@@ -979,6 +979,40 @@ DEV_LOOP_ACTIONS_RETENTION_DAYS: int = config.getint(
     "DEV_LOOP_ACTIONS_RETENTION_DAYS", fallback=7
 )
 
+# FEAT-377 (TASK-1910): bounded QA→development repair-loop cap. A failed QA
+# attempt redispatches development (with QAReport feedback) while
+# `QAReport.attempt < N`; at `attempt >= N` the run escalates to
+# `failure_handler` as before. Read at ``build_dev_loop_definition()`` /
+# ``build_dev_loop_flow()`` call time (not import time) so tests can
+# monkeypatch it per-case.
+DEV_LOOP_QA_MAX_RETRIES: int = config.getint("DEV_LOOP_QA_MAX_RETRIES", fallback=2)
+
+# FEAT-377 (TASK-1914): dev-loop graph-memory wire (G2). Directory holding
+# the SQLite graph plane DevLoopGraphMemory.from_config() opens (one
+# `<tenant>.db` per tenant, same convention as build_graph_memory_toolkit).
+# Unset (default) disables the facade entirely — every dev_loop node
+# behaves byte-identically to today. SQLite-only in v1 (decided
+# 2026-07-26); no Arango dual publish.
+DEV_LOOP_GRAPH_MEMORY_PATH: str = config.get("DEV_LOOP_GRAPH_MEMORY_PATH", fallback="")
+
+# FEAT-377 (TASK-1916): opt-in plan_approval gate (G5) — approve the Jira
+# ticket + spec + task decomposition BEFORE the agent fleet burns tokens
+# implementing it. False (default) preserves current behavior exactly
+# (mirrors the FEAT-322 require_deployment_approval flag's shape; unlike
+# that flag, this one IS conf-backed per this task's explicit design).
+DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean(
+    "DEV_LOOP_REQUIRE_PLAN_APPROVAL", fallback=False
+)
+
+# FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
+# it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
+# re-acquiring it once the gate resolves. True (default) per spec §2 —
+# unlike the other FEAT-377 flags, parking defaults ON since holding a slot
+# for a gate's whole TTL (up to 72h for manual_criterion) is the behavior
+# this task exists to fix. Set False to keep the pre-TASK-1917 behavior
+# (a gate wait holds its slot for the run's entire duration).
+DEV_LOOP_GATE_PARK: bool = config.getboolean("DEV_LOOP_GATE_PARK", fallback=True)
+
 # FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
 # the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
 # above — kept append-only here (rather than reflowing the block near

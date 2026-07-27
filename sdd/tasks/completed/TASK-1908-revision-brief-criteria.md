@@ -78,6 +78,13 @@ async def run_revision(self, brief: RevisionBrief, *, run_id: Optional[str] = No
 - ~~`RevisionBrief.acceptance_criteria`~~ — this task adds it
 - ~~a criteria store the revision trigger can read~~ — run snapshots/graph memory land in TASK-1915; do not invent one
 
+### Contract correction (found during implementation, 2026-07-26)
+- The test-file scope named `test_runner_revision.py` (MODIFY/CREATE), but
+  no such file exists; the real `run_revision` end-to-end coverage lives in
+  `test_revision_mode.py` (verified via `ls`/grep). Extended that file
+  in place with the two both-paths tests instead of creating a duplicate
+  new file.
+
 ---
 
 ## Implementation Notes
@@ -127,10 +134,31 @@ async def test_run_revision_without_criteria(stub_flow):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- Added `RevisionBrief.acceptance_criteria: Optional[List[AcceptanceCriterion]]
+  = None` (default preserves legacy behavior exactly).
+- `run_revision` now builds the synthetic `WorkBrief.acceptance_criteria`
+  as `[*(brief.acceptance_criteria or []), ShellCriterion(name="lint", ...)]`
+  — carried criteria run alongside lint when present, lint-only otherwise.
+  Updated the stale `runner.py` comment above the construction site.
+- Checked all `RevisionBrief(` call sites (grep): only
+  `webhook.py::RevisionWebhookHandler._build_brief` constructs one, from a
+  webhook payload with no criteria data available — left unchanged per the
+  task's explicit fallback instruction ("if no caller has them available
+  yet, leave callers unchanged and note it"); TASK-1915's graph memory
+  write-back is the intended future source.
+- Tests added to `test_revision_mode.py` (see Codebase Contract correction
+  above for the filename discrepancy): `test_run_revision_with_criteria`
+  and `test_run_revision_without_criteria`, both driving the real
+  `run_revision()` through a capturing fake dispatcher and inspecting the
+  `_QABrief.acceptance_criteria` actually handed to the `sdd-qa` dispatch
+  (2 entries carried+lint vs. 1 entry lint-only).
+- `pytest packages/ai-parrot/tests/flows/dev_loop/ -m "not live"` (minus
+  the pre-existing `hypothesis`-missing file): 652 passed, 1 skipped, same
+  one pre-existing unrelated test-order-dependent failure noted in
+  TASK-1906/1907.
+- `ruff check` clean on all touched files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the test-file-location correction above.

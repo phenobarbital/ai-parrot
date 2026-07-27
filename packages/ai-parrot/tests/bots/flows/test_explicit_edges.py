@@ -314,6 +314,78 @@ class TestCycleValidation:
         assert _ran(ctx) == ["a", "b"]
         assert result.status.value == "completed"
 
+    @pytest.mark.asyncio
+    async def test_on_condition_back_edge_does_not_count_as_cycle(self) -> None:
+        """FEAT-377 TASK-1910: an on_condition back-edge (e.g. dev-loop's
+        bounded qa -> development repair-loop edge) must not trip the
+        structural cycle check, even though it is structurally a cycle —
+        the predicate is the bound on the otherwise-infinite loop.
+
+        Shaped like the real dev-loop graph: the back-edge's target
+        ("dev") already has a legitimate unconditional predecessor
+        ("start"), so it is never a pure entry/root node either way — this
+        isolates the cycle-check exemption from node re-entry semantics
+        (which the retry predicate below deliberately never triggers)."""
+        flow = _flow()
+        flow.add_node(StubNode(node_id="start", result="go"))
+        flow.add_node(StubNode(node_id="dev"))
+        flow.add_node(StubNode(node_id="qa", result="passed"))
+        flow.add_node(StubNode(node_id="end"))
+        flow.add_edge("start", "dev")
+        flow.add_edge("dev", "qa")
+        flow.add_edge("qa", "end", predicate=lambda r: True)
+        flow.add_edge("qa", "dev", predicate=lambda r: False)  # never fires
+        ctx = FlowContext(initial_task="")
+        result = await flow.run_flow(ctx)
+        assert _ran(ctx) == ["start", "dev", "qa", "end"]
+        assert result.status.value == "completed"
+
+    @pytest.mark.asyncio
+    async def test_unconditional_cycle_still_raises_alongside_on_condition_edge(
+        self,
+    ) -> None:
+        """An on_condition edge elsewhere must not mask a real unconditional
+        cycle between two other nodes."""
+        flow = _flow()
+        for nid in ("a", "b", "c"):
+            flow.add_node(StubNode(node_id=nid))
+        flow.add_edge("a", "b")
+        flow.add_edge("b", "a")  # unconditional cycle
+        flow.add_edge("a", "c", predicate=lambda r: True)
+        with pytest.raises(ValueError, match="contains a cycle"):
+            await flow.run_flow(FlowContext(initial_task=""))
+
+    @pytest.mark.asyncio
+    async def test_back_edge_actually_retries_and_completes(self) -> None:
+        """FEAT-377 TASK-1910: a bounded repair loop must genuinely re-enter
+        — not merely validate — mirroring dev-loop's qa -> development edge.
+        A counting node fails its predicate on attempt 1, passes on attempt 2."""
+        attempts: dict[str, int] = {"qa": 0}
+
+        class CountingNode(StubNode):
+            def model_post_init(self, __context: Any) -> None:
+                super().model_post_init(__context)
+
+            async def execute(self, ctx: FlowContext, deps: Any, **kwargs: Any) -> Any:
+                ctx.shared_data.setdefault("order", []).append(self.node_id)
+                attempts["qa"] += 1
+                return attempts["qa"]  # 1 on first pass, 2 on retry
+
+        flow = _flow()
+        flow.add_node(StubNode(node_id="dev"))
+        flow.add_node(CountingNode(node_id="qa"))
+        flow.add_node(StubNode(node_id="end"))
+        flow.add_edge("dev", "qa")
+        flow.add_edge("qa", "end", predicate=lambda r: r >= 2)
+        flow.add_edge("qa", "dev", predicate=lambda r: r < 2)
+        ctx = FlowContext(initial_task="")
+        result = await flow.run_flow(ctx)
+        assert result.status.value == "completed"
+        # dev and qa each ran twice (attempt 1 fails the predicate, retries;
+        # attempt 2 passes and reaches "end").
+        assert _ran(ctx) == ["dev", "qa", "dev", "qa", "end"]
+        assert attempts["qa"] == 2
+
 
 class TestFsmLifecycle:
     @staticmethod

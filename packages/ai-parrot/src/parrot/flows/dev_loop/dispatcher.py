@@ -277,7 +277,6 @@ class ClaudeCodeDispatcher:
             DispatchOutputValidationError: Final payload did not validate.
         """
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
-        json_schema_path: Optional[str] = None
         # FEAT-322 TASK-1852: bind the per-dispatch host for _publish_event
         # to read (see module-level _SESSION_HOST_CTX docstring). The main
         # finally: below resets it on every path THAT reaches the semaphore
@@ -304,15 +303,15 @@ class ClaudeCodeDispatcher:
 
         async with self._semaphore:
             try:
-                # ``json_schema_path`` is intentionally not generated:
-                # the SDK's subprocess transport pins
+                # A JSON-schema path is intentionally never generated for
+                # this dispatcher: the SDK's subprocess transport pins
                 # ``--output-format stream-json`` / ``--input-format
                 # stream-json`` itself, so passing
                 # ``extra_args={"output-format": "json", ...}`` causes a
                 # CLI-level conflict. Output validation falls back to
                 # best-effort JSON parsing of the final assistant text
                 # (spec §7 R2).
-                run_options = self._resolve_run_options(profile, cwd, json_schema_path=None)
+                run_options = self._resolve_run_options(profile, cwd)
 
                 client = LLMFactory.create(f"claude-agent:{profile.model}")
 
@@ -438,11 +437,6 @@ class ClaudeCodeDispatcher:
                 return result
             finally:
                 _SESSION_HOST_CTX.reset(_host_token)
-                if json_schema_path is not None:
-                    try:
-                        os.unlink(json_schema_path)
-                    except OSError:  # pragma: no cover - best effort
-                        pass
 
     # ------------------------------------------------------------------
     # Internal helpers (underscored — but accessible to unit tests)
@@ -479,8 +473,6 @@ class ClaudeCodeDispatcher:
         self,
         profile: ClaudeCodeDispatchProfile,
         cwd: str,
-        *,
-        json_schema_path: Optional[str] = None,
     ) -> ClaudeAgentRunOptions:
         """Translate a dispatch profile into a run-options instance.
 
@@ -614,27 +606,6 @@ class ClaudeCodeDispatcher:
             return False
         oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
         return bool(isinstance(oauth, dict) and oauth.get("accessToken"))
-
-    def _materialize_json_schema(self, output_model: Type[BaseModel]) -> str:
-        """Write ``output_model.model_json_schema()`` to a tempfile.
-
-        The path is passed to the CLI via ``extra_args={"json-schema": ...}``
-        when the SDK supports it. The dispatcher unlinks the file in a
-        ``finally:`` block.
-        """
-        schema = output_model.model_json_schema()
-        fd, path = tempfile.mkstemp(prefix="dev_loop_schema_", suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(schema, fh)
-        except Exception:
-            os.close(fd)
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-            raise
-        return path
 
     def _build_prompt(self, brief: BaseModel, output_model: Type[BaseModel]) -> str:
         """Compose the prompt body for a dispatch.

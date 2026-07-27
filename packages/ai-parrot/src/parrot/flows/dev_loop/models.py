@@ -302,6 +302,17 @@ class RevisionBrief(BaseModel):
         ...,
         description="Head SHA at trigger time; used for dedup (mirrors GitHubReviewer).",
     )
+    acceptance_criteria: Optional[List[AcceptanceCriterion]] = Field(
+        default=None,
+        description=(
+            "The original feature's acceptance criteria (FEAT-377 TASK-1908). "
+            "When present and non-empty, `run_revision` re-verifies them "
+            "alongside the lint gate instead of running lint-only. `None` "
+            "(the default) preserves legacy lint-only revision QA exactly — "
+            "no caller populates this yet; graph memory write-back "
+            "(TASK-1915) is the intended future source."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -390,6 +401,19 @@ class DevAgentSpec(BaseModel):
     )
     count: int = Field(
         default=1, ge=1, description="Number of replicas of this spec in the pool."
+    )
+    escalation_model: str = Field(
+        default="",
+        description=(
+            "FEAT-377 TASK-1912 (G3): model used on retry/redispatch instead "
+            "of `model` — same backend, stronger tier (e.g. 'claude-code' "
+            "sonnet -> opus). Consulted by DevAgentPool.run_wave's single "
+            "retry AND the QA repair-loop's development redispatch "
+            "(attempt >= 2). '' (default) disables escalation — the retry "
+            "uses `model`, byte-identical to pre-TASK-1912 behavior. No "
+            "built-in per-backend ladder in v1 (decided 2026-07-26, spec §8) "
+            "— explicit only."
+        ),
     )
 
 
@@ -508,6 +532,18 @@ class QAReport(BaseModel):
     code_review_findings: List[str] = Field(
         default_factory=list,
         description="Qualitative findings emitted by the code-review gate.",
+    )
+    attempt: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "FEAT-377 TASK-1910: which QA attempt produced this report "
+            "(1-based). Lives ON the report — not merely in shared state — "
+            "because the engine's `cel_evaluator` coerces the node result "
+            "via `model_dump()`, so the qa→development retry / "
+            "qa→failure_handler exhaustion CEL predicates can only "
+            "reference fields on `QAReport` itself."
+        ),
     )
 
 

@@ -158,10 +158,46 @@ def test_upsert_routes_memory_kinds(caplog):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- `meta_ontology.py`: added `wiki_page`/`run`/`claim` to `_ENTITY_DEFS`
+  (same property shape as `rationale` — title/source_uri/kind/summary/
+  content_ref/embedding_ref/provenance, `vectorize=["summary","title"]`)
+  and `COLLECTION_TO_KIND` (`gi_wiki_pages`/`gi_runs`/`gi_claims`); added
+  `produced`/`about`/`supported_by`/`contradicts` to `_RELATION_DEFS`
+  (same shape as `contains`/`references`/etc. — wildcard from/to,
+  `field_match` discovery, provenance-only property) and
+  `EDGE_KIND_TO_COLLECTION`. `KIND_TO_COLLECTION` updated automatically
+  (derived by inversion). Updated the module + `build_graphindex_ontology`
+  docstrings (6→9 entities, 6→10 relations).
+- Bootstrap check (per task instruction): grepped for `gi_documents`/
+  `COLLECTION_TO_KIND`/`EDGE_KIND_TO_COLLECTION` repo-wide — the only
+  hits are `meta_ontology.py` and `persist.py`. `loader.py:198-201`
+  confirms `build_graphindex_ontology()` IS the tenant ontology passed to
+  `TenantContext`, so `initialize_tenant` provisions every `gi_*`
+  collection from `_ENTITY_DEFS`/`_RELATION_DEFS` automatically — no
+  literal collection list to extend, no `persist.py` change needed.
+- Added the enum-completeness regression guard
+  (`TestEnumCompleteness`, parametrized over `list(NodeKind)`/
+  `list(EdgeKind)`) and a routing test
+  (`TestPersistenceRoutesMemoryKinds::test_upsert_routes_memory_kinds_without_warning`)
+  asserting no "Unknown kind" warning for run/claim/wiki_page nodes.
+- Updated the pre-existing hard-coded counts in `test_meta_ontology.py`
+  (6→9 entities, 6→10 relations/edge-collections) that would otherwise
+  have failed once the new mappings landed, and extended
+  `test_persist.py`'s `test_nodes_routed_to_correct_collections` /
+  `test_edges_routed_to_correct_collections` (which assert
+  `set(KIND_TO_COLLECTION.values())`/`set(EDGE_KIND_TO_COLLECTION.values())`
+  equality against the collections actually called) with the 3 new node
+  kinds and 4 new edge kinds — these would have failed otherwise since
+  the expected set grew but the test's node/edge fixtures hadn't.
+- `pytest packages/ai-parrot/tests/knowledge/graphindex/ -v`: 620 passed.
+- `ruff check packages/ai-parrot/src/parrot/knowledge/graphindex/`: 2
+  pre-existing unused-import errors in `meta_ontology.py` (`typing.Any`,
+  `TraversalPattern`) and pre-existing errors in unrelated files
+  (`signals.py`) — confirmed via `git stash` diff that these predate this
+  task's changes; left untouched (out of scope, no code path here uses
+  them either way).
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

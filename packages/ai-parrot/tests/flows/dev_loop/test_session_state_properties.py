@@ -419,8 +419,9 @@ def test_action_union_schema_has_discriminator():
     assert "oneOf" in schema
     assert "discriminator" in schema
     assert schema["discriminator"]["propertyName"] == "type"
-    # All 20 documented action types are present in the mapping.
-    assert len(schema["discriminator"]["mapping"]) == 20
+    # All 21 documented action types are present in the mapping (20
+    # original + FEAT-377 TASK-1913's ``run/qaAttemptRecorded``).
+    assert len(schema["discriminator"]["mapping"]) == 21
 
 
 def test_root_action_union_schema_has_discriminator():
@@ -430,4 +431,7 @@ def test_root_action_union_schema_has_discriminator():
     assert schema["discriminator"]["propertyName"] == "type"
     assert set(schema["discriminator"]["mapping"]) == {
         "root/runAdded", "root/runSummaryChanged", "root/runRemoved",
+        # FEAT-377 TASK-1917: gate park/resume visibility in the
+        # replayable root-action stream.
+        "root/runParked", "root/runResumed",
     }

@@ -174,6 +174,10 @@ class TestGraphIndexPersistence:
             make_node("c1", NodeKind.CONCEPT),
             make_node("r1", NodeKind.RATIONALE),
             make_node("sk1", NodeKind.SKILL),
+            # FEAT-377 (TASK-1909): agent graph-memory kinds.
+            make_node("w1", NodeKind.WIKI_PAGE),
+            make_node("run1", NodeKind.RUN),
+            make_node("cl1", NodeKind.CLAIM),
         ]
         await persistence.persist_graph(ctx, nodes, [])
 
@@ -193,6 +197,11 @@ class TestGraphIndexPersistence:
             make_edge("a", "f", EdgeKind.EXPLAINS),
             # FEAT-240 (TASK-1571): EXTENDS added for Odoo model inheritance
             make_edge("a", "g", EdgeKind.EXTENDS),
+            # FEAT-377 (TASK-1909): agent-assertion edges (work lineage).
+            make_edge("a", "h", EdgeKind.PRODUCED),
+            make_edge("a", "i", EdgeKind.ABOUT),
+            make_edge("a", "j", EdgeKind.SUPPORTED_BY),
+            make_edge("a", "k", EdgeKind.CONTRADICTS),
         ]
         # We only test edge routing; no nodes needed for this
         await persistence.persist_graph(ctx, [], edges)

@@ -258,6 +258,10 @@ class DevLoopSessionState(_Frozen):
     gates: Dict[str, ApprovalGate] = Field(default_factory=dict)
     cancel_requested_by: str = ""
     error: str = ""
+    # FEAT-377 (TASK-1910): bounded QA→development repair loop. Persisted via
+    # QaAttemptRecorded so the attempt count is replayable via ``view=state``.
+    qa_attempts: int = 0
+    qa_notes: str = ""
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -403,6 +407,23 @@ class PullRequestLinked(_ActionBase):
     changeset: str = ""             # changeset channel URI
 
 
+class QaAttemptRecorded(_ActionBase):
+    """Recorded each time QA fails and a repair retry is dispatched
+    (FEAT-377 TASK-1910 — G1 bounded QA→development repair loop).
+
+    Note: the spec's §2 Data Models sketch names this action's `type`
+    literal ``"qa_attempt_recorded"``; every other action in this union
+    follows a strict ``"<namespace>/camelCase"`` convention (e.g.
+    ``"run/jiraLinked"``), so this uses ``"run/qaAttemptRecorded"``
+    instead for consistency — semantically identical, no reducer dispatch
+    anywhere parses the string structurally.
+    """
+
+    type: Literal["run/qaAttemptRecorded"] = "run/qaAttemptRecorded"
+    attempt: int                    # 1-based attempt that just failed
+    qa_notes: str = ""              # condensed QAReport failure summary
+
+
 DevLoopAction = Annotated[
     Union[
         RunCreated, RunCancelled, RunClosed,
@@ -411,7 +432,7 @@ DevLoopAction = Annotated[
         DispatchToolUse, DispatchToolResult,
         DispatchOutputInvalid, DispatchFailed, DispatchCompleted,
         GateOpened, GateResolved, GateExpired,
-        JiraLinked, PullRequestLinked,
+        JiraLinked, PullRequestLinked, QaAttemptRecorded,
     ],
     Field(discriminator="type"),
 ]
@@ -465,6 +486,16 @@ class RunSummary(_Frozen):
     pending_gate_count: int = 0
     created_at: float = 0.0
     finished_at: Optional[float] = None
+    parked: bool = Field(
+        default=False,
+        description=(
+            "FEAT-377 TASK-1917 (G6): True while this run has released its "
+            "FLOW_MAX_CONCURRENT_RUNS slot to await a gate "
+            "(DEV_LOOP_GATE_PARK=true). Orthogonal to `phase` — a run can "
+            "be `awaiting_gate` (session-state phase) while still holding "
+            "its slot when parking is disabled."
+        ),
+    )
 
 
 class RunRegistryState(_Frozen):
@@ -495,8 +526,28 @@ class RunRemoved(_RootActionBase):
     run_id: str
 
 
+class RunParked(_RootActionBase):
+    """FEAT-377 TASK-1917 (G6): a run released its concurrency slot to
+    await a gate. Applied by ``DevLoopRunner`` when
+    ``DEV_LOOP_GATE_PARK=true`` and the FIRST gate for this run opens
+    (a run with multiple concurrently-pending gates parks once, on the
+    0->1 transition)."""
+
+    type: Literal["root/runParked"] = "root/runParked"
+    run_id: str
+
+
+class RunResumed(_RootActionBase):
+    """FEAT-377 TASK-1917 (G6): a parked run re-acquired its concurrency
+    slot — applied on the LAST pending gate's resolution (the 1->0
+    transition), whether by explicit approval/rejection or TTL expiry."""
+
+    type: Literal["root/runResumed"] = "root/runResumed"
+    run_id: str
+
+
 RootAction = Annotated[
-    Union[RunAdded, RunSummaryChanged, RunRemoved],
+    Union[RunAdded, RunSummaryChanged, RunRemoved, RunParked, RunResumed],
     Field(discriminator="type"),
 ]
 
@@ -686,6 +737,13 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
     if t == "run/prLinked":
         return state.model_copy(update={"pr_url": action.pr_url})
 
+    # -- QA repair loop (FEAT-377 TASK-1910)
+    if t == "run/qaAttemptRecorded":
+        return state.model_copy(update={
+            "qa_attempts": action.attempt,
+            "qa_notes": action.qa_notes,
+        })
+
     return state  # forward-compat: unknown action → no-op
 
 
@@ -711,6 +769,15 @@ def reduce_root(state: RunRegistryState, action: RootAction) -> RunRegistryState
         if action.run_id not in state.runs:
             return state  # unknown run removal = no-op
         runs = {k: v for k, v in state.runs.items() if k != action.run_id}
+        return state.model_copy(update={"runs": runs})
+    if t == "root/runParked" or t == "root/runResumed":
+        # FEAT-377 TASK-1917: a late/unknown run_id (e.g. already removed)
+        # is a no-op — mirrors runRemoved's guard above.
+        existing = state.runs.get(action.run_id)
+        if existing is None:
+            return state
+        updated = existing.model_copy(update={"parked": t == "root/runParked"})
+        runs = {**state.runs, action.run_id: updated}
         return state.model_copy(update={"runs": runs})
 
     return state  # forward-compat: unknown action → no-op
@@ -1068,15 +1135,18 @@ __all__ = [
     "NodeState",
     "NodeStatus",
     "PullRequestLinked",
+    "QaAttemptRecorded",
     "ROOT_CHANNEL",
     "RootAction",
     "RunAdded",
     "RunCancelled",
     "RunCreated",
     "RunClosed",
+    "RunParked",
     "RunPhase",
     "RunRegistryState",
     "RunRemoved",
+    "RunResumed",
     "RunSummary",
     "RunSummaryChanged",
     "SessionHost",

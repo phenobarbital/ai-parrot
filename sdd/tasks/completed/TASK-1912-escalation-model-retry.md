@@ -87,6 +87,23 @@ async def run_wave(self, tasks: List[TaskRef], *, research: ResearchOutput,
 - ~~`DEV_LOOP_AUTO_ESCALATE`~~ — rejected in spec §8; do not add
 - ~~per-dispatch model parameter on dispatchers~~ — *(unverified — check `DevLoopCodeDispatcher.dispatch` signature before assuming; if absent, rebuild the worker's dispatcher with the escalation model for the retry)*
 
+### Contract resolution (found during implementation, 2026-07-26)
+- The model is NOT frozen in the dispatcher at build time — verified by
+  reading `agent_builder.py:build_dispatcher` fully: every branch returns
+  a `(dispatcher, profile)` pair where the dispatcher is stateless w.r.t.
+  model and the profile alone carries it (`profile.model` for
+  claude-code/codex/gemini/grok/zai/moonshot, `profile.llm=
+  "<backend>:<model>"` for the "nvidia" backend's
+  `LLMCodeDispatchProfile`). `ClaudeCodeDispatcher.dispatch()` reads
+  `profile.model` fresh on every call
+  (`LLMFactory.create(f"claude-agent:{profile.model}")`). So the smallest
+  change is a per-dispatch `profile.model_copy(update={...})` swap — no
+  `agent_builder.py` change, no dispatcher rebuild.
+- `DevLoopCodeDispatcher.dispatch()`'s signature has no `model` kwarg of
+  its own (`brief`/`profile`/`output_model`/`run_id`/`node_id`/`cwd`/
+  `session_host`) — confirmed via the Protocol + `ClaudeCodeDispatcher`
+  concrete signature. The model travels exclusively on `profile`.
+
 ---
 
 ## Implementation Notes
@@ -136,10 +153,61 @@ async def test_first_attempt_never_escalates(pool_with_escalation): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- `models.py`: `DevAgentSpec.escalation_model: str = ""`.
+- `agent_pool.py`:
+  - `DevAgentPool._escalated_profile(worker)` (static): returns
+    `worker.profile.model_copy(update=...)` with the model swapped to
+    `worker.spec.escalation_model` — handles both profile shapes
+    (`model=` direct field, or `llm="<backend>:<model>"` for
+    `LLMCodeDispatchProfile`/nvidia); degrades to the unescalated profile
+    for any unrecognized shape (never raises).
+  - `_dispatch_one` gained `escalate: bool = False`; when `True` and
+    `worker.spec.escalation_model` is non-empty, dispatches with the
+    escalated profile and logs
+    `"retrying task %s on escalation model %s"`.
+  - `run_wave`'s within-wave retry call now passes `escalate=True`
+    unconditionally (existing per-worker behavior: only fires if THAT
+    worker's spec actually has an `escalation_model` set — the retry may
+    land on a different worker via round-robin, verified by a dedicated
+    test using two specs with different escalation configs).
+  - `run_wave` gained its own `escalate: bool = False` parameter, threaded
+    into the FIRST-attempt dispatch gather too (previously only the
+    retry gather could escalate) — this is what item 2 (QA-retry
+    redispatch) below actually flips.
+- `nodes/development.py`: `_execute_pool` computes
+  `escalate = shared.get("qa_attempt", 1) >= 2` (the counter TASK-1911's
+  `_with_repair_feedback` already bumps) and passes it to
+  `pool.run_wave(..., escalate=escalate)` — so a QA-repair-loop
+  redispatch (attempt ≥ 2) uses every worker's `escalation_model` on its
+  FIRST dispatch of the new wave, not just an internal retry.
+  **Scoping decision**: the single-agent path (`_execute_single`) has no
+  `DevAgentSpec` at all (`self._dispatch_profile` is a fixed
+  construction-time value, or a plain default `ClaudeCodeDispatchProfile`
+  with no spec/escalation concept) — there is no lever to escalate, so it
+  is intentionally left untouched. This matches the spec's own framing
+  ("resolved spec") — escalation only applies where a spec exists.
+- `agent_builder.py`: untouched — confirmed unnecessary (see Codebase
+  Contract resolution above).
+- `test_agent_pool.py`: extended `FakeDispatcher` to record the `profile`
+  actually used per call (4th tuple element — verified no existing test
+  does whole-tuple equality that this would break). New
+  `TestEscalationModel` class: `test_retry_uses_escalation_model`,
+  `test_retry_same_model_when_unset` (byte-identical behavior when
+  `escalation_model=""`), `test_first_attempt_never_escalates`,
+  `test_escalation_on_different_retry_worker_uses_that_workers_spec`
+  (retry lands on a different worker via round-robin — the ESCALATED
+  worker's own spec is used, not the originally-failed worker's), and
+  `test_escalated_profile_handles_llm_field_profile` (the nvidia/
+  `LLMCodeDispatchProfile` shape).
+- `pytest packages/ai-parrot/tests/flows/dev_loop/ -m "not live"` (minus
+  the pre-existing `hypothesis`-missing file): 669 passed, 1 skipped,
+  same one pre-existing unrelated failure noted in every prior task.
+- `ruff check` clean on all touched files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none — both Codebase Contract items resolved
+without needing the "maybe" `agent_builder.py` change, and the
+single-agent-path scoping decision follows directly from "the resolved
+spec" (there is none on that path).

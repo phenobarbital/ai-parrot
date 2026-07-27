@@ -369,10 +369,20 @@ class FlowDefinition(BaseModel):
 
     @model_validator(mode="after")
     def _validate_acyclic(self) -> "FlowDefinition":
-        """Reject FlowDefinition whose edges form a cycle.
+        """Reject FlowDefinition whose *unconditional* edges form a cycle.
 
         Runs Kahn's algorithm: repeatedly remove nodes with in-degree 0.
         If any node remains after the queue empties, it participates in a cycle.
+
+        ``on_condition`` edges are exempt from this check (FEAT-377
+        TASK-1910): a CEL-gated back-edge is a deliberate, bounded repair/
+        retry loop (e.g. dev-loop's ``qa → development`` edge, gated by an
+        attempt-count predicate) — the engine's explicit-edge executor
+        (OR-join + skip-propagation) supports such cycles; only the
+        ``from_definition`` AND-join materialization path benefits from
+        acyclicity. A genuinely unconditional cycle (``always``/
+        ``on_success``/``on_error``/``on_timeout``) still raises — those
+        edges have no predicate to bound iteration.
 
         Placed AFTER ``validate_node_ids`` so dangling-reference errors surface
         first (cycle detection assumes referential integrity). Pydantic v2 runs
@@ -389,6 +399,8 @@ class FlowDefinition(BaseModel):
             in_degree.setdefault(n.id, 0)
 
         for edge in self.edges:
+            if edge.condition == "on_condition":
+                continue
             targets = [edge.to] if isinstance(edge.to, str) else edge.to
             for target in targets:
                 # Reference integrity already validated above; guard defensively.

@@ -94,11 +94,29 @@ class TestQABranching:
         assert "failure_handler" not in targets
 
     def test_qa_fail_routes_to_failure_handler(self, flow):
+        # FEAT-377 TASK-1910: a failing QAReport only escalates once the
+        # repair loop is exhausted (attempt >= DEV_LOOP_QA_MAX_RETRIES).
+        from parrot import conf
+
         failing_report = QAReport(
-            passed=False, criterion_results=[], lint_passed=False
+            passed=False, criterion_results=[], lint_passed=False,
+            attempt=int(conf.DEV_LOOP_QA_MAX_RETRIES),
         )
         targets = _conditional_targets(flow, "qa", failing_report)
         assert "failure_handler" in targets
+        assert "deployment_handoff" not in targets
+        assert "development" not in targets
+
+    def test_qa_fail_below_retry_cap_routes_to_development(self, flow):
+        """FEAT-377 TASK-1910: the new bounded repair-loop edge — a failing
+        QAReport below the retry cap redispatches development instead of
+        escalating."""
+        failing_report = QAReport(
+            passed=False, criterion_results=[], lint_passed=False, attempt=1
+        )
+        targets = _conditional_targets(flow, "qa", failing_report)
+        assert "development" in targets
+        assert "failure_handler" not in targets
         assert "deployment_handoff" not in targets
 
 

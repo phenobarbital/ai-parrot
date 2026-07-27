@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.flows.dev_loop.models import RevisionBrief
+from parrot.flows.dev_loop.models import FlowtaskCriterion, RevisionBrief
 from parrot.flows.dev_loop.nodes.revision_handoff import RevisionHandoffNode
 from parrot.flows.dev_loop.runner import (
     DevLoopRunner,
@@ -144,6 +144,80 @@ async def test_run_revision_enters_at_development(monkeypatch, sample_revision_b
     # The revision handoff commented the EXISTING PR; no new PR was opened.
     git.add_pr_comment.assert_awaited_once()
     git.create_pull_request.assert_not_called()
+
+
+# ── run_revision acceptance-criteria pass-through (FEAT-377 TASK-1908) ──
+
+
+async def _run_revision_and_capture_qa_brief(monkeypatch, revision_brief):
+    """Drive ``run_revision`` with a capturing dispatcher and return the
+    ``acceptance_criteria`` carried on the QA dispatch's brief."""
+
+    async def fake_dispatch(*, brief, profile, output_model, **kw):
+        name = output_model.__name__
+        if name == "DevelopmentOutput":
+            return output_model(files_changed=[], commit_shas=[], summary="ok")
+        if name == "QAReport":
+            return output_model(passed=True, criterion_results=[], lint_passed=True)
+        return output_model()
+
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(side_effect=fake_dispatch)
+    git = MagicMock()
+    git.add_pr_comment = AsyncMock(return_value={"id": "c1"})
+    jira = MagicMock()
+    jira.jira_add_comment = AsyncMock(return_value={})
+    jira.jira_transition_issue = AsyncMock(return_value={})
+    jira.jira_transition_to = AsyncMock(return_value={})
+
+    class _Proc:
+        returncode = 0
+
+        async def communicate(self):
+            return (b"", b"")
+
+    async def _fake_exec(*a, **k):
+        return _Proc()
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+
+    runner = DevLoopRunner(
+        MagicMock(),
+        dispatcher=dispatcher, jira_toolkit=jira,
+        git_toolkit=git, redis_url="redis://x",
+    )
+    await runner.run_revision(revision_brief, run_id="rev-criteria")
+
+    qa_calls = [
+        call for call in dispatcher.dispatch.await_args_list
+        if call.kwargs["output_model"].__name__ == "QAReport"
+    ]
+    assert qa_calls, "expected a QAReport dispatch"
+    return qa_calls[0].kwargs["brief"].acceptance_criteria
+
+
+@pytest.mark.asyncio
+async def test_run_revision_with_criteria(monkeypatch, sample_revision_brief):
+    """Carried criteria appear in the synthesized WorkBrief alongside lint."""
+    carried = FlowtaskCriterion(name="regression", task_path="etl/x.yaml")
+    brief = sample_revision_brief.model_copy(
+        update={"acceptance_criteria": [carried]}
+    )
+    executable = await _run_revision_and_capture_qa_brief(monkeypatch, brief)
+    assert len(executable) == 2
+    assert any(c.kind == "flowtask" and c.name == "regression" for c in executable)
+    assert any(c.kind == "shell" and c.name == "lint" for c in executable)
+
+
+@pytest.mark.asyncio
+async def test_run_revision_without_criteria(monkeypatch, sample_revision_brief):
+    """None → single lint ShellCriterion, exactly as before."""
+    assert sample_revision_brief.acceptance_criteria is None
+    executable = await _run_revision_and_capture_qa_brief(
+        monkeypatch, sample_revision_brief
+    )
+    assert len(executable) == 1
+    assert executable[0].kind == "shell" and executable[0].name == "lint"
 
 
 @pytest.mark.asyncio

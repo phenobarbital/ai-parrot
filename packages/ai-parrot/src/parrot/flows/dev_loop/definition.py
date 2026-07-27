@@ -25,6 +25,7 @@ exactly as the legacy Python callables (``_is_bug`` / ``_qa_passed`` …) did.
 
 from __future__ import annotations
 
+from parrot import conf
 from parrot.bots.flows.flow.definition import (
     EdgeDefinition,
     FlowDefinition,
@@ -48,6 +49,19 @@ _CEL_IS_BUG = 'result.kind == "bug"'
 _CEL_IS_NOT_BUG = 'result.kind != "bug"'
 _CEL_QA_PASSED = "result.passed == true"
 _CEL_QA_FAILED = "result.passed == false"
+
+
+def _cel_qa_retry(max_retries: int) -> str:
+    """CEL predicate: QA failed but the bounded repair loop (FEAT-377
+    TASK-1910 — G1) still has attempts left → redispatch development."""
+    return f"result.passed == false && result.attempt < {max_retries}"
+
+
+def _cel_qa_exhausted(max_retries: int) -> str:
+    """CEL predicate: QA failed and the repair loop is exhausted →
+    escalate to the failure handler (the stop rule that bounds the
+    otherwise-infinite retry cycle)."""
+    return f"result.passed == false && result.attempt >= {max_retries}"
 
 # Middle nodes whose hard error routes to the failure handler (on_error fan-in).
 _ON_ERROR_SOURCES = (INTENT, BUG_INTAKE, RESEARCH, DEVELOPMENT, QA, HANDOFF)
@@ -75,6 +89,8 @@ def build_dev_loop_definition(*, revision: bool = False) -> FlowDefinition:
     if revision:
         return _build_revision_definition()
 
+    max_retries = int(conf.DEV_LOOP_QA_MAX_RETRIES)
+
     nodes = [
         _node(INTENT),
         _node(BUG_INTAKE),
@@ -101,14 +117,20 @@ def build_dev_loop_definition(*, revision: bool = False) -> FlowDefinition:
         # Linear chain: research → development → qa.
         EdgeDefinition(**{"from": RESEARCH}, to=DEVELOPMENT, condition="on_success"),
         EdgeDefinition(**{"from": DEVELOPMENT}, to=QA, condition="on_success"),
-        # QA branch: passed → handoff, failed → failure handler.
+        # QA branch: passed → handoff; failed → bounded repair retry to
+        # development (FEAT-377 TASK-1910 — G1) while attempts remain, else
+        # escalate to the failure handler once the repair loop is exhausted.
         EdgeDefinition(
             **{"from": QA}, to=HANDOFF,
             condition="on_condition", predicate=_CEL_QA_PASSED,
         ),
         EdgeDefinition(
+            **{"from": QA}, to=DEVELOPMENT,
+            condition="on_condition", predicate=_cel_qa_retry(max_retries),
+        ),
+        EdgeDefinition(
             **{"from": QA}, to=FAILURE,
-            condition="on_condition", predicate=_CEL_QA_FAILED,
+            condition="on_condition", predicate=_cel_qa_exhausted(max_retries),
         ),
         # Success path terminates at the close node.
         EdgeDefinition(**{"from": HANDOFF}, to=CLOSE, condition="on_success"),

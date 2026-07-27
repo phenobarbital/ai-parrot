@@ -99,6 +99,19 @@ _GATE_TTL_CONF_ATTR: Dict[GateKind, str] = {
 - ~~`DEV_LOOP_GATE_TTL_REVIEW_ESCALATION`~~ — config key does not exist yet; this task declares it
 - ~~any caller of `ClaudeCodeDispatcher._materialize_json_schema`~~ — zero callers (that is why it is dead)
 
+### Contract correction (found during implementation, 2026-07-26)
+- ~~`DEV_LOOP_GATE_TTL_REVIEW_ESCALATION` config key does not exist yet~~ —
+  **FALSE**. `parrot/conf.py:1004-1006` already declares it
+  (`config.getint("DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", fallback=86400)`)
+  and `nodes/qa.py:470` already reads `conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION`
+  directly for the `review_escalation` gate's `ttl_seconds`. The ONLY
+  missing piece was the `_GATE_TTL_CONF_ATTR` dict entry in `runner.py`
+  (confirmed by grep before editing) — no `conf.py` change was needed.
+- The test-file scope named `test_runner_gates.py` (MODIFY/CREATE) for the
+  TTL fix, but the real, pre-existing `gate_ttl_for` coverage lives in
+  `test_runner_host.py::test_gate_ttl_for_all_kinds` (verified via grep).
+  Extended that test in place rather than creating a duplicate new file.
+
 ---
 
 ## Implementation Notes
@@ -151,10 +164,37 @@ def test_gate_ttl_for_all_kinds(kind):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- `failure_handler.py`: replaced the hard-coded `jira_transition_issue(...,
+  transition="Needs Human Review")` call with
+  `transition_issue_with_candidates(self._jira, issue_key, ["Needs Human
+  Review", "Blocked", "To Do"], logger=self.logger)`, matching
+  `deployment_handoff.py`/`close.py`. Updated the `jira` test fixture to
+  add `jira_transition_to` (the helper's preferred walker method) and
+  added two new tests: preferred-candidate success, and fallback through
+  all three candidates when the workflow lacks the first two.
+- `runner.py`: added `"review_escalation": "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION"`
+  to `_GATE_TTL_CONF_ATTR`. The conf default already existed
+  (`conf.py:1004-1006`, added by FEAT-375) — see Codebase Contract
+  correction above. Extended `test_gate_ttl_for_all_kinds` in
+  `test_runner_host.py` plus a new `test_gate_ttl_for_covers_every_gate_kind`
+  regression guard over `get_args(GateKind)`.
+- `dispatcher.py`: deleted `ClaudeCodeDispatcher._materialize_json_schema`
+  (zero callers, confirmed by grep) and the entirely-dead `json_schema_path`
+  plumbing: the local var in `dispatch()`, the `finally:` unlink guard
+  (always `None`, never reassigned), and the unused keyword parameter on
+  `_resolve_run_options` (never referenced inside that method's body
+  either — confirmed by full read before removing; no test references it).
+  `CodexCodeDispatcher._materialize_json_schema` (line ~1326, now shifted)
+  is untouched and still has its live caller.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/ -m "not live"` (minus
+  the pre-existing `hypothesis`-missing `test_session_state_properties.py`):
+  650 passed, 1 skipped, plus the same one pre-existing unrelated
+  test-order-dependent failure noted in TASK-1906
+  (`test_lazy_import.py::test_models_module_is_pure`, passes in isolation).
+- `ruff check` clean on all touched files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the two Codebase Contract
+corrections above (both additive-knowledge, not behavior changes).

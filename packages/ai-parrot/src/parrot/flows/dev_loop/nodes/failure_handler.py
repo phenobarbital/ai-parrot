@@ -20,12 +20,17 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     BugBrief,
     QAReport,
     ResearchOutput,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    register_dev_loop_node,
+    transition_issue_with_candidates,
+)
 
 
 @register_dev_loop_node("dev_loop.failure_handler")
@@ -36,10 +41,14 @@ class FailureHandlerNode(DevLoopNode):
         self,
         *,
         jira_toolkit: Any,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
         name: str = "failure_handler",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_jira", jira_toolkit)
+        # FEAT-377 TASK-1915 (G2 seam 3): opt-in run write-back. None
+        # (default) is a strict no-op.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     # ------------------------------------------------------------------
     # Execute
@@ -80,12 +89,15 @@ class FailureHandlerNode(DevLoopNode):
             )
             return {"status": "escalated_without_ticket"}
 
-        body = self._build_comment(failure_kind, failure_payload)
+        body = self._build_comment(failure_kind, failure_payload, shared)
 
         try:
             await self._jira.jira_add_comment(issue=issue_key, body=body)
-            await self._jira.jira_transition_issue(
-                issue=issue_key, transition="Needs Human Review"
+            await transition_issue_with_candidates(
+                self._jira,
+                issue_key,
+                ["Needs Human Review", "Blocked", "To Do"],
+                logger=self.logger,
             )
             if brief is not None and brief.escalation_assignee:
                 await self._jira.jira_assign_issue(
@@ -99,6 +111,14 @@ class FailureHandlerNode(DevLoopNode):
                 "issue_key": issue_key,
                 "error": str(exc),
             }
+
+        # FEAT-377 TASK-1915 (G2 seam 3): run write-back. The facade's own
+        # publish_run_outcome already degrades to a logged warning on any
+        # failure — never raises into this terminal node.
+        if self._graph_memory is not None:
+            await self._graph_memory.publish_run_outcome(
+                shared.get("run_id", ""), shared.get("qa_report"), "failed", body,
+            )
 
         return {"status": "escalated", "issue_key": issue_key}
 
@@ -150,19 +170,23 @@ class FailureHandlerNode(DevLoopNode):
     # Internal — comment construction
     # ------------------------------------------------------------------
 
-    def _build_comment(self, kind: str, payload: Any) -> str:
+    def _build_comment(self, kind: str, payload: Any, shared: Dict[str, Any]) -> str:
         if kind == "qa_failed" and isinstance(payload, QAReport):
             criterion_lines = "\n".join(
                 f"- {r.name}: exit={r.exit_code}, passed={r.passed}, "
                 f"stderr_tail={r.stderr_tail!r}"
                 for r in payload.criterion_results
             ) or "(no criterion results captured)"
-            return (
+            comment = (
                 "flow-bot: QA failed.\n\n"
                 f"Acceptance criterion results:\n{criterion_lines}\n\n"
                 f"Lint passed: {payload.lint_passed}\n"
                 f"Notes: {payload.notes or '(none)'}"
             )
+            trail = self._attempt_trail(shared)
+            if trail:
+                comment += f"\n\nRepair-loop attempt trail:\n{trail}"
+            return comment
         if kind == "node_error":
             d = payload if isinstance(payload, dict) else {}
             node_id = d.get("node_id", "?")
@@ -173,6 +197,27 @@ class FailureHandlerNode(DevLoopNode):
                 f"`{exc_type}`.\n\n```\n{message}\n```"
             )
         return f"flow-bot: flow failed (kind={kind})"
+
+    @staticmethod
+    def _attempt_trail(shared: Dict[str, Any]) -> str:
+        """Reconstruct the QA repair loop's per-attempt trail from session
+        state (FEAT-377 TASK-1911).
+
+        Replays every ``run/qaAttemptRecorded`` action applied to this
+        run's :class:`SessionHost` (TASK-1910) into one line per attempt.
+        Degrades to an empty string when no host is present (legacy
+        ``DevLoopRunner`` construction) — escalation must never fail on a
+        missing AHP host.
+        """
+        host = shared.get("session_host")
+        if host is None:
+            return ""
+        lines = [
+            f"attempt {envelope.action.attempt}: {envelope.action.qa_notes}"
+            for envelope in host.replay_since(0)
+            if envelope.action.type == "run/qaAttemptRecorded"
+        ]
+        return "\n".join(lines)
 
 
 __all__ = ["FailureHandlerNode"]

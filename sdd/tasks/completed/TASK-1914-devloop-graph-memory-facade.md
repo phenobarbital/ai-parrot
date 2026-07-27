@@ -127,6 +127,46 @@ async def build_graph_memory_toolkit(db_dir, tenant_id="default", agent_id="agen
 - ~~`parrot/flows/dev_loop/graph_memory.py`~~ — this task creates it; nothing imports graphindex from dev_loop today
 - ~~`GraphExpandedRetriever` import path~~ — *(unverified — it is referenced by constructor signatures but was not in the harvested `__all__` list; check `graphindex/retriever.py` and the package exports before importing; use whatever `factory.py` uses)*
 
+### Contract resolution (found during implementation, 2026-07-26)
+- `GraphExpandedRetriever` import path confirmed: `parrot.knowledge.graphindex.retriever`
+  — NOT re-exported via the package `__init__`'s lazy attrs (confirmed by
+  grep), matching `mixin.py:183-195`'s own direct-module import, which
+  this facade mirrors exactly (retriever built from raw `graph`/`nodes`/
+  `embedder`, no `GraphIndexToolkit`).
+- `factory.py`'s `build_graph_memory_toolkit` construction recipe does
+  NOT itself build a `GraphExpandedRetriever`/`GraphContextBuilder`/
+  `GroundingEvaluator` — those are composed by `mixin.py`'s
+  `_build_graph_context` (lines 158-204), the actual pattern to mirror
+  for the retriever/context-builder half. `SQLitePersistence` imports
+  from `persist_sqlite.py` (not `persist.py`, which is the Arango-facing
+  module) and its constructor takes a DIRECTORY (`Path(db_dir)`), one
+  `<tenant_id>.db` file per tenant — `DEV_LOOP_GRAPH_MEMORY_PATH` is
+  therefore a directory path, matching the existing convention.
+- `GraphPublisher._stamp()` (verified by reading `publish.py:52-85`)
+  auto-fills `AssertionMeta` on every node/edge lacking one, from the
+  `GraphUpdate`'s own `asserted_by`/`agent_id`/`run_id`/`source` fields —
+  so `publish_run_outcome` does NOT need to construct `AssertionMeta`
+  per-node/edge manually; setting them on the `GraphUpdate` itself is
+  sufficient (confirmed via a live publish+revert smoke test showing the
+  assertion metadata was correctly attributed).
+- `GraphContext.text` is NEVER empty — it always carries a header
+  template (`"## Graph context\n\nTask: ...\n\n### Knowledge\n"`) even
+  against a freshly-created, zero-node graph. The task's "return
+  `GraphContext.text` (or `None` when empty)" therefore checks
+  `context.node_ids` (empty list ⇒ nothing found), not `context.text` —
+  the exact same check `GraphMemoryMixin._build_graph_context` uses
+  (`if not context.node_ids: return None`). Discovered by a failing test
+  before the fix.
+- `publish_run_outcome`'s frozen signature (`run_id, report, outcome,
+  summary` — no `brief`/entities) cannot construct the spec's literal
+  "ABOUT (run→brief entities)" edge as worded (no entity data available
+  at this call). Resolved by pointing ABOUT (and SUPPORTED_BY) from each
+  CLAIM back to the RUN node itself — "this claim concerns/was
+  evidenced by this run" — which satisfies the acceptance criterion
+  ("PRODUCED/ABOUT edges present") using only data this signature
+  actually receives. `asserted_by` (also not a parameter) defaults to
+  `f"dev_loop:{outcome}"`.
+
 ---
 
 ## Implementation Notes
@@ -188,10 +228,59 @@ async def test_ground_findings_filters_revise(tmp_graph_memory): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-26
 **Notes**:
+- `conf.py`: added `DEV_LOOP_GRAPH_MEMORY_PATH: str = config.get(...,
+  fallback="")` (not in this task's file list, but required — the facade
+  reads it; same pattern as `DEV_LOOP_QA_MAX_RETRIES` in TASK-1910).
+- `graph_memory.py`: `DevLoopGraphMemory` with `from_config`,
+  `build_research_context`, `publish_run_outcome`, `ground_findings` —
+  exact signatures per the task's Scope code block.
+  - `from_config`: disabled (returns `None`) when
+    `DEV_LOOP_GRAPH_MEMORY_PATH` is unset or whitespace-only; otherwise
+    opens `SQLitePersistence(Path(db_dir))`, loads the graph, assembles
+    it (`GraphAssembler`), embeds nodes (`HashingGraphEmbedder`), and
+    composes `GraphExpandedRetriever` + `GraphContextBuilder` +
+    `GroundingEvaluator` around it — no `parrot_tools`/`GraphIndexToolkit`
+    dependency anywhere (verified by grep after writing).
+  - `build_research_context`: budget-capped via
+    `ContextBuildConfig(max_tokens=4000)`; returns `None` on empty
+    results (`context.node_ids`, not `.text` — see Codebase Contract
+    resolution) or on any internal exception.
+  - `publish_run_outcome`: 1 RUN node + 1 CLAIM node per `passed`
+    criterion; PRODUCED (run→claim), ABOUT + SUPPORTED_BY (claim→run —
+    see Codebase Contract resolution for why not "brief entities").
+    Handles `report=None` (still publishes the RUN node alone — a run
+    that never reached QA still gets recorded). Wraps the whole body in
+    `try/except Exception` → `logger.warning` + `return None`.
+  - `ground_findings`: per-finding `ground_claim`, keeps `"grounded"`,
+    drops `"revise"`; an evaluation error KEEPS the finding (documented
+    fail-open choice — dropping a finding on an infra error would be a
+    silent concession, worse than a possibly-unfounded finding surviving
+    to human review).
+- `test_graph_memory.py`: 12 tests against a REAL tmp_path SQLite plane
+  (no mocking of the graph store itself) — disabled contract (unset,
+  whitespace, enabled), publish+revert round-trip with node/edge
+  assertions, only-verified-criteria-become-claims, `report=None` still
+  publishes the RUN node, publish-failure degradation (asserts the
+  warning log line), research-context failure degradation AND the
+  empty-graph-returns-None case (which caught the `.text` vs `.node_ids`
+  bug above), and 3 grounding tests (keep/drop, keep-on-error, empty list).
+- Manual smoke test before writing the formal suite: a live
+  publish → inspect receipt → revert_commit round-trip against a real
+  tmp SQLite file, confirming commit ids, node ids, and edge tuples all
+  resolve exactly as designed (kept as scratch, not committed).
+- `pytest packages/ai-parrot/tests/flows/dev_loop/
+  packages/ai-parrot/tests/knowledge/graphindex/ -m "not live"` (minus
+  the pre-existing `hypothesis`-missing file): 1308 passed, 1 skipped,
+  same one pre-existing unrelated failure noted in every prior task.
+- `ruff check` clean on `graph_memory.py` and the new test file (the one
+  `conf.py` finding is the same pre-existing, unrelated `E402` noted in
+  TASK-1910/1912).
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the two documented, evidence-based
+resolutions above (ABOUT/SUPPORTED_BY targets, and the `.text` vs
+`.node_ids` empty-context check) — both forced by the frozen method
+signature and the graphindex component's actual behavior, not design
+choices made without justification.
