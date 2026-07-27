@@ -8,10 +8,12 @@ from .base import SearchOrigin
 from .vector import VectorStoreOrigin
 from .pageindex import PageIndexOrigin
 from .graphindex import GraphIndexOrigin
+from .wiki import ParrotWikiOrigin
 
 __all__ = (
     "SearchOrigin",
     "VectorStoreOrigin",
     "PageIndexOrigin",
     "GraphIndexOrigin",
+    "ParrotWikiOrigin",
 )
