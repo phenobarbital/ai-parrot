@@ -171,10 +171,69 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
 **Notes**:
+- `scripts/sdd/calibrate_rlimit_as.py` (new): spawns a REAL worker
+  (`WorkerHandle`, the deployed spawn+preexec-rlimits path) and measures
+  `VmPeak`/`VmHWM` by polling `/proc/<worker-pid>/status` from the HOST
+  process (never from inside the sandboxed worker, since `open()` is
+  categorically denied there — reading the worker's own `/proc` entry from
+  its parent sidesteps that cleanly and is arguably more honest, since it
+  can't be perturbed by anything the workload itself does). Ran the
+  bootstrap → 100 MB load → 500 MB load → merge+groupby → plot sequence on
+  ONE worker (cumulative session growth, not per-workload cold starts), as
+  real usage would.
+- **Real measured result**: peak VmPeak = 5522.8 MB (~5.39 GiB) across the
+  full session; bootstrap ALONE already reserves ~3.45 GiB of virtual
+  address space (pandas/numpy/matplotlib/seaborn import — mostly
+  OpenBLAS/thread-pool over-reservation; actual RSS for that step is only
+  ~354 MB). Calibrated default = 2× margin over observed peak, rounded:
+  **12 GiB** (`12 * 1024**3`), replacing the provisional 4 GiB. Full
+  measurements, method, and rationale in
+  `artifacts/logs/feat-380-rlimit-as-calibration.md` (force-added past the
+  blanket `artifacts/` gitignore rule, matching the existing
+  `feat-310-bench-*`/`feat-317-bench-*` precedent already tracked there).
+- `protocol.py`: `WorkerConfig.rlimit_as_bytes` default updated to
+  `12 * 1024**3` with a comment pointing at the evidence file.
+- Added `test_rlimit_as_default_is_calibrated()` to `test_worker.py` (per
+  the task's own Test Specification) AND fixed
+  `test_protocol.py::TestValueCodec::test_worker_config_defaults_match_spec`
+  (TASK-1940), which asserted the OLD 4 GiB value and would otherwise have
+  failed after this change — both now assert `12 * 1024**3` with a comment
+  pointing at the evidence file.
+- Full regression: `pytest packages/ai-parrot/tests/repl_worker/
+  packages/ai-parrot/tests/test_pythonrepl_security.py
+  packages/ai-parrot/tests/test_pythonrepl_executor.py -q` → **113 passed**
+  with the new 12 GiB default in effect (every `real_worker_config`-style
+  fixture across the whole suite uses `WorkerConfig()`'s default or an
+  explicit override, so this exercised the new default broadly, not just in
+  the one new guard test). Verified zero orphaned worker processes and zero
+  `/dev/shm` leaks after the run. `ruff check` on every touched file: clean.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **Workload substitution — "CSV/parquet load" implemented as in-memory
+   DataFrame construction, not literal file I/O.** `pd.read_csv`/
+   `pd.read_parquet` are on the sandbox's categorical data-IO denylist
+   (`python_sanitizer.py` `_PANDAS_IO_NAMES`) — deliberately unmodified
+   (out of scope; that denylist is a security boundary, not a calibration
+   inconvenience). Used seeded `numpy` random generation to construct
+   DataFrames of the target byte size directly instead. This reproduces the
+   dominant peak-memory driver (holding the materialized DataFrame) but not
+   `read_csv`'s transient parsing/type-inference staging-buffer overhead —
+   documented in the evidence file as a follow-up if the denylist is ever
+   revisited for trusted tooling contexts.
+2. **A bug in the calibration workload itself was found and fixed
+   mid-task**: the first `merge_groupby` run used a merge key with only
+   1,000 distinct values shared across both multi-million-row frames — a
+   low-cardinality many-to-many join that combinatorially explodes to ~13.4
+   BILLION merged rows (correctly triggered a `MemoryError`, but from a
+   defective test workload, not a real usage pattern). Fixed by sizing the
+   join key's cardinality to the larger frame's row count before
+   re-running; documented in the evidence file's "Method" section so the
+   mistake and fix are part of the audit trail (AC15 asks for measurements
+   + rationale, and this is relevant rationale).
+3. **Script location**: used `scripts/sdd/calibrate_rlimit_as.py` per the
+   task's own fallback instruction — confirmed
+   `packages/ai-parrot/benchmarks/` does not exist in this repo, so no
+   existing benchmarks convention to fit into.

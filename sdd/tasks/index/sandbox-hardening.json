@@ -152,7 +152,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Needs Modules 2-5 operational (spec Module 8); edits protocol.py default, so keep in the same worktree sequence.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1946-rlimit-as-calibration.md"
+      "completed_at": "2026-07-28T01:55:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1946-rlimit-as-calibration.md"
     },
     {
       "id": "TASK-1960",
