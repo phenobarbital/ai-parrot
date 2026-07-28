@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-380
 **Date**: 2026-07-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 
 > Source exploration: `sdd/proposals/tool-result-compression.brainstorm.md`

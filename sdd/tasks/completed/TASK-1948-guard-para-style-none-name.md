@@ -3,7 +3,7 @@
 **Feature**: msword-loader-none-name-fix
 **Feature ID**: FEAT-385
 **Spec**: sdd/specs/msword-loader-none-name-fix.spec.md
-**Status**: [ ] pending
+**Status**: [x] done
 **Priority**: high
 **Effort**: S
 **Depends-on**: none
@@ -85,4 +85,7 @@ When complete:
 3. Commit with message: `fix: guard para.style None access in MSWordLoader (NAV-9269)`
 
 ### Completion Note
-(Agent fills this in when done)
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-07-27
+**Notes**: Applied one-line guard `(para.style.name or "").lower() if para.style is not None else ""` at line 22 of `packages/ai-parrot-loaders/src/parrot_loaders/docx.py`. Also removed unused `mammoth` import (ruff F401). Committed as `fix: guard para.style None access in MSWordLoader to prevent AttributeError (NAV-9269)` (e92009e94).
+**Deviations from spec**: Guard also covers `style.name is None` via `or ""` — slightly more defensive than spec's one-liner, committed in follow-up c7b9df36b.
