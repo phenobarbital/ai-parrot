@@ -10,6 +10,20 @@ Without the Rust extension, ``run_in_executor`` buys no real parallelism —
 the GIL is still held, so offloading is theater. Sending a fat payload
 uncompressed beats stalling the event loop (G9): that is why the
 "over threshold, no Rust" route is ``PASSTHROUGH``, not ``EXECUTOR``.
+
+Default calibration (TASK-1959, 2026-07-28): the spec's original defaults
+(``inline_budget_ms=1.0``, ``minimal_budget_ms=0.3``, ``row_threshold=5000``)
+were explicit **proposals pending measurement** (spec Sec 3 Module 5:
+"All values configurable; a benchmark task calibrates them against real
+payloads"). Measured against pure-Python codecs (no Rust extension) on a
+500-row x 12-col payload (Intel i7-9850H @ 2.60GHz, Python 3.11.15):
+``json_compact`` MINIMAL p99 ~= 4.6ms, ``columnar`` NORMAL p99 ~= 2.8ms —
+both well above the original budgets. The defaults below reflect that
+measurement; see ``tests/tools/compression/test_benchmarks.py`` (opt-in,
+``PARROT_RUN_BENCHMARKS=1``) and TASK-1959's Completion Note for the full
+table and reasoning. ``executor_budget_ms`` is unchanged (15.0) — no Rust
+extension exists yet to measure the off-loop path against (TASK-1955);
+recalibrate once it lands.
 """
 import logging
 import sys
@@ -29,7 +43,10 @@ class Route(str, Enum):
     """Where a codec call should run, decided BEFORE compressing."""
 
     INLINE = "inline"
-    """Run synchronously on the event loop (sub-millisecond budget)."""
+    """Run synchronously on the event loop, within a low-single-digit-
+    millisecond budget (see :class:`BudgetRouter`'s `inline_budget_ms` /
+    `minimal_budget_ms`, calibrated against measured pure-Python codec
+    latency — TASK-1959)."""
 
     EXECUTOR = "executor"
     """Offload to `run_in_executor`; only meaningful with the Rust
@@ -152,8 +169,8 @@ class CircuitBreaker:
         window_seconds: float = 60.0,
         consecutive_windows: int = 3,
         cooldown_seconds: float = 300.0,
-        inline_budget_ms: float = 1.0,
-        minimal_budget_ms: float = 0.3,
+        inline_budget_ms: float = 3.0,
+        minimal_budget_ms: float = 5.0,
         executor_budget_ms: float = 15.0,
         time_fn: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -318,13 +335,13 @@ class BudgetRouter:
         self,
         *,
         size_threshold_bytes: int = 256 * 1024,
-        row_threshold: int = 5000,
+        row_threshold: int = 1500,
         window_calls: int = 100,
         window_seconds: float = 60.0,
         consecutive_windows: int = 3,
         cooldown_seconds: float = 300.0,
-        inline_budget_ms: float = 1.0,
-        minimal_budget_ms: float = 0.3,
+        inline_budget_ms: float = 3.0,
+        minimal_budget_ms: float = 5.0,
         executor_budget_ms: float = 15.0,
         time_fn: Callable[[], float] = time.monotonic,
     ) -> None:

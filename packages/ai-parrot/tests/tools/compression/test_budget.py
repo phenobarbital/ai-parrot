@@ -67,11 +67,18 @@ class TestRouting:
                             codec_name="json_compact", rust_available=False) is Route.PASSTHROUGH
 
     def test_defaults_match_spec(self):
+        # TASK-1959 recalibrated inline_budget_ms/minimal_budget_ms/
+        # row_threshold against measured pure-Python codec latency — the
+        # spec's original numbers were explicit placeholders ("a benchmark
+        # task calibrates them against real payloads"). See budget.py's
+        # module docstring and TASK-1959's Completion Note for the
+        # measured justification. size_threshold_bytes/executor_budget_ms
+        # are unchanged (no contradicting evidence gathered for either).
         r = BudgetRouter()
         assert r.size_threshold_bytes == 256 * 1024
-        assert r.row_threshold == 5000
-        assert r.inline_budget_ms == 1.0
-        assert r.minimal_budget_ms == 0.3
+        assert r.row_threshold == 1500
+        assert r.inline_budget_ms == 3.0
+        assert r.minimal_budget_ms == 5.0
         assert r.executor_budget_ms == 15.0
 
     def test_thresholds_overridable(self):
