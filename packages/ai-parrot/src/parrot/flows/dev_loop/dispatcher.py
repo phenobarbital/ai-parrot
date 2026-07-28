@@ -1316,6 +1316,7 @@ class CodexCodeDispatcher:
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=8 * 1024 * 1024,
         )
 
     async def _stream_stdout_events(
@@ -1748,6 +1749,7 @@ class GeminiCodeDispatcher:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            limit=8 * 1024 * 1024,
         )
 
     async def _stream_stdout_events(
@@ -2578,6 +2580,7 @@ class LLMCodeDispatcher:
                 stdin=asyncio.subprocess.PIPE if stdin is not None else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=8 * 1024 * 1024,
             )
         except FileNotFoundError as exc:
             return {

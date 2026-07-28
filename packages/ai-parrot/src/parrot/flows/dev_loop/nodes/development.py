@@ -176,7 +176,7 @@ class DevelopmentNode(DevLoopNode):
                 await transition_issue_with_candidates(
                     self._jira,
                     issue_key,
-                    ["In Progress", "Start Progress"],
+                    ["In Progress"],
                     logger=self.logger,
                 )
             except Exception:  # noqa: BLE001

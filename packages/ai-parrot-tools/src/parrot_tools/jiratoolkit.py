@@ -1465,7 +1465,7 @@ class JiraToolkit(AbstractToolkit):
         TRANSITION_ALIASES: Dict[str, tuple] = {
             "done": ("done", "close", "closed", "resolve", "resolved", "complete", "completed", "mark as done", "finish", "finished"),
             "in progress": ("in progress", "in-progress", "start progress", "start", "begin", "begin work", "work on it"),
-            "to do": ("to do", "todo", "reopen", "reopened", "open", "backlog", "back to to do"),
+            "to do": ("to do", "todo", "reopen", "reopened", "back to to do"),
             "cancelled": ("cancelled", "canceled", "cancel", "wont do", "won't do", "won't fix", "wont fix"),
             "blocked": ("blocked", "block", "on hold"),
         }
