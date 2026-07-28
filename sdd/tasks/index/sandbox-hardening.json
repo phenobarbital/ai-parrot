@@ -111,7 +111,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Consumes the namespace API from TASK-1943; shares pythonpandas.py with TASK-1945 — keep sequential.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1944-port-namespace-callsites.md"
+      "completed_at": "2026-07-28T01:22:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1944-port-namespace-callsites.md"
     },
     {
       "id": "TASK-1945",
