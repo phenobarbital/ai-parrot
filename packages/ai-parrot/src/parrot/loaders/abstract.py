@@ -1227,7 +1227,7 @@ class AbstractLoader(ABC):
         with open(filename, 'wb') as f:
             f.write(data)
             f.flush()
-        print(f':: Saved File on {filename}')
+        self.logger.info("Saved file on %s", filename)
 
     async def chunk_documents(
         self,
