@@ -100,9 +100,13 @@ class TestLevelPrecedence:
             '[compressor."special_tool"]\ncodec = "json_compact"\nlevel = "normal"\n'
             '[compressor."*"]\ncodec = "json_compact"\nlevel = "minimal"\n'
         )
+        # A dummy (always-"available") tee so NORMAL isn't capped to MINIMAL
+        # by the TASK-1953 G3 guard — this test probes precedence, not tee
+        # capping (covered separately in test_tee.py).
         stage = CompressionStage(
             registry=CompressorRegistry.load(project_root=tmp_path),
             router=BudgetRouter(),
+            tee=lambda tool_name, payload, codec_name: None,
         )
         data = {"a": 1}
         _, meta = await stage.run(
@@ -229,7 +233,16 @@ class TestTee:
             out, meta = await stage.run(
                 "t", data, status="success", metadata={}, return_direct=False,
             )
-            assert out == {"summary": "x"}
+            # TASK-1953: the stage now appends the `_tee` recovery pointer
+            # to the returned payload itself (not just metadata) so the
+            # LLM can see it and call wm_get_result without extra prompting.
+            assert out == {
+                "summary": "x",
+                "_tee": {
+                    "key": "tee-key-1", "reason": "lossy",
+                    "hint": "use wm_get_result for the full payload",
+                },
+            }
             assert meta["compression_teed"] is True
             assert meta["compression_tee_key"] == "tee-key-1"
             assert calls == [("t", data, "always_lossy_test")]
@@ -278,9 +291,14 @@ class TestBudgetIntegration:
             '[compressor."*"]\ncodec = "json_compact"\nlevel = "normal"\n'
         )
         router = BudgetRouter(size_threshold_bytes=1, row_threshold=1)
+        # A dummy (always-"available") tee so NORMAL isn't capped to MINIMAL
+        # (TASK-1953 G3 guard) — MINIMAL always routes INLINE regardless of
+        # size, which would short-circuit the budget/route decision this
+        # test exercises.
         stage = CompressionStage(
             registry=CompressorRegistry.load(project_root=tmp_path),
             router=router,
+            tee=lambda tool_name, payload, codec_name: None,
         )
         data = [{"a": "x" * 1000} for _ in range(50)]
         out, meta = await stage.run(
@@ -296,10 +314,14 @@ class TestBudgetIntegration:
             '[compressor."*"]\ncodec = "json_compact"\nlevel = "normal"\n'
         )
         router = BudgetRouter(size_threshold_bytes=1, row_threshold=1)
+        # A dummy (always-"available") tee so NORMAL isn't capped to MINIMAL
+        # (TASK-1953 G3 guard) — MINIMAL always routes INLINE, which would
+        # prevent this test from actually exercising the EXECUTOR route.
         stage = CompressionStage(
             registry=CompressorRegistry.load(project_root=tmp_path),
             router=router,
             rust_available=True,
+            tee=lambda tool_name, payload, codec_name: None,
         )
         data = [{"a": "x" * 1000} for _ in range(50)]
         out, meta = await stage.run(
@@ -307,3 +329,4 @@ class TestBudgetIntegration:
         )
         assert "compression_skipped" not in meta
         assert meta["_compressed"] is True
+        assert meta["compression_level"] == FilterLevel.NORMAL.value

@@ -11,6 +11,7 @@ from .abstract import AbstractTool, ToolResult
 from .compression import CompressionStage, CompressorRegistry
 from .compression import codecs as _compression_codecs  # noqa: F401 — import side effect: registers built-in codecs (json_compact, ...) before CompressorRegistry.load() validates the core manifest below
 from .compression.budget import BudgetRouter
+from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
 from ..auth.exceptions import AuthorizationRequired
@@ -285,11 +286,18 @@ class ToolManager(MCPToolManagerMixin):
         # unknown codec name must fail loudly here, never silently at the
         # first tool call. `clone()` shares the registry by reference but
         # gives each session its own router (fresh circuit-breaker state).
+        # `_compression_tee` starts unbound (no WorkingMemoryToolkit yet —
+        # tools/toolkits are typically registered AFTER the manager); it is
+        # (re)bound lazily in `execute_tool()` via `_bind_compression_tee()`
+        # since a WorkingMemoryToolkit may be registered at any point after
+        # construction.
         self._compression_registry: CompressorRegistry = CompressorRegistry.load()
         self._compression_router: BudgetRouter = BudgetRouter()
+        self._compression_tee: CompressionTee = CompressionTee()
         self._compression_stage: CompressionStage = CompressionStage(
             registry=self._compression_registry,
             router=self._compression_router,
+            tee=self._compression_tee,
         )
 
         # Permission resolver for Layer 2 enforcement (optional)
@@ -1510,6 +1518,16 @@ class ToolManager(MCPToolManagerMixin):
                     if result.status == 'forbidden':
                         return result
                     if result.status == "error":
+                        # FEAT-380 (TASK-1953): tee the discarded payload
+                        # BEFORE raising — `result.result` would otherwise
+                        # be lost entirely with no way to recover it. The
+                        # raise below is unchanged (same type/message);
+                        # this is purely additive and never observable to
+                        # existing callers (tee failures are swallowed).
+                        self._bind_compression_tee()
+                        await self._compression_tee.store(
+                            tool_name, result.result, "error"
+                        )
                         raise ValueError(result.error)
                     out = result.result
                     meta = getattr(result, "metadata", {}) or {}
@@ -1527,6 +1545,7 @@ class ToolManager(MCPToolManagerMixin):
                 # reason. `meta` is the same object as `result.metadata`
                 # when `result` is a ToolResult, so merging here makes the
                 # `_compressed` marker travel with it.
+                self._bind_compression_tee()
                 out, comp_meta = await self._compression_stage.run(
                     tool_name, out,
                     status=result.status if isinstance(result, ToolResult) else "success",
@@ -1720,6 +1739,38 @@ class ToolManager(MCPToolManagerMixin):
             name = f"{base}_{i}"
         return name
 
+    def _find_working_memory_toolkit(self) -> Optional[Any]:
+        """Locate an already-registered ``WorkingMemoryToolkit`` instance.
+
+        FEAT-380 (TASK-1953): the compression tee is a CONSUMER of
+        ``WorkingMemoryToolkit`` — it never constructs one. A toolkit's
+        methods each register as an individual ``ToolkitTool`` whose
+        ``bound_method.__self__`` is the owning toolkit instance, so we
+        scan the registered tools for one owned by a ``WorkingMemoryToolkit``.
+
+        Returns:
+            The registered ``WorkingMemoryToolkit`` instance, or ``None``
+            if none is registered.
+        """
+        from .working_memory import WorkingMemoryToolkit
+        for tool in self._tools.values():
+            owner = getattr(getattr(tool, "bound_method", None), "__self__", None)
+            if isinstance(owner, WorkingMemoryToolkit):
+                return owner
+        return None
+
+    def _bind_compression_tee(self) -> None:
+        """(Re)bind the compression tee to the currently-registered
+        ``WorkingMemoryToolkit`` (if any).
+
+        Cheap (a scan over ``self._tools``) and called once per
+        ``execute_tool()`` invocation that reaches the tee, since a
+        ``WorkingMemoryToolkit`` may be registered at any point after the
+        manager (and its ``CompressionTee``) is constructed.
+        """
+        self._compression_tee.bind_working_memory(
+            self._find_working_memory_toolkit()
+        )
 
     def tool_count(self) -> int:
         """Get the number of registered tools."""
@@ -1747,6 +1798,11 @@ class ToolManager(MCPToolManagerMixin):
               session. The ``_compression_registry`` (parsed TOML config)
               IS shared by reference — schemas must stay identical across
               users, and re-parsing per clone would be wasted I/O.
+            - FEAT-380 ``_compression_tee`` (TASK-1953): each clone gets its
+              own tee (fresh retention/counters) from its own ``__init__``,
+              (re)bound to whatever ``WorkingMemoryToolkit`` THAT clone has
+              registered — a shared tee would let one session's teed
+              payloads evict another's.
 
         Args:
             include_search_tool: Whether the clone should auto-register the

@@ -12,24 +12,31 @@ touch ``parrot.tools.manager``. Wiring this stage into
 ``ToolManager.execute_tool()`` is TASK-1952's job.
 """
 import asyncio
+import inspect
 import logging
 import os
 import time
 from functools import partial
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 from .budget import BudgetRouter, Route, is_rust_available
-from .levels import FilterLevel
+from .levels import FilterLevel, cap
 from .protocol import CompressionOutcome, get_codec
 from .registry import CompressorRegistry
+from .tee import CompressionTee, attach_tee_pointer
 
 logger = logging.getLogger(__name__)
 
-# Injected tee callback signature (the real implementation is TASK-1953's
-# working-memory tee): given (tool_name, original_payload, codec_name),
-# persist the original payload and return the tee key, or None if teeing
-# is unavailable/declined.
+# Injected tee collaborator: normally a real `CompressionTee` (TASK-1953),
+# which exposes `.available` (used to cap NORMAL/AGGRESSIVE to MINIMAL when
+# no working memory is registered, per G3) and an async `.store(tool_name,
+# payload, reason) -> str | None`. For backward compatibility (and to keep
+# unit tests decoupled from `WorkingMemoryToolkit`), a bare callable with the
+# legacy `(tool_name, payload, codec_name) -> str | None` shape (sync or
+# async) is also accepted — it is always treated as "available" since it
+# cannot be introspected for that.
 TeeCallback = Callable[[str, Any, str], Optional[str]]
+TeeLike = Union[CompressionTee, TeeCallback]
 
 
 class CompressionStage:
@@ -46,7 +53,7 @@ class CompressionStage:
         self,
         registry: CompressorRegistry,
         router: BudgetRouter,
-        tee: Optional[TeeCallback] = None,
+        tee: Optional[TeeLike] = None,
         *,
         rust_available: Optional[bool] = None,
     ) -> None:
@@ -55,12 +62,13 @@ class CompressionStage:
         Args:
             registry: Loaded, immutable :class:`CompressorRegistry`.
             router: :class:`BudgetRouter` deciding inline/executor/passthrough.
-            tee: Optional callback invoked when a codec reports
-                ``lossy=True``, to persist the original payload to working
-                memory. ``None`` until TASK-1953 supplies the real
-                implementation — lossy compression is still applied, but
-                nothing is teed (the caller, TASK-1953, is responsible for
-                capping levels to MINIMAL when no tee is available, per G3).
+            tee: Optional :class:`~parrot.tools.compression.tee.CompressionTee`
+                (or legacy bare callable, see :data:`TeeLike`) invoked when a
+                codec reports ``lossy=True``, to persist the original payload
+                to working memory. ``None`` → tee disabled: lossy levels
+                (``NORMAL``/``AGGRESSIVE``) are capped to ``MINIMAL`` (G3 —
+                never lossy without recovery); a bare callable is always
+                treated as available (it cannot be introspected).
             rust_available: Override for Rust-extension detection (mainly
                 for tests). Defaults to
                 :func:`~parrot.tools.compression.budget.is_rust_available`.
@@ -72,6 +80,39 @@ class CompressionStage:
             is_rust_available() if rust_available is None else rust_available
         )
         self.logger = logging.getLogger(__name__)
+
+    def _tee_available(self) -> bool:
+        """Whether the tee escape hatch can currently persist a payload.
+
+        A :class:`CompressionTee` reports this via its ``available``
+        property (``False`` when no ``WorkingMemoryToolkit`` is
+        registered). A bare legacy callable cannot be introspected, so it
+        is always treated as available.
+        """
+        if self._tee is None:
+            return False
+        return bool(getattr(self._tee, "available", True))
+
+    async def _invoke_tee(
+        self, tool_name: str, payload: Any, reason: str, codec_name: str,
+    ) -> Optional[str]:
+        """Invoke the configured tee collaborator, sync- or async-safe.
+
+        Prefers the real :class:`CompressionTee` API
+        (``store(tool_name, payload, reason)``) when available; falls back
+        to the legacy positional ``(tool_name, payload, codec_name)`` shape
+        for a bare callable, awaiting the result only if it is awaitable.
+        """
+        if self._tee is None:
+            return None
+        store = getattr(self._tee, "store", None)
+        if store is not None:
+            result = store(tool_name, payload, reason)
+        else:
+            result = self._tee(tool_name, payload, codec_name)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     async def run(
         self,
@@ -156,8 +197,12 @@ class CompressionStage:
             self._router.record(codec_name, duration_ms, route)
 
         teed_key: Optional[str] = None
-        if outcome.lossy and self._tee is not None:
-            teed_key = self._tee(tool_name, payload, codec_name)
+        if outcome.lossy:
+            teed_key = await self._invoke_tee(tool_name, payload, "lossy", codec_name)
+
+        final_payload = outcome.payload
+        if teed_key is not None:
+            final_payload = attach_tee_pointer(final_payload, teed_key, "lossy")
 
         result_metadata: dict[str, Any] = {
             "_compressed": True,
@@ -170,7 +215,7 @@ class CompressionStage:
         }
         if teed_key is not None:
             result_metadata["compression_tee_key"] = teed_key
-        return outcome.payload, result_metadata
+        return final_payload, result_metadata
 
     def _effective_level(
         self,
@@ -191,12 +236,20 @@ class CompressionStage:
         :meth:`CompressorRegistry.resolve`, which already implements
         exact > glob > ``"*"`` match precedence; rule 5 is the defensive
         fallback for a registry with no entries at all.
+
+        Finally (G3): a resolved ``NORMAL``/``AGGRESSIVE`` level is capped
+        to ``MINIMAL`` when the tee escape hatch is unavailable — a lossy
+        compression with no way to recover the original is exactly what G3
+        forbids. ``NONE``/``MINIMAL`` are lossless and never capped.
         """
         if level_override is not None:
-            return level_override
-        if status != "success":
-            return FilterLevel.NONE
-        entry = self._registry.resolve(tool_name)
-        if entry is not None:
-            return entry.level
-        return FilterLevel.MINIMAL
+            level = level_override
+        elif status != "success":
+            level = FilterLevel.NONE
+        else:
+            entry = self._registry.resolve(tool_name)
+            level = entry.level if entry is not None else FilterLevel.MINIMAL
+
+        if level in (FilterLevel.NORMAL, FilterLevel.AGGRESSIVE) and not self._tee_available():
+            level = cap(level, FilterLevel.MINIMAL)
+        return level
