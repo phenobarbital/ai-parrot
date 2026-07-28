@@ -157,6 +157,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         build_dev_loop_flow,
     )
     from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory  # noqa: PLC0415
+    from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch  # noqa: PLC0415
 
     redis_url = conf.config.get("REDIS_URL", fallback="redis://localhost:6379/0")
 
@@ -178,6 +179,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
     # backs (research context, run write-back, grounded findings) degrades
     # to a no-op, so this is a strict extension, never a behavior change.
     graph_memory = await DevLoopGraphMemory.from_config()
+    wiki_search = DevLoopWikiSearch.from_project()
 
     # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
     # preserves current behavior exactly.
@@ -190,6 +192,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         jira_toolkit=jira_toolkit,
         log_toolkits=log_toolkits,
         redis_url=redis_url,
+        wiki_search=wiki_search,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
     )
