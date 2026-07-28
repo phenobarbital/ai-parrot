@@ -102,6 +102,7 @@ import functools
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 import uuid
@@ -135,6 +136,7 @@ from parrot.flows.dev_loop import (
 from parrot.flows.dev_loop.agent_builder import build_dispatcher, parse_pool_env, resolve_pool_max
 from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
+from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 from parrot.flows.dev_loop.models import (
     DevAgentSpec,
     FeatureBrief,
@@ -968,6 +970,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 "qa_max_retries": conf.DEV_LOOP_QA_MAX_RETRIES,
                 "docs_artifact_dir": conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
+                "wiki_search": wiki_search is not None,
                 "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
                 "development_pool_max": app.get("development_pool_max", 4),
                 "max_concurrent_runs": getattr(
@@ -1286,6 +1289,22 @@ async def _on_startup(app: web.Application) -> None:
     # to a no-op, so this is a strict extension, never a behavior change.
     graph_memory = await DevLoopGraphMemory.from_config()
 
+    # Auto-detect wiki search: if .parrot/wiki.json exists and the plane
+    # is built, provide token-budgeted codebase context to ResearchNode's
+    # dispatch brief — no env var required.
+    wiki_search = DevLoopWikiSearch.from_project()
+
+    # Warn when wikitoolkit CLI is not in PATH — the sdd-research subagent
+    # uses it for wiki-first triage via Bash, so a missing binary means
+    # the agent silently falls back to grep.
+    if not shutil.which("wikitoolkit"):
+        logger.warning(
+            "wikitoolkit not found in PATH — sdd-research subagent's "
+            "wiki-first triage (step 0) will silently fall back to grep. "
+            "Activate the venv or install wikitoolkit to enable CLI-based "
+            "wiki search in dispatched sessions."
+        )
+
     # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
     # preserves current behavior exactly.
     require_plan_approval = bool(
@@ -1309,6 +1328,7 @@ async def _on_startup(app: web.Application) -> None:
         git_toolkit=git_toolkit,
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
+        wiki_search=wiki_search,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
         skip_qa=skip_qa,

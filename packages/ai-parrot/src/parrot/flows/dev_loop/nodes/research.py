@@ -34,6 +34,7 @@ from parrot.bots.flows.core.types import DependencyResults
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
+from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
@@ -146,6 +147,7 @@ class ResearchNode(DevLoopNode):
         git_toolkit: Optional[Any] = None,
         repos: Optional[List[RepoSpec]] = None,
         graph_memory: Optional[DevLoopGraphMemory] = None,
+        wiki_search: Optional[DevLoopWikiSearch] = None,
         name: str = "research",
     ) -> None:
         super().__init__(node_id=name)
@@ -163,6 +165,7 @@ class ResearchNode(DevLoopNode):
         # FEAT-377 TASK-1915 (G2 seam 2): opt-in graph-memory context
         # injection. None (default) is a strict no-op.
         object.__setattr__(self, "_graph_memory", graph_memory)
+        object.__setattr__(self, "_wiki_search", wiki_search)
 
     # ------------------------------------------------------------------
     # Execute
@@ -294,22 +297,33 @@ class ResearchNode(DevLoopNode):
         # log_sources; the prompt builder embeds excerpts separately.
         shared["log_excerpts"] = excerpts
 
-        # FEAT-377 TASK-1915 (G2 seam 2): prepend graph-memory context to
-        # the dispatch brief when the facade is configured and finds
-        # something relevant. Reuses the existing `description` free-text
-        # field (never forwarded to the Jira `summary` field) rather than
-        # adding a new one — the ORIGINAL `brief` (used above for the Jira
-        # ticket description) is untouched; only this local dispatch copy
-        # carries the graph context.
-        dispatch_brief = brief
+        # Prepend knowledge-base context to the dispatch brief so the
+        # subagent starts with oriented, ranked codebase pointers instead
+        # of a cold grep sweep.  Two independent seams — wiki (SQLite
+        # retrieval plane) and graph memory (GraphIndex) — each contribute
+        # a section when configured and when something relevant is found.
+        # The ORIGINAL `brief` (used above for the Jira ticket description)
+        # is untouched; only this local dispatch copy carries the context.
+        extra_context_parts: list[str] = []
+
+        if self._wiki_search is not None:
+            wiki_query = f"{brief.affected_component} {brief.summary}"
+            wiki_context = await self._wiki_search.build_research_context(wiki_query)
+            if wiki_context:
+                extra_context_parts.append(f"## Wiki context\n{wiki_context}")
+
         if self._graph_memory is not None:
             graph_context = await self._graph_memory.build_research_context(brief)
             if graph_context:
-                dispatch_brief = brief.model_copy(update={
-                    "description": (
-                        f"{brief.description}\n\n## Graph memory context\n{graph_context}"
-                    ).strip(),
-                })
+                extra_context_parts.append(f"## Graph memory context\n{graph_context}")
+
+        dispatch_brief = brief
+        if extra_context_parts:
+            dispatch_brief = brief.model_copy(update={
+                "description": (
+                    brief.description + "\n\n" + "\n\n".join(extra_context_parts)
+                ).strip(),
+            })
 
         research_out: ResearchOutput = await self._dispatcher.dispatch(
             brief=dispatch_brief,
