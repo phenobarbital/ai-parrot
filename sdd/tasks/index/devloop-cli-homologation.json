@@ -14,7 +14,7 @@
       "feature_id": "FEAT-388",
       "feature": "devloop-cli-homologation",
       "spec": "sdd/specs/devloop-cli-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No file overlap with TASK-1969. External gate: the in-flight Google/agy dispatcher WIP must merge to dev first (it modifies examples/dev_loop/llm_catalog.py).",
       "assigned_to": null,
       "started_at": "2026-07-28T17:03:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1968-catalog-promotion.md"
+      "completed_at": "2026-07-28T17:54:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1968-catalog-promotion.md"
     },
     {
       "id": "TASK-1969",
