@@ -165,10 +165,68 @@ async def test_intake_llm_hint_is_soft(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-28
+**Notes**: Verified `BackendInfo` (catalog.py, TASK-1968) has no
+structured `binary`/`api_key_env` field, only `transport` ("cli"/"api")
++ human-readable `requires` — as the Contract's "Does NOT Exist"
+anticipated. `build_runtime()` now resolves `DEV_LOOP_DEVELOPMENT_AGENT`
+(fallback `claude-code`) into a bare `DevAgentSpec(agent=backend_id)`
+(no manual model pre-resolution — `agent_builder.build_dispatcher`
+already resolves the per-backend `DEV_LOOP_*_MODEL` env var internally,
+exactly mirroring `examples/dev_loop/server.py`'s own
+`build_dispatcher(DevAgentSpec(agent=backend), ...)` call, avoiding
+duplicated logic) and calls `build_dispatcher(spec, redis_url=...,
+max_concurrent=..., stream_ttl_seconds=...)` in place of the hardcoded
+`ClaudeCodeDispatcher(...)`. **Important correctness finding**: verified
+`DevelopmentNode.execute()` falls back to `ClaudeCodeDispatchProfile`
+whenever `dispatch_profile` is `None` — so `build_dev_loop_flow(...)`
+now explicitly receives `development_profile=<profile from
+build_dispatcher>` (confirmed via `server.py`'s identical pattern),
+otherwise a non-claude-code backend would get the wrong profile type
+paired with its dispatcher.
 
-**Completed by**:
-**Date**:
-**Notes**:
+`preflight()`'s old unconditional `claude-cli` check is replaced by a
+backend-aware one: hard-fails only when the resolved backend is
+`claude-code` (byte-identical check name `"claude-cli"` + hint text, to
+keep `test_preflight_missing_claude_cli` passing unmodified); other
+CLI-transport backends check their own binary (`_cli_binary_for()`
+maps `claude-code`→`claude`, `google_coding`→`agy`, else id==binary);
+API-transport backends (nvidia/grok/zai/moonshot) get a soft,
+always-`passed=True` check surfacing `BackendInfo.requires` as a hint
+(no fabricated env-var names for backends whose exact credential key
+isn't verified anywhere in-repo — only `anthropic:ANTHROPIC_API_KEY`,
+explicitly named in the spec's Known Risks, is used for the analogous
+intake-LLM soft-credentials hint). Unknown backend → new
+`"dev-agent-backend"` check, `passed=False`, hint lists every
+`catalog.BACKENDS` id — preflight still never raises.
 
-**Deviations from spec**: none
+Hit and fixed one recursion bug while writing the new backend-mocking
+tests: `patch.object(real_conf.config, "get", side_effect=fake_get)`
+where `fake_get`'s fallback branch called `real_conf.config.get(...)`
+recurses infinitely once `.get` is already patched — fixed by capturing
+`original_get = real_conf.config.get` before patching and calling that
+in the fallback branch, in all 4 new tests that needed it.
+
+`pytest packages/ai-parrot/tests/cli/devloop/test_bootstrap.py -v` →
+13/13 passed (7 pre-existing unmodified + 6 new); full
+`packages/ai-parrot/tests/cli/` → 129 passed, zero regressions. Did not
+run a blanket `ruff --fix` on `bootstrap.py` this time (lesson from
+TASK-1970) — manually verified the diff touches only the two edited
+blocks (preflight's backend-aware check + `build_runtime`'s dispatcher
+construction), leaving every untouched line/method byte-identical.
+
+**Out-of-scope risk flagged, not fixed** (per "NOT in scope: per-run
+pool dispatch"): `DevLoopRunner(..., codereview_dispatcher=None, ...)`
+is unchanged, and `QANode`'s docstring says a `None` codereview
+dispatcher "auto-wraps `dispatcher` in a `ClaudeCodeReviewDispatcher`
+(backward compat)" — worth confirming in a follow-up that this auto-wrap
+behaves sanely when the resolved default `dispatcher` is now a
+non-claude-code backend (e.g. Codex/Gemini), since this task did not
+touch QA-time codereview dispatcher resolution.
+
+**Deviations from spec**: none in behavior. `development_profile` wiring
+into `build_dev_loop_flow` was not explicitly spelled out in this
+task's Scope bullet list, but was necessary for correctness (see
+`DevelopmentNode`'s profile-type fallback above) and mirrors
+`server.py`'s own established pattern exactly.

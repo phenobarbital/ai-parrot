@@ -71,7 +71,7 @@
       "feature_id": "FEAT-388",
       "feature": "devloop-cli-homologation",
       "spec": "sdd/specs/devloop-cli-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Touches only bootstrap.py + its test — no file overlap with TASK-1970; still sequential in the per-spec worktree by default.",
       "assigned_to": null,
       "started_at": "2026-07-28T17:03:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1971-bootstrap-multibackend.md"
+      "completed_at": "2026-07-28T18:36:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1971-bootstrap-multibackend.md"
     },
     {
       "id": "TASK-1972",
