@@ -287,10 +287,143 @@ def test_lazy_import_fallback(monkeypatch, caplog):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- **Major finding during the prerequisite investigation — changes the
+  meaning of "existing maturin setup"**: the root
+  `packages/ai-parrot/pyproject.toml`'s `[build-system]` is
+  `setuptools.build_meta` (Cython-based), NOT maturin. The `[tool.maturin]`
+  block at that file's bottom is therefore **inert/dead configuration** —
+  setuptools has no knowledge of it and never invokes it. Verified
+  directly: `import parrot.yaml_rs` / `import yaml_rs` both fail in this
+  environment before this task (confirmed via `git stash` + fresh
+  interpreter); `registry.py:19-22`'s `try: from parrot import yaml_rs /
+  except ImportError: pass` silently falls back to PyYAML today. `yaml-rs`
+  is actually a **fully independent, self-contained maturin sub-project**
+  (its OWN `pyproject.toml` with `build-backend="maturin"`, own
+  `Cargo.toml`), built by running `maturin develop`/`build` FROM WITHIN
+  `src/parrot/yaml-rs/`, producing a bare-importable `yaml_rs` module (not
+  `parrot.yaml_rs`) — installed into the shared venv as its own package.
+  Given this, "ship inside ai-parrot's existing maturin setup, next to
+  yaml-rs" (Q5) is implemented as: **mirror yaml-rs's ACTUAL working
+  structure** (an independent sub-project, `packages/ai-parrot/src/parrot/codec-rs/`,
+  per this task's own file table) rather than wiring through the root's
+  inert `[tool.maturin]` block — migrating the ROOT build-system to
+  maturin would be an invasive, high-risk change to ai-parrot's entire
+  packaging pipeline (breaking Cython compilation, CI, etc.), far beyond
+  "fix a hyphen/underscore mismatch," and was explicitly out of scope.
+- **Prerequisite fix, scoped accordingly**: corrected the root
+  `[tool.maturin]` block's `python-source`/`module-name` to describe what
+  yaml-rs's OWN working config actually does
+  (`python-source = "src/parrot/yaml-rs/python"`, `module-name =
+  "yaml_rs"`, hyphen preserved, no `parrot.` prefix, no `_yaml_rs`
+  submodule) — since the block is inert either way, this has zero runtime
+  effect but corrects the documentation/discrepancy as instructed, and
+  leaves a trail for a future (out-of-scope) root build-system migration.
+  Extensively commented in place explaining the finding.
+- **`parrot_codec` crate** (`codec-rs/`): a pure-Rust PyO3 extension
+  module (no Python wrapper package, unlike yaml-rs — there is no
+  "fallback to an old implementation inside the Rust package" story here,
+  since `columnar.py`'s existing pure-Python path already IS the fallback)
+  — `module-name = "parrot_codec"` builds directly to a bare-importable
+  `parrot_codec` module. `Cargo.toml` mirrors yaml-rs (`pyo3 0.29`,
+  `crate-type = ["cdylib"]`); added `serde_json`'s `preserve_order`
+  feature specifically (without it, `serde_json::Map` is a sorted
+  `BTreeMap` by default, which would silently violate G4's "first-seen
+  column order, never sorted" determinism guarantee).
+- **pyo3 0.29 API note**: the spec's own "Pattern to Follow" used
+  `py.allow_threads(...)`, but pyo3 0.29 (the version this crate is pinned
+  to, matching yaml-rs) renamed it to `py.detach(...)` — confirmed by a
+  real compiler error (`E0599: no method named allow_threads`) and by
+  reading `pyo3-0.29.0/src/marker.rs` directly. Used `detach`; documented
+  the rename in a code comment so it isn't mistaken for a deviation from
+  spec intent (it's the same GIL-release mechanism under a new name).
+- **`columnarize_json`** implements ONLY the core transform (column
+  extraction, null-column elision, constant-column factoring, positional
+  row alignment) — exactly `ColumnarCodec._columnarize()`'s counterpart.
+  All outer concerns (min_rows/heterogeneity/nested guards, QueryResult
+  unwrapping) stay in Python; by the time Rust is invoked, Python has
+  already confirmed eligibility. 9 `cargo test`s cover column ordering,
+  null elision (including the "missing key counts as null" edge case),
+  constant factoring (incl. the `len(rows) > 1` guard), row alignment with
+  null-padding, determinism (25x repeat), and malformed-input rejection —
+  all pass.
+- **`columnar.py` dispatch rule, implemented exactly as specified**: only
+  a `bytes`/`str` `result` (an ALREADY-serialized JSON row array or
+  QueryResult-shaped object) is eligible for Rust — verified by
+  `test_dict_input_never_crosses_ffi`. A bare row-array input crosses with
+  the ORIGINAL bytes, no re-serialization; a QueryResult-shaped bytes
+  input re-serializes only the extracted `rows` sub-array (the outer
+  QueryResult shell never crosses the FFI boundary either way) — still a
+  single FFI crossing for the transform itself. Added a LOCAL
+  `_RUST`/`_RUST_CHECKED`/`_rust()` cache (per the task's own pattern),
+  deliberately kept separate from `budget.py`'s `is_rust_available()` —
+  they answer different questions (codec-local dispatch vs. router-level
+  routing) even though they share an answer today.
+- **`budget.py`: verified already correctly wired, NO changes made.**
+  `is_rust_available()` (module-level cached detection, logged once at
+  debug) and `CompressionStage`'s `self._rust_available` /
+  `router.route(..., rust_available=self._rust_available)` wiring were
+  BOTH already implemented in TASK-1950/1951 — re-read both files line by
+  line to confirm before deciding not to touch them (Cardinal Rule: no
+  scope creep / no busywork edits). Verified live:
+  `is_rust_available()` now returns `True` with the extension built, and
+  `BudgetRouter.route()` correctly returns `Route.EXECUTOR` for an
+  over-threshold payload (was `PASSTHROUGH` before this task) — G9's
+  "without Rust -> PASSTHROUGH, with Rust -> EXECUTOR" criterion verified
+  both ways.
+- **Built and verified for real** (not just code review): ran
+  `maturin develop --release` inside `codec-rs/`; `import parrot_codec`
+  works; ran the full `test_rust_parity.py` suite with the extension
+  ACTUALLY PRESENT (not mocked) — byte-identical Rust vs. Python output
+  confirmed for a bare row array, a QueryResult-shaped payload, and the
+  heterogeneous/null-elision-only path; confirmed the Rust function is
+  genuinely invoked for bytes input (a spy wrapper) and genuinely NOT
+  invoked for dict/list input.
+- **Necessary, documented ripple**: building the extension in THIS shared
+  dev venv means `parrot_codec` is now importable process-wide, which
+  flipped two PRE-EXISTING tests (TASK-1950's `test_budget.py`, TASK-1951's
+  `test_stage.py`) that had hard-asserted "always absent" as an ambient
+  environmental truth rather than an explicitly-forced state. Fixed both
+  to force the state they actually test via monkeypatching
+  (`budget_module.lazy_import` / `CompressionStage(..., rust_available=False)`)
+  instead of relying on ambient reality — a strictly more correct fix,
+  and necessary for `pytest` to be deterministic in ANY environment going
+  forward (including CI once the extension is built there too).
+- **Wheel-build/toolchain implication for TASK-1962**: `codec-rs/` is
+  built SEPARATELY from the main `ai-parrot` wheel (own maturin
+  sub-project, `maturin develop`/`build` run from within its directory) —
+  it does NOT make the core `ai-parrot` wheel depend on the Rust
+  toolchain (unlike what spec Q5's note anticipated, since that assumed
+  wiring through the root's maturin config, which turned out to be
+  inert). Runtime optionality (G8) is fully preserved: without running
+  `maturin develop` in `codec-rs/`, `parrot_codec` is simply not
+  importable and every code path already falls back to pure Python
+  (verified via `test_lazy_import_fallback`). TASK-1962 should document:
+  (1) `parrot_codec` is optional and built independently via
+  `cd packages/ai-parrot/src/parrot/codec-rs && maturin develop --release`;
+  (2) it requires the Rust toolchain (`cargo`/`rustc`) ONLY when a user
+  wants the accelerated path; (3) it does not affect `pip install
+  ai-parrot` at all.
+- Verification: full compression suite 134/134 green (6 benchmarks
+  correctly skipped) + 6/6 new Rust parity tests (running for REAL, not
+  skipped, since the extension is built); `cargo test` 9/9 green;
+  broader `tests/tools/`+`tests/clients/` unchanged at 51 pre-existing
+  failures; `ruff check` clean on all touched Python files (one
+  pre-existing, untouched `F401` in `test_stage.py`, unrelated); root
+  `pyproject.toml` re-parses as valid TOML.
+
+**Deviations from spec**: implemented `parrot_codec` as an independent
+maturin sub-project (mirroring `yaml-rs`'s ACTUAL structure) rather than
+wiring through the root `packages/ai-parrot/pyproject.toml`'s
+`[tool.maturin]` block, because that block is inert (root build-system is
+setuptools) and activating it would require migrating the entire
+package's build system — far beyond this task's "fix a hyphen mismatch"
+scope. `budget.py` was not modified (verified already correctly wired by
+TASK-1950/1951, contrary to the task's Files table assuming it needed
+changes). Two pre-existing tests (`test_budget.py`, `test_stage.py`)
+needed fixing as a direct, necessary consequence of the extension now
+being genuinely built in this environment — see "Necessary, documented
+ripple" above.
