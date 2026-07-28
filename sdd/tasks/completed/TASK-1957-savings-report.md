@@ -256,10 +256,52 @@ class TestCompressionReport:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- Implemented `CompressionReport` (`report.py`): O(1)-per-event
+  aggregation into `ToolSavings` (per-tool) and `SessionSavings`
+  (session-wide), both Pydantic models with a `pct_saved` property that
+  never divides by zero. `handle(event, skipped_reason=None)` records
+  every call — skipped calls increment `.skipped[reason]` and `.calls`
+  but not `.compressed_calls`/bytes/tokens/ms; compressed calls (including
+  zero-gain ones) accumulate bytes/tokens (`bytes/4`, computed here since
+  `AfterToolCallEvent` carries no token field)/duration and feed a bounded
+  per-tool rolling window for p50/p99. `summary()` returns an independent
+  deep-copied snapshot (mutating it never touches internal state — tested
+  explicitly). `render()` always includes the bytes/4 caveat and shows ms
+  alongside every saving. The whole `handle()` body is wrapped so a
+  malformed event (including `None` or an object with no `tool_name`) is
+  logged and swallowed, never propagated.
+- **p99 reuse, as instructed**: reused `budget.py`'s module-level
+  `_percentile()` nearest-rank function directly (not duplicated) for
+  p50/p99. Did NOT reuse `CircuitBreaker` itself — it is a routing/degrade
+  state machine coupled to `BudgetRouter`, not a plain aggregator; wrapping
+  it here would have pulled in unrelated breaker semantics (windows,
+  cooldowns, opening) for zero benefit. Stated per the task's own
+  instruction ("if the implementation there is not reusable, say so
+  instead of duplicating logic silently").
+- **Per-session isolation**: `ToolManager` does not yet hold a
+  `CompressionReport` instance — TASK-1952 never added one (it wasn't in
+  that task's scope; report.py is this task's own deliverable), so there
+  was nothing to "verify, don't re-implement" on the `manager.py` side.
+  What I verified/tested instead: `CompressionReport` itself carries
+  purely per-instance state (no shared/class-level mutables), so two
+  separate instances never see each other's data — the same safe-for-
+  per-session shape `BudgetRouter`/`CompressionTee` already have. Wiring
+  an actual `ToolManager._compression_report` (and giving `clone()` a
+  fresh one, mirroring the router/tee pattern) is explicitly future work
+  per this task's own "NOT in scope" list ("wiring it to a surface is
+  future work").
+- Exported `CompressionReport`, `CompressionSummary`, `ToolSavings`,
+  `SessionSavings` from `compression/__init__.py`.
+- Verification: 12 new tests pass (aggregation, no-gain recording, skipped
+  reasons, caveat+ms in `render()`, never-raises on `None`/malformed
+  events, session totals, p50<=p99, snapshot independence, per-instance
+  isolation). Full compression suite: 119/119 green. `ruff check
+  compression/` clean.
+
+**Deviations from spec**: none — the "verify, do not re-implement"
+instruction referred to work that turned out not to exist yet (see note
+above); nothing was silently skipped.

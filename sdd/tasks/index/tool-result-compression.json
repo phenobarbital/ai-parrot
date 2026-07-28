@@ -214,7 +214,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -224,8 +224,8 @@
       "parallelism_notes": "Spec worktree C. Owns report.py exclusively. Lowest priority; can trail the rest without blocking anything except TASK-1962.",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1957-savings-report.md"
+      "completed_at": "2026-07-28T01:14:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1957-savings-report.md"
     },
     {
       "id": "TASK-1958",
