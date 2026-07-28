@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import subprocess
 import sys
@@ -24,13 +25,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from scripts.sdd.id_ledger import LEDGER_PATH, load_ledger, save_ledger
 
+#: Timeout (seconds) for every individual git subprocess call. This script
+#: is meant to serve concurrent, automated dev-loop dispatches — an
+#: indefinite hang (stalled network, interactive credential prompt) in one
+#: allocator instance must not block forever.
+_GIT_TIMEOUT_SECONDS = 30.0
+
 
 class IdReservationError(RuntimeError):
-    """Raised when reserve_ids() exhausts its retry budget."""
+    """Raised when reserve_ids() exhausts its retry budget, or when a
+    non-retryable precondition (dirty working tree, wrong branch, invalid
+    push failure) is violated.
+    """
 
 
 class IdReservation(BaseModel):
@@ -38,7 +48,7 @@ class IdReservation(BaseModel):
 
     kind: str
     first_id: int
-    count: int
+    count: int = Field(..., ge=1, description="Number of IDs reserved; must be at least 1.")
     ids: list[str]
 
 
@@ -59,14 +69,81 @@ def _run_git(
 
     Returns:
         The completed subprocess result.
+
+    Raises:
+        subprocess.TimeoutExpired: If the git command does not complete
+            within ``_GIT_TIMEOUT_SECONDS`` (e.g. a stalled network or an
+            interactive credential prompt) — bounded so a single allocator
+            instance can never hang forever.
     """
+    env = dict(os.environ)
+    # Never let git block on an interactive credential prompt — fail fast
+    # instead of hanging indefinitely.
+    env["GIT_TERMINAL_PROMPT"] = "0"
     return subprocess.run(
         ["git", *args],
         cwd=repo_root,
         check=check,
         capture_output=True,
         text=True,
+        env=env,
+        timeout=_GIT_TIMEOUT_SECONDS,
     )
+
+
+def _porcelain_path(line: str) -> str:
+    """Extract the file path from one `git status --porcelain` line.
+
+    Porcelain v1 (non-verbose) format is a fixed 2-character status code
+    followed by a single space, then the path — parsing the field
+    positionally is more robust than a substring/``in`` check, which would
+    false-negative on any unrelated path that merely CONTAINS the ledger
+    path as a substring.
+    """
+    return line[3:] if len(line) > 3 else line
+
+
+def _assert_safe_to_reserve(root: Path, base_branch: str) -> None:
+    """Verify it is safe to run the destructive retry sequence in ``root``.
+
+    ``reserve_ids()``'s retry path runs ``git reset --hard
+    origin/<base_branch>`` after a rejected push — that is only safe when
+    (a) the working tree has no changes besides the ledger file, and (b)
+    the current branch actually IS ``base_branch``. Enforced here (not just
+    in the CLI) so any caller of the library function — including a future
+    dev-loop subagent invoking ``reserve_ids()`` directly — inherits the
+    same guard rather than a footgun.
+
+    Args:
+        root: Repository working directory to check.
+        base_branch: The branch this reservation is expected to push to.
+
+    Raises:
+        IdReservationError: If the working tree has uncommitted changes
+            besides the ledger file, or the current branch is not
+            ``base_branch``.
+    """
+    status = _run_git(["status", "--porcelain"], root)
+    dirty = [
+        line
+        for line in status.stdout.splitlines()
+        if line.strip() and _porcelain_path(line) != str(LEDGER_PATH)
+    ]
+    if dirty:
+        raise IdReservationError(
+            "refusing to run — working tree has uncommitted changes besides "
+            f"{LEDGER_PATH}:\n" + "\n".join(dirty)
+        )
+
+    branch_result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], root)
+    current_branch = branch_result.stdout.strip()
+    if current_branch != base_branch:
+        raise IdReservationError(
+            f"refusing to run — current branch {current_branch!r} does not "
+            f"match --base-branch {base_branch!r}. reserve_ids() must run "
+            "with the target branch checked out, never from inside a "
+            "feature worktree."
+        )
 
 
 def _is_non_fast_forward_rejection(stderr: str) -> bool:
@@ -114,17 +191,22 @@ def reserve_ids(
     function's own ledger-only commit must be the ONLY local commit ahead
     of ``origin/<base_branch>`` — the retry path runs `git reset --hard
     origin/<base_branch>` after a rejected push, which would silently
-    discard ANY other local, unpushed commits or uncommitted changes. The
-    CLI entrypoint below refuses to run when the working tree is dirty
-    with anything besides the ledger file, precisely to guard this
-    invariant; callers using this function as a library must uphold it
-    themselves.
+    discard ANY other local, unpushed commits or uncommitted changes. This
+    is now enforced by ``reserve_ids()`` itself (not just the CLI): it
+    refuses to run if the working tree is dirty with anything besides the
+    ledger file, OR if the current branch does not match ``base_branch``
+    (guards against being invoked from the wrong context, e.g. accidentally
+    inside a feature worktree).
 
     Args:
         kind: ``"task"`` or ``"feature"``.
-        count: Number of sequential IDs to reserve.
+        count: Number of sequential IDs to reserve. Must be ``>= 1`` — a
+            non-positive count would silently rewind the ledger's counter
+            below IDs already issued, reopening the exact collision this
+            allocator exists to close.
         base_branch: The branch to push the ledger-only commit to (e.g.
-            ``"dev"``).
+            ``"dev"``). ``reserve_ids()`` refuses to run unless this is
+            also the currently checked-out branch in ``repo_root``.
         label: Free-text origin of this reservation (feature slug or
             session id) — diagnostic only, stored in the ledger's
             ``updated_by`` field.
@@ -142,11 +224,17 @@ def reserve_ids(
         reserved.
 
     Raises:
+        ValueError: If ``count < 1``.
         IdReservationError: When every attempt is rejected up to
-            ``max_retries``, or when a push fails for a non-retryable
-            reason.
+            ``max_retries``, when a push fails for a non-retryable reason,
+            or when the safety precondition (clean tree, correct branch)
+            is violated.
     """
+    if count < 1:
+        raise ValueError(f"count must be >= 1, got {count!r}")
+
     root = repo_root if repo_root is not None else Path.cwd()
+    _assert_safe_to_reserve(root, base_branch)
     ledger_path = root / LEDGER_PATH
     prefix = "TASK" if kind == "task" else "FEAT"
 
@@ -201,9 +289,12 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
     Prints the reserved IDs one per line on success (exit 0); prints an
-    error to stderr and exits 1 on failure, including a refusal to run at
-    all if the working tree has uncommitted changes besides the ledger
-    file (see ``reserve_ids()``'s docstring precondition).
+    error to stderr and exits 1 on failure. ``reserve_ids()`` itself
+    refuses to run (see its docstring precondition) if the working tree
+    has uncommitted changes besides the ledger file, if the current branch
+    does not match ``--base-branch``, or if ``--count`` is not positive —
+    this CLI surfaces all three as a clean error message rather than a
+    traceback.
     """
     parser = argparse.ArgumentParser(
         description="Reserve sequential TASK/FEAT IDs via a git-native compare-and-swap ledger (FEAT-387).",
@@ -215,21 +306,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-retries", type=int, default=5)
     args = parser.parse_args(argv)
 
-    root = Path.cwd()
-    status = _run_git(["status", "--porcelain"], root)
-    dirty = [
-        line
-        for line in status.stdout.splitlines()
-        if line.strip() and str(LEDGER_PATH) not in line
-    ]
-    if dirty:
-        print(
-            "reserve_ids: refusing to run — working tree has uncommitted "
-            f"changes besides {LEDGER_PATH}:\n" + "\n".join(dirty),
-            file=sys.stderr,
-        )
-        return 1
-
     try:
         reservation = reserve_ids(
             args.kind,
@@ -238,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
             args.label,
             max_retries=args.max_retries,
         )
-    except IdReservationError as exc:
+    except (IdReservationError, ValueError) as exc:
         print(f"reserve_ids: {exc}", file=sys.stderr)
         return 1
 

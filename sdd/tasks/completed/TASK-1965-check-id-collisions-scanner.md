@@ -343,3 +343,17 @@ independent namespaces — same detection GOAL (catch collisions the index
 might miss), corrected mechanism to avoid a false-positive storm on real
 data; the officially-specified 3 unit tests and all Acceptance Criteria
 are unaffected and pass.
+
+### Post-Review Update (2026-07-28)
+
+The adversarial code-review pass flagged (SUGGESTION) that `find_collisions()`
+reused the variable name `feature_owners` for two unrelated purposes: the
+TASK-ID ownership dict at the top of the function, and a second,
+reassigned dict for the FEAT-ID informational scan later in the same
+function. Functionally correct (verified via tests and a live run, since
+the name is freshly rebound before the second use) but a readability/
+maintenance hazard — a future edit reordering the two blocks could
+silently corrupt one namespace with the other. Fixed by renaming the
+second one to `feat_id_owners`. All 9 tests in
+`tests/sdd_scripts/test_check_id_collisions.py` pass after the rename;
+`ruff check scripts/sdd/check_id_collisions.py` clean.

@@ -149,6 +149,44 @@ class TestReserveIds:
         files = [line for line in show.stdout.splitlines() if line.strip()]
         assert files == [str(LEDGER_PATH)]
 
+    def test_reserve_ids_rejects_non_positive_count(
+        self, bare_remote_and_clone
+    ) -> None:
+        """A non-positive count must never be allowed to rewind the ledger."""
+        remote, clone = bare_remote_and_clone
+
+        with pytest.raises(ValueError):
+            reserve_ids("task", 0, "dev", "feature-e", repo_root=clone)
+        with pytest.raises(ValueError):
+            reserve_ids("task", -3, "dev", "feature-e", repo_root=clone)
+
+        # Ledger must be untouched — no commit/push attempted.
+        ledger = load_ledger(clone / LEDGER_PATH)
+        assert ledger.next_task_id == 1000
+
+    def test_reserve_ids_refuses_when_working_tree_dirty(
+        self, bare_remote_and_clone
+    ) -> None:
+        """The library function itself (not just the CLI) must refuse a dirty tree."""
+        remote, clone = bare_remote_and_clone
+        (clone / "unrelated.txt").write_text("dirty\n", encoding="utf-8")
+
+        with pytest.raises(IdReservationError, match="uncommitted changes"):
+            reserve_ids("task", 1, "dev", "feature-f", repo_root=clone)
+
+        ledger = load_ledger(clone / LEDGER_PATH)
+        assert ledger.next_task_id == 1000
+
+    def test_reserve_ids_refuses_on_branch_mismatch(
+        self, bare_remote_and_clone
+    ) -> None:
+        """Must refuse if the checked-out branch does not match base_branch."""
+        remote, clone = bare_remote_and_clone
+        _git(["checkout", "-b", "some-other-branch"], clone)
+
+        with pytest.raises(IdReservationError, match="does not match"):
+            reserve_ids("task", 1, "dev", "feature-g", repo_root=clone)
+
 
 class TestReserveIdsCli:
     def test_cli_prints_reserved_ids_and_exits_zero(

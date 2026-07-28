@@ -164,8 +164,11 @@ def find_collisions(
             )
 
     # 3. Separately tally FEAT-<NNN> -> spec slug from sdd/specs/*.md
-    #    headers for the informational (non-failing) report.
-    feature_owners: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    #    headers for the informational (non-failing) report. Deliberately a
+    #    DIFFERENT dict from `feature_owners` above (which tracks TASK-ID
+    #    ownership) — reusing the same name for this unrelated FEAT-ID
+    #    namespace would be a readability/maintenance hazard.
+    feat_id_owners: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     if specs_dir.is_dir():
         for spec_file in sorted(specs_dir.glob("*.md")):
             try:
@@ -177,10 +180,10 @@ def find_collisions(
                 continue
             feature_id = f"FEAT-{match.group(1)}"
             slug = spec_file.stem.removesuffix(".spec")
-            feature_owners[feature_id][slug].append(str(spec_file))
+            feat_id_owners[feature_id][slug].append(str(spec_file))
 
-    for feature_id in sorted(feature_owners, key=lambda f: int(f.split("-")[1])):
-        owners = feature_owners[feature_id]
+    for feature_id in sorted(feat_id_owners, key=lambda f: int(f.split("-")[1])):
+        owners = feat_id_owners[feature_id]
         if len(owners) > 1:
             reports.append(
                 CollisionReport(
