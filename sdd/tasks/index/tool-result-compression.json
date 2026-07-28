@@ -234,7 +234,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -246,8 +246,8 @@
       "parallelism_notes": "Join point: the five spec section-4 integration tests only pass once tee, columnar codec and the live route are all merged. Shares conftest.py with TASK-1954, so it runs after that task, not beside it.",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1958-e2e-integration-suite.md"
+      "completed_at": "2026-07-28T01:38:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1958-e2e-integration-suite.md"
     },
     {
       "id": "TASK-1959",
