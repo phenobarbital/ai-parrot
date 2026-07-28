@@ -151,3 +151,63 @@ class TestCli:
             ]
         )
         assert exit_code == 0
+
+    def test_baseline_suppresses_known_collisions(self, tmp_path: Path, capsys) -> None:
+        """A collision listed in the baseline file must not cause a failing exit."""
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+        _write_index(index_dir / "feature-a.json", "feature-a", "FEAT-001", ["TASK-100"])
+        _write_index(index_dir / "feature-b.json", "feature-b", "FEAT-002", ["TASK-100"])
+
+        baseline_path = tmp_path / "baseline.json"
+        baseline_path.write_text(json.dumps(["TASK-100"]))
+
+        exit_code = main(
+            [
+                "--index-dir",
+                str(index_dir),
+                "--active-dir",
+                str(tmp_path / "active"),
+                "--completed-dir",
+                str(tmp_path / "completed"),
+                "--specs-dir",
+                str(tmp_path / "specs"),
+                "--baseline",
+                str(baseline_path),
+            ]
+        )
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        # Still visible in the report, just marked non-fatal.
+        assert "TASK-100" in out
+        assert "baselined" in out
+
+    def test_baseline_does_not_suppress_new_collisions(self, tmp_path: Path, capsys) -> None:
+        """A NEW collision not in the baseline must still fail, even with a baseline present."""
+        index_dir = tmp_path / "index"
+        index_dir.mkdir()
+        _write_index(index_dir / "feature-a.json", "feature-a", "FEAT-001", ["TASK-100"])
+        _write_index(index_dir / "feature-b.json", "feature-b", "FEAT-002", ["TASK-100"])
+        _write_index(index_dir / "feature-c.json", "feature-c", "FEAT-003", ["TASK-200"])
+        _write_index(index_dir / "feature-d.json", "feature-d", "FEAT-004", ["TASK-200"])
+
+        baseline_path = tmp_path / "baseline.json"
+        baseline_path.write_text(json.dumps(["TASK-100"]))
+
+        exit_code = main(
+            [
+                "--index-dir",
+                str(index_dir),
+                "--active-dir",
+                str(tmp_path / "active"),
+                "--completed-dir",
+                str(tmp_path / "completed"),
+                "--specs-dir",
+                str(tmp_path / "specs"),
+                "--baseline",
+                str(baseline_path),
+            ]
+        )
+        assert exit_code == 1
+        out = capsys.readouterr().out
+        assert "TASK-200" in out

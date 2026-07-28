@@ -194,13 +194,44 @@ def find_collisions(
     return reports
 
 
+def _load_baseline(path: Path | None) -> set[str]:
+    """Load a baseline allowlist of pre-existing, non-fatal TASK-ID collisions.
+
+    Supports the one-time baseline exception (spec §5 Acceptance Criteria,
+    last bullet): the six FEAT-380-era collisions — and, empirically, many
+    more pre-``per-spec-index`` historical ``TASK-<NNN>`` reuses predating
+    the global counter (FEAT-145) — must NOT retroactively fail CI. IDs
+    listed here are still printed in the report (never hidden), just
+    excluded from the failing set.
+
+    Args:
+        path: Path to a JSON file containing a list of ``TASK-<NNN>``
+            strings (e.g. ``["TASK-1939", "TASK-1940"]``), or ``None``.
+
+    Returns:
+        The set of baselined IDs; empty if ``path`` is ``None`` or the
+        file is missing/unreadable.
+    """
+    if path is None:
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if isinstance(data, list):
+        return {str(item) for item in data}
+    return set()
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
     Exits 1 and prints a human-readable report naming every offending
-    file/slug if any ``TASK-<NNN>`` collision is found; exits 0 otherwise.
-    ``FEAT-<NNN>`` reuse is always printed informationally and never
-    affects the exit code.
+    file/slug if any NEW (non-baselined) ``TASK-<NNN>`` collision is
+    found; exits 0 otherwise. ``FEAT-<NNN>`` reuse is always printed
+    informationally and never affects the exit code. Baselined
+    collisions (``--baseline``) are still printed, but marked as
+    non-fatal and excluded from the exit-code decision.
     """
     parser = argparse.ArgumentParser(
         description="Scan sdd/ for TASK-<NNN> collisions across features (FEAT-387).",
@@ -209,6 +240,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--active-dir", type=Path, default=Path("sdd/tasks/active"))
     parser.add_argument("--completed-dir", type=Path, default=Path("sdd/tasks/completed"))
     parser.add_argument("--specs-dir", type=Path, default=Path("sdd/specs"))
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a JSON allowlist of pre-existing TASK-<NNN> collisions "
+            "to report but NOT fail on (one-time baseline exception)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     collisions = find_collisions(
@@ -217,14 +257,18 @@ def main(argv: list[str] | None = None) -> int:
         completed_dir=args.completed_dir,
         specs_dir=args.specs_dir,
     )
+    baseline = _load_baseline(args.baseline)
 
     task_collisions = [c for c in collisions if c.kind == "task"]
     feature_reuse = [c for c in collisions if c.kind == "feature"]
+    new_task_collisions = [c for c in task_collisions if c.id not in baseline]
+    baselined_task_collisions = [c for c in task_collisions if c.id in baseline]
 
     if task_collisions:
         print("TASK-<NNN> collisions found:")
         for report in task_collisions:
-            print(f"  {report.id}: slugs={report.slugs}")
+            baseline_note = " (baselined — non-fatal)" if report.id in baseline else ""
+            print(f"  {report.id}{baseline_note}: slugs={report.slugs}")
             for source in report.sources:
                 print(f"    - {source}")
 
@@ -235,13 +279,18 @@ def main(argv: list[str] | None = None) -> int:
             for source in report.sources:
                 print(f"    - {source}")
 
-    if task_collisions:
-        print(f"\nFAIL: {len(task_collisions)} TASK-<NNN> collision(s) found.")
+    if new_task_collisions:
+        print(
+            f"\nFAIL: {len(new_task_collisions)} new TASK-<NNN> collision(s) found "
+            f"({len(baselined_task_collisions)} pre-existing, baselined "
+            "collision(s) ignored)."
+        )
         return 1
 
     print(
-        f"OK: no TASK-<NNN> collisions "
-        f"({len(feature_reuse)} informational FEAT-<NNN> reuse note(s))."
+        f"OK: no new TASK-<NNN> collisions "
+        f"({len(baselined_task_collisions)} pre-existing, baselined collision(s) "
+        f"ignored, {len(feature_reuse)} informational FEAT-<NNN> reuse note(s))."
     )
     return 0
 
