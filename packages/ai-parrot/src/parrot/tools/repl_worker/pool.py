@@ -32,7 +32,7 @@ import contextlib
 import logging
 import os
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from .handle import WorkerHandle
 from .protocol import WorkerConfig
@@ -57,7 +57,12 @@ class WorkerPoolExhaustedError(RuntimeError):
 class WorkerPool:
     """Prewarmed pool + lifecycle (TTL eviction, ceiling, orphan reaping)."""
 
-    def __init__(self, config: Optional[WorkerConfig] = None, output_dir: Optional[str] = None):
+    def __init__(
+        self,
+        config: Optional[WorkerConfig] = None,
+        output_dir: Optional[str] = None,
+        repl_kwargs: Optional[dict[str, Any]] = None,
+    ):
         """Initialize the pool (does not spawn anything until first use).
 
         Args:
@@ -65,9 +70,13 @@ class WorkerPool:
                 worker this pool spawns. Defaults to ``WorkerConfig()``.
             output_dir: Shared output directory for plots/reports, passed to
                 every spawned :class:`WorkerHandle`.
+            repl_kwargs: Extra ``PythonREPLTool`` constructor kwargs mirrored
+                on every worker's internal instance (e.g.
+                ``return_plot_as_base64``, TASK-1943).
         """
         self._config = config or WorkerConfig()
         self._output_dir = output_dir
+        self._repl_kwargs = repl_kwargs or {}
         self._ceiling = self._effective_ceiling(self._config)
 
         self._sessions: dict[str, WorkerHandle] = {}
@@ -100,7 +109,7 @@ class WorkerPool:
         loop.create_task(self._top_up_prewarmed())
 
     async def _spawn_handle(self) -> WorkerHandle:
-        handle = WorkerHandle(self._config, output_dir=self._output_dir)
+        handle = WorkerHandle(self._config, output_dir=self._output_dir, repl_kwargs=self._repl_kwargs)
         await handle.start()
         return handle
 

@@ -22,6 +22,7 @@ owns the child side of the control channel.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -134,14 +135,25 @@ class WorkerNamespace:
     change to ``pythonrepl.py`` was needed to get per-worker bootstrap.
     """
 
-    def __init__(self, output_dir: Optional[str] = None, sanitize_input_enabled: bool = True):
+    def __init__(
+        self,
+        output_dir: Optional[str] = None,
+        sanitize_input_enabled: bool = True,
+        repl_kwargs: Optional[dict[str, Any]] = None,
+    ):
         # Local import: heavy (pandas/numpy/matplotlib/seaborn) — must run
         # AFTER rlimits are applied, i.e. after apply_rlimits() in main().
         from parrot.tools.pythonrepl import PythonREPLTool
 
+        # repl_kwargs (FEAT-380 Module 5 / TASK-1943): forwards session
+        # config that shapes `save_current_plot`'s behaviour inside THIS
+        # worker instance (e.g. `return_plot_as_base64`) — these must be set
+        # at construction time since `_execute_code()` reads them off
+        # `self` on the tool instance living HERE, not on the host's.
         self._tool = PythonREPLTool(
             report_dir=output_dir,
             sanitize_input_enabled=sanitize_input_enabled,
+            **(repl_kwargs or {}),
         )
 
     def exec(self, request: ExecRequest) -> ExecResult:
@@ -229,6 +241,7 @@ def serve(
     in_stream: BinaryIO,
     out_stream: BinaryIO,
     output_dir: Optional[str] = None,
+    repl_kwargs: Optional[dict[str, Any]] = None,
 ) -> None:
     """Run the worker service loop: read one framed request, write one framed reply.
 
@@ -242,8 +255,12 @@ def serve(
         out_stream: Binary stream carrying worker -> host frames.
         output_dir: Shared output directory for plots/reports (visible to
             both host and worker); ``None`` uses ``PythonREPLTool``'s default.
+        repl_kwargs: Extra ``PythonREPLTool`` constructor kwargs to mirror on
+            this worker's internal instance (e.g. ``return_plot_as_base64``,
+            TASK-1943) — session config that shapes execution behaviour,
+            distinct from ``WorkerConfig``'s resource-limit/lifecycle fields.
     """
-    namespace = WorkerNamespace(output_dir=output_dir)
+    namespace = WorkerNamespace(output_dir=output_dir, repl_kwargs=repl_kwargs)
     logger.info("repl_worker: ready (max_workers config=%s), entering service loop", config.max_workers)
     while True:
         try:
@@ -265,7 +282,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     Usage::
 
         python -m parrot.tools.repl_worker.worker \\
-            '<WorkerConfig JSON>' <control_read_fd> <control_write_fd> [output_dir]
+            '<WorkerConfig JSON>' <control_read_fd> <control_write_fd> \\
+            [output_dir] ['<repl_kwargs JSON>']
 
     The control channel is a **dedicated pipe** (spec §2 Control Protocol:
     "pipe dedicado"), never stdin/stdout: this framework's own logging setup
@@ -290,20 +308,22 @@ def main(argv: Optional[list[str]] = None) -> None:
     if len(argv) < 3:
         raise SystemExit(
             "usage: python -m parrot.tools.repl_worker.worker "
-            "'<WorkerConfig JSON>' <control_read_fd> <control_write_fd> [output_dir]"
+            "'<WorkerConfig JSON>' <control_read_fd> <control_write_fd> "
+            "[output_dir] ['<repl_kwargs JSON>']"
         )
 
     config = WorkerConfig.model_validate_json(argv[0])
     read_fd = int(argv[1])
     write_fd = int(argv[2])
-    output_dir = argv[3] if len(argv) > 3 else None
+    output_dir = argv[3] if len(argv) > 3 and argv[3] else None
+    repl_kwargs = json.loads(argv[4]) if len(argv) > 4 and argv[4] else None
 
     set_parent_death_signal()
     apply_rlimits(config)
 
     in_stream = os.fdopen(read_fd, "rb", buffering=0)
     out_stream = os.fdopen(write_fd, "wb", buffering=0)
-    serve(config, in_stream, out_stream, output_dir=output_dir)
+    serve(config, in_stream, out_stream, output_dir=output_dir, repl_kwargs=repl_kwargs)
 
 
 if __name__ == "__main__":

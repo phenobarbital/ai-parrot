@@ -19,6 +19,7 @@ TASK-1942 (``WorkerPool``) — this module only owns ONE worker's lifecycle.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -70,7 +71,12 @@ _MEMORY_MARKERS = (
 class WorkerHandle:
     """Host-side handle to one per-session REPL worker process."""
 
-    def __init__(self, config: Optional[WorkerConfig] = None, output_dir: Optional[str] = None):
+    def __init__(
+        self,
+        config: Optional[WorkerConfig] = None,
+        output_dir: Optional[str] = None,
+        repl_kwargs: Optional[dict[str, Any]] = None,
+    ):
         """Initialize the handle (does not spawn — call :meth:`start`).
 
         Args:
@@ -78,9 +84,14 @@ class WorkerHandle:
                 Defaults to ``WorkerConfig()``.
             output_dir: Shared output directory for plots/reports, visible
                 to both host and worker.
+            repl_kwargs: Extra ``PythonREPLTool`` constructor kwargs to
+                mirror on the worker's internal instance (e.g.
+                ``return_plot_as_base64``, TASK-1943) — session config
+                distinct from ``WorkerConfig``'s resource-limit fields.
         """
         self._config = config or WorkerConfig()
         self._output_dir = output_dir
+        self._repl_kwargs = repl_kwargs or {}
         self._proc: Optional[subprocess.Popen] = None
         self._to_worker: Optional[BinaryIO] = None
         self._from_worker: Optional[BinaryIO] = None
@@ -108,8 +119,10 @@ class WorkerHandle:
             str(to_worker_r),
             str(from_worker_w),
         ]
-        if self._output_dir is not None:
-            argv.append(self._output_dir)
+        if self._output_dir is not None or self._repl_kwargs:
+            argv.append(self._output_dir or "")
+        if self._repl_kwargs:
+            argv.append(json.dumps(self._repl_kwargs))
 
         def _spawn() -> subprocess.Popen:
             return subprocess.Popen(  # noqa: S603 - trusted, fixed argv; spawn-only per spec
