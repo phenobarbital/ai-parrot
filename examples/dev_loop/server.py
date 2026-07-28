@@ -114,6 +114,8 @@ from aiohttp import web
 
 from parrot import conf
 from parrot.flows.dev_loop import (
+    GoogleCodingDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    GoogleCodingDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
     BugBrief,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
@@ -167,6 +169,7 @@ _DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV = {
     "grok": "GROK_CODE_MAX_CONCURRENT_DISPATCHES",
     "zai": "ZAI_CODE_MAX_CONCURRENT_DISPATCHES",
     "moonshot": "MOONSHOT_CODE_MAX_CONCURRENT_DISPATCHES",
+    "google_coding": "GOOGLE_CODING_MAX_CONCURRENT_DISPATCHES",
 }
 
 
@@ -209,6 +212,8 @@ def _log_development_agent_selection(backend: str, profile: Any) -> None:
             profile.model,
             profile.reasoning_effort,
         )
+    elif backend == "google_coding":
+        logger.info("Development node using google_coding CLI (model=%s)", profile.model)
 
 
 def _build_codex_adversarial_reviewer(codex_dispatcher: CodexCodeDispatcher) -> object:
@@ -365,9 +370,23 @@ def _build_primary_reviewer(
             )
         )
         return CodeReviewDispatcherFactory.create("gemini", dispatcher=underlying)
+    if agent == "google_coding":
+        underlying = (
+            development_dispatcher
+            if isinstance(development_dispatcher, GoogleCodingDispatcher)
+            else GoogleCodingDispatcher(
+                max_concurrent=conf.config.getint(
+                    "GOOGLE_CODING_MAX_CONCURRENT_DISPATCHES",
+                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+                ),
+                redis_url=redis_url,
+                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+            )
+        )
+        return CodeReviewDispatcherFactory.create("google_coding", dispatcher=underlying)
     raise RuntimeError(
         "DEV_LOOP_CODEREVIEW_AGENT must be 'claude-code', 'codex', 'gemini', "
-        f"'codex-adversarial', or 'parallel', got {agent!r}"
+        f"'google_coding', 'codex-adversarial', or 'parallel', got {agent!r}"
     )
 
 
@@ -970,7 +989,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 "qa_max_retries": conf.DEV_LOOP_QA_MAX_RETRIES,
                 "docs_artifact_dir": conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
-                "wiki_search": wiki_search is not None,
+                "wiki_search": app.get("wiki_search") is not None,
                 "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
                 "development_pool_max": app.get("development_pool_max", 4),
                 "max_concurrent_runs": getattr(
@@ -1293,6 +1312,7 @@ async def _on_startup(app: web.Application) -> None:
     # is built, provide token-budgeted codebase context to ResearchNode's
     # dispatch brief — no env var required.
     wiki_search = DevLoopWikiSearch.from_project()
+    app["wiki_search"] = wiki_search
 
     # Warn when wikitoolkit CLI is not in PATH — the sdd-research subagent
     # uses it for wiki-first triage via Bash, so a missing binary means

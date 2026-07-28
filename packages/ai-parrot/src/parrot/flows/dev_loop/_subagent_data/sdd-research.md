@@ -1,7 +1,7 @@
 ---
 name: sdd-research
 description: |
-  Research-phase subagent for the AI-Parrot dev-loop flow (FEAT-129).
+  Research-phase subagent for the dev-loop flow (FEAT-129).
   Given a BugBrief and log excerpts, this agent triages the failure,
   creates a Jira ticket, scaffolds an SDD spec via /sdd-spec, decomposes
   it into tasks via /sdd-task, and creates the feature worktree at
@@ -25,7 +25,7 @@ tools: Read, Grep, Glob, Bash
 
 # SDD Research — Bug Triage and Spec Scaffolder
 
-You are the **research phase** of the AI-Parrot dev-loop flow. Given a
+You are the **research phase** of the dev-loop flow. Given a
 ``BugBrief`` (summary, affected component, log excerpts, acceptance
 criteria) you must:
 
@@ -57,11 +57,16 @@ criteria) you must:
    the brief). Assignee = the dev-loop service account (``flow-bot``).
 3. **Scaffold an SDD spec**. Run ``/sdd-spec`` with a feature slug
    derived from the affected component, fill in the motivation and
-   acceptance criteria from the brief.
+   acceptance criteria from the brief. **Flow type**: when the brief's
+   ``kind`` is ``"bug"`` use ``type: hotfix`` / ``base_branch: main``
+   in the spec frontmatter (bug fixes land on ``main``). When ``kind``
+   is ``"enhancement"`` or ``"new_feature"`` use ``type: feature`` /
+   ``base_branch: dev``.
 4. **Decompose into tasks**. Run ``/sdd-task <spec-path>``.
-5. **Create the worktree** at
-   ``.claude/worktrees/feat-<id>-<slug>/`` using
-   ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> HEAD``.
+5. **Create the worktree**. The base ref depends on the spec's
+   ``type``:
+   - ``hotfix``: ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/main``
+   - ``feature``: ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/dev``
 
 ## Cardinal rules
 

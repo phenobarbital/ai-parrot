@@ -34,7 +34,7 @@ from parrot import conf
 # Backends that ``JudgePanelReviewDispatcher._build_judge`` can map to a
 # review dispatcher. Every other backend raises ValueError there — see
 # ``code_review.py`` ("supported: claude-code, codex, gemini").
-JUDGE_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini")
+JUDGE_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_coding")
 
 # The adversarial (read-only, ``sdd-secondopinion``-profiled) seat is
 # Codex-only: ``CodexAdversarialReviewDispatcher`` is the sole reviewer
@@ -44,7 +44,7 @@ ADVERSARIAL_BACKEND: str = "codex"
 
 # Non-judge review dispatchers registered in ``CodeReviewDispatcherFactory``
 # that can serve as the *primary* reviewer of a bug-mode run.
-PRIMARY_REVIEW_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini")
+PRIMARY_REVIEW_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_coding")
 
 
 @dataclass(frozen=True)
@@ -119,6 +119,17 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         requires="`gemini` CLI on $PATH, authenticated",
         roles=("development", "judge", "primary_review"),
         notes="`auto` lets the CLI pick the model.",
+    ),
+    BackendInfo(
+        id="google_coding",
+        label="Google Coding (agy)",
+        transport="cli",
+        model_env="DEV_LOOP_GOOGLE_CODING_MODEL",
+        default_model="auto",
+        models=("auto", "gemini-3.6-flash", "gemini-3.0-pro"),
+        requires="`agy` CLI on $PATH, authenticated",
+        roles=("development", "judge", "primary_review"),
+        notes="Headless Google Antigravity CLI console dispatcher.",
     ),
     BackendInfo(
         id="nvidia",
