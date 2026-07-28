@@ -207,10 +207,52 @@ def test_no_compression_import_in_clients():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- **Threshold decision: kept `MAX_TOOL_RESULT_CHARS` at 200,000** (documented
+  directly above the class attribute). Rationale: no empirical evidence
+  exists yet to justify a specific higher number — TASK-1959's
+  latency/size benchmark suite is what would produce real post-compression
+  payload measurements to calibrate against, and that task hadn't landed
+  when this one ran. Raising the limit on guesswork trades a loud, logged
+  truncation for a silent context-window overflow risk; the aggregate
+  per-turn budget also includes conversation history, the system prompt,
+  and every other tool result in the same turn, not just this one. Kept
+  as a class attribute (still overridable per-instance/subclass, verified
+  by a dedicated test).
+- Re-documented `MAX_TOOL_RESULT_CHARS` and `_truncate_large_result()` to
+  state explicitly they are a last line of defense operating on
+  already-compressed payloads, and that the truncation is positional and
+  therefore lossy in an unprincipled way (mirrors spec Sec 1's three
+  defects, in context).
+- Added a `warning` log line at all three places truncation can actually
+  fire (string-result path, serialized-JSON path — which already had a
+  bare warning, now enriched with pre/post sizes — and the
+  non-serializable fallback path), each naming the tool and pre/post
+  sizes. **Threaded an optional `tool_name: Optional[str] = None]`
+  parameter through `_process_tool_result_for_api()`** (backward
+  compatible — every existing internal call site already had the tool
+  name in scope via `fc.name`/the enclosing function's own `tool_name`
+  param, so all 3 call sites were updated to pass it) so the warning can
+  actually name the tool; degrades to `"unknown"` when omitted.
+- Verified G1 holds: no `parrot.tools.compression` import, and — a
+  stronger check I added — no `FilterLevel`/`CompressionStage`/
+  `CompressorRegistry` reference anywhere in the module's source.
+  **Caught my own regression during implementation**: my first draft of
+  the docstrings literally quoted the string `parrot.tools.compression`
+  in prose, which the G1 grep-based test (correctly) flagged as a false
+  positive; reworded to "the ToolManager compression stage" instead.
+- Added a test proving no double reduction: a typical columnar-shaped,
+  already-compressed payload well under the limit passes through
+  byte-identical with no truncation warning logged.
+- Verification: 10 new tests pass; broader `tests/clients/` 159 passed +
+  1 skipped (no regressions, was 149+1 before this task's 10 new tests);
+  `tests/test_google_client.py` has 2 pre-existing failures
+  (redaction/scrubbing of an `os.environ` repr, unrelated to truncation),
+  confirmed identical via `git stash` on the pre-task code. `ruff check
+  client.py` — same 15 pre-existing findings (E402 import-order, F841
+  unused vars), confirmed identical via `git stash`; zero new findings.
+
+**Deviations from spec**: none.
