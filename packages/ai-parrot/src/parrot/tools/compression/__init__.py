@@ -19,6 +19,7 @@ from .protocol import (
     register_codec,
 )
 from .registry import CompressorRegistry
+from .report import CompressionReport, CompressionSummary, SessionSavings, ToolSavings
 from .stage import CompressionStage
 
 __all__ = [
@@ -35,4 +36,8 @@ __all__ = [
     "Route",
     "BudgetRouter",
     "CompressionStage",
+    "CompressionReport",
+    "CompressionSummary",
+    "ToolSavings",
+    "SessionSavings",
 ]
