@@ -211,16 +211,14 @@ async def test_e2e_escalation_opens_gate_and_pr_note(codex_dispatcher, ctx, monk
     # `_resolve_blocking_manual_criteria` — mirrors the FEAT-322 HITL pattern).
     # Several awaits happen first (deterministic QA dispatch, the real codex
     # dispatch's semaphore/subprocess/stream-reading chain, the triage
-    # dispatch) so poll briefly rather than assuming a fixed yield count.
+    # dispatch) so poll briefly with sleep(0.005) rather than assuming a fixed yield count.
     for _ in range(200):
         if any(
             g.kind == "review_escalation" for g in session_host.state.gates.values()
         ):
             break
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.005)
     else:
-        if task.done() and task.exception():
-            raise task.exception()
         pytest.fail("review_escalation gate never opened")
 
     pending_gates = [g for g in session_host.state.gates.values() if g.kind == "review_escalation"]
