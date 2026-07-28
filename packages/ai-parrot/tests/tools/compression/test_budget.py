@@ -151,6 +151,60 @@ class TestCircuitBreaker:
     def test_p99_none_when_no_calls(self, router):
         assert router.p99("never_called") is None
 
+    def test_minimal_level_judged_against_minimal_budget_not_inline_budget(
+        self, router,
+    ):
+        # Defaults: inline_budget_ms=3.0, minimal_budget_ms=5.0 (more
+        # generous). A 4ms call breaches the coarser inline budget but is
+        # WITHIN the minimal budget. Previously `minimal_budget_ms` was
+        # accepted as a constructor kwarg but never actually consulted —
+        # MINIMAL-level calls (always routed INLINE) were incorrectly
+        # judged against `inline_budget_ms` (code-review fix).
+        small = [{"a": 1} for _ in range(10)]
+        for _ in range(3):
+            for _ in range(100):
+                router.record(
+                    "json_compact", duration_ms=4.0, route=Route.INLINE,
+                    level=FilterLevel.MINIMAL,
+                )
+        assert router.route(
+            small, level=FilterLevel.MINIMAL, codec_name="json_compact",
+            rust_available=False,
+        ) is Route.INLINE
+
+    def test_non_minimal_inline_call_still_uses_inline_budget(self, router):
+        # Same 4ms duration, but WITHOUT a MINIMAL level — must still be
+        # judged against the coarser `inline_budget_ms` (3.0) and trip the
+        # breaker, proving the fix only changes MINIMAL-level behavior.
+        small = [{"a": 1} for _ in range(10)]
+        for _ in range(3):
+            for _ in range(100):
+                router.record("columnar", duration_ms=4.0, route=Route.INLINE)
+        assert router.route(
+            small, level=FilterLevel.NORMAL, codec_name="columnar",
+            rust_available=False,
+        ) is Route.PASSTHROUGH
+
+    def test_probe_race_second_concurrent_caller_is_blocked(self, router, clock):
+        # Only ONE call may be treated as "the" half-open probe. A second
+        # concurrent caller landing before the first probe resolves via
+        # `record()` must be blocked (PASSTHROUGH), not also let through
+        # as if it were its own probe (code-review fix: `is_open()`
+        # previously had no `state.probing` check).
+        for _ in range(3):
+            for _ in range(100):
+                router.record("columnar", duration_ms=50.0, route=Route.INLINE)
+        clock.advance(301)  # cooldown elapsed
+        small = [{"a": 1} for _ in range(10)]
+        assert router.route(
+            small, level=FilterLevel.NORMAL, codec_name="columnar",
+            rust_available=False,
+        ) is Route.INLINE  # first caller becomes the probe
+        assert router.route(
+            small, level=FilterLevel.NORMAL, codec_name="columnar",
+            rust_available=False,
+        ) is Route.PASSTHROUGH  # second concurrent caller is blocked
+
 
 class TestEstimateSize:
     def test_empty_list(self):
@@ -171,6 +225,35 @@ class TestEstimateSize:
         big = [{"a": "x" * 1000}] * 1_000_000
         n_bytes, n_rows = estimate_size(big)
         assert n_rows == 1_000_000
+        assert n_bytes > 0
+
+    def test_query_result_shaped_dict_is_sampled_not_fully_walked(self):
+        # QueryResult-shaped payload (this feature's flagship use case,
+        # see columnar.py's `_locate_rows()`): a dict wrapping a large
+        # "rows" list. Previously this fell through to `_rough_bytes()`,
+        # which recursively walks EVERY row — defeating the whole point of
+        # a cheap pre-routing estimate (code-review fix). This must
+        # complete quickly and report the same row count as the bare-list
+        # case above, plus a positive byte estimate.
+        payload = {
+            "driver": "pg",
+            "row_count": 1_000_000,
+            "rows": [{"a": "x" * 1000}] * 1_000_000,
+        }
+        n_bytes, n_rows = estimate_size(payload)
+        assert n_rows == 1_000_000
+        assert n_bytes > 0
+
+    def test_query_result_shaped_dict_empty_rows(self):
+        payload = {"driver": "pg", "rows": []}
+        n_bytes, n_rows = estimate_size(payload)
+        assert n_rows == 0
+        assert n_bytes >= 0
+
+    def test_dict_without_list_field_falls_back_to_full_walk(self):
+        # No dominant list-valued field -> unchanged, existing behavior.
+        n_bytes, n_rows = estimate_size({"a": 1, "b": "hello"})
+        assert n_rows == 0
         assert n_bytes > 0
 
 

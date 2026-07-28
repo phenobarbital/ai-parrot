@@ -30,7 +30,7 @@ import sys
 import threading
 import time
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from parrot._imports import lazy_import
 
@@ -66,11 +66,22 @@ def estimate_size(payload: Any) -> tuple[int, int]:
     conservative decision); an under-estimate is not, so this function
     favors over-estimating.
 
+    QueryResult-shaped dicts (e.g. ``{"driver": ..., "rows": [...],
+    "row_count": ...}`` — this feature's flagship use case, see
+    ``columnar.py``'s ``_locate_rows()``) carry the bulk of their size in a
+    single list-valued field. Those are sampled the SAME cheap way as a
+    bare list: the dominant list's first element, multiplied by its length,
+    plus a full (but normally tiny) walk of the remaining "shell" fields.
+    Only a dict with no such dominant list falls back to a full recursive
+    walk (code-review fix — previously ALL dict payloads, including
+    QueryResult-shaped ones, took the expensive full-walk path).
+
     Args:
         payload: The unwrapped tool result to estimate.
 
     Returns:
-        A ``(bytes, rows)`` tuple. ``rows`` is ``0`` for non-list payloads.
+        A ``(bytes, rows)`` tuple. ``rows`` is ``0`` for non-list payloads
+        with no dominant list-valued field.
     """
     if isinstance(payload, list):
         n_rows = len(payload)
@@ -78,7 +89,42 @@ def estimate_size(payload: Any) -> tuple[int, int]:
             return 0, 0
         sample_bytes = _rough_bytes(payload[0])
         return sample_bytes * n_rows, n_rows
+    if isinstance(payload, dict):
+        dominant_key, dominant_list = _find_dominant_list(payload)
+        if dominant_list is not None:
+            shell_bytes = sum(
+                _rough_bytes(k) + _rough_bytes(v)
+                for k, v in payload.items()
+                if k != dominant_key
+            ) + 2
+            n_rows = len(dominant_list)
+            if n_rows == 0:
+                return shell_bytes, 0
+            sample_bytes = _rough_bytes(dominant_list[0])
+            return shell_bytes + sample_bytes * n_rows, n_rows
     return _rough_bytes(payload), 0
+
+
+def _find_dominant_list(payload: dict[Any, Any]) -> tuple[Any, list[Any] | None]:
+    """Find the largest list-valued field in a dict payload, if any.
+
+    Mirrors the row-oriented shape ``columnar.py``'s ``_locate_rows()``
+    looks for (a dict wrapping a single row-bearing list, e.g. a
+    ``QueryResult``'s ``rows`` field) so the size estimate stays cheap for
+    exactly the payload shape this feature's flagship codec targets.
+
+    Returns:
+        ``(key, list_value)`` for the longest non-empty list-valued field,
+        or ``(None, None)`` if the dict has no list-valued field.
+    """
+    dominant_key: Any = None
+    dominant_list: list[Any] | None = None
+    for key, value in payload.items():
+        if isinstance(value, list) and (
+            dominant_list is None or len(value) > len(dominant_list)
+        ):
+            dominant_key, dominant_list = key, value
+    return dominant_key, dominant_list
 
 
 def _rough_bytes(value: Any) -> int:
@@ -138,7 +184,7 @@ class _CodecState:
 
     def __init__(self, now: float) -> None:
         self.window_start = now
-        self.window_calls: list[tuple[float, "Route"]] = []
+        self.window_calls: list[tuple[float, "Route", "FilterLevel | None"]] = []
         self.consecutive_over = 0
         self.open = False
         self.cooldown_until: float | None = None
@@ -192,12 +238,27 @@ class CircuitBreaker:
             self._states[codec_name] = state
         return state
 
-    def _budget_for(self, route: "Route") -> float:
-        return self._executor_budget_ms if route is Route.EXECUTOR else self._inline_budget_ms
+    def _budget_for(self, route: "Route", level: "FilterLevel | None" = None) -> float:
+        """Budget (ms) for a call that took ``route`` at ``level``.
+
+        MINIMAL-level calls always route INLINE (see ``BudgetRouter.route``)
+        but are judged against ``minimal_budget_ms``, not the coarser
+        ``inline_budget_ms`` — the two were calibrated against different
+        measured p99s (TASK-1959: ``json_compact`` MINIMAL ~4.6ms vs.
+        ``columnar`` NORMAL ~2.8ms). Previously ``minimal_budget_ms`` was
+        accepted as a constructor kwarg but never consulted anywhere
+        (code-review fix).
+        """
+        if route is Route.EXECUTOR:
+            return self._executor_budget_ms
+        if level is FilterLevel.MINIMAL:
+            return self._minimal_budget_ms
+        return self._inline_budget_ms
 
     def is_open(self, codec_name: str) -> bool:
         """Return ``True`` if the breaker currently blocks calls for
-        ``codec_name`` (fully open, cooldown not yet elapsed).
+        ``codec_name`` (fully open, cooldown not yet elapsed, OR a probe is
+        already in flight).
 
         When the cooldown has elapsed, transitions the breaker to
         half-open (allows exactly one probe call) and returns ``False``.
@@ -211,18 +272,33 @@ class CircuitBreaker:
             if not state.open:
                 self._expire_if_stale(codec_name, state, now)
                 return False
+            if state.probing:
+                # A probe call is already in flight and hasn't resolved via
+                # `record()` yet — block any OTHER concurrent caller from
+                # also being treated as "the" probe (code-review fix: this
+                # check previously did not exist, so two callers landing in
+                # the same post-cooldown window could both slip through).
+                return True
             if state.cooldown_until is not None and now >= state.cooldown_until:
                 state.probing = True
                 return False
             return True
 
-    def record(self, codec_name: str, duration_ms: float, route: "Route") -> None:
+    def record(
+        self,
+        codec_name: str,
+        duration_ms: float,
+        route: "Route",
+        level: "FilterLevel | None" = None,
+    ) -> None:
         """Feed a completed call's duration into the breaker.
 
         Args:
             codec_name: Name of the codec that ran.
             duration_ms: Wall-clock duration of the call, in milliseconds.
             route: The :class:`Route` the call actually took.
+            level: The effective :class:`FilterLevel` for this call, used
+                to pick the right budget (see :meth:`_budget_for`).
         """
         with self._lock:
             state = self._state(codec_name)
@@ -233,14 +309,14 @@ class CircuitBreaker:
                 state.recent_durations = state.recent_durations[-1000:]
 
             if state.probing:
-                self._resolve_probe(codec_name, state, duration_ms, route, now)
+                self._resolve_probe(codec_name, state, duration_ms, route, level, now)
                 return
 
             # Close out a stale window (possibly empty) before starting to
             # accumulate this call into a fresh one.
             self._expire_if_stale(codec_name, state, now)
 
-            state.window_calls.append((duration_ms, route))
+            state.window_calls.append((duration_ms, route, level))
             if len(state.window_calls) >= self._window_calls:
                 self._close_window(codec_name, state, now)
 
@@ -257,10 +333,11 @@ class CircuitBreaker:
         state: _CodecState,
         duration_ms: float,
         route: "Route",
+        level: "FilterLevel | None",
         now: float,
     ) -> None:
         state.probing = False
-        if duration_ms > self._budget_for(route):
+        if duration_ms > self._budget_for(route, level):
             state.cooldown_until = now + self._cooldown_seconds
             logger.warning(
                 "Circuit breaker probe for codec '%s' failed (%.3fms over "
@@ -288,7 +365,9 @@ class CircuitBreaker:
             return
 
         over_count = sum(
-            1 for duration_ms, route in calls if duration_ms > self._budget_for(route)
+            1
+            for duration_ms, route, level in calls
+            if duration_ms > self._budget_for(route, level)
         )
         over_budget = over_count > len(calls) / 2
 
@@ -394,15 +473,26 @@ class BudgetRouter:
             return Route.INLINE
         return Route.EXECUTOR if rust_available else Route.PASSTHROUGH
 
-    def record(self, codec_name: str, duration_ms: float, route: Route) -> None:
+    def record(
+        self,
+        codec_name: str,
+        duration_ms: float,
+        route: Route,
+        level: Optional[FilterLevel] = None,
+    ) -> None:
         """Feed a completed call's duration into the circuit breaker.
 
         Args:
             codec_name: Name of the codec that ran.
             duration_ms: Wall-clock duration of the call, in milliseconds.
             route: The :class:`Route` the call actually took.
+            level: The effective :class:`FilterLevel` for this call. Needed
+                to judge MINIMAL-level (always-INLINE) calls against
+                ``minimal_budget_ms`` instead of the coarser
+                ``inline_budget_ms`` (code-review fix). ``None`` preserves
+                the pre-fix behavior (judged as a generic inline call).
         """
-        self._breaker.record(codec_name, duration_ms, route)
+        self._breaker.record(codec_name, duration_ms, route, level)
 
     def p99(self, codec_name: str) -> float | None:
         """Rolling p99 duration (ms) for ``codec_name``. See

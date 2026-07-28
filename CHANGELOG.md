@@ -61,6 +61,55 @@ flow, savings report, optional Rust extension).
   four). `voice_text`/`display_data` are read from the ToolResult's own
   fields, uncompressed, exactly as before.
 
+### Fixed
+
+Found by an adversarial code review (Claude subagent + Codex, both CONFIRMed
+after independent verification) before this feature's first release:
+
+- **G3 violation**: a lossy compression whose tee call failed or was
+  unavailable at RUNTIME (not just statically, e.g. a transient
+  `WorkingMemoryToolkit` error) was still returned — with no way to
+  recover the original. `CompressionStage.run()` now falls back to the
+  uncompressed original whenever a lossy outcome's tee key comes back
+  `None`, exactly as `CompressionTee.store()`'s own docstring always
+  promised callers would happen.
+- **`minimal_budget_ms` was dead code**: `CircuitBreaker._budget_for()`
+  only branched INLINE vs. EXECUTOR, so MINIMAL-level calls (always
+  routed INLINE) were judged against the coarser `inline_budget_ms`
+  instead of the level-specific budget calibrated for them (TASK-1959).
+  `record()`/`_budget_for()` now thread the effective `FilterLevel`
+  through so MINIMAL calls are judged correctly.
+- **`estimate_size()` wasn't actually cheap for `QueryResult`-shaped
+  dicts**: a dict payload (e.g. `{"driver": ..., "rows": [...]}`, this
+  feature's flagship use case) fell through to a full recursive
+  `_rough_bytes()` walk of every row before routing — the exact
+  "fully walk a large payload" cost the function's own docstring says it
+  avoids. Dict payloads with a dominant list-valued field are now
+  sampled the same cheap way as a bare list.
+- **`ToolManager.execute_tool()`'s `meta = getattr(result, "metadata",
+  {}) or {}`** silently swapped in a fresh dict whenever `result.metadata`
+  was falsy — which is every time it starts as `{}` (Pydantic's
+  `default_factory=dict` default, the common case) — breaking the
+  aliasing the surrounding comment relied on. Compression fields now
+  reliably land on the actual `ToolResult.metadata` object, not just on
+  whatever `add_result_hook` happened to observe by reference.
+- Circuit-breaker half-open probing had a race: `is_open()` didn't check
+  for an in-flight probe, so two calls landing in the same post-cooldown
+  window could both be treated as "the" probe. It now blocks any
+  additional caller until the first probe resolves via `record()`.
+- The error-path tee call in `execute_tool()` is now wrapped in its own
+  try/except so a catastrophically broken tee can never mask the
+  original `ValueError(result.error)`.
+- `parrot_codec`'s `columnarize()` now wraps the transform in
+  `catch_unwind` so an unexpected Rust panic surfaces as an ordinary
+  `PyRuntimeError` (caught by `columnar.py`'s `except Exception:`)
+  instead of PyO3's `PanicException`, which derives from `BaseException`
+  and would otherwise slip past that guard.
+- `parrot_codec`'s constant-column factoring now compares numbers the
+  same way Python's `==` does (`1 == 1.0`); `serde_json::Value`'s derived
+  `PartialEq` treated same-value int/float differently, a byte-for-byte
+  parity break against the Python reference implementation.
+
 ### Known limitations (see `docs/tools/compression.md` for detail)
 
 - The live voice route (`clients/live.py`) does not yet apply compression

@@ -1523,14 +1523,32 @@ class ToolManager(MCPToolManagerMixin):
                         # be lost entirely with no way to recover it. The
                         # raise below is unchanged (same type/message);
                         # this is purely additive and never observable to
-                        # existing callers (tee failures are swallowed).
-                        self._bind_compression_tee()
-                        await self._compression_tee.store(
-                            tool_name, result.result, "error"
-                        )
+                        # existing callers. Guarded defensively: a broken
+                        # tee (e.g. `_bind_compression_tee()` raising while
+                        # scanning tools) must never replace/mask the
+                        # original `result.error` (code-review fix).
+                        try:
+                            self._bind_compression_tee()
+                            await self._compression_tee.store(
+                                tool_name, result.result, "error"
+                            )
+                        except Exception as tee_exc:  # noqa: BLE001
+                            self.logger.warning(
+                                "Compression tee failed while capturing "
+                                "error payload for %s: %s", tool_name, tee_exc,
+                            )
                         raise ValueError(result.error)
                     out = result.result
-                    meta = getattr(result, "metadata", {}) or {}
+                    # `result.metadata` defaults to `{}` via Pydantic's
+                    # `default_factory=dict` — never `None` — but `X or {}`
+                    # would still swap it for a NEW dict whenever it's
+                    # falsy (i.e. every time it's empty, the common case),
+                    # silently breaking the aliasing the comment below
+                    # relies on. Only substitute a fresh dict when the
+                    # attribute is genuinely absent/`None` (code-review fix).
+                    meta = getattr(result, "metadata", None)
+                    if meta is None:
+                        meta = {}
                 else:
                     out = result
                     meta = {}

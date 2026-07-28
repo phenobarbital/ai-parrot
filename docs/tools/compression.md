@@ -269,6 +269,20 @@ want to build this specific optional extension yourself.
   materialized Python objects always stay on the Python path regardless
   of whether the extension is installed.
 
+  **Routing granularity note**: `BudgetRouter.route()` decides
+  INLINE/EXECUTOR/PASSTHROUGH from `rust_available` (a process-wide flag —
+  is `parrot_codec` importable at all?), not from whether THIS SPECIFIC
+  payload is `bytes`/`str`-eligible for the FFI path described above. So
+  a native `list[dict]` payload, when the extension IS installed and the
+  payload is over threshold, still gets routed to `Route.EXECUTOR` — it
+  runs in a worker thread (still useful: it frees the event loop even
+  though it's a real OS thread context switch, not "for free" like the
+  Rust path), but the transform itself stays pure Python under the GIL
+  the whole time, same as the `Route.INLINE` case just off the event
+  loop. This is a real, if modest, waste of a thread-pool slot — not a
+  correctness bug — and is a candidate for a future "isinstance(payload,
+  (bytes, str))" refinement to `BudgetRouter.route()`'s EXECUTOR branch.
+
 ## Latency budgets
 
 The router decides, from a cheap pre-compression size estimate, whether a

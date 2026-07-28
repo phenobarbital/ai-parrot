@@ -14,9 +14,32 @@
 //! `CompressionOutcome` construction) stay in Python — by the time this
 //! function is called, the Python side has already confirmed the input is
 //! eligible for columnarization.
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use serde_json::{Map, Value};
+
+/// Python-`==`-compatible equality for `serde_json::Value`.
+///
+/// `serde_json::Value`'s derived `PartialEq` treats `Number(1)` (parsed
+/// from a JSON integer literal) and `Number(1.0)` (parsed from a JSON
+/// float literal) as UNEQUAL, whereas Python's `==` treats `1 == 1.0` as
+/// `True`. Left unfixed, a numerically-constant column mixing int/float
+/// literals across rows (e.g. `1` in row 0, `1.0` in row 1) would factor
+/// out as a constant in the Python reference implementation but NOT here
+/// — a byte-for-byte parity break (code-review fix, TASK-1955's parity
+/// contract). Compare as `f64` whenever both sides parse as numbers;
+/// fall back to `==` otherwise.
+fn values_equal_like_python(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => match (x.as_f64(), y.as_f64()) {
+            (Some(fx), Some(fy)) => fx == fy,
+            _ => x == y,
+        },
+        _ => a == b,
+    }
+}
 
 /// Split row-oriented JSON (`[{...}, {...}, ...]`) into the columnar
 /// `{"columns": [...], "rows": [[...], ...], "constants": {...}}` form.
@@ -69,9 +92,9 @@ fn columnarize_json(payload: &[u8], _min_rows: usize) -> Result<Vec<u8>, String>
         let mut factored: Vec<String> = Vec::new();
         for col in columns.iter() {
             let first = rows[0].get(col).cloned().unwrap_or(Value::Null);
-            let all_equal = rows
-                .iter()
-                .all(|row| row.get(col).cloned().unwrap_or(Value::Null) == first);
+            let all_equal = rows.iter().all(|row| {
+                values_equal_like_python(&row.get(col).cloned().unwrap_or(Value::Null), &first)
+            });
             if all_equal {
                 constants.insert(col.clone(), first);
                 factored.push(col.clone());
@@ -116,6 +139,16 @@ fn columnarize_json(payload: &[u8], _min_rows: usize) -> Result<Vec<u8>, String>
 ///
 /// Returns:
 ///     UTF-8 JSON bytes encoding `{"columns", "rows", "constants"}`.
+///
+/// Panic safety: `columnarize_json` is run inside `catch_unwind` so an
+/// unexpected panic (e.g. an unforeseen indexing bug) surfaces as an
+/// ordinary `PyRuntimeError` instead of PyO3's `PanicException`.
+/// `PanicException` derives from `BaseException`, not `Exception` — it
+/// would silently bypass `columnar.py`'s `except Exception:` guard and
+/// break the "a broken codec must never break a tool call" contract
+/// (code-review fix). This does NOT protect against a stack overflow,
+/// which aborts the process unconditionally in Rust and cannot be caught
+/// by any mechanism — a residual, documented limitation.
 #[pyfunction]
 #[pyo3(signature = (payload, min_rows=20))]
 fn columnarize(py: Python<'_>, payload: &[u8], min_rows: usize) -> PyResult<Vec<u8>> {
@@ -124,8 +157,21 @@ fn columnarize(py: Python<'_>, payload: &[u8], min_rows: usize) -> PyResult<Vec<
     // (verified against this crate's pinned pyo3 version, `Cargo.toml`);
     // functionally identical GIL-release mechanism (spec's own "Pattern
     // to Follow" used the older `allow_threads` name).
-    py.detach(move || columnarize_json(&owned, min_rows))
-        .map_err(PyRuntimeError::new_err)
+    let outcome = py.detach(move || {
+        catch_unwind(AssertUnwindSafe(|| columnarize_json(&owned, min_rows)))
+    });
+    let result = match outcome {
+        Ok(inner) => inner,
+        Err(panic_payload) => {
+            let msg = panic_payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic in columnarize_json".to_string());
+            Err(format!("internal panic during columnarization: {msg}"))
+        }
+    };
+    result.map_err(PyRuntimeError::new_err)
 }
 
 #[pymodule]
@@ -204,5 +250,51 @@ mod tests {
     fn rejects_non_object_rows() {
         let err = columnarize_json(br#"[1, 2, 3]"#, 20);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn values_equal_like_python_matches_python_semantics() {
+        assert!(values_equal_like_python(
+            &serde_json::json!(1),
+            &serde_json::json!(1.0)
+        ));
+        assert!(!values_equal_like_python(
+            &serde_json::json!(1),
+            &serde_json::json!(2)
+        ));
+        assert!(values_equal_like_python(
+            &serde_json::json!("a"),
+            &serde_json::json!("a")
+        ));
+        assert!(!values_equal_like_python(
+            &serde_json::json!("a"),
+            &serde_json::json!("b")
+        ));
+    }
+
+    #[test]
+    fn int_and_float_constants_are_treated_as_equal_like_python() {
+        // Mirrors Python's `1 == 1.0` (`True`) — a column holding `1` in
+        // one row and `1.0` in another must still factor out as a
+        // constant, matching `ColumnarCodec._columnarize()`'s Python `==`
+        // semantics (code-review fix: previously `Number(1) !=
+        // Number(1.0)` under serde_json's derived `PartialEq` broke this
+        // parity contract).
+        let out = run(r#"[{"a":1,"n":1},{"a":2,"n":1.0}]"#);
+        assert_eq!(out["columns"], serde_json::json!(["a"]));
+        assert_eq!(out["constants"]["n"], serde_json::json!(1));
+    }
+
+    #[test]
+    fn catch_unwind_around_transform_captures_panics() {
+        // Not a test of the `columnarize()` pyfunction itself (that needs
+        // a `Python` GIL token) — verifies the SAME `catch_unwind` +
+        // `AssertUnwindSafe` pattern used inside it correctly converts a
+        // panic into an `Err` instead of unwinding past the FFI boundary
+        // (code-review fix).
+        let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+            panic!("synthetic panic for test coverage");
+        }));
+        assert!(outcome.is_err());
     }
 }

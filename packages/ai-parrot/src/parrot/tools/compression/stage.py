@@ -194,11 +194,27 @@ class CompressionStage:
             return payload, {"compression_skipped": "codec_error"}
         finally:
             duration_ms = (time.perf_counter() - started) * 1000
-            self._router.record(codec_name, duration_ms, route)
+            self._router.record(codec_name, duration_ms, route, level)
 
         teed_key: Optional[str] = None
         if outcome.lossy:
             teed_key = await self._invoke_tee(tool_name, payload, "lossy", codec_name)
+            if teed_key is None:
+                # G3: never return a lossy payload with no way to recover
+                # the original. `_effective_level()` already caps NORMAL/
+                # AGGRESSIVE to MINIMAL when the tee is STATICALLY
+                # unavailable, but that check can't predict a RUNTIME tee
+                # failure (`CompressionTee.store()` never raises — it
+                # returns `None` on failure by contract, see tee.py). Fall
+                # back to the uncompressed original rather than silently
+                # losing data (code-review fix).
+                self.logger.warning(
+                    "Compressor '%s' produced a lossy result for tool '%s' "
+                    "but tee storage failed or is unavailable; falling "
+                    "back to the original payload (G3).",
+                    codec_name, tool_name,
+                )
+                return payload, {"compression_skipped": "tee_failed"}
 
         final_payload = outcome.payload
         if teed_key is not None:

@@ -222,6 +222,15 @@ class TestTee:
         with caplog.at_level("WARNING"):
             out = await tool_manager_with_wm.execute_tool("lossy_tool", {})
         assert "_tee" not in out
+        # G3 (code-review fix): when the tee call fails at RUNTIME (as
+        # opposed to being statically unavailable, which is what caps the
+        # level up front), the stage must fall back to the UNCOMPRESSED
+        # original — not silently return the lossy `{"summary": ...}`
+        # output with no way to recover it. Previously this test only
+        # checked for the absent `_tee` pointer, which passed either way
+        # and did not actually catch the bug.
+        assert "summary" not in out
+        assert out == ORIGINAL_PAYLOAD
         assert any("wm down" in r.message or "Tee failed" in r.message
                    for r in caplog.records)
 
@@ -230,6 +239,24 @@ class TestTee:
         wm = tool_manager_with_wm._find_working_memory_toolkit()
         recovered = await wm.get_result(key=out["_tee"]["key"], include_raw=True)
         assert recovered["raw_data"] == ORIGINAL_PAYLOAD
+
+    async def test_error_path_tee_failure_does_not_mask_original_error(
+        self, tool_manager_with_wm, monkeypatch,
+    ):
+        # Code-review fix: the error-branch tee call in `execute_tool()`
+        # is now wrapped in its own try/except so that a completely
+        # broken tee (e.g. `CompressionTee.store()` itself raising,
+        # bypassing its own internal safety net) can never replace or
+        # mask the tool's ORIGINAL `ValueError(result.error)` with some
+        # other exception.
+        async def boom(*args, **kwargs):
+            raise RuntimeError("tee catastrophically broken")
+
+        monkeypatch.setattr(
+            tool_manager_with_wm._compression_tee, "store", boom,
+        )
+        with pytest.raises(ValueError, match="boom"):
+            await tool_manager_with_wm.execute_tool("erroring_tool", {})
 
     async def test_wm_registered_after_construction_still_works(self):
         """The tee is bound lazily — a WorkingMemoryToolkit registered

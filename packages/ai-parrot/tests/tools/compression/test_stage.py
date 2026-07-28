@@ -144,7 +144,9 @@ class TestSafety:
         calls = []
         monkeypatch.setattr(
             router, "record",
-            lambda codec_name, duration_ms, route: calls.append((codec_name, route)),
+            lambda codec_name, duration_ms, route, level=None: calls.append(
+                (codec_name, route),
+            ),
         )
         stage = CompressionStage(
             registry=CompressorRegistry.load(project_root=tmp_path),
@@ -250,7 +252,13 @@ class TestTee:
             from parrot.tools.compression.protocol import _CODEC_REGISTRY
             _CODEC_REGISTRY.pop("always_lossy_test", None)
 
-    async def test_lossy_outcome_without_tee_callback_still_returns_compressed(self, tmp_path):
+    async def test_lossy_outcome_without_tee_falls_back_to_original(self, tmp_path):
+        # G3 (code-review fix): a lossy outcome with no way to recover the
+        # original must NEVER be returned. With `tee=None`, `_invoke_tee`
+        # always returns `None` — the stage must fall back to the
+        # UNCOMPRESSED original rather than returning `outcome.payload`
+        # (which was the previous, buggy behavior: the compressed payload
+        # was still returned even though it could never be recovered).
         @register_codec
         class _AlwaysLossy2:
             codec_name = "always_lossy_test_2"
@@ -272,15 +280,56 @@ class TestTee:
                 router=BudgetRouter(),
                 tee=None,
             )
+            data = {"a": 1}
             out, meta = await stage.run(
-                "t", {"a": 1}, status="success", metadata={}, return_direct=False,
+                "t", data, status="success", metadata={}, return_direct=False,
             )
-            assert out == {"summary": "x"}
-            assert meta["compression_teed"] is False
-            assert "compression_tee_key" not in meta
+            assert out is data
+            assert meta["compression_skipped"] == "tee_failed"
         finally:
             from parrot.tools.compression.protocol import _CODEC_REGISTRY
             _CODEC_REGISTRY.pop("always_lossy_test_2", None)
+
+    async def test_lossy_outcome_tee_returns_none_falls_back_to_original(self, tmp_path):
+        # Same G3 guarantee, but for the "tee IS configured yet the actual
+        # store() call still fails/returns None at runtime" case — this is
+        # the gap the static `_tee_available()` check (used for the G3
+        # level-capping decision) cannot predict, since it only knows a
+        # `WorkingMemoryToolkit` is registered, not that a specific store()
+        # call will succeed (`CompressionTee.store()` never raises, it
+        # returns `None` by contract; see tee.py).
+        @register_codec
+        class _AlwaysLossy3:
+            codec_name = "always_lossy_test_3"
+
+            def compress(self, result, *, level, params):
+                return CompressionOutcome(
+                    payload={"summary": "x"}, lossy=True, bytes_before=100,
+                    bytes_after=10, est_tokens_saved=20, codec_name="always_lossy_test_3",
+                )
+
+        try:
+            d = tmp_path / ".parrot"
+            d.mkdir()
+            (d / "compressors.toml").write_text(
+                '[compressor."*"]\ncodec = "always_lossy_test_3"\nlevel = "normal"\n'
+            )
+            stage = CompressionStage(
+                registry=CompressorRegistry.load(project_root=tmp_path),
+                router=BudgetRouter(),
+                # Reports "available" (bare callable can't be introspected)
+                # but the actual call always fails at runtime.
+                tee=lambda tool_name, payload, codec_name: None,
+            )
+            data = {"a": 1}
+            out, meta = await stage.run(
+                "t", data, status="success", metadata={}, return_direct=False,
+            )
+            assert out is data
+            assert meta["compression_skipped"] == "tee_failed"
+        finally:
+            from parrot.tools.compression.protocol import _CODEC_REGISTRY
+            _CODEC_REGISTRY.pop("always_lossy_test_3", None)
 
 
 class TestBudgetIntegration:

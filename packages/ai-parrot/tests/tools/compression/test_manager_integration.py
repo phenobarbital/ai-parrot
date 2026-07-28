@@ -124,6 +124,36 @@ class TestStagePlacement:
         assert meta["compression_codec"] == "json_compact"
         assert meta["result_size_bytes"] <= meta["result_size_bytes_original"]
 
+    async def test_result_metadata_receives_compression_fields_directly(
+        self, tool_manager_with_compression,
+    ):
+        """Code-review fix: `meta = getattr(result, "metadata", {}) or {}`
+        swapped in a NEW dict whenever `result.metadata` was falsy — which
+        is every time it starts as `{}` (Pydantic's `default_factory=dict`
+        default), the common case. That broke the aliasing the
+        `execute_tool()` comment claims, so `meta.update(comp_meta)` only
+        ever mutated a throwaway dict `result.metadata` never saw. This
+        test intercepts the actual `ToolResult` `tool.execute()` returns
+        and asserts the compression fields land on ITS `.metadata` — not
+        just on whatever `add_result_hook` happens to observe by
+        reference."""
+        tool = tool_manager_with_compression._tools["bulky_tool"]
+        captured = []
+        original_execute = tool.execute
+
+        async def spy_execute(**kwargs):
+            result = await original_execute(**kwargs)
+            captured.append(result)
+            return result
+
+        tool.execute = spy_execute
+        await tool_manager_with_compression.execute_tool("bulky_tool", {})
+
+        assert captured, "tool.execute was not invoked"
+        result = captured[0]
+        assert result.metadata.get("_compressed") is True
+        assert result.metadata.get("compression_codec") == "json_compact"
+
 
 class TestClone:
     def test_clone_does_not_share_metrics(self, tool_manager_with_compression):
