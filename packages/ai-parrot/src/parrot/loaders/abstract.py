@@ -1,34 +1,37 @@
 from __future__ import annotations
-from typing import Generator, Union, List, Any, Optional, TypeVar, TYPE_CHECKING
-from collections.abc import Callable
-from abc import ABC, abstractmethod
-from datetime import datetime
-import uuid
-from pathlib import Path, PosixPath, PurePath
-from urllib.parse import urlparse, unquote
+
 import asyncio
+import uuid
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Generator
+from datetime import UTC, datetime
+from pathlib import Path, PosixPath, PurePath
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from urllib.parse import unquote, urlparse
+
 if TYPE_CHECKING:
     import pandas as pd
+from datamodel.parsers.json import JSONContent  # pylint: disable=E0611
 from navconfig.logging import logging
-from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
-from ..stores.models import Document
-## AI Models:
-from ..models.google import GoogleModel
+
 from ..clients.factory import LLMFactory
-from .splitters import (
-    TokenTextSplitter,
-    MarkdownTextSplitter,
-    SemanticTextSplitter,
-)
-from ..stores.utils.chunking import LateChunkingProcessor
 from ..conf import (
+    CUDA_DEFAULT_DEVICE,
+    CUDA_DEFAULT_DEVICE_NUMBER,
+    DEFAULT_GROQ_MODEL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TEMPERATURE,
-    DEFAULT_GROQ_MODEL,
-    CUDA_DEFAULT_DEVICE,
-    CUDA_DEFAULT_DEVICE_NUMBER
 )
 
+## AI Models:
+from ..models.google import GoogleModel
+from ..stores.models import Document
+from ..stores.utils.chunking import LateChunkingProcessor
+from .splitters import (
+    MarkdownTextSplitter,
+    SemanticTextSplitter,
+    TokenTextSplitter,
+)
 
 T = TypeVar('T')
 
@@ -38,15 +41,15 @@ class AbstractLoader(ABC):
     Base class for all loaders.
     Loaders are responsible for loading data from various sources.
     """
-    extensions: List[str] = ['.*']
-    skip_directories: List[str] = []
+    extensions: ClassVar[list[str]] = ['.*']
+    skip_directories: ClassVar[list[str]] = []
 
     def __init__(
         self,
-        source: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        source: str | Path | list[str | Path] | None = None,
         *,
-        tokenizer: Union[str, Callable] = None,
-        text_splitter: Union[str, Callable] = None,
+        tokenizer: str | Callable | None = None,
+        text_splitter: str | Callable | None = None,
         source_type: str = 'file',
         language: str = 'en',
         **kwargs
@@ -87,7 +90,7 @@ class AbstractLoader(ABC):
 
         # Advanced features
         self._summarization = kwargs.get('summarization', False)
-        self._summary_model: Optional[Any] = kwargs.get('summary_model', None)
+        self._summary_model: Any | None = kwargs.get('summary_model', None)
         self._use_summary_pipeline: bool = kwargs.get('use_summary_pipeline', False)
         self._use_translation_pipeline: bool = kwargs.get('use_translation_pipeline', False)
         self._translation = kwargs.get('translation', False)
@@ -106,9 +109,7 @@ class AbstractLoader(ABC):
         # from loaders that expect URL sources (e.g. WebScrapingLoader).
         # Lists of URLs are also preserved as-is.
         def _is_url(value: Any) -> bool:
-            return isinstance(value, str) and (
-                value.startswith('http://') or value.startswith('https://')
-            )
+            return isinstance(value, str) and value.startswith(('http://', 'https://'))
 
         if self.path is not None:
             if isinstance(self.path, list):
@@ -123,9 +124,7 @@ class AbstractLoader(ABC):
             elif _is_url(self.path):
                 # Keep URL string untouched.
                 pass
-            elif isinstance(self.path, str):
-                self.path = Path(self.path).resolve()
-            elif isinstance(self.path, (Path, PurePath)):
+            elif isinstance(self.path, (str, Path, PurePath)):
                 self.path = Path(self.path).resolve()
 
         # Tokenizer
@@ -263,8 +262,8 @@ class AbstractLoader(ABC):
 
     def get_default_llm(
         self,
-        model: str = None,
-        model_kwargs: dict = None,
+        model: str | None = None,
+        model_kwargs: dict | None = None,
         use_groq: bool = False,
         use_openai: bool = False
     ) -> Any:
@@ -298,7 +297,7 @@ class AbstractLoader(ABC):
 
     def _get_device(
         self,
-        device_type: str = None,
+        device_type: str | None = None,
         cuda_number: int = 0
     ):
         """
@@ -352,7 +351,7 @@ class AbstractLoader(ABC):
             import torch
             torch.cuda.synchronize()  # Wait for all kernels to finish
             torch.cuda.empty_cache()  # Clear unused memory
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Error clearing CUDA memory: {e}")
 
     async def __aenter__(self):
@@ -437,7 +436,7 @@ class AbstractLoader(ABC):
             # Both 'markdown' and 'text' use semantic splitter
             return self.text_splitter
 
-    def is_valid_path(self, path: Union[str, Path]) -> bool:
+    def is_valid_path(self, path: str | Path) -> bool:
         """Check if a path is valid."""
         if self.extensions == '*':
             return True
@@ -462,7 +461,7 @@ class AbstractLoader(ABC):
         return True
 
     @abstractmethod
-    async def _load(self, source: Union[str, PurePath], **kwargs) -> List[Document]:
+    async def _load(self, source: str | PurePath, **kwargs) -> list[Document]:
         """Load a single data/url/file from a source and return it as a Parrot Document.
 
         Args:
@@ -471,14 +470,13 @@ class AbstractLoader(ABC):
         Returns:
             List[Document]: A list of Parrot Documents.
         """
-        pass
 
     async def from_path(
         self,
-        path: Union[str, Path],
+        path: str | Path,
         recursive: bool = False,
         **kwargs
-    ) -> List[asyncio.Task]:
+    ) -> list[asyncio.Task]:
         """
         Load data from a path.
         """
@@ -491,11 +489,10 @@ class AbstractLoader(ABC):
                 # Use glob to find all files with the specified extension
                 for item in glob_method(f'*{ext}'):
                     # Check if the item is a directory and if it should be skipped
-                    if set(item.parts).isdisjoint(self.skip_directories):
-                        if self.is_valid_path(item):
-                            tasks.append(
-                                asyncio.create_task(self._load(item, **kwargs))
-                            )
+                    if set(item.parts).isdisjoint(self.skip_directories) and self.is_valid_path(item):
+                        tasks.append(
+                            asyncio.create_task(self._load(item, **kwargs))
+                        )
         elif path.is_file():
             if self.is_valid_path(path):
                 tasks.append(
@@ -509,9 +506,9 @@ class AbstractLoader(ABC):
 
     async def from_url(
         self,
-        url: Union[str, List[str]],
+        url: str | list[str],
         **kwargs
-    ) -> List[asyncio.Task]:
+    ) -> list[asyncio.Task]:
         """
         Load data from a URL.
         """
@@ -528,7 +525,7 @@ class AbstractLoader(ABC):
         self,
         source: pd.DataFrame,
         **kwargs
-    ) -> List[asyncio.Task]:
+    ) -> list[asyncio.Task]:
         """
         Load data from a pandas DataFrame.
         """
@@ -547,7 +544,7 @@ class AbstractLoader(ABC):
             self.logger.warning("Pandas not installed, cannot load from DataFrame")
         return tasks
 
-    def chunkify(self, lst: List[T], n: int = 50) -> Generator[List[T], None, None]:
+    def chunkify(self, lst: list[T], n: int = 50) -> Generator[list[T], None, None]:
         """Split a List of objects into chunks of size n.
 
         Args:
@@ -581,7 +578,7 @@ class AbstractLoader(ABC):
             async with self.semaphore:
                 try:
                     return await task
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     self.logger.error(f"Task error: {e}")
                     return e
 
@@ -612,14 +609,14 @@ class AbstractLoader(ABC):
 
     async def load(
         self,
-        source: Optional[Any] = None,
+        source: Any | None = None,
         split_documents: bool = True,
         late_chunking: bool = False,
         vector_store=None,
         store_full_document: bool = True,
-        auto_detect_content_type: bool = None,
+        auto_detect_content_type: bool | None = None,
         **kwargs
-    ) -> List[Document]:
+    ) -> list[Document]:
         """
         Load data from a source and return it as a list of Documents.
 
@@ -654,9 +651,7 @@ class AbstractLoader(ABC):
 
         if isinstance(source, (str, Path, PosixPath, PurePath)):
             # Check if it's a URL
-            if isinstance(source, str) and (
-                source.startswith('http://') or source.startswith('https://')
-            ):
+            if isinstance(source, str) and source.startswith(('http://', 'https://')):
                 tasks = await self.from_url(source, **kwargs)
             else:
                 # Assume it's a file path or directory
@@ -668,9 +663,8 @@ class AbstractLoader(ABC):
         elif isinstance(source, list):
             # Check if it's a list of URLs or paths
             if all(
-                isinstance(item, str) and (
-                    item.startswith('http://') or item.startswith('https://')
-                ) for item in source
+                isinstance(item, str) and item.startswith(('http://', 'https://'))
+                for item in source
             ):
                 tasks = await self.from_url(source, **kwargs)
             else:
@@ -739,7 +733,7 @@ class AbstractLoader(ABC):
          "category", "document_meta"}
     )
 
-    def _derive_title(self, path: Union[str, PurePath]) -> str:
+    def _derive_title(self, path: str | PurePath) -> str:
         """Derive a human-readable title from a path or URL.
 
         Rules (in order):
@@ -761,7 +755,7 @@ class AbstractLoader(ABC):
 
         if isinstance(path, str):
             # URL detection
-            if path.startswith("http://") or path.startswith("https://"):
+            if path.startswith(("http://", "https://")):
                 parsed = urlparse(path)
                 segments = [
                     seg for seg in parsed.path.split("/") if seg
@@ -786,7 +780,7 @@ class AbstractLoader(ABC):
                     stem = Path(path).stem
                     if stem:
                         return stem.replace("_", " ").replace("-", " ").title()
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001, S110
                     pass
 
         return str(path)
@@ -812,7 +806,7 @@ class AbstractLoader(ABC):
             "filename": "",
             "type": self.doctype,
             "source_type": self._source_type,
-            "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+            "created_at": datetime.now(tz=UTC).strftime("%Y-%m-%d, %H:%M:%S"),
             "category": self.category,
             "document_meta": {},
         }
@@ -869,13 +863,13 @@ class AbstractLoader(ABC):
 
     def create_metadata(
         self,
-        path: Union[str, PurePath],
+        path: str | PurePath,
         doctype: str = 'document',
         source_type: str = 'source',
-        doc_metadata: Optional[dict] = None,
+        doc_metadata: dict | None = None,
         *,
-        language: Optional[str] = None,
-        title: Optional[str] = None,
+        language: str | None = None,
+        title: str | None = None,
         **kwargs
     ) -> dict:
         """Build a canonical ``Document.metadata`` dict.
@@ -963,7 +957,7 @@ class AbstractLoader(ABC):
             "filename": filename,
             "type": resolved_doctype,
             "source_type": resolved_source_type,
-            "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+            "created_at": datetime.now(tz=UTC).strftime("%Y-%m-%d, %H:%M:%S"),
             "category": resolved_category,
             "document_meta": document_meta,
             # Extras from legacy doc_metadata — top level
@@ -976,8 +970,8 @@ class AbstractLoader(ABC):
     def create_document(
         self,
         content: Any,
-        path: Union[str, PurePath],
-        metadata: Optional[dict] = None,
+        path: str | PurePath,
+        metadata: dict | None = None,
         **kwargs
     ) -> Document:
         """Create a Parrot Document from content.
@@ -1045,7 +1039,7 @@ class AbstractLoader(ABC):
                 temperature=0.1,
             )
             return summary.output
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error(
                 f'ERROR on summary_from_text: {e}'
             )
@@ -1057,11 +1051,7 @@ class AbstractLoader(ABC):
     ):
         if not self._summary_model:
             if self._use_summary_pipeline:
-                from transformers import (
-                    AutoModelForSeq2SeqLM,
-                    AutoTokenizer,
-                    pipeline
-                )
+                from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
                 _, pipe_dev, torch_dtype = self._get_device()
                 summarize_model = AutoModelForSeq2SeqLM.from_pretrained(
                     model_name,
@@ -1090,7 +1080,7 @@ class AbstractLoader(ABC):
     def translate_text(
         self,
         text: str,
-        source_lang: str = None,
+        source_lang: str | None = None,
         target_lang: str = "es"
     ) -> str:
         """
@@ -1127,7 +1117,7 @@ class AbstractLoader(ABC):
                     max_tokens=1000
                 )
                 return translation.output if hasattr(translation, 'output') else str(translation)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error(f'ERROR on translate_text: {e}')
             return ""
 
@@ -1135,7 +1125,7 @@ class AbstractLoader(ABC):
         self,
         source_lang: str = "en",
         target_lang: str = "es",
-        model_name: str = None
+        model_name: str | None = None
     ):
         """
         Get or create a translation model.
@@ -1157,11 +1147,7 @@ class AbstractLoader(ABC):
 
         if cache_key not in self._translation_models:
             if self._use_translation_pipeline:
-                from transformers import (
-                    AutoModelForSeq2SeqLM,
-                    AutoTokenizer,
-                    pipeline
-                )
+                from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
                 # Select appropriate model based on language pair if not specified
                 if model_name is None:
                     if source_lang == "en" and target_lang in ["es", "fr", "de", "it", "pt", "ru"]:
@@ -1181,7 +1167,7 @@ class AbstractLoader(ABC):
                         model=translate_model,
                         tokenizer=translate_tokenizer
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     self.logger.error(
                         f"Error loading translation model {model_name}: {e}"
                     )
@@ -1245,12 +1231,12 @@ class AbstractLoader(ABC):
 
     async def chunk_documents(
         self,
-        documents: List[Document],
+        documents: list[Document],
         use_late_chunking: bool = False,
         vector_store=None,
         store_full_document: bool = True,
-        auto_detect_content_type: bool = None
-    ) -> List[Document]:
+        auto_detect_content_type: bool | None = None
+    ) -> list[Document]:
         """
         Chunk documents using the configured text splitter or late chunking strategy.
 
@@ -1275,9 +1261,9 @@ class AbstractLoader(ABC):
 
     def _chunk_with_text_splitter(
         self,
-        documents: List[Document],
-        auto_detect_content_type: bool = None
-    ) -> List[Document]:
+        documents: list[Document],
+        auto_detect_content_type: bool | None = None
+    ) -> list[Document]:
         """
         Chunk documents using regular text splitters.
 
@@ -1289,7 +1275,7 @@ class AbstractLoader(ABC):
             List of chunked documents
         """
         chunked_docs = []
-        detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type  # noqa
+        detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type
 
         # Content kinds that are ATOMIC-by-design — loaders emit them as
         # already-final units (e.g. a single HTML tag, a named selector hit,
@@ -1373,7 +1359,7 @@ class AbstractLoader(ABC):
                     )
                     chunked_docs.append(chunked_doc)
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.error(f"Error chunking document: {e}")
                 # Fall back to adding the original document
                 chunked_docs.append(doc)
@@ -1383,13 +1369,13 @@ class AbstractLoader(ABC):
 
     async def _chunk_with_late_chunking(
         self,
-        documents: List[Document],
+        documents: list[Document],
         vector_store=None,
         store_full_document: bool = True,
         parent_chunk_threshold_tokens: int = 16000,
         parent_chunk_size_tokens: int = 4000,
         parent_chunk_overlap_tokens: int = 200,
-    ) -> List[Document]:
+    ) -> list[Document]:
         """Chunk documents using the late chunking strategy.
 
         Routing logic (FEAT-128):
@@ -1515,7 +1501,7 @@ class AbstractLoader(ABC):
                             )
                         )
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.error(f"Error in late chunking for document {doc_idx}: {e}")
                 # Fall back to adding the original document
                 chunked_docs.append(document)
