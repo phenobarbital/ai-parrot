@@ -32,7 +32,7 @@
       "feature_id": "FEAT-388",
       "feature": "devloop-cli-homologation",
       "spec": "sdd/specs/devloop-cli-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Creates new files only (intake.py + tests); no overlap with TASK-1968.",
       "assigned_to": null,
       "started_at": "2026-07-28T17:03:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1969-feature-intake.md"
+      "completed_at": "2026-07-28T18:07:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1969-feature-intake.md"
     },
     {
       "id": "TASK-1970",

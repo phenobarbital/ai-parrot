@@ -203,10 +203,30 @@ def test_default_llm_key(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-28
+**Notes**: Implemented `FeatureDraft` + `FeatureIntake` in
+`parrot/cli/devloop/intake.py` exactly per the public interface in spec
+§2. Heavy imports (`parrot.conf`, `parrot.clients.factory`,
+`parrot.flows.dev_loop.models`) are deferred into method bodies, with a
+`TYPE_CHECKING`-only import for the `DevAgentSpec`/`FeatureBrief`/
+`JudgePanelConfig` type hints so the module stays light at import time
+(module-level import of `parrot.flows.dev_loop.models` would otherwise
+transitively run `flows/dev_loop/__init__.py`'s heavy eager imports).
+Verified the real `AnthropicClient.invoke()` swallows a failed
+structured-output parse into a raw-string `.output` rather than raising
+— `_invoke_draft`/`_retry_after_failure` therefore treat BOTH a raised
+`pydantic.ValidationError` from `invoke()` AND a non-`FeatureDraft`
+`.output` as a validation failure eligible for the one allowed retry,
+covering both the mocked test's raise-then-succeed pattern and the real
+client's swallow-into-string behavior. Slug sanitation is a small
+self-contained regex helper (no new dependency) per the task's
+constraint. `pytest packages/ai-parrot/tests/cli/devloop/test_intake.py
+-v` → 11/11 passed; `pytest packages/ai-parrot/tests/cli/ -q` → 110
+passed (no regressions). `ruff check --fix` applied to both new files
+(modern `list`/`X | None` style — no verbatim-move constraint here,
+unlike TASK-1968's catalog.py); the one remaining `DTZ011` (`date.
+today()`) was left as-is, matching the unsuppressed convention already
+used throughout `bots/jira_specialist.py`.
 
 **Deviations from spec**: none
