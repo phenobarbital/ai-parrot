@@ -193,10 +193,59 @@ async def test_cancel_dispatches_nothing(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-28
+**Notes**: Kind picker (`bug/enhancement/feature`, defaults to `bug` on
+EOF/empty) implemented as a new `_prompt_kind()`; `bug`/`enhancement`
+pre-fill `WorkBrief.kind` via `initial={"kind": kind}` (skips only that
+field's own prompt — every other field/prompt/order byte-identical,
+verified by the still-passing pre-existing `test_devloop_feature_brief.py`
+suite) and append an optional dev-agent pool step; `feature` routes to
+a new `_collect_feature_brief()` (draft → Rich panel →
+accept/edit/redo/cancel loop, never Jira/log-source prompts) with
+optional pool + judge-panel steps after write. `/feature` registered in
+the handlers dict. `--dev-agent backend[:model[:count]]` (repeatable,
+colon-split max 2) and `--text` (+ `--yes`) added to `run`; flags merge
+into whichever brief is built, `--brief` file wins when it already sets
+`dev_agents`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Deliberately did **not** touch `wizard.py` (not in this task's file
+list, despite the spec's Implementation Notes mentioning
+"or extend WizardFieldOverride minimally" as an option) — instead wrote
+bespoke, catalog-filtered numbered pickers (`_prompt_backend_choice` +
+`_collect_dev_agent_pool`/`_collect_judge_panel`) directly in
+`console.py`. This also let me defensively handle a real, pre-existing
+gap I found while verifying the Codebase Contract: `catalog.
+JUDGE_BACKENDS` includes `google_coding` (which `code_review.py`'s
+`_build_judge` now supports) but `JudgeSpec._agent_must_have_review_
+profile`'s hardcoded validator tuple in `models.py` does **not** — so
+picking `google_coding` as a judge raises `pydantic.ValidationError`.
+Since `models.py` is explicitly out of scope ("zero model changes"), I
+catch that `ValidationError` in `_collect_judge_panel`/
+`_collect_dev_agent_pool` and let the user retry the row instead of
+crashing the wizard. **Flagging this for a follow-up task**: either add
+`google_coding` to that validator's `supported` tuple, or drop it from
+`catalog.JUDGE_BACKENDS` until it does.
 
-**Deviations from spec**: none
+Also found and fixed a regression during implementation: `ruff check
+--fix` initially rewrote type-hint style (`Optional`/`Dict`/`List` →
+modern `X | None`/`dict`/`list`, plus stripped `# noqa: PLC0415`
+comments and `asyncio.TimeoutError` → `TimeoutError`) across pre-existing
+methods I never touched. Manually reverted all of those to their exact
+original form (only `_prompt_kind`, `_collect_workbrief_wizard`,
+`_collect_feature_brief`, and the other genuinely-new/rewritten methods
+keep modern style) — confirmed via `git diff` that the final diff is
+scoped to only the intended additions. Separately, `ruff --fix` also
+briefly broke `test_console_e2e_fake_flow` (an existing integration test
+patches `_collect_work_brief` with a narrow single-arg fake) by always
+passing the 3 new kwargs from `_dispatch_initial`; fixed by only passing
+them when at least one is non-default, keeping the old call shape
+byte-identical otherwise.
+
+`pytest packages/ai-parrot/tests/cli/ -v` → 123 passed (13 new +
+110 pre-existing, zero regressions).
+
+**Deviations from spec**: none in behavior. Implementation detail only:
+catalog-filtered backend pickers are bespoke console.py helpers rather
+than a `WizardFieldOverride` extension, since `wizard.py` was not in
+this task's file list.

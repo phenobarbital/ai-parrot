@@ -122,10 +122,49 @@ async def test_intake_to_dispatch_e2e(tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-28
+**Notes**: `test_intake_e2e.py` exercises the full chain with NO mocking
+of the document-rendering logic itself: a fake `AbstractClient`
+(`FakeIntakeClient`, patched at `parrot.clients.factory.LLMFactory.
+create`) supplies the canned `FeatureDraft`, but `FeatureIntake.
+write_document()` runs for real against a `monkeypatch.chdir(tmp_path)`
+-scoped `sdd/proposals/` (its default is a bare relative `Path("sdd/
+proposals")`, so chdir is the correct/least-invasive way to sandbox it
+without touching `intake.py`'s public signature). The test drives the
+interactive path start-to-finish — kind picker ("3") → multiline free
+text → accept → skip pool/judge steps → `dc._dispatch_run(brief)` — and
+asserts on every link: the LLM prompt actually contains the user's free
+text, the document exists on disk with FEAT-145 frontmatter and the
+drafted content, `FeatureBrief.document_path` points at that exact file,
+and a fake `StubRunner.run()` received that exact `FeatureBrief`
+instance.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Docs (`documentation/parrot-devloop-cli.md`) gained: a "The kind picker"
+section, a full "Feature-mode intake" walkthrough (draft/accept/edit/
+redo/cancel), a "Dev-agent pool & judge panel" section (interactive +
+`--dev-agent` non-interactive), a `FeatureBrief (YAML)` example
+alongside the existing `WorkBrief`/`RevisionBrief` ones, a
+"Configuration reference" table for `DEV_LOOP_DEVELOPMENT_AGENT` /
+`DEV_LOOP_INTAKE_LLM` / concurrency+TTL keys / per-backend model env
+vars, an expanded backend-aware preflight table (with a correction
+mid-write: CLI-transport backends other than claude-code still
+genuinely gate preflight on their own binary — only API-transport
+backends are unconditionally soft — my first draft wording implied
+otherwise), `/feature` in the slash-command table, and updated
+Quick-start/Troubleshooting entries. `examples/dev_loop/` docs
+deliberately untouched (out of scope).
 
-**Deviations from spec**: none
+`pytest packages/ai-parrot/tests/cli/ -v` → 130 passed (1 new E2E + 129
+pre-existing, zero regressions). `pytest packages/ai-parrot/tests/flows/
+dev_loop/ -q` → 862 passed, 2 failed, 6 skipped — the 2 failures
+(`test_e2e_run_with_blocking_gates`, `test_models_module_is_pure`) are
+the exact same pre-existing/order-dependent baseline observed at the
+start of this feature (TASK-1968's completion note), unchanged by
+FEAT-388. Evidence saved to `artifacts/logs/feat-388-task-1972-
+evidence.txt` (local only — `artifacts/` is gitignored per project
+convention, not committed).
+
+This closes FEAT-388 — all 5 tasks (TASK-1968..1972) done.
+
+**Deviations from spec**: none.

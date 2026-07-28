@@ -153,10 +153,27 @@ def test_backends_have_unique_ids():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-28
+**Notes**: The gating Google/agy dispatcher WIP had already merged to `dev`
+(backend id landed as `google_coding`, not `agy`) by the time this task
+started, so the Codebase Contract's line numbers (37/43/47/51/83/183/188/
+201/243/272) were re-verified against `examples/dev_loop/llm_catalog.py`
+and matched exactly. Moved the catalog verbatim to
+`parrot/flows/dev_loop/catalog.py` (only the module docstring gained a
+paragraph noting the new home / FEAT-388), rewrote the source file as a
+pure re-export shim, and added `test_catalog.py` (shim-identity test +
+the two given fixtures + two extra sanity tests). `catalog` was NOT added
+to `flows/dev_loop/__init__.py`'s eager exports, per the task's key
+constraint. `ruff check --fix` was applied only to the new shim (import
+sort + `__all__` sort — no semantic change); `catalog.py` was left
+byte-verbatim (same pre-existing `Optional`/`Tuple`/`Dict` typing style as
+sibling module `agent_builder.py`, which also fails a bare `ruff check`
+under this repo's un-configured ruff defaults — confirmed this is ambient
+codebase style, not a regression from the verbatim move).
+`pytest packages/ai-parrot/tests/flows/dev_loop/ -q` → 862 passed, 2
+failed, 6 skipped; the 2 failures (`test_e2e_run_with_blocking_gates`,
+`test_models_module_is_pure`) are pre-existing/order-dependent per prior
+session notes, unrelated to this change.
 
 **Deviations from spec**: none
