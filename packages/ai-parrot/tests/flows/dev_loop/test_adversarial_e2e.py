@@ -219,6 +219,8 @@ async def test_e2e_escalation_opens_gate_and_pr_note(codex_dispatcher, ctx, monk
             break
         await asyncio.sleep(0)
     else:
+        if task.done() and task.exception():
+            raise task.exception()
         pytest.fail("review_escalation gate never opened")
 
     pending_gates = [g for g in session_host.state.gates.values() if g.kind == "review_escalation"]

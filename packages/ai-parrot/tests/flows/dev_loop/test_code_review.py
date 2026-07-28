@@ -357,7 +357,6 @@ class TestFullQAFlowIntegration:
         underlying = MagicMock()
         underlying.dispatch = AsyncMock(
             side_effect=[
-                QAReport(passed=True, criterion_results=[], lint_passed=True),
                 CodeReviewVerdict(
                     passed=True,
                     findings=[
@@ -373,17 +372,14 @@ class TestFullQAFlowIntegration:
         report = await node.execute(qa_ctx)
         assert report.passed is True
         assert report.code_review_findings == ["fixed null guard"]
-        assert underlying.dispatch.await_count == 3
+        assert underlying.dispatch.await_count == 2
 
     @pytest.mark.asyncio
     async def test_codex_review_fix_rerun(self, qa_ctx):
         """Full QA -> Codex review -> fix -> rerun cycle (separate dispatcher)."""
         qa_dispatcher = MagicMock()
         qa_dispatcher.dispatch = AsyncMock(
-            side_effect=[
-                QAReport(passed=True, criterion_results=[], lint_passed=True),
-                QAReport(passed=True, criterion_results=[], lint_passed=True),
-            ]
+            return_value=QAReport(passed=True, criterion_results=[], lint_passed=True)
         )
         codex_dispatcher = MagicMock()
         codex_dispatcher.dispatch = AsyncMock(
@@ -395,7 +391,7 @@ class TestFullQAFlowIntegration:
         node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
         report = await node.execute(qa_ctx)
         assert report.passed is True
-        assert qa_dispatcher.dispatch.await_count == 2
+        assert qa_dispatcher.dispatch.await_count == 1
         codex_dispatcher.dispatch.assert_awaited_once()
 
     @pytest.mark.asyncio
