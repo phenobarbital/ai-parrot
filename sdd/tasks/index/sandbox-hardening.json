@@ -172,7 +172,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +185,8 @@
       "parallelism_notes": "Docs describe the code as merged (Modules 1-7); written last.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1960-docs-and-windows-degradation.md"
+      "completed_at": "2026-07-28T02:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1960-docs-and-windows-degradation.md"
     }
   ]
 }
