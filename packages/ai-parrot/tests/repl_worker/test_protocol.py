@@ -106,9 +106,14 @@ class TestValueCodec:
         pd.testing.assert_frame_equal(decoded, df)
 
     def test_worker_config_defaults_match_spec(self):
-        """Spec §2 Data Models — defaults must match exactly."""
+        """Spec §2 Data Models — defaults must match exactly.
+
+        `rlimit_as_bytes` was empirically calibrated by TASK-1946 (was the
+        spec's illustrative 4 GiB placeholder) — see
+        artifacts/logs/feat-380-rlimit-as-calibration.md before changing.
+        """
         config = WorkerConfig()
-        assert config.rlimit_as_bytes == 4 * 1024**3
+        assert config.rlimit_as_bytes == 12 * 1024**3
         assert config.rlimit_cpu_seconds == 300
         assert config.rlimit_nofile == 256
         assert config.deadline_ms == 60_000

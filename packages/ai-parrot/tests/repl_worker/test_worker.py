@@ -131,6 +131,14 @@ def _spawn_worker(config: WorkerConfig, output_dir: str) -> SpawnedWorker:
     return SpawnedWorker(config, output_dir)
 
 
+def test_rlimit_as_default_is_calibrated():
+    """Guard (TASK-1946/AC15): the shipped default matches the calibrated,
+    documented value. See artifacts/logs/feat-380-rlimit-as-calibration.md
+    before changing — this is not "set by eye", it's measured.
+    """
+    assert WorkerConfig().rlimit_as_bytes == 12 * 1024**3
+
+
 class TestApplyRlimits:
     @posix_only
     def test_worker_rlimits_applied(self, worker_config):

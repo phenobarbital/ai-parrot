@@ -223,7 +223,13 @@ class NamespaceLossError(BaseModel):
 class WorkerConfig(BaseModel):
     """Deployment-tunable limits (all with working defaults)."""
 
-    rlimit_as_bytes: int = 4 * 1024**3  # ~4 GiB; calibration task pending (Module 8)
+    # ~12 GiB — empirically calibrated (TASK-1946, Module 8): observed peak
+    # VmPeak 5522.8 MB across a full session (bootstrap + 500 MB DataFrame +
+    # merge/groupby + plot) x ~2 margin, rounded. See
+    # artifacts/logs/feat-380-rlimit-as-calibration.md for the full
+    # measurements/method — re-run scripts/sdd/calibrate_rlimit_as.py after
+    # any pandas/numpy/matplotlib/pyarrow version bump.
+    rlimit_as_bytes: int = 12 * 1024**3
     rlimit_cpu_seconds: int = 300
     rlimit_nofile: int = 256
     deadline_ms: int = 60_000
