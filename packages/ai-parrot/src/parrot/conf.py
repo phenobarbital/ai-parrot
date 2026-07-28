@@ -939,7 +939,7 @@ DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
 # Override per-project via ``JIRA_WORKFLOW_PATH_<PROJECT>`` env var.
 DEV_LOOP_JIRA_WORKFLOW_PATH: str = config.get(
     "DEV_LOOP_JIRA_WORKFLOW_PATH",
-    fallback="Backlog > To Do > Open > In Progress > In Review > Resolved > Closed",
+    fallback="Backlog > Open > In Progress > Resolved > Closed",
 )
 
 # Jira transition labels the dev-loop applies at each hand-off point. Every
