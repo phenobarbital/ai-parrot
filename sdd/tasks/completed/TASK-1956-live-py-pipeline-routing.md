@@ -304,10 +304,61 @@ class TestLiveRouting:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- **Routing target used: `AbstractTool.execute()`, NOT
+  `ToolManager.execute_tool()`** — explicitly required by this task's own
+  "Pattern to Follow" (`result = await tool.execute(**tool_args)`), and
+  the only choice that satisfies the hard constraint "preserve
+  `voice_text`/`display_data`, reading them from the ORIGINAL `ToolResult`
+  fields." Verified: `ToolManager.execute_tool()` (TASK-1952/1953, out of
+  scope here) only ever returns the bare `.result` payload on the success
+  path (post-compression) — it never exposes `voice_text`/`display_data`
+  to its caller. Routing through it would have made those fields
+  permanently unreachable from `live.py`, silently breaking the voice UX
+  this task is explicitly gated on protecting
+  (`test_live_voice_fields_never_compressed`). Documented this
+  architectural fact directly in the `live.py` comment at the call site.
+  **Consequence, flagged rather than silently worked around**: the live
+  route restores permissions (Layer 2), the credential broker, secret/PII
+  redaction, and lifecycle events (FEAT-176) — matching G1's "both
+  execution routes" language loosely — but does **not** yet apply the
+  compression stage, since that only exists inside
+  `ToolManager.execute_tool()`. Wiring compression onto this path would
+  require `manager.py` to expose the original `ToolResult` (or at least
+  `voice_text`/`display_data`) from `execute_tool()`'s return contract —
+  out of this task's file scope (`manager.py` is owned by TASK-1952/1953).
+  A natural follow-up.
+- Replaced `hasattr(tool, '_execute')` / `tool._execute(**tool_args)` with
+  `isinstance(tool, AbstractTool)` / `await tool.execute(**tool_args)`.
+  The existing 416-437 block needed NO changes: it already generically
+  maps any non-`"success"` `ToolResult.status` (including the newly
+  reachable `"forbidden"`) to `{"error": result.error or "Unknown error"}`
+  via its pre-existing `else` branch. The plain-callable branch and the
+  trusted-context injection loop are untouched.
+- 8 new tests in `test_live_tool_routing.py` (built directly against
+  `LiveToolAdapter`, no genai/network setup needed): voice fields survive
+  byte-identical even though `result.result` conceptually could be
+  compressed elsewhere; a spy on `AbstractTool.execute` proves the new
+  call path; forbidden tools never reach `_execute()`; an internal
+  exception maps to `{"error": ...}` (via `AbstractTool.execute()`'s own
+  catch-all, never propagating); plain-callable unchanged; return
+  contract is a 2-tuple; grep-style proof no `tool._execute(` call
+  remains (a prose comment mentioning the OLD call is fine — the test
+  checks for the call expression, not the substring).
+- **Note**: the "tool not found" branch (line ~392) returns a bare
+  `FunctionResponse`, not the `(response, display_data)` tuple every
+  other branch returns — a pre-existing inconsistency, unrelated to this
+  task's scope, left untouched and documented in the corresponding test.
+- Verification: new suite 8/8 green; full `tests/clients/` 149 passed, 1
+  skipped (no regressions); `ruff check live.py` clean;
+  `grep -n "_execute(" live.py` returns only the explanatory comment, no
+  call expression.
+
+**Deviations from spec**: compression is not yet applied on the live
+route — see "Consequence, flagged rather than silently worked around"
+above. Everything else (permission/broker/redaction/event restoration,
+voice/display preservation, forbidden handling, return contract) is
+implemented exactly as specified.
