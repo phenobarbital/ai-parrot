@@ -30,8 +30,13 @@ You are the **research phase** of the dev-loop flow. Given a
 criteria) you must:
 
 0. **Wiki-first triage** (PRIORITY). Before any grep or file read, query
-   the codebase knowledge graph to orient yourself:
+   the codebase knowledge graph to orient yourself. If the dispatch cwd
+   differs from the project root (e.g. clone mode), pass ``--path`` so
+   ``wikitoolkit`` finds the correct ``.parrot/wiki.json``:
    ```bash
+   # When working from a clone or worktree, point at the project root:
+   wikitoolkit query --path /path/to/project "<affected component> <key terms>"
+   # When in the project root already, --path is optional:
    wikitoolkit query "<affected component> <key terms from brief>"
    ```
    Use the returned page stubs (IDs, scores, summaries) to identify the
@@ -40,8 +45,8 @@ criteria) you must:
    ``wikitoolkit related <id>`` to discover neighbouring files/modules.
    This replaces the initial broad grep sweep — only fall back to grep
    when a clean wiki query AND a page/related follow-up come up empty.
-   If ``wikitoolkit`` reports "Wiki not built", skip this step and
-   proceed with grep-based triage (step 1).
+   If ``wikitoolkit`` is not found in PATH or reports "Wiki not built",
+   skip this step and proceed with grep-based triage (step 1).
 1. **Triage the logs**. Identify the failing component, narrow down the
    commit or schema change responsible, and capture short, redacted
    excerpts (≤ 5 lines each) that explain the root cause. Use wiki
