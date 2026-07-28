@@ -192,3 +192,42 @@ async def test_custom_codereview_dispatcher_used(ctx):
     mock_reviewer.review.assert_awaited_once()
     # Only the deterministic pass goes through the plain dispatcher.
     dispatcher.dispatch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_review_brief_carries_deterministic_qa_results(ctx):
+    """The review brief embeds the deterministic gate's recorded results.
+
+    Read-only reviewers (codex adversarial, FEAT-375) cannot execute
+    anything that writes — pytest dies on tempdir creation in a read-only
+    sandbox — so the brief must carry the already-executed criterion
+    results as the evidence to judge from.
+    """
+    from parrot.flows.dev_loop.models import CriterionResult
+
+    qa = QAReport(
+        passed=True,
+        criterion_results=[
+            CriterionResult(
+                name="run",
+                kind="flowtask",
+                exit_code=0,
+                duration_seconds=0.1,
+                passed=True,
+            )
+        ],
+        lint_passed=True,
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=qa)
+    reviewer = MagicMock()
+    reviewer.review = AsyncMock(
+        return_value=CodeReviewVerdict(passed=True, findings=[])
+    )
+    node = QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer)
+    await node.execute(ctx)
+    review_brief = reviewer.review.await_args.kwargs["brief"]
+    assert review_brief.qa_criterion_results == [
+        {"name": "run", "kind": "flowtask", "exit_code": 0, "passed": True}
+    ]
+    assert review_brief.qa_lint_passed is True

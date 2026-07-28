@@ -94,6 +94,20 @@ class _CodeReviewBrief(BaseModel):
     worktree_path: str
     summary: str = ""
     jira_issue_key: str = ""
+    qa_criterion_results: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Deterministic QA gate results, one entry per executed "
+            "acceptance criterion (name/kind/exit_code/passed). Already "
+            "executed by the sdd-qa gate — reviewers must judge from these "
+            "recorded results and NEVER re-run the criteria themselves "
+            "(read-only reviewers cannot execute anything that writes)."
+        ),
+    )
+    qa_lint_passed: Optional[bool] = Field(
+        default=None,
+        description="Deterministic QA gate lint outcome (None if unknown).",
+    )
 
 
 @register_dev_loop_node("dev_loop.qa")
@@ -196,7 +210,7 @@ class QANode(DevLoopNode):
         # the fixes to the worktree branch (FEAT-270); when it does, the
         # deterministic pass re-runs to confirm the fix didn't regress.
         cr_passed, cr_findings, files_modified = await self._run_code_review(
-            shared, research, brief
+            shared, research, brief, qa_report=report
         )
         cr_skipped = any(
             f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
@@ -481,6 +495,8 @@ class QANode(DevLoopNode):
         shared: Dict[str, Any],
         research: ResearchOutput,
         brief: BugBrief,
+        *,
+        qa_report: Optional[QAReport] = None,
     ) -> tuple[bool, List[str], List[str]]:
         """Delegate to the configured code-review dispatcher.
 
@@ -496,13 +512,31 @@ class QANode(DevLoopNode):
         degraded) so :meth:`_collect_triage_findings` can read the
         structured findings for triage without widening this method's
         public 3-tuple contract (existing callers/tests assert on it).
+
+        Args:
+            qa_report: The deterministic gate's report, folded into the
+                brief as ``qa_criterion_results`` so reviewers judge from
+                the recorded exit codes instead of re-running criteria —
+                a read-only reviewer (codex adversarial) that attempts to
+                run pytest dies on tempdir creation and retry-spirals.
         """
         review_cwd = research.worktree_path
+        qa_results: List[Dict[str, Any]] = [
+            {
+                "name": r.name,
+                "kind": r.kind,
+                "exit_code": r.exit_code,
+                "passed": r.passed,
+            }
+            for r in (qa_report.criterion_results if qa_report else [])
+        ]
         review_brief = _CodeReviewBrief(
             acceptance_criteria=list(brief.acceptance_criteria),
             worktree_path=review_cwd,
             summary=brief.summary,
             jira_issue_key=research.jira_issue_key,
+            qa_criterion_results=qa_results,
+            qa_lint_passed=qa_report.lint_passed if qa_report else None,
         )
         try:
             verdict = await self._codereview_dispatcher.review(

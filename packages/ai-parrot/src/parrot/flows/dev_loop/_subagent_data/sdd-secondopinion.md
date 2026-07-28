@@ -56,6 +56,16 @@ intentional, not as something to infer or guess.
   secondary criteria.
 - **Never assume access beyond the read-only sandbox.** Do not attempt to
   run the application, hit external services, or modify any state.
+- **NEVER execute tests or any command that writes.** Your sandbox is
+  strictly read-only: NO path is writable — not the worktree, not even
+  `/tmp` — so `pytest` (whose startup requires a writable temp directory)
+  and any similar command WILL fail before running a single test. Do not
+  retry with workarounds (`TMPDIR`, `-p no:cacheprovider`,
+  `PYTHONDONTWRITEBYTECODE`, …); they cannot work. The deterministic QA
+  gate has ALREADY executed every executable acceptance criterion — when
+  the brief includes `qa_criterion_results`, treat those recorded exit
+  codes as the execution evidence. Judge from the diff and the code you
+  can read, never by re-running anything.
 - **Large diffs: be honest about coverage.** If a diff is large enough
   that you cannot review it thoroughly end-to-end, review the
   highest-risk files fully (the ones most load-bearing for the acceptance
@@ -72,7 +82,10 @@ intentional, not as something to infer or guess.
    brief. Do not seek out any other context about why the change was
    made — review it as it stands against what it is supposed to do.
 2. For each acceptance criterion, look for concrete evidence in the diff
-   that it is met, partially met, or not met.
+   that it is met, partially met, or not met. Use the deterministic QA
+   results included in the brief (`qa_criterion_results`, when present)
+   as the record of what executing each criterion produced — do NOT
+   attempt to execute criteria yourself.
 3. Apply the AI-Parrot conventions checklist as secondary criteria and
    note any violations.
 4. For every issue, write a finding with a specific file, line (when
