@@ -486,16 +486,17 @@ def _build_jira_toolkit() -> JiraToolkit:
     Declares the project's **workflow path** so ``jira_transition_to`` can
     walk multi-stage custom workflows. Jira's API only exposes the
     transitions available from an issue's *current* status, so a single hop
-    cannot cross a chain like ``Backlog → Open → To Do → In Progress →
-    Resolved`` — without a declared path the dev-loop's resolve/deploy
+    cannot cross a chain like ``Backlog → Open → In Progress → Resolved →
+    Closed`` — without a declared path the dev-loop's resolve/deploy
     transition silently falls back to one direct hop and fails. The path is
     read from ``JIRA_WORKFLOW_PATH_<PROJECT>`` (e.g. ``JIRA_WORKFLOW_PATH_NAV``)
-    and defaults to the NAV chain. Separators: ``>``, ``->`` or ``→``.
+    and defaults to ``DEV_LOOP_JIRA_WORKFLOW_PATH`` from ``conf``.
+    Separators: ``>``, ``->`` or ``→``.
     """
     project = conf.config.get("JIRA_PROJECT") or "NAV"
     workflow_path = conf.config.get(
         f"JIRA_WORKFLOW_PATH_{project.upper()}",
-        fallback="Backlog > Open > To Do > In Progress > Resolved",
+        fallback=conf.DEV_LOOP_JIRA_WORKFLOW_PATH,
     )
     return JiraToolkit(
         server_url=conf.config.get("JIRA_INSTANCE"),
