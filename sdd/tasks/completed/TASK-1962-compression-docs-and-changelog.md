@@ -222,10 +222,79 @@ def test_doc_toml_example_validates():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- **Docs layout confirmed before creating files** (per the task's own
+  instruction): `docs/tools.md` is a single flat reference file (NOT a
+  directory) — but `docs/toolkits/`, `docs/events/`, and `docs/executors/`
+  are all existing precedents for a `docs/<topic>/<feature>.md` deep-dive
+  page alongside a flat top-level index. Created `docs/tools/compression.md`
+  (a NEW `docs/tools/` directory, consistent with that established
+  pattern) rather than assuming the task's proposed path blindly.
+  `CHANGELOG.md` confirmed as the repo's actual changelog file/format
+  (`## [Unreleased] — FEAT-<NNN>: <Title>` sections, newest first) —
+  matched it exactly.
+- Wrote `docs/tools/compression.md` covering every required section:
+  levels table, TOML config format + BOTH precedence orders (source and
+  match), the effective-level precedence table (including the G3 capping
+  rule, which isn't in the original spec's 5-rule list but IS real
+  shipped behavior), kill switch, tee recovery flow (with the pointer
+  JSON shape), extending via third-party manifest, savings report (with
+  the token-estimate caveat stated twice — inline in `render()`'s own
+  output AND in the docs prose), and the optional Rust extension (build
+  command, what changes present vs. absent, and the explicit "does NOT
+  make the core wheel depend on Rust" clarification per TASK-1955's
+  Completion Note).
+- **Every documented behavior was re-verified against the merged code**
+  (not copied from the spec) — re-read `stage.py`'s `_effective_level()`,
+  `budget.py`'s calibrated defaults (TASK-1959's NEW values: 1,500 rows /
+  3.0ms / 5.0ms, not the spec's original 5,000 / 1.0ms / 0.3ms),
+  `registry.py`'s resolution precedence, `tee.py`'s pointer shape, and
+  `report.py`'s caveat string, live, to write this page.
+- **"Document what shipped, not what the spec proposed" — the honest
+  parts**: added an explicit "Known limitations" section documenting TWO
+  real gaps discovered during earlier tasks that the spec's narrative
+  text doesn't surface on its own: (1) the live voice route restores
+  permissions/broker/redaction/events but NOT compression itself
+  (TASK-1956's documented architectural constraint); (2)
+  `AfterToolCallEvent`'s new fields are not populated on the literal
+  event instance a subscriber observes — only in `ToolResult.metadata`
+  (TASK-1952's documented gap). Also noted `CompressionReport` has no
+  automatic `ToolManager` listener yet (TASK-1957's scope boundary). None
+  of these are code changes for THIS task — flagged, not fixed, per the
+  "NOT in scope: Code changes" instruction.
+- Also documented the `AGGRESSIVE` level honestly: no built-in codec
+  currently implements `AGGRESSIVE`-specific behavior beyond what
+  `NORMAL` already does — rather than describe a feature that doesn't
+  exist.
+- **Copy-pasteable TOML example validated for real**, not just eyeballed:
+  wrote `test_docs_examples.py` (the task's own "optional but
+  recommended" test) which regex-extracts the fenced ```toml block from
+  the doc and round-trips it through `tomllib.loads()` +
+  `CompressorConfig(**parsed)` — passes.
+- Changelog entry: led with the ONE semantic change
+  (`result_size_bytes` now post-compression, `result_size_bytes_original`
+  added) exactly as instructed ("name the field and the direction of the
+  change explicitly"), plus a second, smaller behavior-change bullet for
+  the Google client's truncation logging (new, previously-silent warning
+  on two of its three truncation paths — TASK-1961). Cross-linked to the
+  new docs page from the changelog entry itself.
+- Cross-linked from `docs/tools.md` in TWO places: a new "Tool-Result
+  Compression" subsection right after the `ToolManager` section (since
+  that's exactly where the pipeline runs), and an "Additional Resources"
+  bullet at the bottom for a second discovery path.
+- Verification: full compression suite 135/135 green (6 benchmarks
+  correctly skipped); `ruff check` clean on the new test file; the TOML
+  example validates programmatically; both cross-links use correct
+  relative paths (verified `docs/tools.md` -> `tools/compression.md` and
+  `docs/tools/compression.md` -> `../tools.md`).
+
+**Deviations from spec**: none in the documentation itself — this task
+faithfully documents what shipped. The "Known limitations" section above
+IS the honest divergence record the task asked for (live.py compression
+gap; event-field population gap; savings-report auto-wiring gap) — all
+three were already flagged in their respective originating tasks'
+Completion Notes; this task's job was to surface them to USERS, not
+introduce new ones.

@@ -277,7 +277,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -289,8 +289,8 @@
       "parallelism_notes": "Documentation only — touches docs/ and the changelog, no source files, so it never conflicts. Deliberately late in the graph because it must document what shipped, not what the spec proposed.",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1962-compression-docs-and-changelog.md"
+      "completed_at": "2026-07-28T01:56:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1962-compression-docs-and-changelog.md"
     },
     {
       "id": "TASK-1961",
