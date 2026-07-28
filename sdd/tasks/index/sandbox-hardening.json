@@ -90,7 +90,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Rewires pythonrepl.py onto handle+pool; also touches the line TASK-1939 modified.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1943-pythonrepl-worker-integration.md"
+      "completed_at": "2026-07-28T00:40:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1943-pythonrepl-worker-integration.md"
     },
     {
       "id": "TASK-1944",
