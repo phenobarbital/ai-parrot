@@ -246,10 +246,88 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
 **Notes**:
+- `pythonrepl.py`: `_execute()` rewritten to (1) sanitize input, (2) run a
+  new `_host_gate_check()` (allowlist + AST denylist, cheap/no round-trip,
+  mirrors `_execute_code()`'s gate exactly), (3) on pass, get this
+  instance's worker via `_get_worker_handle()` and call `handle.execute()`.
+  No call to `self._execute_code()`/`self._repl_executor` remains in
+  `_execute()` — the in-process path is structurally unreachable (G8/AC8).
+  Added `get_var`/`set_var`/`list_vars`/`snapshot` namespace-API methods
+  delegating to the worker handle. `reset_environment()` keeps its existing
+  synchronous host-side re-bootstrap (unchanged, for un-ported external
+  readers of `.locals` — TASK-1944) and additionally sets
+  `self._pending_worker_reset = True`; `_get_worker_handle()` applies it
+  lazily (kill + let the pool's own crash-restart spawn a fresh worker) on
+  the next call, since `reset_environment()`'s public signature must stay
+  sync. **Session strategy** (no session concept existed before, per
+  Codebase Contract): one `WorkerPool` + one fixed `session_id`
+  (`f"pythonrepl-{uuid4().hex}"`) per `PythonREPLTool` **instance** — matches
+  today's existing per-instance `self.locals` isolation unit exactly, and
+  reuses the real `WorkerPool` (TASK-1942) rather than a bare `WorkerHandle`
+  to get TTL/crash-restart/orphan-reaping for free. `execute_sync()` (a
+  separate, pre-existing sync escape hatch) is deliberately UNTOUCHED — it
+  still calls `_execute_code()` in-process; not named anywhere in this
+  task's scope, and `test_pythonrepl_security.py` (unmodified, 33 tests)
+  depends on it continuing to work exactly as before, which it does (that
+  file never touches `_execute()` at all, so it's completely unaffected —
+  no worker spawns, no slowdown).
+- `repl_worker/__init__.py`: now also exports `WorkerHandle`, `WorkerPool`,
+  `WorkerPoolExhaustedError` (imported by `pythonrepl.py` from the package,
+  not the submodule).
+- 12 new tests in `test_integration.py` (contract invariant, no-fallback,
+  gate-never-starts-worker, state persistence, session isolation, reset,
+  namespace API, plot-via-shared-dir, plot-base64, e2e runaway-loop
+  recovery). `pytest packages/ai-parrot/tests/repl_worker/
+  packages/ai-parrot/tests/test_pythonrepl_security.py
+  packages/ai-parrot/tests/test_pythonrepl_executor.py -q` → 96 passed, run
+  twice for stability; verified zero orphaned worker processes via `ps aux`
+  after each run. `ruff check` on `pythonrepl.py` + `repl_worker/` shows the
+  same 18 pre-existing errors as baseline — zero new.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`handle.py` and `pool.py` were extended beyond this task's own Files
+   to Create/Modify table** (which lists only `pythonrepl.py` and
+   `repl_worker/__init__.py`). This task's own Scope section requires
+   `return_plot_as_base64` (and, for full worker/host parity, `plt_style`/
+   `palette`/`setup_code`/`auto_save_plots`) to reach the WORKER's own
+   `PythonREPLTool` instance — that instance is what actually runs
+   `_execute_code()`/`save_current_plot()` now, so these settings must be
+   set at ITS construction time, not the host's. Neither `WorkerConfig`
+   (spec-frozen) nor the existing `WorkerHandle`/`WorkerPool`/
+   `WorkerNamespace` constructors (TASK-1940-1942) had a channel for this.
+   Implemented as a strictly-additive, backward-compatible optional
+   `repl_kwargs: dict | None = None` parameter threaded through
+   `WorkerPool.__init__` -> `WorkerHandle.__init__`/`start()` -> `worker.py`
+   `main()`'s CLI (`[output_dir] ['<repl_kwargs JSON>']`, both optional,
+   trailing) -> `WorkerNamespace.__init__` -> `PythonREPLTool(**repl_kwargs)`
+   on the worker's own instance. No existing call site's behaviour changed
+   (all previous tests for TASK-1940/1941/1942 still pass unmodified,
+   verified). `policy` is deliberately NOT threaded — the worker always
+   revalidates with `general_profile()`, an explicit TASK-1940 design
+   decision restated in this task's own scope text.
+2. **The host's own `PythonREPLTool` instance still fully bootstraps
+   itself** (imports pandas/numpy/matplotlib, populates `self.locals`) in
+   `__init__`, unchanged — even though code execution now happens in a
+   SEPARATE worker instance. This is intentional, not an oversight: TASK-1944
+   (porting the 5 external call sites that read `.locals`/`.globals`
+   directly) is explicitly out of this task's scope, so those call sites
+   must keep seeing a populated `self.locals` on the host instance until
+   they're ported. This does mean pandas/numpy/matplotlib get imported
+   TWICE per tool instance today (once host-side for backward compat, once
+   worker-side for real execution) — a known, deliberate, temporary
+   redundancy to be revisited once TASK-1944 lands and host-side
+   `.locals`/`.globals` populating can potentially be dropped.
+3. **Pre-existing worktree environment gap, unrelated to this task**:
+   `packages/ai-parrot/tests/test_basic_agent_new.py` and a few cases in
+   `test_core_tools.py`/`test_monorepo_imports.py` fail in THIS worktree
+   with `ModuleNotFoundError: No module named 'parrot.utils.types'` — a
+   compiled Cython extension (`.so`) present in the main repo's working
+   tree (a local, gitignored build artifact) but absent from this fresh
+   worktree checkout. Verified this reproduces identically on `dev` HEAD
+   with zero changes from this task (same command, same failure, same
+   trigger — missing `.so`), and is unrelated to anything touched here.
+   Not fixed (would require running a Cython build step, out of scope for
+   FEAT-380).

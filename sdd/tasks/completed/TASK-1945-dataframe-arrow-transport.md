@@ -204,10 +204,96 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
 **Notes**:
+- `transport.py` (new): `encode_dataframe(df, name) -> EncodedDataFrame`
+  (Arrow IPC into a fresh `SharedMemory` block; falls back to pickle+base64
+  ONLY on `pa.lib.ArrowInvalid`/`ArrowNotImplementedError`/`ArrowTypeError`,
+  always with `logger.warning` naming the DataFrame — G9), plus
+  `decode_dataframe_from_shm`/`decode_pickle_payload` (worker side) and
+  `unlink_shm` (host side, idempotent). **shm ownership contract** (documented
+  in the module docstring): host creates+writes+sends name, worker
+  opens+decodes+closes (never unlinks), host unlinks only after receiving the
+  worker's ACK (the framed response to `inject_df`) — verified leak-free via
+  `/dev/shm` diffing in `test_no_shm_leaks_after_inject`.
+- `protocol.py`: `InjectDfRequest` gained explicit `format`/`shm_name`/`size`/
+  `payload` fields (replacing the placeholder `handle: Any`) — safe to
+  redefine since TASK-1940 stubbed this op with zero real callers.
+- `worker.py`: real `inject_df` dispatch — decodes via `transport.py` then
+  `namespace.set_var()`. The `from .transport import ...` is a LOCAL import
+  inside the dispatch branch (not top-of-file) specifically to keep
+  `pyarrow` off the module's import-time surface — `transport.py` pulls in
+  pyarrow, and importing it eagerly at `worker.py` load time would happen
+  BEFORE `apply_rlimits()` runs in `main()`, breaking the established
+  "rlimits before heavy imports" invariant (TASK-1940/1942) that
+  `WorkerNamespace`'s own pandas/numpy/matplotlib import already follows.
+- `handle.py`: `WorkerHandle.inject_dataframe()` implemented (replacing the
+  TASK-1941 `NotImplementedError` stub) — encodes off the event loop
+  (`run_in_executor`), sends `InjectDfRequest`, unlinks the shm block in a
+  `finally` after the response.
+- `pythonrepl.py`: added `PythonREPLTool.inject_dataframe()` (delegates to
+  the worker handle) — explicitly named in the task's Scope text though not
+  in the file table (see Deviations).
+- `pythonpandas.py`: `PythonPandasTool._get_worker_handle()`'s worker-seeding
+  (TASK-1944) now routes actual DataFrame values through
+  `inject_dataframe()` (Arrow) instead of `set_var()` (always-pickle);
+  scalar metadata (`*_row_count`/`*_col_count`/`*_shape`/`*_columns`) stays
+  on `set_var()`.
+- `manager.py`: `share_dataframe()` needed a real bug fix — see Deviations.
+- 18 new tests (`test_transport.py` ×7, `test_e2e.py` ×3 + a
+  `share_dataframe` regression, `test_handle.py`'s
+  `test_inject_dataframe_not_implemented` rewritten to
+  `test_inject_dataframe` since the feature it tested — raising
+  `NotImplementedError` — is now implemented). Full suite:
+  `pytest packages/ai-parrot/tests/repl_worker/
+  packages/ai-parrot/tests/test_pythonrepl_security.py
+  packages/ai-parrot/tests/test_pythonrepl_executor.py -q` → **112 passed**;
+  verified zero orphaned worker processes (`ps aux`) and zero leaked shm
+  segments (`ls /dev/shm/`) after the full run. `ruff check` on every
+  modified/created source file matches the established pre-existing
+  per-file baselines exactly (manager.py 1, pythonpandas.py 7, pythonrepl.py
+  18 — all pre-existing; handle.py/protocol.py/worker.py/transport.py 0).
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`pythonrepl.py` modified though absent from the Files to
+   Create/Modify table** — the task's own Scope text explicitly says "wire
+   `PythonREPLTool.inject_dataframe()` ... to use it", which requires the
+   method to exist on the tool class. Added as a thin delegate to
+   `WorkerHandle.inject_dataframe()`, mirroring `get_var`/`set_var`/
+   `list_vars`/`snapshot`'s existing pattern (TASK-1943).
+2. **`manager.py`'s `share_dataframe()` had a pre-existing, unrelated bug**
+   fixed as part of satisfying this task's own acceptance criterion
+   ("share_dataframe()/auto_push_to_pandas deliver frames into the worker
+   namespace"): it called `pandas_tool.add_dataframe(safe, df,
+   regenerate_guide=True)`, but `add_dataframe(self, name, df)` never
+   accepted a `regenerate_guide` kwarg — every call raised `TypeError`,
+   silently swallowed by the surrounding `except Exception`, so the
+   auto-push into `python_pandas` never actually ran, on `dev` or before
+   this task. Fixed by dropping the invalid kwarg. No behavior beyond "the
+   call no longer silently no-ops" changed.
+3. **No `manager.py` changes were needed for the actual cross-process
+   delivery** — `share_dataframe()`/`add_dataframe()` stay fully
+   synchronous (as today); the DataFrame reaches the worker lazily,
+   transparently, via `PythonPandasTool._get_worker_handle()`'s existing
+   diff-based seeding (TASK-1944) the next time that tool's worker is
+   acquired — now upgraded to use Arrow transport instead of `set_var()`'s
+   always-pickle path. `manager.py` itself only needed the `TypeError` fix
+   above to actually reach that seeding path at all.
+4. **`WorkerHandle.inject_dataframe()`'s Arrow encode step runs on the
+   default executor** (`loop.run_in_executor(None, ...)`), not
+   `PythonREPLTool`'s TASK-1939 dedicated `_repl_executor` — threading that
+   specific executor through would require a new constructor parameter
+   cascading through `WorkerHandle`/`WorkerPool` (mirroring the
+   `repl_kwargs` extension from TASK-1943) for a narrow, infrequent
+   operation (DataFrame injection, not the hot per-exec path TASK-1939
+   targeted). Documented as a minor, deliberate simplification rather than
+   silently expanding scope further; a candidate follow-up if profiling
+   ever shows this matters.
+5. **`test_handle.py`'s `test_inject_dataframe_not_implemented` was
+   rewritten** to `test_inject_dataframe` (asserting the real roundtrip
+   instead of `NotImplementedError`) — the behavior it tested (TASK-1941's
+   stub) no longer exists after this task implements the feature; this is
+   the same category of "necessary test update because an earlier task's
+   test scaffolding described intentionally-temporary behavior" already
+   established in TASK-1943's Completion Note.

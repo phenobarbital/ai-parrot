@@ -210,10 +210,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
 **Notes**:
+- `pool.py`: `WorkerPool` + `WorkerPoolExhaustedError`. Session mapping
+  (`session_id -> WorkerHandle`), a background `_maintenance_loop()` task
+  (TTL sweep, interval `min(5, max(1, idle_ttl_seconds/10))`) and a
+  background `_top_up_prewarmed()` task both started lazily and
+  non-blockingly from `_ensure_started()` (called at the top of `acquire()`)
+  — deliberately fire-and-forget so the FIRST caller into the pool is never
+  made to wait for prewarming; later callers benefit once the background
+  task has had time to run. Ceiling (`max_workers` or
+  `min(max(4, cpu_count()), 16)`) is checked against **sessions +
+  prewarmed spares combined** (total live worker processes), raising
+  `WorkerPoolExhaustedError` immediately — no queueing. Crash restart: a
+  dead session worker is popped and replaced transparently on its next
+  `acquire()` (the interrupted call's namespace-loss error was already
+  surfaced by `WorkerHandle.execute()` at the time of death; this class
+  doesn't re-report it, just makes the session usable again).
+  `shutdown()` cancels the maintenance task and kills every bound +
+  prewarmed handle — zero live workers survive.
+- `worker.py` (MODIFY, as the task scoped): added
+  `set_parent_death_signal()` — Linux-only `PR_SET_PDEATHSIG(SIGKILL)` via
+  `ctypes`/`libc.prctl`, called first thing in `main()` (before
+  `apply_rlimits`/heavy imports). No-op with nothing logged as an error on
+  non-Linux platforms (macOS/Windows rely on `shutdown()`'s sweep as the
+  documented portable backstop, per scope).
+- 7 new tests in `test_pool.py` (ceiling, distinct-session workers,
+  same-session reuse, TTL eviction, prewarm timing, crash restart, orphan
+  reaping via `shutdown()`), all against real spawned worker subprocesses.
+  `pytest packages/ai-parrot/tests/repl_worker/ -q` → 48 passed (protocol +
+  worker + handle + pool). `ruff check` on `repl_worker/` is clean.
 
-**Deviations from spec**: none
+**Deviations from spec / notable findings**: none beyond the
+`rlimit_as_bytes` fixture-value note already on record from TASK-1940/1941
+(this task's own `worker_config` fixture again illustrates 512 MiB in the
+spec text; tests here use the spec's ~4 GiB *default* instead, since every
+pool test spawns real workers that import pandas/numpy/matplotlib).

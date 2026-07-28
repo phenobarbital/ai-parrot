@@ -180,10 +180,63 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
 **Notes**:
+- `docs/repl-worker-sandbox.md` (new, added to `mkdocs.yml` nav under
+  "Tools, Loaders & RAG" next to the existing "Sandbox Tool" entry): covers
+  §1 execution model (ASCII diagram adapted from the spec, host-gate →
+  worker-revalidation flow, `execute_sync()` called out as the one
+  unaffected in-process escape hatch), §2 failure modes (table: gate
+  denial / timeout / memory / crash / ceiling / TTL, plus the exact
+  namespace-loss error JSON shape), §3 every `WorkerConfig` field with its
+  REAL current default (all 7 spot-checked against `protocol.py` at
+  writing time, including the 12 GiB TASK-1946-calibrated `rlimit_as_bytes`
+  with a link to the evidence file) and tuning notes, §4 the namespace API
+  (`get_var`/`set_var`/`list_vars`/`snapshot`/`inject_dataframe`, explicit
+  "no sync variant, no dict-proxy" framing, and the `WorkingMemoryToolkit`
+  snapshot-semantics note from TASK-1944), §5 **Windows degradation as a
+  visible, top-level ⚠️-marked section** with an explicit guarantee-by-
+  guarantee table (AC16), §6 a brief history note. Opens with an explicit
+  Non-Goals framing (resource bounding, not adversarial containment,
+  shares kernel/network/FS with host) per the spec's own Non-Goals section.
+- Verified every documented symbol against the actual code (not the spec's
+  aspiration) via grep spot-checks: all 7 `WorkerConfig` fields + defaults,
+  `PythonREPLTool`'s 5 namespace-API method signatures + `worker_config`
+  kwarg, `executor_max_workers` default, `WorkerPoolExhaustedError`'s exact
+  message wording.
+- **Cross-links** (AC: "stale docs/ references... updated"): grepped
+  `docs/` for `python_repl`/`PythonREPLTool` and reviewed every hit.
+  `docs/CLASSES.md`, `docs/jupyter_mode.md`, `docs/datasetmanager_design.md`,
+  `docs/pandas-agent-capabilities.md` needed no changes — they describe
+  `PythonREPLTool` at a level of abstraction (class catalog entries,
+  LLM-facing behavior) this feature doesn't change. Two files DID need a
+  cross-link: `docs/executors/docker-executor.md` (a genuinely different,
+  complementary isolation layer — relocates the whole tool call to a
+  remote Docker/K8s runtime; added a note distinguishing it from the
+  worker-process model) and `docs/sandbox_tool.md` (a gVisor installation
+  guide describing kernel-level containment that is **not** what's
+  actually implemented — added a note pointing at the real mechanism
+  before a reader could be misled into thinking gVisor is wired in).
+  `docs/outputs.md`'s `PythonREPLTool(globals_dict=...)` example was
+  reviewed but left untouched — see Deviations.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`docs/outputs.md`'s `PythonREPLTool(globals_dict={'folium': folium})`
+   example was NOT updated**, despite `globals_dict` no longer reaching the
+   worker (a real, already-documented TASK-1943 limitation). That file
+   imports from a non-existent `aiparrot` package (`from aiparrot import
+   Agent`, `from aiparrot.tools import PythonREPLTool` — the real package
+   is `parrot`, not `aiparrot`) — it was already aspirational/non-canonical
+   before this feature, unrelated to anything this task changed. Editing
+   it correctly would require broader context about what that document
+   actually is (marketing copy? a different distribution name?) than a
+   docs-only task focused on the worker execution model should guess at.
+   Flagged here rather than silently skipped.
+2. **No mkdocs build/render verification** — `mkdocs.yml` uses
+   mkdocs-material's custom Python-object YAML tags
+   (`!!python/name:material.extensions.emoji.twemoji`), so it can't be
+   parsed with plain `yaml.safe_load` in this environment (no mkdocs
+   installed as a dev dependency here); verified the nav entry's
+   indentation matches its siblings exactly by inspection instead of a
+   full `mkdocs build`.
