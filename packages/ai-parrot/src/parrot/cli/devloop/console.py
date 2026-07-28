@@ -186,7 +186,10 @@ class DevLoopConsole:
                 into whichever brief is built; a brief file's own
                 ``dev_agents`` (if already set) wins over this.
             intake_text: Optional ``--text`` free-text feature request (G4).
-            skip_confirm: ``--yes`` — skip the intake confirm loop (G5).
+            skip_confirm: ``--yes`` — skip the intake accept/edit/redo/
+                cancel confirm loop (G5). Applies to the feature path
+                regardless of how it was entered (``--text``, or picking
+                ``feature`` at the interactive kind picker).
         """
         if brief_file:
             brief = self._load_brief(brief_file)
@@ -199,7 +202,9 @@ class DevLoopConsole:
 
         kind = await self._prompt_kind()
         if kind == "feature":
-            return await self._collect_feature_brief(dev_agents_flag=dev_agents)
+            return await self._collect_feature_brief(
+                dev_agents_flag=dev_agents, skip_confirm=skip_confirm
+            )
         return await self._collect_workbrief_wizard(kind, dev_agents_flag=dev_agents)
 
     @staticmethod
@@ -467,9 +472,10 @@ class DevLoopConsole:
         current = getattr(draft, field_name)
         if isinstance(current, list):
             self.console.print(
-                f"[dim]Editing {field_name} (one item per line, empty line to finish)[/dim]"
+                f"[dim]Editing {field_name} (one item per line, empty line to finish; "
+                "an immediate empty line leaves it unchanged)[/dim]"
             )
-            new_value: Any = []
+            items: list[str] = []
             while True:
                 try:
                     line = await self._session.prompt_async("  > ")
@@ -477,7 +483,11 @@ class DevLoopConsole:
                     break
                 if not line:
                     break
-                new_value.append(line)
+                items.append(line)
+            # An immediate empty line (no items typed) means "no change" —
+            # matching the scalar branch's "empty input = keep current"
+            # semantics, rather than silently clearing the list to [].
+            new_value: Any = items if items else current
         else:
             try:
                 raw = (await self._session.prompt_async(f"  {field_name} [{current}]: ")).strip()
@@ -1092,6 +1102,11 @@ class DevLoopConsole:
             await self._dispatch_run(brief)
         except (EOFError, KeyboardInterrupt):
             self.console.print("[dim]Cancelled.[/dim]")
+        except (FileNotFoundError, ValueError) as exc:
+            # Mirrors start()'s friendly error path (G5): pydantic.
+            # ValidationError subclasses ValueError, so this also catches
+            # an invalid brief — never a raw traceback.
+            self.console.print(f"[bold red]Brief error:[/bold red] {exc}")
         if self._active_view:
             self._active_view.resume()
 
@@ -1105,6 +1120,12 @@ class DevLoopConsole:
             await self._dispatch_run(brief)
         except (EOFError, KeyboardInterrupt):
             self.console.print("[dim]Cancelled.[/dim]")
+        except (FileNotFoundError, ValueError) as exc:
+            # Mirrors start()'s friendly error path (G5): an empty free-text
+            # request, an intake LLM failure, or an invalid FeatureBrief
+            # (pydantic.ValidationError subclasses ValueError) all surface
+            # as "Brief error:" — never a raw traceback.
+            self.console.print(f"[bold red]Brief error:[/bold red] {exc}")
         if self._active_view:
             self._active_view.resume()
 

@@ -77,8 +77,10 @@ def devloop(ctx: click.Context) -> None:
                    "everything else (or no 'kind') loads as a bug/enhancement/"
                    "new_feature WorkBrief.")
 @click.option("--yes", "skip_wizard", is_flag=True, default=False,
-              help="Skip confirmation prompts (requires --brief, or use with "
-                   "--text to skip the intake accept/edit/redo/cancel loop).")
+              help="Skip confirmation prompts (requires --brief); for a "
+                   "feature-mode request (--text, or 'feature' at the "
+                   "interactive kind picker), skips the intake "
+                   "accept/edit/redo/cancel confirm loop instead.")
 @click.option("--dev-agent", "dev_agent_flags", multiple=True, default=(),
               help="Repeatable dev-agent pool row: backend[:model[:count]] "
                    "(e.g. codex:gpt-5.5:2). Merges into the built brief; "

@@ -138,7 +138,7 @@ parrot devloop run [OPTIONS]
 | Option | Default | Description |
 | --- | --- | --- |
 | `--brief FILE` | — | Path to a YAML/JSON `WorkBrief` or `FeatureBrief` file. `kind: feature` routes to feature-mode; anything else (or no `kind`) loads as `WorkBrief`. |
-| `--yes` | off | Skip confirmation prompts (requires `--brief`), **or** with `--text`, skip the intake accept/edit/redo/cancel confirm loop (FEAT-388 G5). |
+| `--yes` | off | Skip confirmation prompts (requires `--brief`). For a feature-mode request — via `--text` or by picking `feature` at the interactive kind picker — skips the intake accept/edit/redo/cancel confirm loop instead (FEAT-388 G5). |
 | `--dev-agent BACKEND[:MODEL[:COUNT]]` | — | *(FEAT-388 G2, repeatable)* Add a dev-agent pool row, e.g. `--dev-agent codex:gpt-5.5:2`. Merges into the built brief; a `--brief` file's own `dev_agents` (if already set) wins over this. Unknown backend fails fast, listing every valid catalog id. |
 | `--text "<request>"` | — | *(FEAT-388 G4)* Non-interactive free-text feature intake — skips the kind picker entirely and goes straight to the intake draft/confirm loop (or, combined with `--yes`, dispatches the first draft with no prompts at all). |
 
@@ -264,7 +264,8 @@ parrot devloop run --text "Add a dark-mode toggle that persists across sessions"
    | `cancel` | Abort — nothing is written or dispatched |
 
    Intake **never** auto-dispatches without an explicit `accept` — the
-   only way to skip this loop is `--text` combined with `--yes`.
+   only way to skip this loop is `--yes` (with `--text`, or after
+   picking `feature` at the interactive kind picker).
 4. The confirmed draft is rendered as a brainstorm markdown document
    under `sdd/proposals/<slug>.brainstorm.md` (FEAT-145 frontmatter).
    Re-running the same request never overwrites an existing file — a

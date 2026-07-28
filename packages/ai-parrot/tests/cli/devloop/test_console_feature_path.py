@@ -205,3 +205,67 @@ async def test_cancel_dispatches_nothing():
             await dc._collect_work_brief()
 
     assert dispatched == []
+
+
+# ── Post-review fixes: --yes on the interactive feature path, Brief error:
+# consistency on /new + /feature, and "no input = no change" for list edits ──
+
+
+@pytest.mark.asyncio
+async def test_yes_skips_confirm_loop_on_interactive_feature_path():
+    """skip_confirm (--yes) applies even when 'feature' is chosen via the
+    interactive kind picker, not just via --text."""
+    dc = _make_console(
+        [
+            "3",  # kind picker: feature
+            "I want dark mode",  # multiline free text, line 1
+            "",  # empty line ends multiline input
+            # No further inputs consumed: skip_confirm=True means no
+            # confirm loop, no dev-agent pool prompt, no judge-panel prompt.
+        ]
+    )
+
+    with _patch_intake():
+        brief = await dc._collect_work_brief(skip_confirm=True)
+
+    assert brief.document_kind == "brainstorm"
+    assert brief.dev_agents is None
+    assert brief.judge_panel is None
+
+
+@pytest.mark.asyncio
+async def test_cmd_feature_empty_text_shows_brief_error():
+    """An empty free-text request surfaces 'Brief error:' (G5), not a raw exception."""
+    dc = _make_console([""])  # multiline prompt immediately ends with no lines
+    dispatched: list[Any] = []
+
+    async def fake_dispatch_run(brief: Any) -> str:
+        dispatched.append(brief)
+        return "run-1"
+
+    with _patch_intake(), patch.object(dc, "_dispatch_run", fake_dispatch_run):
+        await dc._cmd_feature("")
+
+    assert dispatched == []
+    output = dc.console.export_text()
+    assert "Brief error" in output
+    assert "Traceback" not in output
+
+
+@pytest.mark.asyncio
+async def test_edit_list_field_empty_line_keeps_unchanged():
+    """'edit <list-field>' with an immediate empty line leaves the list
+    unchanged, matching the scalar-field branch's "no input = no change"."""
+    from parrot.cli.devloop.intake import FeatureDraft as RealFeatureDraft
+
+    dc = _make_console([""])  # immediate empty line
+    draft = RealFeatureDraft(
+        title="Add dark mode",
+        slug="add-dark-mode",
+        problem_statement="Users want dark mode.",
+        requirements=["existing requirement"],
+    )
+
+    result = await dc._edit_draft_field(draft, "requirements")
+
+    assert result.requirements == ["existing requirement"]
