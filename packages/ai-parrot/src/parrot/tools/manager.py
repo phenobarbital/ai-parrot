@@ -1747,7 +1747,18 @@ class ToolManager(MCPToolManagerMixin):
         return new_tm
 
     def share_dataframe(self, name: str, df: "pd.DataFrame", meta: Dict[str, Any] = None) -> str:
-        """Store df in shared context and push into python_pandas if present."""
+        """Store df in shared context and push into python_pandas if present.
+
+        FEAT-380 (TASK-1945): pushing into ``python_pandas`` here only
+        updates the tool's host-side ``df_locals`` bookkeeping (via
+        ``add_dataframe()`` -> ``_process_dataframes()``) — the actual
+        cross-process delivery into the worker's namespace (Arrow IPC/shm,
+        pickle fallback) happens lazily, transparently, the next time that
+        tool's worker is acquired (``PythonPandasTool._get_worker_handle()``,
+        TASK-1944's diff-based seeding, upgraded to Arrow by TASK-1945).
+        This method stays synchronous (its own call sites are), so it cannot
+        await that round-trip directly.
+        """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("share_dataframe expects a pandas.DataFrame")
         safe = name or f"df_{len(self._shared['dataframes'])+1}"
@@ -1757,7 +1768,14 @@ class ToolManager(MCPToolManagerMixin):
             pandas_tool = self.get_tool(self.pandas_tool_name)
             if pandas_tool:
                 try:
-                    msg = pandas_tool.add_dataframe(safe, df, regenerate_guide=True)
+                    # FEAT-380 (TASK-1945): `add_dataframe()` takes only
+                    # (name, df) — `regenerate_guide` was never a real
+                    # parameter (pre-existing bug: this call always raised
+                    # TypeError, silently swallowed below, so the auto-push
+                    # never actually ran). Fixed as part of this task's own
+                    # "share_dataframe()/auto_push_to_pandas deliver frames
+                    # into the worker namespace" acceptance criterion.
+                    msg = pandas_tool.add_dataframe(safe, df)
                     self.logger.debug("PandasTool: %s", msg)
                 except Exception as e:
                     self.logger.warning("Could not push DF into %s: %s", self.pandas_tool_name, e)

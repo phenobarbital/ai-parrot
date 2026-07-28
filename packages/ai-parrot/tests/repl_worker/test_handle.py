@@ -168,12 +168,18 @@ class TestNamespaceAPI:
         finally:
             await handle.kill()
 
-    async def test_inject_dataframe_not_implemented(self, real_worker_config, tmp_path):
-        """Arrow IPC transport is TASK-1945 — explicitly out of scope here."""
+    async def test_inject_dataframe(self, real_worker_config, tmp_path):
+        """Arrow IPC/shm transport (TASK-1945) — see test_transport.py for
+        full roundtrip/fallback/shm-leak coverage; this is a handle-level
+        smoke test that the API works end-to-end."""
+        import pandas as pd
+
         handle = WorkerHandle(real_worker_config, output_dir=str(tmp_path))
         await handle.start()
         try:
-            with pytest.raises(NotImplementedError):
-                await handle.inject_dataframe("df", None)
+            df = pd.DataFrame({"a": [1, 2, 3]})
+            await handle.inject_dataframe("df", df)
+            value = await handle.get_var("df")
+            pd.testing.assert_frame_equal(value, df)
         finally:
             await handle.kill()

@@ -155,12 +155,23 @@ class PythonPandasTool(PythonREPLTool):
         everything currently in `df_locals` has been pushed, while still
         picking up anything added later via `register_dataframes()`/
         `sync_from_manager()`.
+
+        FEAT-380 (TASK-1945): actual DataFrame values go through
+        ``inject_dataframe()`` (Arrow IPC/shm, pickle-fallback-with-warning)
+        instead of ``set_var()`` (which always pickles, TASK-1940's
+        ``encode_value``) — the scalar metadata entries
+        (``*_row_count``/``*_col_count``/``*_shape``/``*_columns``) stay on
+        ``set_var()`` since they're not DataFrames.
         """
         handle = await super()._get_worker_handle()
         new_names = set(self.df_locals) - self._seeded_df_names
         if new_names:
             for name in new_names:
-                await handle.set_var(name, self.df_locals[name])
+                value = self.df_locals[name]
+                if isinstance(value, pd.DataFrame):
+                    await handle.inject_dataframe(name, value)
+                else:
+                    await handle.set_var(name, value)
             self._seeded_df_names |= new_names
         return handle
 

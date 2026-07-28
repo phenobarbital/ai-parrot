@@ -1170,6 +1170,16 @@ print("Use 'execution_results' dict to store intermediate results.")
         handle = await self._get_worker_handle()
         return await handle.snapshot()
 
+    async def inject_dataframe(self, name: str, df: Any) -> None:
+        """Inject a DataFrame into this instance's worker via Arrow IPC/shm (FEAT-380 Module 7).
+
+        Args:
+            name: Variable name to bind the DataFrame to in the REPL namespace.
+            df: The ``pandas.DataFrame`` to inject.
+        """
+        handle = await self._get_worker_handle()
+        await handle.inject_dataframe(name, df)
+
     def execute_sync(self, code: str, debug: bool = False) -> str:
         """
         Execute Python code synchronously.

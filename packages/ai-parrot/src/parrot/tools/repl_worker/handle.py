@@ -30,6 +30,7 @@ from .protocol import (
     ExecRequest,
     ExecResult,
     GetVarRequest,
+    InjectDfRequest,
     ListNsRequest,
     ListNsResponse,
     NamespaceLossError,
@@ -250,13 +251,45 @@ class WorkerHandle:
         return response.output
 
     async def inject_dataframe(self, name: str, df: Any) -> None:
-        """Inject a DataFrame into the worker namespace.
+        """Inject a DataFrame into the worker namespace via Arrow IPC/shm (TASK-1945).
 
-        Raises:
-            NotImplementedError: Arrow IPC / shared-memory transport lands
-                in TASK-1945 — not in scope for this task.
+        Encodes ``df`` (Arrow IPC into a shared-memory block, or pickle as a
+        logged fallback for dtypes Arrow can't represent — see
+        ``transport.py``), sends it to the worker, and unlinks the shm block
+        only after the worker's ACK (the framed response below) — see
+        ``transport.py``'s module docstring for the full shm ownership
+        contract.
+
+        Args:
+            name: Variable name to bind the DataFrame to.
+            df: The ``pandas.DataFrame`` to inject.
         """
-        raise NotImplementedError("inject_dataframe: Arrow IPC transport is TASK-1945")
+        # Local import: `transport.py` pulls in `pyarrow` (heavy) — the host
+        # process already pays this cost elsewhere via pandas, but keep it
+        # off this module's import-time surface for symmetry with the
+        # worker side.
+        from .transport import encode_dataframe, unlink_shm
+
+        loop = asyncio.get_event_loop()
+        # Encoding is CPU/memory-bound (Arrow conversion + a shm copy) — run
+        # it off the event loop (Key Constraint).
+        encoded = await loop.run_in_executor(None, encode_dataframe, df, name)
+        request = InjectDfRequest(
+            name=name,
+            format=encoded.format,
+            shm_name=encoded.shm_name,
+            size=encoded.size,
+            payload=encoded.payload,
+        )
+        try:
+            await self._send(request, timeout_s=30.0)
+        finally:
+            if encoded.shm_name is not None:
+                # Host owns the block's lifecycle: unlink only now that the
+                # worker has ack'd (read + closed its handle) via the
+                # response awaited above.
+                await loop.run_in_executor(None, unlink_shm, encoded.shm_name)
+        self.known_vars = sorted(set(self.known_vars) | {name})
 
     async def get_var(self, name: str) -> Any:
         """Read one namespace variable from the worker."""

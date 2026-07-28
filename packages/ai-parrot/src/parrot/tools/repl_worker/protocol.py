@@ -21,7 +21,7 @@ import base64
 import json
 import pickle
 import struct
-from typing import Any, BinaryIO, Literal
+from typing import Any, BinaryIO, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -95,13 +95,20 @@ class ExecRequest(BaseModel):
 class InjectDfRequest(BaseModel):
     """Host -> worker: inject a DataFrame into the namespace.
 
-    NOT IMPLEMENTED in this task — Arrow IPC / shared-memory transport is
-    TASK-1945. The worker replies with an :class:`ErrorResponse` for this op.
+    Implemented by TASK-1945: Arrow IPC over shared memory as the primary
+    transport (``format="arrow"``), pickle+base64 as the fallback
+    (``format="pickle"``) for dtypes Arrow cannot represent (spec G9).
     """
 
     op: Literal["inject_df"] = "inject_df"
     name: str
-    handle: Any = None
+    format: Literal["arrow", "pickle"] = "arrow"
+    #: shared-memory block name carrying the Arrow IPC stream (format="arrow").
+    shm_name: Optional[str] = None
+    #: exact byte length written into the shm block (format="arrow").
+    size: Optional[int] = None
+    #: base64-encoded pickle bytes (format="pickle").
+    payload: Optional[str] = None
 
 
 class GetVarRequest(BaseModel):

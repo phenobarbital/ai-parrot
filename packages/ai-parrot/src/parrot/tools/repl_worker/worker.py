@@ -231,8 +231,19 @@ def _dispatch(namespace: WorkerNamespace, message: Any) -> Any:
     if isinstance(message, PingRequest):
         return PongResponse()
     if isinstance(message, InjectDfRequest):
-        # Arrow IPC / shared-memory DataFrame transport is TASK-1945.
-        return ErrorResponse(message="not_implemented: inject_df lands in TASK-1945")
+        # FEAT-380 Module 7 (TASK-1945): Arrow IPC / shared-memory transport,
+        # pickle fallback for dtypes Arrow can't represent (G9). Local import:
+        # `transport.py` pulls in `pyarrow` (heavy) — deferred so it loads
+        # AFTER apply_rlimits(), same "rlimits before heavy imports" pattern
+        # WorkerNamespace already follows for pandas/numpy/matplotlib.
+        from .transport import decode_dataframe_from_shm, decode_pickle_payload
+
+        if message.format == "arrow":
+            df = decode_dataframe_from_shm(message.shm_name, message.size)
+        else:
+            df = decode_pickle_payload(message.payload)
+        namespace.set_var(message.name, df)
+        return OkResponse()
     return ErrorResponse(message=f"Unhandled message type: {type(message).__name__}")
 
 
