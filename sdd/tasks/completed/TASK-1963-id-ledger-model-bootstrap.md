@@ -285,10 +285,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
+**Notes**: Implemented `IdLedger` (Pydantic model, 4 fields), `load_ledger`/
+`save_ledger` (byte-stable JSON via `json.dumps(..., indent=2,
+sort_keys=False)` + trailing newline, matching `migrate_index.py`), and
+`bootstrap_ledger()` scanning `sdd/tasks/index/*.json` (including
+`_orphans.json` for the TASK counter, excluded from the FEAT-header scan)
+plus `sdd/specs/*.md` for the `**Feature ID**` header. Ran the CLI
+(`python -m scripts.sdd.id_ledger bootstrap`) and committed the resulting
+`sdd/tasks/.id_ledger.json` (`next_task_id=1968`, `next_feature_id=388` —
+strictly ahead of the live max of TASK-1967/FEAT-387). 5 unit tests pass
+(`pytest tests/sdd_scripts/test_id_ledger.py -v`), `ruff check
+scripts/sdd/id_ledger.py` clean.
 
 **Deviations from spec**: none

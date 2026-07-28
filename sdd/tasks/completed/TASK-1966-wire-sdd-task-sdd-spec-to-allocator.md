@@ -204,10 +204,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
+**Notes**: Re-verified `reserve_ids.py`'s actual CLI (`--kind`, `--count`,
+`--base-branch`, `--label`, prints one ID per line, exit 0/1) directly from
+TASK-1964's real implementation before writing the command instructions —
+confirmed no `--dry-run` flag exists (as anticipated in the Codebase
+Contract's "Does NOT Exist"). Added a new guardrail bullet to both command
+files stating IDs are reserved via `reserve_ids.py`, never hand-computed;
+rewrote `/sdd-task` §4 step 3/4 to call `reserve_ids.py --kind task --count
+<N>` and consume `$TASK_IDS` verbatim; rewrote `/sdd-spec` §5's Feature-ID
+line to call `reserve_ids.py --kind feature --count 1`, added the
+`reuse_feature_id` frontmatter escape hatch (documented inline in the
+frontmatter shape block and as prose) for the FEAT-380-style intentional
+multi-spec-split case. Verified manually via the exact commands in the
+task's Test Specification: `grep -n "increment last" sdd-spec.md` → no
+match; `grep -n "reserve_ids" sdd-task.md sdd-spec.md` → matches in both.
+No other section of either file touched (worktree creation, commit steps,
+per-spec index schema all unchanged). `ruff check scripts/sdd/
+tests/sdd_scripts/` shows only 8 pre-existing errors in
+`test_tag_yaml_fixtures.py` (unrelated, not touched by this task); all
+FEAT-387 files remain clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none.

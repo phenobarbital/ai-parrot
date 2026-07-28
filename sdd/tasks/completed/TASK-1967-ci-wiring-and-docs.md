@@ -235,10 +235,57 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
+**Notes**: Added a new step to the existing `lint-and-registry` job in
+`.github/workflows/ci.yml` (not a new job, per the confirmed precedent)
+running `check_id_collisions.py --baseline scripts/sdd/.collision_baseline.json`.
+Added the `--baseline` flag to `check_id_collisions.py`'s CLI (its own
+Implementation Notes explicitly permit this, since `--baseline` did not
+yet exist after TASK-1965) plus 2 new tests
+(`test_baseline_suppresses_known_collisions`,
+`test_baseline_does_not_suppress_new_collisions`) in
+`tests/sdd_scripts/test_check_id_collisions.py`. Updated `sdd/WORKFLOW.md`
+(new "TASK/FEAT ID Allocation (FEAT-387)" section) and `CLAUDE.md`'s SDD
+Auto-Commit Rule table + a new FEAT-387 note.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**IMPORTANT finding, materially changing the baseline's scope**: TASK-1965's
+completion note already flagged this, but it's worth restating here since
+it drove this task's actual implementation. Running
+`check_id_collisions.py` against the real `dev` tree (via this worktree,
+which branched from `dev` and has no other feature's SDD files modified)
+found **316** distinct `TASK-<NNN>` collisions — not the "six known
+FEAT-380-era" ones the spec's Non-Goals/Acceptance-Criteria text describes.
+The other ~310 are low-numbered IDs (TASK-001 through roughly TASK-1770)
+reused across many, many unrelated older features — clearly a pre-existing,
+pre-`per-spec-index` (FEAT-145) era where task numbering was scoped
+per-feature rather than globally unique, long before this spec's race
+condition was possible. Since TASK-1967's own acceptance criterion
+requires "a local dry run... exits 0 against the current dev tree," a
+baseline containing only six IDs would make this brand-new CI check
+immediately fail on merge for reasons unrelated to this feature — the
+opposite of the stated intent ("only fails on NEW collisions introduced
+by the PR's own diff, not pre-existing ones"). I generated
+`scripts/sdd/.collision_baseline.json` programmatically by running
+`find_collisions()` against the live tree at implementation time and
+capturing every current `TASK-<NNN>` collision ID (316 entries, sorted
+numerically) — not a hand-typed six-item list. Verified the local dry run
+acceptance criterion directly: `python -m scripts.sdd.check_id_collisions
+--baseline scripts/sdd/.collision_baseline.json` exits 0 against the
+current tree (316 pre-existing baselined, 40 informational FEAT-ID reuse
+notes, 0 new collisions). All 61 tests in `tests/sdd_scripts/` pass;
+`ruff check scripts/sdd/check_id_collisions.py
+tests/sdd_scripts/test_check_id_collisions.py` clean; `ci.yml` re-parsed
+as valid YAML after editing.
 
-**Deviations from spec**: none
+**Deviations from spec**: (1) The baseline file's CONTENT is the full,
+programmatically-generated set of 316 current collisions rather than the
+spec's assumed six — a data correction, not an architectural deviation;
+the baseline-exception MECHANISM itself (diff-scoped, in-script, git-tracked
+allowlist) is implemented exactly as specified. (2) Per the task's own
+Implementation Notes (not its Files-to-Create/Modify table, which lists
+only the 3 CI/docs files), also modified `scripts/sdd/check_id_collisions.py`
+(added `--baseline`) and created `scripts/sdd/.collision_baseline.json`,
+and added 2 tests to `tests/sdd_scripts/test_check_id_collisions.py` —
+explicitly authorized by the task's own prose ("ADD it here... still
+within this task's file list... rather than reopening TASK-1965").
