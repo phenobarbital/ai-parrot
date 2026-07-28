@@ -299,6 +299,11 @@ class TestBudgetIntegration:
             registry=CompressorRegistry.load(project_root=tmp_path),
             router=router,
             tee=lambda tool_name, payload, codec_name: None,
+            # TASK-1955 built the optional Rust extension in this dev
+            # environment; force the "absent" state explicitly rather
+            # than relying on ambient environment reality, since this
+            # test specifically exercises the no-Rust PASSTHROUGH route.
+            rust_available=False,
         )
         data = [{"a": "x" * 1000} for _ in range(50)]
         out, meta = await stage.run(

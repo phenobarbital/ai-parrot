@@ -174,6 +174,23 @@ class TestEstimateSize:
         assert n_bytes > 0
 
 
-def test_is_rust_available_absent_in_test_env():
-    # The parrot_codec extension does not exist yet (TASK-1955).
+def test_is_rust_available_reflects_extension_presence(monkeypatch):
+    # TASK-1955 built the optional `parrot_codec` extension, so this can no
+    # longer assert a fixed "always absent" truth — whether it's importable
+    # depends on the environment (built here via `maturin develop`, absent
+    # in a fresh checkout). Force each state explicitly via the module's
+    # own cache instead of relying on ambient environment state.
+    import parrot.tools.compression.budget as budget_module
+
+    monkeypatch.setattr(budget_module, "_rust_available_cache", None)
+    monkeypatch.setattr(budget_module, "_rust_absence_logged", False)
+    monkeypatch.setattr(
+        budget_module, "lazy_import",
+        lambda *a, **k: (_ for _ in ()).throw(ImportError("forced absent")),
+    )
     assert is_rust_available() is False
+
+    monkeypatch.setattr(budget_module, "_rust_available_cache", None)
+    monkeypatch.setattr(budget_module, "_rust_absence_logged", False)
+    monkeypatch.setattr(budget_module, "lazy_import", lambda *a, **k: object())
+    assert is_rust_available() is True
