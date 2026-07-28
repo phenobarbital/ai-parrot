@@ -5,6 +5,75 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased] — FEAT-380: Tool-Result Compression Pipeline
+
+A client-agnostic compression stage now runs inside
+`ToolManager.execute_tool()` for every `AbstractTool`/`ToolkitTool` call —
+see [`docs/tools/compression.md`](docs/tools/compression.md) for the full
+feature documentation (config format, levels, kill switch, tee recovery
+flow, savings report, optional Rust extension).
+
+### Behavior Change
+
+- **`AfterToolCallEvent.result_size_bytes` now reports the
+  POST-compression size; the pre-compression size moved to a new field,
+  `result_size_bytes_original`.** Anyone graphing `result_size_bytes` over
+  time will see an unexplained step change at this release — that IS the
+  change: the field's meaning flipped from "raw tool output size" to
+  "size after the compression pipeline ran." Update any dashboard/alert
+  that assumed the old (pre-compression) semantics to read
+  `result_size_bytes_original` instead.
+- **`GoogleGenAIClient.MAX_TOOL_RESULT_CHARS` is now a last line of
+  defense, not the primary one.** Its positional (first-N) truncation
+  behavior is unchanged, but it now runs on payloads that have typically
+  already passed through the compression pipeline above, and a `warning`
+  now logs the tool name and pre/post sizes whenever it actually fires
+  (previously silent on two of its three truncation paths).
+
+### Added
+
+- `parrot.tools.compression` — new package: `FilterLevel`, the
+  `ResultCompressor` protocol + codec registry (`register_codec`/
+  `get_codec`), `CompressorRegistry` (multi-source TOML manifest loading:
+  project → third-party packages → core defaults), `CompressionStage`
+  (gates, effective-level resolution, codec dispatch, tee), the built-in
+  `json_compact` (lossless, `MINIMAL`) and `columnar` (row-oriented
+  splitting, `NORMAL`) codecs, `BudgetRouter` + `CircuitBreaker`
+  (pre-compression latency budgeting, G7/G9), `CompressionTee` (working-
+  memory escape hatch for lossy/error payloads), and `CompressionReport`
+  (per-tool/per-session savings aggregation).
+- New `AfterToolCallEvent` fields (all defaulted — the dataclass is
+  frozen): `compression_codec`, `compression_level`,
+  `result_size_bytes_original`, `compression_duration_ms`,
+  `compression_teed`.
+- `PARROT_COMPRESSION_DISABLED=1` — global kill switch; restores
+  pre-feature behavior exactly.
+- Optional Rust extension `parrot_codec`
+  (`packages/ai-parrot/src/parrot/codec-rs/`, PyO3, built independently
+  via `maturin develop`) accelerates the `columnar` codec's transform for
+  already-serialized (`bytes`/`str`) input, with the GIL released for the
+  duration. Purely optional — `pip install ai-parrot` is unaffected, and
+  every code path has a pure-Python fallback.
+- `clients/live.py`'s voice-session tool execution now routes through
+  `AbstractTool.execute()` instead of the private `tool._execute()` —
+  restoring permission checks, the credential broker, secret/PII
+  redaction, and lifecycle events on that path (previously bypassed all
+  four). `voice_text`/`display_data` are read from the ToolResult's own
+  fields, uncompressed, exactly as before.
+
+### Known limitations (see `docs/tools/compression.md` for detail)
+
+- The live voice route (`clients/live.py`) does not yet apply compression
+  itself — only the permission/broker/redaction/event restoration above.
+- The new `compression_*` fields are not yet populated on the literal
+  `AfterToolCallEvent` instance a subscriber observes (the event fires
+  before the compression stage runs); the real values are in
+  `ToolResult.metadata` today.
+- `CompressionReport` has no automatic `ToolManager` listener yet — feed
+  it events manually.
+
+---
+
 ## [Unreleased] — FEAT-319: EventBus Consolidation
 
 ### Changed
