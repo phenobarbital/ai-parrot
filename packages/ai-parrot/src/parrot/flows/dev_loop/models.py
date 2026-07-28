@@ -17,7 +17,7 @@ See ``sdd/specs/feat-129-upgrades.spec.md`` §3 Module 1 for the FEAT-132
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Literal, Optional, Union
 
 from pydantic import (
     AliasChoices,
@@ -840,6 +840,18 @@ class CodeReviewVerdict(BaseModel):
     summary: str = ""
     files_modified: List[str] = Field(default_factory=list)
 
+    _SEVERITY_ALIASES: ClassVar[Dict[str, str]] = {
+        "blocker": "critical",
+        "blocking": "critical",
+        "error": "major",
+        "warning": "minor",
+        "medium": "minor",
+        "low": "nit",
+        "info": "nit",
+        "trivial": "nit",
+        "high": "major",
+    }
+
     @field_validator("findings", mode="before")
     @classmethod
     def _coerce_findings(cls, v: Any) -> Any:
@@ -854,6 +866,9 @@ class CodeReviewVerdict(BaseModel):
                     item = {**item, "message": item.get("summary", item.get("description", "(no message)"))}
                 if "severity" not in item:
                     item = {**item, "severity": "minor"}
+                sev = item.get("severity", "")
+                if isinstance(sev, str) and sev.lower() in cls._SEVERITY_ALIASES:
+                    item = {**item, "severity": cls._SEVERITY_ALIASES[sev.lower()]}
                 out.append(item)
             else:
                 out.append(item)
