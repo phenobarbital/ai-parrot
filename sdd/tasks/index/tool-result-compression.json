@@ -134,7 +134,7 @@
       "feature_id": "FEAT-380",
       "feature": "tool-result-compression",
       "spec": "sdd/specs/tool-result-compression.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Spec worktree A. Owns tee.py; also edits manager.py (error-branch reorder) and stage.py (tee callback), so it must NOT run concurrently with any other manager.py/stage.py task — but is disjoint from TASK-1954 (codecs/), TASK-1956 (live.py), TASK-1957 (report.py) and TASK-1961 (google/client.py), which can run alongside.",
       "assigned_to": null,
       "started_at": "2026-07-27T17:11:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1953-compression-tee.md"
+      "completed_at": "2026-07-28T00:23:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1953-compression-tee.md"
     },
     {
       "id": "TASK-1954",

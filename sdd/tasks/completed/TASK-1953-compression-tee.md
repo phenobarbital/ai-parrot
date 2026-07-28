@@ -339,10 +339,72 @@ class TestTee:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- Implemented `CompressionTee` (`tee.py`): `store()` (async,
+  `__tee__:<tool>:<turn_id>:<counter>` keys, per-`tool_name` counter defends
+  `put_generic`'s silent overwrite), `attach_tee_pointer()` (module-level
+  function — the `_tee` block per spec §2), turn-based `_retain`/`cleanup`
+  eviction via `drop_stored()`, and `bind_working_memory()` for lazy
+  (re)binding. Never raises — a failing tee logs a warning and returns
+  `None`.
+- **`turn_id` deviation (flagged in advance by the task itself)**: verified
+  `ToolManager` has no conversational-turn concept anywhere in `manager.py`.
+  `CompressionTee` uses a stable per-instance UUID (generated once at
+  construction — one `CompressionTee` per `ToolManager`, i.e. per user
+  session after `clone()`) as the `turn_id` component, and retention tracks
+  the last N tee *entries* rather than N conversational turns. Documented
+  in the class docstring.
+- Wired the tee into `CompressionStage` (`stage.py`): `_effective_level()`
+  now caps a resolved `NORMAL`/`AGGRESSIVE` level to `MINIMAL` via
+  `levels.cap()` whenever `tee.available` is falsy (G3), applied uniformly
+  regardless of which precedence rule produced the level (including
+  `level_override`, since a hard safety invariant must not be bypassable).
+  `run()` now `await`s the tee (added `_invoke_tee`/`_tee_available` — the
+  `tee` constructor param now accepts a real `CompressionTee` OR, for
+  backward compatibility, a legacy bare callable duck-typed via
+  `getattr(..., "store"/"available", ...)`) and, on a successful tee,
+  attaches the `_tee` pointer to the RETURNED payload (not just metadata)
+  via `attach_tee_pointer` — this is what makes `"_tee" in out` true for
+  callers of `execute_tool()`.
+- `manager.py`: reordered the `status == "error"` branch — `result.result`
+  is now teed (`reason="error"`) BEFORE `raise ValueError(result.error)`;
+  the raise itself, its type, and its message are byte-identical.
+  `_find_working_memory_toolkit()` scans registered tools for one whose
+  `bound_method.__self__` is a `WorkingMemoryToolkit` (never constructs
+  one); `_bind_compression_tee()` calls it lazily on every
+  `execute_tool()` invocation that reaches the tee, since a
+  `WorkingMemoryToolkit` may be registered after the manager (and its
+  `CompressionTee`) is constructed — verified with a dedicated test.
+  `clone()` docstring extended; each clone gets its own fresh
+  `CompressionTee` from its own `__init__` (never shared).
+- **Necessary, documented deviation from the file scope**: fixing 3
+  existing TASK-1951 tests in `test_stage.py` (not in this task's file
+  list) was unavoidable — they encoded assumptions (NORMAL level stays
+  NORMAL with no tee configured; a lossy `out` never carries a `_tee` key)
+  that are directly superseded by this task's own G3 capping/pointer
+  requirements. Left every other test in that file untouched; each fix is
+  a single, minimally-scoped, clearly-commented change (two tests gained a
+  dummy always-"available" tee stub so they keep probing what they
+  originally probed — precedence and budget routing, not tee capping; one
+  test's expected `out` was updated to include the now-attached `_tee`
+  pointer).
+- Verification: full compression suite 90/90 green; broader
+  `tests/tools/` (excl. compression) unchanged at 51 pre-existing failures
+  (same set as before this task, unrelated to compression);
+  `test_toolmanager_load_tool.py` + `test_toolmanager_confirmation.py` +
+  `test_tool_manager_mcp.py` + `tests/tools/test_grants.py` 62/62 (all
+  green this run, incl. the two web_scraping tests that needed the
+  worktree's missing compiled `.so` copied over per TASK-1952's note).
+  `ruff check compression/ manager.py` — same single pre-existing `F821`
+  finding on `manager.py` noted in TASK-1952, unrelated to this task;
+  `tee.py`/`stage.py` lint clean.
+
+**Deviations from spec**: `turn_id` is a stable per-`CompressionTee`
+identifier, not a real conversational-turn counter (none exists — see
+above); consequently retention is "last N tee entries" not "last N turns".
+Additionally touched `tests/tools/compression/test_stage.py` (outside this
+task's file list) to keep 3 TASK-1951 tests valid under the new G3
+capping/pointer-attachment behavior — see notes above.
