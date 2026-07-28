@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-388
 **Date**: 2026-07-28
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 **Brainstorm**: `sdd/proposals/devloop-cli-homologation.brainstorm.md`
 
