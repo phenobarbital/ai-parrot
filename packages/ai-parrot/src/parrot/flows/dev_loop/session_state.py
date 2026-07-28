@@ -64,6 +64,7 @@ import time
 import uuid
 from typing import (
     Annotated,
+    Any,
     Callable,
     Dict,
     List,
@@ -1197,7 +1198,8 @@ _DISPATCH_KIND_MAP: Dict[str, type] = {
 
 
 def action_from_flow_event(event: str, node_id: str, ts: float,
-                           error: str = "") -> Optional[DevLoopAction]:
+                           error: str = "",
+                           node_result: Any = None) -> Optional[DevLoopAction]:
     """Map a ``FlowEventPublisher`` event to a :data:`DevLoopAction`.
 
     Args:
@@ -1206,6 +1208,7 @@ def action_from_flow_event(event: str, node_id: str, ts: float,
         node_id: The node the event concerns.
         ts: Event timestamp (POSIX seconds).
         error: Optional error string (only used for ``node_failed``).
+        node_result: Serialised node result (only for ``node_completed``).
 
     Returns:
         The mapped action, or ``None`` if ``event`` is not recognised
@@ -1217,7 +1220,10 @@ def action_from_flow_event(event: str, node_id: str, ts: float,
     if mapped == "node/started":
         return NodeStarted(node_id=node_id, ts=ts)  # type: ignore[arg-type]
     if mapped == "node/completed":
-        return NodeCompleted(node_id=node_id, ts=ts)  # type: ignore[arg-type]
+        summary: Dict[str, str] = {}
+        if isinstance(node_result, dict):
+            summary = {str(k): str(v) for k, v in node_result.items()}
+        return NodeCompleted(node_id=node_id, ts=ts, summary=summary)  # type: ignore[arg-type]
     if mapped == "node/failed":
         return NodeFailed(node_id=node_id, ts=ts, error=error[:500])  # type: ignore[arg-type]
     return NodeSkipped(node_id=node_id, ts=ts)  # type: ignore[arg-type]

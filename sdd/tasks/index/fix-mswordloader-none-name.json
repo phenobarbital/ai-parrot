@@ -1,0 +1,35 @@
+{
+  "feature": "fix-mswordloader-none-name",
+  "feature_id": "FEAT-382",
+  "spec": "sdd/specs/fix-mswordloader-none-name.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-27T19:33:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1942",
+      "feature_id": "FEAT-382",
+      "feature": "fix-mswordloader-none-name",
+      "slug": "guard-para-style-none",
+      "title": "Guard para.style None access in MSWordLoader.docx_to_markdown",
+      "status": "pending",
+      "priority": "high",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1942-guard-para-style-none.md"
+    },
+    {
+      "id": "TASK-1943",
+      "feature_id": "FEAT-382",
+      "feature": "fix-mswordloader-none-name",
+      "slug": "test-none-style-coverage",
+      "title": "Add pytest coverage for para.style is None scenario",
+      "status": "pending",
+      "priority": "high",
+      "depends_on": ["TASK-1942"],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-1943-test-none-style-coverage.md"
+    }
+  ]
+}

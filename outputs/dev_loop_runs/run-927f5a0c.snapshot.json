@@ -1,0 +1,48 @@
+{
+  "channel": "parrot-session:/run-927f5a0c",
+  "state": {
+    "run_id": "run-927f5a0c",
+    "channel": "parrot-session:/run-927f5a0c",
+    "revision": false,
+    "phase": "failed",
+    "created_at": 1785019407.5632243,
+    "finished_at": 1785019409.2366319,
+    "work_kind": "bug",
+    "summary": "`parrot devloop` cli console is not possible to terminate with CTRL+C",
+    "jira_issue_key": "",
+    "pr_url": "",
+    "nodes": {
+      "intent_classifier": {
+        "node_id": "intent_classifier",
+        "status": "completed",
+        "started_at": 1785019407.6513977,
+        "finished_at": 1785019407.6571054,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      },
+      "bug_intake": {
+        "node_id": "bug_intake",
+        "status": "completed",
+        "started_at": 1785019407.6575544,
+        "finished_at": 1785019407.6594498,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      },
+      "research": {
+        "node_id": "research",
+        "status": "running",
+        "started_at": 1785019407.659664,
+        "finished_at": null,
+        "error": "",
+        "dispatch": null,
+        "summary": {}
+      }
+    },
+    "gates": {},
+    "cancel_requested_by": "",
+    "error": ""
+  },
+  "from_seq": 7
+}

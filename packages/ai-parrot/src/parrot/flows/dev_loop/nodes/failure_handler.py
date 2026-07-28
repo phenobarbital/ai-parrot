@@ -81,10 +81,12 @@ class FailureHandlerNode(DevLoopNode):
         failure_kind, failure_payload = self._resolve_failure(ctx, shared)
 
         issue_key = research.jira_issue_key if research else None
-        if not issue_key:
-            self.logger.error(
-                "FailureHandler: no jira_issue_key in ctx; research never "
-                "created the ticket. failure_kind=%s",
+        skip_jira = shared.get("skip_jira", False)
+        if not issue_key or skip_jira:
+            self.logger.info(
+                "FailureHandler: %s — skipping Jira escalation. "
+                "failure_kind=%s",
+                "skip_jira=True" if skip_jira else "no jira_issue_key",
                 failure_kind,
             )
             return {"status": "escalated_without_ticket"}

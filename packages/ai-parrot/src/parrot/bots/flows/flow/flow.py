@@ -31,6 +31,7 @@ from ..core.context import FlowContext
 from ..core.fsm import AgentTaskMachine
 from ..core.result import (
     FlowResult,
+    _serialise_result_value,
     build_node_metadata,
     determine_run_status,
 )
@@ -1194,6 +1195,7 @@ class AgentsFlow(PersistenceMixin):
                         "flow": self.name,
                         "context": ctx,
                         "duration_ms": durations[nid] * 1000.0,
+                        "node_result": _serialise_result_value(event.result),
                     },
                 )
 

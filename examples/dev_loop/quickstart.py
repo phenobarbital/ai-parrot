@@ -64,12 +64,16 @@ logger = logging.getLogger("dev_loop.quickstart")
 
 def _build_jira_toolkit() -> JiraToolkit:
     """Service-account JiraToolkit (flow-bot, basic_auth)."""
+    workflow_paths = {}
+    if conf.DEV_LOOP_JIRA_WORKFLOW_PATH:
+        workflow_paths["_DEFAULT"] = conf.DEV_LOOP_JIRA_WORKFLOW_PATH
     return JiraToolkit(
         server_url=conf.config.get("JIRA_INSTANCE"),
         auth_type="basic_auth",
         username=conf.config.get("JIRA_USERNAME"),
         password=conf.config.get("JIRA_API_TOKEN"),
         default_project=conf.config.get("JIRA_PROJECT"),
+        workflow_paths=workflow_paths,
     )
 
 

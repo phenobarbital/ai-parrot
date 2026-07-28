@@ -400,7 +400,7 @@ def _resolve_codereview_dispatcher(
             :func:`_build_codex_adversarial_reviewer`).
     """
     configured = conf.config.get(
-        "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+        "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
     ).strip().lower()
 
     adversary = _build_codex_adversarial_reviewer(
@@ -486,16 +486,17 @@ def _build_jira_toolkit() -> JiraToolkit:
     Declares the project's **workflow path** so ``jira_transition_to`` can
     walk multi-stage custom workflows. Jira's API only exposes the
     transitions available from an issue's *current* status, so a single hop
-    cannot cross a chain like ``Backlog → Open → To Do → In Progress →
-    Resolved`` — without a declared path the dev-loop's resolve/deploy
+    cannot cross a chain like ``Backlog → Open → In Progress → Resolved →
+    Closed`` — without a declared path the dev-loop's resolve/deploy
     transition silently falls back to one direct hop and fails. The path is
     read from ``JIRA_WORKFLOW_PATH_<PROJECT>`` (e.g. ``JIRA_WORKFLOW_PATH_NAV``)
-    and defaults to the NAV chain. Separators: ``>``, ``->`` or ``→``.
+    and defaults to ``DEV_LOOP_JIRA_WORKFLOW_PATH`` from ``conf``.
+    Separators: ``>``, ``->`` or ``→``.
     """
     project = conf.config.get("JIRA_PROJECT") or "NAV"
     workflow_path = conf.config.get(
         f"JIRA_WORKFLOW_PATH_{project.upper()}",
-        fallback="Backlog > Open > To Do > In Progress > Resolved",
+        fallback=conf.DEV_LOOP_JIRA_WORKFLOW_PATH,
     )
     return JiraToolkit(
         server_url=conf.config.get("JIRA_INSTANCE"),
@@ -567,22 +568,32 @@ def _build_log_toolkits() -> dict[str, object]:
     and ``default_log_group`` per project policy — the per-source log
     group from each :class:`LogSource` is no longer forwarded as a
     per-query kwarg.
+
+    CloudWatch is optional: when AWS credentials are missing the server
+    starts without log-fetching capability and ResearchNode gracefully
+    skips the ``cloudwatch`` source.
     """
     from parrot_tools.aws.cloudwatch import CloudWatchToolkit
 
     aws_id = conf.config.get("AWS_PROFILE", fallback="cloudwatch")
     log_group = conf.config.get("CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch")
-    toolkits: dict[str, object] = {
-        "cloudwatch": CloudWatchToolkit(
+    toolkits: dict[str, object] = {}
+    try:
+        toolkits["cloudwatch"] = CloudWatchToolkit(
             aws_id=aws_id,
             default_log_group=log_group,
-        ),
-    }
-    logger.info(
-        "CloudWatch toolkit ready (profile=%s, log_group=%s)",
-        aws_id,
-        log_group,
-    )
+        )
+        logger.info(
+            "CloudWatch toolkit ready (profile=%s, log_group=%s)",
+            aws_id,
+            log_group,
+        )
+    except (ValueError, ImportError) as exc:
+        logger.warning(
+            "CloudWatch toolkit disabled — missing credentials or "
+            "dependency (%s). Log-fetching will be unavailable.",
+            exc,
+        )
     return toolkits
 
 
@@ -947,7 +958,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 ),
                 "codereview_agent": app.get("codereview_agent_key", "parallel"),
                 "codereview_agent_configured": conf.config.get(
-                    "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+                    "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
                 ),
                 "log_group": conf.config.get(
                     "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
@@ -957,6 +968,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 "qa_max_retries": conf.DEV_LOOP_QA_MAX_RETRIES,
                 "docs_artifact_dir": conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
+                "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
                 "development_pool_max": app.get("development_pool_max", 4),
                 "max_concurrent_runs": getattr(
                     app.get("runner"), "max_concurrent_runs", None
@@ -1030,24 +1042,33 @@ async def handle_run(request: web.Request) -> web.Response:
     runner: DevLoopRunner = request.app["runner"]
     started_at = time.time()
 
+    skip_qa = bool(form.get("skip_qa", False))
+    skip_jira = bool(form.get("skip_jira", False))
+    extra_shared: dict[str, Any] = {}
+    if skip_qa:
+        extra_shared["skip_qa"] = True
+    if skip_jira:
+        extra_shared["skip_jira"] = True
+
     async def _run() -> None:
         try:
             logger.info(
-                "Starting %s flow run_id=%s (%s)",
-                "FEATURE" if is_feature else "bug", run_id, label,
+                "Starting %s flow run_id=%s (%s) skip_qa=%s skip_jira=%s",
+                "FEATURE" if is_feature else "bug", run_id, label, skip_qa, skip_jira,
             )
             result = await runner.run(
                 brief,
                 run_id=run_id,
                 initial_task=initial_task,
+                extra_shared=extra_shared or None,
             )
             logger.info("Flow run_id=%s finished status=%s in %.1fs", run_id, result.status, time.time() - started_at)
         except Exception:
             logger.exception("Flow run_id=%s failed", run_id)
 
     task = asyncio.create_task(_run(), name=f"flow-run-{run_id}")
-    request.app["flow_tasks"].add(task)
-    task.add_done_callback(request.app["flow_tasks"].discard)
+    request.app["flow_tasks"][run_id] = task
+    task.add_done_callback(lambda t: request.app["flow_tasks"].pop(run_id, None))
 
     return web.json_response(
         {
@@ -1058,6 +1079,24 @@ async def handle_run(request: web.Request) -> web.Response:
             "bundle_url": f"/api/flow/{run_id}/bundle",
         }
     )
+
+
+async def handle_cancel(request: web.Request) -> web.Response:
+    """Cancel a running flow: apply RunCancelled + cancel the asyncio task."""
+    run_id = request.match_info["run_id"]
+    runner: DevLoopRunner = request.app["runner"]
+
+    try:
+        envelope = await runner.cancel_run(run_id, requested_by="console-user")
+    except KeyError:
+        return web.json_response({"error": "unknown_run"}, status=404)
+
+    task = request.app["flow_tasks"].get(run_id)
+    if task and not task.done():
+        task.cancel()
+
+    logger.info("cancel_run: run_id=%s", run_id)
+    return web.json_response({"envelope": envelope.model_dump(mode="json")})
 
 
 def _run_id_is_safe(run_id: str) -> bool:
@@ -1252,6 +1291,7 @@ async def _on_startup(app: web.Application) -> None:
     require_plan_approval = bool(
         getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
     )
+    skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
     jira_toolkit = _build_jira_toolkit()
     git_toolkit = _build_git_toolkit()
@@ -1271,6 +1311,7 @@ async def _on_startup(app: web.Application) -> None:
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
+        skip_qa=skip_qa,
     )
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
     # The extra deps let the runner build the revision (FEAT-250) and
@@ -1320,6 +1361,7 @@ async def _on_startup(app: web.Application) -> None:
             # identical opt-in wiring instead of silently dropping it.
             graph_memory=graph_memory,
             require_plan_approval=require_plan_approval,
+            skip_qa=skip_qa,
         )
         app["feature_mode_available"] = True
         logger.info(
@@ -1337,7 +1379,7 @@ async def _on_startup(app: web.Application) -> None:
     app["runner"] = runner
     app["codereview_agent_key"] = codereview_agent_key
     app["development_pool_max"] = development_pool_max
-    app["flow_tasks"] = set()
+    app["flow_tasks"] = {}  # run_id -> asyncio.Task
     logger.info(
         "Dev-loop flow ready (max %d concurrent runs)",
         runner.max_concurrent_runs,
@@ -1353,7 +1395,7 @@ async def _on_cleanup(app: web.Application) -> None:
     swallows its own exceptions because shutdown errors should never
     mask each other.
     """
-    tasks = list(app.get("flow_tasks", []))
+    tasks = list(app.get("flow_tasks", {}).values())
     for task in tasks:
         task.cancel()
     if tasks:
@@ -1386,6 +1428,7 @@ def build_app(redis_url: str = "redis://localhost:6379/0") -> web.Application:
     app.router.add_get("/api/flow/{run_id}/bundle", handle_bundle)
     app.router.add_get("/api/flow/{run_id}/replay", handle_replay)
     app.router.add_get("/api/flow/{run_id}/ws", flow_stream_ws)
+    app.router.add_post("/api/flow/{run_id}/cancel", handle_cancel)
     return app
 
 

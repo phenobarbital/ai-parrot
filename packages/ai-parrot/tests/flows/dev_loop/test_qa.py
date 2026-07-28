@@ -159,6 +159,37 @@ class TestDispatchValidationErrorPropagates:
             await node.execute(ctx)
 
 
+class TestSkipQA:
+    @pytest.mark.asyncio
+    async def test_skip_qa_returns_synthetic_pass(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock()
+        node = QANode(dispatcher=dispatcher, skip_qa=True)
+        result = await node.execute(ctx)
+
+        assert result.passed is True
+        assert result.lint_passed is True
+        assert result.code_review_passed is True
+        assert "skip_qa=True" in result.notes
+        assert ctx["qa_report"] is result
+        dispatcher.dispatch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skip_qa_false_runs_normally(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+                CodeReviewVerdict(passed=True),
+            ]
+        )
+        node = QANode(dispatcher=dispatcher, skip_qa=False)
+        result = await node.execute(ctx)
+
+        assert result.passed is True
+        assert dispatcher.dispatch.await_count == 2
+
+
 class TestCwd:
     @pytest.mark.asyncio
     async def test_cwd_uses_worktree_path(self, ctx):

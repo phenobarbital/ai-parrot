@@ -20,6 +20,7 @@ modifies state only on `base_branch`.
 /sdd-done FEAT-014
 /sdd-done videoreel-visual-changes
 /sdd-done FEAT-014 --dry-run           # show what would change, don't change anything
+/sdd-done FEAT-014 --merge             # direct merge into base_branch (old behavior)
 /sdd-done FEAT-014 --force             # mark done even if some checks fail
 /sdd-done FEAT-014 --resolve-jira      # also transition the Jira ticket to Done
 /sdd-done FEAT-014 --sync-down         # for hotfixes: after the user merges the PR
@@ -37,12 +38,15 @@ modifies state only on `base_branch`.
 
 > **CRITICAL — `/sdd-done` NEVER pushes to `main` and NEVER opens a PR against `main` (FEAT-145).**
 > Hotfixes go to `main` ONLY via a manually-opened PR. This rule is non-negotiable
-> and applies to every flag combination — including `--force` and `--resolve-jira`.
+> and applies to every flag combination — including `--merge`, `--force`, and `--resolve-jira`.
 > For hotfixes, this command pushes the hotfix branch and prints a `gh pr create
 > --base main` snippet. After the user merges the PR, the `.github/workflows/sync-down.yml`
 > Action propagates the change to `staging` and `dev` automatically. If the Action
 > fails or you are offline, re-run with `--sync-down` to propagate the change back to
 > both `staging` and `dev` manually. (`--sync-dev` is a deprecated alias for `--sync-down`.)
+>
+> **Default behavior for features**: `/sdd-done` opens a PR against `BASE_BRANCH`
+> (typically `dev` or `staging`). Pass `--merge` to merge directly instead.
 
 ## Steps
 
@@ -107,19 +111,15 @@ Read the task file and extract the "Files to create/modify" section.
 test -f <worktree-path>/<filepath>
 ```
 
-**c) Test check (optional, skip if --force):**
-If the task file lists test commands, run them in the worktree:
-```bash
-cd <worktree-path> && npx vitest run <test-path> 2>&1 | tail -10
-# or
-cd <worktree-path> && pytest <test-path> -x -q 2>&1 | tail -5
-```
+**Note:** Test validation is intentionally skipped here — each task already ran
+its acceptance-criteria tests during `/sdd-start` or `sdd-worker` execution.
+Re-running them at close time adds latency without new signal.
 
 ### 5. Build Verification Report
 Classify each task:
 
-- **✅ VERIFIED** — commit found AND files exist AND tests pass (or no tests specified).
-- **⚠️ PARTIAL** — commit found but some files missing or tests failing.
+- **✅ VERIFIED** — commit found AND files exist.
+- **⚠️ PARTIAL** — commit found but some files missing.
 - **❌ NO EVIDENCE** — no matching commits, files don't exist.
 
 Present the report:
@@ -134,12 +134,10 @@ Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
   ✅ TASK-096 — Scene Editor Refactor
      Commits: feat(videoreel): TASK-096 — Scene Editor Refactor (abc1234)
      Files: src/lib/components/SceneEditor.svelte ✅
-     Tests: 3 passed ✅
 
   ⚠️ TASK-097 — Visual Transitions
      Commits: feat(videoreel): TASK-097 — Visual Transitions (def5678)
-     Files: src/lib/components/Transitions.svelte ✅
-     Tests: 1 failed ⚠️
+     Files: src/lib/components/Transitions.svelte ✅ | src/lib/utils/transitions.ts ❌
 
   ❌ TASK-098 — Export Pipeline
      Commits: none found
@@ -192,13 +190,14 @@ If the worktree branch hasn't been pushed yet:
 git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
 ```
 
-### 9. Merge Feature Branch into `<BASE_BRANCH>` (FEAT-145, flow-aware)
+### 9. Integrate Feature Branch (FEAT-145, flow-aware)
 
 > **CRITICAL**: This is the step that brings the implementation code into the
-> base branch. Without it, the task index is updated but the code changes remain
-> only on the feature branch — causing "marked done but not implemented" issues.
+> base branch. The default is to open a PR; pass `--merge` to merge directly.
 
 **Hard refusal — `BASE_BRANCH == "main"`:**
+
+Hotfixes ALWAYS go through a PR, regardless of flags (including `--merge`):
 
 ```bash
 if [[ "$BASE_BRANCH" == "main" ]]; then
@@ -223,7 +222,47 @@ EOF
 fi
 ```
 
-**Feature flow (`BASE_BRANCH != "main"`)** — perform the merge:
+**Feature flow (`BASE_BRANCH != "main"`) — default: open a PR:**
+
+Unless `--merge` is passed, push the feature branch and open a PR against
+`BASE_BRANCH`:
+
+```bash
+# Push the feature branch (already done in Step 8, but ensure it's up to date)
+git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
+
+# Open a PR against the base branch
+gh pr create \
+  --base "$BASE_BRANCH" \
+  --head "feat-<FEAT-ID>-<slug>" \
+  --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
+  --body "$(cat <<EOF
+## Summary
+
+<Verification report from Step 5 — list of tasks implemented>
+
+## Tasks
+
+<N>/<total> tasks verified.
+
+---
+_Closed by /sdd-done_
+EOF
+)"
+```
+
+If `gh` is not installed or not authenticated, print the manual command:
+```
+ℹ️  Could not create PR automatically. Run manually:
+
+    gh pr create --base <BASE_BRANCH> --head feat-<FEAT-ID>-<slug> \
+      --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
+      --body "<verification summary>"
+```
+
+**Feature flow with `--merge` — direct merge (old behavior):**
+
+When `--merge` is explicitly passed, perform a direct merge instead of a PR:
 
 ```bash
 # We're already on $BASE_BRANCH (verified in Step 1)
@@ -244,13 +283,10 @@ If the merge has conflicts:
 If conflicts are resolved, commit the merge. If the user aborts, STOP and
 do NOT proceed to cleanup.
 
-**Self-heal — reap stalled `active/` orphans (runs after every merge):**
+**Self-heal — reap stalled `active/` orphans (runs after every `--merge`):**
 
-> The merge can carry an `active/` copy of a task back onto `<BASE_BRANCH>` if
-> the feature branch ever copied-instead-of-moved during completion. This sweep
-> removes any `active/` file whose task is `done` in the index AND has a
-> `completed/` twin (leaves others for manual review). It is idempotent and
-> safe to run unconditionally.
+> Only applies when `--merge` is used. When using PR flow, the orphan sweep
+> happens on the PR merge side.
 
 ```bash
 scripts/sdd/heal_orphans.sh <feature-slug>
@@ -483,6 +519,8 @@ git branch -d feat-<FEAT-ID>-<slug>
 ```
 
 ### 12. Output
+
+**Default (PR flow):**
 ```
 ✅ FEAT-<ID> — <title>: <N>/<total> tasks closed.
 
@@ -490,9 +528,24 @@ Closed:
   ✅ TASK-096 — Scene Editor Refactor (verified)
   ✅ TASK-097 — Visual Transitions (verified)
 
-Index updated on dev and committed.
+Index updated and committed.
 Branch pushed: feat-<ID>-<slug>
-Merged into dev: feat-<ID>-<slug> ✅
+PR opened: feat-<ID>-<slug> → <BASE_BRANCH>  <PR-URL>
+Worktree removed: .claude/worktrees/feat-<ID>-<slug>
+Local branch deleted: feat-<ID>-<slug>
+```
+
+**With `--merge`:**
+```
+✅ FEAT-<ID> — <title>: <N>/<total> tasks closed.
+
+Closed:
+  ✅ TASK-096 — Scene Editor Refactor (verified)
+  ✅ TASK-097 — Visual Transitions (verified)
+
+Index updated and committed.
+Branch pushed: feat-<ID>-<slug>
+Merged into <BASE_BRANCH>: feat-<ID>-<slug> ✅
 Worktree removed: .claude/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
@@ -505,10 +558,11 @@ Jira: NAV-8036 → Done ✅
 
 If ALL tasks were closed:
 ```
-✅ FEAT-<ID> — <title>: all <N> tasks closed and merged into dev.
+✅ FEAT-<ID> — <title>: all <N> tasks closed.
 
-Worktree cleaned up.
-Feature branch merged and deleted.
+Branch pushed. PR opened → <BASE_BRANCH>.
+{if --merge} Merged into <BASE_BRANCH> directly. {end if}
+Worktree cleaned up. Feature branch deleted.
 {if --resolve-jira} Jira NAV-8036 → Done ✅ {end if}
 ```
 

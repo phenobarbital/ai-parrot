@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
+    CodeReviewVerdict,
     QAReport,
     RepoSpec,
     ResearchOutput,
@@ -79,6 +80,58 @@ def test_qareport_codereview_explicit():
     )
     assert r.code_review_passed is False
     assert r.code_review_findings == ["missing null check"]
+
+
+def test_qareport_codereview_findings_coerces_dicts():
+    """Dicts (CodeReviewFinding-shaped) are coerced to their message string."""
+    r = QAReport(
+        passed=True,
+        criterion_results=[],
+        lint_passed=True,
+        code_review_findings=[
+            {"file": "foo.py", "message": "missing null check", "severity": "minor"},
+            "plain string finding",
+            {"file": "bar.py", "severity": "major"},
+        ],
+    )
+    assert r.code_review_findings[0] == "missing null check"
+    assert r.code_review_findings[1] == "plain string finding"
+    # no message key -> fallback to str(dict)
+    assert "bar.py" in r.code_review_findings[2]
+    assert "major" in r.code_review_findings[2]
+
+
+# ── CodeReviewVerdict findings coercion ────────────────────────────────
+
+
+def test_verdict_coerces_plain_strings():
+    v = CodeReviewVerdict(findings=["missing null check"])
+    assert v.findings[0].message == "missing null check"
+    assert v.findings[0].severity == "minor"
+
+
+def test_verdict_coerces_dict_missing_message_and_severity():
+    """Subagent returns file+verdict but no message/severity."""
+    v = CodeReviewVerdict(
+        passed=False,
+        findings=[
+            {"file": "parrot/loaders/msword.py", "verdict": "CONFIRMED"},
+            {"file": "tests/test_x.py", "summary": "test gap", "verdict": "PLAUSIBLE"},
+        ],
+    )
+    assert len(v.findings) == 2
+    assert v.findings[0].file == "parrot/loaders/msword.py"
+    assert v.findings[0].severity == "minor"
+    assert v.findings[0].message == "(no message)"
+    assert v.findings[1].message == "test gap"
+
+
+def test_verdict_passes_well_formed_dicts_through():
+    v = CodeReviewVerdict(
+        findings=[{"message": "actual issue", "severity": "major", "file": "x.py"}]
+    )
+    assert v.findings[0].message == "actual issue"
+    assert v.findings[0].severity == "major"
 
 
 # ── ResearchOutput.repo_path ───────────────────────────────────────────

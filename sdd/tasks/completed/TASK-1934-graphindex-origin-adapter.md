@@ -15,7 +15,7 @@
 Implements spec §3 Module 5: the GraphIndex origin adapter over the 4-phase
 graph retrieval pipeline (seed → expand → community annotation → assembly).
 Resolved decision: the adapter is FTS-capable **only when configured with a
-`GraphIndexSQLiteReader`** — its `search_symbols` is an async FTS5/BM25
+`SQLiteGraphReader`** — its `search_symbols` is an async FTS5/BM25
 lexical search; without a reader, `supports_fts=False`.
 
 ---
@@ -25,7 +25,7 @@ lexical search; without a reader, `supports_fts=False`.
 - Implement `GraphIndexOrigin(SearchOrigin)` in
   `parrot_tools/multistoresearch/origins/graphindex.py`.
 - Constructor: `retriever` (`GraphExpandedRetriever` instance),
-  optional `reader` (`GraphIndexSQLiteReader` instance), `name: str = "graphindex"`,
+  optional `reader` (`SQLiteGraphReader` instance), `name: str = "graphindex"`,
   `description` (default explains graph retrieval + community context),
   optional `timeout`, optional `seed_top_k` pass-through.
 - `search`: `await retriever.search(query, seed_top_k=...)` →
@@ -64,8 +64,17 @@ from parrot.models import SearchOriginKind, OriginHit                # TASK-1930
 from parrot_tools.multistoresearch.origins.base import SearchOrigin  # TASK-1932
 # Backends passed as instances; lazy/TYPE_CHECKING imports only:
 # parrot.knowledge.graphindex.retriever.GraphExpandedRetriever
-# parrot.knowledge.graphindex.sqlite_reader.GraphIndexSQLiteReader
+# parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader
 ```
+
+> **Contract correction (verified 2026-07-27 during TASK-1934 implementation):**
+> the reader class is actually named **`SQLiteGraphReader`**
+> (`packages/ai-parrot/src/parrot/knowledge/graphindex/sqlite_reader.py:47`,
+> re-exported from `parrot.knowledge.graphindex.__init__`), not
+> `SQLiteGraphReader` as originally written in this task and in the
+> spec. `search_symbols` is unaffected — same signature, same file, same
+> line (320). All other Codebase Contract references below are updated to
+> the correct name.
 
 ### Existing Signatures to Use
 ```python
@@ -80,7 +89,7 @@ class GraphExpandedRetriever:        # line 168
                      budget: Optional[BudgetConfig] = None) -> GraphRetrievalResult  # line 658
 
 # packages/ai-parrot/src/parrot/knowledge/graphindex/sqlite_reader.py
-class GraphIndexSQLiteReader:  # exact class-name spelling: verify at the top of the file
+class SQLiteGraphReader:  # exact class-name spelling: verify at the top of the file
     async def search_symbols(self, query: str, *, limit: int = 20) -> list[dict]  # line 320
     # FTS5/BM25 over title+summary; auto-load()s; scores NEGATIVE, ascending = best.
     # Result dict keys: node_id, kind, title, source_uri, summary, score, domain_tags
@@ -168,10 +177,25 @@ async def test_search_flattens_retrieval_result():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Implemented `GraphIndexOrigin` wrapping
+`GraphExpandedRetriever.search()`, flattening `GraphRetrievalResult.nodes`
+(already sorted by `combined_score` descending) into ordered
+`OriginHit`s. `supports_fts` reflects whether a reader was configured;
+`fts_search` delegates to `search_symbols(query, limit=k)`, preserving
+the reader's best-first order while carrying the raw NEGATIVE FTS5 BM25
+score through unmodified (documented in `metadata["score_convention"]`).
+15 unit tests added across the three test files touched this task
+session (26 total in `multistoresearch/`), all passing; `ruff check`
+clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Corrected a stale Codebase Contract reference
+BEFORE implementing (per Cardinal Rule: verify before writing code) — the
+reader class is actually named `SQLiteGraphReader`
+(`parrot/knowledge/graphindex/sqlite_reader.py:47`), not
+`GraphIndexSQLiteReader` as written in the original task/spec text. The
+task file's contract section was corrected first (see the "Contract
+correction" note inserted above); `search_symbols`'s signature, location,
+and semantics were all otherwise accurate as specified. No other
+deviation.

@@ -59,6 +59,7 @@ def build_dev_loop_node_factories(
     wiki_toolkit: Optional[Any] = None,
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
+    skip_qa: bool = False,
 ) -> Dict[str, NodeFactory]:
     """Return the ``{dev_loop.* type: factory}`` map binding live deps.
 
@@ -115,6 +116,10 @@ def build_dev_loop_node_factories(
             ``require_deployment_approval``'s node-side shape) before the
             agent fleet dispatches. Only takes effect when the run also
             has a ``SessionHost``.
+        skip_qa: When ``True``, ``QANode`` returns a synthetic passing
+            ``QAReport`` without running deterministic checks or code
+            review. Useful for trivial fixes where QA overhead exceeds
+            the research + development cycle. Defaults to ``False``.
 
     Returns:
         A mapping suitable for ``node_factories=`` on
@@ -154,6 +159,7 @@ def build_dev_loop_node_factories(
                 dispatcher_builder=development_dispatcher_builder,
                 pool_max=development_pool_max,
                 require_plan_approval=require_plan_approval,
+                jira_toolkit=jira_toolkit,
                 name=nd.id,
             ),
             deps,
@@ -166,6 +172,7 @@ def build_dev_loop_node_factories(
                 dispatcher=dispatcher,
                 codereview_dispatcher=codereview_dispatcher,
                 graph_memory=graph_memory,
+                skip_qa=skip_qa,
                 name=nd.id,
             ),
             deps,

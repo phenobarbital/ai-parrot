@@ -83,7 +83,7 @@ For EACH task, you MUST populate its `## Codebase Contract` section:
 3. **Add task-specific references**: if the task touches files not covered by the spec's
    contract, read those files now and add their signatures.
 4. **Be precise about scope**: only include imports/signatures the task actually needs.
-   A task that modifies `parrot/tools/` does not need signatures from `parrot/loaders/`.
+   A task that modifies one module does not need signatures from unrelated modules.
 5. **Include the "Does NOT Exist" section**: this is the strongest anti-hallucination
    measure. List plausible-sounding things that an agent might assume exist but don't.
 
