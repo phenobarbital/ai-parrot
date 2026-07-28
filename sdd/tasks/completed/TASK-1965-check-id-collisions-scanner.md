@@ -300,10 +300,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
+**Notes**: Implemented `find_collisions()`/`CollisionReport`/CLI. Important
+finding during implementation: the sketch's step 2 ("cross-check
+active/completed filenames against the index-derived slug") as literally
+described conflates two different namespaces — a per-task index entry's
+`feature` slug (e.g. `"sandbox-hardening"`) vs. a task file's own
+descriptive slug (e.g. `"repl-dedicated-executor"`, the `<slug>` in
+`TASK-<NNN>-<slug>.md`). These are never expected to be equal even for a
+single, healthy, correctly-owned task, so naively merging both into one
+dict produced ~1804 false "collisions" when run against the real `dev`
+tree (nearly every task in the repo). Fixed by tracking the two as
+independent namespaces: (1) index-derived `feature` ownership is the
+primary, authoritative collision signal (empirically confirmed sufficient
+to detect all six FEAT-380-era collisions on its own, since both sides of
+each real collision are properly indexed); (2) raw filename-derived
+descriptive-slug duplication under active/completed is kept as an
+independent, secondary fallback signal, only surfaced when the index
+doesn't disambiguate a given TASK-ID at all. Re-running against the real
+`dev` tree after the fix reports 316 genuine `TASK-<NNN>` collisions
+(all pre-existing, pre-per-spec-index-era task numbering reused across
+unrelated features, including but far exceeding the six FEAT-380-era ones
+named in the spec) — flagging this for TASK-1967, since its assumption of
+"exactly six" pre-existing collisions for the baseline file undercounts
+reality by ~50x; the baseline must be generated from the live tree, not
+hardcoded to the six named IDs, to satisfy TASK-1967's own acceptance
+criterion that a local dry run must exit 0 against the current `dev`
+tree. 7 tests pass (`pytest tests/sdd_scripts/test_check_id_collisions.py
+-v` — the 3 spec-required tests plus 4 additional tests covering
+filename-only fallback detection, `_orphans.json` handling, and CLI exit
+codes). `ruff check scripts/sdd/check_id_collisions.py` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Added 4 tests beyond the spec's 3-test list
+(filename-fallback collision detection, `_orphans.json` task-scan
+inclusion, CLI exit-code smoke tests) to cover edge cases surfaced while
+verifying against the real repo. No `--baseline` flag added here (left for
+TASK-1967 per its own Implementation Notes, which explicitly permit adding
+it there). The step-2 filename cross-check was redesigned (see Notes
+above) from the sketch's literal "one merged dict" shape to two
+independent namespaces — same detection GOAL (catch collisions the index
+might miss), corrected mechanism to avoid a false-positive storm on real
+data; the officially-specified 3 unit tests and all Acceptance Criteria
+are unaffected and pass.

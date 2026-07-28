@@ -52,16 +52,16 @@
       "feature_id": "FEAT-387",
       "feature": "sdd-task-id-allocation-race",
       "spec": "sdd/specs/sdd-task-id-allocation-race.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Read-only scanner over existing sdd/tasks + sdd/specs files; no dependency on the allocator (TASK-1963/1964). Can run in parallel with them.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1965-check-id-collisions-scanner.md"
+      "started_at": "2026-07-28T14:01:03+00:00",
+      "completed_at": "2026-07-28T14:01:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1965-check-id-collisions-scanner.md"
     },
     {
       "id": "TASK-1966",
