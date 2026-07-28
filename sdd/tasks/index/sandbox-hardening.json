@@ -131,7 +131,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Depends on Module 5 (spec); shares pythonpandas.py/manager.py with TASK-1944's seeding path — sequential to avoid conflicts (ToolResult-compression freeze also watches these files).",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1945-dataframe-arrow-transport.md"
+      "completed_at": "2026-07-28T01:47:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1945-dataframe-arrow-transport.md"
     },
     {
       "id": "TASK-1946",
