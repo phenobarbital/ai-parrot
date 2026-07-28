@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-28T13:44:38+00:00",
-  "completed_at": null,
+  "completed_at": "2026-07-28T14:24:14+00:00",
   "tasks": [
     {
       "id": "TASK-1963",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-387",
       "feature": "sdd-task-id-allocation-race",
       "spec": "sdd/specs/sdd-task-id-allocation-race.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Independent data model + one-time bootstrap; no dependency on the allocator or scanner. Can run in parallel with TASK-1965.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1963-id-ledger-model-bootstrap.md"
+      "completed_at": "2026-07-28T14:24:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1963-id-ledger-model-bootstrap.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1964",
@@ -32,16 +33,19 @@
       "feature_id": "FEAT-387",
       "feature": "sdd-task-id-allocation-race",
       "spec": "sdd/specs/sdd-task-id-allocation-race.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1963"],
+      "depends_on": [
+        "TASK-1963"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports IdLedger/load_ledger/save_ledger from TASK-1963; must land after it.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1964-reserve-ids-allocator.md"
+      "completed_at": "2026-07-28T14:24:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1964-reserve-ids-allocator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1965",
@@ -50,7 +54,7 @@
       "feature_id": "FEAT-387",
       "feature": "sdd-task-id-allocation-race",
       "spec": "sdd/specs/sdd-task-id-allocation-race.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +62,9 @@
       "parallelism_notes": "Read-only scanner over existing sdd/tasks + sdd/specs files; no dependency on the allocator (TASK-1963/1964). Can run in parallel with them.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1965-check-id-collisions-scanner.md"
+      "completed_at": "2026-07-28T14:24:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1965-check-id-collisions-scanner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1966",
@@ -68,16 +73,19 @@
       "feature_id": "FEAT-387",
       "feature": "sdd-task-id-allocation-race",
       "spec": "sdd/specs/sdd-task-id-allocation-race.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1964"],
+      "depends_on": [
+        "TASK-1964"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs reserve_ids.py's real CLI interface (flags, output format) verified before editing the command definitions.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1966-wire-sdd-task-sdd-spec-to-allocator.md"
+      "completed_at": "2026-07-28T14:24:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1966-wire-sdd-task-sdd-spec-to-allocator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1967",
@@ -86,16 +94,20 @@
       "feature_id": "FEAT-387",
       "feature": "sdd-task-id-allocation-race",
       "spec": "sdd/specs/sdd-task-id-allocation-race.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1965", "TASK-1966"],
+      "depends_on": [
+        "TASK-1965",
+        "TASK-1966"
+      ],
       "parallel": false,
       "parallelism_notes": "Docs should describe the full, already-wired end-to-end flow; CI wiring needs the scanner (TASK-1965) to exist.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1967-ci-wiring-and-docs.md"
+      "completed_at": "2026-07-28T14:24:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1967-ci-wiring-and-docs.md",
+      "verification": "verified"
     }
   ]
 }

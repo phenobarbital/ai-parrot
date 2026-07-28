@@ -316,10 +316,98 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
+**Notes**: Implemented `reserve_ids()` (read-commit-push-retry
+compare-and-swap loop, `repo_root`/`sleep_fn` injectable for tests),
+`IdReservation` model, `IdReservationError`, and the CLI (refuses to run
+if the working tree has changes besides the ledger file; prints one
+reserved ID per line on success). Verified the exact non-fast-forward
+rejection wording (`"[rejected]"` / `"(fetch first)"`) empirically against
+the installed git version via a scratch bare-repo experiment before
+encoding the detection regex — confirmed these tokens are emitted in
+English regardless of locale (verified on a Spanish-locale git
+installation). Commit stages ONLY `sdd/tasks/.id_ledger.json` via
+`git add sdd/tasks/.id_ledger.json` (never `git add -A`). 6 tests pass
+(`pytest tests/sdd_scripts/test_reserve_ids.py -v` — the 4 spec-required
+tests plus 2 additional CLI smoke tests covering the "prints IDs, exits 0"
+and "refuses when dirty" acceptance criteria), all against a throwaway
+local bare-remote + clone fixture — no test touches the real repository or
+network. `ruff check scripts/sdd/reserve_ids.py` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: Added two CLI-level tests
+(`TestReserveIdsCli`) beyond the spec's 4-test list, to directly cover the
+CLI acceptance criteria ("prints one reserved ID per line and exits 0",
+"refuses to run when dirty") that the spec's Unit Tests table didn't
+enumerate as standalone tests. No behavioral deviation from the spec.
 
-**Deviations from spec**: none
+**Also not implemented**: the spec's two named Integration Tests
+(`test_sdd_task_end_to_end_uses_reserved_ids`,
+`test_ci_collision_job_fails_on_reintroduced_collision`) were not written
+under those names. Their behavior is covered by equivalent unit tests
+instead: the concurrent-race guarantee by
+`test_reserve_ids_retries_on_non_fast_forward` (this file) and the
+CI-failure-on-collision behavior by
+`TestCli::test_cli_exits_nonzero_on_collision` in
+`tests/sdd_scripts/test_check_id_collisions.py` (TASK-1965). Flagging this
+explicitly per the post-implementation adversarial code review — this
+should have been called out as an intentional substitution at
+implementation time rather than left implicit.
+
+### Post-Review Update (2026-07-28)
+
+The adversarial code-review pass (invoked after all 5 FEAT-387 tasks were
+implemented) found one CRITICAL and several IMPORTANT issues in this
+file's `reserve_ids()`/CLI, since fixed in the same worktree before
+pushing:
+
+- **CRITICAL (fixed)**: no validation that `count >= 1`. A reproduced
+  repro showed `reserve_ids("task", -3, ...)` silently moving
+  `next_task_id` BACKWARD (e.g. 1000 → 997), which would reopen the exact
+  collision this feature exists to close. Fixed with an explicit
+  `if count < 1: raise ValueError(...)` guard at the top of
+  `reserve_ids()` plus `Field(..., ge=1)` on `IdReservation.count`; added
+  `test_reserve_ids_rejects_non_positive_count`.
+- **IMPORTANT (fixed)**: the dirty-working-tree precondition was enforced
+  only in `main()`, not in `reserve_ids()` itself — any future library
+  caller bypassing the CLI (e.g. a dev-loop subagent) would inherit the
+  destructive-reset footgun undocumented-but-unenforced. Moved the check
+  into a new `_assert_safe_to_reserve()` helper called at the top of
+  `reserve_ids()`; added `test_reserve_ids_refuses_when_working_tree_dirty`
+  (library-level, not just CLI-level).
+- **IMPORTANT (fixed)**: no verification that the current branch matches
+  `--base-branch` before the destructive `git reset --hard
+  origin/<base_branch>` retry path. Added a branch-match assertion to
+  `_assert_safe_to_reserve()`; added
+  `test_reserve_ids_refuses_on_branch_mismatch`.
+- **IMPORTANT (fixed)**: no `timeout=` on any git subprocess call and no
+  `GIT_TERMINAL_PROMPT=0` — a stalled network or interactive credential
+  prompt could hang an allocator instance indefinitely, a real risk given
+  this script's purpose (concurrent, automated dev-loop dispatches). Added
+  a 30s timeout and `GIT_TERMINAL_PROMPT=0` to every `_run_git()` call.
+- **SUGGESTION (fixed)**: the CLI's dirty-check used substring containment
+  (`str(LEDGER_PATH) not in line`) rather than parsing the porcelain
+  status line's actual path field — replaced with a proper positional
+  parse (`_porcelain_path()`).
+- **IMPORTANT (noted, not fixed)**: `.collision_baseline.json` (TASK-1967)
+  can in principle be silently grown in the same PR that introduces a new
+  collision, defeating the CI gate. This is a generic weakness of
+  allowlist-style CI gates, not specific to this implementation — noted
+  for the human PR reviewer rather than fixed here (would require a
+  separate check comparing the baseline file's diff against
+  `origin/dev`, out of scope for this task).
+- **SUGGESTION (not fixed, rejected)**: reviewer suggested scoping
+  `ci.yml`'s trigger with a `paths:` filter for efficiency. REJECTED —
+  TASK-1967's own Codebase Contract explicitly states diff-scoping "must
+  happen INSIDE the step's script logic, not via a workflow-level `paths:`
+  filter" (the baseline-file mechanism already implements this correctly).
+- **NITPICK / SUGGESTION (not fixed)**: `--dry-run` flag (matching
+  `migrate_index.py`'s convention) was never added to `reserve_ids.py`,
+  and the `sdd_meta.py` integration described in the spec's Integration
+  Points table was intentionally not used (base_branch is passed as a
+  plain CLI flag instead, resolved by the calling command). Both are
+  reasonable simplifications, noted for visibility rather than changed.
+
+All 9 tests in `tests/sdd_scripts/test_reserve_ids.py` pass after the fix
+(6 original + 3 new regression tests); `ruff check
+scripts/sdd/reserve_ids.py` clean.
