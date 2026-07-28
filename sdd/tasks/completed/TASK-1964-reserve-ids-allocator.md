@@ -316,10 +316,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
+**Notes**: Implemented `reserve_ids()` (read-commit-push-retry
+compare-and-swap loop, `repo_root`/`sleep_fn` injectable for tests),
+`IdReservation` model, `IdReservationError`, and the CLI (refuses to run
+if the working tree has changes besides the ledger file; prints one
+reserved ID per line on success). Verified the exact non-fast-forward
+rejection wording (`"[rejected]"` / `"(fetch first)"`) empirically against
+the installed git version via a scratch bare-repo experiment before
+encoding the detection regex — confirmed these tokens are emitted in
+English regardless of locale (verified on a Spanish-locale git
+installation). Commit stages ONLY `sdd/tasks/.id_ledger.json` via
+`git add sdd/tasks/.id_ledger.json` (never `git add -A`). 6 tests pass
+(`pytest tests/sdd_scripts/test_reserve_ids.py -v` — the 4 spec-required
+tests plus 2 additional CLI smoke tests covering the "prints IDs, exits 0"
+and "refuses when dirty" acceptance criteria), all against a throwaway
+local bare-remote + clone fixture — no test touches the real repository or
+network. `ruff check scripts/sdd/reserve_ids.py` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Added two CLI-level tests
+(`TestReserveIdsCli`) beyond the spec's 4-test list, to directly cover the
+CLI acceptance criteria ("prints one reserved ID per line and exits 0",
+"refuses to run when dirty") that the spec's Unit Tests table didn't
+enumerate as standalone tests. No behavioral deviation from the spec.

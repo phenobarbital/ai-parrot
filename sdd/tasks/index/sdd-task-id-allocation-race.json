@@ -32,7 +32,7 @@
       "feature_id": "FEAT-387",
       "feature": "sdd-task-id-allocation-race",
       "spec": "sdd/specs/sdd-task-id-allocation-race.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,9 +41,9 @@
       "parallel": false,
       "parallelism_notes": "Imports IdLedger/load_ledger/save_ledger from TASK-1963; must land after it.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1964-reserve-ids-allocator.md"
+      "started_at": "2026-07-28T13:54:46+00:00",
+      "completed_at": "2026-07-28T13:54:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1964-reserve-ids-allocator.md"
     },
     {
       "id": "TASK-1965",
