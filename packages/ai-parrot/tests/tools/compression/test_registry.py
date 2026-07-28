@@ -1,45 +1,29 @@
 """Unit tests for the TOML compressor manifest schema + CompressorRegistry
 (TASK-1948).
 
-The `json_compact` codec itself is TASK-1949's deliverable and is not
-implemented yet at this task's scope. The core default manifest
-(`compressors.toml`) names it, so a dummy codec registered under the same
-`codec_name` is used here to keep these tests independent of TASK-1949.
+The core default manifest (`compressors.toml`) names `json_compact`
+(TASK-1949) and, since TASK-1954 added the `dq_execute_database_query`
+entry, `columnar` (TASK-1954) too — both must be registered for
+`CompressorRegistry.load()` to validate it. Importing
+`parrot.tools.compression.codecs` (the real package both codecs live in)
+registers them as an import side effect; done here via an autouse fixture
+so these tests don't depend on collection order relative to
+`test_json_compact.py`/`test_columnar.py`.
 """
 import sys
 from pathlib import Path
 
 import pytest
 
-from parrot.tools.compression import (
-    CompressionOutcome,
-    CompressorRegistry,
-    FilterLevel,
-    register_codec,
-)
-from parrot.tools.compression.protocol import _CODEC_REGISTRY
+from parrot.tools.compression import CompressorRegistry, FilterLevel
 
 
 @pytest.fixture(autouse=True)
-def _dummy_json_compact_codec():
-    """Register a stand-in `json_compact` codec so the core default
-    manifest (which names it) validates at `load()` time, without
-    depending on TASK-1949's real implementation.
-    """
-    already_registered = "json_compact" in _CODEC_REGISTRY
-    if not already_registered:
-        @register_codec
-        class _DummyJsonCompact:
-            codec_name = "json_compact"
-
-            def compress(self, result, *, level, params):
-                return CompressionOutcome(
-                    payload=result, lossy=False, bytes_before=0,
-                    bytes_after=0, est_tokens_saved=0, codec_name="json_compact",
-                )
-    yield
-    if not already_registered:
-        _CODEC_REGISTRY.pop("json_compact", None)
+def _ensure_builtin_codecs_registered():
+    """Ensure `json_compact`/`columnar` are registered before `load()`
+    validates the core manifest. Plain `import` is idempotent (cached in
+    `sys.modules`), so this is safe regardless of test order."""
+    import parrot.tools.compression.codecs  # noqa: F401
 
 
 @pytest.fixture

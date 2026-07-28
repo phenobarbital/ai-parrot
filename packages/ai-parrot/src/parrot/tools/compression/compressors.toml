@@ -5,6 +5,22 @@
 # matching entry. Conservative by design (G2): the wildcard entry applies
 # only lossless MINIMAL compression.
 
+# DatabaseQueryToolkit's `execute_database_query` registers with the
+# toolkit's `tool_prefix="dq"` (verified: databasequery/toolkit.py:147),
+# so the tool name seen by ToolManager.execute_tool() at runtime is
+# `dq_execute_database_query` — not the bare `execute_database_query` name
+# used illustratively in the spec's TOML example (spec Sec 2). NORMAL +
+# tee=true: QueryResult.rows is the primary target of the `columnar` codec
+# (TASK-1954), a lossy transformation that requires the working-memory
+# escape hatch (TASK-1953) to stay G3-compliant.
+[compressor."dq_execute_database_query"]
+codec = "columnar"
+level = "normal"
+tee = true
+
+[compressor."dq_execute_database_query".params]
+min_rows = 20
+
 [compressor."*"]
 codec = "json_compact"
 level = "minimal"
