@@ -325,8 +325,9 @@ async def test_e2e_run_with_blocking_gates(
         gid for gid, g in host.state.gates.items() if g.kind == "manual_criterion"
     )
     assert host.state.phase == "awaiting_gate"
-    # Jira must not have transitioned to "Ready to Deploy" yet.
-    assert mock_jira.jira_transition_to.await_count == 0
+    # Research & Development both transitioned Jira to 'In Progress' (2 calls),
+    # but DeploymentHandoff hasn't transitioned to 'Ready to Deploy' yet.
+    assert mock_jira.jira_transition_to.await_count == 2
 
     resp = await client.post(
         f"/runs/{RUN_ID}/gates/{qa_gate_id}/resolve",
@@ -344,7 +345,7 @@ async def test_e2e_run_with_blocking_gates(
     deploy_gate_id = next(
         gid for gid, g in host.state.gates.items() if g.kind == "deployment_approval"
     )
-    assert mock_jira.jira_transition_to.await_count == 0  # still not called
+    assert mock_jira.jira_transition_to.await_count == 2
 
     resp = await client.post(
         f"/runs/{RUN_ID}/gates/{deploy_gate_id}/resolve",
@@ -354,7 +355,8 @@ async def test_e2e_run_with_blocking_gates(
 
     result = await asyncio.wait_for(task, timeout=10)
 
-    # Jira transitioned to "Ready to Deploy" only AFTER both approvals.
+    # Research, Development, DeploymentHandoff, and Close all transition Jira (4 calls total).
+    assert mock_jira.jira_transition_to.await_count == 4
     mock_jira.jira_transition_to.assert_awaited()
     assert result.responses["deployment_handoff"]["status"] == "ready_to_deploy"
 
