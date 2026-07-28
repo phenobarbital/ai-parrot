@@ -306,9 +306,10 @@ Add a dev-agent row? [y/N]: n
 Skipping the step (default) dispatches the single-agent path, unchanged.
 
 Feature-mode intake also offers a **judge-panel** step, restricted to
-backends with a review profile (`claude-code`, `codex`, `gemini`,
-`google_coding`) — skipping it falls back to the default 3-judge panel
-(`default_judge_panel()` / `DEV_LOOP_JUDGE_PANEL`).
+`claude-code`, `codex`, and `gemini` (the backends `JudgeSpec` currently
+accepts — `google_coding` is deliberately excluded from this picker
+pending a `models.py` fix) — skipping it falls back to the default
+3-judge panel (`default_judge_panel()` / `DEV_LOOP_JUDGE_PANEL`).
 
 **Non-interactively**, use the repeatable `--dev-agent` flag instead of
 either step:

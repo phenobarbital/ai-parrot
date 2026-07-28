@@ -368,3 +368,159 @@ async def test_build_runtime_resolves_codex_backend():
     spec_arg = mock_build_dispatcher.call_args[0][0]
     assert spec_arg.agent == "codex"
     assert runtime.dispatcher is sentinel_dispatcher
+
+
+# ── Post-review CRITICAL fix: codereview_dispatcher must match the
+# resolved backend, not silently fall back to a claude-code-only wrap ──
+
+
+@pytest.mark.asyncio
+async def test_build_runtime_claude_code_keeps_codereview_none():
+    """Default backend (claude-code): codereview_dispatcher stays None —
+    byte-identical to the pre-fix behavior (QANode's own fallback is
+    already correct for a real ClaudeCodeDispatcher)."""
+    import parrot.cli.devloop.bootstrap as bootstrap_mod
+
+    ok_result = PreflightResult(ok=True, checks=[])
+
+    with patch.object(bootstrap_mod, "preflight", AsyncMock(return_value=ok_result)), \
+         patch.object(bootstrap_mod, "_build_jira_toolkit", return_value=None), \
+         patch.object(bootstrap_mod, "_build_log_toolkits", return_value={}), \
+         patch.object(
+             bootstrap_mod, "default_identities",
+             AsyncMock(return_value=("reporter", "escalation")),
+         ), \
+         patch(
+             "parrot.flows.dev_loop.agent_builder.build_dispatcher",
+             return_value=(MagicMock(), MagicMock()),
+         ), \
+         patch(
+             "parrot.flows.dev_loop.code_review.CodeReviewDispatcherFactory.create",
+         ) as mock_create, \
+         patch(
+             "parrot.flows.dev_loop.build_dev_loop_flow", return_value=object(),
+         ) as mock_build_flow, \
+         patch(
+             "parrot.flows.dev_loop.DevLoopRunner", return_value=MagicMock(),
+         ) as MockRunner, \
+         patch(
+             "parrot.flows.dev_loop.graph_memory.DevLoopGraphMemory.from_config",
+             AsyncMock(return_value=None),
+         ):
+        await build_runtime()
+
+    mock_create.assert_not_called()
+    _, flow_kwargs = mock_build_flow.call_args
+    assert flow_kwargs["codereview_dispatcher"] is None
+    _, runner_kwargs = MockRunner.call_args
+    assert runner_kwargs["codereview_dispatcher"] is None
+
+
+@pytest.mark.asyncio
+async def test_build_runtime_wires_matching_codereview_dispatcher_for_codex():
+    """DEV_LOOP_DEVELOPMENT_AGENT=codex: a matching CodexCodeReviewDispatcher
+    is built via CodeReviewDispatcherFactory and forwarded to both
+    build_dev_loop_flow and DevLoopRunner — QANode's fallback would
+    otherwise wrap the Codex dispatcher in a ClaudeCodeReviewDispatcher,
+    silently degrading every code-review gate to always-pass."""
+    import parrot.cli.devloop.bootstrap as bootstrap_mod
+    import parrot.conf as real_conf
+
+    sentinel_dispatcher = MagicMock()
+    sentinel_reviewer = MagicMock()
+
+    original_get = real_conf.config.get
+
+    def fake_get(key, fallback=None):
+        if key == "DEV_LOOP_DEVELOPMENT_AGENT":
+            return "codex"
+        return original_get(key, fallback=fallback)
+
+    ok_result = PreflightResult(ok=True, checks=[])
+
+    with patch.object(bootstrap_mod, "preflight", AsyncMock(return_value=ok_result)), \
+         patch.object(bootstrap_mod, "_build_jira_toolkit", return_value=None), \
+         patch.object(bootstrap_mod, "_build_log_toolkits", return_value={}), \
+         patch.object(
+             bootstrap_mod, "default_identities",
+             AsyncMock(return_value=("reporter", "escalation")),
+         ), \
+         patch.object(real_conf.config, "get", side_effect=fake_get), \
+         patch(
+             "parrot.flows.dev_loop.agent_builder.build_dispatcher",
+             return_value=(sentinel_dispatcher, MagicMock()),
+         ), \
+         patch(
+             "parrot.flows.dev_loop.code_review.CodeReviewDispatcherFactory.create",
+             return_value=sentinel_reviewer,
+         ) as mock_create, \
+         patch(
+             "parrot.flows.dev_loop.build_dev_loop_flow", return_value=object(),
+         ) as mock_build_flow, \
+         patch(
+             "parrot.flows.dev_loop.DevLoopRunner", return_value=MagicMock(),
+         ) as MockRunner, \
+         patch(
+             "parrot.flows.dev_loop.graph_memory.DevLoopGraphMemory.from_config",
+             AsyncMock(return_value=None),
+         ):
+        await build_runtime()
+
+    mock_create.assert_called_once_with("codex", dispatcher=sentinel_dispatcher)
+
+    _, flow_kwargs = mock_build_flow.call_args
+    assert flow_kwargs["codereview_dispatcher"] is sentinel_reviewer
+    _, runner_kwargs = MockRunner.call_args
+    assert runner_kwargs["codereview_dispatcher"] is sentinel_reviewer
+
+
+@pytest.mark.asyncio
+async def test_build_runtime_nvidia_keeps_codereview_none():
+    """A backend with no registered review profile (nvidia) keeps
+    codereview_dispatcher=None — today's documented residual gap; a full
+    fix (mirroring server.py's independent DEV_LOOP_CODEREVIEW_AGENT +
+    adversarial/parallel selection) is out of this task's scope."""
+    import parrot.cli.devloop.bootstrap as bootstrap_mod
+    import parrot.conf as real_conf
+
+    original_get = real_conf.config.get
+
+    def fake_get(key, fallback=None):
+        if key == "DEV_LOOP_DEVELOPMENT_AGENT":
+            return "nvidia"
+        return original_get(key, fallback=fallback)
+
+    ok_result = PreflightResult(ok=True, checks=[])
+
+    with patch.object(bootstrap_mod, "preflight", AsyncMock(return_value=ok_result)), \
+         patch.object(bootstrap_mod, "_build_jira_toolkit", return_value=None), \
+         patch.object(bootstrap_mod, "_build_log_toolkits", return_value={}), \
+         patch.object(
+             bootstrap_mod, "default_identities",
+             AsyncMock(return_value=("reporter", "escalation")),
+         ), \
+         patch.object(real_conf.config, "get", side_effect=fake_get), \
+         patch(
+             "parrot.flows.dev_loop.agent_builder.build_dispatcher",
+             return_value=(MagicMock(), MagicMock()),
+         ), \
+         patch(
+             "parrot.flows.dev_loop.code_review.CodeReviewDispatcherFactory.create",
+         ) as mock_create, \
+         patch(
+             "parrot.flows.dev_loop.build_dev_loop_flow", return_value=object(),
+         ) as mock_build_flow, \
+         patch(
+             "parrot.flows.dev_loop.DevLoopRunner", return_value=MagicMock(),
+         ) as MockRunner, \
+         patch(
+             "parrot.flows.dev_loop.graph_memory.DevLoopGraphMemory.from_config",
+             AsyncMock(return_value=None),
+         ):
+        await build_runtime()
+
+    mock_create.assert_not_called()
+    _, flow_kwargs = mock_build_flow.call_args
+    assert flow_kwargs["codereview_dispatcher"] is None
+    _, runner_kwargs = MockRunner.call_args
+    assert runner_kwargs["codereview_dispatcher"] is None

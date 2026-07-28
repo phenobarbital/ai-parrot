@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 _GATE_POLL_INTERVAL = 0.25  # seconds
 _KIND_CHOICES: tuple[str, ...] = ("bug", "enhancement", "feature")
 
+#: Post-review fix: catalog.JUDGE_BACKENDS includes "google_coding" (which
+#: code_review.py's _build_judge DOES support), but JudgeSpec's own
+#: `_agent_must_have_review_profile` validator (models.py) has a narrower,
+#: hardcoded `supported = ("claude-code", "codex", "gemini")` that predates
+#: that backend landing — picking "google_coding" here would always raise
+#: pydantic.ValidationError. Fixing the validator is a models.py change
+#: (explicitly out of FEAT-388 scope, "zero model changes"); filtering the
+#: judge-panel picker to only what JudgeSpec actually accepts avoids
+#: offering a guaranteed-dead-end choice. Keep in sync with models.py.
+_JUDGE_REVIEW_CAPABLE_BACKENDS: tuple[str, ...] = ("claude-code", "codex", "gemini")
+
 
 class DevLoopConsole:
     """Interactive console session for dev-loop flows."""
@@ -576,12 +587,14 @@ class DevLoopConsole:
     async def _collect_judge_panel(self) -> JudgePanelConfig | None:
         """Optional QA judge-panel step — rows of ``JudgeSpec`` (feature path only).
 
-        Choices are limited to the catalog's ``JUDGE_BACKENDS``. Default
-        is skip (``None``, i.e. ``JudgePanelReviewDispatcher`` falls back
-        to ``default_judge_panel()`` / ``DEV_LOOP_JUDGE_PANEL``). A
-        ``JudgeSpec`` construction failure (e.g. a backend without a
-        review profile) is reported and the row is retried rather than
-        crashing the wizard.
+        Choices are limited to the catalog's ``JUDGE_BACKENDS``,
+        intersected with ``_JUDGE_REVIEW_CAPABLE_BACKENDS`` (backends
+        ``JudgeSpec`` actually accepts today — see that constant's
+        docstring for the known ``google_coding`` gap). Default is skip
+        (``None``, i.e. ``JudgePanelReviewDispatcher`` falls back to
+        ``default_judge_panel()`` / ``DEV_LOOP_JUDGE_PANEL``). A
+        ``JudgeSpec`` construction failure is reported and the row is
+        retried rather than crashing the wizard.
 
         Returns:
             The collected panel, or ``None`` when skipped/empty.
@@ -605,7 +618,7 @@ class DevLoopConsole:
         if customize not in ("y", "yes"):
             return None
 
-        judge_backend_ids = set(catalog.JUDGE_BACKENDS)
+        judge_backend_ids = set(catalog.JUDGE_BACKENDS) & set(_JUDGE_REVIEW_CAPABLE_BACKENDS)
         backends = [b for b in catalog.BACKENDS if b.id in judge_backend_ids]
         judges: list[JudgeSpec] = []
         while True:

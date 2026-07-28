@@ -252,7 +252,9 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         DevLoopRunner,
         build_dev_loop_flow,
     )
+    from parrot.flows.dev_loop import catalog  # noqa: PLC0415
     from parrot.flows.dev_loop.agent_builder import build_dispatcher  # noqa: PLC0415
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory  # noqa: PLC0415
     from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory  # noqa: PLC0415
     from parrot.flows.dev_loop.models import DevAgentSpec  # noqa: PLC0415
     from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch  # noqa: PLC0415
@@ -281,6 +283,28 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         ),
     )
 
+    # Code-review-review fix (post-review CRITICAL finding): QANode's own
+    # "codereview_dispatcher=None -> wrap `dispatcher` in
+    # ClaudeCodeReviewDispatcher" backward-compat fallback (qa.py) assumes
+    # `dispatcher` is always a ClaudeCodeDispatcher — true before FEAT-388
+    # (this file always built ClaudeCodeDispatcher unconditionally), no
+    # longer true now that `dispatcher` can be any backend. Passing a non-
+    # claude-code dispatcher into ClaudeCodeReviewDispatcher silently
+    # degrades every code-review gate to "always pass" (a swallowed
+    # exception inside AbstractCodeReviewDispatcher.review()). Build a
+    # matching reviewer via the existing CodeReviewDispatcherFactory for
+    # every backend that actually has one (catalog.PRIMARY_REVIEW_BACKENDS);
+    # the claude-code default is left as None (QANode's own fallback is
+    # byte-identical there), and backends with no review profile
+    # (nvidia/grok/zai/moonshot) keep today's imperfect fallback — a full
+    # fix mirroring server.py's independent DEV_LOOP_CODEREVIEW_AGENT +
+    # adversarial/parallel reviewer selection is out of this task's scope.
+    codereview_dispatcher = None
+    if backend_id != "claude-code" and backend_id in catalog.PRIMARY_REVIEW_BACKENDS:
+        codereview_dispatcher = CodeReviewDispatcherFactory.create(
+            backend_id, dispatcher=dispatcher
+        )
+
     jira_toolkit = _build_jira_toolkit()
     log_toolkits = _build_log_toolkits()
 
@@ -306,6 +330,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         wiki_search=wiki_search,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
+        codereview_dispatcher=codereview_dispatcher,
     )
 
     reporter, escalation = await default_identities(jira_toolkit)
@@ -316,7 +341,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         jira_toolkit=jira_toolkit,
         git_toolkit=None,
         redis_url=redis_url,
-        codereview_dispatcher=None,
+        codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
     )
 
