@@ -3,7 +3,7 @@
 **Feature**: remove-groq-loader-summary
 **Feature ID**: FEAT-386
 **Spec**: sdd/specs/remove-groq-loader-summary.spec.md
-**Status**: [ ] pending | [ ] in-progress | [ ] done
+**Status**: [ ] pending | [ ] in-progress | [x] done
 **Priority**: high
 **Depends-on**: none
 **Assigned-to**: unassigned
@@ -112,4 +112,11 @@ When complete:
 3. Add completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+Implemented 2026-07-28. Removed `from ..models.groq import GroqModel` import from
+`packages/ai-parrot/src/parrot/loaders/abstract.py`. Replaced the Groq branch in
+`get_summarization_model()` with a `GoogleGenAIClient` using
+`GoogleModel.GEMINI_2_5_FLASH_LITE`. Updated `summary_from_text()` to call the
+synchronous `summarizer.summarize_text()` via `asyncio.to_thread()` (no `await`,
+no `_ensure_client()` warm-up). `asyncio` was already imported. Pre-existing ruff
+and test failures (7 tests, 37k lint issues) confirmed present on base before this
+change — none introduced by this fix.
