@@ -73,7 +73,7 @@ def toolkit(fake_artifact_store):
     """InfographicToolkit with a mock bot attached."""
     tk = InfographicToolkit(artifact_store=fake_artifact_store)
     bot = MagicMock()
-    bot._get_repl_locals = MagicMock(return_value={})
+    bot._get_repl_locals = AsyncMock(return_value={})
     # _resolve_scope prefers _current_* (set by PandasAgent.ask at runtime);
     # None here exercises the user_id/agent_id/session_id fallback.
     bot._current_user_id = None

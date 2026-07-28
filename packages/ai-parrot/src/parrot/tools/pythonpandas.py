@@ -142,6 +142,38 @@ class PythonPandasTool(PythonREPLTool):
         # Update description with loaded DataFrames
         self._update_description()
 
+    async def _get_worker_handle(self):
+        """Acquire this instance's worker, seeding new `df_locals` into it first.
+
+        FEAT-380 (TASK-1944): ports the old ``locals_dict``/``clone()``
+        constructor-time merge (`:122, :128-130` in the pre-worker code) to
+        worker seeding — the worker's `PythonREPLTool` instance has its own,
+        separate namespace (TASK-1943), so `df_locals` entries (DataFrames
+        + row/col-count/shape/columns metadata from `_process_dataframes`)
+        are pushed in via the namespace API instead of a constructor kwarg.
+        Diffs against `_seeded_df_names` so it's a cheap no-op once
+        everything currently in `df_locals` has been pushed, while still
+        picking up anything added later via `register_dataframes()`/
+        `sync_from_manager()`.
+        """
+        handle = await super()._get_worker_handle()
+        new_names = set(self.df_locals) - self._seeded_df_names
+        if new_names:
+            for name in new_names:
+                await handle.set_var(name, self.df_locals[name])
+            self._seeded_df_names |= new_names
+        return handle
+
+    def reset_environment(self) -> None:
+        """Reset the REPL environment — also re-seeds `df_locals` on next use.
+
+        FEAT-380 (TASK-1944): a reset kills and replaces the worker
+        (`PythonREPLTool.reset_environment`), so the DataFrames must be
+        re-pushed into the fresh worker's empty namespace.
+        """
+        super().reset_environment()
+        self._seeded_df_names = set()
+
     # ─────────────────────────────────────────────────────────────
     # Session Isolation
     # ─────────────────────────────────────────────────────────────
@@ -214,6 +246,22 @@ class PythonPandasTool(PythonREPLTool):
         clone.debug = self.debug
         clone.BLOCKED_IMPORTS = self.BLOCKED_IMPORTS
 
+        # ── FEAT-380 (TASK-1944): worker identity, NOT shared with source ──
+        # The clone is explicitly about session isolation — it must get its
+        # OWN worker (own session_id, own lazily-created pool), never the
+        # source tool's, or two "isolated" sessions would collide on the same
+        # underlying worker process (defeating G7/the whole point of this
+        # method). `PythonREPLTool.__init__` normally sets these; this clone
+        # bypasses `__init__` entirely (see comment above), so they're set
+        # here instead.
+        import uuid as _uuid
+        clone._session_id = f"pythonrepl-{_uuid.uuid4().hex}"
+        clone._worker_config = getattr(self, "_worker_config", None)
+        clone._worker_pool = None
+        clone._pending_worker_reset = False
+        clone._worker_repl_kwargs = dict(getattr(self, "_worker_repl_kwargs", {}) or {})
+        clone._seeded_df_names = set()
+
         # ── Isolated execution state ──
         # Start with a COPY of the source's locals/globals so the clone
         # inherits library imports (pd, np, plt, …) and utility functions.
@@ -226,7 +274,17 @@ class PythonPandasTool(PythonREPLTool):
 
         # ── Sync DataFrames from the session DM ──
         clone.dataframes = {}
-        clone.df_locals = {}
+        # FEAT-380 (TASK-1944): seed `df_locals` with the source's
+        # eagerly-loaded DataFrames as the baseline (this is what
+        # `_get_worker_handle()`'s worker-seeding diffs against — without
+        # this, a clone created with no `dataset_manager` would get an
+        # empty worker namespace, contradicting this method's own docstring
+        # promise that "eagerly-loaded DataFrames... are copied"). The `dm`
+        # branch below fully rebuilds `df_locals` from the DM's active set
+        # when present, superseding this baseline (table-source DataFrames
+        # are query-specific and must be re-fetched per session, per the
+        # docstring).
+        clone.df_locals = dict(self.df_locals)
         if dm:
             active_dfs = dm.get_active_dataframes()
             clone.dataframes = active_dfs
@@ -404,6 +462,14 @@ class PythonPandasTool(PythonREPLTool):
                        from the loaded-only dict (legacy behaviour).
         """
         self.df_locals = {}
+        # FEAT-380 (TASK-1944): `df_locals` is being rebuilt from scratch —
+        # invalidate the worker-seeding tracker (`_get_worker_handle()`) too,
+        # since a name that was already pushed to the worker may now map to
+        # a DIFFERENT DataFrame object (a refresh/drift re-sync). Set
+        # unconditionally (works whether or not the attribute exists yet —
+        # this runs once from `__init__`, before `super().__init__()` has
+        # even set up the rest of the worker-related state).
+        self._seeded_df_names: set = set()
 
         for i, (df_name, df) in enumerate(self.dataframes.items()):
             # Use stable alias from DatasetManager when available,
@@ -555,6 +621,18 @@ class PythonPandasTool(PythonREPLTool):
         Clear all registered DataFrames from the execution environment.
 
         Removes DataFrame references from locals/globals and resets internal state.
+
+        FEAT-380 (TASK-1944) limitation: this only clears the HOST-side
+        bookkeeping (`.locals`/`.globals`, kept for backward-compat readers
+        per TASK-1943) and the worker-seeding tracker. The namespace API
+        (TASK-1943) has no `del_var`/`unset_var` — there is currently no way
+        to remove an already-pushed variable from a LIVE worker's namespace
+        short of a full `reset_environment()` (which clears everything, not
+        just DataFrames). Names cleared here are simply not re-pushed until
+        `register_dataframes()`/`sync_from_manager()` runs again; if the
+        worker is still alive, it keeps serving the old values in the
+        meantime. Extending the namespace API with an unset primitive is a
+        candidate follow-up, out of this task's scope.
         """
         # Remove old df_locals entries from locals/globals
         for key in list(self.df_locals.keys()):
@@ -564,6 +642,7 @@ class PythonPandasTool(PythonREPLTool):
         # Clear internal state
         self.dataframes = {}
         self.df_locals = {}
+        self._seeded_df_names = set()
         self._df_guide_cache = ""
 
     # ─────────────────────────────────────────────────────────────

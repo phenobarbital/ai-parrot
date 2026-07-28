@@ -404,7 +404,11 @@ class TestDatasetManagerEnhancedTools:
     async def test_store_dataframe_with_repl(self, dm, sample_df):
         """store_dataframe looks up variable from REPL locals and registers it."""
         repl_locals = {"new_df": sample_df}
-        dm.set_repl_locals_getter(lambda: repl_locals)
+
+        async def _getter():
+            return repl_locals
+
+        dm.set_repl_locals_getter(_getter)
 
         result = await dm.store_dataframe("new_df", "Filtered sales data")
 
