@@ -245,10 +245,99 @@ class TestNoLoopBlocking:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
+**Machine**: Intel Core i7-9850H @ 2.60GHz, 12 logical cores, Python
+3.11.15, Linux, no Rust extension compiled (pure-Python path only).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Measured p50/p99 table** (`n=300` for <=500 rows, `n=50` for larger,
+20-call warmup, `json_compact` at MINIMAL / `columnar` at NORMAL):
+
+| Payload class | rows | json_compact p50/p99 (ms) | columnar p50/p99 (ms) |
+|---|---|---|---|
+| small_10 | 10 | 0.059 / 0.065 | 0.007 / 0.007 |
+| typical_500x12 | 500 | 2.72 / 4.61 | 1.70 / 2.84 |
+| large_5000x12 | 5,000 | 30.73 / 37.25 | 20.88 / 50.42 |
+| huge_over_threshold (wide) | 5,000 | 67.60 / 71.93 | 56.62 / 90.15 |
+| heterogeneous_30 | 30 | 0.052 / 0.128 | 0.026 / 0.065 (null-elision-only path) |
+| deeply_nested_30 | 30 | 0.133 / 0.244 | 0.029 / 0.053 (null-elision-only path) |
+
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- **Defaults changed in `budget.py`** (both `CircuitBreaker.__init__` and
+  `BudgetRouter.__init__` — kept in sync):
+  - `minimal_budget_ms`: 0.3 -> **5.0** (measured `json_compact` MINIMAL
+    p99 on the "typical" 500-row payload: 4.61ms — ~15x the original
+    budget. The original 0.3ms was an aspirational spec placeholder, not
+    a measurement.)
+  - `inline_budget_ms`: 1.0 -> **3.0** (measured `columnar` NORMAL p99 on
+    the same typical payload: 2.84ms.)
+  - `row_threshold`: 5000 -> **1500** (linear-scaling extrapolation: NORMAL
+    costs ~0.0057ms/row at 500 rows; at the OLD threshold of 5000 rows the
+    inline cost would already be ~28-50ms — measured directly at exactly
+    5000 rows: 50.42ms p99 — an order of magnitude over budget. 1500 rows
+    keeps the worst-case inline cost within a defensible few-x multiple of
+    the new 3.0ms budget while the circuit breaker remains the backstop
+    for genuinely pathological cases.)
+  - `size_threshold_bytes` (256 KB) and `executor_budget_ms` (15.0)
+    **unchanged** — no contradicting evidence was gathered for either.
+    `executor_budget_ms` specifically cannot be calibrated without the
+    Rust extension (TASK-1955) to actually measure the off-loop path
+    against; explicitly deferred, per this task's own "NOT in scope: Rust
+    path benchmarks."
+  - `window_calls`/`window_seconds`/`consecutive_windows`/`cooldown_seconds`
+    unchanged — no sustained-load evidence gathered (out of this task's
+    scope; would require a different kind of test).
+  - Updated the module docstring, `Route.INLINE`'s docstring, and
+    `test_defaults_match_spec` (TASK-1950's own test — a necessary,
+    documented ripple, not in this task's file list, but the old asserted
+    literals would otherwise silently go stale and fail) to reflect the
+    new values with the measurement rationale.
+- **Crossover point**: measured at row counts 100/500/1,000/2,000/5,000/
+  10,000/20,000 (n=30, warmup=5, `columnar` NORMAL) — p99 exceeds the
+  1.0ms REFERENCE budget (spec's original number, used as the crossover
+  probe threshold since it's the spec's own G7 language) somewhere between
+  100 and 500 rows on this pure-Python path; well below the OLD
+  row_threshold=5000, confirming that default was too generous. Full
+  per-row-count table printed by `test_crossover_point_is_reported`
+  (run with `-s`; note `capsys`-based tests drain their own output, so use
+  a direct script or `--capture=no` to see it live rather than piping to
+  a file).
+- **G9 mechanically proven**: `test_over_threshold_never_blocks_loop` runs
+  a 7.7MB / 5,000-row (wide) payload through `CompressionStage.run()` with
+  the Rust extension absent and a concurrent heartbeat task; max observed
+  event-loop lag stayed under the 50ms bound (near-zero in practice, since
+  the router correctly routes to `PASSTHROUGH` — verified via the
+  `compression_skipped == "budget_passthrough"` metadata, not just the lag
+  bound, so a "fast but still blocking" false pass is ruled out).
+- **Self-contained skip gate**: used `pytestmark = pytest.mark.skipif(not
+  os.environ.get("PARROT_RUN_BENCHMARKS"), ...)` rather than relying on
+  `tests/benchmarks/`'s `conftest.py` convention, because that hook only
+  activates when `tests/benchmarks/` itself is part of the collected tree
+  — running a narrower path like
+  `pytest packages/ai-parrot/tests/tools/compression/` (as used throughout
+  this feature's development) would NOT have triggered it, silently
+  running slow wall-clock tests in what should be a fast unit-test path.
+  Also carries `@pytest.mark.benchmark` for consistency with the
+  repo-wide convention when the full suite IS collected. Run explicitly
+  via `PARROT_RUN_BENCHMARKS=1 pytest .../test_benchmarks.py -v -s`.
+- **Two necessary, documented ripple fixes** (not in this task's file
+  list): `test_budget.py::test_defaults_match_spec` (TASK-1950) updated to
+  assert the new calibrated literals, with the measurement rationale
+  inlined as a comment. `test_benchmarks.py` itself reads
+  `MINIMAL_BUDGET_MS`/`INLINE_BUDGET_MS` from a live `BudgetRouter()`
+  instance's actual attributes rather than a second hardcoded copy, so
+  this suite can never silently drift out of sync with `budget.py` again.
+- Verification: full compression suite 119/119 (6 benchmark tests
+  correctly skipped in the default run); all 6 benchmark tests pass when
+  gated on with `PARROT_RUN_BENCHMARKS=1`; broader `tests/tools/`
+  unchanged at 51 pre-existing failures; `ruff check budget.py
+  test_benchmarks.py test_budget.py` clean (one pre-existing, untouched
+  `F401` in `test_stage.py` from TASK-1953, unrelated to this task).
+
+**Deviations from spec**: `row_threshold`/`inline_budget_ms`/
+`minimal_budget_ms` changed with measured justification (see table above)
+— this IS the task's explicit purpose, not an unauthorized deviation.
+`size_threshold_bytes`/`executor_budget_ms`/window-related constants left
+unchanged, also per measured evidence (or lack thereof for the executor
+path, explicitly deferred to post-TASK-1955).
