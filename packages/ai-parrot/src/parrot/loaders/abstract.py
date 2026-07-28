@@ -72,8 +72,8 @@ class AbstractLoader(ABC):
         self.min_chunk_size: int = kwargs.get('min_chunk_size', 30)
         self.full_document: bool = kwargs.get('full_document', True)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
-        self.extensions = kwargs.get('extensions', self.extensions)
-        self.skip_directories = kwargs.get(
+        self.extensions = kwargs.get('extensions', self.extensions)  # type: ignore[misc]
+        self.skip_directories = kwargs.get(  # type: ignore[misc]
             'skip_directories',
             self.skip_directories
         )
@@ -1177,7 +1177,7 @@ class AbstractLoader(ABC):
             if not self._use_translation_pipeline:
                 # Use LLM for translation
                 translation_model = self.get_default_llm(
-                    model=GoogleModel.GEMINI_2_5_FLASH_LITE_PREVIEW
+                    model=GoogleModel.GEMINI_2_5_FLASH_LITE_PREVIEW.value
                 )
                 self._translation_models[cache_key] = translation_model
 
