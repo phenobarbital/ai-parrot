@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-387
 **Date**: 2026-07-28
 **Author**: Claude (session-initiated, per user request)
-**Status**: draft
+**Status**: approved
 **Target version**: n/a (tooling-only, no package version bump)
 
 ---
