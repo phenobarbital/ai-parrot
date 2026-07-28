@@ -19,6 +19,8 @@ TASK-1942 (``WorkerPool``) — this module only owns ONE worker's lifecycle.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import contextlib
 import json
 import logging
 import os
@@ -77,6 +79,7 @@ class WorkerHandle:
         config: Optional[WorkerConfig] = None,
         output_dir: Optional[str] = None,
         repl_kwargs: Optional[dict[str, Any]] = None,
+        executor: Optional[concurrent.futures.Executor] = None,
     ):
         """Initialize the handle (does not spawn — call :meth:`start`).
 
@@ -89,6 +92,17 @@ class WorkerHandle:
                 mirror on the worker's internal instance (e.g.
                 ``return_plot_as_base64``, TASK-1943) — session config
                 distinct from ``WorkerConfig``'s resource-limit fields.
+            executor: Dedicated executor for this handle's blocking I/O
+                (pipe read/write, subprocess spawn/kill, Arrow encode).
+                Code-review fix (post-TASK-1945/AC1): every blocking call
+                here previously used ``run_in_executor(None, ...)`` — the
+                framework's SHARED default executor, exactly what Module 1
+                (TASK-1939, ``PythonREPLTool._repl_executor``) exists to
+                stop hijacking. Defaults to a small, self-owned
+                ``ThreadPoolExecutor`` (shut down in :meth:`kill`) so even
+                standalone ``WorkerHandle`` usage never falls back to the
+                shared pool; ``PythonREPLTool``/``WorkerPool`` pass their
+                own dedicated executor through explicitly.
         """
         self._config = config or WorkerConfig()
         self._output_dir = output_dir
@@ -97,6 +111,37 @@ class WorkerHandle:
         self._to_worker: Optional[BinaryIO] = None
         self._from_worker: Optional[BinaryIO] = None
         self._lock = asyncio.Lock()
+        self._owns_executor = executor is None
+        self._executor: concurrent.futures.Executor = executor or concurrent.futures.ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="repl-worker-handle"
+        )
+        # Code-review fix: `_drain_stdio()` runs two permanently-blocking
+        # `stream.readline()` loops (stdout+stderr) for the ENTIRE lifetime
+        # of the worker process — each iteration immediately resubmits
+        # another blocking call the instant the previous one returns, so it
+        # occupies 2 executor threads continuously, not just transiently.
+        # That's incompatible with sharing `self._executor` (AC1's dedicated
+        # but BOUNDED pool, e.g. 4 threads) across MULTIPLE `WorkerHandle`s,
+        # as `WorkerPool` does for the session worker + prewarmed spares:
+        # once enough live workers exist to saturate the shared pool with
+        # drain threads alone, every actual `_send()`/`inject_dataframe()`
+        # call permanently starves for a free thread — a real deadlock
+        # (reproduced with the default `prewarm_pool_size=2`: 3 live workers
+        # x 2 drain threads = 6 needed, only 4 available). The drain loop is
+        # a passive diagnostics sink, not part of AC1's contract (which is
+        # about not hijacking the FRAMEWORK's shared default executor for
+        # the actual code-execution I/O path) — give it its own small,
+        # always self-owned executor instead, independent of whatever
+        # executor was passed in for `self._executor`.
+        self._stdio_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="repl-worker-stdio"
+        )
+        self._stdio_task: Optional[asyncio.Task] = None
+        #: Bounded ring buffer of recent stderr lines, fed by the continuous
+        #: drain task (`_drain_stdio`) — `_classify_death()` reads from this
+        #: instead of re-reading `self._proc.stderr` directly, which would
+        #: race the drain task reading the same stream.
+        self._stderr_tail: list[str] = []
         #: Cheap, names-only shadow of the worker namespace — feeds
         #: `lost_variables` in the namespace-loss error after a kill.
         self.known_vars: list[str] = []
@@ -133,13 +178,59 @@ class WorkerHandle:
                 stderr=subprocess.PIPE,
             )
 
-        self._proc = await loop.run_in_executor(None, _spawn)
+        self._proc = await loop.run_in_executor(self._executor, _spawn)
         # The parent doesn't need the child's ends of either pipe.
         os.close(to_worker_r)
         os.close(from_worker_w)
         self._to_worker = os.fdopen(to_worker_w, "wb", buffering=0)
         self._from_worker = os.fdopen(from_worker_r, "rb", buffering=0)
         logger.debug("WorkerHandle: spawned worker pid=%s", self._proc.pid)
+
+        # Continuously drain stdout/stderr so their OS pipe buffers never
+        # fill (code-review fix): nothing else reads these while the worker
+        # is alive, and this framework's own logging setup writes to them
+        # for every `self.logger.*` call the worker makes. Once the
+        # (~64KB) kernel pipe buffer fills, the worker's next log write
+        # blocks indefinitely — previously only ever "recovered" by the
+        # HOST's deadline SIGKILL on some later, unrelated exec() call,
+        # misreported as an ordinary timeout instead of a stdio deadlock.
+        self._stdio_task = loop.create_task(self._drain_stdio())
+
+    async def _drain_stdio(self) -> None:
+        """Continuously read stdout/stderr into the logger (bounded per line).
+
+        stderr lines are also appended to `self._stderr_tail` (a bounded
+        ring buffer) for `_classify_death()` to consult — it must NOT read
+        `self._proc.stderr` directly itself, since that would race this
+        task reading the same stream.
+        """
+        loop = asyncio.get_event_loop()
+
+        async def _pump(stream: Optional[BinaryIO], label: str) -> None:
+            if stream is None:
+                return
+            while True:
+                try:
+                    line = await loop.run_in_executor(self._stdio_executor, stream.readline)
+                except (ValueError, OSError):
+                    return  # stream closed out from under us (kill()) — stop draining
+                if not line:
+                    return  # EOF: worker exited
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if not text:
+                    continue
+                pid = self._proc.pid if self._proc is not None else "?"
+                logger.debug("repl_worker[pid=%s %s]: %s", pid, label, text[:2000])
+                if label == "stderr":
+                    self._stderr_tail.append(text)
+                    if len(self._stderr_tail) > 200:
+                        self._stderr_tail.pop(0)
+
+        await asyncio.gather(
+            _pump(self._proc.stdout if self._proc else None, "stdout"),
+            _pump(self._proc.stderr if self._proc else None, "stderr"),
+            return_exceptions=True,
+        )
 
     def _roundtrip(self, request: Any) -> Any:
         """Blocking write+read of one request/response pair (runs in an executor)."""
@@ -158,7 +249,7 @@ class WorkerHandle:
         async with self._lock:
             if not self.is_alive:
                 raise EOFError("worker process is not running")
-            future = loop.run_in_executor(None, self._roundtrip, request)
+            future = loop.run_in_executor(self._executor, self._roundtrip, request)
             try:
                 return await asyncio.wait_for(future, timeout=timeout_s)
             except asyncio.TimeoutError:
@@ -172,29 +263,49 @@ class WorkerHandle:
                 raise
 
     async def _kill_process(self) -> None:
-        """SIGKILL the worker (POSIX) / TerminateProcess (Windows, AC16)."""
-        if self._proc is None:
-            return
+        """SIGKILL the worker (POSIX) / TerminateProcess (Windows, AC16).
+
+        Idempotent and safe to call after the process is already reaped —
+        deliberately touches ``self._executor`` ONLY when there's actually
+        something to kill/wait for (code-review fix): a self-owned executor
+        is shut down at the end of :meth:`kill`, so an unconditional
+        post-kill ``wait()`` dispatch here would raise
+        ``RuntimeError: cannot schedule new futures after shutdown`` on a
+        second call (e.g. `_classify_death()` reached after an external
+        `kill()`, or `kill()` called twice).
+        """
+        if self._proc is None or self._proc.poll() is not None:
+            return  # nothing alive to kill, or already reaped
         loop = asyncio.get_event_loop()
-        if self._proc.poll() is None:
-            await loop.run_in_executor(None, self._proc.kill)
-        await loop.run_in_executor(None, self._proc.wait)
+        await loop.run_in_executor(self._executor, self._proc.kill)
+        await loop.run_in_executor(self._executor, self._proc.wait)
 
     async def _classify_death(self) -> str:
         """Best-effort classification of an unexpected worker death.
 
+        Code-review fix: this used to unconditionally *wait* for the
+        process to exit on its own if it was still alive — but a death
+        classification can be triggered by a protocol-level failure (e.g.
+        `ValueError` from `read_frame()` on a framing desync) that doesn't
+        necessarily mean the process died. If the worker was actually still
+        alive and healthy, that `wait()` could block forever, hanging the
+        caller indefinitely instead of returning the bounded G5 error
+        contract the feature is supposed to guarantee everywhere. We can no
+        longer trust the pipe's framing state after a desync regardless, so
+        if the process is still alive at this point, kill it deterministically
+        instead of waiting for it.
+
         Returns:
             ``"memory"`` when stderr hints at memory pressure, else
             ``"crash"`` (the generic fallback — segfault, uncaught native
-            abort, etc.).
+            abort, protocol desync, etc.).
         """
-        loop = asyncio.get_event_loop()
-        if self._proc is not None and self._proc.poll() is None:
-            await loop.run_in_executor(None, self._proc.wait)
-        stderr_text = ""
-        if self._proc is not None and self._proc.stderr is not None:
-            raw = await loop.run_in_executor(None, self._proc.stderr.read)
-            stderr_text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else (raw or "")
+        # `_kill_process()` is idempotent/safe here whether the process is
+        # still alive (kills it) or already reaped (no-op, no executor use).
+        await self._kill_process()
+        # Read from the drain task's accumulated buffer, never the stream
+        # directly — `_drain_stdio()` owns reading `self._proc.stderr`.
+        stderr_text = "\n".join(self._stderr_tail)
         if any(marker in stderr_text for marker in _MEMORY_MARKERS):
             return "memory"
         return "crash"
@@ -273,7 +384,7 @@ class WorkerHandle:
         loop = asyncio.get_event_loop()
         # Encoding is CPU/memory-bound (Arrow conversion + a shm copy) — run
         # it off the event loop (Key Constraint).
-        encoded = await loop.run_in_executor(None, encode_dataframe, df, name)
+        encoded = await loop.run_in_executor(self._executor, encode_dataframe, df, name)
         request = InjectDfRequest(
             name=name,
             format=encoded.format,
@@ -288,7 +399,7 @@ class WorkerHandle:
                 # Host owns the block's lifecycle: unlink only now that the
                 # worker has ack'd (read + closed its handle) via the
                 # response awaited above.
-                await loop.run_in_executor(None, unlink_shm, encoded.shm_name)
+                await loop.run_in_executor(self._executor, unlink_shm, encoded.shm_name)
         self.known_vars = sorted(set(self.known_vars) | {name})
 
     async def get_var(self, name: str) -> Any:
@@ -338,8 +449,28 @@ class WorkerHandle:
         return isinstance(response, PongResponse)
 
     async def kill(self) -> None:
-        """Terminate the worker process and close the control pipes."""
+        """Terminate the worker process, its drain task, and the control pipes.
+
+        Deliberately does NOT take ``self._lock`` before killing: an
+        in-flight ``_send()`` holds that lock for the *entire* duration of
+        its blocking read (parked in an executor thread, potentially for up
+        to ``deadline_ms``) — taking the same lock here would deadlock
+        `kill()` against exactly the in-flight call it needs to be able to
+        interrupt. Killing the OS process directly (unsynchronized) is safe:
+        it makes the worker's end of the pipe close, so a concurrent
+        `_send()`'s blocked read observes EOF and resolves via its own
+        ``(EOFError, OSError, ValueError)`` handling — a possible
+        `ValueError: I/O operation on closed file` from closing the host's
+        own stream objects here while another thread reads them is caught
+        by that same handler. Only the OS-level kill matters for
+        correctness; the stream-close below is opportunistic cleanup.
+        """
         await self._kill_process()
+        if self._stdio_task is not None:
+            self._stdio_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._stdio_task
+            self._stdio_task = None
         for stream in (self._to_worker, self._from_worker):
             if stream is not None:
                 try:
@@ -348,3 +479,8 @@ class WorkerHandle:
                     pass
         self._to_worker = None
         self._from_worker = None
+        if self._owns_executor:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+        # `_stdio_executor` is always self-owned (see `__init__`) — always
+        # shut it down here, regardless of `_owns_executor`.
+        self._stdio_executor.shutdown(wait=False, cancel_futures=True)

@@ -162,8 +162,22 @@ class PythonPandasTool(PythonREPLTool):
         ``encode_value``) — the scalar metadata entries
         (``*_row_count``/``*_col_count``/``*_shape``/``*_columns``) stay on
         ``set_var()`` since they're not DataFrames.
+
+        Code-review fix (post-TASK-1945): ``_seeded_df_names`` is only ever
+        ADDED to, never cleared here — but the pool can silently swap in a
+        brand-new worker for the same ``session_id`` behind this method's
+        back (crash restart, TTL eviction, deadline kill; TASK-1942's
+        crash-restart path). The fresh worker's namespace is empty, yet
+        every name already marked "seeded" against the now-dead worker
+        would be skipped, so the DataFrames would just silently vanish from
+        what the LLM sees. Detect the swap by identity (a restarted worker
+        is a new ``WorkerHandle`` object) and reseed everything when it
+        happens.
         """
         handle = await super()._get_worker_handle()
+        if id(handle) != self._seeded_worker_handle_id:
+            self._seeded_df_names = set()
+            self._seeded_worker_handle_id = id(handle)
         new_names = set(self.df_locals) - self._seeded_df_names
         if new_names:
             for name in new_names:
@@ -184,6 +198,7 @@ class PythonPandasTool(PythonREPLTool):
         """
         super().reset_environment()
         self._seeded_df_names = set()
+        self._seeded_worker_handle_id = None
 
     # ─────────────────────────────────────────────────────────────
     # Session Isolation
@@ -256,6 +271,16 @@ class PythonPandasTool(PythonREPLTool):
         clone.return_plot_as_base64 = self.return_plot_as_base64
         clone.debug = self.debug
         clone.BLOCKED_IMPORTS = self.BLOCKED_IMPORTS
+        # Code-review fix (post-TASK-1945 AC1 wiring): `_acquire_worker_pool()`
+        # now reads `self._repl_executor` unconditionally to route worker I/O
+        # through it (Module 1's dedicated, bounded pool) — a clone built via
+        # `object.__new__()` skipping `PythonREPLTool.__init__()` never had
+        # this attribute, so the first worker touch on any clone raised
+        # `AttributeError`. This class's own docstring already promises the
+        # clone "shares the heavy infrastructure (... executor)" with the
+        # source tool, so share the SAME dedicated pool rather than spawning
+        # a fresh one per clone.
+        clone._repl_executor = self._repl_executor
 
         # ── FEAT-380 (TASK-1944): worker identity, NOT shared with source ──
         # The clone is explicitly about session isolation — it must get its
@@ -272,6 +297,7 @@ class PythonPandasTool(PythonREPLTool):
         clone._pending_worker_reset = False
         clone._worker_repl_kwargs = dict(getattr(self, "_worker_repl_kwargs", {}) or {})
         clone._seeded_df_names = set()
+        clone._seeded_worker_handle_id = None
 
         # ── Isolated execution state ──
         # Start with a COPY of the source's locals/globals so the clone
@@ -479,8 +505,11 @@ class PythonPandasTool(PythonREPLTool):
         # a DIFFERENT DataFrame object (a refresh/drift re-sync). Set
         # unconditionally (works whether or not the attribute exists yet —
         # this runs once from `__init__`, before `super().__init__()` has
-        # even set up the rest of the worker-related state).
+        # even set up the rest of the worker-related state). Also seeds
+        # `_seeded_worker_handle_id` (code-review fix) so `_get_worker_handle()`
+        # can compare against it unconditionally, without a `getattr` guard.
         self._seeded_df_names: set = set()
+        self._seeded_worker_handle_id: Optional[int] = None
 
         for i, (df_name, df) in enumerate(self.dataframes.items()):
             # Use stable alias from DatasetManager when available,
@@ -903,8 +932,23 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
         # NameError on the next python_repl_pandas call.
         self._rebind_drifted_dataframes()
 
-        # Snapshot current locals keys to identify new variables
-        pre_keys = set(self.locals.keys())
+        # Snapshot current namespace var names to identify new variables.
+        #
+        # Code-review fix (post-TASK-1943): `self.locals` on this HOST
+        # instance no longer reflects the executed code's actual namespace —
+        # since Module 5 (worker-process isolation), code runs in a
+        # separate persistent worker process with its own, separate
+        # `locals`/`globals` (`PythonREPLTool._execute()`/`WorkerHandle`).
+        # Diffing `self.locals` here was permanently a no-op (`pre_keys` and
+        # `current_keys` below were always identical, since neither is ever
+        # touched by execution anymore) — silently disabling the "B.
+        # DataFrame Preview" half of the audit block for every call.
+        # `list_vars()`/`get_var()` (the namespace API, TASK-1943/1940) are
+        # the only way to see the worker's real namespace from here.
+        try:
+            pre_keys = set(await self.list_vars())
+        except Exception:
+            pre_keys = set()
 
         result = await super()._execute(code, debug=debug, **kwargs)
 
@@ -942,14 +986,22 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
             
             # B. DataFrame Preview
             # Check for new or modified DataFrames to assist debugging
-            current_keys = set(self.locals.keys())
+            # (code-review fix: see `pre_keys` comment above — query the
+            # worker's real namespace, not the stale host-side `self.locals`).
+            try:
+                current_keys = set(await self.list_vars())
+            except Exception:
+                current_keys = set()
             new_keys = current_keys - pre_keys
-            
+
             for key in new_keys:
-                if key.startswith('_'): 
+                if key.startswith('_'):
                     continue
-                    
-                val = self.locals[key]
+
+                try:
+                    val = await self.get_var(key)
+                except Exception:
+                    continue
                 if isinstance(val, pd.DataFrame) and not val.empty:
                     audit_parts.append(f"\n🔍 [AUDIT] Preview of '{key}' (first 3 rows):")
                     try:

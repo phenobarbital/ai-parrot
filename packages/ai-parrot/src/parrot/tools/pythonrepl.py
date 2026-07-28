@@ -1053,6 +1053,14 @@ print("Use 'execution_results' dict to store intermediate results.")
                 config=self._worker_config,
                 output_dir=str(self.output_dir),
                 repl_kwargs=self._worker_repl_kwargs,
+                # Code-review fix (AC1): route every worker's blocking I/O
+                # through this instance's OWN dedicated executor (Module 1,
+                # TASK-1939) instead of letting WorkerHandle fall back to a
+                # self-owned-but-separate one. Without this, `_repl_executor`
+                # was created but never actually used anywhere on the
+                # code-execution path — dead weight that silently defeated
+                # part of what Module 1 shipped to guarantee.
+                executor=self._repl_executor,
             )
         return self._worker_pool
 
@@ -1078,6 +1086,32 @@ print("Use 'execution_results' dict to store intermediate results.")
             # transparently spawns a fresh one (its own crash-restart path,
             # TASK-1942) — the namespace is intentionally cleared.
         return await pool.acquire(self._session_id)
+
+    @contextlib.asynccontextmanager
+    async def _worker_session(self):
+        """Acquire this instance's worker for one operation, releasing it after.
+
+        Code-review fix (post-TASK-1945): ``WorkerPool.release()`` existed
+        (TASK-1942) but was never called from anywhere in this class — every
+        namespace-API call and every ``_execute()`` acquired a handle via
+        ``_get_worker_handle()`` and never told the pool the operation was
+        done. ``WorkerPool.acquire()`` does refresh ``_last_active`` on every
+        call, so idle-TTL eviction (AC12) wasn't silently broken, but a
+        session that finished a long-running call was never explicitly
+        marked idle-from-now either. Routing every worker touch through this
+        context manager restores the intended acquire/release pairing
+        without changing any of the pool's own eviction semantics.
+
+        Yields:
+            A live ``WorkerHandle`` bound to ``self._session_id``.
+        """
+        handle = await self._get_worker_handle()
+        try:
+            yield handle
+        finally:
+            pool = self._worker_pool
+            if pool is not None:
+                await pool.release(self._session_id)
 
     async def _execute(self, code: str, debug: bool = False, **kwargs) -> Any:
         """
@@ -1116,8 +1150,8 @@ print("Use 'execution_results' dict to store intermediate results.")
                 )
                 return {"status": "done_with_errors", "result": gate_error, "error": gate_error}
 
-            handle = await self._get_worker_handle()
-            output = await handle.execute(query, debug=debug)
+            async with self._worker_session() as handle:
+                output = await handle.execute(query, debug=debug)
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}")
             msg = f"ToolError: {type(e).__name__}: {str(e)}"
@@ -1147,8 +1181,8 @@ print("Use 'execution_results' dict to store intermediate results.")
         Returns:
             The variable's current value.
         """
-        handle = await self._get_worker_handle()
-        return await handle.get_var(name)
+        async with self._worker_session() as handle:
+            return await handle.get_var(name)
 
     async def set_var(self, name: str, value: Any) -> None:
         """Write one namespace variable in this instance's worker (namespace API).
@@ -1157,18 +1191,18 @@ print("Use 'execution_results' dict to store intermediate results.")
             name: Variable name to bind in the REPL namespace.
             value: Value to assign.
         """
-        handle = await self._get_worker_handle()
-        await handle.set_var(name, value)
+        async with self._worker_session() as handle:
+            await handle.set_var(name, value)
 
     async def list_vars(self) -> List[str]:
         """List variable names currently in this instance's worker namespace."""
-        handle = await self._get_worker_handle()
-        return await handle.list_vars()
+        async with self._worker_session() as handle:
+            return await handle.list_vars()
 
     async def snapshot(self) -> Dict[str, Any]:
         """Return a serializable dump of this instance's worker namespace."""
-        handle = await self._get_worker_handle()
-        return await handle.snapshot()
+        async with self._worker_session() as handle:
+            return await handle.snapshot()
 
     async def inject_dataframe(self, name: str, df: Any) -> None:
         """Inject a DataFrame into this instance's worker via Arrow IPC/shm (FEAT-380 Module 7).
@@ -1177,8 +1211,8 @@ print("Use 'execution_results' dict to store intermediate results.")
             name: Variable name to bind the DataFrame to in the REPL namespace.
             df: The ``pandas.DataFrame`` to inject.
         """
-        handle = await self._get_worker_handle()
-        await handle.inject_dataframe(name, df)
+        async with self._worker_session() as handle:
+            await handle.inject_dataframe(name, df)
 
     def execute_sync(self, code: str, debug: bool = False) -> str:
         """

@@ -18,9 +18,11 @@ guarantees *some* value makes it across the wire for `get_var`/`set_var`/
 from __future__ import annotations
 
 import base64
+import io as _io
 import json
 import pickle
 import struct
+import types
 from typing import Any, BinaryIO, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -31,6 +33,94 @@ _LENGTH_STRUCT = struct.Struct(">I")
 
 #: Sentinel key identifying a pickle+base64-wrapped value inside a JSON payload.
 _PICKLE_MARKER = "__repl_worker_pickle_b64__"
+
+# ---------------------------------------------------------------------------
+# Insecure-deserialization guard (code-review finding, post-TASK-1945)
+# ---------------------------------------------------------------------------
+#
+# `decode_value()` runs on the HOST for `get_var()`/`snapshot()` responses —
+# i.e. on data whose SHAPE (not just contents) is influenced by whatever the
+# LLM's sandboxed code put in the namespace. `encode_value()`'s dict branch
+# preserves dict KEYS verbatim, so a plain, JSON-native dict literal typed
+# directly in sandboxed code —
+#
+#     x = {"__repl_worker_pickle_b64__": "<payload computed offline>"}
+#
+# — is indistinguishable, by shape alone, from a value `encode_value()`
+# itself pickled. No `import pickle`/`import base64` inside the sandbox is
+# needed: the payload is a plain string literal, so the AST/allowlist gate
+# sees nothing but an ordinary dict-of-strings. Without a restriction here,
+# `pickle.loads()` on that payload gives arbitrary code execution in the
+# UNSANDBOXED HOST process — a full breach of the process-isolation boundary
+# this whole feature exists to build (the same class of bug the codebase
+# already denylists `pd.read_pickle`/`to_pickle` for, reopened through an
+# ungated door).
+#
+# Mitigation: restrict `Unpickler.find_class()` to a data-only allowlist
+# (pandas/numpy/datetime/decimal/collections/plain builtins), rejecting
+# dangerous builtins explicitly. Most `__reduce__`-based RCE gadgets
+# (`os.system`, `subprocess.Popen`, `builtins.eval`, `functools.partial`
+# wrapping a dangerous callable, ...) resolve to a module outside this
+# allowlist and fail closed in `find_class()` before ever being called —
+# unpickling a value shaped like a DataFrame/ndarray/plain container still
+# works; unpickling a `__reduce__` payload that would call an arbitrary
+# executable does not.
+_SAFE_PICKLE_TOP_LEVEL_MODULES = frozenset(
+    {
+        "pandas", "numpy", "datetime", "decimal", "collections", "builtins",
+        # `pathlib` round-trips plain path data only (no `__reduce__` gadget
+        # comparable to os/subprocess) and legitimately shows up in the REPL
+        # namespace, e.g. `report_directory` (code-review fix, discovered via
+        # `snapshot()` on a freshly-bootstrapped worker).
+        "pathlib",
+    }
+)
+#: Builtins that ARE data-only-module members but are dangerous as callables
+#: if a `__reduce__` payload resolves to them (e.g. `(eval, ("...",))`).
+_UNSAFE_BUILTINS = frozenset(
+    {
+        "eval", "exec", "compile", "__import__", "open", "input",
+        "breakpoint", "getattr", "setattr", "delattr", "vars", "globals",
+        "locals", "memoryview",
+    }
+)
+
+
+class _RestrictedUnpickler(pickle.Unpickler):
+    """Unpickler that only resolves classes/functions under a safe allowlist.
+
+    See the module-level comment above for the threat this defends against.
+    """
+
+    def find_class(self, module: str, name: str) -> Any:  # noqa: D102 - see class docstring
+        top_level = module.split(".", 1)[0]
+        if top_level not in _SAFE_PICKLE_TOP_LEVEL_MODULES:
+            raise pickle.UnpicklingError(
+                f"repl_worker: refusing to unpickle {module}.{name} "
+                "(insecure-deserialization guard — module not on the allowlist)"
+            )
+        if module == "builtins" and name in _UNSAFE_BUILTINS:
+            raise pickle.UnpicklingError(
+                f"repl_worker: refusing to unpickle builtins.{name} "
+                "(insecure-deserialization guard — dangerous builtin)"
+            )
+        return super().find_class(module, name)
+
+
+def _safe_pickle_loads(data: bytes) -> Any:
+    """``pickle.loads()`` guarded by :class:`_RestrictedUnpickler`.
+
+    Args:
+        data: Raw pickle bytes (already base64-decoded).
+
+    Returns:
+        The unpickled value.
+
+    Raises:
+        pickle.UnpicklingError: ``data`` tries to reconstruct a class/
+            function outside the safe allowlist.
+    """
+    return _RestrictedUnpickler(_io.BytesIO(data)).load()
 
 
 def encode_value(value: Any) -> Any:
@@ -53,6 +143,19 @@ def encode_value(value: Any) -> Any:
         return [encode_value(v) for v in value]
     if isinstance(value, dict):
         return {str(k): encode_value(v) for k, v in value.items()}
+    if isinstance(value, types.ModuleType) or callable(value):
+        # Code-review fix: modules/functions/callables are never meaningful
+        # "data" to hand back across the wire, and pickling one means the
+        # host's restricted unpickler (see `_RestrictedUnpickler` above)
+        # would need to reconstruct an arbitrary callable reference — the
+        # exact thing that guard exists to refuse. This can be reached not
+        # just for a namespace value itself (already filtered a layer up by
+        # `WorkerNamespace.snapshot()`) but for a callable *nested inside* an
+        # otherwise-plain container (e.g. a dict of helper functions), so the
+        # check lives here, applied recursively. Represent it as an inert
+        # placeholder instead of ever attempting to pickle it.
+        label = getattr(value, "__qualname__", None) or getattr(value, "__name__", None) or repr(value)
+        return f"<{type(value).__name__}: {label} (not transportable)>"
     try:
         json.dumps(value)
         return value
@@ -70,7 +173,7 @@ def decode_value(value: Any) -> Any:
         The original Python value (unpickled if it was pickle-wrapped).
     """
     if isinstance(value, dict) and set(value) == {_PICKLE_MARKER}:
-        return pickle.loads(base64.b64decode(value[_PICKLE_MARKER]))
+        return _safe_pickle_loads(base64.b64decode(value[_PICKLE_MARKER]))
     if isinstance(value, dict):
         return {k: decode_value(v) for k, v in value.items()}
     if isinstance(value, list):

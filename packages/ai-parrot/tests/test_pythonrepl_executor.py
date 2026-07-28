@@ -18,8 +18,11 @@ from parrot.tools.pythonrepl import PythonREPLTool
 
 
 @pytest.fixture
-def tool(tmp_path):
-    return PythonREPLTool(report_dir=tmp_path, sanitize_input_enabled=True)
+async def tool(tmp_path):
+    instance = PythonREPLTool(report_dir=tmp_path, sanitize_input_enabled=True)
+    yield instance
+    if instance._worker_pool is not None:
+        await instance._worker_pool.shutdown()
 
 
 class TestDedicatedExecutor:
@@ -60,10 +63,35 @@ class TestDedicatedExecutor:
         assert isinstance(err, dict) and err["status"] in ("error", "done_with_errors")
 
     def test_default_executor_not_used(self):
-        """AC1: `run_in_executor(None, ...)` must not appear in the exec path."""
+        """AC1: `run_in_executor(None, ...)` must not appear in the exec path.
+
+        This is a source-text guard for `_execute()` itself, which is
+        accurate but incomplete on its own: `_execute()` delegates actual
+        execution to `WorkerHandle.execute()` (a different module) rather
+        than calling `run_in_executor` directly, so this check alone can't
+        see whether the WORKER's blocking I/O ends up on the shared default
+        executor. See `test_worker_io_uses_dedicated_executor_end_to_end`
+        below for the real, end-to-end verification (code-review fix).
+        """
         import inspect
 
         from parrot.tools import pythonrepl
 
         source = inspect.getsource(pythonrepl.PythonREPLTool._execute)
         assert "run_in_executor(None" not in source
+
+    async def test_worker_io_uses_dedicated_executor_end_to_end(self, tool):
+        """AC1, end-to-end (code-review fix): the actual `WorkerHandle`
+        spawned for this tool's worker uses `tool._repl_executor` for its
+        blocking pipe I/O — not a separate pool, and never the framework's
+        shared default executor.
+        """
+        ok = await tool._execute("x = 1 + 1")
+        assert isinstance(ok, str)
+
+        assert tool._worker_pool is not None
+        assert tool._worker_pool._executor is tool._repl_executor
+
+        handle = tool._worker_pool._sessions[tool._session_id]
+        assert handle._executor is tool._repl_executor
+        assert handle._owns_executor is False

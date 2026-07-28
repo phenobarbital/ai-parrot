@@ -98,6 +98,16 @@ dependencies = [
     "questionary>=2.1.1",
     # Pandas stays in core (owner decision)
     "pandas>=2.0.0",
+    # Code-review fix (FEAT-380 sandbox-hardening, post-TASK-1945):
+    # `repl_worker/transport.py` (Arrow IPC/shm DataFrame transport, the
+    # PRIMARY path `PythonPandasTool._get_worker_handle()` uses to seed
+    # every DataFrame into the worker) imports `pyarrow` unconditionally.
+    # It's a lazy, function-local import (only paid for when
+    # `inject_dataframe()` actually runs), but that's still the default
+    # DataFrame-injection path — an undeclared dependency there means a
+    # bare `pip install ai-parrot` breaks the tool at first use instead of
+    # at install time. Same floor pin as ai-parrot-server (FEAT-327).
+    "pyarrow>=25.0",
     # SQL validation for DatabaseToolkit (FEAT-062)
     "sqlglot>=20.0",
     "numexpr==2.10.2",

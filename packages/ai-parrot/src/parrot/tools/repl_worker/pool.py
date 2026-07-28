@@ -28,6 +28,7 @@ everything about *which* worker serves *which* session, and for how long:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import logging
 import os
@@ -62,6 +63,7 @@ class WorkerPool:
         config: Optional[WorkerConfig] = None,
         output_dir: Optional[str] = None,
         repl_kwargs: Optional[dict[str, Any]] = None,
+        executor: Optional[concurrent.futures.Executor] = None,
     ):
         """Initialize the pool (does not spawn anything until first use).
 
@@ -73,10 +75,19 @@ class WorkerPool:
             repl_kwargs: Extra ``PythonREPLTool`` constructor kwargs mirrored
                 on every worker's internal instance (e.g.
                 ``return_plot_as_base64``, TASK-1943).
+            executor: Dedicated executor passed through to every
+                :class:`WorkerHandle` this pool spawns (code-review fix,
+                AC1). When ``None`` (default), each spawned handle creates
+                its own small self-owned executor instead — either way, no
+                worker's blocking I/O ever touches the event loop's shared
+                default executor. Pass ``PythonREPLTool._repl_executor``
+                here to route an entire session's worker I/O through one
+                specific dedicated pool.
         """
         self._config = config or WorkerConfig()
         self._output_dir = output_dir
         self._repl_kwargs = repl_kwargs or {}
+        self._executor = executor
         self._ceiling = self._effective_ceiling(self._config)
 
         self._sessions: dict[str, WorkerHandle] = {}
@@ -84,6 +95,17 @@ class WorkerPool:
         self._prewarmed: list[WorkerHandle] = []
 
         self._lock = asyncio.Lock()
+        #: Serializes `_top_up_prewarmed()` so at most one "spawn up to
+        #: prewarm_pool_size" loop runs at a time (code-review fix): without
+        #: this, concurrent invocations (one per `acquire()` call) could each
+        #: observe "under ceiling" before any of them recorded its spawn,
+        #: transiently overshooting `max_workers`.
+        self._topup_lock = asyncio.Lock()
+        #: Background tasks this pool has fired (currently just top-up
+        #: sweeps) — tracked so `shutdown()` can cancel/await them instead
+        #: of leaving them to finish (and possibly append a freshly-spawned,
+        #: now-orphaned worker) after shutdown already cleared everything.
+        self._background_tasks: set[asyncio.Task] = set()
         self._maintenance_task: Optional[asyncio.Task] = None
         self._started = False
 
@@ -106,28 +128,63 @@ class WorkerPool:
         self._started = True
         loop = asyncio.get_event_loop()
         self._maintenance_task = loop.create_task(self._maintenance_loop())
-        loop.create_task(self._top_up_prewarmed())
+        self._track_background(self._top_up_prewarmed())
+
+    def _track_background(self, coro) -> asyncio.Task:
+        """Fire ``coro`` as a background task, tracked for `shutdown()`."""
+        task = asyncio.get_event_loop().create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def _spawn_handle(self) -> WorkerHandle:
-        handle = WorkerHandle(self._config, output_dir=self._output_dir, repl_kwargs=self._repl_kwargs)
+        handle = WorkerHandle(
+            self._config, output_dir=self._output_dir, repl_kwargs=self._repl_kwargs, executor=self._executor
+        )
         await handle.start()
         return handle
 
     async def _top_up_prewarmed(self) -> None:
-        """Spawn prewarmed spares up to `prewarm_pool_size`, respecting the ceiling."""
-        while True:
-            async with self._lock:
-                total = len(self._sessions) + len(self._prewarmed)
-                if len(self._prewarmed) >= self._config.prewarm_pool_size or total >= self._ceiling:
+        """Spawn prewarmed spares up to `prewarm_pool_size`, respecting the ceiling.
+
+        Single-flight (guarded by `self._topup_lock`): if another top-up is
+        already running, this call is a no-op — the running one will keep
+        going until full anyway. Without this, concurrent invocations could
+        each observe "under ceiling" before any of them recorded its own
+        spawn, transiently overshooting `max_workers` (code-review fix).
+        """
+        if self._topup_lock.locked():
+            return
+        async with self._topup_lock:
+            while True:
+                async with self._lock:
+                    if not self._started:
+                        return  # shutdown() ran — stop topping up
+                    total = len(self._sessions) + len(self._prewarmed)
+                    if len(self._prewarmed) >= self._config.prewarm_pool_size or total >= self._ceiling:
+                        return
+                try:
+                    handle = await self._spawn_handle()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("WorkerPool: failed to spawn a prewarmed worker")
                     return
-            try:
-                handle = await self._spawn_handle()
-            except Exception:
-                logger.exception("WorkerPool: failed to spawn a prewarmed worker")
-                return
-            async with self._lock:
-                self._prewarmed.append(handle)
-            logger.debug("WorkerPool: prewarmed worker ready (pool size=%d)", len(self._prewarmed))
+                async with self._lock:
+                    if not self._started:
+                        # shutdown() ran while we were spawning — this
+                        # worker would otherwise be appended into a pool
+                        # that already believes it holds zero live workers
+                        # (an orphan `shutdown()` never sees). Kill it
+                        # instead of resurrecting it (code-review fix, AC12).
+                        stale_handle = handle
+                        handle = None
+                    else:
+                        self._prewarmed.append(handle)
+                if handle is None:
+                    await stale_handle.kill()
+                    return
+                logger.debug("WorkerPool: prewarmed worker ready (pool size=%d)", len(self._prewarmed))
 
     async def _maintenance_loop(self) -> None:
         """Background TTL-eviction sweep. Cancelled deterministically by shutdown()."""
@@ -185,12 +242,23 @@ class WorkerPool:
                 self._sessions.pop(session_id, None)
                 self._last_active.pop(session_id, None)
 
-            total = len(self._sessions) + len(self._prewarmed)
-            if total >= self._ceiling:
-                raise WorkerPoolExhaustedError(
-                    f"WorkerPool ceiling reached ({self._ceiling} workers); raise "
-                    "WorkerConfig.max_workers to allow more concurrent sessions."
-                )
+            # Ceiling check (code-review fix): only reject when there's
+            # neither a prewarmed spare to consume NOR room to spawn a new
+            # one. Consuming a prewarmed spare converts it into a session
+            # slot — total worker count doesn't change — so it must never
+            # be blocked by the ceiling check; only spawning an ADDITIONAL
+            # worker can push past the ceiling. The old `total >= ceiling`
+            # check (regardless of `self._prewarmed`) rejected sessions
+            # even with spares sitting ready to be assigned — e.g.
+            # `max_workers=2, prewarm_pool_size=2` rejected the very first
+            # session ever acquired.
+            if not self._prewarmed:
+                total = len(self._sessions) + len(self._prewarmed)
+                if total >= self._ceiling:
+                    raise WorkerPoolExhaustedError(
+                        f"WorkerPool ceiling reached ({self._ceiling} workers); raise "
+                        "WorkerConfig.max_workers to allow more concurrent sessions."
+                    )
 
             if self._prewarmed:
                 handle = self._prewarmed.pop(0)
@@ -204,7 +272,7 @@ class WorkerPool:
 
         # Top up the prewarmed spares in the background — never block the
         # caller who just successfully acquired a worker.
-        asyncio.get_event_loop().create_task(self._top_up_prewarmed())
+        self._track_background(self._top_up_prewarmed())
         return handle
 
     async def release(self, session_id: str) -> None:
@@ -221,12 +289,32 @@ class WorkerPool:
         """Kill every worker (bound and prewarmed) and stop the maintenance loop.
 
         Leaves zero live workers behind, on any platform (AC12).
+
+        Code-review fix: previously, a `_top_up_prewarmed()` background task
+        that was mid-spawn when `shutdown()` ran could finish afterward and
+        append its freshly-spawned worker into `self._prewarmed` — a
+        process this method had already "finished" cleaning up and would
+        never kill. `self._started = False` is now set FIRST (before
+        anything else), so any in-flight top-up observes it (under the
+        lock, both before AND after its own spawn) and kills its own worker
+        instead of resurrecting it into a pool that already reported zero
+        live workers. Tracked background tasks are also cancelled/awaited
+        as a best-effort head start (cancellation can't interrupt a spawn
+        already in flight, hence the belt-and-suspenders `_started` check).
         """
+        self._started = False
+
         if self._maintenance_task is not None:
             self._maintenance_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._maintenance_task
             self._maintenance_task = None
+
+        tasks = list(self._background_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         async with self._lock:
             handles = list(self._sessions.values()) + list(self._prewarmed)
@@ -236,5 +324,3 @@ class WorkerPool:
 
         for handle in handles:
             await handle.kill()
-
-        self._started = False
