@@ -320,10 +320,55 @@ class TestColumnar:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-28
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+- Implemented `ColumnarCodec` (`codecs/columnar.py`): row-oriented
+  `list[dict]` -> `{"columns", "rows", "constants"}` split form, column
+  order derived from first-seen order across rows (never `set` iteration —
+  G4 determinism verified by a 100x-repeat test); constant-column factoring
+  (only when `len(rows) > 1`); all-null-column elision (logged at debug,
+  not embedded in `CompressionOutcome` — that contract is frozen from
+  TASK-1947 with no metadata field for this, so the discoverability
+  requirement is met via logging + the existing `lossy` flag rather than
+  a new field). Passthrough guards: `min_rows` (default 20, configurable),
+  heterogeneous rows (union/intersection ratio > 1.5, configurable, plus a
+  zero-shared-keys guard), nested dict/list values (null-elision only, no
+  flattening), non-serializable/non-list-dict input. Accepts both a bare
+  `list[dict]` and a `QueryResult`-shaped dict (`rows` key), leaving
+  sibling fields untouched. No `pandas` import (verified by a dedicated
+  test reading the source file). `codecs/__init__.py` now imports the
+  module so `@register_codec` fires.
+- **Verified tool-name correction**: the spec's own TOML example (§2) uses
+  the bare `execute_database_query` key, but
+  `databasequery/toolkit.py:147` sets `tool_prefix="dq"`, so the tool name
+  `ToolManager.execute_tool()` actually receives at runtime is
+  `dq_execute_database_query`. Used the verified real name in the core
+  manifest entry (NORMAL, `tee=true`, `min_rows=20`) instead of the
+  spec's illustrative one; documented in the TOML comment. Did not touch
+  `parrot/tools/databasequery/` (out of scope, per the task).
+- **Two necessary, documented ripple fixes to prior tasks' test files**
+  (not in this task's file list, but unavoidable — adding a second core
+  manifest entry that requires the `columnar` codec broke every test that
+  calls `CompressorRegistry.load()` without that codec registered):
+  - `test_registry.py` (TASK-1948): its autouse fixture hand-registered a
+    dummy stand-in `json_compact` codec. Replaced with
+    `import parrot.tools.compression.codecs` (now that BOTH real codecs
+    exist, this is simpler and more realistic than maintaining stand-ins).
+  - No other test file needed changes — `test_json_compact.py`,
+    `test_budget.py`, `test_stage.py`, `test_manager_integration.py`, and
+    `test_tee.py` all already import `parrot.tools.compression.codecs`
+    (directly or transitively via `manager.py`) or build a registry that
+    doesn't reference the new entry.
+- Verification: full compression suite 107/107 green; broader
+  `tests/tools/` (excl. compression) unchanged at 51 pre-existing failures
+  (identical set, confirmed unrelated to this task in TASK-1952's/1953's
+  notes); `ruff check compression/` clean; `compressors.toml` re-parses as
+  valid TOML.
+
+**Deviations from spec**: used the verified real tool name
+(`dq_execute_database_query`) instead of the spec's illustrative
+`execute_database_query`; null-column-elision "recorded in metadata" is
+satisfied via `logger.debug()` + the existing `lossy` flag rather than a
+new `CompressionOutcome` field (that contract is frozen — see above).
