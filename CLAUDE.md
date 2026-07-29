@@ -233,8 +233,8 @@ git worktree prune
 |---------|-----------------|------------------|
 | `/sdd-brainstorm` | `sdd/proposals/<n>.brainstorm.md` (with frontmatter) | `base_branch` |
 | `/sdd-proposal`   | `sdd/proposals/<n>.proposal.md` (with frontmatter)  | `base_branch` |
-| `/sdd-spec`       | `sdd/specs/<n>.spec.md` (with frontmatter)          | `base_branch` |
-| `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` | `base_branch` |
+| `/sdd-spec`       | `sdd/specs/<n>.spec.md` (with frontmatter) + a `reserve_ids.py` FEAT-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
+| `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` + a `reserve_ids.py` TASK-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
 | `/sdd-start`      | Per-spec index status update + implementation code  | worktree (feature branch) |
 | `/sdd-done`       | Per-spec index final state + task file moves; merges feature → `base_branch` | `base_branch` (NEVER `main`) |
 
@@ -247,6 +247,16 @@ sdd: <action> for <feature-name>
 repo to update SDD state — per-spec indexes mean each feature owns its own
 index file, so the worktree's commit covers code AND state in one stroke.
 The merge in `/sdd-done` brings them to `base_branch` atomically.
+
+**Note (FEAT-387)**: `sdd/tasks/.id_ledger.json` is a git-tracked
+compare-and-swap counter for `TASK-<NNN>`/`FEAT-<NNN>` numbers, allocated
+via `scripts/sdd/reserve_ids.py` (not scanned-and-incremented by hand). Its
+reservation commit is independent — pushed to `base_branch` immediately by
+`reserve_ids.py` itself, BEFORE the calling command's own task/spec files
+are written, never bundled into the same commit. `scripts/sdd/
+check_id_collisions.py` is an independent, read-only backstop wired into
+CI that catches any `TASK-<NNN>` collision that still slips through. See
+`sdd/WORKFLOW.md` ("TASK/FEAT ID Allocation") for full details.
 
 ## Isolation Model
 

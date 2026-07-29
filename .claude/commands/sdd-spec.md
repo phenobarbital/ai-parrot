@@ -10,7 +10,15 @@ Scaffold a new Feature Specification using the SDD methodology.
 ## Guardrails
 - Always use the official template at `sdd/templates/spec.md`.
 - Do NOT write implementation code in the spec — specs are design documents.
-- Feature IDs must be unique. Check existing specs before assigning.
+- **Feature IDs are unique by construction**: new `FEAT-<NNN>` numbers are
+  reserved via `scripts/sdd/reserve_ids.py` (FEAT-387) — a git-native
+  compare-and-swap ledger, not a manual "check existing specs" scan — so
+  two `/sdd-spec` runs racing each other cannot silently collide on the
+  same number. See §5 below. The one documented exception is intentional
+  `FEAT-<NNN>` reuse across a deliberate multi-spec split of one
+  initiative (e.g. FEAT-380 across `sandbox-hardening`,
+  `shelltool-hardening`, `tool-result-compression`) — declared explicitly
+  via a `reuse_feature_id` frontmatter field, never a silent fallback.
 - If a `.brainstorm.md` exists for this feature in `sdd/proposals/`, use it as input.
 - **NEVER re-ask a question that the brainstorm already answered.** Resolved
   answers must be carried forward verbatim, not re-opened. See §2 for the
@@ -225,9 +233,34 @@ This step prevents AI hallucinations during implementation. You MUST:
      ---
      type: feature        # or: hotfix
      base_branch: dev     # or: main (mandatory for hotfix)
+     # reuse_feature_id: FEAT-<NNN>   # OPTIONAL — only for an intentional
+     #   multi-spec split of one initiative (see Guardrails); when present,
+     #   skip the reserve_ids.py call below and use this ID verbatim.
      ---
      ```
-   - Feature ID (check existing; increment last; start at FEAT-001 if none).
+   - **Feature ID** — reserve via the ledger allocator (FEAT-387), never
+     hand-compute by checking existing specs and incrementing the last one:
+     ```bash
+     FEAT_ID=$(python -m scripts.sdd.reserve_ids --kind feature --count 1 \
+       --base-branch "$BASE_BRANCH" --label <feature-name>)
+     ```
+     On success this prints exactly one `FEAT-<NNN>` line; use it verbatim
+     as this spec's Feature ID. `reserve_ids.py` commits and pushes its own
+     ledger-only update to `origin/$BASE_BRANCH` as part of this call
+     (retrying internally on a non-fast-forward rejection) and refuses to
+     run if the working tree has uncommitted changes besides the ledger
+     file. If the command exits non-zero, **STOP** and report the error —
+     do NOT fall back to hand-computing a number.
+
+     **Escape hatch — intentional FEAT-ID reuse**: if this spec is a
+     deliberate split of an existing initiative across multiple specs (the
+     FEAT-380-style pattern — `sandbox-hardening.spec.md`,
+     `shelltool-hardening.spec.md`, and `tool-result-compression.spec.md`
+     all intentionally share `FEAT-380`), do NOT call `reserve_ids.py`.
+     Instead, set `reuse_feature_id: FEAT-<NNN>` in the frontmatter above,
+     state the reused ID explicitly, and skip the reservation call
+     entirely — this documents the intentional reuse for auditability
+     rather than silently reusing a stale number.
    - Today's date.
    - Answers from user (or prior exploration documents).
    - Architectural patterns from your codebase research.
