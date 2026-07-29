@@ -449,9 +449,9 @@ class InfographicToolkit(AbstractToolkit):
         """
         # --- Validation pipeline ---
         template = self._validate_template(template_name)
-        resolved_blocks = self._resolve_blocks(blocks, blocks_variable)
+        resolved_blocks = await self._resolve_blocks(blocks, blocks_variable)
         coerced_blocks = self._validate_blocks(template, resolved_blocks)
-        repl_locals = self._get_repl_locals()
+        repl_locals = await self._get_repl_locals()
         self._validate_data_variables(data_variables, repl_locals)
         validated_theme = self._validate_theme(theme or template.default_theme)
 
@@ -1024,7 +1024,7 @@ class InfographicToolkit(AbstractToolkit):
         """
         try:
             template = self._validate_template(template_name)
-            resolved_blocks = self._resolve_blocks(blocks, blocks_variable)
+            resolved_blocks = await self._resolve_blocks(blocks, blocks_variable)
             self._validate_blocks(template, resolved_blocks)
             return {"ok": True}
         except InfographicValidationError as exc:
@@ -1091,7 +1091,7 @@ class InfographicToolkit(AbstractToolkit):
             "detail": ...}`` on a structured failure.
         """
         try:
-            repl_locals = self._get_repl_locals()
+            repl_locals = await self._get_repl_locals()
             if block_type == "chart":
                 block_dict = self._build_chart_block(
                     repl_locals, data_variable, chart_type,
@@ -1635,7 +1635,7 @@ class InfographicToolkit(AbstractToolkit):
                     )
                 return  # only check the first list-like key found
 
-    def _resolve_blocks(
+    async def _resolve_blocks(
         self,
         blocks: Optional[List[Dict[str, Any]]],
         blocks_variable: Optional[str],
@@ -1654,6 +1654,10 @@ class InfographicToolkit(AbstractToolkit):
         so ``numpy`` scalars (e.g. ``round()`` over a pandas Series) coerce to
         native Python types before Pydantic validation.
 
+        FEAT-380 (TASK-1944): async — ``_get_repl_locals()`` now awaits a
+        worker round-trip; both callers (``render``, ``validate_blocks``)
+        are already async.
+
         Raises:
             InfographicValidationError: ``BLOCKS_MISSING`` when neither source
                 is provided, ``BLOCKS_VAR_MISSING`` when the named variable is
@@ -1661,7 +1665,7 @@ class InfographicToolkit(AbstractToolkit):
                 list of dicts.
         """
         if blocks_variable:
-            repl_locals = self._get_repl_locals()
+            repl_locals = await self._get_repl_locals()
             if blocks_variable not in repl_locals:
                 raise InfographicValidationError(
                     "BLOCKS_VAR_MISSING",
@@ -1730,18 +1734,21 @@ class InfographicToolkit(AbstractToolkit):
     # Bot binding helpers
     # ------------------------------------------------------------------
 
-    def _get_repl_locals(self) -> Dict[str, Any]:
+    async def _get_repl_locals(self) -> Dict[str, Any]:
         """Resolve the pandas REPL locals from the bound bot (PandasAgent).
 
         The toolkit is attached to a bot via ``toolkit._bot = agent``.
         ``PandasAgent`` exposes ``_get_repl_locals()`` which returns the
         current interpreter namespace including all computed DataFrames.
+
+        FEAT-380 (TASK-1944): async — the bound bot's getter now awaits a
+        `PythonREPLTool.snapshot()` round-trip to its worker process.
         """
         bot = getattr(self, "_bot", None)
         if bot is None:
             return {}
         getter = getattr(bot, "_get_repl_locals", None)
-        return getter() if callable(getter) else {}
+        return await getter() if callable(getter) else {}
 
     def _resolve_scope(self, bot: Any) -> Tuple[str, str, str]:
         """Extract (user_id, agent_id, session_id) from the bot context.

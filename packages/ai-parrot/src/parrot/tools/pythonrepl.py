@@ -7,11 +7,12 @@ import ast
 import types
 import re
 import sys
-import asyncio
 import threading
 import contextlib
 import base64
 import logging
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 logging.getLogger(name="matplotlib").setLevel(logging.INFO)
 
@@ -197,6 +198,8 @@ class PythonREPLTool(AbstractTool):
         return_plot_as_base64: bool = False,
         debug: bool = False,
         policy=None,  # FEAT-252 (TASK-1614): PythonExecutionPolicy | None
+        executor_max_workers: int = 4,
+        worker_config=None,  # FEAT-380 Module 5: repl_worker.protocol.WorkerConfig | None
         **kwargs,
     ):
         """
@@ -214,6 +217,17 @@ class PythonREPLTool(AbstractTool):
             return_plot_as_base64: Whether to return plots as base64 strings
             policy: ``PythonExecutionPolicy`` for the allowlist-first AST gate.
                 Defaults to ``general_profile()``.
+            executor_max_workers: Size of the dedicated thread pool used to run
+                generated code (FEAT-380 Module 1 / AC1). A runaway loop then
+                only exhausts this REPL-scoped pool instead of the framework's
+                shared default executor. Kept for the palliative that shipped
+                in Module 1; no longer on the code-execution path itself
+                (Module 5 moves that to the worker process) but preserved so
+                any caller still relying on the attribute keeps working.
+            worker_config: ``repl_worker.protocol.WorkerConfig`` — resource
+                limits / lifecycle tuning for this instance's persistent
+                worker process (FEAT-380 Module 5). Defaults to
+                ``WorkerConfig()`` (lazily, on first use).
             **kwargs: Additional arguments for AbstractTool
         """
         # Check Python version
@@ -243,6 +257,39 @@ class PythonREPLTool(AbstractTool):
         # Initialize execution environment
         self.locals = locals_dict or {}
         self.globals = globals_dict or {}
+
+        # FEAT-380 Module 1 (AC1): dedicated, bounded executor for generated
+        # code — a runaway loop then only hijacks this REPL-scoped pool
+        # instead of the framework's shared default ThreadPoolExecutor.
+        self._repl_executor = ThreadPoolExecutor(
+            max_workers=executor_max_workers,
+            thread_name_prefix="python-repl",
+        )
+        self.logger.debug(
+            "Created dedicated python-repl executor (max_workers=%s)",
+            executor_max_workers,
+        )
+
+        # FEAT-380 Module 5: this tool instance IS the session (there is no
+        # broader session concept today, per the Codebase Contract) — one
+        # persistent worker process per instance, acquired lazily on first
+        # `_execute()`/namespace-API call, never in `__init__` (spec: lazy
+        # start). `_worker_repl_kwargs` mirrors the settings that shape
+        # `_execute_code()`'s behaviour on the WORKER's own instance (its
+        # `save_current_plot` closure, output style, …) — these must be set
+        # at the worker's construction time since it reads them off `self`
+        # there, not on the host's instance.
+        self._session_id = f"pythonrepl-{uuid.uuid4().hex}"
+        self._worker_config = worker_config
+        self._worker_pool = None
+        self._pending_worker_reset = False
+        self._worker_repl_kwargs = {
+            "plt_style": plt_style,
+            "palette": palette,
+            "setup_code": self.setup_code,
+            "auto_save_plots": auto_save_plots,
+            "return_plot_as_base64": return_plot_as_base64,
+        }
 
         # Setup matplotlib to use non-interactive backend
         self._setup_charts()
@@ -947,9 +994,136 @@ print("Use 'execution_results' dict to store intermediate results.")
             return False
         return bool(self._ERROR_OUTPUT_RE.match(output.lstrip()))
 
+    def _host_gate_check(self, query: str) -> Optional[str]:
+        """Cheap, no-round-trip static gate check run HOST-SIDE (FEAT-380 Module 5).
+
+        Mirrors the gate portion of ``_execute_code()`` exactly (allowlist
+        validator + AST denylist walk) so a snippet rejected here produces
+        the IDENTICAL error string a rejection deep inside ``_execute_code``
+        would — whether that happens here (cheap, no worker round-trip) or,
+        as defence in depth, is independently re-validated inside the worker
+        itself before it ever runs the code (spec G6/AC6: "el host falla
+        barato sin round-trip; el worker protege incluso si un caller futuro
+        llega sin pasar por la ruta del host").
+
+        Args:
+            query: The (already sanitized, if enabled) code snippet.
+
+        Returns:
+            An error string if the gate denies ``query``, else ``None``.
+        """
+        try:
+            tree = ast.parse(query)
+        except SyntaxError as e:
+            return f"SyntaxError: {str(e)}"
+
+        allowlist_result = self._code_sanitizer.validate(query)
+        if allowlist_result.is_denied:
+            reasons = "; ".join(allowlist_result.reasons[:3])
+            return (
+                f"SecurityError: code denied by allowlist gate — {reasons}. "
+                "Hint: call list_variables() to inspect available variables/"
+                "DataFrames (globals()/locals()/vars() are not permitted); "
+                "dir(obj) and try/except are allowed; file, network and os "
+                "access are blocked."
+            )
+
+        return self._check_ast_security(tree)
+
+    async def _acquire_worker_pool(self):
+        """Lazily create this tool INSTANCE's dedicated ``WorkerPool``.
+
+        FEAT-380 Module 5: there is no broader "session" concept in
+        ``PythonREPLTool`` today (Codebase Contract — "Does NOT Exist"), so
+        this tool uses **one worker per tool instance**, matching today's
+        existing isolation unit (``self.locals`` is already per-instance,
+        never shared across instances). Reusing the real ``WorkerPool``
+        class (rather than a bare ``WorkerHandle``) gets TTL eviction,
+        crash-restart and orphan-reaping for free instead of re-implementing
+        them here — this pool only ever serves the single
+        ``self._session_id`` key.
+
+        Returns:
+            This instance's ``WorkerPool`` (created on first call).
+        """
+        if self._worker_pool is None:
+            from parrot.tools.repl_worker import WorkerPool
+
+            self._worker_pool = WorkerPool(
+                config=self._worker_config,
+                output_dir=str(self.output_dir),
+                repl_kwargs=self._worker_repl_kwargs,
+                # Code-review fix (AC1): route every worker's blocking I/O
+                # through this instance's OWN dedicated executor (Module 1,
+                # TASK-1939) instead of letting WorkerHandle fall back to a
+                # self-owned-but-separate one. Without this, `_repl_executor`
+                # was created but never actually used anywhere on the
+                # code-execution path — dead weight that silently defeated
+                # part of what Module 1 shipped to guarantee.
+                executor=self._repl_executor,
+            )
+        return self._worker_pool
+
+    async def _get_worker_handle(self):
+        """Return this instance's live worker, applying any pending reset first.
+
+        Returns:
+            A live ``WorkerHandle`` bound to ``self._session_id``.
+
+        Raises:
+            Exception: Whatever the pool/handle raises if the worker cannot
+                be started (``WorkerPoolExhaustedError``, spawn failures,
+                …) — propagated to the caller (FEAT-380 G8/AC8: no
+                in-process ``exec()`` fallback; the caller reports this as
+                an explicit error instead).
+        """
+        pool = await self._acquire_worker_pool()
+        if self._pending_worker_reset:
+            self._pending_worker_reset = False
+            stale = await pool.acquire(self._session_id)
+            await stale.kill()
+            # WorkerPool.acquire() below sees the now-dead handle and
+            # transparently spawns a fresh one (its own crash-restart path,
+            # TASK-1942) — the namespace is intentionally cleared.
+        return await pool.acquire(self._session_id)
+
+    @contextlib.asynccontextmanager
+    async def _worker_session(self):
+        """Acquire this instance's worker for one operation, releasing it after.
+
+        Code-review fix (post-TASK-1945): ``WorkerPool.release()`` existed
+        (TASK-1942) but was never called from anywhere in this class — every
+        namespace-API call and every ``_execute()`` acquired a handle via
+        ``_get_worker_handle()`` and never told the pool the operation was
+        done. ``WorkerPool.acquire()`` does refresh ``_last_active`` on every
+        call, so idle-TTL eviction (AC12) wasn't silently broken, but a
+        session that finished a long-running call was never explicitly
+        marked idle-from-now either. Routing every worker touch through this
+        context manager restores the intended acquire/release pairing
+        without changing any of the pool's own eviction semantics.
+
+        Yields:
+            A live ``WorkerHandle`` bound to ``self._session_id``.
+        """
+        handle = await self._get_worker_handle()
+        try:
+            yield handle
+        finally:
+            pool = self._worker_pool
+            if pool is not None:
+                await pool.release(self._session_id)
+
     async def _execute(self, code: str, debug: bool = False, **kwargs) -> Any:
         """
         Execute Python code asynchronously (AbstractTool interface).
+
+        FEAT-380 (Sandbox Hardening, Module 5): code no longer runs
+        in-process — the host gate (allowlist + AST denylist) still fails
+        cheap without a round-trip, but actual execution happens in this
+        instance's persistent worker process via ``WorkerHandle``/
+        ``WorkerPool``. There is **no in-process ``exec()`` fallback**
+        (G8/AC8): if the worker cannot start, this returns an explicit G5
+        error dict instead.
 
         Args:
             code: Python code to execute
@@ -958,31 +1132,87 @@ print("Use 'execution_results' dict to store intermediate results.")
 
         Returns:
             The execution output string on success, or a ``{status, result,
-            error}`` dict when the code raised or was blocked — so the framework
-            records an error instead of reporting a failed run as a success.
-            The error text is preserved in ``result`` so the LLM still sees it.
+            error}`` dict when the code raised, was blocked, or the worker
+            died — so the framework records an error instead of reporting a
+            failed run as a success. The error text is preserved in
+            ``result`` so the LLM still sees it.
         """
         try:
             self.logger.info(f"Executing Python code: {code[:100]}...")
 
-            # Execute the code in a thread to avoid blocking
-            loop = asyncio.get_event_loop()
-            output = await loop.run_in_executor(None, self._execute_code, code, debug)
+            query = sanitize_input(code) if self.sanitize_input_enabled else code
+
+            # Host gate first — cheap rejection, no worker round-trip.
+            gate_error = self._host_gate_check(query)
+            if gate_error:
+                self.logger.warning(
+                    "Tool %s code rejected by host gate: %s", self.name, gate_error[:200]
+                )
+                return {"status": "done_with_errors", "result": gate_error, "error": gate_error}
+
+            async with self._worker_session() as handle:
+                output = await handle.execute(query, debug=debug)
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}")
             msg = f"ToolError: {type(e).__name__}: {str(e)}"
             return {"status": "error", "result": msg, "error": str(e)}
 
-        # _execute_code traps errors and returns them as text for the LLM. Don't
-        # let that masquerade as success — report an error status (the text is
-        # kept in `result` so the model can still read and fix it).
-        if self._is_error_output(output):
+        # The worker already classifies error-shaped output into the
+        # {status, result, error} dict shape itself (it runs the exact same
+        # `_execute_code`/`_is_error_output` this class always has) — a dict
+        # here is either that classification or a namespace-loss error after
+        # a timeout/crash. Pass it through as-is; only redact plain success
+        # strings (mirrors `_execute_code`'s own redaction of success paths
+        # only, never of gate/error messages).
+        if isinstance(output, dict):
             self.logger.warning(
                 "Tool %s code execution returned an error: %s",
                 self.name, str(output)[:200],
             )
-            return {"status": "done_with_errors", "result": output, "error": output}
-        return output
+            return output
+        return self._redact_execution_output(output)
+
+    async def get_var(self, name: str) -> Any:
+        """Read one namespace variable from this instance's worker (namespace API).
+
+        Args:
+            name: Variable name in the REPL namespace.
+
+        Returns:
+            The variable's current value.
+        """
+        async with self._worker_session() as handle:
+            return await handle.get_var(name)
+
+    async def set_var(self, name: str, value: Any) -> None:
+        """Write one namespace variable in this instance's worker (namespace API).
+
+        Args:
+            name: Variable name to bind in the REPL namespace.
+            value: Value to assign.
+        """
+        async with self._worker_session() as handle:
+            await handle.set_var(name, value)
+
+    async def list_vars(self) -> List[str]:
+        """List variable names currently in this instance's worker namespace."""
+        async with self._worker_session() as handle:
+            return await handle.list_vars()
+
+    async def snapshot(self) -> Dict[str, Any]:
+        """Return a serializable dump of this instance's worker namespace."""
+        async with self._worker_session() as handle:
+            return await handle.snapshot()
+
+    async def inject_dataframe(self, name: str, df: Any) -> None:
+        """Inject a DataFrame into this instance's worker via Arrow IPC/shm (FEAT-380 Module 7).
+
+        Args:
+            name: Variable name to bind the DataFrame to in the REPL namespace.
+            df: The ``pandas.DataFrame`` to inject.
+        """
+        async with self._worker_session() as handle:
+            await handle.inject_dataframe(name, df)
 
     def execute_sync(self, code: str, debug: bool = False) -> str:
         """
@@ -1021,7 +1251,19 @@ print("Use 'execution_results' dict to store intermediate results.")
         return info
 
     def reset_environment(self) -> None:
-        """Reset the REPL environment to its initial state."""
+        """Reset the REPL environment to its initial state.
+
+        FEAT-380 Module 5: resetting now means killing and replacing this
+        instance's WORKER (where code actually executes) on its next use —
+        the namespace is intentionally cleared, matching a fresh worker's
+        empty namespace. This method's public signature stays synchronous,
+        so it only flags the worker for replacement here; ``_execute()``/the
+        namespace API kill + lazily respawn it (this tool's existing "lazy
+        start" pattern already works this way — see ``_get_worker_handle``).
+        The host's OWN instance still re-bootstraps below unchanged, since
+        external call sites not yet ported to the namespace API (TASK-1944)
+        still read ``self.locals``/``self.globals`` directly.
+        """
         self.logger.info("Resetting Python REPL environment...")
 
         # Clear all plots first
@@ -1040,6 +1282,11 @@ print("Use 'execution_results' dict to store intermediate results.")
         # Re-bootstrap
         PythonREPLTool._bootstrapped = False
         self._bootstrap()
+
+        # FEAT-380 Module 5: the WORKER that actually executes code is
+        # killed + replaced lazily on the next `_execute()`/namespace-API
+        # call (never here — this method stays synchronous).
+        self._pending_worker_reset = True
 
         self.logger.info("Python REPL environment reset complete")
 

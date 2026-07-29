@@ -162,6 +162,7 @@ nav:
       - Tools Reference: tools.md
       - What-If Tool: whatif_tool.md
       - Sandbox Tool: sandbox_tool.md
+      - REPL Worker Sandbox: repl-worker-sandbox.md
       - Hierarchy Tool: hierarchy_tool.md
       - Tool Clone: tool_clone.md
       - ArXiv Tool: ARXIV_TOOL_README.md
