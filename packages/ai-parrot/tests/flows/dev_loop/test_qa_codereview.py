@@ -42,11 +42,11 @@ def _dispatcher(qa_report, verdict_or_exc):
 
     QANode's default (no ``codereview_dispatcher`` supplied) wraps this same
     dispatcher in a ``ClaudeCodeReviewDispatcher``, so ``dispatch()`` is
-    called twice: once for the deterministic ``sdd-qa`` pass, once for the
-    code-review pass (``output_model=CodeReviewVerdict``).
+    called twice: first for the code-review pass (so reviewer fixes land
+    before verification), then for the deterministic ``sdd-qa`` pass.
     """
     d = MagicMock()
-    d.dispatch = AsyncMock(side_effect=[qa_report, verdict_or_exc])
+    d.dispatch = AsyncMock(side_effect=[verdict_or_exc, qa_report])
     return d
 
 
@@ -94,8 +94,8 @@ async def test_qa_codereview_dispatch_is_write_enabled(ctx):
     verdict = CodeReviewVerdict(passed=True, findings=[])
     node = QANode(dispatcher=_dispatcher(qa, verdict))
     await node.execute(ctx)
-    # The SECOND dispatch is the code-review gate.
-    cr_profile = node._dispatcher.dispatch.await_args_list[1].kwargs["profile"]
+    # The FIRST dispatch is the code-review gate (reviewer runs before QA).
+    cr_profile = node._dispatcher.dispatch.await_args_list[0].kwargs["profile"]
     assert cr_profile.subagent == "sdd-codereview"
     assert cr_profile.permission_mode == "default"
     assert "Edit" in cr_profile.allowed_tools
@@ -121,33 +121,23 @@ async def test_codereview_cwd_uses_worktree_path(ctx):
     verdict = CodeReviewVerdict(passed=True, findings=[])
     node = QANode(dispatcher=_dispatcher(qa, verdict))
     await node.execute(ctx)
-    cr_cwd = node._dispatcher.dispatch.await_args_list[1].kwargs["cwd"]
+    cr_cwd = node._dispatcher.dispatch.await_args_list[0].kwargs["cwd"]
     assert cr_cwd == ctx["research_output"].worktree_path
 
 
 @pytest.mark.asyncio
-async def test_rerun_after_fix(ctx):
-    """When reviewer fixes files, deterministic QA re-runs (FEAT-270)."""
-    qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
+async def test_qa_validates_after_fix(ctx):
+    """When reviewer fixes files, QA validates the final state (FEAT-270).
+
+    Write-enabled reviewers run FIRST so their fixes land before the single
+    deterministic QA pass — no redundant re-run needed.
+    """
     verdict = CodeReviewVerdict(
         passed=True, findings=[], files_modified=["sync.py"]
     )
-    rerun_qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
-    dispatcher = MagicMock()
-    dispatcher.dispatch = AsyncMock(side_effect=[qa, verdict, rerun_qa])
-    node = QANode(dispatcher=dispatcher)
-    report = await node.execute(ctx)
-    assert report.passed is True
-    assert dispatcher.dispatch.await_count == 3
-
-
-@pytest.mark.asyncio
-async def test_skip_rerun_no_fixes(ctx):
-    """When reviewer passes with no fixes, skip re-run (FEAT-270)."""
     qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
-    verdict = CodeReviewVerdict(passed=True, findings=[], files_modified=[])
     dispatcher = MagicMock()
-    dispatcher.dispatch = AsyncMock(side_effect=[qa, verdict])
+    dispatcher.dispatch = AsyncMock(side_effect=[verdict, qa])
     node = QANode(dispatcher=dispatcher)
     report = await node.execute(ctx)
     assert report.passed is True
@@ -155,15 +145,27 @@ async def test_skip_rerun_no_fixes(ctx):
 
 
 @pytest.mark.asyncio
-async def test_rerun_fails_after_fix(ctx):
-    """When re-run fails after reviewer fix, QA fails (FEAT-270)."""
+async def test_no_fixes_still_two_dispatches(ctx):
+    """When reviewer passes with no fixes, same dispatch count (FEAT-270)."""
+    verdict = CodeReviewVerdict(passed=True, findings=[], files_modified=[])
     qa = QAReport(passed=True, criterion_results=[], lint_passed=True)
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(side_effect=[verdict, qa])
+    node = QANode(dispatcher=dispatcher)
+    report = await node.execute(ctx)
+    assert report.passed is True
+    assert dispatcher.dispatch.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_qa_fails_after_fix(ctx):
+    """When QA fails after reviewer fix, overall QA fails (FEAT-270)."""
     verdict = CodeReviewVerdict(
         passed=True, findings=[], files_modified=["sync.py"]
     )
-    rerun_qa = QAReport(passed=False, criterion_results=[], lint_passed=False)
+    qa_fail = QAReport(passed=False, criterion_results=[], lint_passed=False)
     dispatcher = MagicMock()
-    dispatcher.dispatch = AsyncMock(side_effect=[qa, verdict, rerun_qa])
+    dispatcher.dispatch = AsyncMock(side_effect=[verdict, qa_fail])
     node = QANode(dispatcher=dispatcher)
     report = await node.execute(ctx)
     assert report.passed is False
@@ -183,6 +185,7 @@ async def test_custom_codereview_dispatcher_used(ctx):
     dispatcher = MagicMock()
     dispatcher.dispatch = AsyncMock(return_value=qa)
     mock_reviewer = MagicMock()
+    mock_reviewer.advisory = False
     mock_reviewer.review = AsyncMock(
         return_value=CodeReviewVerdict(passed=True, findings=[])
     )

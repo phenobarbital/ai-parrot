@@ -185,19 +185,35 @@ class QANode(DevLoopNode):
             if not isinstance(c, ManualCriterion)
         ]
 
-        report = await self._run_deterministic_qa(
-            shared, research, brief, executable
-        )
-        deterministic_passed = report.passed
+        is_advisory = getattr(self._codereview_dispatcher, "advisory", False)
 
-        # FEAT-250 G4 / FEAT-270: additive code-review gate. A run passes QA
-        # only when the deterministic criteria/lint AND the qualitative
-        # review both pass. The reviewer may fix issues it finds and commit
-        # the fixes to the worktree branch (FEAT-270); when it does, the
-        # deterministic pass re-runs to confirm the fix didn't regress.
-        cr_passed, cr_findings, files_modified = await self._run_code_review(
-            shared, research, brief
-        )
+        # FEAT-250 G4 / FEAT-270, optimised pipeline:
+        #
+        # - Advisory reviewers (read-only): run deterministic QA and code
+        #   review CONCURRENTLY — the reviewer never modifies files, so
+        #   there is no race with the QA subagent reading the worktree.
+        #
+        # - Write-enabled reviewers: run code review FIRST so its fixes
+        #   are committed before the single deterministic QA pass. This
+        #   replaces the old QA → review → re-run-QA three-step with a
+        #   two-step (review → QA), eliminating the redundant re-run.
+        if is_advisory:
+            self.logger.info(
+                "Advisory reviewer — running deterministic QA and code review concurrently"
+            )
+            qa_coro = self._run_deterministic_qa(
+                shared, research, brief, executable
+            )
+            cr_coro = self._run_code_review(shared, research, brief)
+            report, (cr_passed, cr_findings, files_modified) = (
+                await asyncio.gather(qa_coro, cr_coro)
+            )
+            deterministic_passed = report.passed
+        else:
+            cr_passed, cr_findings, files_modified = await self._run_code_review(
+                shared, research, brief
+            )
+
         cr_skipped = any(
             f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
         )
@@ -223,7 +239,7 @@ class QANode(DevLoopNode):
         # findings must be routed to the primary worker for explicit triage
         # (CONFIRM/REJECT/ESCALATE) instead of being trusted at face value.
         triage_notes: List[str] = []
-        if not cr_skipped and getattr(self._codereview_dispatcher, "advisory", False):
+        if not cr_skipped and is_advisory:
             triage_findings = self._collect_triage_findings(shared)
             if triage_findings:
                 triage_notes, triage_files_modified, escalation_passed = (
@@ -237,7 +253,20 @@ class QANode(DevLoopNode):
                 # Module 5 QA pass/fail semantics).
                 cr_passed = escalation_passed
 
-        if files_modified:
+        # Deterministic QA — deferred for write-enabled reviewers, or
+        # re-run for advisory reviewers when triage committed fixes.
+        if not is_advisory:
+            if files_modified:
+                self.logger.info(
+                    "Code review modified %s — running deterministic QA on fixed code",
+                    files_modified,
+                )
+            report = await self._run_deterministic_qa(
+                shared, research, brief, executable,
+                cwd_override=research.worktree_path,
+            )
+            deterministic_passed = report.passed
+        elif files_modified:
             self.logger.info(
                 "Code review modified %s — re-running deterministic QA",
                 files_modified,

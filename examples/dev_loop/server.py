@@ -102,6 +102,7 @@ import functools
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 import uuid
@@ -113,6 +114,8 @@ from aiohttp import web
 
 from parrot import conf
 from parrot.flows.dev_loop import (
+    GoogleCodingDispatcher,  # noqa: F401 - re-exported; test-patchable, see agent_builder
+    GoogleCodingDispatchProfile,  # noqa: F401 - re-exported; test-patchable, see agent_builder
     BugBrief,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
@@ -135,6 +138,7 @@ from parrot.flows.dev_loop import (
 from parrot.flows.dev_loop.agent_builder import build_dispatcher, parse_pool_env, resolve_pool_max
 from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
+from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 from parrot.flows.dev_loop.models import (
     DevAgentSpec,
     FeatureBrief,
@@ -165,6 +169,7 @@ _DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV = {
     "grok": "GROK_CODE_MAX_CONCURRENT_DISPATCHES",
     "zai": "ZAI_CODE_MAX_CONCURRENT_DISPATCHES",
     "moonshot": "MOONSHOT_CODE_MAX_CONCURRENT_DISPATCHES",
+    "google_coding": "GOOGLE_CODING_MAX_CONCURRENT_DISPATCHES",
 }
 
 
@@ -207,6 +212,8 @@ def _log_development_agent_selection(backend: str, profile: Any) -> None:
             profile.model,
             profile.reasoning_effort,
         )
+    elif backend == "google_coding":
+        logger.info("Development node using google_coding CLI (model=%s)", profile.model)
 
 
 def _build_codex_adversarial_reviewer(codex_dispatcher: CodexCodeDispatcher) -> object:
@@ -363,9 +370,23 @@ def _build_primary_reviewer(
             )
         )
         return CodeReviewDispatcherFactory.create("gemini", dispatcher=underlying)
+    if agent == "google_coding":
+        underlying = (
+            development_dispatcher
+            if isinstance(development_dispatcher, GoogleCodingDispatcher)
+            else GoogleCodingDispatcher(
+                max_concurrent=conf.config.getint(
+                    "GOOGLE_CODING_MAX_CONCURRENT_DISPATCHES",
+                    fallback=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
+                ),
+                redis_url=redis_url,
+                stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
+            )
+        )
+        return CodeReviewDispatcherFactory.create("google_coding", dispatcher=underlying)
     raise RuntimeError(
         "DEV_LOOP_CODEREVIEW_AGENT must be 'claude-code', 'codex', 'gemini', "
-        f"'codex-adversarial', or 'parallel', got {agent!r}"
+        f"'google_coding', 'codex-adversarial', or 'parallel', got {agent!r}"
     )
 
 
@@ -486,16 +507,17 @@ def _build_jira_toolkit() -> JiraToolkit:
     Declares the project's **workflow path** so ``jira_transition_to`` can
     walk multi-stage custom workflows. Jira's API only exposes the
     transitions available from an issue's *current* status, so a single hop
-    cannot cross a chain like ``Backlog → Open → To Do → In Progress →
-    Resolved`` — without a declared path the dev-loop's resolve/deploy
+    cannot cross a chain like ``Backlog → Open → In Progress → Resolved →
+    Closed`` — without a declared path the dev-loop's resolve/deploy
     transition silently falls back to one direct hop and fails. The path is
     read from ``JIRA_WORKFLOW_PATH_<PROJECT>`` (e.g. ``JIRA_WORKFLOW_PATH_NAV``)
-    and defaults to the NAV chain. Separators: ``>``, ``->`` or ``→``.
+    and defaults to ``DEV_LOOP_JIRA_WORKFLOW_PATH`` from ``conf``.
+    Separators: ``>``, ``->`` or ``→``.
     """
     project = conf.config.get("JIRA_PROJECT") or "NAV"
     workflow_path = conf.config.get(
         f"JIRA_WORKFLOW_PATH_{project.upper()}",
-        fallback="Backlog > Open > To Do > In Progress > Resolved",
+        fallback=conf.DEV_LOOP_JIRA_WORKFLOW_PATH,
     )
     return JiraToolkit(
         server_url=conf.config.get("JIRA_INSTANCE"),
@@ -967,6 +989,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 "qa_max_retries": conf.DEV_LOOP_QA_MAX_RETRIES,
                 "docs_artifact_dir": conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
+                "wiki_search": app.get("wiki_search") is not None,
                 "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
                 "development_pool_max": app.get("development_pool_max", 4),
                 "max_concurrent_runs": getattr(
@@ -1285,6 +1308,23 @@ async def _on_startup(app: web.Application) -> None:
     # to a no-op, so this is a strict extension, never a behavior change.
     graph_memory = await DevLoopGraphMemory.from_config()
 
+    # Auto-detect wiki search: if .parrot/wiki.json exists and the plane
+    # is built, provide token-budgeted codebase context to ResearchNode's
+    # dispatch brief — no env var required.
+    wiki_search = DevLoopWikiSearch.from_project()
+    app["wiki_search"] = wiki_search
+
+    # Warn when wikitoolkit CLI is not in PATH — the sdd-research subagent
+    # uses it for wiki-first triage via Bash, so a missing binary means
+    # the agent silently falls back to grep.
+    if not shutil.which("wikitoolkit"):
+        logger.warning(
+            "wikitoolkit not found in PATH — sdd-research subagent's "
+            "wiki-first triage (step 0) will silently fall back to grep. "
+            "Activate the venv or install wikitoolkit to enable CLI-based "
+            "wiki search in dispatched sessions."
+        )
+
     # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
     # preserves current behavior exactly.
     require_plan_approval = bool(
@@ -1308,6 +1348,7 @@ async def _on_startup(app: web.Application) -> None:
         git_toolkit=git_toolkit,
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
+        wiki_search=wiki_search,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
         skip_qa=skip_qa,

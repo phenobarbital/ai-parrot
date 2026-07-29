@@ -1,0 +1,109 @@
+{
+  "feature": "devloop-cli-homologation",
+  "feature_id": "FEAT-388",
+  "spec": "sdd/specs/devloop-cli-homologation.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-28T18:21:52+02:00",
+  "completed_at": "2026-07-28T18:50:28+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1968",
+      "slug": "catalog-promotion",
+      "title": "Promote the LLM backend catalog into the package + shim",
+      "feature_id": "FEAT-388",
+      "feature": "devloop-cli-homologation",
+      "spec": "sdd/specs/devloop-cli-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No file overlap with TASK-1969. External gate: the in-flight Google/agy dispatcher WIP must merge to dev first (it modifies examples/dev_loop/llm_catalog.py).",
+      "assigned_to": null,
+      "started_at": "2026-07-28T17:03:05+00:00",
+      "completed_at": "2026-07-28T17:54:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1968-catalog-promotion.md"
+    },
+    {
+      "id": "TASK-1969",
+      "slug": "feature-intake",
+      "title": "Free-text feature intake — FeatureDraft + FeatureIntake",
+      "feature_id": "FEAT-388",
+      "feature": "devloop-cli-homologation",
+      "spec": "sdd/specs/devloop-cli-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Creates new files only (intake.py + tests); no overlap with TASK-1968.",
+      "assigned_to": null,
+      "started_at": "2026-07-28T17:03:05+00:00",
+      "completed_at": "2026-07-28T18:07:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1969-feature-intake.md"
+    },
+    {
+      "id": "TASK-1970",
+      "slug": "console-feature-path",
+      "title": "Console kind picker, feature wizard path, pool/judge steps, flags",
+      "feature_id": "FEAT-388",
+      "feature": "devloop-cli-homologation",
+      "spec": "sdd/specs/devloop-cli-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1968",
+        "TASK-1969"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports the catalog (1968) and FeatureIntake (1969); modifies console.py and cli/devloop/__init__.py.",
+      "assigned_to": null,
+      "started_at": "2026-07-28T17:03:05+00:00",
+      "completed_at": "2026-07-28T18:25:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1970-console-feature-path.md"
+    },
+    {
+      "id": "TASK-1971",
+      "slug": "bootstrap-multibackend",
+      "title": "Bootstrap multi-backend dispatcher + backend-aware preflight",
+      "feature_id": "FEAT-388",
+      "feature": "devloop-cli-homologation",
+      "spec": "sdd/specs/devloop-cli-homologation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1968"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only bootstrap.py + its test — no file overlap with TASK-1970; still sequential in the per-spec worktree by default.",
+      "assigned_to": null,
+      "started_at": "2026-07-28T17:03:05+00:00",
+      "completed_at": "2026-07-28T18:36:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1971-bootstrap-multibackend.md"
+    },
+    {
+      "id": "TASK-1972",
+      "slug": "docs-e2e",
+      "title": "Docs update + intake-to-dispatch integration test",
+      "feature_id": "FEAT-388",
+      "feature": "devloop-cli-homologation",
+      "spec": "sdd/specs/devloop-cli-homologation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1970",
+        "TASK-1971"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration + docs; requires every delivered interface.",
+      "assigned_to": null,
+      "started_at": "2026-07-28T17:03:05+00:00",
+      "completed_at": "2026-07-28T18:50:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1972-docs-e2e.md"
+    }
+  ]
+}
