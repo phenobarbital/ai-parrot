@@ -465,6 +465,20 @@ all_tools = shared_manager.all_tools()
 tool_names = [tool.name for tool in all_tools]
 ```
 
+### Tool-Result Compression
+
+Every `execute_tool()` call above passes through a client-agnostic
+compression stage before the result reaches any LLM — no per-tool or
+per-client opt-in required. Zero configuration means lossless-only
+(`MINIMAL`) compaction; a `.parrot/compressors.toml` manifest can raise
+specific tools to `NORMAL` (columnar splitting, constant-column
+factoring) with automatic working-memory recovery for anything lossy.
+
+See **[Tool-Result Compression Pipeline](tools/compression.md)** for the
+full configuration format, the kill switch
+(`PARROT_COMPRESSION_DISABLED=1`), the tee recovery flow, and the
+optional Rust acceleration path.
+
 ---
 
 ## Integration & Communication
@@ -698,5 +712,7 @@ result = await manager.execute_tool(
 - **Agent Integration:** See `parrot/bots/agent.py`
 - **Custom Tool Development:** Extend `AbstractTool` class
 - **MCP Integration:** See `parrot/tools/server.py` for protocol details
+- **Tool-Result Compression:** See [Tool-Result Compression Pipeline](tools/compression.md)
+  for the config format, kill switch, tee recovery flow, and optional Rust extension
 
 For more information on specific tools or creating custom tools, consult the source code in the `parrot/tools/` directory.

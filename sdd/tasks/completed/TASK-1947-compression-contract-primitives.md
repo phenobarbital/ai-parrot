@@ -275,21 +275,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `parrot.tools.compression` package exactly per contract:
+`FilterLevel` + `cap()` in `levels.py`; `CompressionOutcome`, `ResultCompressor`
+Protocol, and the codec registry (`register_codec`/`get_codec`/`known_codecs`)
+in `protocol.py`; public surface re-exported from `__init__.py`; empty
+`codecs/` package marker. All 10 unit tests pass (including the
+no-import-cycle-with-manager subprocess check and all 16 `cap()` pairs).
+`ruff check` clean.
 
-**Completed by**: sdd-worker (autonomous, Sonnet) + adversarial code-review fix pass
-**Date**: 2026-07-28
-**Notes**: Implemented per spec in the FEAT-380 worktree
-(`feat-FEAT-380-tool-result-compression`); acceptance criteria verified via
-`pytest packages/ai-parrot/tests/tools/compression/` (144 passed, 6 skipped)
-and, where applicable, `cargo test` in `codec-rs/` (12 passed). An
-adversarial code review (Claude subagent + Codex, independently verified)
-found 3 BLOCKING and 4 SHOULD-FIX cross-cutting issues after all 15 tasks
-landed; all were fixed in a follow-up commit
-(`fix(tool-result-compression): resolve adversarial code-review findings`)
-with 9 additional regression tests, re-verified green.
-
-**Deviations from spec**: none beyond what each task's own file documents
-(e.g. TASK-1959's latency recalibration, TASK-1961's truncation
-demotion) — see the code-review fix commit for the post-hoc corrections
-above.
+**Deviations from spec**: none

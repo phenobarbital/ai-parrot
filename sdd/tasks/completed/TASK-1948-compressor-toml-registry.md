@@ -300,21 +300,22 @@ def test_third_party_package_manifest_no_core_edits(monkeypatch, tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `CompressorEntry`/`CompressorConfig` Pydantic schema
+(`config.py`), immutable multi-source `CompressorRegistry` (`registry.py`,
+project `.parrot/compressors.toml` > third-party package manifests via
+`thirdparty_sources` > core defaults `compressors.toml`), match precedence
+exact > glob (longest-first) > `"*"`, load-time codec validation with
+file-path + entry-key error messages, shadow-warning logging, and a
+third-party `fixture_pkg/` proving G6 with zero core edits. Exported
+`CompressorRegistry`/`CompressorEntry`/`CompressorConfig` from
+`compression/__init__.py`; added `"parrot.tools.compression" = ["*.toml"]`
+to `pyproject.toml` package-data so the default manifest ships in the wheel.
+Since the real `json_compact` codec is TASK-1949's deliverable, tests
+register a stand-in codec under that name (autouse fixture) so the core
+manifest validates without depending on TASK-1949. All 18 tests pass
+(10 from TASK-1947 + 8 new); `ruff check` clean; `pyproject.toml` re-parses
+as valid TOML after the edit.
 
-**Completed by**: sdd-worker (autonomous, Sonnet) + adversarial code-review fix pass
-**Date**: 2026-07-28
-**Notes**: Implemented per spec in the FEAT-380 worktree
-(`feat-FEAT-380-tool-result-compression`); acceptance criteria verified via
-`pytest packages/ai-parrot/tests/tools/compression/` (144 passed, 6 skipped)
-and, where applicable, `cargo test` in `codec-rs/` (12 passed). An
-adversarial code review (Claude subagent + Codex, independently verified)
-found 3 BLOCKING and 4 SHOULD-FIX cross-cutting issues after all 15 tasks
-landed; all were fixed in a follow-up commit
-(`fix(tool-result-compression): resolve adversarial code-review findings`)
-with 9 additional regression tests, re-verified green.
-
-**Deviations from spec**: none beyond what each task's own file documents
-(e.g. TASK-1959's latency recalibration, TASK-1961's truncation
-demotion) — see the code-review fix commit for the post-hoc corrections
-above.
+**Deviations from spec**: none

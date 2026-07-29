@@ -610,13 +610,40 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 # Schema DDL shipped for manual application.
 "parrot.security" = ["*.sql"]
 "parrot.pipelines" = ["*.sql"]
+# Core default compressor manifest (FEAT-380), loaded by CompressorRegistry.
+"parrot.tools.compression" = ["*.toml"]
 
 # ---------------------------------------------------------------------------
-# Maturin (Rust extension)
+# Maturin (Rust extensions) — TASK-1955 (FEAT-380) investigation note:
+#
+# This package's [build-system] above is setuptools (Cython-based), NOT
+# maturin — so this [tool.maturin] block is NOT invoked by the actual
+# `pip install`/`build` of ai-parrot; setuptools has no knowledge of it.
+# The two optional Rust extensions in this tree (`yaml-rs/`, `codec-rs/`)
+# are each their OWN self-contained maturin sub-projects (own pyproject.toml
+# with build-backend="maturin", own Cargo.toml) built independently via
+# `maturin develop`/`build` run FROM WITHIN their own directory, producing
+# wheels installed into the SAME venv as ai-parrot (see
+# `src/parrot/yaml-rs/pyproject.toml` and `src/parrot/codec-rs/pyproject.toml`).
+# Both degrade gracefully to a pure-Python fallback when not built
+# (`registry.py`'s `try: from parrot import yaml_rs / except ImportError`;
+# `compression/budget.py`'s `is_rust_available()`).
+#
+# `python-source` below was pointing at a directory that never existed on
+# disk (`src/parrot/yaml_rs`, underscore — the real one is
+# `src/parrot/yaml-rs/python/yaml_rs`, hyphen) and `module-name` didn't
+# match `yaml-rs`'s own working config (`module-name = "yaml_rs"`, no
+# `parrot.` prefix, no `_yaml_rs` submodule) either. Corrected below to
+# describe what the on-disk yaml-rs sub-project ACTUALLY does, for
+# accuracy — but since this block is inert (see above), the correction
+# has no runtime effect either way. Left in place (rather than removed)
+# as living documentation of the real Rust-extension layout, and because
+# a future migration of the root build-system TO maturin (out of this
+# feature's scope) would need this reconciled first.
 # ---------------------------------------------------------------------------
 [tool.maturin]
-python-source = "src/parrot/yaml_rs"
-module-name = "parrot.yaml_rs._yaml_rs"
+python-source = "src/parrot/yaml-rs/python"
+module-name = "yaml_rs"
 bindings = "pyo3"
 features = ["pyo3/extension-module"]
 

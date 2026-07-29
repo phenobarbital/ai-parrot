@@ -396,9 +396,24 @@ class LiveToolAdapter:
                 )
 
             # Execute the tool
-            if hasattr(tool, '_execute'):
-                # AbstractTool
-                result = await tool._execute(**tool_args)
+            if isinstance(tool, AbstractTool):
+                # FEAT-380 (TASK-1956, Q4): route through AbstractTool.execute()
+                # instead of the private `_execute()` — restores permission
+                # checks (Layer 2), the credential broker, secret/PII
+                # redaction, and lifecycle events (FEAT-176), none of which
+                # the private call went through. `execute()` always returns
+                # a standardized `ToolResult` (never raises for expected
+                # failure modes — `status='forbidden'`/`'error'` are both
+                # handled generically by the `else` branch below), so
+                # `voice_text`/`display_data` are read from THIS ToolResult's
+                # own fields further down, uncompressed — this path does not
+                # go through `ToolManager.execute_tool()` (and therefore not
+                # through the compression stage), because that method's
+                # return contract only exposes the post-compression
+                # `result.result` payload, discarding `voice_text`/
+                # `display_data` entirely; routing through it here would
+                # silently break the voice UX. See TASK-1956 Completion Note.
+                result = await tool.execute(**tool_args)
             elif hasattr(tool, '__call__'):
                 # Callable
                 called = tool(**tool_args)
