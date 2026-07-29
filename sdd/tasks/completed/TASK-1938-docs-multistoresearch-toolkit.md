@@ -107,10 +107,24 @@ modules and cross-checking every snippet against them.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Created `docs/multistoresearch-toolkit.md` following the
+`docs/pageindex.md` style (TOC, Quick Start, sections, API Reference).
+Covers: the four tools table, per-origin adapter configuration examples
+for all four families (vector, PageIndex's three modes with `hybrid`
+default, GraphIndex with/without reader, ParrotWiki with/without
+embedder), the `MultiSearchResponse`/`OriginSection`/`OriginHit` payload
+shapes, the FTS capability matrix (pgvector ✗, faiss ✗, arango ✓,
+graphindex ✓-with-reader, wiki ✓ always, pageindex ✗ always), caveats
+(score non-comparability, 30s default timeout, `llm` mode token cost),
+and a migration note with a before/after table plus a concrete
+old→new construction snippet. Cross-linked from
+`docs/chapters/tools-rag.md`'s "Read next" section (no separate `docs/`
+index file exists beyond the chapter system). Every import, constructor
+signature, and attribute referenced in the doc was cross-checked against
+the actual implemented source files (`toolkit.py`, `origins/*.py`) via
+grep, not the spec sketch. Markdown fence count verified even (18,
+balanced).
 
 **Deviations from spec**: none

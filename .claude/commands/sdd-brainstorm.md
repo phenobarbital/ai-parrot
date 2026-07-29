@@ -114,7 +114,7 @@ you reference in the brainstorm, you MUST:
 
 1. **Read the actual source file** and record exact signatures (class name, method names,
    parameter types, return types) with file path and line numbers.
-2. **Verify imports** — confirm `from parrot.X import Y` actually works by checking
+2. **Verify imports** — confirm all referenced imports actually resolve by checking
    `__init__.py` files and module structure.
 3. **Capture user-provided code** — if the user pasted code snippets during discovery
    (Steps 2–3), preserve them verbatim in the Code Context section.

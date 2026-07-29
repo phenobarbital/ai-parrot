@@ -1192,12 +1192,47 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         return None
 
-    # Maximum characters per tool result sent back to the model.
+    # FEAT-380 (TASK-1961): last line of defense, not first. The
+    # client-agnostic compression pipeline (the ToolManager compression stage,
+    # applied once in `ToolManager.execute_tool()` — G1: exactly one
+    # place) now runs on every tool result BEFORE it ever reaches this
+    # client, so by the time `_truncate_large_result()` sees a payload it
+    # has typically already been reduced (json_compact's lossless
+    # separator/null/dedup compaction at minimum; columnar/constant
+    # factoring for tabular results at NORMAL). This truncation only fires
+    # on whatever survives that pipeline — deliberately kept as a genuine
+    # last resort, not the primary defense it used to be.
+    #
+    # Threshold decision (TASK-1961, 2026-07-28): kept at 200,000 chars
+    # (~50K tokens). No empirical evidence yet justifies a specific higher
+    # number — TASK-1959's latency/size benchmark suite is what would
+    # produce real post-compression payload measurements to recalibrate
+    # against. Raising it on guesswork risks trading a loud, logged
+    # truncation for a silent context-window overflow — the aggregate
+    # context budget for a turn also includes conversation history, the
+    # system prompt, and every OTHER tool result in the same turn, not
+    # just this one. See the Completion Note of TASK-1961 for the full
+    # reasoning.
+    #
     # ~200K chars ≈ 50K tokens; keeps aggregate well under the 1M limit.
     MAX_TOOL_RESULT_CHARS: int = 200_000
 
     def _truncate_large_result(self, data: Any, max_chars: int) -> Any:
         """Truncate a Python object so its JSON stays under *max_chars*.
+
+        **Last line of defense (FEAT-380, TASK-1961), not the first.** The
+        compression pipeline (the ToolManager compression stage) already applies
+        semantic, client-agnostic reduction to every tool result before it
+        reaches this client (G1) — this method only ever sees what
+        survives that pipeline. It is **positional and therefore lossy in
+        an unprincipled way**: it keeps the *first N* elements of a list
+        (or the first N chars of a string), with no notion of which
+        elements matter. In a test result the failures matter; in a vector
+        search the top-score chunks matter — neither is guaranteed to be
+        in the first N. This is precisely the defect the compression
+        pipeline exists to fix upstream; do not try to make this method
+        smarter — it is intentionally a dumb, guaranteed-to-terminate
+        safety valve, not a second compression stage.
 
         Strategy keeps the JSON structurally valid:
         * list  → binary-search for the max item count that fits.
@@ -1336,7 +1371,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
         else:
             # No screenshot — fall back to the standard JSON response.
-            response_content = self._process_tool_result_for_api(result)
+            response_content = self._process_tool_result_for_api(result, tool_name=tool_name)
             return Part(
                 function_response=types.FunctionResponse(
                     id=tool_id,
@@ -1355,13 +1390,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return self._scrubber.scrub(value, tool_name=tool_name)
         return value
 
-    def _process_tool_result_for_api(self, result) -> dict:
+    def _process_tool_result_for_api(self, result, tool_name: Optional[str] = None) -> dict:
         """Process tool result for Google Function Calling API compatibility.
 
-        Serializes various Python objects into a JSON-compatible dict
-        for the Google GenAI API. Results exceeding MAX_TOOL_RESULT_CHARS
-        are truncated to prevent context-window overflow.
+        Serializes various Python objects into a JSON-compatible dict for
+        the Google GenAI API. Results exceeding ``MAX_TOOL_RESULT_CHARS``
+        are truncated — the **last line of defense** (FEAT-380, TASK-1961),
+        operating on a payload that has typically already passed through
+        the client-agnostic compression pipeline. See
+        ``MAX_TOOL_RESULT_CHARS``'s docstring for the full rationale.
+
+        Args:
+            result: Raw tool result (``ToolResult``, DataFrame, Pydantic
+                model, dict, list, string, or ``Exception``).
+            tool_name: Name of the tool that produced ``result``, when the
+                caller has it (all current call sites do, via the
+                function-call object's ``.name``). Included in the
+                truncation warning log line for operational visibility;
+                ``None`` degrades gracefully to an "unknown" label.
         """
+        _tool_label = tool_name or "unknown"
+
         # 1. Handle exceptions and special wrapper types first
         if isinstance(result, Exception):
             return {"result": f"Tool execution failed: {str(result)}", "error": True}
@@ -1381,7 +1430,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if not result.strip():
                 return {"result": "Code executed successfully (no output)"}
             if len(result) > self.MAX_TOOL_RESULT_CHARS:
+                pre_size = len(result)
                 result = result[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
+                self.logger.warning(
+                    "Tool '%s' result truncated (last line of defense, "
+                    "FEAT-380): %d chars -> %d chars (limit=%d)",
+                    _tool_label, pre_size, len(result), self.MAX_TOOL_RESULT_CHARS,
+                )
             return {"result": result}
 
         # Convert complex types to basic Python types
@@ -1416,12 +1471,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # 4. Attempt to serialize the processed result
         try:
             serialized = self._json.dumps(clean_result)
-            # --- truncation gate ---
+            # --- truncation gate (last line of defense, FEAT-380) ---
             if len(serialized) > self.MAX_TOOL_RESULT_CHARS:
-                self.logger.warning(
-                    f"Tool result too large ({len(serialized)} chars), " f"truncating to {self.MAX_TOOL_RESULT_CHARS}"
-                )
                 truncated = self._truncate_large_result(clean_result, self.MAX_TOOL_RESULT_CHARS)
+                post_size = len(self._json.dumps(truncated))
+                self.logger.warning(
+                    "Tool '%s' result truncated (last line of defense, "
+                    "FEAT-380): %d chars -> %d chars (limit=%d)",
+                    _tool_label, len(serialized), post_size, self.MAX_TOOL_RESULT_CHARS,
+                )
                 return {"result": truncated}
             json_compatible_result = self._json.loads(serialized)
         except Exception as e:
@@ -1432,7 +1490,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
             fallback = self._maybe_scrub(str(clean_result), tool_name="tool_result")  # FEAT-252
             if len(fallback) > self.MAX_TOOL_RESULT_CHARS:
+                pre_size = len(fallback)
                 fallback = fallback[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
+                self.logger.warning(
+                    "Tool '%s' result truncated (last line of defense, "
+                    "FEAT-380, non-serializable fallback path): %d chars -> "
+                    "%d chars (limit=%d)",
+                    _tool_label, pre_size, len(fallback), self.MAX_TOOL_RESULT_CHARS,
+                )
             json_compatible_result = fallback
 
         # Wrap for Google Function Calling format
@@ -1909,7 +1974,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         # can process the screenshot visually.
                         part = self._build_computer_use_function_response_part(tool_id, fc.name, result)
                     else:
-                        response_content = self._process_tool_result_for_api(result)
+                        response_content = self._process_tool_result_for_api(result, tool_name=fc.name)
                         # In-band loop nudge (from round 2 onward): long
                         # prompts dilute the "be direct" system rules, so the
                         # reminder rides INSIDE the tool response payload —
@@ -3976,7 +4041,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                         function_response_parts = []
                         for fc, result in zip(collected_function_calls, tool_results):
-                            response_content = self._process_tool_result_for_api(result)
+                            response_content = self._process_tool_result_for_api(result, tool_name=fc.name)
                             function_response_parts.append(
                                 Part(function_response=types.FunctionResponse(name=fc.name, response=response_content))
                             )

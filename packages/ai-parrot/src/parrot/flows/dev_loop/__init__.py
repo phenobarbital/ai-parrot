@@ -12,6 +12,7 @@ spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
 from parrot.flows.dev_loop.commands import register_command_routes
 from parrot.flows.dev_loop.config import parse_repo_specs
 from parrot.flows.dev_loop.dispatcher import (
+    GoogleCodingDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
     GeminiCodeDispatcher,
@@ -39,6 +40,7 @@ from parrot.flows.dev_loop.webhook import (
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
     AdversarialFinding,
+    GoogleCodingDispatchProfile,
     BugBrief,
     ClaudeCodeDispatchProfile,
     CodexAdversarialReviewProfile,
@@ -87,6 +89,8 @@ __all__ = [
     "ActionEnvelope",
     "ActionOrigin",
     "AdversarialFinding",
+    "GoogleCodingDispatcher",
+    "GoogleCodingDispatchProfile",
     "ApprovalGate",
     "BugBrief",
     "ClaudeCodeDispatcher",

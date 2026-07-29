@@ -141,6 +141,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
         "wiki_built": "wiki plane built",
         "claude_md_section": "CLAUDE.md wiki section",
         "pre_tool_use_hook": "PreToolUse nudge hook",
+        "permissions": "wikitoolkit permissions (settings.local.json)",
         "slash_command": "/parrotwiki command",
         "git_post_commit_hook": "git post-commit auto-upsert",
     }

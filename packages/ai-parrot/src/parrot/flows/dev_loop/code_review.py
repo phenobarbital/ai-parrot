@@ -20,12 +20,14 @@ from pydantic import BaseModel, ValidationError
 
 from parrot import conf
 from parrot.flows.dev_loop.dispatcher import (
+    GoogleCodingDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
     GeminiCodeDispatcher,
 )
 from parrot.flows.dev_loop.models import (
     AdversarialFinding,
+    GoogleCodingCodeReviewProfile,
     ClaudeCodeDispatchProfile,
     ClaudeCodeReviewProfile,
     CodeReviewFinding,
@@ -244,6 +246,21 @@ class GeminiCodeReviewDispatcher(AbstractCodeReviewDispatcher):
 
     def build_review_profile(self) -> GeminiCodeReviewProfile:
         return GeminiCodeReviewProfile(model=self._model)
+
+
+@CodeReviewDispatcherFactory.register("google_coding")
+class GoogleCodingCodeReviewDispatcher(AbstractCodeReviewDispatcher):
+    """Wraps :class:`GoogleCodingDispatcher` for code review tasks."""
+
+    agent_name = "google_coding"
+
+    def __init__(self, *, dispatcher: GoogleCodingDispatcher, model: str | None = None) -> None:
+        self._dispatcher = dispatcher
+        self._model = model or "auto"
+        self.logger = logging.getLogger(__name__)
+
+    def build_review_profile(self) -> GoogleCodingCodeReviewProfile:
+        return GoogleCodingCodeReviewProfile(model=self._model)
 
 
 @CodeReviewDispatcherFactory.register("codex-adversarial")
@@ -687,11 +704,13 @@ class JudgePanelReviewDispatcher(AbstractCodeReviewDispatcher):
             return judge_id, CodexAdversarialReviewDispatcher(dispatcher=dispatcher, model=model)
         if spec.agent == "gemini":
             return judge_id, GeminiCodeReviewDispatcher(dispatcher=dispatcher, model=model)
+        if spec.agent == "google_coding":
+            return judge_id, GoogleCodingCodeReviewDispatcher(dispatcher=dispatcher, model=model)
 
         raise ValueError(
             f"JudgePanelReviewDispatcher does not support judge backend "
             f"{spec.agent!r} — no review profile exists for it yet "
-            f"(supported: claude-code, codex, gemini)."
+            f"(supported: claude-code, codex, gemini, google_coding)."
         )
 
     async def review(

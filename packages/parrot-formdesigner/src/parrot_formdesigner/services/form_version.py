@@ -207,7 +207,7 @@ class FormVersionService:
         try:
             await self._save_snapshot(snapshot, tenant=tenant)
         except Exception as exc:
-            if _is_unique_violation(exc):
+            if is_unique_violation(exc):
                 raise ValueError(
                     f"Version '{new_version}' of form '{form_id}' already exists and is frozen."
                 ) from exc

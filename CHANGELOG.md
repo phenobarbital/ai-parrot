@@ -5,6 +5,124 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased] — FEAT-380: Tool-Result Compression Pipeline
+
+A client-agnostic compression stage now runs inside
+`ToolManager.execute_tool()` for every `AbstractTool`/`ToolkitTool` call —
+see [`docs/tools/compression.md`](docs/tools/compression.md) for the full
+feature documentation (config format, levels, kill switch, tee recovery
+flow, savings report, optional Rust extension).
+
+### Behavior Change
+
+- **`AfterToolCallEvent.result_size_bytes` now reports the
+  POST-compression size; the pre-compression size moved to a new field,
+  `result_size_bytes_original`.** Anyone graphing `result_size_bytes` over
+  time will see an unexplained step change at this release — that IS the
+  change: the field's meaning flipped from "raw tool output size" to
+  "size after the compression pipeline ran." Update any dashboard/alert
+  that assumed the old (pre-compression) semantics to read
+  `result_size_bytes_original` instead.
+- **`GoogleGenAIClient.MAX_TOOL_RESULT_CHARS` is now a last line of
+  defense, not the primary one.** Its positional (first-N) truncation
+  behavior is unchanged, but it now runs on payloads that have typically
+  already passed through the compression pipeline above, and a `warning`
+  now logs the tool name and pre/post sizes whenever it actually fires
+  (previously silent on two of its three truncation paths).
+
+### Added
+
+- `parrot.tools.compression` — new package: `FilterLevel`, the
+  `ResultCompressor` protocol + codec registry (`register_codec`/
+  `get_codec`), `CompressorRegistry` (multi-source TOML manifest loading:
+  project → third-party packages → core defaults), `CompressionStage`
+  (gates, effective-level resolution, codec dispatch, tee), the built-in
+  `json_compact` (lossless, `MINIMAL`) and `columnar` (row-oriented
+  splitting, `NORMAL`) codecs, `BudgetRouter` + `CircuitBreaker`
+  (pre-compression latency budgeting, G7/G9), `CompressionTee` (working-
+  memory escape hatch for lossy/error payloads), and `CompressionReport`
+  (per-tool/per-session savings aggregation).
+- New `AfterToolCallEvent` fields (all defaulted — the dataclass is
+  frozen): `compression_codec`, `compression_level`,
+  `result_size_bytes_original`, `compression_duration_ms`,
+  `compression_teed`.
+- `PARROT_COMPRESSION_DISABLED=1` — global kill switch; restores
+  pre-feature behavior exactly.
+- Optional Rust extension `parrot_codec`
+  (`packages/ai-parrot/src/parrot/codec-rs/`, PyO3, built independently
+  via `maturin develop`) accelerates the `columnar` codec's transform for
+  already-serialized (`bytes`/`str`) input, with the GIL released for the
+  duration. Purely optional — `pip install ai-parrot` is unaffected, and
+  every code path has a pure-Python fallback.
+- `clients/live.py`'s voice-session tool execution now routes through
+  `AbstractTool.execute()` instead of the private `tool._execute()` —
+  restoring permission checks, the credential broker, secret/PII
+  redaction, and lifecycle events on that path (previously bypassed all
+  four). `voice_text`/`display_data` are read from the ToolResult's own
+  fields, uncompressed, exactly as before.
+
+### Fixed
+
+Found by an adversarial code review (Claude subagent + Codex, both CONFIRMed
+after independent verification) before this feature's first release:
+
+- **G3 violation**: a lossy compression whose tee call failed or was
+  unavailable at RUNTIME (not just statically, e.g. a transient
+  `WorkingMemoryToolkit` error) was still returned — with no way to
+  recover the original. `CompressionStage.run()` now falls back to the
+  uncompressed original whenever a lossy outcome's tee key comes back
+  `None`, exactly as `CompressionTee.store()`'s own docstring always
+  promised callers would happen.
+- **`minimal_budget_ms` was dead code**: `CircuitBreaker._budget_for()`
+  only branched INLINE vs. EXECUTOR, so MINIMAL-level calls (always
+  routed INLINE) were judged against the coarser `inline_budget_ms`
+  instead of the level-specific budget calibrated for them (TASK-1959).
+  `record()`/`_budget_for()` now thread the effective `FilterLevel`
+  through so MINIMAL calls are judged correctly.
+- **`estimate_size()` wasn't actually cheap for `QueryResult`-shaped
+  dicts**: a dict payload (e.g. `{"driver": ..., "rows": [...]}`, this
+  feature's flagship use case) fell through to a full recursive
+  `_rough_bytes()` walk of every row before routing — the exact
+  "fully walk a large payload" cost the function's own docstring says it
+  avoids. Dict payloads with a dominant list-valued field are now
+  sampled the same cheap way as a bare list.
+- **`ToolManager.execute_tool()`'s `meta = getattr(result, "metadata",
+  {}) or {}`** silently swapped in a fresh dict whenever `result.metadata`
+  was falsy — which is every time it starts as `{}` (Pydantic's
+  `default_factory=dict` default, the common case) — breaking the
+  aliasing the surrounding comment relied on. Compression fields now
+  reliably land on the actual `ToolResult.metadata` object, not just on
+  whatever `add_result_hook` happened to observe by reference.
+- Circuit-breaker half-open probing had a race: `is_open()` didn't check
+  for an in-flight probe, so two calls landing in the same post-cooldown
+  window could both be treated as "the" probe. It now blocks any
+  additional caller until the first probe resolves via `record()`.
+- The error-path tee call in `execute_tool()` is now wrapped in its own
+  try/except so a catastrophically broken tee can never mask the
+  original `ValueError(result.error)`.
+- `parrot_codec`'s `columnarize()` now wraps the transform in
+  `catch_unwind` so an unexpected Rust panic surfaces as an ordinary
+  `PyRuntimeError` (caught by `columnar.py`'s `except Exception:`)
+  instead of PyO3's `PanicException`, which derives from `BaseException`
+  and would otherwise slip past that guard.
+- `parrot_codec`'s constant-column factoring now compares numbers the
+  same way Python's `==` does (`1 == 1.0`); `serde_json::Value`'s derived
+  `PartialEq` treated same-value int/float differently, a byte-for-byte
+  parity break against the Python reference implementation.
+
+### Known limitations (see `docs/tools/compression.md` for detail)
+
+- The live voice route (`clients/live.py`) does not yet apply compression
+  itself — only the permission/broker/redaction/event restoration above.
+- The new `compression_*` fields are not yet populated on the literal
+  `AfterToolCallEvent` instance a subscriber observes (the event fires
+  before the compression stage runs); the real values are in
+  `ToolResult.metadata` today.
+- `CompressionReport` has no automatic `ToolManager` listener yet — feed
+  it events manually.
+
+---
+
 ## [Unreleased] — FEAT-319: EventBus Consolidation
 
 ### Changed

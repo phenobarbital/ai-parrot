@@ -34,6 +34,7 @@ from parrot.bots.flows.core.types import DependencyResults
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
+from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
@@ -42,7 +43,11 @@ from parrot.flows.dev_loop.models import (
     ResearchOutput,
     WorkBrief,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    register_dev_loop_node,
+    transition_issue_with_candidates,
+)
 
 
 # Atlassian caps the description field at 32 767 chars; leave a 2K
@@ -142,6 +147,7 @@ class ResearchNode(DevLoopNode):
         git_toolkit: Optional[Any] = None,
         repos: Optional[List[RepoSpec]] = None,
         graph_memory: Optional[DevLoopGraphMemory] = None,
+        wiki_search: Optional[DevLoopWikiSearch] = None,
         name: str = "research",
     ) -> None:
         super().__init__(node_id=name)
@@ -159,6 +165,7 @@ class ResearchNode(DevLoopNode):
         # FEAT-377 TASK-1915 (G2 seam 2): opt-in graph-memory context
         # injection. None (default) is a strict no-op.
         object.__setattr__(self, "_graph_memory", graph_memory)
+        object.__setattr__(self, "_wiki_search", wiki_search)
 
     # ------------------------------------------------------------------
     # Execute
@@ -180,55 +187,82 @@ class ResearchNode(DevLoopNode):
 
         # 1. Fetch logs first — cheap, deterministic, and the excerpts
         # become part of the Jira description.
-        excerpts = await self._collect_log_excerpts(brief.log_sources)
+        excerpts = await self._collect_log_excerpts(
+            brief.log_sources, brief.affected_component
+        )
 
         # 2. Resolve the Jira ticket BEFORE dispatching. Unit tests pin
         # this ordering (spec §4 test_research_node_creates_jira_then_dispatches).
-        # Idempotency: reuse an existing ticket when one already tracks
-        # this incident (caller-supplied ``existing_issue_key`` or an
-        # open ticket whose summary matches verbatim). Otherwise, fall
-        # back to creating a new one. Reporter is resolved to an
-        # accountId here (the toolkit auto-resolves the assignee but
-        # not the raw fields={"reporter":…} blob, so we do it
-        # explicitly so emails work in BugBrief.reporter).
-        description = await self._build_description(brief, excerpts)
-        existing_key = await self._find_existing_issue(brief)
-        if existing_key:
-            issue_key = existing_key
+        skip_jira = shared.get("skip_jira", False)
+        if skip_jira:
+            issue_key = "SKIP-0"
             self.logger.info(
-                "Re-using existing Jira ticket %s for run_id=%s",
-                issue_key, shared.get("run_id", "?"),
-            )
-            await self._comment_retriggered(
-                issue_key=issue_key,
-                run_id=shared.get("run_id", ""),
-                description=description,
+                "Jira bypass enabled (skip_jira=True) for run_id=%s — "
+                "no ticket created.",
+                shared.get("run_id", "?"),
             )
         else:
-            reporter_fields = await self._reporter_fields(brief.reporter)
-            # FEAT-132: pick the issuetype from the kind→type mapping.
-            issuetype = _ISSUE_TYPE_BY_KIND.get(
-                getattr(brief, "kind", "bug"), "Bug"
-            )
-            jira_resp = await self._jira.jira_create_issue(
-                summary=brief.summary,
-                issuetype=issuetype,
-                description=description,
-                assignee=conf.FLOW_BOT_JIRA_ACCOUNT_ID or None,
-                fields=reporter_fields,
-            )
-            issue_key = self._extract_issue_key(jira_resp)
-            self.logger.info(
-                "Created new Jira ticket %s (kind=%s) for run_id=%s",
-                issue_key, getattr(brief, "kind", "bug"), shared.get("run_id", "?"),
-            )
-            # FEAT-132 G4: post plan-summary as first comment on new tickets.
-            run_id = shared.get("run_id", "")
-            plan = await self._build_plan_summary(brief, excerpts)
-            await self._post_plan_summary_comment(
-                issue_key=issue_key, plan=plan, run_id=run_id
-            )
+            # Idempotency: reuse an existing ticket when one already tracks
+            # this incident (caller-supplied ``existing_issue_key`` or an
+            # open ticket whose summary matches verbatim). Otherwise, fall
+            # back to creating a new one. Reporter is resolved to an
+            # accountId here (the toolkit auto-resolves the assignee but
+            # not the raw fields={"reporter":…} blob, so we do it
+            # explicitly so emails work in BugBrief.reporter).
+            description = await self._build_description(brief, excerpts)
+            existing_key = await self._find_existing_issue(brief)
+            if existing_key:
+                issue_key = existing_key
+                self.logger.info(
+                    "Re-using existing Jira ticket %s for run_id=%s",
+                    issue_key, shared.get("run_id", "?"),
+                )
+                await self._comment_retriggered(
+                    issue_key=issue_key,
+                    run_id=shared.get("run_id", ""),
+                    description=description,
+                )
+            else:
+                reporter_fields = await self._reporter_fields(brief.reporter)
+                # FEAT-132: pick the issuetype from the kind→type mapping.
+                issuetype = _ISSUE_TYPE_BY_KIND.get(
+                    getattr(brief, "kind", "bug"), "Bug"
+                )
+                jira_resp = await self._jira.jira_create_issue(
+                    summary=brief.summary,
+                    issuetype=issuetype,
+                    description=description,
+                    assignee=conf.FLOW_BOT_JIRA_ACCOUNT_ID or None,
+                    fields=reporter_fields,
+                )
+                issue_key = self._extract_issue_key(jira_resp)
+                self.logger.info(
+                    "Created new Jira ticket %s (kind=%s) for run_id=%s",
+                    issue_key, getattr(brief, "kind", "bug"), shared.get("run_id", "?"),
+                )
+                # FEAT-132 G4: post plan-summary as first comment on new tickets.
+                run_id = shared.get("run_id", "")
+                plan = await self._build_plan_summary(brief, excerpts)
+                await self._post_plan_summary_comment(
+                    issue_key=issue_key, plan=plan, run_id=run_id
+                )
         shared["jira_issue_key"] = issue_key
+
+        # Transition the ticket out of Backlog so downstream nodes
+        # (Development, Handoff) can reach In Progress / Resolved
+        # without walking the entire workflow from Backlog.
+        try:
+            await transition_issue_with_candidates(
+                self._jira,
+                issue_key,
+                ["Open", "In Progress", "To Do"],
+                logger=self.logger,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "Initial Jira transition failed for %s (continuing): %s",
+                issue_key, exc,
+            )
 
         # 3. FEAT-253: Provision repos BEFORE the sdd-research dispatch so
         # the dispatch cwd is set correctly (clone path when a repo is
@@ -263,22 +297,33 @@ class ResearchNode(DevLoopNode):
         # log_sources; the prompt builder embeds excerpts separately.
         shared["log_excerpts"] = excerpts
 
-        # FEAT-377 TASK-1915 (G2 seam 2): prepend graph-memory context to
-        # the dispatch brief when the facade is configured and finds
-        # something relevant. Reuses the existing `description` free-text
-        # field (never forwarded to the Jira `summary` field) rather than
-        # adding a new one — the ORIGINAL `brief` (used above for the Jira
-        # ticket description) is untouched; only this local dispatch copy
-        # carries the graph context.
-        dispatch_brief = brief
+        # Prepend knowledge-base context to the dispatch brief so the
+        # subagent starts with oriented, ranked codebase pointers instead
+        # of a cold grep sweep.  Two independent seams — wiki (SQLite
+        # retrieval plane) and graph memory (GraphIndex) — each contribute
+        # a section when configured and when something relevant is found.
+        # The ORIGINAL `brief` (used above for the Jira ticket description)
+        # is untouched; only this local dispatch copy carries the context.
+        extra_context_parts: list[str] = []
+
+        if self._wiki_search is not None:
+            wiki_query = f"{brief.affected_component} {brief.summary}"
+            wiki_context = await self._wiki_search.build_research_context(wiki_query)
+            if wiki_context:
+                extra_context_parts.append(f"## Wiki context\n{wiki_context}")
+
         if self._graph_memory is not None:
             graph_context = await self._graph_memory.build_research_context(brief)
             if graph_context:
-                dispatch_brief = brief.model_copy(update={
-                    "description": (
-                        f"{brief.description}\n\n## Graph memory context\n{graph_context}"
-                    ).strip(),
-                })
+                extra_context_parts.append(f"## Graph memory context\n{graph_context}")
+
+        dispatch_brief = brief
+        if extra_context_parts:
+            dispatch_brief = brief.model_copy(update={
+                "description": (
+                    brief.description + "\n\n" + "\n\n".join(extra_context_parts)
+                ).strip(),
+            })
 
         research_out: ResearchOutput = await self._dispatcher.dispatch(
             brief=dispatch_brief,
@@ -303,7 +348,25 @@ class ResearchNode(DevLoopNode):
         # already a registered git worktree on the expected branch;
         # fail fast only on the unsafe shapes (untracked directory or
         # mismatched branch).
-        await self._ensure_worktree_safe(research_out.branch_name)
+        worktree_reused = await self._ensure_worktree_safe(
+            research_out.branch_name
+        )
+
+        # 6b. When reusing a worktree, assess existing work so
+        # DevelopmentNode can skip already-completed changes.
+        if worktree_reused:
+            prior = await self._assess_prior_work(
+                os.path.join(conf.WORKTREE_BASE_PATH, research_out.branch_name),
+                research_out.branch_name,
+            )
+            if prior:
+                shared["prior_work_context"] = prior
+                self.logger.info(
+                    "Prior work detected in reused worktree: %d commit(s), "
+                    "%d file(s) changed.",
+                    prior.get("commit_count", 0),
+                    prior.get("files_changed", 0),
+                )
 
         # 7. Set repo_path on the output to record the base repository.
         # repo_path is str(BASE_DIR) (local) or the clone path (declared
@@ -389,19 +452,23 @@ class ResearchNode(DevLoopNode):
     # ------------------------------------------------------------------
 
     async def _collect_log_excerpts(
-        self, sources: List[LogSource]
+        self, sources: List[LogSource], affected_component: str = ""
     ) -> List[str]:
         excerpts: List[str] = []
         for src in sources:
             try:
-                excerpts.extend(await self._fetch_logs(src))
+                excerpts.extend(
+                    await self._fetch_logs(src, affected_component)
+                )
             except Exception as exc:  # never block the flow on log fetch
                 self.logger.warning(
                     "Log fetch failed for %s/%s: %s", src.kind, src.locator, exc
                 )
         return excerpts
 
-    async def _fetch_logs(self, source: LogSource) -> List[str]:
+    async def _fetch_logs(
+        self, source: LogSource, affected_component: str = ""
+    ) -> List[str]:
         if source.kind == "inline":
             # The locator IS the pasted log/stack-trace text — nothing to
             # fetch. Keep the tail so oversized pastes don't bloat the
@@ -411,7 +478,8 @@ class ResearchNode(DevLoopNode):
         if source.kind == "cloudwatch":
             toolkit = self._log_toolkits.get("cloudwatch")
             if toolkit is None:
-                raise ValueError("CloudWatch toolkit not configured")
+                self.logger.warning("CloudWatch toolkit not configured — skipping log source")
+                return []
             # Per project policy the log group is configured at toolkit
             # construction time (default_log_group); the per-source
             # locator is informational and only forwarded if a non-empty
@@ -421,12 +489,17 @@ class ResearchNode(DevLoopNode):
             }
             if source.locator and source.locator != toolkit.default_log_group:
                 kwargs["log_group_name"] = source.locator
+            if affected_component:
+                kwargs["query_string"] = self._build_cw_query(
+                    affected_component
+                )
             result = await toolkit.aws_cloudwatch_query_logs(**kwargs)
             return self._tail_text(result)
         if source.kind == "elasticsearch":
             toolkit = self._log_toolkits.get("elasticsearch")
             if toolkit is None:
-                raise ValueError("Elasticsearch toolkit not configured")
+                self.logger.warning("Elasticsearch toolkit not configured — skipping log source")
+                return []
             result = await toolkit.search(
                 index=source.locator,
                 window_minutes=source.time_window_minutes,
@@ -440,6 +513,35 @@ class ResearchNode(DevLoopNode):
             )
             return [content]
         raise ValueError(f"Unknown log source kind: {source.kind}")
+
+    @staticmethod
+    def _build_cw_query(
+        affected_component: str, limit: int = 100
+    ) -> str:
+        """Build a CloudWatch Insights query filtered by the affected component.
+
+        Extracts the leaf name (e.g. ``MSWordLoader`` from
+        ``Parrot.Loaders.MSWordLoader``) as a broad filter and
+        OR-matches the full dotted path for precision. This keeps
+        the result set focused on the component under investigation
+        instead of returning unrelated service logs.
+        """
+        leaf = affected_component.rsplit(".", 1)[-1]
+        escaped_leaf = re.escape(leaf)
+        if leaf != affected_component:
+            escaped_full = re.escape(affected_component)
+            filter_clause = (
+                f"filter @message like /{escaped_full}/ "
+                f"or @message like /{escaped_leaf}/"
+            )
+        else:
+            filter_clause = f"filter @message like /{escaped_leaf}/"
+        return (
+            "fields @timestamp, @message "
+            f"| {filter_clause} "
+            "| sort @timestamp desc "
+            f"| limit {limit}"
+        )
 
     @staticmethod
     def _read_file_tail(path: str, max_bytes: int) -> str:
@@ -943,7 +1045,7 @@ class ResearchNode(DevLoopNode):
                 return key
         return ""
 
-    async def _ensure_worktree_safe(self, branch_name: str) -> None:
+    async def _ensure_worktree_safe(self, branch_name: str) -> bool:
         """Verify the resolved worktree is safe to reuse, or fail loudly.
 
         Idempotency relaxation of spec §7 R5: when the dev-loop
@@ -966,10 +1068,14 @@ class ResearchNode(DevLoopNode):
 
         Uses :func:`asyncio.create_subprocess_exec` to avoid blocking
         the event loop while git inspects the worktree list.
+
+        Returns:
+            ``True`` when an existing worktree was reused, ``False``
+            when the path did not exist (fresh creation by subagent).
         """
         path = os.path.join(conf.WORKTREE_BASE_PATH, branch_name)
         if not os.path.exists(path):
-            return
+            return False
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -1012,6 +1118,7 @@ class ResearchNode(DevLoopNode):
             "Reusing existing worktree %s on branch %s",
             path, branch_name,
         )
+        return True
 
     @staticmethod
     def _find_worktree_entry(
@@ -1041,6 +1148,86 @@ class ResearchNode(DevLoopNode):
         if current.get("worktree") == abs_path:
             return current
         return None
+
+    # ------------------------------------------------------------------
+    # Prior-work assessment (worktree reuse)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _assess_prior_work(
+        worktree_path: str,
+        branch_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Inspect a reused worktree for existing commits and changes.
+
+        Runs ``git log`` and ``git diff --stat`` against the merge-base
+        to capture what the previous run already implemented. Returns
+        ``None`` when no prior work is detected (empty worktree or
+        git commands fail).
+
+        The returned dict is stored in ``shared["prior_work_context"]``
+        and consumed by ``DevelopmentNode`` to avoid repeating work.
+        """
+        async def _run_git(*args: str) -> Optional[str]:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git", *args,
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0:
+                    return stdout.decode().strip()
+            except Exception:
+                pass
+            return None
+
+        merge_base = await _run_git(
+            "merge-base", "HEAD", "origin/dev",
+        )
+        if not merge_base:
+            merge_base = await _run_git(
+                "merge-base", "HEAD", "origin/main",
+            )
+        if not merge_base:
+            return None
+
+        log_output = await _run_git(
+            "log", "--oneline", "--no-decorate",
+            f"{merge_base}..HEAD",
+        )
+        diff_stat = await _run_git(
+            "diff", "--stat", f"{merge_base}..HEAD",
+        )
+        diff_names = await _run_git(
+            "diff", "--name-only", "--diff-filter=d",
+            f"{merge_base}..HEAD",
+        )
+        uncommitted_diff = await _run_git(
+            "diff", "--stat", "HEAD",
+        )
+
+        commits = [
+            line for line in (log_output or "").splitlines() if line.strip()
+        ]
+        changed_files = [
+            f for f in (diff_names or "").splitlines() if f.strip()
+        ]
+
+        if not commits and not changed_files and not uncommitted_diff:
+            return None
+
+        return {
+            "commit_count": len(commits),
+            "commits": commits[:30],
+            "files_changed": len(changed_files),
+            "changed_files": changed_files[:50],
+            "diff_stat": (diff_stat or "")[:2000],
+            "uncommitted_stat": (uncommitted_diff or "")[:1000],
+            "merge_base": merge_base,
+            "branch": branch_name,
+        }
 
 
 __all__ = ["ResearchNode"]
