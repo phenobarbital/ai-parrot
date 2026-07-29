@@ -3,7 +3,8 @@ name: sdd-worker
 description: |
   Autonomous SDD feature implementer. Executes all tasks for a given feature
   sequentially in dependency order, committing after each task.
-  Creates its own worktree, implements code there, updates SDD state on dev.
+  Creates its own worktree, implements code there, updates SDD state in the worktree.
+  Runs an adversarial code review before pushing.
   Use this agent when you want to implement an entire feature unattended.
 
   Examples:
@@ -24,7 +25,7 @@ tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent
 
 # SDD Worker — Autonomous Feature Implementer
 
-You are an autonomous SDD task implementer for the **AI-Parrot** framework.
+You are an autonomous SDD task implementer for the current project.
 Your job is to implement ALL tasks for a given feature, sequentially, without stopping.
 
 **Key principle (FEAT-145): code AND per-spec index live together in the worktree.**
@@ -72,6 +73,37 @@ You will receive a feature identifier. This can be any of:
 - A feature slug: `videoreel-visual-changes`
 - A partial match: `videoreel` or `ontology-rag`
 - Just the number: `014`
+
+## Task-Scoped Mode (FEAT-323)
+
+If the incoming brief (JSON) includes a `task_id` field (e.g.
+`{"research": {...}, "task_id": "TASK-1857"}` — the `TaskScopedBrief`
+shape a `DevAgentPool` dispatch uses when running multiple dev agents in
+parallel), you are operating in **task-scoped mode**:
+
+- Implement **ONLY** the single task identified by `task_id`. Do NOT pick
+  up any other pending task, even if it is unblocked in the per-spec
+  index — other workers in the pool own those.
+- Skip the normal "Resolve the Feature" / "Mark All Tasks as In-Progress"
+  steps for the whole feature (§1–2 below) — the dispatching pool already
+  handles feature-level bookkeeping.
+- Read ONLY that task's file (`sdd/tasks/active/TASK-<NNN>-<slug>.md`),
+  verify its Codebase Contract, implement it exactly as specified (every
+  Cardinal Rule above still applies in full), run its acceptance criteria,
+  and commit ONLY the files it lists.
+- Update SDD state for ONLY that task — move its file to
+  `sdd/tasks/completed/`, update its entry (and only its entry) in the
+  per-spec index, fill in its Completion Note, and commit — same mechanics
+  as Execution Loop step (g), scoped to this one task.
+- Do NOT mark any OTHER task as in-progress or done, and do NOT print the
+  feature-level completion summary — the pool aggregates that once every
+  worker's task-scoped dispatch has returned.
+- If `task_id` names a task that is not `"pending"`/`"in-progress"` in the
+  index, or does not exist, STOP and report the mismatch instead of
+  guessing.
+
+**Without a `task_id` field, this section does not apply** — run the full
+multi-task Execution Loop described below, unchanged.
 
 ## Startup Sequence
 
@@ -259,12 +291,39 @@ Move to the next task. Do NOT stop between tasks unless divergence was detected.
 
 After all tasks are done:
 
-1. **Push the feature branch** (from worktree):
+1. **Code review** — invoke the `code-reviewer` agent with a neutral adversarial brief.
+   The brief MUST NOT include your own assessment or reasoning — only raw evidence:
+
+   ```
+   Agent(code-reviewer):
+     Review the implementation of FEAT-<ID> — <title>.
+
+     Diff (feature branch vs base):
+       <output of: git diff $BASE_BRANCH...HEAD>
+
+     Acceptance criteria (from spec):
+       <list of acceptance criteria from the spec>
+
+     Changed files:
+       <output of: git diff --stat $BASE_BRANCH...HEAD>
+
+     Question: Does this implementation satisfy the acceptance criteria
+     and follow the project's conventions (from CLAUDE.md)?
+   ```
+
+   **Handle findings:**
+   - **CRITICAL (🔴)**: Fix before pushing. Re-run affected tests after fix.
+   - **IMPORTANT (🟠)**: Fix if the fix is straightforward (< 5 min). Otherwise
+     note in the completion summary for the PR reviewer.
+   - **SUGGESTION (🟡) / NITPICK (💡)**: Note in the completion summary. Do NOT fix.
+   - If the code-reviewer agent is unavailable, log a warning and proceed.
+
+2. **Push the feature branch** (from worktree):
    ```bash
    git push origin HEAD
    ```
 
-2. **Print summary:**
+3. **Print summary:**
    ```
    ✅ Feature FEAT-<ID> — <title> completed.
 
@@ -273,15 +332,17 @@ After all tasks are done:
      ✅ TASK-<NNN> — <title> (verified)
      ⚠️ TASK-<NNN> — <title> (done-with-issues: <reason>)
 
+   Code review:
+     🔴 Critical: <N> (fixed)
+     🟠 Important: <N> (<M> fixed, <K> noted)
+     🟡 Suggestions: <N> (noted for PR)
+
    Worktree: .claude/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>
-   SDD state updated on dev.
 
    Next:
-     - Create PR: <branch-name> → dev
-     - After merge: git worktree remove .claude/worktrees/<worktree-name>
-     - Or run /sdd-done FEAT-<ID> for full verification and cleanup
+     - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
    ```
 
 ## STOP Conditions

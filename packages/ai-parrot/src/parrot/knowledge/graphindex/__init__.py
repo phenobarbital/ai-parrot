@@ -19,6 +19,10 @@ from parrot.knowledge.graphindex.schema import (
     EdgeKind,
     UniversalNode,
     UniversalEdge,
+    AssertionMeta,
+    GraphUpdate,
+    CommitReceipt,
+    stable_edge_id,
     SourceConfig,
     GraphProjectionReport,
     BuildResult,
@@ -35,9 +39,17 @@ from parrot.knowledge.graphindex.communities import (
     Community,
     CommunitiesResult,
     cohesion_for_community,
+    derive_community_label,
     detect_communities,
 )
-from parrot.knowledge.graphindex.loader import GraphIndexLoader
+from parrot.knowledge.graphindex.export_html import (
+    GraphExportPayload,
+    build_export_payload,
+    community_color,
+    export_graph,
+    write_graph_html,
+    write_graph_json,
+)
 from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
 from parrot.knowledge.graphindex.projection import (
     project_graph_sidecars,
@@ -58,6 +70,20 @@ __all__ = [
     "GraphProjectionReport",
     "BuildResult",
     "IngestResult",
+    "AssertionMeta",
+    "GraphUpdate",
+    "CommitReceipt",
+    "stable_edge_id",
+    "GraphPublisher",
+    "build_graph_memory_toolkit",
+    "HashingGraphEmbedder",
+    "make_stub_tenant_context",
+    "GraphContextBuilder",
+    "ContextBuildConfig",
+    "GraphContext",
+    "GraphMemoryMixin",
+    "GroundingEvaluator",
+    "GroundingResult",
     "SignalRelevance",
     "SignalRelevanceConfig",
     "compute_pairwise_signals",
@@ -66,7 +92,14 @@ __all__ = [
     "Community",
     "CommunitiesResult",
     "cohesion_for_community",
+    "derive_community_label",
     "detect_communities",
+    "GraphExportPayload",
+    "build_export_payload",
+    "community_color",
+    "export_graph",
+    "write_graph_html",
+    "write_graph_json",
     "GraphIndexLoader",
     "OdooCodeExtractor",
     "SQLitePersistence",
@@ -76,3 +109,36 @@ __all__ = [
     "project_report_frontmatter",
     "node_to_frontmatter_dict",
 ]
+
+# ``GraphIndexLoader`` transitively pulls the full loaders/clients web-framework
+# stack (aiohttp, navigator, embeddings). Import it lazily (PEP 562) so that
+# ``import parrot.knowledge.graphindex`` — and the local-first CLI / pure graph
+# modules — stay lightweight and usable without those heavyweight dependencies.
+_LAZY_ATTRS = {
+    "GraphIndexLoader": "parrot.knowledge.graphindex.loader",
+    # GraphPublisher is lazy so the publish path stays optional for
+    # consumers that only need the read-side schema/persistence symbols.
+    "GraphPublisher": "parrot.knowledge.graphindex.publish",
+    # The factory returns a GraphIndexToolkit from the sibling
+    # ai-parrot-tools distribution (imported lazily inside the call).
+    "build_graph_memory_toolkit": "parrot.knowledge.graphindex.factory",
+    "HashingGraphEmbedder": "parrot.knowledge.graphindex.factory",
+    "make_stub_tenant_context": "parrot.knowledge.graphindex.factory",
+    "GraphContextBuilder": "parrot.knowledge.graphindex.context_builder",
+    "ContextBuildConfig": "parrot.knowledge.graphindex.context_builder",
+    "GraphContext": "parrot.knowledge.graphindex.context_builder",
+    "GraphMemoryMixin": "parrot.knowledge.graphindex.mixin",
+    "GroundingEvaluator": "parrot.knowledge.graphindex.grounding",
+    "GroundingResult": "parrot.knowledge.graphindex.grounding",
+}
+
+
+def __getattr__(name: str):
+    """Resolve lazily-exported attributes on first access (PEP 562)."""
+    module_path = _LAZY_ATTRS.get(name)
+    if module_path is not None:
+        import importlib
+
+        module = importlib.import_module(module_path)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

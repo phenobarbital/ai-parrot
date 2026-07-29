@@ -3,17 +3,21 @@
 Implements the "Ingest" operation from Karpathy's 3-layer architecture.
 Orchestrates the full pipeline for a single source document:
 
-1. Check source manifest — skip if already ingested and not stale.
+1. Check the source registry — skip if already ingested and not stale.
 2. Load source content from the file path.
 3. Process via ``PageIndexToolkit.insert_content()`` (which internally
    delegates to ``TwoStepIngester``).
-4. Create a ``WIKI_PAGE`` node in GraphIndex for the generated content.
-5. Link the graph node to the source URI via ``EdgeKind.REFERENCES``.
-6. Update the source manifest (hash + mtime + pages generated).
+4. Upsert the generated pages into the :class:`WikiStore` retrieval
+   plane (bodies, categories, token counts) and record
+   ``summarizes`` edges page → source.  ``replace_source_slice``
+   guarantees re-ingest never accumulates duplicates.
+5. Optionally (``sync_graph=True``) mirror a ``wiki_page`` node into
+   GraphIndex.
+6. Update the source registry (hash + mtime + pages generated).
 7. Append to the operation log via ``WikiBookkeeper.log_operation()``.
 
 All operations are async.  On partial failure the error is logged but
-no corrupt state is left: the manifest is only updated after all steps
+no corrupt state is left: the registry is only updated after all steps
 succeed.
 """
 
@@ -31,6 +35,11 @@ from pydantic import BaseModel, Field
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.models import WikiConfig
 from parrot.knowledge.wiki.sources import SourceCollectionManager
+from parrot.knowledge.wiki.store import (
+    WikiPageRecord,
+    WikiStore,
+    estimate_tokens,
+)
 
 
 class IngestReport(BaseModel):
@@ -83,6 +92,8 @@ class WikiIngestOrchestrator:
         graphindex_toolkit: Any,
         source_manager: SourceCollectionManager,
         bookkeeper: WikiBookkeeper,
+        store: Optional[WikiStore] = None,
+        sync_graph: bool = False,
     ) -> None:
         """Initialise the orchestrator with all dependencies.
 
@@ -91,11 +102,18 @@ class WikiIngestOrchestrator:
             graphindex_toolkit: A ``GraphIndexToolkit`` instance.
             source_manager: :class:`SourceCollectionManager` for the wiki.
             bookkeeper: :class:`WikiBookkeeper` for log/index management.
+            store: :class:`WikiStore` retrieval plane.  When ``None``,
+                store sync is skipped (legacy behaviour).
+            sync_graph: When ``True``, additionally mirror a
+                ``wiki_page`` node into GraphIndex (off by default —
+                the WikiStore is the retrieval plane).
         """
         self._pi = pageindex_toolkit
         self._gi = graphindex_toolkit
         self._sources = source_manager
         self._bookkeeper = bookkeeper
+        self._store = store
+        self._sync_graph = sync_graph
         self.logger: logging.Logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
@@ -182,33 +200,63 @@ class WikiIngestOrchestrator:
 
         try:
             pi_result = await self._create_wiki_pages(content, tree_name)
-            pages_created = pi_result.get("nodes_added", 0)
-            # Collect node IDs from the result
-            inserted_ids = pi_result.get("node_ids", [])
-            if isinstance(inserted_ids, list):
-                page_ids = [str(nid) for nid in inserted_ids]
-            elif pi_result.get("node_id"):
-                page_ids = [str(pi_result["node_id"])]
+            # PageIndexToolkit.insert_content() contract:
+            # {"tree_name", "new_node_ids", "title", "summary"}
+            inserted_ids = pi_result.get("new_node_ids") or []
+            page_ids = [str(nid) for nid in inserted_ids]
+            pages_created = len(page_ids)
         except Exception as exc:  # noqa: BLE001
             self.logger.error("PageIndex insert failed for %s: %s", source_uri, exc)
             return self._error_report(source_id, source_uri, t0, str(exc))
 
-        # Step 4 — sync to GraphIndex
+        # Step 4 — upsert into the WikiStore retrieval plane.
+        # replace_source_slice deletes the source's previous pages first,
+        # so re-ingest never accumulates duplicates.
+        if self._store is not None:
+            try:
+                records = await self._build_page_records(
+                    tree_name,
+                    page_ids,
+                    source_id=source_id,
+                    fallback_title=str(pi_result.get("title") or ""),
+                    fallback_summary=str(
+                        pi_result.get("summary") or content[:500]
+                    ),
+                )
+                edges = [
+                    (r.concept_id, source_id, "summarizes") for r in records
+                ]
+                await self._store.replace_source_slice(
+                    source_id, records, edges
+                )
+                # Stable concept_ids become the recorded page identities.
+                page_ids = [r.concept_id for r in records]
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "WikiStore sync failed for %s (non-fatal): %s",
+                    source_uri,
+                    exc,
+                )
+
+        # Step 4b — optional GraphIndex mirror (off by default).
         graph_nodes_created = 0
         graph_node_id: Optional[str] = None
-        try:
-            graph_node_id = await self._sync_to_graph(
-                source_uri,
-                tree_name=tree_name,
-                summary=content[:500],
-            )
-            if graph_node_id:
-                graph_nodes_created = 1
-                page_ids.append(graph_node_id)
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "GraphIndex sync failed for %s (non-fatal): %s", source_uri, exc
-            )
+        if self._sync_graph:
+            try:
+                graph_node_id = await self._sync_to_graph(
+                    source_uri,
+                    tree_name=tree_name,
+                    summary=content[:500],
+                )
+                if graph_node_id:
+                    graph_nodes_created = 1
+                    page_ids.append(graph_node_id)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GraphIndex sync failed for %s (non-fatal): %s",
+                    source_uri,
+                    exc,
+                )
 
         # Step 5 — update manifest (blocking I/O offloaded to thread)
         try:
@@ -294,6 +342,120 @@ class WikiIngestOrchestrator:
         """
         result = await self._pi.insert_content(tree_name, content)
         return result if isinstance(result, dict) else {}
+
+    async def _build_page_records(
+        self,
+        tree_name: str,
+        node_ids: list[str],
+        source_id: str,
+        fallback_title: str = "",
+        fallback_summary: str = "",
+    ) -> list[WikiPageRecord]:
+        """Build :class:`WikiPageRecord` rows for freshly inserted nodes.
+
+        Reads the PageIndex tree (``get_tree``) to resolve each node's
+        stable ``concept_id``, title, summary, and category, and loads
+        the markdown body through the toolkit's content store when
+        available.  Degrades gracefully to minimal records (identity =
+        ``node_id``, empty body) when the tree or bodies cannot be read
+        — e.g. with mocked toolkits.
+
+        Args:
+            tree_name: PageIndex tree (wiki) name.
+            node_ids: ``new_node_ids`` returned by ``insert_content``.
+            source_id: Source these pages were derived from.
+            fallback_title: Title used when a node cannot be resolved.
+            fallback_summary: Summary used when a node cannot be resolved.
+
+        Returns:
+            One record per node id.
+        """
+        tree: Optional[dict[str, Any]] = None
+        try:
+            candidate = await self._pi.get_tree(tree_name)
+            if isinstance(candidate, dict):
+                tree = candidate
+        except Exception:  # noqa: BLE001 — mocked/legacy toolkits
+            tree = None
+
+        loader = None
+        content_store = getattr(self._pi, "_content_store", None)
+        if tree is not None and content_store is not None:
+            try:
+                candidate_loader = content_store.loader_for(tree_name)
+                if callable(candidate_loader):
+                    loader = candidate_loader
+            except Exception:  # noqa: BLE001
+                loader = None
+
+        records: list[WikiPageRecord] = []
+        for nid in node_ids:
+            node: Optional[dict[str, Any]] = None
+            if tree is not None:
+                node = self._find_node(tree, nid)
+
+            if node is None:
+                records.append(
+                    WikiPageRecord(
+                        concept_id=nid,
+                        node_id=nid,
+                        title=fallback_title or nid,
+                        summary=fallback_summary,
+                        source_id=source_id,
+                        token_count=estimate_tokens(fallback_summary),
+                    )
+                )
+                continue
+
+            concept_id = str(node.get("concept_id") or nid)
+            body = self._load_body(loader, concept_id, nid)
+            summary = str(node.get("summary") or fallback_summary)
+            records.append(
+                WikiPageRecord(
+                    concept_id=concept_id,
+                    node_id=nid,
+                    title=str(node.get("title") or fallback_title or nid),
+                    category=str(
+                        node.get("category") or node.get("type") or "concept"
+                    ).lower(),
+                    summary=summary,
+                    body=body,
+                    source_id=source_id,
+                    token_count=estimate_tokens(body or summary),
+                )
+            )
+        return records
+
+    @staticmethod
+    def _find_node(tree: dict[str, Any], node_id: str) -> Optional[dict[str, Any]]:
+        """Locate a node dict by ``node_id`` in a PageIndex tree."""
+        try:
+            from parrot.knowledge.pageindex.utils import find_node_by_id
+
+            return find_node_by_id(tree.get("structure", tree), node_id)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _load_body(
+        loader: Optional[Any],
+        concept_id: str,
+        node_id: str,
+    ) -> str:
+        """Load a node's markdown body, trying every known sidecar key."""
+        if loader is None:
+            return ""
+        keys = [concept_id, node_id]
+        if "/" in concept_id:
+            keys.insert(1, concept_id.replace("/", "--"))
+        for key in keys:
+            try:
+                loaded = loader(key)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(loaded, str) and loaded:
+                return loaded
+        return ""
 
     async def _sync_to_graph(
         self,

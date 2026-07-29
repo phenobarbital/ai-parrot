@@ -1,0 +1,55 @@
+{
+  "feature_id": "FEAT-304",
+  "mode": "enrichment",
+  "summary_oneline": "Port flowtask's LeadIQ GraphQL component into ai-parrot-tools as a LeadIQ toolkit for structured company/employee extraction.",
+  "overall_confidence": "high",
+  "localization": [
+    { "path": "flowtask/components/LeadIQ.py", "symbol": "LeadIQ (queries + _process_* transforms)", "lines": "56-617", "role": "source to port: GraphQL queries + response flatteners", "evidence": ["F001"], "confidence": "high" },
+    { "path": "packages/ai-parrot-tools/src/parrot_tools/leadiq/tool.py", "symbol": "LeadIQToolkit (new)", "lines": "new", "role": "target: new toolkit module", "evidence": ["F002", "F004"], "confidence": "high" },
+    { "path": "packages/ai-parrot-tools/src/parrot_tools/__init__.py", "symbol": "TOOL_REGISTRY", "lines": "12-25", "role": "register 'leadiq' -> dotted path", "evidence": ["F002"], "confidence": "high" },
+    { "path": "packages/ai-parrot-tools/src/parrot_tools/company_info/tool.py", "symbol": "CompanyInfoToolkit / scrape_leadiq", "lines": "163-693", "role": "closest pattern analog + non-duplicate scraping variant", "evidence": ["F004", "F006"], "confidence": "high" },
+    { "path": "packages/ai-parrot/src/parrot/interfaces/http.py", "symbol": "HTTPService.session", "lines": "126-258", "role": "async GraphQL POST transport", "evidence": ["F005"], "confidence": "high" }
+  ],
+  "constraints": [
+    { "text": "Tools return LLM-consumable structured data (dict/JSON/ToolResult), not a pandas DataFrame; the flowtask DataFrame assembly + FlowComponent input plumbing must be dropped.", "evidence": ["F001", "F003"], "confidence": "high" },
+    { "text": "GraphQL POST must use in-repo HTTPService (aiohttp) via session(); no requests/httpx.", "evidence": ["F005", "F001"], "confidence": "high" },
+    { "text": "API key read via navconfig config.get('LEADIQ_API_KEY'); auth header 'Authorization: Basic {key}' + 'apollo-require-preflight: true'.", "evidence": ["F001", "F003"], "confidence": "high" },
+    { "text": "Register the tool in TOOL_REGISTRY as a manual entry ('leadiq'); generator preserves manual entries.", "evidence": ["F002"], "confidence": "high" },
+    { "text": "Keep distinct from existing scrape_leadiq (Google+Selenium scraping); place in its own leadiq/ module.", "evidence": ["F006"], "confidence": "high" }
+  ],
+  "recent_history": [],
+  "scope": {
+    "whats_new": [
+      "parrot_tools/leadiq/tool.py with LeadIQToolkit(AbstractToolkit), tool_prefix='leadiq'",
+      "Async tools: search_company, search_employees, search_flat (each @tool_schema)",
+      "Pydantic input model (company_name) + structured output models",
+      "parrot_tools/leadiq/__init__.py exporting the toolkit"
+    ],
+    "whats_changed": [
+      "packages/ai-parrot-tools/src/parrot_tools/__init__.py::TOOL_REGISTRY add 'leadiq' entry"
+    ],
+    "non_goals": [
+      "Do not remove/modify CompanyInfoToolkit.scrape_leadiq (scraping variant stays)",
+      "No pandas DataFrame return / no flowtask FlowComponent coupling",
+      "No batch DataFrame-column input plumbing"
+    ]
+  },
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization and patterns are high-confidence and the scope is a well-bounded port; a spec can lock down the toolkit-vs-single-tool choice and the return contract."
+  },
+  "unknowns": [
+    { "id": "U1", "question": "Expose as a LeadIQToolkit with three tools (search_company/employees/flat) or a single LeadIQTool with a search_type arg?", "resolves_claims": ["C6"], "user_answer": "Toolkit (LeadIQToolkit with three @tool_schema methods)." },
+    { "id": "U2", "question": "Return contract: structured dict/JSON records (recommended, LLM-friendly) vs list-of-records mirroring the flowtask DataFrame rows?", "resolves_claims": ["C5"], "user_answer": "Return a structured ToolResult." },
+    { "id": "U3", "question": "Is LEADIQ_API_KEY expected to be pre-Base64-encoded for the 'Basic' header (flowtask passes it raw), or should the tool encode 'apiKey:' itself?", "resolves_claims": ["C4"], "user_answer": "Already Base64-encoded; inject verbatim as 'Basic {LEADIQ_API_KEY}'. Stored in .env." }
+  ],
+  "claims": [
+    { "id": "C1", "text": "Source is a GraphQL client with 3 query types over api.leadiq.com/graphql", "evidence": ["F001"], "confidence": "high" },
+    { "id": "C2", "text": "AbstractToolkit + @tool_schema is the right host pattern (CompanyInfoToolkit analog)", "evidence": ["F004"], "confidence": "high" },
+    { "id": "C3", "text": "HTTPService.session ports the POST transport verbatim (async, aiohttp)", "evidence": ["F005", "F001"], "confidence": "high" },
+    { "id": "C4", "text": "Auth is Basic {LEADIQ_API_KEY} + apollo-require-preflight header", "evidence": ["F001"], "confidence": "medium" },
+    { "id": "C5", "text": "Return contract must change from DataFrame to structured data", "evidence": ["F001", "F003"], "confidence": "high" },
+    { "id": "C6", "text": "Toolkit-with-3-tools is preferable to a single tool for LLM clarity", "evidence": ["F004"], "confidence": "medium" },
+    { "id": "C7", "text": "No existing LeadIQ API client exists; only a scraping variant", "evidence": ["F006"], "confidence": "high" }
+  ]
+}

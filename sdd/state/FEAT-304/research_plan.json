@@ -1,0 +1,14 @@
+{
+  "feature_id": "FEAT-304",
+  "mode": "enrichment",
+  "budget": "default",
+  "queries": [
+    { "id": "Q001", "type": "read", "intent": "Read the flowtask LeadIQ source component to port", "params": { "path": "/home/jesuslara/proyectos/flowtask/flowtask/components/LeadIQ.py" }, "priority": "high" },
+    { "id": "Q002", "type": "tree", "intent": "Map ai-parrot-tools package structure and TOOL_REGISTRY", "params": { "path": "packages/ai-parrot-tools/src/parrot_tools" }, "priority": "high" },
+    { "id": "Q003", "type": "read", "intent": "Understand AbstractTool / AbstractToolArgsSchema single-tool pattern", "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/bloomberg.py, fred_api.py, abstract.py" }, "priority": "high" },
+    { "id": "Q004", "type": "read", "intent": "Understand AbstractToolkit multi-method pattern via closest analog", "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/company_info/tool.py, packages/ai-parrot/src/parrot/tools/toolkit.py" }, "priority": "high" },
+    { "id": "Q005", "type": "read", "intent": "Confirm HTTPService.session signature used by flowtask LeadIQ", "params": { "path": "packages/ai-parrot/src/parrot/interfaces/http.py" }, "priority": "high" },
+    { "id": "Q006", "type": "grep", "intent": "Check for existing LeadIQ code in ai-parrot-tools (dedupe risk)", "params": { "pattern": "leadiq|LEADIQ" }, "priority": "medium" },
+    { "id": "Q007", "type": "read", "intent": "Confirm config (navconfig) + registry generator conventions", "params": { "path": "fred_api.py, __init__.py, scripts/generate_tool_registry.py" }, "priority": "medium" }
+  ]
+}

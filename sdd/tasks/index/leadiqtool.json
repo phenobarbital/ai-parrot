@@ -1,0 +1,73 @@
+{
+  "feature": "leadiqtool",
+  "feature_id": "FEAT-304",
+  "spec": "sdd/specs/leadiqtool.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-13T00:00:00Z",
+  "completed_at": "2026-07-14T00:23:21+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1756",
+      "slug": "leadiq-toolkit-core",
+      "title": "Implement LeadIQToolkit core (leadiq/tool.py)",
+      "feature_id": "FEAT-304",
+      "feature": "leadiqtool",
+      "spec": "sdd/specs/leadiqtool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational module; TASK-1757 and TASK-1758 both import from it. Nothing else in the feature can start first.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:35:46+00:00",
+      "completed_at": "2026-07-14T00:23:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1756-leadiq-toolkit-core.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1757",
+      "slug": "leadiq-package-wiring",
+      "title": "Wire LeadIQ package exports and TOOL_REGISTRY entry",
+      "feature_id": "FEAT-304",
+      "feature": "leadiqtool",
+      "spec": "sdd/specs/leadiqtool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1756"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports LeadIQToolkit from TASK-1756 and edits the shared package __init__.py; must follow TASK-1756.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:35:46+00:00",
+      "completed_at": "2026-07-14T00:23:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1757-leadiq-package-wiring.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1758",
+      "slug": "leadiq-tests",
+      "title": "Unit tests for LeadIQToolkit",
+      "feature_id": "FEAT-304",
+      "feature": "leadiqtool",
+      "spec": "sdd/specs/leadiqtool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1756",
+        "TASK-1757"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests both the toolkit (TASK-1756) and the registry entry (TASK-1757); runs last.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T23:35:46+00:00",
+      "completed_at": "2026-07-14T00:23:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1758-leadiq-tests.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "feat_id": "FEAT-375",
+  "slug": "codex-cli-agent",
+  "phase": "committed",
+  "mode": "enrichment",
+  "started_at": "2026-07-26T00:53:14+02:00",
+  "updated_at": "2026-07-26T01:05:00+02:00",
+  "base_branch": "dev",
+  "type": "feature",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Add OpenAI codex CLI as an invocable sub-agent in parrot.flows.dev_loop for dev tasks and adversarial code review"
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 9,
+    "grep_calls": 6,
+    "git_calls": 1,
+    "wiki_queries": 5,
+    "wiki_pages": 2,
+    "depth_reached": 2
+  },
+  "wiki_available": true,
+  "phases": {
+    "plan": {
+      "status": "done",
+      "approved_by_user": true,
+      "queries_planned": 15
+    },
+    "research": {
+      "status": "done",
+      "truncated": false,
+      "findings": 6,
+      "queries_skipped": 0
+    },
+    "synthesis": {
+      "status": "done",
+      "overall_confidence": "high",
+      "lint_passed": true
+    },
+    "qa": {
+      "status": "done",
+      "questions_total": 3,
+      "questions_answered": 3
+    },
+    "output": {
+      "status": "done",
+      "proposal_path": "sdd/proposals/codex-cli-agent.proposal.md",
+      "commit_sha": "e2c03848a"
+    }
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-375"
+  }
+}

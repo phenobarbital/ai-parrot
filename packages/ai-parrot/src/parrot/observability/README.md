@@ -168,7 +168,7 @@ from parrot.observability import (
     UsageRecord, AbstractLogger, UsageRecordingSubscriber, LoggingUsageRecorder,
 )
 from parrot.observability.cost import CostCalculator
-from parrot.core.events.lifecycle.global_registry import get_global_registry
+from parrot.core.events.lifecycle import get_global_registry
 
 class MyRecorder(AbstractLogger):
     name = "my-sink"

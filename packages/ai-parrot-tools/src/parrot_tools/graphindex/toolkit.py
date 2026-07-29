@@ -26,11 +26,20 @@ Tool surface:
   find_node, find_references, get_neighborhood, traverse,
   search_hybrid, find_central_nodes, shortest_path, explain,
   relevance, neighborhood_by_relevance, list_communities,
-  find_community
+  find_community, export_graph_html
 
   # WRITE
   create_concept, create_node, link_nodes, unlink_nodes,
   attach_summary, tag_node, merge_nodes
+
+  # DURABLE MEMORY (requires publisher=GraphPublisher)
+  graph_history, revert_write
+
+When a ``GraphPublisher`` is injected, every write tool ALSO persists
+its mutation as an audited, revertible commit stamped with the agent's
+identity and run — the graph becomes durable cross-session memory
+("the agent forgets, the graph does not"). Persistence failures never
+fail the tool call; they surface as ``persist_warning`` in the result.
 """
 
 from __future__ import annotations
@@ -90,7 +99,19 @@ class GraphIndexToolkit(AbstractToolkit):
             authoritative).
         signal_config: Optional :class:`SignalRelevanceConfig` (FEAT-190).
             Defaults to the library's default config when not supplied.
+        publisher: Optional ``GraphPublisher`` — when supplied, every
+            write tool ALSO persists its mutation durably as an audited
+            commit (write-through). Without it, writes stay in-memory
+            only (legacy behavior). Persistence failures never fail the
+            tool call; they surface as a ``persist_warning`` key.
+        agent_id: Stable identifier stamped onto persisted writes.
+        run_id: Optional run/session identifier linking persisted writes
+            to the execution that produced them. Mutable — set per ask.
     """
+
+    # Reverting another agent's (or one's own) committed write is the one
+    # destructive operation that warrants human confirmation (FEAT-235).
+    confirming_tools: frozenset = frozenset({"revert_write"})
 
     def __init__(
         self,
@@ -103,6 +124,9 @@ class GraphIndexToolkit(AbstractToolkit):
         embedder: Optional["GraphIndexEmbedder"] = None,
         nodes: Optional[list["UniversalNode"]] = None,
         signal_config: Optional["SignalRelevanceConfig"] = None,
+        publisher: Optional[Any] = None,
+        agent_id: str = "agent",
+        run_id: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.graph = graph
@@ -114,6 +138,9 @@ class GraphIndexToolkit(AbstractToolkit):
         self.embedder = embedder
         self.nodes = nodes if nodes is not None else []
         self.signal_config = signal_config
+        self.publisher = publisher
+        self.agent_id = agent_id
+        self.run_id = run_id
         self._community_cache: Optional[Any] = None
         self._analytics_cache: Optional[Any] = None  # FEAT-215
         self._encoder_warning_emitted = False
@@ -146,6 +173,78 @@ class GraphIndexToolkit(AbstractToolkit):
             if n.node_id == node_id:
                 return n
         return None
+
+    def _model_from_graph(self, node_id: str) -> Optional["UniversalNode"]:
+        """Best-effort ``UniversalNode`` for persistence.
+
+        Prefers the authoritative model in ``self.nodes``; falls back to
+        rebuilding one from the rustworkx payload dict.
+        """
+        node = self._node_by_id(node_id)
+        if node is not None:
+            return node
+        idx = self.node_map.get(node_id)
+        if idx is None:
+            return None
+        payload = self.graph[idx]
+        if not isinstance(payload, dict):
+            return None
+        from parrot.knowledge.graphindex.schema import UniversalNode
+        try:
+            return UniversalNode(
+                node_id=payload["node_id"],
+                kind=payload["kind"],
+                title=payload.get("title", payload["node_id"]),
+                source_uri=payload.get("source_uri") or f"agent://{payload['kind']}/{payload['node_id']}",
+                content_ref=payload.get("content_ref"),
+                summary=payload.get("summary"),
+                embedding_ref=payload.get("embedding_ref"),
+                domain_tags=payload.get("domain_tags") or {},
+                parent_id=payload.get("parent_id"),
+                provenance=payload.get("provenance", "extracted"),
+            )
+        except Exception:  # noqa: BLE001 — persistence is best-effort
+            return None
+
+    async def _persist_write(
+        self,
+        op: str,
+        nodes: Optional[list["UniversalNode"]] = None,
+        edges: Optional[list] = None,
+        removed_edges: Optional[list[tuple[str, str, str]]] = None,
+        removed_nodes: Optional[list[str]] = None,
+        reason: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> dict:
+        """Write-through a mutation to the durable graph plane.
+
+        Returns a dict to merge into the tool result:
+        ``{}`` when no publisher is configured (legacy in-memory mode),
+        ``{"persisted": True, "commit_id": ...}`` on success, or
+        ``{"persisted": False, "persist_warning": ...}`` on failure —
+        the in-memory mutation is kept either way (never-raise contract).
+        """
+        if self.publisher is None:
+            return {}
+        from parrot.knowledge.graphindex.schema import GraphUpdate
+        try:
+            update = GraphUpdate(
+                nodes=list(nodes or []),
+                edges=list(edges or []),
+                removed_edges=list(removed_edges or []),
+                removed_nodes=list(removed_nodes or []),
+                agent_id=self.agent_id,
+                run_id=self.run_id,
+                asserted_by=f"agent:{self.agent_id}",
+                source=source,
+                reason=reason,
+                op=op,
+            )
+            receipt = await self.publisher.publish(update)
+            return {"persisted": True, "commit_id": receipt.commit_id}
+        except Exception as exc:  # noqa: BLE001 — degrade, don't fail the tool
+            self.logger.warning("%s: durable persist failed: %s", op, exc)
+            return {"persisted": False, "persist_warning": str(exc)}
 
 
     # ------------------------------------------------------------------
@@ -400,6 +499,61 @@ class GraphIndexToolkit(AbstractToolkit):
         result.sort(key=lambda x: x["centrality_score"], reverse=True)
         return result[:top_k]
 
+    async def export_graph_html(
+        self, output_dir: str, top_k_god_nodes: int = 15
+    ) -> dict:
+        """Export an interactive ``graph.html`` map plus ``graph.json``.
+
+        Renders the current in-memory graph as a self-contained, clickable
+        force-directed page: nodes are concepts, colour is the detected
+        community, node size scales with centrality (god nodes are highlighted),
+        and clicking a node opens a detail panel. The page inlines the ECharts
+        runtime so it works fully offline. A sibling ``graph.json`` carries the
+        serialized graph for programmatic reuse.
+
+        Args:
+            output_dir: Directory where ``graph.html`` and ``graph.json`` are
+                written (created if missing).
+            top_k_god_nodes: Number of most-central "god" nodes to highlight.
+
+        Returns:
+            Dict with ``graph_html``, ``graph_json``, ``node_count``,
+            ``edge_count`` and ``community_count`` — or an ``error`` dict when
+            the export module is unavailable.
+        """
+        try:
+            from parrot.knowledge.graphindex.export_html import export_graph
+        except ImportError as exc:
+            return {"error": f"HTML export unavailable: {exc}"}
+
+        if self.graph.num_nodes() == 0:
+            return {"error": "Graph is empty; nothing to export."}
+
+        communities = self._get_or_compute_communities()
+        analytics = self._get_or_compute_analytics()
+        try:
+            html_path, json_path = export_graph(
+                self.graph,
+                output_dir,
+                communities=communities,
+                analytics=analytics,
+                god_top_k=top_k_god_nodes,
+            )
+        except Exception as exc:
+            logger.error("export_graph_html failed: %s", exc)
+            return {"error": str(exc)}
+
+        community_count = (
+            len(communities.communities) if communities is not None else 0
+        )
+        return {
+            "graph_html": str(html_path),
+            "graph_json": str(json_path),
+            "node_count": self.graph.num_nodes(),
+            "edge_count": self.graph.num_edges(),
+            "community_count": community_count,
+        }
+
     async def shortest_path(self, from_id: str, to_id: str) -> list[dict]:
         """Find the shortest path between two nodes.
 
@@ -585,12 +739,14 @@ class GraphIndexToolkit(AbstractToolkit):
 
         self.nodes.append(node)
         self._invalidate_community_cache()
-        return {
+        result = {
             "node_id": node_id,
             "kind": kind_enum.value,
             "title": node.title,
             "status": "created",
         }
+        result.update(await self._persist_write("create_node", nodes=[node]))
+        return result
 
     async def link_nodes(
         self,
@@ -639,12 +795,14 @@ class GraphIndexToolkit(AbstractToolkit):
             return {"error": f"link_nodes: assembler rejected: {exc}"}
 
         self._invalidate_community_cache()
-        return {
+        result = {
             "source_id": source_id,
             "target_id": target_id,
             "kind": kind_enum.value,
             "status": "linked",
         }
+        result.update(await self._persist_write("link_nodes", edges=[edge]))
+        return result
 
     async def unlink_nodes(
         self,
@@ -665,6 +823,7 @@ class GraphIndexToolkit(AbstractToolkit):
             return {"error": "unlink_nodes: unknown source_id or target_id"}
 
         removed = 0
+        removed_triples: list[tuple[str, str, str]] = []
         for s, t in ((src_idx, tgt_idx), (tgt_idx, src_idx)):
             for _eidx, payload in list(self._edges_between(s, t)):
                 if kind is not None and payload.get("kind") != kind:
@@ -672,6 +831,11 @@ class GraphIndexToolkit(AbstractToolkit):
                 try:
                     self.graph.remove_edge(s, t)
                     removed += 1
+                    removed_triples.append((
+                        payload.get("source_id"),
+                        payload.get("target_id"),
+                        payload.get("kind"),
+                    ))
                 except Exception:
                     pass
                 # Also clean the assembler's edge_index_map entry.
@@ -692,12 +856,16 @@ class GraphIndexToolkit(AbstractToolkit):
             }
 
         self._invalidate_community_cache()
-        return {
+        result = {
             "source_id": source_id,
             "target_id": target_id,
             "removed": removed,
             "status": "unlinked",
         }
+        result.update(
+            await self._persist_write("unlink_nodes", removed_edges=removed_triples)
+        )
+        return result
 
     def _edges_between(self, src_idx: int, tgt_idx: int):
         """Yield (edge_index, payload) for every edge from src to tgt."""
@@ -736,7 +904,13 @@ class GraphIndexToolkit(AbstractToolkit):
                 )
 
         self._invalidate_community_cache()
-        return {"node_id": node_id, "summary": summary, "status": "updated"}
+        result = {"node_id": node_id, "summary": summary, "status": "updated"}
+        model = self._model_from_graph(node_id)
+        if model is not None:
+            result.update(
+                await self._persist_write("attach_summary", nodes=[model])
+            )
+        return result
 
     async def tag_node(self, node_id: str, key: str, value: Any) -> dict:
         """Shallow-merge a single key/value into the node's ``domain_tags``."""
@@ -759,7 +933,11 @@ class GraphIndexToolkit(AbstractToolkit):
             node.domain_tags[key] = value
 
         self._invalidate_community_cache()
-        return {"node_id": node_id, "key": key, "value": value, "status": "tagged"}
+        result = {"node_id": node_id, "key": key, "value": value, "status": "tagged"}
+        model = self._model_from_graph(node_id)
+        if model is not None:
+            result.update(await self._persist_write("tag_node", nodes=[model]))
+        return result
 
     async def merge_nodes(
         self,
@@ -786,6 +964,18 @@ class GraphIndexToolkit(AbstractToolkit):
         dup_idx = self.node_map[duplicate_id]
         canonical_idx = self.node_map[canonical_id]
 
+        # Capture the duplicate's identity before any mutation so the
+        # merge stays additive and inspectable (alias retention).
+        dup_payload = self.graph[dup_idx]
+        dup_title = (
+            dup_payload.get("title") if isinstance(dup_payload, dict) else None
+        )
+        dup_aliases: list[str] = []
+        if isinstance(dup_payload, dict):
+            tags = dup_payload.get("domain_tags") or {}
+            if isinstance(tags, dict):
+                dup_aliases = [str(a) for a in tags.get("aliases", [])]
+
         # Collect every (other_id, payload, direction) before we mutate.
         out_edges: list[dict] = list(
             payload for _s, _t, payload in self.graph.out_edges(dup_idx)
@@ -796,6 +986,7 @@ class GraphIndexToolkit(AbstractToolkit):
 
         existing_keys = self._existing_edge_keys(canonical_idx)
         redirected = 0
+        redirected_edges: list = []
 
         from parrot.knowledge.graphindex.schema import (
             EdgeKind, Provenance, UniversalEdge,
@@ -820,6 +1011,7 @@ class GraphIndexToolkit(AbstractToolkit):
                 self.assembler.add_edge(edge)
                 existing_keys.add(key)
                 redirected += 1
+                redirected_edges.append(edge)
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning("merge_nodes: out-edge redirect failed: %s", exc)
 
@@ -842,6 +1034,7 @@ class GraphIndexToolkit(AbstractToolkit):
                 self.assembler.add_edge(edge)
                 existing_keys.add(key)
                 redirected += 1
+                redirected_edges.append(edge)
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning("merge_nodes: in-edge redirect failed: %s", exc)
 
@@ -860,13 +1053,47 @@ class GraphIndexToolkit(AbstractToolkit):
             pass
         self.nodes = [n for n in self.nodes if n.node_id != duplicate_id]
 
+        # Additive alias retention: the canonical node keeps the merged
+        # duplicate's title (and its aliases) in domain_tags['aliases'],
+        # so the merge is inspectable and no surface form is lost.
+        new_aliases = [a for a in ([dup_title] if dup_title else []) + dup_aliases]
+        canonical_payload = self.graph[canonical_idx]
+        if new_aliases and isinstance(canonical_payload, dict):
+            tags = canonical_payload.setdefault("domain_tags", {})
+            if isinstance(tags, dict):
+                merged = list(tags.get("aliases", [])) + new_aliases
+                tags["aliases"] = sorted({str(a) for a in merged})
+        canonical_model = self._node_by_id(canonical_id)
+        if new_aliases and canonical_model is not None:
+            merged = list(canonical_model.domain_tags.get("aliases", [])) + new_aliases
+            canonical_model.domain_tags["aliases"] = sorted({str(a) for a in merged})
+
         self._invalidate_community_cache()
-        return {
+        result = {
             "canonical_id": canonical_id,
             "duplicate_id": duplicate_id,
             "redirected_edges": redirected,
+            "aliases_added": new_aliases,
             "status": "merged",
         }
+        persist_nodes = []
+        model = self._model_from_graph(canonical_id)
+        if model is not None:
+            persist_nodes.append(model)
+        result.update(
+            await self._persist_write(
+                "merge_nodes",
+                nodes=persist_nodes,
+                edges=redirected_edges,
+                removed_nodes=[duplicate_id],
+                reason=(
+                    f"merged {duplicate_id!r}"
+                    + (f" ({dup_title})" if dup_title else "")
+                    + f" into {canonical_id!r}"
+                ),
+            )
+        )
+        return result
 
     def _existing_edge_keys(self, node_idx: int) -> set[tuple]:
         """Return the set of ``(source_id, target_id, kind)`` triples
@@ -885,6 +1112,191 @@ class GraphIndexToolkit(AbstractToolkit):
         import hashlib
         raw = f"{kind}::{title}::{summary}".encode("utf-8")
         return hashlib.sha1(raw).hexdigest()[:16]
+
+    async def graph_history(
+        self,
+        run_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """List durable graph write commits, newest first.
+
+        Every persisted write (create_node, link_nodes, merge_nodes, ...)
+        is recorded as an audited commit carrying the agent, run, and
+        rationale that produced it.
+
+        Args:
+            run_id: Only show commits from this run/session.
+            limit: Maximum commits returned.
+
+        Returns:
+            Commit summaries, or a single-element list with an ``error``
+            key when no durable plane is configured.
+        """
+        if self.publisher is None:
+            return [{"error": "graph_history: no durable graph plane configured"}]
+        try:
+            return await self.publisher.list_commits(run_id=run_id, limit=limit)
+        except Exception as exc:  # noqa: BLE001
+            return [{"error": f"graph_history: {exc}"}]
+
+    async def revert_write(self, commit_id: str) -> dict:
+        """Revert a durable graph write commit (restore its pre-images).
+
+        The revert is refused when later commits touched the same nodes
+        or edges. NOTE: the revert applies to the durable plane; the
+        in-memory view refreshes on the next toolkit load.
+
+        Args:
+            commit_id: The commit to revert (see ``graph_history``).
+
+        Returns:
+            ``{"status": "reverted", ...}`` or ``{"error": ...}``.
+        """
+        if self.publisher is None:
+            return {"error": "revert_write: no durable graph plane configured"}
+        try:
+            result = await self.publisher.revert_commit(commit_id)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"revert_write: {exc}"}
+        if "error" not in result:
+            result["note"] = (
+                "durable plane reverted; reload the toolkit to refresh the"
+                " in-memory graph"
+            )
+        return result
+
+    async def ground_claim(self, claim: str) -> dict:
+        """Check whether the graph evidences a claim (grounding layer).
+
+        Resolves the claim's entities, looks for supporting edge paths,
+        and returns either cited evidence (stable edge ids) or a
+        structured revise instruction listing the missing evidence.
+        Contradicting relations touching the entities are surfaced.
+
+        Args:
+            claim: Natural-language claim to check.
+
+        Returns:
+            A grounding result dict (``decision``: ``grounded`` |
+            ``revise``) or ``{"error": ...}``.
+        """
+        try:
+            from parrot.knowledge.graphindex.grounding import GroundingEvaluator
+            from parrot.knowledge.graphindex.retriever import (
+                GraphExpandedRetriever,
+            )
+
+            if self.embedder is None:
+                return {"error": "ground_claim: no embedder configured"}
+            retriever = GraphExpandedRetriever(
+                graph=self.graph,
+                nodes=self.nodes,
+                embedder=self.embedder,
+                signal_config=self.signal_config,
+            )
+            evaluator = GroundingEvaluator(retriever, client=self.client)
+            result = await evaluator.ground_claim(claim)
+            return result.model_dump()
+        except Exception as exc:  # noqa: BLE001 — never raise into the LLM
+            return {"error": f"ground_claim: {exc}"}
+
+    async def extract_knowledge(self, text: str, source_uri: str = "") -> dict:
+        """Extract typed entities/relations from text into the graph.
+
+        Runs a schema-constrained LLM extraction, deduplicates entities
+        against the existing graph (additive alias merges — nothing is
+        destroyed), publishes ONE audited commit, and mirrors the new
+        nodes/edges into the in-memory graph so they are immediately
+        searchable.
+
+        Requires both a ``client`` (LLM) and a ``publisher`` (durable
+        plane) on the toolkit.
+
+        Args:
+            text: Free text to extract knowledge from.
+            source_uri: Citation URI recorded on the extracted items.
+
+        Returns:
+            ``{entities, relations, commit_id, node_ids}`` or
+            ``{"error": ...}``.
+        """
+        if self.client is None:
+            return {"error": "extract_knowledge: no LLM client configured"}
+        if self.publisher is None:
+            return {"error": "extract_knowledge: no durable graph plane configured"}
+        try:
+            from parrot.knowledge.graphindex.extractors.llm import (
+                LLMGraphExtractor,
+            )
+
+            extractor = LLMGraphExtractor(self.client, self.publisher)
+            result = await extractor.extract_and_publish(
+                text,
+                source_uri=source_uri,
+                agent_id=self.agent_id,
+                run_id=self.run_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — never raise into the LLM
+            return {"error": f"extract_knowledge: {exc}"}
+
+        # Mirror committed nodes/edges into the in-memory graph (only
+        # possible when the write dependencies are wired).
+        if not self._write_supported:
+            return {
+                "entities": len(result.extracted.entities),
+                "relations": len(result.extracted.relations),
+                "nodes_written": len(result.update.nodes),
+                "edges_written": len(result.update.edges),
+                "node_ids": [n.node_id for n in result.update.nodes],
+                "commit_id": result.receipt.commit_id,
+                "persisted": True,
+                "note": "in-memory graph not updated (no assembler/embedder)",
+            }
+        for node in result.update.nodes:
+            if node.node_id in self.node_map:
+                # Alias merge on an existing node — refresh the payload.
+                try:
+                    self.assembler.add_node(node)
+                except Exception:  # noqa: BLE001
+                    pass
+                continue
+            try:
+                rust_idx = self.assembler.add_node(node)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "extract_knowledge: in-memory add failed for %s: %s",
+                    node.node_id,
+                    exc,
+                )
+                continue
+            self.node_map[node.node_id] = rust_idx
+            try:
+                await self.embedder.embed_nodes([node])
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "extract_knowledge: embed failed for %s: %s",
+                    node.node_id,
+                    exc,
+                )
+            if node.node_id not in self.node_id_list:
+                self.node_id_list.append(node.node_id)
+            self.nodes.append(node)
+        for edge in result.update.edges:
+            try:
+                self.assembler.add_edge(edge)
+            except Exception:  # noqa: BLE001
+                pass
+        self._invalidate_community_cache()
+
+        return {
+            "entities": len(result.extracted.entities),
+            "relations": len(result.extracted.relations),
+            "nodes_written": len(result.update.nodes),
+            "edges_written": len(result.update.edges),
+            "node_ids": [n.node_id for n in result.update.nodes],
+            "commit_id": result.receipt.commit_id,
+            "persisted": True,
+        }
 
     # ==================================================================
     # READ tools — signal + community surface (FEAT-190 / FEAT-191)

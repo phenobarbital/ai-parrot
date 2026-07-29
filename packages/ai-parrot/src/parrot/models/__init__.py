@@ -93,6 +93,7 @@ from .zai import ZaiModel
 from .crew_definition import (
     ExecutionMode,
     AgentDefinition,
+    ToolNodeDefinition,
     FlowRelation,
     CrewDefinition,
 )
@@ -101,7 +102,16 @@ from .conference import (
     ConferenceRound,
     ConferenceResult,
 )
-from .stores import StoreType, StoreConfig, SearchResult
+from .stores import (
+    StoreType,
+    StoreConfig,
+    SearchResult,
+    SearchOriginKind,
+    OriginHit,
+    OriginSection,
+    MultiSearchResponse,
+    MultiSearch,
+)
 
 __all__ = (
     "OutputFormat",
@@ -186,6 +196,7 @@ __all__ = (
     # Crew definition models
     "ExecutionMode",
     "AgentDefinition",
+    "ToolNodeDefinition",
     "FlowRelation",
     "CrewDefinition",
     # Conference models (FEAT-223)
@@ -196,4 +207,10 @@ __all__ = (
     "StoreType",
     "StoreConfig",
     "SearchResult",
+    # Multi-search origins + protocol (FEAT-379)
+    "SearchOriginKind",
+    "OriginHit",
+    "OriginSection",
+    "MultiSearchResponse",
+    "MultiSearch",
 )

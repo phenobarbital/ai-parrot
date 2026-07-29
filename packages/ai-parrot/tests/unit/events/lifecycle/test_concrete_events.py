@@ -3,7 +3,7 @@ import json
 import pytest
 from dataclasses import FrozenInstanceError
 
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.core.events.lifecycle.events import (
     AgentInitializedEvent,
     AgentConfiguredEvent,
@@ -21,7 +21,7 @@ from parrot.core.events.lifecycle.events import (
     ToolCallFailedEvent,
     MessageAddedEvent,
 )
-from parrot.core.events.lifecycle.meta import SubscriberErrorEvent
+from navigator_eventbus.lifecycle.meta import SubscriberErrorEvent
 
 
 ALL_CLASSES = [

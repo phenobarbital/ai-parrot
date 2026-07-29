@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
       "completed_at": "2026-05-18T02:29:55+00:00",
-      "file": "sdd/tasks/active/TASK-1206-pygithub-dependency.md",
+      "file": "sdd/tasks/completed/TASK-1206-pygithub-dependency.md",
       "verification": "verified"
     },
     {
@@ -44,7 +44,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
       "completed_at": "2026-05-18T02:29:55+00:00",
-      "file": "sdd/tasks/active/TASK-1207-github-app-token-provider.md",
+      "file": "sdd/tasks/completed/TASK-1207-github-app-token-provider.md",
       "verification": "verified"
     },
     {
@@ -65,7 +65,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
       "completed_at": "2026-05-18T02:29:55+00:00",
-      "file": "sdd/tasks/active/TASK-1208-gittoolkit-auth-type-plumbing.md",
+      "file": "sdd/tasks/completed/TASK-1208-gittoolkit-auth-type-plumbing.md",
       "verification": "verified"
     },
     {
@@ -86,7 +86,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
       "completed_at": "2026-05-18T02:29:55+00:00",
-      "file": "sdd/tasks/active/TASK-1209-github-reviewer-auth-type-wiring.md",
+      "file": "sdd/tasks/completed/TASK-1209-github-reviewer-auth-type-wiring.md",
       "verification": "verified"
     }
   ]

@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1104-remove-broken-consolidator-stub.md",
+      "file": "sdd/tasks/completed/TASK-1104-remove-broken-consolidator-stub.md",
       "verification": "verified"
     },
     {
@@ -42,7 +42,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1105-storage-data-models.md",
+      "file": "sdd/tasks/completed/TASK-1105-storage-data-models.md",
       "verification": "verified"
     },
     {
@@ -63,7 +63,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1106-postgres-schema-sql.md",
+      "file": "sdd/tasks/completed/TASK-1106-postgres-schema-sql.md",
       "verification": "verified"
     },
     {
@@ -85,7 +85,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1107-security-report-store.md",
+      "file": "sdd/tasks/completed/TASK-1107-security-report-store.md",
       "verification": "verified"
     },
     {
@@ -102,11 +102,11 @@
         "TASK-1105"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends only on TASK-1105 (data models). Could run in parallel with TASK-1106 and TASK-1107 if isolation were per-task \u2014 but per-spec worktree means sequential.",
+      "parallelism_notes": "Depends only on TASK-1105 (data models). Could run in parallel with TASK-1106 and TASK-1107 if isolation were per-task — but per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1108-scanner-parsers.md",
+      "file": "sdd/tasks/completed/TASK-1108-scanner-parsers.md",
       "verification": "verified"
     },
     {
@@ -129,7 +129,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1109-report-persistence-mixin.md",
+      "file": "sdd/tasks/completed/TASK-1109-report-persistence-mixin.md",
       "verification": "verified"
     },
     {
@@ -150,7 +150,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1110-cloudsploit-toolkit-mixin.md",
+      "file": "sdd/tasks/completed/TASK-1110-cloudsploit-toolkit-mixin.md",
       "verification": "verified"
     },
     {
@@ -171,7 +171,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1111-compliance-toolkit-mixin.md",
+      "file": "sdd/tasks/completed/TASK-1111-compliance-toolkit-mixin.md",
       "verification": "verified"
     },
     {
@@ -192,7 +192,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1112-container-toolkit-mixin-trivy-tempfile.md",
+      "file": "sdd/tasks/completed/TASK-1112-container-toolkit-mixin-trivy-tempfile.md",
       "verification": "verified"
     },
     {
@@ -210,17 +210,17 @@
         "TASK-1108"
       ],
       "parallel": false,
-      "parallelism_notes": "Independent of producer-toolkit changes (1110-1112) \u2014 could parallelize in separate worktrees. Per-spec worktree means sequential.",
+      "parallelism_notes": "Independent of producer-toolkit changes (1110-1112) — could parallelize in separate worktrees. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1113-security-report-toolkit.md",
+      "file": "sdd/tasks/completed/TASK-1113-security-report-toolkit.md",
       "verification": "verified"
     },
     {
       "id": "TASK-1114",
       "slug": "summarizers",
-      "title": "WeeklySecuritySummarizer + MonthlySecuritySummarizer (multi-provider \u00d7 framework)",
+      "title": "WeeklySecuritySummarizer + MonthlySecuritySummarizer (multi-provider × framework)",
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
@@ -235,13 +235,13 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1114-summarizers.md",
+      "file": "sdd/tasks/completed/TASK-1114-summarizers.md",
       "verification": "verified"
     },
     {
       "id": "TASK-1115",
       "slug": "aws-credentials-security-slot",
-      "title": "parrot/conf.py \u2014 AWS_CREDENTIALS['security'] slot",
+      "title": "parrot/conf.py — AWS_CREDENTIALS['security'] slot",
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
@@ -254,7 +254,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1115-aws-credentials-security-slot.md",
+      "file": "sdd/tasks/completed/TASK-1115-aws-credentials-security-slot.md",
       "verification": "verified"
     },
     {
@@ -282,7 +282,7 @@
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1116-security-agent-wiring.md",
+      "file": "sdd/tasks/completed/TASK-1116-security-agent-wiring.md",
       "verification": "verified"
     },
     {
@@ -300,11 +300,11 @@
         "TASK-1113"
       ],
       "parallel": false,
-      "parallelism_notes": "Docs only \u2014 could run any time after the store and toolkit are in place. Per-spec worktree means sequential.",
+      "parallelism_notes": "Docs only — could run any time after the store and toolkit are in place. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
       "completed_at": "2026-05-12T02:21:42.285412+00:00",
-      "file": "sdd/tasks/active/TASK-1117-readme-docs.md",
+      "file": "sdd/tasks/completed/TASK-1117-readme-docs.md",
       "verification": "verified"
     }
   ]

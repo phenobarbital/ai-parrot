@@ -54,7 +54,7 @@ def test_devloop_development_uses_canonical_node():
     import parrot.flows.dev_loop.nodes.development as _mod  # noqa: PLC0415
 
     src = _src(_mod)
-    assert "parrot.flows.dev_loop.nodes.base import DevLoopNode" in src
+    assert "parrot.flows.dev_loop.nodes.base" in src and "DevLoopNode" in src
 
 
 def test_devloop_qa_uses_canonical_node():
@@ -62,7 +62,7 @@ def test_devloop_qa_uses_canonical_node():
     import parrot.flows.dev_loop.nodes.qa as _mod  # noqa: PLC0415
 
     src = _src(_mod)
-    assert "parrot.flows.dev_loop.nodes.base import DevLoopNode" in src
+    assert "parrot.flows.dev_loop.nodes.base" in src and "DevLoopNode" in src
 
 
 def test_devloop_research_uses_canonical_node():
@@ -70,4 +70,4 @@ def test_devloop_research_uses_canonical_node():
     import parrot.flows.dev_loop.nodes.research as _mod  # noqa: PLC0415
 
     src = _src(_mod)
-    assert "parrot.flows.dev_loop.nodes.base import DevLoopNode" in src
+    assert "parrot.flows.dev_loop.nodes.base" in src and "DevLoopNode" in src

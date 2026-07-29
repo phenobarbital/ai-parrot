@@ -157,6 +157,74 @@ def _classify_file(file_path: Path) -> str:
     return "document"
 
 
+def _extract_table_from_inner(inner: Any, parsed: 'ParsedResponse') -> None:
+    """Try to populate ``parsed.table_data`` from a nested data payload.
+
+    Handles the two shapes produced by Pydantic structured outputs:
+    - ``{columns: [...], rows: [[...], ...]}`` dict or model
+    - list-of-dicts (``DataFrame.to_dict(orient='records')``)
+    """
+    cols = getattr(inner, 'columns', None)
+    rws = getattr(inner, 'rows', None)
+    if isinstance(cols, list) and isinstance(rws, list):
+        try:
+            if HAS_PANDAS:
+                df = pd.DataFrame(rws, columns=cols)
+                parsed.table_data = df
+                parsed.table_markdown = _dataframe_to_markdown(df)
+                parsed.has_structured_output = True
+        except Exception:
+            pass
+    elif isinstance(inner, dict) and 'columns' in inner and 'rows' in inner:
+        try:
+            if HAS_PANDAS:
+                df = pd.DataFrame(inner['rows'], columns=inner['columns'])
+                parsed.table_data = df
+                parsed.table_markdown = _dataframe_to_markdown(df)
+                parsed.has_structured_output = True
+        except Exception:
+            pass
+    elif isinstance(inner, list) and inner and isinstance(inner[0], dict):
+        try:
+            if HAS_PANDAS:
+                df = pd.DataFrame(inner)
+                parsed.table_data = df
+                parsed.table_markdown = _dataframe_to_markdown(df)
+                parsed.has_structured_output = True
+        except Exception:
+            pass
+
+
+_PYDANTIC_TEXT_FIELDS = (
+    "explanation", "answer", "text", "message",
+    "response", "content", "summary", "output",
+)
+
+
+def _extract_text_from_pydantic(*candidates: Any) -> Optional[str]:
+    """Return the first human-readable text field from Pydantic models.
+
+    Iterates *candidates* (e.g. ``structured_output``, ``output``);
+    for each that is a ``BaseModel``, checks well-known text field
+    names and returns the first non-empty string.  Mirrors the logic
+    in ``msagentsdk.agent.render_reply_text`` so both integration
+    paths extract the same display text.
+    """
+    try:
+        from pydantic import BaseModel
+    except ImportError:
+        return None
+
+    for payload in candidates:
+        if payload is None or not isinstance(payload, BaseModel):
+            continue
+        for field_name in _PYDANTIC_TEXT_FIELDS:
+            value = getattr(payload, field_name, None)
+            if isinstance(value, str) and value.strip():
+                return value
+    return None
+
+
 def _dataframe_to_markdown(df: Any, max_rows: int = 50) -> str:
     """Convert a pandas DataFrame to markdown table format."""
     if not HAS_PANDAS:
@@ -345,42 +413,56 @@ def parse_response(response: Any) -> ParsedResponse:
         parsed.text = response
         return parsed
     
-    # Extract primary text content
-    if hasattr(response, 'response') and response.response:
-        parsed.text = str(response.response)
-    elif hasattr(response, 'content'):
-        content = response.content
-        if isinstance(content, str):
-            parsed.text = content
-        elif isinstance(content, list):
-            # Handle list of content blocks
+    # Extract primary text content.
+    # Prefer output/content (the channel-facing rendered text) over
+    # .response (the raw text_response before formatting — may be a
+    # short summary when structured output produced the real content).
+    output = getattr(response, 'output', None)
+    content = getattr(response, 'content', None)
+    for value in (output, content):
+        if isinstance(value, str) and value.strip():
+            parsed.text = value
+            break
+        elif isinstance(value, list):
             text_parts = []
-            for block in content:
+            for block in value:
                 if isinstance(block, dict) and block.get('type') == 'text':
                     text_parts.append(block.get('text', ''))
                 elif isinstance(block, str):
                     text_parts.append(block)
-            parsed.text = "\n".join(text_parts)
-        else:
-            parsed.text = str(content)
-    elif hasattr(response, 'output'):
-        output = response.output
-        if isinstance(output, str):
-            parsed.text = output
-        elif hasattr(output, 'to_string'):
-            # pandas DataFrame
-            parsed.table_data = output
-            parsed.table_markdown = _dataframe_to_markdown(output)
+            joined = "\n".join(text_parts)
+            if joined.strip():
+                parsed.text = joined
+                break
+        elif value is not None and hasattr(value, 'to_string'):
+            parsed.table_data = value
+            parsed.table_markdown = _dataframe_to_markdown(value)
             parsed.has_structured_output = True
-        elif isinstance(output, dict):
-            parsed.text = str(output)
+            break
+        elif isinstance(value, dict):
+            parsed.text = str(value)
             parsed.has_structured_output = True
-        else:
-            parsed.text = str(output)
-    elif hasattr(response, 'text'):
-        parsed.text = str(response.text)
+            break
     else:
-        parsed.text = str(response)
+        # Try structured Pydantic model fields before falling back to
+        # .response — handles PandasAgentResponse and similar models
+        # whose output is a BaseModel with a text-ish field.
+        extracted = _extract_text_from_pydantic(
+            getattr(response, 'structured_output', None),
+            output,
+        )
+        if extracted:
+            parsed.text = extracted
+            parsed.has_structured_output = True
+        else:
+            # Fall back to .response, then .text, then str()
+            text = getattr(response, 'response', None)
+            if isinstance(text, str) and text.strip():
+                parsed.text = text
+            elif hasattr(response, 'text') and response.text:
+                parsed.text = str(response.text)
+            else:
+                parsed.text = str(response)
     
     # Extract code
     if hasattr(response, 'code') and response.code:
@@ -400,6 +482,17 @@ def parse_response(response: Any) -> ParsedResponse:
             parsed.table_data = data
             parsed.table_markdown = _dataframe_to_markdown(data)
             parsed.has_structured_output = True
+        elif isinstance(data, list) and data and isinstance(data[0], dict):
+            # List-of-dicts (DataFrame.to_dict(orient='records')) — the
+            # format PandasAgent serializes to before returning.
+            try:
+                if HAS_PANDAS:
+                    df = pd.DataFrame(data)
+                    parsed.table_data = df
+                    parsed.table_markdown = _dataframe_to_markdown(df)
+                    parsed.has_structured_output = True
+            except Exception:
+                pass
         elif isinstance(data, dict) and 'rows' in data and 'columns' in data:
             # Tabular data as dict
             try:
@@ -417,6 +510,11 @@ def parse_response(response: Any) -> ParsedResponse:
             parsed.table_data = structured
             parsed.table_markdown = _dataframe_to_markdown(structured)
             parsed.has_structured_output = True
+        elif parsed.table_data is None and hasattr(structured, 'data'):
+            # Pydantic model with a .data attribute (e.g. PandasAgentResponse)
+            inner = getattr(structured, 'data', None)
+            if inner is not None:
+                _extract_table_from_inner(inner, parsed)
     
     # Extract images
     if hasattr(response, 'images') and response.images:

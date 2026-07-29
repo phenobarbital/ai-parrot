@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
       "completed_at": "2026-06-03T17:07:11+00:00",
-      "file": "sdd/tasks/active/TASK-1429-contract-models.md"
+      "file": "sdd/tasks/completed/TASK-1429-contract-models.md"
     },
     {
       "id": "TASK-1430",
@@ -41,7 +41,7 @@
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
       "completed_at": "2026-06-03T17:07:11+00:00",
-      "file": "sdd/tasks/active/TASK-1430-dtype-vocabulary-map.md"
+      "file": "sdd/tasks/completed/TASK-1430-dtype-vocabulary-map.md"
     },
     {
       "id": "TASK-1431",
@@ -62,7 +62,7 @@
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
       "completed_at": "2026-06-03T17:07:11+00:00",
-      "file": "sdd/tasks/active/TASK-1431-structured-table-renderer.md"
+      "file": "sdd/tasks/completed/TASK-1431-structured-table-renderer.md"
     },
     {
       "id": "TASK-1432",
@@ -83,7 +83,7 @@
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
       "completed_at": "2026-06-03T17:07:11+00:00",
-      "file": "sdd/tasks/active/TASK-1432-data-py-routing-guard.md"
+      "file": "sdd/tasks/completed/TASK-1432-data-py-routing-guard.md"
     },
     {
       "id": "TASK-1433",
@@ -104,7 +104,7 @@
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
       "completed_at": "2026-06-03T17:07:11+00:00",
-      "file": "sdd/tasks/active/TASK-1433-pandasagent-producer.md"
+      "file": "sdd/tasks/completed/TASK-1433-pandasagent-producer.md"
     },
     {
       "id": "TASK-1434",
@@ -125,7 +125,7 @@
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
       "completed_at": "2026-06-03T17:07:11+00:00",
-      "file": "sdd/tasks/active/TASK-1434-db-sql-producer.md"
+      "file": "sdd/tasks/completed/TASK-1434-db-sql-producer.md"
     },
     {
       "id": "TASK-1435",
@@ -146,7 +146,7 @@
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
       "completed_at": "2026-06-03T17:07:11+00:00",
-      "file": "sdd/tasks/active/TASK-1435-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-1435-integration-tests.md"
     }
   ]
 }

@@ -1,0 +1,112 @@
+{
+  "feature": "ux-custom-engine-copilot",
+  "feature_id": "FEAT-303",
+  "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-14T00:00:00Z",
+  "completed_at": "2026-07-14T01:06:36+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1751",
+      "slug": "semantic-ui-model",
+      "title": "Semantic UI Model (Pydantic contract)",
+      "feature_id": "FEAT-303",
+      "feature": "ux-custom-engine-copilot",
+      "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation module — every other task imports it; nothing to parallelize against.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T22:53:01+00:00",
+      "completed_at": "2026-07-13T23:26:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1751-semantic-ui-model.md"
+    },
+    {
+      "id": "TASK-1752",
+      "slug": "adaptive-card-renderer",
+      "title": "Adaptive Card renderer (templates + text fallback)",
+      "feature_id": "FEAT-303",
+      "feature": "ux-custom-engine-copilot",
+      "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1751"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports semantic.py from TASK-1751; sequential.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T22:53:01+00:00",
+      "completed_at": "2026-07-13T23:53:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1752-adaptive-card-renderer.md"
+    },
+    {
+      "id": "TASK-1753",
+      "slug": "bridge-wiring-config",
+      "title": "Bridge wiring + config knobs + lazy exports",
+      "feature_id": "FEAT-303",
+      "feature": "ux-custom-engine-copilot",
+      "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1752"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits agent.py/models.py/wrapper.py/__init__.py; depends on renderer API from TASK-1752.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T22:53:01+00:00",
+      "completed_at": "2026-07-14T00:00:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1753-bridge-wiring-config.md"
+    },
+    {
+      "id": "TASK-1754",
+      "slug": "card-action-invoke-shim",
+      "title": "Card action round-trip invoke shim",
+      "feature_id": "FEAT-303",
+      "feature": "ux-custom-engine-copilot",
+      "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1753"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the same file (agent.py) as TASK-1753 and reuses its card seam; must be sequential.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T22:53:01+00:00",
+      "completed_at": "2026-07-14T00:07:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1754-card-action-invoke-shim.md"
+    },
+    {
+      "id": "TASK-1755",
+      "slug": "integration-tests-docs",
+      "title": "Integration tests, import isolation, and docs",
+      "feature_id": "FEAT-303",
+      "feature": "ux-custom-engine-copilot",
+      "spec": "sdd/specs/ux-custom-engine-copilot.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1751",
+        "TASK-1752",
+        "TASK-1753",
+        "TASK-1754"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Cross-module verification; requires all prior tasks merged in the worktree.",
+      "assigned_to": null,
+      "started_at": "2026-07-13T22:53:01+00:00",
+      "completed_at": "2026-07-14T01:06:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1755-integration-tests-docs.md"
+    }
+  ]
+}

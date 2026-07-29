@@ -30,7 +30,7 @@ from parrot.core.events.lifecycle.events import (
 from parrot.observability.attributes import resolve_gen_ai_system
 
 if TYPE_CHECKING:
-    from parrot.core.events.lifecycle.registry import EventRegistry
+    from parrot.core.events.lifecycle import EventRegistry
     from parrot.observability.cost.calculator import CostCalculator
 
 logger = logging.getLogger(__name__)

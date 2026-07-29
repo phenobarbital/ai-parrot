@@ -1,0 +1,23 @@
+{
+  "feat_id": "FEAT-375",
+  "mode_detected": "enrichment",
+  "mode_rationale": "Feature addition to an existing, healthy subsystem (dev_loop) — not a bug investigation. Research aims to map integration points for a new external-CLI sub-agent.",
+  "wiki_available": true,
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "params": {"question": "dev_loop flow subagent dispatcher agent builder"}, "intent": "Orient: how the dev-loop flow builds and dispatches its Claude subagents", "priority": 1},
+    {"id": "Q002", "type": "wiki_query", "params": {"question": "dev_loop code review node CodeReviewNode findings"}, "intent": "Orient: how adversarial/code review is currently performed in the loop", "priority": 1},
+    {"id": "Q003", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py"}, "intent": "Understand the subagent definition contract (name, prompt file, tools, model)", "priority": 1},
+    {"id": "Q004", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatcher.py"}, "intent": "Understand how subagents are invoked (process model, permission modes, streaming)", "priority": 1},
+    {"id": "Q005", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/code_review.py"}, "intent": "Map the code-review pipeline that a codex adversarial reviewer would plug into", "priority": 1},
+    {"id": "Q006", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/agent_builder.py"}, "intent": "How agents are constructed/configured (extension point for a CodexAgent)", "priority": 2},
+    {"id": "Q007", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/config.py"}, "intent": "Config surface: where codex binary path / enable flag / sandbox mode would live", "priority": 2},
+    {"id": "Q008", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/development.py"}, "intent": "How development tasks are executed by the worker subagent (invocation pattern to mirror)", "priority": 2},
+    {"id": "Q009", "type": "grep", "params": {"pattern": "create_subprocess|subprocess", "path": "packages/ai-parrot/src/parrot/flows/dev_loop"}, "intent": "Existing async shell-execution helpers to reuse for codex exec", "priority": 2},
+    {"id": "Q010", "type": "grep", "params": {"pattern": "codex", "path": "packages/ai-parrot/src", "flags": "-ri"}, "intent": "Any existing codex references in the codebase", "priority": 2},
+    {"id": "Q011", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-codereview.md"}, "intent": "Current review brief format — template for a codex adversarial brief", "priority": 2},
+    {"id": "Q012", "type": "git_log", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/", "since": "3 months"}, "intent": "Recent activity / in-flight work that could conflict", "priority": 3},
+    {"id": "Q013", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/models.py"}, "intent": "Pydantic contracts (ReviewReport etc.) a codex reviewer must emit", "priority": 2},
+    {"id": "Q014", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/agent_pool.py"}, "intent": "Agent pool lifecycle — where a codex agent would be registered", "priority": 3},
+    {"id": "Q015", "type": "wiki_query", "params": {"question": "dev_loop QA node acceptance criteria runner shell execution"}, "intent": "Orient: QA node shell-criterion execution as a possible reuse path", "priority": 3}
+  ]
+}

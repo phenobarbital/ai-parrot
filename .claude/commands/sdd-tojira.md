@@ -426,7 +426,7 @@ The `jira:` metadata in the spec enables:
 
 ## Reference
 - Jira tool (MCP): `mcp_mcp-atlassian_jira_create_issue`
-- Jira tool (ai-parrot): `JiraToolkit.jira_create_issue()`
+- Jira tool: `JiraToolkit.jira_create_issue()`
 - Spec template: `sdd/templates/spec.md`
 - Per-spec task index: `sdd/tasks/index/<feature-slug>.json`
 - SDD methodology: `sdd/WORKFLOW.md`

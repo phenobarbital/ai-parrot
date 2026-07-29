@@ -28,6 +28,10 @@ class A2AAgentConfig:
         tags: Tags describing the agent, surfaced in the AgentCard.
         welcome_message: Message sent when a new conversation starts.
         system_prompt_override: Override the agent's default system prompt.
+        output_mode: Output mode requested from the agent on every A2A turn
+            (default ``"text"`` — markdown-free plain text, since A2A
+            consumers such as Microsoft Copilot render TextParts literally).
+            Set to ``"default"`` to keep the agent's native (markdown) output.
         jwt_secret: Shared secret for JWT auth on inbound A2A requests.
         api_key: Shared secret for API-Key auth on inbound A2A requests.
         api_key_header: Header name that carries ``api_key`` (default
@@ -53,6 +57,7 @@ class A2AAgentConfig:
     tags: List[str] = field(default_factory=list)
     welcome_message: Optional[str] = None
     system_prompt_override: Optional[str] = None
+    output_mode: str = "text"
 
     # Security
     jwt_secret: Optional[str] = None
@@ -105,6 +110,7 @@ class A2AAgentConfig:
             tags=data.get("tags", []),
             welcome_message=data.get("welcome_message"),
             system_prompt_override=data.get("system_prompt_override"),
+            output_mode=data.get("output_mode", "text"),
             jwt_secret=data.get("jwt_secret"),
             api_key=data.get("api_key"),
             api_key_header=data.get("api_key_header", "X-API-Key"),

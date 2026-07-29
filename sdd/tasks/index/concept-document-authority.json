@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1084-yaml-knowledge-layer.md"
+      "file": "sdd/tasks/completed/TASK-1084-yaml-knowledge-layer.md"
     },
     {
       "id": "TASK-1085",
@@ -82,7 +82,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1087-pgvector-metadata-filters-extension.md"
+      "file": "sdd/tasks/completed/TASK-1087-pgvector-metadata-filters-extension.md"
     },
     {
       "id": "TASK-1088",
@@ -121,7 +121,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1089-pageindex-scoped-search.md"
+      "file": "sdd/tasks/completed/TASK-1089-pageindex-scoped-search.md"
     },
     {
       "id": "TASK-1090",

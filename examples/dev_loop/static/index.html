@@ -3,408 +3,1610 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Dev-Loop Console — FEAT-129</title>
+<title>Agent Flow — Dev-Loop Console</title>
 <style>
-  :root {
-    --bg: #0f1115;
-    --panel: #161a22;
-    --panel2: #1d222d;
-    --border: #20242f;
-    --text: #e6e9ef;
-    --muted: #8a93a6;
-    --accent: #5b9dff;
-    --ok: #4ade80;
-    --warn: #facc15;
-    --err: #f87171;
-    --queued: #64748b;
+/* ─────────────────────────────────────────────────────────────────────
+   Design system — the "industry blueprint" language of the AFD mockup
+   (static/afd.html), rebuilt as self-contained CSS. The mockup pulled a
+   design-system bundle that does not ship with this example, so every
+   token and class it referenced is defined here.
+   ───────────────────────────────────────────────────────────────────── */
+:root {
+  --color-bg: #0b1120;
+  --color-surface: #111827;
+  --color-text: #e2e8f0;
+  --color-divider: #1e293b;
+  --color-accent: #3b82f6;
+  --color-accent-100: #1e3a5f;
+  --color-accent-700: #60a5fa;
+  --color-accent-800: #93c5fd;
+  --color-accent-900: #dc2626;
+  --font-heading: ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-body: ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-bg: #f1f5f9;
+    --color-surface: #ffffff;
+    --color-text: #0f172a;
+    --color-divider: #cbd5e1;
+    --color-accent: #2563eb;
+    --color-accent-100: #dbeafe;
+    --color-accent-700: #1d4ed8;
+    --color-accent-800: #1e40af;
+    --color-accent-900: #dc2626;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif;
-    background: var(--bg); color: var(--text);
-  }
-  header.app {
-    display: flex; align-items: center; gap: 16px;
-    padding: 14px 22px; border-bottom: 1px solid var(--border);
-    background: var(--panel); position: sticky; top: 0; z-index: 10;
-  }
-  header.app h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  header.app .run { color: var(--muted); font-family: ui-monospace, monospace; }
-  header.app .grow { flex: 1; }
-  button {
-    background: var(--accent); color: #fff; border: 0; border-radius: 6px;
-    padding: 8px 14px; font-weight: 600; cursor: pointer;
-  }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.ghost {
-    background: transparent; color: var(--text); border: 1px solid #2a3040;
-  }
+}
+:root[data-theme="light"] {
+  --color-bg: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-text: #0f172a;
+  --color-divider: #cbd5e1;
+  --color-accent: #2563eb;
+  --color-accent-100: #dbeafe;
+  --color-accent-700: #1d4ed8;
+  --color-accent-800: #1e40af;
+  --color-accent-900: #dc2626;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--color-bg); color: var(--color-text);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+}
+h6 { font-family: var(--font-heading); font-size: 13px; font-weight: 700;
+     letter-spacing: .1em; text-transform: uppercase; margin: 0; }
+a { color: var(--color-accent-700); text-decoration: none; }
+a:hover { color: var(--color-accent); text-decoration: underline; }
+@keyframes afpulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 
-  /* Layout */
-  main {
-    display: grid; grid-template-columns: 380px 1fr;
-    gap: 14px; padding: 18px 22px;
-  }
-  @media (max-width: 1100px) {
-    main { grid-template-columns: 1fr; }
-  }
+.nav { display: flex; align-items: center; }
+.nav-brand { font-family: var(--font-heading); font-size: 19px; font-weight: 700; }
 
-  /* Form */
-  .form {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; padding: 14px; display: flex; flex-direction: column;
-    gap: 10px; min-width: 320px;
-  }
-  .form h2 { margin: 0 0 4px; font-size: 14px; color: var(--muted); font-weight: 600; }
-  .form label {
-    display: flex; flex-direction: column; gap: 4px; font-size: 12px;
-    color: var(--muted);
-  }
-  .form input, .form textarea {
-    background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 10px; font: inherit; font-size: 13px;
-  }
-  .form textarea { resize: vertical; min-height: 64px; font-family: ui-monospace, monospace; }
-  .form textarea.tall { min-height: 110px; }
-  .form .row { display: grid; grid-template-columns: 1fr 110px; gap: 8px; }
-  .form button { align-self: flex-start; }
-  .form .err {
-    background: #2b1517; border: 1px solid #5a2228; color: var(--err);
-    border-radius: 6px; padding: 6px 10px; font-size: 12px;
-    white-space: pre-wrap; display: none;
-  }
-  .form .err.show { display: block; }
-  .form .hint {
-    font-size: 11px; color: var(--muted); margin-top: -4px;
-  }
-  .form .hint code {
-    background: var(--bg); padding: 1px 5px; border-radius: 3px;
-    font-size: 11px;
-  }
+/* Blueprint box: hairline frame with accent corner ticks. */
+.blueprint { position: relative; border: 1px solid var(--color-divider);
+             background: var(--color-bg); }
+.blueprint > .corner { position: absolute; width: 6px; height: 6px;
+                       border: 1px solid var(--color-accent); display: block; }
+.corner.tl { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.corner.tr { top: -1px; right: -1px; border-left: 0; border-bottom: 0; }
+.corner.bl { bottom: -1px; left: -1px; border-right: 0; border-top: 0; }
+.corner.br { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
 
-  /* Board */
-  .board {
-    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 12px;
-  }
-  @media (max-width: 1500px) {
-    .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (max-width: 700px) {
-    .board { grid-template-columns: 1fr; }
-  }
-  .node {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; height: 460px;
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  .node header {
-    padding: 10px 12px; border-bottom: 1px solid var(--border);
-    background: var(--panel2); position: static;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .node h2 { font-size: 13px; margin: 0; font-weight: 600; }
-  .pill {
-    padding: 2px 8px; border-radius: 999px; font-size: 11px;
-    font-weight: 600; background: var(--queued); color: #0b0d12;
-  }
-  .pill.running  { background: var(--accent); color: #fff; }
-  .pill.passed   { background: var(--ok); color: #052; }
-  .pill.failed   { background: var(--err); color: #200; }
-  .pill.queued   { background: var(--queued); color: #0b0d12; }
+.btn {
+  font: inherit; font-size: 13px; border-radius: 0; cursor: pointer;
+  padding: 8px 15px; display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid var(--color-divider); background: transparent;
+  color: var(--color-text); position: relative;
+}
+.btn:hover:not(:disabled) { border-color: var(--color-accent); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary { background: var(--color-accent); border-color: var(--color-accent);
+               color: #fff; font-weight: 700; }
+.btn-primary:hover:not(:disabled) { background: var(--color-accent-700); }
+.btn-ghost { border-color: transparent; }
+.btn-danger { border-color: var(--color-accent-900); color: var(--color-accent-900); }
 
-  .events {
-    flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 10px;
-    font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 12px;
-    overscroll-behavior: contain;
-  }
-  .ev { padding: 4px 0; border-bottom: 1px dashed #1f2330; cursor: pointer; }
-  .ev:last-child { border-bottom: 0; }
-  .ev:hover .k { text-decoration: underline; }
-  .ev .tg {
-    display: inline-block; width: 12px; color: var(--muted);
-    transition: transform 0.1s ease; user-select: none;
-  }
-  .ev.open .tg { transform: rotate(90deg); }
-  .ev .k { color: var(--accent); }
-  .ev .ts { color: var(--muted); margin-right: 6px; }
-  .ev pre {
-    margin: 4px 0 0; padding: 6px 8px; background: #0b0e15;
-    border-radius: 4px; max-height: 220px; overflow: auto;
-    color: var(--muted); font-size: 11px; cursor: text;
-    display: none;
-  }
-  .ev.open pre { display: block; }
-  footer {
-    padding: 10px 22px; color: var(--muted); font-size: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .legend { display: flex; gap: 14px; }
-  .legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.tag { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px;
+       font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
+.tag-neutral { background: color-mix(in srgb, var(--color-text) 9%, transparent); }
+.tag-outline { border: 1px solid var(--color-divider); }
+.tag-danger { background: var(--color-accent-900); color: #fff; }
+
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field > label, .field-label {
+  font-size: 11.5px; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--color-text) 62%, transparent);
+}
+.input, select.input, textarea.input {
+  font: inherit; font-size: 13.5px; padding: 8px 10px; border-radius: 0;
+  border: 1px solid var(--color-divider); background: var(--color-surface);
+  color: var(--color-text); width: 100%; min-width: 0;
+}
+.input:focus { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+.input:disabled { opacity: .6; }
+textarea.input { resize: vertical; }
+.hint { margin: 5px 0 0; font-size: 11px; line-height: 1.5;
+        color: color-mix(in srgb, var(--color-text) 52%, transparent); }
+
+.seg { display: flex; border: 1px solid var(--color-divider); flex-wrap: wrap; }
+.seg-opt { flex: 1; display: flex; align-items: center; justify-content: center;
+           gap: 6px; padding: 7px 10px; font-size: 12.5px; cursor: pointer;
+           border-right: 1px solid var(--color-divider); user-select: none;
+           white-space: nowrap; }
+.seg-opt:last-child { border-right: 0; }
+.seg-opt.on { background: var(--color-accent-100); color: var(--color-accent-800); }
+
+.table { width: 100%; border-collapse: collapse; }
+.table td, .table th { padding: 6px 8px; border-bottom: 1px solid var(--color-divider);
+                       text-align: left; font-size: 12.5px; }
+.table th { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase;
+            color: color-mix(in srgb, var(--color-text) 55%, transparent);
+            font-weight: 600; }
+
+.mono { font-family: var(--font-mono); }
+.muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.micro { font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+         color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.rule { flex: 1; height: 1px; background: var(--color-divider); min-width: 16px; }
+.sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+            flex-wrap: wrap; }
+.hidden { display: none !important; }
+
+.err-box { border: 1px solid var(--color-accent-900); background:
+           color-mix(in srgb, var(--color-accent-900) 12%, transparent);
+           color: var(--color-accent-900); padding: 8px 12px; font-size: 12.5px;
+           white-space: pre-wrap; }
+
+.ev-row { border-bottom: 1px dashed color-mix(in srgb, var(--color-text) 12%, transparent);
+          padding: 5px 0; }
+.ev-head { display: flex; gap: 10px; align-items: baseline; cursor: pointer;
+           font-family: var(--font-mono); font-size: 12px; }
+.ev-head .caret { width: 9px; }
+.ev-json { margin: 6px 0 2px; padding: 8px 10px; background: var(--color-surface);
+           border: 1px solid var(--color-divider); font-family: var(--font-mono);
+           font-size: 11.5px; line-height: 1.6; overflow: auto; max-height: 240px;
+           white-space: pre-wrap; word-break: break-word;
+           color: color-mix(in srgb, var(--color-text) 78%, transparent); }
+
+.pill { display: inline-flex; align-items: center; padding: 2px 9px; font-size: 11px;
+        letter-spacing: .04em; text-transform: uppercase; }
+.pill.idle, .pill.queued { background: color-mix(in srgb, var(--color-text) 8%, transparent);
+                           color: color-mix(in srgb, var(--color-text) 58%, transparent); }
+.pill.running { background: var(--color-accent); color: var(--color-bg);
+                animation: afpulse 1.4s ease-in-out infinite; }
+.pill.completed { background: var(--color-accent-100); color: var(--color-accent-800); }
+.pill.failed { background: var(--color-accent-900); color: #fff; }
+.pill.skipped { background: color-mix(in srgb, var(--color-text) 8%, transparent);
+                color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+
+.dot { display: block; width: 9px; height: 9px; flex: none;
+       background: color-mix(in srgb, var(--color-text) 18%, transparent); }
+.dot.running { background: var(--color-accent); animation: afpulse 1.2s ease-in-out infinite; }
+.dot.completed { background: var(--color-accent); }
+.dot.failed { background: var(--color-accent-900); }
+
+.scroll { overflow-y: auto; overscroll-behavior: contain; }
+.wrap { max-width: 1560px; margin: 0 auto; padding: 26px 28px 80px; }
+.agent-row { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1.4fr) 78px 38px;
+             gap: 8px; align-items: end; }
+.judge-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.3fr) 38px;
+             gap: 8px; align-items: end; }
+@media (max-width: 1000px) { .cols-2 { grid-template-columns: 1fr !important; } }
+
+#theme-toggle { font-size: 18px; padding: 6px 10px; line-height: 1; border-color: var(--color-divider); }
+#theme-toggle:hover { border-color: var(--color-accent); }
 </style>
+<script>
+(function(){var t=localStorage.getItem('afd-theme');if(t)document.documentElement.setAttribute('data-theme',t)})();
+</script>
 </head>
 <body>
-<header class="app">
-  <h1>Dev-Loop Console</h1>
-  <span class="run" id="run-label">no run yet</span>
-  <span class="grow"></span>
-  <button class="ghost" id="reconnect-btn" disabled>Reconnect</button>
-</header>
 
-<main>
-  <form class="form" id="incident-form">
-    <h2>Open an incident</h2>
+<div class="nav" style="border-bottom:1px solid var(--color-divider);padding:12px 28px;gap:20px;position:sticky;top:0;z-index:20;background:var(--color-bg)">
+  <span class="nav-brand" style="display:flex;align-items:baseline;gap:10px;margin-right:auto">Agent Flow
+    <span class="mono micro" id="mode-label">development</span>
+  </span>
+  <span class="mono muted" style="font-size:12px" id="run-label">no run yet</span>
+  <span class="tag tag-outline"><i class="dot" id="conn-dot"></i><span id="conn-label">idle</span></span>
+  <button class="btn btn-danger hidden" type="button" id="stop-btn">Stop run</button>
+  <button class="btn" type="button" id="restart-btn">Restart run</button>
+  <button class="btn" type="button" id="theme-toggle" title="Toggle dark/light mode"></button>
+</div>
 
-    <fieldset class="kind-group" style="border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 0;">
-      <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Kind</legend>
-      <label style="flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
-        <input type="radio" name="kind" value="Bug" checked /> Bug
-      </label>
-      <label style="flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
-        <input type="radio" name="kind" value="Enhancement" /> Enhancement
-      </label>
-      <label style="flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
-        <input type="radio" name="kind" value="New Feature" /> New Feature
-      </label>
-    </fieldset>
+<div class="wrap">
 
-    <label>Summary <span style="color: var(--muted); font-weight: normal;">(max 255 chars — Jira limit)</span>
-      <input name="summary" required minlength="10" maxlength="255"
-             placeholder="Customer sync drops the last row on >1000 records" />
-    </label>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--color-divider);border:1px solid var(--color-divider);margin-bottom:26px" id="steps"></div>
 
-    <label>Affected component
-      <input name="affected_component" required
-             placeholder="etl/customers/sync.yaml" />
-    </label>
+  <!-- ── 01 REQUEST ──────────────────────────────────────────────── -->
+  <section style="margin-bottom:26px">
+    <div class="sec-head"><h6>01 — Request</h6><span class="rule"></span></div>
 
-    <label>Detailed description (optional, no length cap — goes to ticket body)
-      <textarea name="description" class="tall"
-                placeholder="What did you observe? Steps to reproduce, error messages, ticket links…"></textarea>
-    </label>
-
-    <label>Acceptance criteria — one per line
-      <textarea name="acceptance_criteria" class="tall" required
-                placeholder="task etl/customers/sync.yaml&#10;ruff check .&#10;pytest tests/etl/test_customers.py -v&#10;The customer count must equal 1500 after a sync of a 1500-row CSV"></textarea>
-    </label>
-    <div class="hint">
-      Lines starting with <code>task</code> · <code>flowtask</code> · <code>pytest</code> ·
-      <code>ruff</code> · <code>mypy</code> · <code>pylint</code>
-      become <strong>shell criteria</strong> (run as subprocess; exit
-      code 0 = pass). Anything else becomes a <strong>manual
-      criterion</strong> — its text is attached to the Jira ticket for
-      the human reviewer to sign off. Mix freely.
+    <div class="blueprint hidden" id="request-collapsed" style="padding:14px 18px;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <span class="tag tag-accent" id="rc-kind">bug</span>
+      <span style="font-family:var(--font-heading);font-size:17px;flex:1;min-width:240px" id="rc-summary"></span>
+      <span class="mono muted" style="font-size:12px" id="rc-target"></span>
+      <span class="muted" style="font-size:12px" id="rc-criteria"></span>
+      <button class="btn" type="button" id="edit-request-btn">Edit request</button>
     </div>
 
-    <div class="row">
-      <label>CloudWatch log group (optional)
-        <input name="log_group" placeholder="(default: fluent-bit-cloudwatch)" />
-      </label>
-      <label>Window (min)
-        <input name="time_window_minutes" type="number" min="1" max="1440" value="60" />
-      </label>
+    <form class="blueprint" id="request-form" style="padding:22px 24px">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+
+      <div class="cols-2" style="display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:26px;align-items:start">
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+
+          <div id="work-intake" style="display:flex;flex-direction:column;gap:14px">
+            <div class="field">
+              <label for="f-description">Describe the work — the agent reads this first</label>
+              <textarea id="f-description" class="input mono" style="min-height:150px;font-size:13px;line-height:1.6"
+                placeholder="Customer sync drops the last row on payloads over 1000 records. Started after the pagination change in release 2.14. Reproduce with a 1500-row CSV: the destination table ends at 1499 rows."></textarea>
+              <p class="hint">Plain prose is fine. Research pulls the ticket, the logs and the failing test on its own — anything you add below only narrows the search.</p>
+            </div>
+            <div class="field">
+              <label for="f-summary">Summary — becomes the ticket title (255 char Jira limit)</label>
+              <input id="f-summary" class="input" maxlength="255"
+                     placeholder="Customer sync drops the last row on payloads over 1000 records" />
+            </div>
+          </div>
+
+          <div id="feature-intake" class="hidden" style="display:flex;flex-direction:column;gap:14px">
+            <div class="field">
+              <label for="f-document-path">Driving document — the SDD markdown the run plans from</label>
+              <input id="f-document-path" class="input mono"
+                     placeholder="sdd/proposals/my-feature.brainstorm.md" />
+              <p class="hint">Must exist and be readable on the server. The brief is validated before a single dispatch is spent.</p>
+            </div>
+            <div class="field">
+              <span class="field-label">Document kind — decides how much the planner must generate</span>
+              <div class="seg" id="f-document-kind"></div>
+              <p class="hint" id="document-kind-hint"></p>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="field">
+            <span class="field-label">Kind — picks the intake branch</span>
+            <div class="seg" id="f-kind"></div>
+            <p class="hint" id="kind-hint"></p>
+          </div>
+
+          <div class="blueprint" style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <span class="micro">Ready to dispatch</span>
+            <div id="ready-rows" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+
+          <button class="btn btn-primary blueprint" type="submit" id="submit-btn" style="height:44px;font-size:15px;justify-content:center">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <span id="submit-label">Dispatch run</span>
+          </button>
+          <div class="err-box hidden" id="form-err"></div>
+          <p class="hint" style="margin:0">Dispatching opens a run and streams every node event below. Nothing is pushed to Jira or GitHub until Handoff.</p>
+        </div>
+      </div>
+
+      <div style="margin-top:20px;border-top:1px solid var(--color-divider);padding-top:14px">
+        <button class="btn btn-ghost" type="button" id="adv-toggle" style="padding-inline:0;gap:8px">
+          <span class="mono" style="display:inline-block;width:10px" id="adv-caret">▾</span>
+          Special &amp; advanced options
+          <span class="tag tag-neutral" style="margin-left:6px" id="adv-badge"></span>
+        </button>
+        <div id="adv-body" style="margin-top:14px">
+          <div style="display:flex;flex-wrap:wrap;border-bottom:1px solid var(--color-divider);margin-bottom:16px" id="adv-tabs"></div>
+          <div class="cols-2" style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:26px;align-items:start;min-height:190px">
+            <div id="adv-fields"></div>
+            <div class="blueprint" style="padding:14px;display:flex;flex-direction:column;gap:8px">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <span class="micro" style="color:var(--color-accent-700)">What this tab does</span>
+              <p style="margin:0;font-size:12.5px;line-height:1.6;color:color-mix(in srgb,var(--color-text) 74%,transparent)" id="adv-note"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── 02 EXECUTION ────────────────────────────────────────────── -->
+  <section class="hidden" id="exec-section" style="margin-bottom:26px">
+    <div class="sec-head">
+      <h6>02 — Execution</h6>
+      <span class="muted" style="font-size:12px" id="exec-progress"></span>
+      <span class="rule"></span>
+      <span class="micro">View</span>
+      <div class="seg" id="view-picker" style="flex:0 0 auto"></div>
     </div>
+    <div id="exec-body"></div>
+  </section>
 
-    <label>Existing Jira ticket (optional)
-      <input name="existing_issue_key"
-             placeholder="e.g. NAV-8241 — leave empty to auto-detect or create" />
-    </label>
-    <div class="hint">
-      Leave blank to let Research auto-detect duplicates (open tickets in
-      <code>JIRA_PROJECT</code> with the same summary). Set this to force
-      re-use of a specific ticket — Research will append a "re-triggered"
-      comment instead of opening a new one.
+  <!-- ── 03 SUMMARY ──────────────────────────────────────────────── -->
+  <section class="hidden" id="summary-section" style="margin-bottom:20px">
+    <div class="sec-head">
+      <h6>03 — Job summary</h6>
+      <span class="rule"></span>
+      <span class="muted" style="font-size:12px" id="sum-finished"></span>
     </div>
-
-    <div class="err" id="form-err"></div>
-    <button type="submit" id="submit-btn">Submit incident</button>
-  </form>
-
-  <section class="board" id="board"></section>
-</main>
-
-<footer>
-  <div class="legend">
-    <span><i class="swatch" style="background: var(--queued)"></i> idle / queued</span>
-    <span><i class="swatch" style="background: var(--accent)"></i> running</span>
-    <span><i class="swatch" style="background: var(--ok)"></i> passed</span>
-    <span><i class="swatch" style="background: var(--err)"></i> failed</span>
-  </div>
-</footer>
+    <div id="summary-body"></div>
+    <div class="blueprint" style="margin-top:18px;padding:16px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <span style="font-family:var(--font-heading);font-size:18px" id="sum-headline"></span>
+      <span class="muted" style="font-size:12.5px" id="sum-subline"></span>
+      <span class="rule"></span>
+      <button class="btn" type="button" id="view-report-btn">View report</button>
+      <button class="btn" type="button" id="bundle-btn">Download run bundle</button>
+      <button class="btn" type="button" id="another-btn">Start another run</button>
+    </div>
+    <div class="blueprint hidden" id="report-box" style="margin-top:14px;padding:16px 18px">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <pre class="ev-json" style="max-height:560px;margin:0" id="report-pre"></pre>
+    </div>
+  </section>
+</div>
 
 <script type="module">
-const NODES = [
-  { id: "intent_classifier",  label: "1. Classify"   },  // FEAT-132
-  { id: "bug_intake",         label: "2. Bug Intake" },
-  { id: "research",           label: "3. Research"   },
-  { id: "development",        label: "4. Development"},
-  { id: "qa",                 label: "5. QA"         },
-  { id: "deployment_handoff", label: "6. Handoff"    },
-  { id: "close",              label: "7. Close"      },  // FEAT-250
-  { id: "failure_handler",    label: "8. Failure"    },  // on_error fan-in
-];
+"use strict";
 
-const board    = document.getElementById("board");
-const form     = document.getElementById("incident-form");
-const formErr  = document.getElementById("form-err");
-const submitBtn= document.getElementById("submit-btn");
-const reBtn    = document.getElementById("reconnect-btn");
-const runLabel = document.getElementById("run-label");
+/* ═══════════════════════════════════════════════════════════════════
+   Node topologies. Declared client-side because each mode's node set is
+   fixed by definition.py — the stream only reports which of them fired.
+   ═══════════════════════════════════════════════════════════════════ */
+const TOPOLOGY = {
+  bug: [
+    { id: "intent_classifier",  label: "Classify",    role: "router · validates and routes the brief" },
+    { id: "bug_intake",         label: "Bug Intake",  role: "normalises the request into a bug brief" },
+    { id: "research",           label: "Research",    role: "logs, Jira ticket, spec, tasks, worktree" },
+    { id: "development",        label: "Development", role: "writes the patch, iterates on the loop" },
+    { id: "qa",                 label: "QA",          role: "acceptance criteria + adversarial review" },
+    { id: "deployment_handoff", label: "Handoff",     role: "opens the PR, transitions the ticket" },
+    { id: "close",              label: "Close",       role: "closes the loop" },
+    { id: "failure_handler",    label: "Failure",     role: "on_error fan-in — parks the run for a human" },
+  ],
+  feature: [
+    { id: "intent_classifier",  label: "Classify",    role: "router · validates the feature brief" },
+    { id: "planner",            label: "Planner",     role: "spec + task index + worktree, sizes the pool" },
+    { id: "development",        label: "Development", role: "parallel dev agents over dependency waves" },
+    { id: "synthesis",          label: "Synthesis",   role: "post-merge reconciliation of the workers" },
+    { id: "qa",                 label: "QA",          role: "criteria + N-judge panel (majority)" },
+    { id: "feedback_router",    label: "Feedback",    role: "retry / escalate / accept-with-notes" },
+    { id: "feature_handoff",    label: "Handoff",     role: "draft PR against dev + docs + wiki" },
+    { id: "close",              label: "Close",       role: "closes the loop" },
+    { id: "failure_handler",    label: "Failure",     role: "on_error fan-in — parks the run for a human" },
+  ],
+};
 
-const cards = new Map();
-for (const n of NODES) {
-  const card = document.createElement("section");
-  card.className = "node";
-  card.innerHTML = `
-    <header>
-      <h2>${n.label}</h2>
-      <span class="grow" style="flex:1"></span>
-      <span class="pill queued" data-status>idle</span>
-    </header>
-    <div class="events" data-events></div>`;
-  board.appendChild(card);
-  cards.set(n.id, {
-    pill: card.querySelector("[data-status]"),
-    events: card.querySelector("[data-events]"),
-  });
+const KIND_HINTS = {
+  bug: "Log-driven triage: BugIntake pulls CloudWatch excerpts before Research opens the ticket.",
+  enhancement: "Skips BugIntake and goes straight to Research — a Jira Story is created.",
+  new_feature: "Skips BugIntake and goes straight to Research — a Jira New Feature is created.",
+  feature: "The SDD topology: plans from a document, develops in parallel, synthesises, and ends in a draft PR against dev. Jira is optional.",
+};
+
+const DOC_KIND_HINTS = {
+  brainstorm: "The planner runs the full chain: /sdd-spec, then /sdd-task, then creates the worktree.",
+  proposal: "The planner runs /sdd-spec and /sdd-task, then creates the worktree.",
+  spec: "The spec is already resolved — the planner skips /sdd-spec and goes straight to /sdd-task.",
+};
+
+const TAB_NOTES = {
+  criteria: "Lines starting with an allowlisted head run as shell criteria — exit code 0 passes. Every other line becomes a manual criterion attached to the ticket for a human to sign off. Mix freely.",
+  context: "Narrows what Research starts from. Leave the component blank and Research locates the fault itself, which costs an extra tool round-trip.",
+  observability: "Research queries these logs before it reads any code, so a tight window keeps the evidence relevant and the token bill down.",
+  jira: "Leave the issue key blank and Research auto-detects duplicates — open tickets in the project with the same summary. Set it to force re-use.",
+  planning: "Feature mode plans from a document. The planner generates whatever SDD artifacts are missing, creates the worktree, and sizes the dev pool from the first dependency wave. Jira is optional — no ticket is ever created.",
+  agents: "One dispatcher per agent. Leave the pool empty to let the server default decide (bug mode) or the planner size it from the task graph (feature mode). An empty model means the backend's own default.",
+  review: "Adversarial review is not optional. Bug-mode runs pair the primary reviewer with the read-only Codex sdd-secondopinion seat; feature-mode runs carry it as a judge in the panel — appended automatically if you leave it out.",
+  guardrails: "Server-side limits, shown read-only: they come from the deployment's configuration, not from this form.",
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   Application state
+   ═══════════════════════════════════════════════════════════════════ */
+function emptyState() {
+  return {
+    phase: "created", nodes: {}, gates: {}, prUrl: "", jiraKey: "",
+    judgeVerdicts: {}, feedback: [], docs: [], qaAttempts: 0,
+    createdAt: null, finishedAt: null, error: "",
+  };
 }
 
-let ws = null;
-let runId = null;
+const app = {
+  config: null,
+  phase: "idle",           // idle | running | done
+  mode: "bug",             // bug | feature
+  kind: "bug",
+  runId: null,
+  wsEvents: null, wsState: null, connected: false,
+  view: "rail",
+  selected: null,
+  advOpen: true,
+  advTab: "criteria",
+  requestOpen: true,
+  openEvents: new Set(),
+  events: new Map(),       // node_id -> [{ts, kind, payload}]
+  eventCount: 0,
+  s: emptyState(),         // folded session state (view=state)
+  telemetry: { input: 0, output: 0, cost: 0, turns: 0, reported: 0 },
+  form: {
+    description: "", summary: "",
+    documentPath: "", documentKind: "proposal",
+    criteria: "ruff check .\npytest -q\nThe change is covered by a regression test",
+    affectedComponent: "", existingIssueKey: "", jiraIssueKey: "",
+    logGroup: "", timeWindow: "60",
+    devAgents: [], devIsolation: "shared",
+    judges: [], skipQa: false, skipJira: false,
+  },
+};
 
-function setStatus(nodeId, status, label = status) {
-  const card = cards.get(nodeId);
-  if (!card) return;
-  card.pill.className = `pill ${status}`;
-  card.pill.textContent = label;
+/* ═══════════════════════════════════════════════════════════════════
+   Utilities
+   ═══════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function fmtDuration(seconds) {
+  if (seconds == null || !isFinite(seconds)) return "—";
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(2) : seconds.toFixed(1)}s`;
+  const m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
+  if (m < 60) return `${m}m ${String(s).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+const fmtClock = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString() : "—";
+function fmtNum(n) {
+  if (n == null) return "—";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
 }
 
-function appendEvent(nodeId, env) {
-  const card = cards.get(nodeId);
-  if (!card) return;
-  const time = new Date(env.ts * 1000).toLocaleTimeString();
-  const row = document.createElement("div");
-  row.className = "ev";
-  row.innerHTML = `
-    <span class="tg">▸</span>
-    <span class="ts">${time}</span>
-    <span class="k">${env.event_kind}</span>
-    <pre>${escapeHtml(JSON.stringify(env.payload, null, 2))}</pre>`;
-  // Collapsed by default — click the row header to expand/collapse the
-  // full payload. Clicks inside the <pre> are ignored so the JSON can be
-  // selected/scrolled without collapsing the message.
-  row.addEventListener("click", (e) => {
-    if (e.target.closest("pre")) return;
-    row.classList.toggle("open");
-  });
-  card.events.appendChild(row);
-  card.events.scrollTop = card.events.scrollHeight;
+/** One-line gist of an event payload, for the collapsed event row. */
+function briefOf(kind, p) {
+  if (!p || typeof p !== "object") return "";
+  if (p.decision) return String(p.decision);
+  if (p.command || p.cmd) {
+    const c = p.command || p.cmd;
+    return `${c}${p.exit_code != null ? ` → exit ${p.exit_code}` : ""}`;
+  }
+  if (p.criterion) return String(p.criterion).slice(0, 52);
+  if (p.tool_name) return String(p.tool_name);
+  if (p.pr_url) return String(p.pr_url);
+  if (p.issue_key) return String(p.issue_key);
+  if (p.step) return String(p.step);
+  if (p.error) return String(p.error).slice(0, 60);
+  if (p.status) return String(p.status);
+  if (p.kind) return String(p.kind);
+  const keys = Object.keys(p);
+  return keys.length ? `${keys[0]}=${String(p[keys[0]]).slice(0, 40)}` : "";
 }
 
-function escapeHtml(s) {
-  return s.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"})[c]);
+/* ═══════════════════════════════════════════════════════════════════
+   Session-state fold (WebSocket ?view=state)
+
+   The multiplexer sends one `snapshot` envelope then an `action`
+   envelope per state mutation. Rather than mirror the server's whole
+   `reduce()`, this folds only the projections the console renders.
+   ═══════════════════════════════════════════════════════════════════ */
+function adoptSnapshot(snap) {
+  const st = (snap && snap.state) || {};
+  const s = emptyState();
+  s.phase = st.phase || "created";
+  s.prUrl = st.pr_url || "";
+  s.jiraKey = st.jira_issue_key || "";
+  s.createdAt = st.created_at || null;
+  s.finishedAt = st.finished_at || null;
+  s.error = st.error || "";
+  s.qaAttempts = st.qa_attempts || 0;
+  for (const [id, n] of Object.entries(st.nodes || {})) s.nodes[id] = { ...n };
+  s.gates = { ...(st.gates || {}) };
+  s.judgeVerdicts = { ...(st.judge_verdicts || {}) };
+  s.feedback = [...(st.feedback_decisions || [])];
+  s.docs = [...(st.docs_artifacts || [])];
+  app.s = s;
 }
 
-function classify(env) {
-  const k = env.event_kind || "";
-  if (k.endsWith(".queued"))    return "queued";
-  if (k.endsWith(".started"))   return "running";
-  if (k.endsWith(".failed") || k.endsWith(".output_invalid")) return "failed";
-  if (k.endsWith(".completed")) return "passed";
-  if (k === "flow.bug_brief_validated") return "passed";
-  if (k === "flow.intake_validated") return "passed";   // FEAT-132
-  if (k === "flow.pr_opened" || k === "flow.completed") return "passed";
-  // Flow-level node lifecycle (FEAT-250): the Close and FailureHandler
-  // nodes aren't dispatched, so they only emit these envelopes.
-  if (k === "flow.node_started")   return "running";
-  if (k === "flow.node_completed") return "passed";
-  return null;
+function node(id) {
+  if (!app.s.nodes[id]) {
+    app.s.nodes[id] = { node_id: id, status: "idle", dispatch: null, summary: {} };
+  }
+  return app.s.nodes[id];
 }
 
-function handleEnvelope(env) {
-  const node = env.node_id;
-  if (!node) return;
-  appendEvent(node, env);
-  const status = classify(env);
-  if (status) setStatus(node, status, status);
-}
+function foldAction(a) {
+  const s = app.s;
+  switch (a.type) {
+    case "run/created":   s.createdAt = a.ts; s.phase = "created"; break;
+    case "run/closed":    s.finishedAt = a.ts; s.phase = a.phase || "closed"; break;
+    case "run/cancelled": s.phase = "cancelled"; break;
 
-function resetBoard() {
-  for (const [, c] of cards) {
-    c.events.innerHTML = "";
-    c.pill.className = "pill queued";
-    c.pill.textContent = "idle";
+    case "node/started":   { const n = node(a.node_id); n.status = "running"; n.started_at = a.ts; break; }
+    case "node/completed": { const n = node(a.node_id); n.status = "completed"; n.finished_at = a.ts;
+                             n.summary = { ...(n.summary || {}), ...(a.summary || {}) }; break; }
+    case "node/failed":    { const n = node(a.node_id); n.status = "failed"; n.finished_at = a.ts;
+                             n.error = a.error || ""; break; }
+    case "node/skipped":   { node(a.node_id).status = "skipped"; break; }
+
+    case "dispatch/queued":  node(a.node_id).dispatch =
+      { status: "queued", dispatcher: a.dispatcher || "", message_count: 0, tool_use_count: 0 }; break;
+    case "dispatch/started": { const n = node(a.node_id); n.dispatch = n.dispatch || {};
+                               n.dispatch.status = "running"; n.dispatch.started_at = a.ts; break; }
+    case "dispatch/delta":   { const d = node(a.node_id).dispatch;
+                               if (d) d.message_count = (d.message_count || 0) + 1; break; }
+    case "dispatch/tool_use":{ const d = node(a.node_id).dispatch;
+                               if (d) d.tool_use_count = (d.tool_use_count || 0) + 1; break; }
+    case "dispatch/failed":  { const d = node(a.node_id).dispatch;
+                               if (d) { d.status = "failed"; d.last_error = a.error || ""; } break; }
+    case "dispatch/output_invalid": { const d = node(a.node_id).dispatch;
+                               if (d) { d.status = "output_invalid"; d.last_error = a.error || ""; } break; }
+    case "dispatch/completed": {
+      const d = node(a.node_id).dispatch;
+      if (d) {
+        d.status = "completed"; d.finished_at = a.ts;
+        // FEAT-378 TASK-1927 telemetry — every field optional.
+        d.input_tokens = a.input_tokens; d.output_tokens = a.output_tokens;
+        d.total_cost_usd = a.total_cost_usd; d.num_turns = a.num_turns;
+        d.duration_ms = a.duration_ms;
+      }
+      if (a.input_tokens != null || a.output_tokens != null || a.total_cost_usd != null) {
+        const t = app.telemetry;
+        t.reported += 1;
+        t.input += a.input_tokens || 0;
+        t.output += a.output_tokens || 0;
+        t.cost += a.total_cost_usd || 0;
+        t.turns += a.num_turns || 0;
+      }
+      break;
+    }
+
+    case "gate/opened":   s.gates[a.gate.gate_id] = { ...a.gate }; break;
+    case "gate/resolved": { const g = s.gates[a.gate_id];
+                            if (g) { g.status = a.resolution; g.resolved_by = a.resolved_by;
+                                     g.resolved_at = a.ts; g.comment = a.comment || ""; } break; }
+    case "gate/expired":  { const g = s.gates[a.gate_id]; if (g) g.status = "expired"; break; }
+
+    case "run/jiraLinked": s.jiraKey = a.issue_key || ""; break;
+    case "run/prLinked":   s.prUrl = a.pr_url || ""; break;
+    case "run/qaAttemptRecorded": s.qaAttempts = a.attempt || s.qaAttempts; break;
+
+    case "feature/judgeVerdictRecorded": {
+      const round = String(a.round || "1");
+      (s.judgeVerdicts[round] = s.judgeVerdicts[round] || []).push({
+        judge_id: a.judge_id, backend: a.backend, model: a.model, passed: a.passed,
+        findings_count: a.findings_count, summary: a.summary, ts: a.ts,
+      });
+      break;
+    }
+    case "feature/feedbackDecisionRecorded":
+      s.feedback.push({ decision: a.decision, dev_brief: a.dev_brief,
+                        notes: a.notes, qa_attempt: a.qa_attempt, ts: a.ts });
+      break;
+    case "feature/docsArtifactLinked":
+      s.docs.push({ docs_path: a.docs_path, wiki_page_id: a.wiki_page_id, pr_url: a.pr_url });
+      if (a.pr_url && !s.prUrl) s.prUrl = a.pr_url;
+      break;
+    default: break;
   }
 }
 
-function connectWs(rid) {
-  if (ws) ws.close();
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/api/flow/${rid}/ws?view=both&replay=true`);
-  ws.addEventListener("open",   () => reBtn.disabled = true);
-  ws.addEventListener("close",  () => reBtn.disabled = false);
-  ws.addEventListener("error",  () => reBtn.disabled = false);
-  ws.addEventListener("message", (e) => {
-    try { handleEnvelope(JSON.parse(e.data)); }
-    catch (err) { console.error("bad envelope", err, e.data); }
+/* ═══════════════════════════════════════════════════════════════════
+   WebSockets — the only transport, per the server's design
+   ═══════════════════════════════════════════════════════════════════ */
+const wsUrl = (path) =>
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
+
+const isTerminal = (p) => ["succeeded", "failed", "cancelled", "closed"].includes(p);
+
+function connect(runId) {
+  closeSockets();
+
+  // Event log — one envelope per flow/dispatch event, per node.
+  const evs = new WebSocket(wsUrl(`/api/flow/${runId}/ws?view=both&replay=true`));
+  evs.addEventListener("open", () => { app.connected = true; renderChrome(); });
+  evs.addEventListener("close", () => { app.connected = false; renderChrome(); });
+  evs.addEventListener("message", (e) => {
+    let env; try { env = JSON.parse(e.data); } catch { return; }
+    if (!env.node_id) return;
+    const list = app.events.get(env.node_id) || [];
+    list.push({ ts: env.ts, kind: env.event_kind, payload: env.payload });
+    app.events.set(env.node_id, list);
+    app.eventCount += 1;
+    scheduleRender();
+  });
+  app.wsEvents = evs;
+
+  // Authoritative session state — snapshot + folded actions.
+  const sts = new WebSocket(wsUrl(`/api/flow/${runId}/ws?view=state`));
+  sts.addEventListener("message", (e) => {
+    let env; try { env = JSON.parse(e.data); } catch { return; }
+    if (env.event_kind === "snapshot") adoptSnapshot(env.payload);
+    else if (env.event_kind === "action") {
+      const action = env.payload && env.payload.action;
+      if (action) foldAction(action);
+    }
+    if (isTerminal(app.s.phase) && app.phase === "running") finish();
+    scheduleRender();
+  });
+  sts.addEventListener("close", () => {
+    if (app.phase === "running") {
+      if (isTerminal(app.s.phase)) {
+        finish();
+      } else {
+        markNodesTerminal();
+        app.s.phase = "closed";
+        finish();
+      }
+      scheduleRender();
+    }
+  });
+  app.wsState = sts;
+}
+
+function closeSockets() {
+  for (const key of ["wsEvents", "wsState"]) {
+    const ws = app[key];
+    if (ws && ws.readyState <= 1) ws.close();
+    app[key] = null;
+  }
+}
+
+function finish() {
+  app.phase = "done";
+  $("summary-section").classList.remove("hidden");
+}
+
+function markNodesTerminal() {
+  for (const n of Object.values(app.s.nodes)) {
+    if (n.status === "running") n.status = "completed";
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Rendering — batched so a burst of stream events costs one repaint
+   ═══════════════════════════════════════════════════════════════════ */
+let pending = false;
+function scheduleRender() {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; render(); });
+}
+
+function render() {
+  renderChrome();
+  renderSteps();
+  renderReady();
+  renderExecution();
+  renderSummary();
+}
+
+function renderChrome() {
+  $("run-label").textContent = app.runId ? `run_id = ${app.runId}` : "no run yet";
+  $("mode-label").textContent = app.mode === "feature" ? "feature · sdd" : "development";
+  $("conn-label").textContent = app.phase === "running"
+    ? (app.connected ? "streaming" : "reconnecting")
+    : app.phase === "done" ? "stream closed" : "idle";
+  $("conn-dot").className = "dot" +
+    (app.phase === "running" && app.connected ? " running" : app.phase === "done" ? " completed" : "");
+  $("stop-btn").classList.toggle("hidden", app.phase !== "running");
+  $("submit-label").textContent = app.phase === "idle" ? "Dispatch run" : "Re-dispatch run";
+}
+
+function renderSteps() {
+  const nodes = nodesForRender();
+  const finished = nodes.filter((n) => ["completed", "failed", "skipped"].includes(n.status)).length;
+  const touched = nodes.filter((n) => n.status !== "idle").length;
+  const steps = [
+    { num: "01", title: "Request", state: app.phase === "idle" ? "awaiting input" : "submitted" },
+    { num: "02", title: "Execution", state: app.phase === "idle" ? "locked"
+        : app.phase === "done" ? `${finished} of ${touched} nodes finished`
+        : `streaming — ${finished} of ${touched}` },
+    { num: "03", title: "Job summary", state: app.phase === "done" ? summaryHeadline().short : "locked" },
+  ];
+  $("steps").innerHTML = steps.map((s) => `
+    <div style="background:var(--color-bg);padding:12px 16px;display:flex;align-items:center;gap:12px">
+      <span style="font-family:var(--font-heading);font-size:22px;line-height:1;color:var(--color-accent);min-width:28px">${s.num}</span>
+      <span style="display:flex;flex-direction:column;gap:1px;min-width:0">
+        <span style="font-family:var(--font-heading);font-size:16px;line-height:1.1">${esc(s.title)}</span>
+        <span class="micro">${esc(s.state)}</span>
+      </span>
+    </div>`).join("");
+}
+
+function criteriaSummary() {
+  const heads = new Set(app.config?.shell_criteria_heads || []);
+  let shell = 0, manual = 0;
+  for (let line of app.form.criteria.split("\n")) {
+    line = line.trim().replace(/^[-*]\s+/, "");
+    if (!line) continue;
+    const head = line.split(/\s+/)[0].replace(/:$/, "");
+    heads.has(head) ? shell++ : manual++;
+  }
+  return `${shell} shell · ${manual} manual`;
+}
+
+function renderReady() {
+  const f = app.form;
+  const rows = app.mode === "feature"
+    ? [
+        ["document", f.documentPath ? f.documentPath.split("/").pop() : "— required —"],
+        ["doc kind", f.documentKind],
+        ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "planner-sized"],
+        ["judges", `${effectiveJudges().length} · majority`],
+        ["jira", f.jiraIssueKey || "none (optional)"],
+        ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["Jira", f.skipJira ? "SKIPPED" : "active"],
+      ]
+    : [
+        ["kind", app.kind],
+        ["component", f.affectedComponent || "— required —"],
+        ["criteria", criteriaSummary()],
+        ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "server default"],
+        ["review", `${app.config?.defaults?.codereview_agent || "parallel"} + adversary`],
+        ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["Jira", f.skipJira ? "SKIPPED" : "active"],
+      ];
+  $("ready-rows").innerHTML = rows.map(([k, v]) => `
+    <span style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px">
+      <span class="muted">${esc(k)}</span><span class="mono" style="text-align:right">${esc(v)}</span>
+    </span>`).join("");
+}
+
+/* ── 02 Execution ─────────────────────────────────────────────────── */
+function nodesForRender() {
+  const spec = TOPOLOGY[app.mode] || TOPOLOGY.bug;
+  return spec.map((n, i) => {
+    const st = app.s.nodes[n.id] || { status: "idle" };
+    const events = app.events.get(n.id) || [];
+    const elapsed = st.started_at
+      ? ((st.finished_at || Date.now() / 1000) - st.started_at) : null;
+    return {
+      ...n, num: String(i + 1).padStart(2, "0"),
+      status: st.status || "idle", error: st.error || "",
+      dispatch: st.dispatch || null, summary: st.summary || {},
+      events, startedAt: st.started_at, finishedAt: st.finished_at, elapsed,
+    };
   });
 }
 
-function showError(msg) {
-  formErr.textContent = msg;
-  formErr.classList.add("show");
-}
-function clearError() {
-  formErr.textContent = "";
-  formErr.classList.remove("show");
+function eventRowsHtml(nodeId, events) {
+  if (!events.length) {
+    return `<p class="muted" style="font-size:12.5px;padding:10px 0 2px">This node has not been dispatched yet.</p>`;
+  }
+  return events.slice().reverse().map((e, j) => {
+    const key = `${nodeId}:${events.length - 1 - j}`;
+    const open = app.openEvents.has(key);
+    return `<div class="ev-row">
+      <div class="ev-head" data-ev="${esc(key)}">
+        <span class="caret muted">${open ? "▾" : "▸"}</span>
+        <span class="muted">${esc(fmtClock(e.ts))}</span>
+        <span style="color:var(--color-accent-700)">${esc(e.kind)}</span>
+        <span class="rule"></span>
+        <span class="muted">${esc(briefOf(e.kind, e.payload))}</span>
+      </div>
+      ${open ? `<pre class="ev-json">${esc(JSON.stringify(e.payload, null, 2))}</pre>` : ""}
+    </div>`;
+  }).join("");
 }
 
-function buildPayload(fd) {
-  const criteria = (fd.get("acceptance_criteria") || "")
-    .split("\n").map(s => s.trim()).filter(Boolean);
-  const window = parseInt(fd.get("time_window_minutes") || "60", 10);
+function nodeMetaHtml(n) {
+  const d = n.dispatch;
+  if (!d) return "";
+  const bits = [];
+  if (d.dispatcher) bits.push(d.dispatcher);
+  if (d.message_count) bits.push(`${d.message_count} msgs`);
+  if (d.tool_use_count) bits.push(`${d.tool_use_count} tools`);
+  return bits.join(" · ");
+}
+
+function renderExecution() {
+  if (app.phase === "idle") return;
+  const nodes = nodesForRender();
+  $("exec-progress").textContent =
+    `${app.eventCount} envelopes` +
+    (app.s.qaAttempts ? ` · QA attempt ${app.s.qaAttempts + 1}` : "") +
+    (app.phase === "done" ? " · stream closed" : " · streaming");
+
+  const body = $("exec-body");
+
+  if (app.view === "panels") {
+    body.innerHTML = `<div class="scroll" style="max-height:660px;display:flex;flex-direction:column;gap:14px;padding:6px">${
+      nodes.map((n) => `
+        <div class="blueprint" style="padding:0;${n.status === "running"
+          ? "border-color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 6%,transparent)" : ""}">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--color-divider);flex-wrap:wrap">
+            <span class="mono muted" style="font-size:11px">${n.num}</span>
+            <span style="font-family:var(--font-heading);font-size:18px;line-height:1">${esc(n.label)}</span>
+            <span class="pill ${n.status}">${esc(n.status)}</span>
+            <span class="rule"></span>
+            <span class="muted" style="font-size:12px">${esc(nodeMetaHtml(n) || n.role)}</span>
+            <span class="mono" style="font-size:12px;min-width:56px;text-align:right">${esc(fmtDuration(n.elapsed))}</span>
+          </div>
+          ${n.error ? `<div class="err-box" style="margin:10px 14px">${esc(n.error)}</div>` : ""}
+          <div class="scroll" style="max-height:200px;padding:6px 14px 10px">${eventRowsHtml(n.id, n.events)}</div>
+        </div>`).join("")
+    }</div>`;
+    return;
+  }
+
+  if (app.view === "spine") {
+    body.innerHTML = `<div class="scroll" style="max-height:660px;padding:4px">${
+      nodes.map((n) => {
+        const open = app.selected === n.id || n.status === "running" || n.status === "failed";
+        return `<div style="display:grid;grid-template-columns:132px 1fr;gap:20px;align-items:start">
+          <div style="text-align:right;padding-top:9px;display:flex;flex-direction:column;gap:2px">
+            <span class="mono muted" style="font-size:12px">${esc(fmtClock(n.startedAt))}</span>
+            <span class="mono muted" style="font-size:11px">${esc(fmtDuration(n.elapsed))}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:22px 1fr;gap:14px">
+            <div style="display:flex;flex-direction:column;align-items:center">
+              <span class="dot ${n.status}" style="margin-top:12px;width:11px;height:11px"></span>
+              <span style="width:1px;flex:1;min-height:26px;background:var(--color-divider)"></span>
+            </div>
+            <div style="padding:6px 0 20px;min-width:0">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;cursor:pointer" data-node="${esc(n.id)}">
+                <span style="font-family:var(--font-heading);font-size:19px;line-height:1.1">${esc(n.label)}</span>
+                <span class="pill ${n.status}">${esc(n.status)}</span>
+                <span class="muted" style="font-size:12px">${esc(n.role)}</span>
+              </div>
+              ${open
+                ? `<div style="margin-top:8px;border-left:1px solid var(--color-divider);padding-left:14px">${eventRowsHtml(n.id, n.events)}</div>`
+                : `<p class="muted" style="margin:5px 0 0;font-size:12.5px">${n.events.length} events · ${
+                     n.status === "idle" ? "not dispatched" : "finished in " + fmtDuration(n.elapsed)
+                   } — click the title to expand</p>`}
+            </div>
+          </div>
+        </div>`;
+      }).join("")
+    }</div>`;
+    return;
+  }
+
+  // focus rail
+  const sel = nodes.find((n) => n.id === app.selected)
+    || nodes.find((n) => n.status === "running")
+    || [...nodes].reverse().find((n) => n.status !== "idle")
+    || nodes[0];
+  body.innerHTML = `<div class="cols-2" style="display:grid;grid-template-columns:300px minmax(0,1fr);gap:18px;align-items:start">
+    <div class="scroll" style="max-height:620px;display:flex;flex-direction:column;gap:1px;background:var(--color-divider);border:1px solid var(--color-divider)">
+      ${nodes.map((n) => `
+        <div data-node="${esc(n.id)}" style="background:${sel && sel.id === n.id
+            ? "color-mix(in srgb,var(--color-accent) 12%,transparent)" : "var(--color-bg)"
+          };padding:11px 13px;display:flex;align-items:center;gap:11px;cursor:pointer">
+          <span class="dot ${n.status}"></span>
+          <span style="display:flex;flex-direction:column;gap:1px;min-width:0;flex:1">
+            <span style="font-family:var(--font-heading);font-size:15px;line-height:1.1">${esc(n.label)}</span>
+            <span class="muted" style="font-size:11px">${esc(n.status)} · ${n.events.length} events</span>
+          </span>
+          <span class="mono muted" style="font-size:11.5px">${esc(fmtDuration(n.elapsed))}</span>
+        </div>`).join("")}
+    </div>
+    <div class="blueprint" style="padding:0;min-height:420px">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--color-divider);flex-wrap:wrap">
+        <span style="font-family:var(--font-heading);font-size:21px;line-height:1">${esc(sel ? sel.label : "—")}</span>
+        <span class="pill ${sel ? sel.status : "idle"}">${esc(sel ? sel.status : "idle")}</span>
+        <span class="rule"></span>
+        <span class="muted" style="font-size:12px">${esc(sel ? (nodeMetaHtml(sel) || sel.role) : "")}</span>
+        <span class="mono" style="font-size:12.5px">${esc(sel ? fmtDuration(sel.elapsed) : "—")}</span>
+      </div>
+      ${sel && sel.error ? `<div class="err-box" style="margin:12px 16px">${esc(sel.error)}</div>` : ""}
+      <div class="scroll" style="max-height:520px;padding:8px 16px 14px">${sel ? eventRowsHtml(sel.id, sel.events) : ""}</div>
+    </div>
+  </div>`;
+}
+
+/* ── 03 Summary ───────────────────────────────────────────────────── */
+const handoffNodeId = () => app.mode === "feature" ? "feature_handoff" : "deployment_handoff";
+
+function prNumber(url) {
+  const tail = String(url || "").replace(/\/+$/, "").split("/").pop();
+  return /^\d+$/.test(tail) ? `#${tail}` : "";
+}
+
+/**
+ * The PR is the contract of a finished run: the Handoff node is the only
+ * step that opens one, so a terminated run without a `pr_url` is surfaced
+ * as a failure rather than quietly rendered as success.
+ */
+function summaryHeadline() {
+  const s = app.s;
+  const handoff = s.nodes[handoffNodeId()];
+  if (s.prUrl) {
+    return {
+      short: `PR open — ${prNumber(s.prUrl) || "awaiting review"}`,
+      long: "Handoff complete — waiting on human review",
+      sub: app.mode === "feature"
+        ? "A draft PR against dev. The flow never merges; a human reviews and merges."
+        : "Close runs once the PR is merged and the manual criteria are signed off.",
+      bad: false,
+    };
+  }
+  if (handoff && handoff.status === "failed") {
+    return { short: "handoff failed — no PR", long: "Handoff failed — no pull request was produced",
+             sub: handoff.error || "The run cannot be considered complete without a PR.", bad: true };
+  }
+  if (s.phase === "failed" || s.nodes.failure_handler?.status === "completed") {
+    return { short: "run parked — needs a human", long: "Run parked by the Failure Handler",
+             sub: s.error || "The run stopped before Handoff — no PR was opened.", bad: true };
+  }
+  return { short: "finished without a PR", long: "Run finished without a pull request",
+           sub: "The Handoff node is the only step that opens a PR; it never reported one for this run.",
+           bad: true };
+}
+
+function effectiveJudges() {
+  if (app.form.judges.length) {
+    const j = [...app.form.judges];
+    const adv = app.config?.adversarial_backend || "codex";
+    if (!j.some((x) => x.agent === adv)) j.push({ agent: adv, model: app.config?.adversarial_model || "" });
+    return j;
+  }
+  return app.config?.default_judge_panel || [];
+}
+
+function renderSummary() {
+  if (app.phase !== "done") return;
+  const s = app.s;
+  const h = summaryHeadline();
+  $("sum-headline").textContent = h.long;
+  $("sum-subline").textContent = h.sub;
+  $("sum-finished").textContent = s.finishedAt
+    ? `finished ${fmtClock(s.finishedAt)} · ${fmtDuration(s.finishedAt - (s.createdAt || s.finishedAt))} wall clock`
+    : "";
+
+  const nodes = nodesForRender().filter((n) => n.status !== "idle");
+  const maxDur = Math.max(1, ...nodes.map((n) => n.elapsed || 0));
+  const t = app.telemetry;
+  const docs = s.docs[s.docs.length - 1] || null;
+  const verdictRounds = Object.entries(s.judgeVerdicts);
+  const gates = Object.values(s.gates);
+
+  const prCard = `
+    <div class="blueprint" style="padding:0">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="padding:16px 18px;border-bottom:1px solid var(--color-divider);display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+        <span style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:240px">
+          <span class="micro" style="color:${h.bad ? "var(--color-accent-900)" : "var(--color-accent-700)"}">${h.bad ? "No pull request" : "Pull request opened"}</span>
+          <span style="font-family:var(--font-heading);font-size:23px;line-height:1.15">${esc(h.long)}</span>
+          ${s.prUrl
+            ? `<a class="mono" style="font-size:12.5px" href="${esc(s.prUrl)}" target="_blank" rel="noopener">${esc(s.prUrl)} ↗</a>`
+            : `<span class="muted" style="font-size:12.5px">${esc(h.sub)}</span>`}
+        </span>
+        <span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+          <span class="tag ${h.bad ? "tag-danger" : "tag-accent"}">${esc(s.phase)}</span>
+          ${s.prUrl ? `<span class="mono muted" style="font-size:12.5px">${esc(prNumber(s.prUrl))}</span>` : ""}
+        </span>
+      </div>
+      ${docs ? `
+      <div style="padding:14px 18px;border-bottom:1px solid var(--color-divider);display:flex;flex-direction:column;gap:6px">
+        <span class="micro">Documentation artifact</span>
+        <span class="mono" style="font-size:12.5px">${esc(docs.docs_path || "—")}</span>
+        <span class="muted" style="font-size:12px">${docs.wiki_page_id
+          ? `wiki page <span class="mono">${esc(docs.wiki_page_id)}</span>`
+          : "wiki ingest skipped"}</span>
+      </div>` : ""}
+      <div style="padding:14px 18px">
+        <span class="micro">Agents</span>
+        <table class="table" style="margin-top:6px">
+          <thead><tr><th>Node</th><th>Status</th><th style="text-align:right">Duration</th><th>Dispatcher</th><th style="text-align:right">Msgs</th><th style="text-align:right">Tools</th></tr></thead>
+          <tbody>${nodes.map((n) => `
+            <tr>
+              <td style="font-family:var(--font-heading)">${esc(n.label)}</td>
+              <td><span class="pill ${n.status}">${esc(n.status)}</span></td>
+              <td class="mono" style="text-align:right">${esc(fmtDuration(n.elapsed))}</td>
+              <td class="mono muted">${esc(n.dispatch?.dispatcher || "—")}</td>
+              <td class="mono" style="text-align:right">${n.dispatch?.message_count ?? "—"}</td>
+              <td class="mono" style="text-align:right">${n.dispatch?.tool_use_count ?? "—"}</td>
+            </tr>`).join("")}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  const side = `
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:11px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <span class="micro">Ticket</span><span class="rule"></span>
+          ${s.jiraKey
+            ? `<span class="mono" style="font-size:14px">${esc(s.jiraKey)}</span>`
+            : `<span class="muted" style="font-size:12.5px">no ticket — ${app.mode === "feature" ? "Jira is optional in feature mode" : "none linked"}</span>`}
+        </div>
+        ${s.qaAttempts ? `<span class="muted" style="font-size:12.5px">QA repair attempts: <span class="mono">${s.qaAttempts}</span></span>` : ""}
+      </div>
+
+      ${verdictRounds.length ? `
+      <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="micro">QA judge panel — majority, fail-closed</span>
+        ${verdictRounds.map(([round, vs]) => `
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <span class="muted" style="font-size:11.5px">round ${esc(round)} — ${vs.filter((v) => v.passed).length}/${vs.length} passed</span>
+            ${vs.map((v) => `
+              <span style="display:flex;gap:9px;align-items:baseline;font-size:12.5px">
+                <span class="pill ${v.passed ? "completed" : "failed"}" style="min-width:58px;justify-content:center">${v.passed ? "pass" : "fail"}</span>
+                <span class="mono">${esc(v.backend || v.judge_id)}${v.model ? ":" + esc(v.model) : ""}</span>
+                <span class="rule"></span>
+                <span class="muted">${v.findings_count} findings</span>
+              </span>`).join("")}
+          </div>`).join("")}
+      </div>` : ""}
+
+      ${s.feedback.length ? `
+      <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="micro">Feedback router</span>
+        ${s.feedback.map((f) => `
+          <span style="display:flex;gap:9px;align-items:baseline;font-size:12.5px;min-width:0">
+            <span class="tag tag-outline">${esc(f.decision)}</span>
+            <span class="muted">attempt ${f.qa_attempt}</span>
+            <span class="rule"></span>
+            <span class="muted" style="max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.notes || f.dev_brief || "")}</span>
+          </span>`).join("")}
+      </div>` : ""}
+
+      ${gates.length ? `
+      <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="micro">Gate audit trail</span>
+        ${gates.map((g) => `
+          <span style="display:flex;gap:9px;align-items:baseline;font-size:12.5px">
+            <span class="tag tag-outline">${esc(g.kind)}</span>
+            <span class="muted">${esc(g.title || g.node_id)}</span>
+            <span class="rule"></span>
+            <span class="mono">${esc(g.status)}${g.resolved_by ? " · " + esc(g.resolved_by) : ""}</span>
+          </span>`).join("")}
+      </div>` : ""}
+
+      <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="micro">Run timeline</span>
+        ${nodes.map((n) => `
+          <span style="display:grid;grid-template-columns:104px 1fr 62px;gap:10px;align-items:center;font-size:12px">
+            <span class="muted">${esc(n.label)}</span>
+            <span style="height:9px;background:color-mix(in srgb,var(--color-text) 7%,transparent);display:block">
+              <span style="display:block;height:9px;background:${n.status === "failed" ? "var(--color-accent-900)" : "var(--color-accent)"};width:${Math.round(((n.elapsed || 0) / maxDur) * 100)}%"></span>
+            </span>
+            <span class="mono muted" style="text-align:right">${esc(fmtDuration(n.elapsed))}</span>
+          </span>`).join("")}
+      </div>
+
+      <div class="blueprint" style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="micro">Cost &amp; tokens</span>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+          ${[["total cost", t.reported ? `$${t.cost.toFixed(2)}` : "—"],
+             ["input tokens", t.reported ? fmtNum(t.input) : "—"],
+             ["output tokens", t.reported ? fmtNum(t.output) : "—"],
+             ["turns", t.reported ? String(t.turns) : "—"]].map(([k, v]) => `
+            <span style="display:flex;flex-direction:column;gap:1px">
+              <span style="font-family:var(--font-heading);font-size:20px;line-height:1">${esc(v)}</span>
+              <span class="micro">${esc(k)}</span>
+            </span>`).join("")}
+        </div>
+        ${t.reported ? "" : `<p class="hint" style="margin:0">No dispatch reported usage telemetry for this run.</p>`}
+      </div>
+    </div>`;
+
+  $("summary-body").innerHTML =
+    `<div class="cols-2" style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start">${prCard}${side}</div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Advanced tabs
+   ═══════════════════════════════════════════════════════════════════ */
+function tabsForMode() {
+  const common = [
+    { id: "agents", label: "Agents & models" },
+    { id: "review", label: "Review & judges" },
+    { id: "guardrails", label: "Guardrails" },
+  ];
+  return app.mode === "feature"
+    ? [{ id: "planning", label: "Planning & Jira" }, ...common]
+    : [{ id: "criteria", label: "Acceptance criteria" },
+       { id: "context", label: "Context & scope" },
+       { id: "observability", label: "Observability" },
+       { id: "jira", label: "Jira & ticketing" },
+       ...common];
+}
+
+function modelOptions(backendId, selected) {
+  const b = (app.config?.backends || []).find((x) => x.id === backendId);
+  const models = b ? b.models : [];
+  const opts = [`<option value=""${selected ? "" : " selected"}>default${b ? ` (${esc(b.default_model)})` : ""}</option>`];
+  for (const m of models) {
+    opts.push(`<option value="${esc(m)}"${m === selected ? " selected" : ""}>${esc(m)}</option>`);
+  }
+  if (selected && !models.includes(selected)) {
+    opts.push(`<option value="${esc(selected)}" selected>${esc(selected)}</option>`);
+  }
+  return opts.join("");
+}
+
+function backendOptions(role, selected) {
+  return (app.config?.roles?.[role] || []).map((id) => {
+    const b = (app.config.backends || []).find((x) => x.id === id);
+    return `<option value="${esc(id)}"${id === selected ? " selected" : ""}>${esc(b ? b.label : id)}</option>`;
+  }).join("");
+}
+
+function tabBodyHtml(tab) {
+  const f = app.form;
+  const d = app.config?.defaults || {};
+  const grid = (inner) => `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px">${inner}</div>`;
+  const isolationSeg = `
+    <div class="seg" data-seg="devIsolation">
+      ${["shared", "isolated"].map((v) =>
+        `<label class="seg-opt ${f.devIsolation === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
+    </div>`;
+
+  if (tab === "criteria") {
+    return grid(`
+      <div class="field" style="grid-column:1/-1">
+        <label for="t-criteria">One criterion per line</label>
+        <textarea id="t-criteria" class="input mono" data-form="criteria" style="min-height:140px;font-size:12.5px;line-height:1.7">${esc(f.criteria)}</textarea>
+        <p class="hint">Shell heads: <span class="mono">${esc((app.config?.shell_criteria_heads || []).join(" · "))}</span> — everything else becomes a manual criterion.</p>
+      </div>`);
+  }
+  if (tab === "context") {
+    return grid(`
+      <div class="field">
+        <label for="t-component">Affected component</label>
+        <input id="t-component" class="input mono" data-form="affectedComponent" value="${esc(f.affectedComponent)}" placeholder="etl/customers/sync.yaml" />
+        <p class="hint">Path, DAG or service name. Research starts here. Required.</p>
+      </div>
+      <div class="field">
+        <span class="field-label">Dev worktree isolation</span>
+        ${isolationSeg}
+        <p class="hint">Isolated gives every pool worker its own sub-worktree, merged sequentially.</p>
+      </div>`);
+  }
+  if (tab === "observability") {
+    return grid(`
+      <div class="field">
+        <label for="t-loggroup">CloudWatch log group</label>
+        <input id="t-loggroup" class="input mono" data-form="logGroup" value="${esc(f.logGroup)}" placeholder="${esc(d.log_group || "")} (default)" />
+      </div>
+      <div class="field">
+        <label for="t-window">Window (minutes)</label>
+        <input id="t-window" class="input mono" type="number" min="1" max="1440" data-form="timeWindow" value="${esc(f.timeWindow)}" />
+        <p class="hint">1 – 1440, counted back from dispatch.</p>
+      </div>`);
+  }
+  if (tab === "jira") {
+    return grid(`
+      <div class="field">
+        <label for="t-issue">Existing issue key</label>
+        <input id="t-issue" class="input mono" data-form="existingIssueKey" value="${esc(f.existingIssueKey)}" placeholder="${esc(d.jira_project || "NAV")}-8241 — blank to auto-detect or create" />
+      </div>
+      <div class="field">
+        <span class="field-label">Project (server-side)</span>
+        <input class="input mono" value="${esc(d.jira_project || "")}" disabled />
+      </div>`);
+  }
+  if (tab === "planning") {
+    return grid(`
+      <div class="field">
+        <label for="t-jira-key">Jira issue key (optional)</label>
+        <input id="t-jira-key" class="input mono" data-form="jiraIssueKey" value="${esc(f.jiraIssueKey)}" placeholder="blank — no ticket is created in feature mode" />
+        <p class="hint">When set, downstream nodes only link, transition and comment on it.</p>
+      </div>
+      <div class="field">
+        <span class="field-label">Docs artifact directory (server-side)</span>
+        <input class="input mono" value="${esc(d.docs_artifact_dir || "docs/features")}" disabled />
+        <p class="hint">Handoff writes <span class="mono">feat-&lt;id&gt;-&lt;slug&gt;.md</span> there, commits it to the PR branch${d.wiki_page_ingest ? " and ingests it as a wiki page" : " (wiki ingest is off)"}.</p>
+      </div>`);
+  }
+  if (tab === "agents") {
+    const rows = f.devAgents.map((a, i) => `
+      <div class="agent-row">
+        <div class="field"><span class="field-label">Backend</span>
+          <select class="input" data-agent-field="agent" data-idx="${i}">${backendOptions("development", a.agent)}</select></div>
+        <div class="field"><span class="field-label">Model</span>
+          <select class="input" data-agent-field="model" data-idx="${i}">${modelOptions(a.agent, a.model)}</select></div>
+        <div class="field"><span class="field-label">Count</span>
+          <input class="input mono" type="number" min="1" max="8" data-agent-field="count" data-idx="${i}" value="${a.count}" /></div>
+        <button type="button" class="btn btn-danger" data-agent-del="${i}" style="padding:8px 10px" title="Remove">✕</button>
+      </div>`).join("");
+    return `<div style="display:flex;flex-direction:column;gap:12px">
+      <span class="field-label">Development agent pool${app.mode === "feature"
+        ? " — leave empty to let the planner size it from the task graph"
+        : " — leave empty to use the server default"}</span>
+      ${rows || `<p class="hint" style="margin:0">No pool declared.</p>`}
+      <button type="button" class="btn" id="add-agent-btn" style="align-self:flex-start">+ Add agent</button>
+      <div class="field" style="max-width:280px">
+        <span class="field-label">Worktree isolation</span>
+        ${isolationSeg}
+      </div>
+    </div>`;
+  }
+  if (tab === "review") {
+    const judges = f.judges.length ? f.judges : (app.config?.default_judge_panel || []);
+    const advBackend = app.config?.adversarial_backend || "codex";
+    const adv = app.config?.adversarial_review || {};
+    const rows = judges.map((j, i) => {
+      const locked = j.agent === advBackend;
+      return `<div class="judge-row">
+        <div class="field"><span class="field-label">Judge ${i + 1}${locked ? " · adversarial" : ""}</span>
+          <select class="input" data-judge-field="agent" data-idx="${i}" ${locked ? "disabled" : ""}>${backendOptions("judge", j.agent)}</select></div>
+        <div class="field"><span class="field-label">Model</span>
+          <select class="input" data-judge-field="model" data-idx="${i}">${modelOptions(j.agent, j.model)}</select></div>
+        ${!locked
+          ? `<button type="button" class="btn btn-danger" data-judge-del="${i}" style="padding:8px 10px" title="Remove">✕</button>`
+          : `<span></span>`}
+      </div>`;
+    }).join("");
+    return `<div style="display:flex;flex-direction:column;gap:14px">
+      <div class="blueprint" style="padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="micro" style="color:var(--color-accent-700)">Adversarial review — mandatory</span>
+        <span style="font-size:12.5px">Reviewer wired on this server: <span class="mono">${esc(d.codereview_agent || "parallel")}</span>${
+          d.codereview_agent_configured && d.codereview_agent_configured !== d.codereview_agent
+            ? ` <span class="muted">(upgraded from ${esc(d.codereview_agent_configured)})</span>` : ""}</span>
+        <span class="muted" style="font-size:12px">${esc(adv.note || "")} Scope: <span class="mono">${esc(adv.scope || "uncommitted")}</span>${
+          adv.base_ref ? ` · base <span class="mono">${esc(adv.base_ref)}</span>` : ""}</span>
+      </div>
+      <span class="field-label">QA judge panel</span>
+      ${rows}
+      <button type="button" class="btn" id="add-judge-btn" style="align-self:flex-start">+ Add judge</button>
+      <p class="hint" style="margin:0">Simple majority. A tie, or an abstention that breaks majority, escalates rather than passing.${
+        app.mode !== "feature" ? " Judge overrides apply to feature-mode runs only." : ""}</p>
+    </div>`;
+  }
+  // guardrails
+  const skipQaChecked = f.skipQa ? "checked" : "";
+  const skipJiraChecked = f.skipJira ? "checked" : "";
+  return grid(`
+    <div class="field" style="grid-column:1/-1">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="chk-skip-qa" ${skipQaChecked} style="width:16px;height:16px" />
+        <span class="field-label" style="margin:0">Skip QA for this run</span>
+      </label>
+      <p class="hint">Bypasses deterministic acceptance tests and code review — returns a synthetic pass. Use for trivial fixes (typos, syntax) where the 7-minute QA cycle is not worth the wait. Server default: <span class="mono">${d.skip_qa ? "on" : "off"}</span></p>
+    </div>
+    <div class="field" style="grid-column:1/-1">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="chk-skip-jira" ${skipJiraChecked} style="width:16px;height:16px" />
+        <span class="field-label" style="margin:0">Skip Jira for this run</span>
+      </label>
+      <p class="hint">No ticket creation, no transitions, no comments. Research still runs (logs + triage + sdd-research dispatch) but without Jira integration. Use for local experiments or when Jira is down.</p>
+    </div>
+    <div class="field"><span class="field-label">QA repair retries (DEV_LOOP_QA_MAX_RETRIES)</span>
+      <input class="input mono" value="${esc(String(d.qa_max_retries ?? "—"))}" disabled /></div>
+    <div class="field"><span class="field-label">Concurrent runs (FLOW_MAX_CONCURRENT_RUNS)</span>
+      <input class="input mono" value="${esc(String(d.max_concurrent_runs ?? "—"))}" disabled /></div>
+    <div class="field"><span class="field-label">Dev pool ceiling (DEV_LOOP_DEV_POOL_MAX)</span>
+      <input class="input mono" value="${esc(String(d.development_pool_max ?? "—"))}" disabled /></div>
+    <div class="field"><span class="field-label">Default development agent</span>
+      <input class="input mono" value="${esc(String(d.development_agent || "—"))}" disabled /></div>
+    <div class="field" style="grid-column:1/-1"><span class="field-label">On failure</span>
+      <input class="input mono" value="route → failure_handler (the run is parked, never half-merged)" disabled /></div>`);
+}
+
+function renderTabs() {
+  const tabs = tabsForMode();
+  if (!tabs.some((t) => t.id === app.advTab)) app.advTab = tabs[0].id;
+  $("adv-tabs").innerHTML = tabs.map((t) => `
+    <button type="button" class="btn" data-tab="${t.id}" style="border:0;border-bottom:2px solid ${
+      t.id === app.advTab ? "var(--color-accent)" : "transparent"
+    };padding:8px 13px;font-size:13.5px;background:transparent;color:${
+      t.id === app.advTab ? "var(--color-text)" : "color-mix(in srgb,var(--color-text) 55%,transparent)"
+    }">${esc(t.label)}</button>`).join("");
+  $("adv-note").textContent = TAB_NOTES[app.advTab] || "";
+  $("adv-fields").innerHTML = tabBodyHtml(app.advTab);
+  $("adv-badge").textContent = `${tabs.length} groups`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Pickers / mode
+   ═══════════════════════════════════════════════════════════════════ */
+function renderKindPicker() {
+  const featureAvailable = app.config?.feature_mode?.available;
+  $("f-kind").innerHTML = (app.config?.kinds || []).map((k) => {
+    const off = k.value === "feature" && !featureAvailable;
+    return `<label class="seg-opt ${app.kind === k.value ? "on" : ""}" data-kind="${k.value}"${
+      off ? ` style="opacity:.4;cursor:not-allowed" title="${esc(app.config?.feature_mode?.reason || "unavailable on this server")}"` : ""
+    }>${esc(k.label)}</label>`;
+  }).join("");
+  $("kind-hint").textContent = KIND_HINTS[app.kind] || "";
+
+  $("f-document-kind").innerHTML = (app.config?.document_kinds || []).map((v) =>
+    `<label class="seg-opt ${app.form.documentKind === v ? "on" : ""}" data-dockind="${v}">${esc(v)}</label>`).join("");
+  $("document-kind-hint").textContent = DOC_KIND_HINTS[app.form.documentKind] || "";
+
+  $("view-picker").innerHTML = [["panels", "Panels"], ["rail", "Focus rail"], ["spine", "Spine"]]
+    .map(([v, l]) => `<label class="seg-opt ${app.view === v ? "on" : ""}" data-view="${v}">${esc(l)}</label>`).join("");
+}
+
+function applyMode() {
+  app.mode = app.kind === "feature" ? "feature" : "bug";
+  $("work-intake").classList.toggle("hidden", app.mode === "feature");
+  $("feature-intake").classList.toggle("hidden", app.mode !== "feature");
+  renderKindPicker();
+  renderTabs();
+  renderReady();
+  renderChrome();
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Submit / lifecycle
+   ═══════════════════════════════════════════════════════════════════ */
+function buildPayload() {
+  const f = app.form;
+  if (app.mode === "feature") {
+    const payload = {
+      kind: "feature",
+      document_path: f.documentPath.trim(),
+      document_kind: f.documentKind,
+    };
+    if (f.jiraIssueKey.trim()) payload.jira_issue_key = f.jiraIssueKey.trim();
+    if (f.devAgents.length) payload.dev_agents = f.devAgents;
+    if (f.judges.length) payload.judge_panel = f.judges;
+    if (f.skipQa) payload.skip_qa = true;
+    if (f.skipJira) payload.skip_jira = true;
+    return payload;
+  }
   const payload = {
-    kind: fd.get("kind") || "Bug",   // FEAT-132: server normalises to snake_case
-    summary: fd.get("summary").trim(),
-    affected_component: fd.get("affected_component").trim(),
-    description: (fd.get("description") || "").trim(),
-    acceptance_criteria: criteria,
-    time_window_minutes: window,
+    kind: app.kind,
+    summary: f.summary.trim(),
+    description: f.description.trim(),
+    affected_component: f.affectedComponent.trim(),
+    acceptance_criteria: f.criteria.split("\n").map((s) => s.trim()).filter(Boolean),
+    time_window_minutes: parseInt(f.timeWindow || "60", 10),
   };
-  const lg = (fd.get("log_group") || "").trim();
-  if (lg) payload.log_group = lg;
-  const ek = (fd.get("existing_issue_key") || "").trim();
-  if (ek) payload.existing_issue_key = ek;
+  if (f.logGroup.trim()) payload.log_group = f.logGroup.trim();
+  if (f.existingIssueKey.trim()) payload.existing_issue_key = f.existingIssueKey.trim();
+  if (f.devAgents.length) {
+    payload.dev_agents = f.devAgents;
+    payload.dev_isolation = f.devIsolation;
+  }
+  if (f.skipQa) payload.skip_qa = true;
+  if (f.skipJira) payload.skip_jira = true;
   return payload;
 }
 
-form.addEventListener("submit", async (ev) => {
+function showError(msg) {
+  const box = $("form-err");
+  box.textContent = msg;
+  box.classList.remove("hidden");
+}
+
+function applyRequestCollapse() {
+  const collapsed = !app.requestOpen;
+  $("request-form").classList.toggle("hidden", collapsed);
+  $("request-collapsed").classList.toggle("hidden", !collapsed);
+  if (collapsed) {
+    const f = app.form;
+    $("rc-kind").textContent = app.kind;
+    $("rc-summary").textContent = app.mode === "feature" ? f.documentPath : f.summary;
+    $("rc-target").textContent = app.mode === "feature" ? f.documentKind : f.affectedComponent;
+    $("rc-criteria").textContent = app.mode === "feature"
+      ? `${effectiveJudges().length} judges`
+      : `${criteriaSummary()} acceptance criteria`;
+  }
+}
+
+async function submit(ev) {
   ev.preventDefault();
-  clearError();
-  submitBtn.disabled = true;
-  resetBoard();
+  $("form-err").classList.add("hidden");
+  $("submit-btn").disabled = true;
   try {
-    const payload = buildPayload(new FormData(form));
     const res = await fetch("/api/flow/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(buildPayload()),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
-    runId = data.run_id;
-    runLabel.textContent = `run_id = ${runId}`;
-    connectWs(runId);
+
+    // Reset every per-run projection before the streams start.
+    app.runId = data.run_id;
+    app.phase = "running";
+    app.events = new Map();
+    app.eventCount = 0;
+    app.openEvents = new Set();
+    app.selected = null;
+    app.s = emptyState();
+    app.telemetry = { input: 0, output: 0, cost: 0, turns: 0, reported: 0 };
+    app.requestOpen = false;
+    applyRequestCollapse();
+    $("exec-section").classList.remove("hidden");
+    $("summary-section").classList.add("hidden");
+    $("report-box").classList.add("hidden");
+    connect(data.run_id);
+    render();
   } catch (err) {
     showError(err.message);
   } finally {
-    submitBtn.disabled = false;
+    $("submit-btn").disabled = false;
+  }
+}
+
+async function stopRun() {
+  if (!app.runId || app.phase !== "running") return;
+  $("stop-btn").disabled = true;
+  try {
+    const res = await fetch(`/api/flow/${app.runId}/cancel`, { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.warn("stop failed:", data.error || res.statusText);
+    }
+  } catch (err) {
+    console.warn("stop failed:", err);
+  } finally {
+    $("stop-btn").disabled = false;
+  }
+}
+
+function restart() {
+  closeSockets();
+  app.phase = "idle";
+  app.runId = null;
+  app.connected = false;
+  app.events = new Map();
+  app.eventCount = 0;
+  app.openEvents = new Set();
+  app.s = emptyState();
+  app.telemetry = { input: 0, output: 0, cost: 0, turns: 0, reported: 0 };
+  app.requestOpen = true;
+  applyRequestCollapse();
+  $("exec-section").classList.add("hidden");
+  $("summary-section").classList.add("hidden");
+  $("report-box").classList.add("hidden");
+  render();
+}
+
+async function loadReport() {
+  const box = $("report-box"), pre = $("report-pre");
+  box.classList.remove("hidden");
+  pre.textContent = "Loading…";
+  try {
+    const res = await fetch(`/api/flow/${app.runId}/bundle?format=md`);
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = text;
+      try { msg = JSON.parse(text).error || text; } catch { /* plain body */ }
+      pre.textContent = msg;
+      return;
+    }
+    pre.textContent = text;
+  } catch (err) {
+    pre.textContent = String(err);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Event delegation
+   ═══════════════════════════════════════════════════════════════════ */
+document.addEventListener("click", (e) => {
+  const t = e.target;
+
+  const kind = t.closest("[data-kind]");
+  if (kind) {
+    const v = kind.dataset.kind;
+    if (v === "feature" && !app.config?.feature_mode?.available) return;
+    app.kind = v; applyMode(); return;
+  }
+  const dk = t.closest("[data-dockind]");
+  if (dk) { app.form.documentKind = dk.dataset.dockind; renderKindPicker(); renderReady(); return; }
+  const view = t.closest("[data-view]");
+  if (view) { app.view = view.dataset.view; renderKindPicker(); renderExecution(); return; }
+  const seg = t.closest("[data-seg] [data-val]");
+  if (seg) {
+    app.form[seg.closest("[data-seg]").dataset.seg] = seg.dataset.val;
+    renderTabs(); renderReady(); return;
+  }
+  const tab = t.closest("[data-tab]");
+  if (tab) { app.advTab = tab.dataset.tab; renderTabs(); return; }
+  const nodeEl = t.closest("[data-node]");
+  if (nodeEl) { app.selected = nodeEl.dataset.node; renderExecution(); return; }
+  const ev = t.closest("[data-ev]");
+  if (ev) {
+    const key = ev.dataset.ev;
+    app.openEvents.has(key) ? app.openEvents.delete(key) : app.openEvents.add(key);
+    renderExecution(); return;
+  }
+  const delAgent = t.closest("[data-agent-del]");
+  if (delAgent) { app.form.devAgents.splice(+delAgent.dataset.agentDel, 1); renderTabs(); renderReady(); return; }
+  const delJudge = t.closest("[data-judge-del]");
+  if (delJudge) {
+    if (!app.form.judges.length) app.form.judges = (app.config?.default_judge_panel || []).map((j) => ({ ...j }));
+    app.form.judges.splice(+delJudge.dataset.judgeDel, 1); renderTabs(); renderReady(); return;
+  }
+
+  switch (t.id) {
+    case "adv-toggle":
+      app.advOpen = !app.advOpen;
+      $("adv-body").classList.toggle("hidden", !app.advOpen);
+      $("adv-caret").textContent = app.advOpen ? "▾" : "▸";
+      break;
+    case "add-agent-btn":
+      app.form.devAgents.push({
+        agent: (app.config?.roles?.development || ["claude-code"])[0], model: "", count: 1,
+      });
+      renderTabs(); renderReady(); break;
+    case "add-judge-btn":
+      if (!app.form.judges.length) app.form.judges = (app.config?.default_judge_panel || []).map((j) => ({ ...j }));
+      app.form.judges.push({ agent: "claude-code", model: "" });
+      renderTabs(); renderReady(); break;
+    case "edit-request-btn":
+      app.requestOpen = true; applyRequestCollapse(); break;
+    case "stop-btn":
+      stopRun(); break;
+    case "restart-btn":
+    case "another-btn":
+      restart(); break;
+    case "view-report-btn":
+      if (app.runId) loadReport(); break;
+    case "bundle-btn":
+      if (app.runId) location.href = `/api/flow/${app.runId}/bundle?format=md&download=1`;
+      break;
+    case "chk-skip-qa":
+      app.form.skipQa = t.checked;
+      renderReady();
+      break;
+    case "chk-skip-jira":
+      app.form.skipJira = t.checked;
+      renderReady();
+      break;
   }
 });
 
-reBtn.addEventListener("click", () => { if (runId) connectWs(runId); });
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.dataset.form) { app.form[t.dataset.form] = t.value; renderReady(); return; }
+
+  const af = t.dataset.agentField;
+  if (af) {
+    const row = app.form.devAgents[+t.dataset.idx];
+    if (row) {
+      row[af] = af === "count" ? Math.max(1, parseInt(t.value || "1", 10)) : t.value;
+      if (af === "agent") { row.model = ""; renderTabs(); }
+      renderReady();
+    }
+    return;
+  }
+  const jf = t.dataset.judgeField;
+  if (jf) {
+    if (!app.form.judges.length) app.form.judges = (app.config?.default_judge_panel || []).map((j) => ({ ...j }));
+    const row = app.form.judges[+t.dataset.idx];
+    if (row) {
+      row[jf] = t.value;
+      if (jf === "agent") { row.model = ""; renderTabs(); }
+      renderReady();
+    }
+    return;
+  }
+  const map = { "f-description": "description", "f-summary": "summary", "f-document-path": "documentPath" };
+  if (map[t.id]) { app.form[map[t.id]] = t.value; renderReady(); }
+});
+
+$("request-form").addEventListener("submit", submit);
+
+/* ═══════════════════════════════════════════════════════════════════
+   Boot
+   ═══════════════════════════════════════════════════════════════════ */
+(async function boot() {
+  try {
+    const res = await fetch("/api/config");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    app.config = await res.json();
+  } catch (err) {
+    showError(`Could not load /api/config: ${err.message}`);
+    app.config = {
+      backends: [], roles: {}, kinds: [{ value: "bug", label: "Bug" }],
+      document_kinds: ["brainstorm", "proposal", "spec"], defaults: {},
+      feature_mode: { available: false, reason: "config unavailable" },
+    };
+  }
+  app.form.timeWindow = String(app.config.defaults?.time_window_minutes ?? 60);
+  app.form.skipQa = !!app.config.defaults?.skip_qa;
+  applyMode();
+  render();
+})();
+
+// Theme toggle
+function isDark() {
+  const attr = document.documentElement.getAttribute("data-theme");
+  if (attr) return attr === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function updateThemeIcon() {
+  $("theme-toggle").textContent = isDark() ? "☀" : "☾";
+  $("theme-toggle").title = isDark() ? "Switch to light mode" : "Switch to dark mode";
+}
+$("theme-toggle").addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("afd-theme", next);
+  updateThemeIcon();
+});
+updateThemeIcon();
+
+// Keep elapsed timers moving while a run streams.
+setInterval(() => { if (app.phase === "running") scheduleRender(); }, 1000);
 </script>
 </body>
 </html>

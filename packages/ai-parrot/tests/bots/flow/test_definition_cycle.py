@@ -36,6 +36,13 @@ def _edge(src: str, tgt: str) -> EdgeDefinition:
     return EdgeDefinition(**{"from": src, "to": tgt, "condition": "always"})
 
 
+def _cond_edge(src: str, tgt: str, predicate: str = "result.x == true") -> EdgeDefinition:
+    """EdgeDefinition factory for an ``on_condition`` edge."""
+    return EdgeDefinition(**{
+        "from": src, "to": tgt, "condition": "on_condition", "predicate": predicate,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Valid DAGs (should not raise)
 # ---------------------------------------------------------------------------
@@ -117,6 +124,36 @@ class TestFlowDefinitionCycleDetection:
             )
         err = str(exc_info.value)
         assert "x" in err or "y" in err
+
+
+# ---------------------------------------------------------------------------
+# on_condition back-edges are exempt (FEAT-377 TASK-1910 — bounded repair
+# loops, e.g. dev-loop's qa -> development retry edge)
+# ---------------------------------------------------------------------------
+
+
+class TestOnConditionCycleExemption:
+    def test_accepts_two_node_cycle_when_back_edge_is_on_condition(self) -> None:
+        """A -> B unconditional, B -> A gated by a CEL predicate: allowed —
+        the predicate is the bound on the otherwise-infinite loop."""
+        FlowDefinition(
+            flow="conditional-back-edge",
+            nodes=[_node("a"), _node("b")],
+            edges=[_edge("a", "b"), _cond_edge("b", "a")],
+        )
+
+    def test_still_rejects_unconditional_cycle_alongside_on_condition_edges(self) -> None:
+        """An on_condition edge elsewhere in the graph must not mask a real
+        unconditional cycle between two other nodes."""
+        with pytest.raises((ValidationError, ValueError), match="[Cc]ycle"):
+            FlowDefinition(
+                flow="mixed",
+                nodes=[_node("a"), _node("b"), _node("c")],
+                edges=[
+                    _edge("a", "b"), _edge("b", "a"),  # unconditional cycle
+                    _cond_edge("a", "c"),               # unrelated on_condition edge
+                ],
+            )
 
 
 # ---------------------------------------------------------------------------

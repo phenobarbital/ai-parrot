@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 from typing import Any, Dict, Optional, Union
 
@@ -59,6 +60,13 @@ class DeploymentHandoffNode(DevLoopNode):
             Reads ``GITHUB_REPOSITORY`` env var when not provided.
         base_branch: Default base branch for the PR (default ``"dev"``).
         name: Node id (default ``"deployment_handoff"``).
+        require_deployment_approval: FEAT-322 opt-in — when ``True`` AND a
+            ``SessionHost`` is present in shared state, opens a blocking
+            ``deployment_approval`` HITL gate before the Jira transition.
+            Defaults to ``False`` so existing/legacy runs (which now always
+            have a host seeded by ``DevLoopRunner.run()``, TASK-1851) are
+            NOT unexpectedly gated — mirrors ``ManualCriterion.blocking``'s
+            explicit opt-in philosophy (spec §1 G4 zero-regression).
     """
 
     def __init__(
@@ -70,6 +78,7 @@ class DeploymentHandoffNode(DevLoopNode):
         target_repo: Optional[str] = None,
         base_branch: str = "dev",
         name: str = "deployment_handoff",
+        require_deployment_approval: bool = False,
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_jira", jira_toolkit)
@@ -81,6 +90,9 @@ class DeploymentHandoffNode(DevLoopNode):
             target_repo or os.environ.get("GITHUB_REPOSITORY", ""),
         )
         object.__setattr__(self, "_base_branch", base_branch)
+        object.__setattr__(
+            self, "_require_deployment_approval", require_deployment_approval
+        )
 
     # ------------------------------------------------------------------
     # Execute
@@ -114,6 +126,10 @@ class DeploymentHandoffNode(DevLoopNode):
         dev_out: DevelopmentOutput = shared.get("development_output")
         qa_report: QAReport = shared.get("qa_report")
         issue_key = research.jira_issue_key
+
+        # Bug fixes branch from main; the PR target must match.
+        if getattr(brief, "kind", "bug") == "bug":
+            object.__setattr__(self, "_base_branch", "main")
 
         # 1. Push.
         try:
@@ -161,36 +177,116 @@ class DeploymentHandoffNode(DevLoopNode):
 
         pr_number = self._parse_pr_number(pr_url)
 
-        # 3. Transition Jira.
-        try:
-            await transition_issue_with_candidates(
-                self._jira,
-                issue_key,
-                conf.DEV_LOOP_JIRA_TRANSITIONS_READY,
-                logger=self.logger,
+        # FEAT-322: deployment_approval HITL gate — between PR creation and
+        # the Jira transition. A human must approve before the ticket moves;
+        # reject/expire routes through the existing blocked path (no Jira
+        # transition happens). Opt-in via ``require_deployment_approval``
+        # (default False): ``DevLoopRunner.run()`` always seeds
+        # ``shared["session_host"]`` now (TASK-1851), so gating on host
+        # presence ALONE would make every existing/legacy run block forever
+        # on an unresolved gate — the explicit flag preserves
+        # "zero-regression by default" (spec §1 G4) the same way
+        # ``ManualCriterion.blocking`` does for QA. No-host fallback (e.g. a
+        # node invoked outside the runner) logs a WARNING and proceeds.
+        host = shared.get("session_host")
+        if self._require_deployment_approval and host is not None:
+            gate_status, gate_error = await self._await_deployment_approval(
+                host, shared.get("run_id", ""), issue_key, pr_url,
             )
-        except Exception as exc:  # noqa: BLE001 - degraded path
+            if gate_status != "approved":
+                await self._mark_blocked(issue_key, gate_error)
+                return {"status": "blocked", "error": gate_error}
+        elif self._require_deployment_approval and host is None:
             self.logger.warning(
-                "Jira transition failed (continuing): %s", exc
+                "DeploymentHandoffNode: require_deployment_approval=True but "
+                "no session_host in shared state (legacy DevLoopRunner "
+                "construction) — proceeding without a deployment_approval "
+                "gate."
             )
 
-        # 4. Comment with PR link.
-        try:
-            await self._jira.jira_add_comment(
-                issue=issue_key,
-                body=(
-                    f"flow-bot: PR opened — {pr_url}\n"
-                    f"QA passed all acceptance criteria."
-                ),
+        # 3. Transition Jira (skipped when skip_jira is active).
+        skip_jira = shared.get("skip_jira", False)
+        if skip_jira:
+            self.logger.info(
+                "Jira bypass enabled (skip_jira=True) — skipping "
+                "transition and comment for %s", pr_url,
             )
-        except Exception as exc:  # noqa: BLE001 - degraded path
-            self.logger.warning("Jira add_comment failed: %s", exc)
+        else:
+            try:
+                await transition_issue_with_candidates(
+                    self._jira,
+                    issue_key,
+                    conf.DEV_LOOP_JIRA_TRANSITIONS_READY,
+                    logger=self.logger,
+                )
+            except Exception as exc:  # noqa: BLE001 - degraded path
+                self.logger.warning(
+                    "Jira transition failed (continuing): %s", exc
+                )
+
+            # 4. Comment with PR link.
+            try:
+                await self._jira.jira_add_comment(
+                    issue=issue_key,
+                    body=(
+                        f"flow-bot: PR opened — {pr_url}\n"
+                        f"QA passed all acceptance criteria."
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 - degraded path
+                self.logger.warning("Jira add_comment failed: %s", exc)
 
         return {
             "status": "ready_to_deploy",
             "pr_url": pr_url,
             "pr_number": pr_number,
         }
+
+    # ------------------------------------------------------------------
+    # Internal — deployment_approval HITL gate (FEAT-322)
+    # ------------------------------------------------------------------
+
+    async def _await_deployment_approval(
+        self, host: Any, run_id: str, issue_key: str, pr_url: str,
+    ) -> tuple[str, str]:
+        """Open the ``deployment_approval`` gate and await its resolution.
+
+        Args:
+            host: The run's ``SessionHost`` (never ``None`` — callers only
+                invoke this when a host is present).
+            run_id: The run id, used to build the changeset ``payload_ref``.
+            issue_key: The Jira issue key (used in the gate title).
+            pr_url: The draft PR URL (surfaced in the gate instructions).
+
+        Returns:
+            A ``(gate_status, error_message)`` tuple. ``error_message`` is
+            ``""`` when ``gate_status == "approved"``; otherwise it is the
+            ``"deployment_approval <status> by <resolver>"`` reason used
+            for the blocked-path Jira comment.
+        """
+        # Lazy imports — avoid a runner.py <-> factories.py <-> this module
+        # import cycle (runner.py imports factories.py, which imports this
+        # module to build the node).
+        from parrot.flows.dev_loop.runner import gate_ttl_for
+        from parrot.flows.dev_loop.session_state import changeset_channel
+
+        gate_id, _ = host.open_gate(
+            kind="deployment_approval",
+            node_id="deployment_handoff",
+            title=f"Deploy approval: {issue_key}",
+            instructions=f"Approve deployment for PR {pr_url}",
+            payload_ref=changeset_channel(run_id) if run_id else "",
+            ttl_seconds=gate_ttl_for("deployment_approval"),
+            on_expiry="fail",
+        )
+        gate = await host.wait_gate(gate_id)
+        if gate.status == "approved":
+            return "approved", ""
+        reason = (
+            f"deployment_approval {gate.status} by "
+            f"{gate.resolved_by or 'ttl'}"
+        )
+        return gate.status, reason
 
     # ------------------------------------------------------------------
     # Internal — git push
@@ -233,9 +329,19 @@ class DeploymentHandoffNode(DevLoopNode):
         return int(tail) if tail.isdigit() else None
 
     async def _create_pr(self, branch: str, title: str, body: str) -> str:
-        """Open a DRAFT PR; return the PR URL (number derived by the caller)."""
+        """Open a DRAFT PR; return the PR URL (number derived by the caller).
+
+        Tries ``gh`` first (respects user's auth session), then falls
+        back to the REST API when ``gh`` is absent OR fails (e.g. expired
+        OAuth token, 401).
+        """
         if self._gh_available():
-            return await self._create_pr_with_gh(branch, title, body)
+            try:
+                return await self._create_pr_with_gh(branch, title, body)
+            except RuntimeError as exc:
+                self.logger.warning(
+                    "gh CLI failed, falling back to REST API: %s", exc
+                )
         return await self._create_pr_via_rest(branch, title, body)
 
     async def _create_pr_with_gh(
@@ -267,6 +373,39 @@ class DeploymentHandoffNode(DevLoopNode):
         # The last line of `gh pr create` output is the PR URL.
         return text.splitlines()[-1] if text else ""
 
+    _GITHUB_REMOTE_RE = re.compile(
+        r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$"
+    )
+
+    async def _detect_target_repo(self, cwd: str = ".") -> str:
+        """Derive ``owner/repo`` from ``git remote get-url origin``."""
+        proc = await asyncio.create_subprocess_exec(
+            "git", "-C", cwd, "remote", "get-url", "origin",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        if proc.returncode != 0 or not out:
+            return ""
+        m = self._GITHUB_REMOTE_RE.search(out.decode().strip())
+        return f"{m['owner']}/{m['repo']}" if m else ""
+
+    async def _resolve_github_token(self) -> str:
+        """Return a GitHub PAT from ``GITHUB_TOKEN`` or ``gh auth token``."""
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if token:
+            return token
+        gh = self._gh_cli_path or "gh"
+        if not shutil.which(gh):
+            return ""
+        proc = await asyncio.create_subprocess_exec(
+            gh, "auth", "token",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        return out.decode().strip() if proc.returncode == 0 else ""
+
     async def _create_pr_via_rest(
         self, branch: str, title: str, body: str
     ) -> str:
@@ -274,12 +413,13 @@ class DeploymentHandoffNode(DevLoopNode):
         # can monkeypatch the helper without aiohttp involvement at all.
         import aiohttp  # noqa: WPS433 - intentional lazy import
 
-        token = os.environ.get("GITHUB_TOKEN", "")
-        if not self._target_repo or not token:
+        token = await self._resolve_github_token()
+        repo = self._target_repo or await self._detect_target_repo()
+        if not repo or not token:
             raise RuntimeError(
                 "GitHub REST fallback requires target_repo + GITHUB_TOKEN"
             )
-        url = f"https://api.github.com/repos/{self._target_repo}/pulls"
+        url = f"https://api.github.com/repos/{repo}/pulls"
         payload = {
             "title": title,
             "body": body,

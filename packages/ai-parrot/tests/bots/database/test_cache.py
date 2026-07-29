@@ -3,7 +3,11 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from parrot.bots.database.cache import CachePartition, CachePartitionConfig
+from parrot.bots.database.cache import (
+    CacheManager,
+    CachePartition,
+    CachePartitionConfig,
+)
 from parrot.bots.database.models import Completeness, TableMetadata
 
 
@@ -158,3 +162,43 @@ class TestDeprecation:
             warnings.simplefilter("always")
             result = await partition.get_table_metadata("s", "t")
         assert result is not None
+
+
+class _FakeStore:
+    """Minimal stand-in for an AbstractStore with an async ``disconnect``."""
+
+    def __init__(self) -> None:
+        self.disconnected = False
+
+    async def disconnect(self) -> None:
+        self.disconnected = True
+
+
+class TestCacheManagerClose:
+    async def test_close_disposes_owned_vector_store(self):
+        store = _FakeStore()
+        manager = CacheManager(vector_store=store)
+        await manager.close()
+        assert store.disconnected is True
+        # Reference dropped so the engine can be GC'd cleanly.
+        assert manager.vector_store is None
+
+    async def test_close_skips_unowned_vector_store(self):
+        store = _FakeStore()
+        manager = CacheManager(vector_store=store, owns_vector_store=False)
+        await manager.close()
+        assert store.disconnected is False
+        assert manager.vector_store is store
+
+    async def test_close_without_vector_store_is_noop(self):
+        manager = CacheManager()
+        await manager.close()  # must not raise
+
+    async def test_close_swallows_disconnect_errors(self):
+        class _Boom:
+            async def disconnect(self):
+                raise RuntimeError("boom")
+
+        manager = CacheManager(vector_store=_Boom())
+        await manager.close()  # error is logged, not raised
+        assert manager.vector_store is None

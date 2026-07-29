@@ -50,14 +50,6 @@ def test_unknown_mode_raises():
 # Output prompt system
 # ---------------------------------------------------------------------------
 
-def test_matplotlib_has_system_prompt():
-    """MatplotlibRenderer has a system prompt registered."""
-    assert has_system_prompt(OutputMode.MATPLOTLIB) is True
-    prompt = get_output_prompt(OutputMode.MATPLOTLIB)
-    assert prompt is not None
-    assert len(prompt) > 0
-
-
 def test_json_has_no_system_prompt():
     """JSON renderer has no system prompt (not needed)."""
     get_renderer(OutputMode.JSON)  # ensure loaded
@@ -105,7 +97,7 @@ def test_jinja2_renderer_resolves():
 def test_satellite_renderers_have_render_method():
     """All satellite renderers have a render method."""
     satellite_modes = [
-        OutputMode.MATPLOTLIB, OutputMode.PLOTLY, OutputMode.ECHARTS,
+        OutputMode.ECHARTS,
         OutputMode.MAP, OutputMode.INFOGRAPHIC, OutputMode.JINJA2,
         OutputMode.CARD, OutputMode.SLACK,
     ]

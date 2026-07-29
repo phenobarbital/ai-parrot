@@ -199,8 +199,13 @@ class SkillRegistry:
             self._embedding_model = embedding_model
         elif isinstance(self._embedding_model_name, str):
             try:
-                from sentence_transformers import SentenceTransformer
-                self._embedding_model = SentenceTransformer(self._embedding_model_name)
+                from parrot._imports import lazy_import
+                _st = lazy_import(
+                    "sentence_transformers",
+                    package_name="sentence-transformers",
+                    extra="embeddings",
+                )
+                self._embedding_model = _st.SentenceTransformer(self._embedding_model_name)
                 self.dimension = self._embedding_model.get_sentence_embedding_dimension()
             except ImportError:
                 self.logger.warning("sentence-transformers not available")

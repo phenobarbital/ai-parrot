@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.core.events.lifecycle.base import TraceContext
+from navigator_eventbus.lifecycle.base import TraceContext
 from parrot.core.events.lifecycle.events import (
     AfterToolCallEvent,
     BeforeToolCallEvent,
@@ -238,7 +238,7 @@ class TestNoRecorderRegression:
     @pytest.mark.asyncio
     async def test_events_flow_without_recorder(self):
         """Emit lifecycle events to global registry without a recorder — no errors."""
-        from parrot.core.events.lifecycle.global_registry import scope
+        from navigator_eventbus.lifecycle.global_registry import scope
 
         with scope() as registry:
             tc = TraceContext(trace_id="t-norec", span_id="s-1")

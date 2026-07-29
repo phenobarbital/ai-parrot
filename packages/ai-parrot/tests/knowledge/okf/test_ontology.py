@@ -44,8 +44,9 @@ class TestConceptType:
         assert ConceptType.DOCUMENT_NODE.value == "Document"
 
     def test_total_count(self) -> None:
-        """ConceptType must have exactly 16 values (11 existing + 5 new)."""
-        assert len(ConceptType) == 16
+        """ConceptType member count (11 pageindex + 5 FEAT-239 + 5 wiki
+        FEAT-260 + OTHER FEAT-216 + RUN/CLAIM lineage types)."""
+        assert len(ConceptType) == 24
 
     def test_string_round_trip(self) -> None:
         """ConceptType(value) must reconstruct the correct enum member."""
@@ -89,8 +90,9 @@ class TestRelationType:
         assert RelationType("extends") == RelationType.EXTENDS
 
     def test_total_count(self) -> None:
-        """RelationType must have exactly 13 values (8 existing + 4 FEAT-239 + 1 FEAT-240)."""
-        assert len(RelationType) == 13
+        """RelationType member count (8 existing + 4 FEAT-239 + 1 FEAT-240
+        + 2 wiki FEAT-260 + 3 lineage relations)."""
+        assert len(RelationType) == 18
 
     def test_string_round_trip(self) -> None:
         """RelationType(value) must reconstruct the correct enum member."""
@@ -172,4 +174,4 @@ class TestReExportCompat:
         from parrot.knowledge.pageindex.okf.ontology import ConceptType as CT
 
         assert CT.GUIDELINE.value == "Guideline"
-        assert len(CT) == 16
+        assert len(CT) == 24

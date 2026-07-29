@@ -1,0 +1,25 @@
+---
+type: Wiki Entity
+title: FieldStyleHint
+id: class:parrot.forms.style.FieldStyleHint
+tags:
+- entity
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Per-field style customization hints.
+---
+
+# FieldStyleHint
+
+Defined in [`parrot.forms.style`](../summaries/mod:parrot.forms.style.md).
+
+```python
+class FieldStyleHint(BaseModel)
+```
+
+Per-field style customization hints.
+
+Attributes:
+    size: Size hint controlling how much horizontal space the field occupies.
+    order: Override the field's display order within its section.
+    css_class: Additional CSS class(es) for HTML5 rendering.
+    variant: Renderer-specific variant identifier (e.g., "outlined", "filled").

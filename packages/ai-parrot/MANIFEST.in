@@ -1,0 +1,2 @@
+recursive-include src *.pyx *.pxd
+include setup.py

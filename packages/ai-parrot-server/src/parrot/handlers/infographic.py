@@ -20,9 +20,22 @@ from datetime import datetime, timezone
 from aiohttp import web
 from navconfig.logging import logging
 from navigator_auth.decorators import is_authenticated, user_session
+from navigator_session import get_session
 from pydantic import ValidationError
 
 from .agent import AgentTalk
+from .infographic_render import (
+    RenderBodyTooLargeError,
+    RenderJob,
+    RenderPayloadError,
+    RenderRequest,
+    RenderResponse,
+    decode_inline_datasets,
+    parse_json_render_request,
+    parse_multipart_render_request,
+    render_deterministic,
+)
+from .render_jobs import RenderJobStore
 from ..helpers.infographics import (
     get_template,
     get_theme,
@@ -31,6 +44,8 @@ from ..helpers.infographics import (
     register_template,
     register_theme,
 )
+from ..tools.infographic_toolkit import InfographicToolkit, InfographicValidationError
+from ..conf import INFOGRAPHIC_RENDER_TEMPLATE_DIRS
 
 # Keys consumed or reserved by the handler itself.  They must NOT be
 # forwarded as ``**kwargs`` into ``bot.get_infographic`` because doing so
@@ -96,6 +111,8 @@ class InfographicTalk(AgentTalk):
             return await self._handle_templates_register()
         if resource == "themes":
             return await self._handle_themes_register()
+        if resource == "render":
+            return await self._render_infographic_deterministic()
         # Default: per-agent infographic generation
         return await self._generate_infographic()
 
@@ -105,6 +122,7 @@ class InfographicTalk(AgentTalk):
         Routing logic based on match_info:
             - ``resource == "templates"`` → list or get template
             - ``resource == "themes"``    → list or get theme
+            - ``resource == "render"``    → async render job status (``job_id``)
             - default                     → endpoint info
 
         Returns:
@@ -116,6 +134,11 @@ class InfographicTalk(AgentTalk):
             return await self._handle_templates_get(mi.get("template_name"))
         if resource == "themes":
             return await self._handle_themes_get(mi.get("theme_name"))
+        if resource == "render":
+            job_id = mi.get("job_id")
+            if not job_id:
+                return self.error("Missing job_id in URL.", status=400)
+            return await self._get_render_job_status(job_id)
         return self.json_response({
             "message": "InfographicTalk — get_infographic HTTP handler",
             "version": "1.0",
@@ -302,6 +325,348 @@ class InfographicTalk(AgentTalk):
             self.logger.warning(
                 "Auto-save infographic artifact failed: %s", exc
             )
+
+    # ── Deterministic render (FEAT-327) ──────────────────────────────────
+
+    async def _render_infographic_deterministic(self) -> web.Response:
+        """Deterministic, bot-less render: ``POST .../infographic/render``.
+
+        No ``{agent_id}``, no bot, no LLM. Decodes the request (JSON or
+        multipart), runs the FEAT-326 validation gate via
+        ``AdhocDatasetAdapter``, renders through a server-owned
+        ``InfographicToolkit``, persists (awaited, unless ``persist=False``),
+        and returns a negotiated response with the two-behavior URL rule.
+
+        Returns:
+            ``text/html`` (spliced/rendered HTML) or ``application/json``
+            (``RenderResponse``), per ``_negotiate_accept()``; ``202``
+            ``{"job_id": ...}`` for ``async=true`` (TASK-1891). ``400`` on a
+            malformed part/body, ``403`` on PBAC denial, ``413`` over the
+            body cap, ``404`` on an unknown template, ``422`` on aggregated
+            validation deficits, ``5xx`` otherwise.
+        """
+        # PBAC gate BEFORE decoding — same existing action/decorator the LLM
+        # generation path already uses (spec's resolution: "no NEW auth
+        # scheme" — this reuses "agent:chat", scoped "*" since there is no
+        # per-agent id here, matching the templates/themes register pattern
+        # at _handle_templates_register/_handle_themes_register). Fails
+        # open (returns None) when PBAC isn't configured, same as every
+        # other action on this handler.
+        pbac_denied = await self._check_pbac_agent_access(agent_id="*", action="agent:chat")
+        if pbac_denied is not None:
+            return pbac_denied
+
+        try:
+            parsed, frames = await self._decode_render_request()
+        except RenderPayloadError as exc:
+            return self.json_response(
+                {"error": "Malformed request", "part": exc.part_name, "detail": str(exc)},
+                status=400,
+            )
+        except RenderBodyTooLargeError as exc:
+            return self.json_response({"error": str(exc)}, status=413)
+        except ValidationError as exc:
+            return self.json_response(
+                {"error": "Invalid RenderRequest", "details": exc.errors()}, status=400
+            )
+
+        try:
+            get_template(parsed.template)
+        except KeyError:
+            return self.error(f"Unknown template '{parsed.template}'.", status=404)
+
+        user_id, agent_id, session_id = await self._resolve_render_attribution(parsed)
+
+        if parsed.async_:
+            return await self._enqueue_render_job(
+                parsed, frames, user_id=user_id, agent_id=agent_id, session_id=session_id
+            )
+
+        toolkit = self._get_render_toolkit()
+        artifact_store = self.request.app.get("artifact_store") if parsed.persist else None
+        if parsed.persist and artifact_store is None:
+            self.logger.warning(
+                "Render requested persist=True but app['artifact_store'] is not "
+                "configured; proceeding WITHOUT persistence."
+            )
+
+        try:
+            outcome = await render_deterministic(
+                parsed,
+                frames,
+                toolkit=toolkit,
+                artifact_store=artifact_store,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+            )
+        except InfographicValidationError as exc:
+            if exc.code in ("sections_unmet", "payload_shape_mismatch"):
+                return self.json_response(
+                    {"error": exc.code, "detail": exc.detail}, status=422
+                )
+            self.logger.error("Render failed: %s — %s", exc.code, exc.detail)
+            return self.json_response(
+                {"error": exc.code, "detail": exc.detail}, status=500
+            )
+        except RenderPayloadError as exc:
+            return self.json_response(
+                {"error": "Payload assembly failed", "part": exc.part_name, "detail": str(exc)},
+                status=400,
+            )
+
+        accept = self._negotiate_accept()
+        if accept == "text/html":
+            response = web.Response(
+                body=outcome.html.encode("utf-8"),
+                content_type="text/html",
+                charset="utf-8",
+            )
+            response.headers["X-Artifact-Persisted"] = str(outcome.persisted).lower()
+            return response
+
+        payload = RenderResponse(
+            artifact_id=outcome.artifact_id,
+            url=outcome.url,
+            url_note=outcome.url_note,
+            template=parsed.template,
+            sections_validated=outcome.sections_validated,
+            persisted=outcome.persisted,
+            timings=outcome.timings,
+        )
+        return self.json_response(payload.model_dump())
+
+    async def _decode_render_request(self):
+        """Decode the render body (JSON or multipart) into a ``RenderRequest`` + frames.
+
+        Returns:
+            Tuple of ``(RenderRequest, {name: DataFrame})`` — inline datasets
+            decoded from the JSON body, plus (for multipart) the
+            ``dataset:<name>`` parts.
+
+        Both transports enforce the SAME pre-buffering ``DEFAULT_MAX_BODY_SIZE``
+        cap (``parse_json_render_request``/``parse_multipart_render_request``)
+        — the framework's own app-wide ``client_max_size`` does not cover
+        this endpoint's spec-mandated ceiling at the right granularity.
+
+        Raises:
+            RenderPayloadError: Malformed body/part, invalid JSON, a
+                ``RenderRequest`` validation failure, or a declared ``None``
+                dataset with no backing multipart part.
+            RenderBodyTooLargeError: The body exceeds the configured cap.
+        """
+        content_type = self.request.content_type or ""
+        if content_type.startswith("multipart/"):
+            reader = await self.request.multipart()
+            parsed, multipart_frames = await parse_multipart_render_request(reader)
+            frames = decode_inline_datasets(parsed)
+            frames.update(multipart_frames)
+            return parsed, frames
+
+        # JSON transport: parse_json_render_request enforces the SAME
+        # pre-buffering DEFAULT_MAX_BODY_SIZE cap as the multipart path —
+        # the framework's own app-wide client_max_size does not cover this
+        # endpoint's spec-mandated 50 MB ceiling at the right granularity.
+        return await parse_json_render_request(self.request)
+
+    async def _resolve_render_attribution(self, parsed: RenderRequest):
+        """Resolve ``(user_id, agent_id, session_id)`` attribution for a render.
+
+        ``user_id`` comes ONLY from the authenticated session (never the
+        body — the body cannot spoof another user's ownership); ``agent_id``/
+        ``session_id`` come from the body, falling back to system defaults.
+
+        Args:
+            parsed: The parsed ``RenderRequest``.
+
+        Returns:
+            The resolved ``(user_id, agent_id, session_id)`` tuple.
+        """
+        user_id = None
+        try:
+            request_session = self.request.session or await get_session(self.request)
+            if request_session:
+                user_id = request_session.get("user_id")
+        except AttributeError:
+            pass
+        user_id = user_id or "_anon"
+        agent_id = parsed.agent_id or "_anon"
+        session_id = parsed.session_id or uuid.uuid4().hex
+        return str(user_id), str(agent_id), str(session_id)
+
+    def _get_render_toolkit(self) -> InfographicToolkit:
+        """Return (lazily building) the server-owned ``InfographicToolkit``.
+
+        Cached on ``self.request.app["infographic_render_toolkit"]`` — ONE
+        instance shared across requests. Safe to share: the render flow
+        (``render_deterministic``) never mutates toolkit instance state
+        (unlike the bot-bound authoring path), so there is no cross-request
+        interference.
+
+        ``template_dirs`` resolution order:
+        1. ``app["infographic_render_template_dirs"]`` — per-app override,
+           mirrors the existing ``app["artifact_store"]`` DI convention
+           (``manager.py`` on_startup).
+        2. ``parrot.conf.INFOGRAPHIC_RENDER_TEMPLATE_DIRS`` — deployment-wide
+           config (``INFOGRAPHIC_RENDER_TEMPLATE_DIRS`` env var, comma-separated).
+
+        When BOTH are empty, a render request will fail with
+        ``TEMPLATE_ENGINE_UNSET`` — a loud warning is logged the first time
+        this happens (not per-request) so the gap is never silent.
+        """
+        app = self.request.app
+        toolkit = app.get("infographic_render_toolkit")
+        if toolkit is None:
+            template_dirs = app.get("infographic_render_template_dirs") or (
+                INFOGRAPHIC_RENDER_TEMPLATE_DIRS or None
+            )
+            if not template_dirs:
+                self.logger.warning(
+                    "Building the render-endpoint InfographicToolkit with NO "
+                    "template_dirs configured (app['infographic_render_template_dirs'] "
+                    "and parrot.conf.INFOGRAPHIC_RENDER_TEMPLATE_DIRS are both empty). "
+                    "EVERY render request will fail with TEMPLATE_ENGINE_UNSET until "
+                    "one is set. See docs/api/infographic_render.md."
+                )
+            # artifact_store may legitimately be None here (not yet configured);
+            # the render flow never reads toolkit._artifact_store — persistence
+            # goes through the SAME store passed explicitly to render_deterministic
+            # — so this is safe despite InfographicToolkit's non-Optional param.
+            toolkit = InfographicToolkit(
+                artifact_store=app.get("artifact_store"),  # type: ignore[arg-type]
+                template_dirs=template_dirs,
+            )
+            app["infographic_render_toolkit"] = toolkit
+        return toolkit
+
+    def _get_render_job_store(self) -> RenderJobStore:
+        """Return (lazily building) the shared ``RenderJobStore`` (FEAT-327, Module 4).
+
+        Cached on ``self.request.app["infographic_render_job_store"]`` — ONE
+        instance shared across requests/workers-in-process; the underlying
+        Redis client is what actually makes polling multi-worker-safe.
+        """
+        app = self.request.app
+        store = app.get("infographic_render_job_store")
+        if store is None:
+            store = RenderJobStore()
+            app["infographic_render_job_store"] = store
+        return store
+
+    async def _enqueue_render_job(
+        self,
+        parsed: RenderRequest,
+        frames: Dict[str, Any],
+        *,
+        user_id: str,
+        agent_id: str,
+        session_id: str,
+    ) -> web.Response:
+        """Create a pending job, spawn the render as a background task, return 202.
+
+        Args:
+            parsed: The parsed ``RenderRequest`` (``async_`` is True).
+            frames: Decoded ``{name: DataFrame}`` datasets.
+            user_id: Attribution — session user_id.
+            agent_id: Attribution — body agent_id or system default.
+            session_id: Attribution — body session_id or system default.
+
+        Returns:
+            ``202`` JSON response with ``{"job_id": ...}``.
+        """
+        job_store = self._get_render_job_store()
+        job_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+        job = RenderJob(
+            job_id=job_id,
+            status="pending",
+            created_at=now.isoformat(),
+            deadline=now.isoformat(),  # placeholder — job_store.create() stamps the real one
+        )
+        await job_store.create(job)
+
+        # Fire-and-forget, but NOT unreferenced: asyncio only holds a WEAK
+        # reference to a Task with no other referrer, so an unreferenced
+        # task can be garbage-collected before it completes (a well-known
+        # asyncio footgun — see asyncio.create_task's own docs). Keep a
+        # strong reference on `app` for the task's lifetime, self-removing
+        # via a done-callback so this set never grows unbounded.
+        task = asyncio.get_running_loop().create_task(
+            self._run_render_job(job_store, job_id, parsed, frames, user_id, agent_id, session_id)
+        )
+        pending_tasks = self.request.app.setdefault("infographic_render_tasks", set())
+        pending_tasks.add(task)
+        task.add_done_callback(pending_tasks.discard)
+        return self.json_response({"job_id": job_id}, status=202)
+
+    async def _run_render_job(
+        self,
+        job_store: RenderJobStore,
+        job_id: str,
+        parsed: RenderRequest,
+        frames: Dict[str, Any],
+        user_id: str,
+        agent_id: str,
+        session_id: str,
+    ) -> None:
+        """Run the deterministic render as a background job; NEVER raises.
+
+        Transitions the job to ``running`` (stamping the watchdog deadline),
+        runs :func:`render_deterministic`, and writes ``done``+result or
+        ``failed``+structured error as the terminal state (with TTL). Any
+        exception is captured into the job record — it must never escape
+        and die silently (this coroutine has no caller awaiting it).
+        """
+        try:
+            await job_store.set_running(job_id)
+            toolkit = self._get_render_toolkit()
+            artifact_store = self.request.app.get("artifact_store") if parsed.persist else None
+            outcome = await render_deterministic(
+                parsed,
+                frames,
+                toolkit=toolkit,
+                artifact_store=artifact_store,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+            )
+            result = RenderResponse(
+                artifact_id=outcome.artifact_id,
+                url=outcome.url,
+                url_note=outcome.url_note,
+                template=parsed.template,
+                sections_validated=outcome.sections_validated,
+                persisted=outcome.persisted,
+                timings=outcome.timings,
+            )
+            job = await job_store.get(job_id)
+            if job is not None:
+                await job_store.set_terminal(job.model_copy(update={"status": "done", "result": result}))
+        except Exception as exc:  # noqa: BLE001 — must never die silently
+            self.logger.exception("Async render job %s failed: %s", job_id, exc)
+            code = exc.code if isinstance(exc, InfographicValidationError) else type(exc).__name__
+            detail = exc.detail if isinstance(exc, InfographicValidationError) else str(exc)
+            job = await job_store.get(job_id)
+            if job is not None:
+                await job_store.set_terminal(
+                    job.model_copy(update={"status": "failed", "error": {"code": code, "detail": detail}})
+                )
+
+    async def _get_render_job_status(self, job_id: str) -> web.Response:
+        """Handle ``GET .../infographic/render/jobs/{job_id}``.
+
+        Args:
+            job_id: The job identifier from the URL.
+
+        Returns:
+            ``200`` with the ``RenderJob`` state, or ``404`` when
+            unknown/expired.
+        """
+        job_store = self._get_render_job_store()
+        job = await job_store.get(job_id)
+        if job is None:
+            return self.error(f"Unknown or expired job '{job_id}'.", status=404)
+        return self.json_response(job.model_dump())
 
     async def _handle_templates_get(
         self, name: Optional[str]

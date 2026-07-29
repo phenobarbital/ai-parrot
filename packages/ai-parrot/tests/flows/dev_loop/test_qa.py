@@ -49,23 +49,66 @@ class TestPermissionMode:
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(
             side_effect=[
-                QAReport(passed=True, criterion_results=[], lint_passed=True),
                 CodeReviewVerdict(passed=True),
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
             ]
         )
         node = QANode(dispatcher=dispatcher)
         await node.execute(ctx)
-        # The FIRST dispatch is the deterministic sdd-qa pass — the SECOND
-        # (code-review, FEAT-270) is intentionally write-enabled and is
-        # covered separately in test_qa_codereview.py.
+        # Write-enabled reviewers run FIRST (so their fixes land before the
+        # deterministic pass). The deterministic sdd-qa pass is the SECOND
+        # dispatch; code-review is covered in test_qa_codereview.py.
         profile: ClaudeCodeDispatchProfile = (
-            dispatcher.dispatch.await_args_list[0].kwargs["profile"]
+            dispatcher.dispatch.await_args_list[1].kwargs["profile"]
         )
         assert profile.permission_mode == "plan"
         assert "Edit" not in (profile.allowed_tools or [])
         assert "Write" not in (profile.allowed_tools or [])
         assert "Read" in profile.allowed_tools
         assert "Bash" in profile.allowed_tools
+
+
+class TestSessionHostForwarding:
+    """FEAT-322: shared["session_host"] must reach BOTH dispatch() calls —
+    the deterministic sdd-qa pass AND the code-review pass (the latter via
+    ClaudeCodeReviewDispatcher.review(), which wraps the SAME dispatcher by
+    default)."""
+
+    @pytest.mark.asyncio
+    async def test_session_host_forwarded_to_both_dispatch_calls(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[
+                CodeReviewVerdict(passed=True),
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+            ]
+        )
+        node = QANode(dispatcher=dispatcher)
+        sentinel_host = object()
+        ctx["session_host"] = sentinel_host
+
+        await node.execute(ctx)
+
+        review_kwargs = dispatcher.dispatch.await_args_list[0].kwargs
+        deterministic_kwargs = dispatcher.dispatch.await_args_list[1].kwargs
+        assert deterministic_kwargs["session_host"] is sentinel_host
+        assert review_kwargs["session_host"] is sentinel_host
+
+    @pytest.mark.asyncio
+    async def test_session_host_none_when_absent(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[
+                CodeReviewVerdict(passed=True),
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+            ]
+        )
+        node = QANode(dispatcher=dispatcher)
+
+        await node.execute(ctx)
+
+        for call in dispatcher.dispatch.await_args_list:
+            assert call.kwargs["session_host"] is None
 
 
 class TestFailureDoesNotRaise:
@@ -79,7 +122,7 @@ class TestFailureDoesNotRaise:
         )
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(
-            side_effect=[failing, CodeReviewVerdict(passed=True)]
+            side_effect=[CodeReviewVerdict(passed=True), failing]
         )
         node = QANode(dispatcher=dispatcher)
         result = await node.execute(ctx)
@@ -95,7 +138,7 @@ class TestSuccessReturnsReport:
         )
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(
-            side_effect=[passing, CodeReviewVerdict(passed=True)]
+            side_effect=[CodeReviewVerdict(passed=True), passing]
         )
         node = QANode(dispatcher=dispatcher)
         result = await node.execute(ctx)
@@ -116,6 +159,37 @@ class TestDispatchValidationErrorPropagates:
             await node.execute(ctx)
 
 
+class TestSkipQA:
+    @pytest.mark.asyncio
+    async def test_skip_qa_returns_synthetic_pass(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock()
+        node = QANode(dispatcher=dispatcher, skip_qa=True)
+        result = await node.execute(ctx)
+
+        assert result.passed is True
+        assert result.lint_passed is True
+        assert result.code_review_passed is True
+        assert "skip_qa=True" in result.notes
+        assert ctx["qa_report"] is result
+        dispatcher.dispatch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skip_qa_false_runs_normally(self, ctx):
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            side_effect=[
+                CodeReviewVerdict(passed=True),
+                QAReport(passed=True, criterion_results=[], lint_passed=True),
+            ]
+        )
+        node = QANode(dispatcher=dispatcher, skip_qa=False)
+        result = await node.execute(ctx)
+
+        assert result.passed is True
+        assert dispatcher.dispatch.await_count == 2
+
+
 class TestCwd:
     @pytest.mark.asyncio
     async def test_cwd_uses_worktree_path(self, ctx):
@@ -124,11 +198,12 @@ class TestCwd:
         )
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(
-            side_effect=[passing, CodeReviewVerdict(passed=True)]
+            side_effect=[CodeReviewVerdict(passed=True), passing]
         )
         node = QANode(dispatcher=dispatcher)
         await node.execute(ctx)
+        # Deterministic QA is the second dispatch (after code review)
         assert (
-            dispatcher.dispatch.await_args_list[0].kwargs["cwd"]
+            dispatcher.dispatch.await_args_list[1].kwargs["cwd"]
             == ctx["research_output"].worktree_path
         )

@@ -2,9 +2,38 @@ from pkgutil import extend_path
 __path__ = extend_path(__path__, __name__)
 
 import contextlib
+import warnings
 from typing import Protocol, Dict, Type, Any, Optional
 from importlib import import_module
 from ...models.outputs import OutputMode
+
+# FEAT-273 (Module 12 / G7): legacy OutputModes superseded by the A2UI pipeline.
+# Each entry names the A2UI replacement path (single source of truth for the message).
+# Kept modes (JSON/YAML/MARKDOWN/SLACK/WHATSAPP/TERMINAL, infographic-JSON) are ABSENT.
+_A2UI_REPLACEMENTS: Dict[OutputMode, str] = {
+    OutputMode.ECHARTS: "OutputMode.A2UI with the Chart catalog component",
+    OutputMode.STRUCTURED_CHART: "OutputMode.A2UI with the Chart catalog component",
+    OutputMode.MAP: "OutputMode.A2UI with the Map catalog component",
+    OutputMode.STRUCTURED_MAP: "OutputMode.A2UI with the Map catalog component",
+    OutputMode.TABLE: "OutputMode.A2UI with the DataTable catalog component",
+    OutputMode.STRUCTURED_TABLE: "OutputMode.A2UI with the DataTable catalog component",
+    OutputMode.CARD: "OutputMode.A2UI with the Card/KPICard catalog components",
+    OutputMode.TEMPLATE_REPORT: "OutputMode.A2UI with the Report catalog component",
+    OutputMode.JINJA2: "OutputMode.A2UI with the Report catalog component",
+    OutputMode.HTML: "OutputMode.A2UI with the SSR-HTML renderer",
+    OutputMode.APPLICATION: "OutputMode.A2UI with the SSR-HTML renderer",
+}
+
+
+def _warn_if_deprecated(mode: OutputMode) -> None:
+    """Emit a `DeprecationWarning` for an A2UI-superseded legacy mode (FEAT-273)."""
+    replacement = _A2UI_REPLACEMENTS.get(mode)
+    if replacement is not None:
+        warnings.warn(
+            f"OutputMode.{mode.name} is deprecated (FEAT-273): use {replacement}.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
 
 class Renderer(Protocol):
     """Protocol for output renderers."""
@@ -18,6 +47,7 @@ _PROMPTS: Dict[OutputMode, str] = {}
 
 # Module-level dispatch table — maps OutputMode → module name(s) to import
 _MODULE_MAP: dict = {
+    OutputMode.TEXT:            ('.text',),
     OutputMode.TERMINAL:        ('.terminal',),          # no renderer; TerminalGenerator is in generators/
     OutputMode.HTML:            ('.html',),
     OutputMode.JSON:            ('.json',),
@@ -25,16 +55,12 @@ _MODULE_MAP: dict = {
     OutputMode.YAML:            ('.yaml',),
     OutputMode.CHART:           ('.chart',),             # base class only; no renderer registered
     OutputMode.MAP:             ('.map',),
-    OutputMode.ALTAIR:          ('.altair',),
     OutputMode.STRUCTURED_CHART: ('.structured_chart',),
     OutputMode.STRUCTURED_TABLE: ('.structured_table',),
     OutputMode.STRUCTURED_MAP:   ('.structured_map',),
     OutputMode.JINJA2:          ('.jinja2',),
     OutputMode.TEMPLATE_REPORT: ('.template_report',),
-    OutputMode.PLOTLY:          ('.plotly',),
-    OutputMode.MATPLOTLIB:      ('.matplotlib',),
     OutputMode.ECHARTS:         ('.echarts',),
-    OutputMode.SEABORN:         ('.seaborn',),
     OutputMode.TABLE:           ('.table',),
     OutputMode.APPLICATION:     ('.application',),
     OutputMode.CARD:            ('.card',),
@@ -61,6 +87,7 @@ def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
 
 def get_renderer(mode: OutputMode) -> Type[Renderer]:
     """Get the renderer class for the given output mode."""
+    _warn_if_deprecated(mode)
     if mode not in RENDERERS:
         modules = _MODULE_MAP.get(mode, ())
         with contextlib.suppress(ImportError):
@@ -98,10 +125,35 @@ def get_infographic_html_renderer():
 
     Returns:
         Type[InfographicHTMLRenderer]: The concrete renderer class.
+
+    Raises:
+        ImportError: If the ``ai-parrot-visualizations`` package is not
+            installed — the renderer moved there in FEAT-200; the message
+            names the exact pip extra to install.
     """
-    from .infographic_html import InfographicHTMLRenderer  # noqa: F401 — ensure registered
+    # FEAT-273 (G7): the infographic-HTML path is superseded; the JSON path is kept.
+    warnings.warn(
+        "The infographic-HTML renderer path is deprecated (FEAT-273): use "
+        "OutputMode.A2UI with the Infographic catalog component and the SSR-HTML "
+        "renderer. The infographic-JSON path is unaffected.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    try:
+        from .infographic_html import InfographicHTMLRenderer as _Cls
+    except ModuleNotFoundError as exc:
+        # FEAT-200 moved this module to the ai-parrot-visualizations satellite;
+        # only translate the error when the renderer module itself is missing,
+        # not when one of its own dependencies fails to import.
+        if exc.name and exc.name.endswith('infographic_html'):
+            raise ImportError(
+                "Infographic HTML rendering requires the 'ai-parrot-visualizations' "
+                "package (renderers moved out of core in FEAT-200). Install it with: "
+                "pip install 'ai-parrot-visualizations[infographic]' "
+                "(or reinstall the host with the extra: pip install 'ai-parrot[charts]')."
+            ) from exc
+        raise
     get_renderer(OutputMode.INFOGRAPHIC)  # trigger lazy-load + registration
-    from .infographic_html import InfographicHTMLRenderer as _Cls
     return _Cls
 
 

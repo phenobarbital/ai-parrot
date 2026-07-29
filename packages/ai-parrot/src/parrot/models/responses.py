@@ -219,6 +219,14 @@ class AIMessage(BaseModel):
             "field. (FEAT-197)"
         ),
     )
+    a2ui_envelope: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "A2UI v1.0 declarative envelope (a serialized CreateSurface) for "
+            "OutputMode.A2UI responses. Carried separately from `output` so legacy "
+            "consumers are unaffected (FEAT-273)."
+        ),
+    )
 
     # Allow arbitrary types for output field (pandas DataFrames, etc.)
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -597,6 +605,53 @@ class AIMessageFactory:
             usage=CompletionUsage.from_claude(response.get("usage", {})),
             stop_reason=response.get("stop_reason"),
             finish_reason=response.get("stop_reason"),
+            tool_calls=tool_calls or [],
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            raw_response=response,
+            response=content if isinstance(content, str) else str(content)
+        )
+
+    @staticmethod
+    def from_bedrock(
+        response: Dict[str, Any],
+        input_text: str,
+        model: str,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        structured_output: Any = None,
+        tool_calls: List[ToolCall] = None
+    ) -> AIMessage:
+        """Create AIMessage from Bedrock Converse API response."""
+        content = ""
+        message_content = response.get("output", {}).get("message", {}).get("content", [])
+        for block in message_content:
+            if "text" in block:
+                content += block["text"]
+
+        if tool_calls is None:
+            tool_calls = [
+                ToolCall(
+                    id=block["toolUse"].get("toolUseId"),
+                    name=block["toolUse"].get("name"),
+                    arguments=block["toolUse"].get("input", {}),
+                )
+                for block in message_content
+                if "toolUse" in block
+            ]
+
+        return AIMessage(
+            input=input_text,
+            output=structured_output or content,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
+            model=model,
+            provider="bedrock-converse",
+            usage=CompletionUsage.from_bedrock(response.get("usage", {})),
+            stop_reason=response.get("stopReason"),
+            finish_reason=response.get("stopReason"),
             tool_calls=tool_calls or [],
             user_id=user_id,
             session_id=session_id,

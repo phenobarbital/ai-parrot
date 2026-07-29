@@ -1,0 +1,773 @@
+---
+type: Wiki Overview
+title: AI-Parrot
+id: doc:readme-md
+tags:
+- overview
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Whether you need a simple chatbot, a complex multi-agent orchestration workflow,
+  or a robust production-ready AI service, AI-Parrot exposes the primitives to build
+  it efficiently.
+relates_to:
+- concept: mod:parrot
+  rel: mentions
+- concept: mod:parrot.a2a
+  rel: mentions
+- concept: mod:parrot.bots
+  rel: mentions
+- concept: mod:parrot.bots.flows.crew
+  rel: mentions
+- concept: mod:parrot.bots.flows.flow
+  rel: mentions
+- concept: mod:parrot.clients.google.client
+  rel: mentions
+- concept: mod:parrot.conf
+  rel: mentions
+- concept: mod:parrot.embeddings
+  rel: mentions
+- concept: mod:parrot.embeddings.google
+  rel: mentions
+- concept: mod:parrot.handlers
+  rel: mentions
+- concept: mod:parrot.manager
+  rel: mentions
+- concept: mod:parrot.models.google
+  rel: mentions
+- concept: mod:parrot.models.outputs
+  rel: mentions
+- concept: mod:parrot.rerankers
+  rel: mentions
+- concept: mod:parrot.rerankers.local
+  rel: mentions
+- concept: mod:parrot.scheduler
+  rel: mentions
+- concept: mod:parrot.stores
+  rel: mentions
+- concept: mod:parrot.stores.pgvector
+  rel: mentions
+- concept: mod:parrot.tools
+  rel: mentions
+---
+
+# AI-Parrot
+
+**AI-Parrot** is an async-first Python framework for building, extending, and orchestrating AI Agents and Chatbots. Built on top of `navigator-api`, it provides a unified interface for interacting with various LLM providers, managing tools, conducting agent-to-agent (A2A) communication, and serving agents via the Model Context Protocol (MCP).
+
+Whether you need a simple chatbot, a complex multi-agent orchestration workflow, or a robust production-ready AI service, AI-Parrot exposes the primitives to build it efficiently.
+
+---
+
+## Monorepo Structure
+
+AI-Parrot is organized as a **monorepo** managed by [uv workspaces](https://docs.astral.sh/uv/concepts/workspaces/). Each package is independently versioned and published to PyPI, so you install only what you need.
+
+### Core
+
+| Package | PyPI | Description |
+|---------|------|-------------|
+| [`ai-parrot`](packages/ai-parrot) | `pip install ai-parrot` | Core framework — agents, LLM clients, memory, orchestration (AgentCrew, AgentsFlow), skills, knowledge graphs, and the `parrot` CLI |
+
+### Satellite Packages
+
+Satellite packages extend the core with optional functionality. They contribute to the `parrot.*` namespace via PEP 420 implicit namespace packages, so import paths stay the same regardless of which packages are installed.
+
+| Package | PyPI | Description |
+|---------|------|-------------|
+| [`ai-parrot-server`](packages/ai-parrot-server) | `pip install ai-parrot-server` | Server infrastructure — HTTP handlers, MCP/A2A transports (QUIC, gRPC), scheduler (APScheduler), and autonomous agent deployment |
+| [`ai-parrot-tools`](packages/ai-parrot-tools) | `pip install ai-parrot-tools` | 30+ tool and toolkit implementations — Jira, AWS, Slack, Docker, Git, databases, finance, security scanners, code interpreters, and more |
+| [`ai-parrot-loaders`](packages/ai-parrot-loaders) | `pip install ai-parrot-loaders` | Document loaders for RAG pipelines — PDF, YouTube, audio transcription (WhisperX), web scraping, eBooks, video, and OCR |
+| [`ai-parrot-embeddings`](packages/ai-parrot-embeddings) | `pip install ai-parrot-embeddings` | Embedding, vector-store, and reranker backends — HuggingFace, OpenAI, Google, PgVector, Milvus, ArangoDB, FAISS, ChromaDB |
+| [`ai-parrot-integrations`](packages/ai-parrot-integrations) | `pip install ai-parrot-integrations` | Messaging channel integrations — Slack, Telegram, MS Teams, WhatsApp, Matrix, voice interfaces (ASR + TTS) |
+| [`ai-parrot-visualizations`](packages/ai-parrot-visualizations) | `pip install ai-parrot-visualizations` | Output renderers — Matplotlib, Seaborn, Plotly, Altair, ECharts, Folium maps, SVG infographics, Streamlit, Panel dashboards |
+| [`ai-parrot-pipelines`](packages/ai-parrot-pipelines) | `pip install ai-parrot-pipelines` | Specialized pipelines — planogram compliance, retail shelf analysis, and vision workflows |
+| [`ai-parrot-advisors`](packages/ai-parrot-advisors) | `pip install ai-parrot-advisors` | Product advisor and selection-matching components powered by embeddings and catalog search |
+| [`parrot-formdesigner`](packages/parrot-formdesigner) | `pip install parrot-formdesigner` | Platform-agnostic form design and rendering — Telegram, Slack, Teams, HTML, and Adaptive Cards |
+
+### How the namespace works
+
+The core and satellite packages share the `parrot.*` namespace. For example, `ai-parrot-embeddings` provides `parrot.embeddings.google`, `parrot.stores.pgvector`, and `parrot.rerankers.local` — the same import paths the core defines as abstract base classes. Install a satellite and its concrete implementations become available automatically.
+
+```
+ai-parrot (core)                          ai-parrot-embeddings (satellite)
+├── parrot.embeddings   ← base classes    ├── parrot.embeddings.google
+├── parrot.stores       ← base classes    ├── parrot.stores.pgvector
+└── parrot.rerankers    ← base classes    └── parrot.rerankers.local
+```
+
+---
+
+## Installation
+
+### Core framework
+
+```bash
+pip install ai-parrot
+```
+
+### Quick Setup (CLI)
+
+After installing, use the `parrot` CLI to configure your environment interactively:
+
+```bash
+# Interactive setup wizard — select LLM provider, enter API keys, generate .env
+parrot setup
+
+# Initialize configuration directory structure (env/ and etc/)
+parrot conf init
+```
+
+The `parrot setup` wizard will guide you through:
+1. Selecting an LLM provider (OpenAI, Anthropic, Google, etc.)
+2. Entering your API credentials
+3. Writing them to the correct `.env` file
+4. Optionally creating a starter Agent and bootstrap files (`app.py`, `run.py`)
+
+Additional CLI commands:
+
+```bash
+# Start an MCP server from a YAML config
+parrot mcp --config server.yaml
+
+# Deploy an autonomous agent as a systemd service
+parrot autonomous create --agent my_agent.py
+parrot autonomous install --agent my_agent.py --name my-agent
+```
+
+### LLM Providers
+
+Install only the providers you need:
+
+```bash
+# Individual providers
+pip install "ai-parrot[openai]"       # OpenAI / GPT
+pip install "ai-parrot[anthropic]"    # Anthropic / Claude
+pip install "ai-parrot[google]"       # Google Gemini
+pip install "ai-parrot[groq]"         # Groq
+pip install "ai-parrot[xai]"          # X.AI / Grok
+
+# All LLM providers at once
+pip install "ai-parrot[llms]"
+```
+
+Additional providers supported out of the box (no extra install needed):
+- **HuggingFace** (`hf`) — uses the HuggingFace Inference API
+- **vLLM** (`vllm`) — connects to a local vLLM server
+- **OpenRouter** (`openrouter`) — routes to any model via OpenRouter API
+- **Ollama / Local** — via OpenAI-compatible endpoints
+
+### Embeddings & Vector Stores
+
+```bash
+# Base embedding support
+pip install ai-parrot-embeddings
+
+# With specific backends
+pip install "ai-parrot-embeddings[huggingface]"    # Sentence transformers
+pip install "ai-parrot-embeddings[pgvector]"       # PostgreSQL pgvector
+pip install "ai-parrot-embeddings[milvus]"         # Milvus vector DB
+pip install "ai-parrot-embeddings[chroma]"         # ChromaDB
+pip install "ai-parrot-embeddings[all]"            # All backends
+```
+
+### Tools
+
+```bash
+pip install ai-parrot-tools
+
+# Or with specific tool extras
+pip install "ai-parrot-tools[jira]"
+pip install "ai-parrot-tools[aws]"
+pip install "ai-parrot-tools[slack]"
+pip install "ai-parrot-tools[finance]"
+pip install "ai-parrot-tools[all]"       # All tool dependencies
+```
+
+Available tool extras: `jira`, `slack`, `aws`, `docker`, `git`, `analysis`, `excel`, `kubernetes`, `sandbox`, `codeinterpreter`, `pulumi`, `sitesearch`, `office365`, `scraping`, `finance`, `db`, `flowtask`, `google`, `arxiv`, `wikipedia`, `weather`, `messaging`, `security`, `pdf`, `msword`.
+
+### Document Loaders
+
+```bash
+pip install ai-parrot-loaders
+
+# Or with specific loader extras
+pip install "ai-parrot-loaders[youtube]"
+pip install "ai-parrot-loaders[pdf]"
+pip install "ai-parrot-loaders[audio]"
+pip install "ai-parrot-loaders[all]"     # All loader dependencies
+```
+
+Available loader extras: `youtube`, `audio`, `pdf`, `web`, `ebook`, `video`, `images`, `document`, `scraping`.
+
+### Server & Integrations
+
+```bash
+# Server infrastructure (handlers, scheduler, MCP/A2A transports)
+pip install "ai-parrot-server[all]"
+
+# Messaging integrations
+pip install "ai-parrot-integrations[telegram]"
+pip install "ai-parrot-integrations[slack]"
+pip install "ai-parrot-integrations[msteams]"
+pip install "ai-parrot-integrations[whatsapp]"
+pip install "ai-parrot-integrations[voice]"      # All voice backends
+pip install "ai-parrot-integrations[all]"        # All integrations
+```
+
+### Visualizations
+
+```bash
+pip install "ai-parrot-visualizations[charts]"   # Matplotlib, Seaborn, Plotly, Altair, ECharts
+pip install "ai-parrot-visualizations[map]"       # Folium maps
+pip install "ai-parrot-visualizations[all]"       # All renderers
+```
+
+### Platform & Security Tools
+
+AI-Parrot includes tools for **cloud security auditing** and **infrastructure management**. These tools rely on external Docker images that must be installed before use:
+
+```bash
+# Security tools
+parrot install cloudsploit    # AWS security scanner (CloudSploit)
+parrot install prowler        # Cloud security posture management
+
+# Platform tools
+parrot install pulumi         # Infrastructure as Code CLI
+```
+
+The `parrot install` command pulls and configures the required Docker containers automatically, so the tools are ready to be used by your agents.
+
+---
+
+## Quick Start
+
+Create a simple weather chatbot in just a few lines of code:
+
+```python
+import asyncio
+from parrot.bots import Chatbot
+from parrot.tools import tool
+
+# 1. Define a tool
+@tool
+def get_weather(location: str) -> str:
+    """Get the current weather for a location."""
+    return f"The weather in {location} is Sunny, 25C"
+
+async def main():
+    # 2. Create the Agent
+    bot = Chatbot(
+        name="WeatherBot",
+        llm="openai:gpt-4o",  # Provider:Model
+        tools=[get_weather],
+        system_prompt="You are a helpful weather assistant."
+    )
+
+    # 3. Configure (loads tools, connects to memory)
+    await bot.configure()
+
+    # 4. Chat!
+    response = await bot.ask("What's the weather like in Madrid?")
+    print(response)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Using LLM Clients Directly
+
+Beyond the `Chatbot` abstraction, you can access any LLM provider client directly for lower-level operations like image generation, embeddings, or custom completion calls:
+
+```python
+import asyncio
+from parrot.clients.google.client import GoogleGenAIClient
+from parrot.models.outputs import ImageGenerationPrompt
+from parrot.models.google import GoogleModel
+
+async def main():
+    prompt = ImageGenerationPrompt(
+        prompt="A realistic passport-style photo with white background",
+        styles=["photorealistic", "high resolution"],
+        model=GoogleModel.IMAGEN_3.value,
+        aspect_ratio="16:9",
+    )
+
+    client = GoogleGenAIClient()
+    async with client:
+        response = await client.image_generation(prompt_data=prompt)
+        for img_path in response.images:
+            print(f"Image saved to: {img_path}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Each provider client (`GoogleGenAIClient`, `OpenAIClient`, `AnthropicClient`, etc.) implements `AbstractClient` and can be used as an async context manager. This gives you full access to provider-specific features — image generation, audio transcription, structured outputs — while still benefiting from AI-Parrot's unified configuration and credential management.
+
+---
+
+## Running as a Server
+
+AI-Parrot is not only a library — it is also a full **aiohttp-based application server** that exposes your agents as REST APIs, WebSocket endpoints, and more. This is powered by [Navigator](https://github.com/phenobarbital/navigator-api), an async web framework built on aiohttp.
+
+### How it works
+
+When you run `parrot setup`, it generates two files:
+
+- **`app.py`** — Defines your application handler, registers agents with `BotManager`, and configures routes.
+- **`run.py`** — The entry point that starts the aiohttp server.
+
+**app.py** (generated by `parrot setup`):
+
+```python
+from parrot.manager import BotManager
+from parrot.conf import STATIC_DIR
+from parrot.handlers import AppHandler
+from agents.my_agent import MyAgent
+
+
+class Main(AppHandler):
+    app_name: str = "Parrot"
+    enable_static: bool = True
+    staticdir: str = STATIC_DIR
+
+    def configure(self) -> None:
+        self.bot_manager = BotManager()
+        self.bot_manager.register(MyAgent())
+        self.bot_manager.setup(self.app)
+```
+
+**run.py** (generated by `parrot setup`):
+
+```python
+from navigator import Application
+from app import Main
+
+app = Application(Main, enable_jinja2=True)
+
+if __name__ == "__main__":
+    app.run()
+```
+
+### Built-in endpoints
+
+Once the server starts, `BotManager.setup()` automatically registers these routes:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/agents/chat/{agent_id}` | POST | Chat with an agent (JSON, HTML, or Markdown response) |
+| `/api/v1/agents/chat/{agent_id}` | PATCH | Configure tools/MCP servers for a session |
+| `/api/v1/bot_management` | GET | List registered bots |
+| `/api/v1/bot_management/{bot}` | GET/POST/PATCH/DELETE | CRUD operations on bots |
+| `/api/v1/agent_tools` | GET | List available tools |
+| `/api/v1/ai/client` | GET | LLM provider configuration |
+| `/ws/userinfo` | WebSocket | Real-time user notifications |
+
+### Starting the server
+
+**Development** (single process, auto-reload):
+
+```bash
+python run.py
+```
+
+The server starts on `http://0.0.0.0:5000` by default (configurable via `APP_HOST` / `APP_PORT` environment variables).
+
+**Production** (Gunicorn with async workers):
+
+```bash
+# Install gunicorn
+pip install "ai-parrot[deploy]"
+
+# Run with aiohttp-compatible workers
+gunicorn run:app \
+    --worker-class aiohttp.worker.GunicornUVLoopWebWorker \
+    --workers 4 \
+    --bind 0.0.0.0:5000 \
+    --timeout 360
+```
+
+The long timeout (360s) accommodates agent queries that involve multi-step tool execution or LLM calls.
+
+### Talking to your agents via REST
+
+Once the server is running, any registered agent is accessible via HTTP:
+
+```bash
+# Chat with an agent
+curl -X POST http://localhost:5000/api/v1/agents/chat/my-agent \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the weather in Madrid?"}'
+
+# Request markdown output
+curl -X POST "http://localhost:5000/api/v1/agents/chat/my-agent?output_format=markdown" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Summarize the latest news"}'
+```
+
+---
+
+## Architecture
+
+AI-Parrot is designed with a modular architecture enabling agents to be both consumers and providers of tools and services.
+
+```mermaid
+graph TD
+    User["User / Client"] --> API["AgentTalk Handlers"]
+    API --> Bot["Chatbot / BaseBot"]
+
+    subgraph "Agent Core"
+        Bot --> Memory["Memory / Vector Store"]
+        Bot --> LLM["LLM Client (OpenAI/Anthropic/Etc)"]
+        Bot --> TM["Tool Manager"]
+    end
+
+    subgraph "Tools & Capabilities"
+        TM --> LocalTools["Local Tools (@tool)"]
+        TM --> Toolkits["Toolkits (OpenAPI/Custom)"]
+        TM --> MCPServer["External MCP Servers"]
+    end
+
+    subgraph "Connectivity"
+        Bot -.-> A2A["A2A Protocol (Client/Server)"]
+        Bot -.-> MCP["MCP Protocol (Server)"]
+        Bot -.-> Integrations["Telegram / MS Teams"]
+    end
+
+    subgraph "Orchestration"
+        Crew["AgentCrew"] --> Bot
+        Flow["AgentsFlow (DAG)"] --> Bot
+        Crew --> OtherBots["Other Agents"]
+        Flow --> OtherBots
+    end
+```
+
+---
+
+## Core Concepts
+
+### Agents (`Chatbot`)
+
+The `Chatbot` class is your main entry point. It handles conversation history, RAG (Retrieval-Augmented Generation), and the tool execution loop.
+
+```python
+bot = Chatbot(
+    name="MyAgent",
+    model="anthropic:claude-sonnet-4-20250514",
+    enable_memory=True
+)
+```
+
+### Tools
+
+#### Functional Tools (`@tool`)
+
+The simplest way to create a tool. The docstring and type hints are automatically used to generate the schema for the LLM.
+
+```python
+from parrot.tools import tool
+
+@tool
+def calculate_vat(amount: float, rate: float = 0.20) -> float:
+    """Calculate VAT for a given amount."""
+    return amount * rate
+```
+
+#### Class-Based Toolkits (`AbstractToolkit`)
+
+Group related tools into a reusable class. All public async methods become tools.
+
+```python
+from parrot.tools import AbstractToolkit
+
+class MathToolkit(AbstractToolkit):
+    async def add(self, a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    async def multiply(self, a: int, b: int) -> int:
+        """Multiply two numbers."""
+        return a * b
+```
+
+#### OpenAPI Toolkit (`OpenAPIToolkit`)
+
+Dynamically generate tools from any OpenAPI/Swagger specification.
+
+```python
+from parrot.tools import OpenAPIToolkit
+
+petstore = OpenAPIToolkit(
+    spec="https://petstore.swagger.io/v2/swagger.json",
+    service="petstore"
+)
+
+# Now your agent can call petstore_get_pet_by_id, etc.
+bot = Chatbot(name="PetBot", tools=petstore.get_tools())
+```
+
+### Orchestration
+
+#### AgentCrew
+
+Orchestrate multiple agents to solve complex tasks using `AgentCrew`.
+
+**Supported Modes:**
+- **Sequential**: Agents run one after another, passing context.
+- **Parallel**: Independent tasks run concurrently.
+- **Flow**: DAG-based execution defined by dependencies.
+- **Loop**: Iterative execution until a condition is met.
+
+```python
+from parrot.bots.flows.crew import AgentCrew
+
+crew = AgentCrew(
+    name="ResearchTeam",
+    agents=[researcher_agent, writer_agent]
+)
+
+# Define a Flow — Writer waits for Researcher to finish
+crew.task_flow(researcher_agent, writer_agent)
+
+await crew.run_flow("Research the latest advancements in Quantum Computing")
+```
+
+#### AgentsFlow
+
+Event-driven DAG executor for complex agent workflows with conditional routing, OR-join, and skip-propagation.
+
+```python
+from parrot.bots.flows.flow import AgentsFlow
+
+flow = AgentsFlow(name="pipeline")
+flow.add_node(analyzer)
+flow.add_node(writer)
+flow.add_edge(analyzer, writer, predicate=lambda ctx: ctx.get("proceed"))
+
+result = await flow.run_flow("Analyze and summarize this dataset")
+```
+
+### Scheduling (`@schedule`)
+
+Give your agents agency to run tasks in the background.
+
+```python
+from parrot.scheduler import schedule, ScheduleType
+
+class DailyBot(Chatbot):
+    @schedule(schedule_type=ScheduleType.DAILY, hour=9, minute=0)
+    async def morning_briefing(self):
+        news = await self.ask("Summarize today's top tech news")
+        await self.send_notification(news)
+```
+
+---
+
+## Connectivity & Exposure
+
+### Agent-to-Agent (A2A) Protocol
+
+Agents can discover and talk to each other using the A2A protocol.
+
+**Expose an Agent:**
+```python
+from parrot.a2a import A2AServer
+
+a2a = A2AServer(my_agent)
+a2a.setup(app, url="https://my-agent.com")
+```
+
+**Consume an Agent:**
+```python
+from parrot.a2a import A2AClient
+
+async with A2AClient("https://remote-agent.com") as client:
+    response = await client.send_message("Hello from another agent!")
+```
+
+### Model Context Protocol (MCP)
+
+AI-Parrot has first-class support for MCP.
+
+**Consume MCP Servers:**
+```python
+mcp_servers = [
+    MCPServerConfig(
+        name="filesystem",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+    )
+]
+await bot.setup_mcp_servers(mcp_servers)
+```
+
+**Expose Agent as MCP Server:**
+Allow Claude Desktop or other MCP clients to use your agent as a tool.
+
+### Platform Integrations
+
+Expose your bots natively to chat platforms (via `ai-parrot-integrations`):
+- **Telegram**
+- **Microsoft Teams**
+- **Slack**
+- **WhatsApp**
+- **Matrix / Element**
+- **Voice** (ASR + TTS with multiple backends)
+
+---
+
+## Supported LLM Providers
+
+| Provider | Extra | Identifier | Example |
+|----------|-------|------------|---------|
+| OpenAI | `openai` | `openai` | `openai:gpt-4o` |
+| Anthropic | `anthropic` | `anthropic`, `claude` | `anthropic:claude-sonnet-4-20250514` |
+| Google Gemini | `google` | `google` | `google:gemini-3.1-flash-lite-preview` |
+| Groq | `groq` | `groq` | `groq:llama-3.3-70b-versatile` |
+| X.AI / Grok | `xai` | `grok` | `grok:grok-3` |
+| HuggingFace | *(included)* | `hf` | `hf:meta-llama/Llama-3-8B` |
+| vLLM | *(included)* | `vllm` | `vllm:model-name` |
+| OpenRouter | *(included)* | `openrouter` | `openrouter:anthropic/claude-sonnet-4` |
+| Ollama | *(included)* | via OpenAI endpoint | — |
+
+---
+
+## Contributing
+
+### Development setup (from source)
+
+AI-Parrot uses **`uv`** as its package manager and provides a **Makefile** to simplify common tasks.
+
+```bash
+git clone https://github.com/phenobarbital/ai-parrot.git
+cd ai-parrot
+
+# Create the virtual environment (Python 3.11)
+make venv
+source .venv/bin/activate
+
+# Full dev install — all packages, all extras, dev tools
+make develop
+
+# Run tests
+make test
+```
+
+#### Makefile targets
+
+The Makefile covers the entire development lifecycle. Run `make help` for the full list.
+
+**Development install variants:**
+
+| Target | What it installs |
+|--------|-----------------|
+| `make develop` | All packages + all extras + dev tools (full environment) |
+| `make develop-fast` | All packages, base deps only (no torch/tensorflow/whisperx) |
+| `make develop-ml` | Embeddings + audio loaders (heavy ML stack) |
+
+**Production install variants:**
+
+| Target | What it installs |
+|--------|-----------------|
+| `make install` | All packages, base deps only (no extras) |
+| `make install-core` | Core with LLM clients + vector stores |
+| `make install-tools` | Core + tools with common extras (jira, slack, aws, etc.) |
+| `make install-tools-all` | Core + tools with ALL extras |
+| `make install-loaders` | Core + loaders with common extras (youtube, web, pdf) |
+| `make install-loaders-all` | Core + loaders with ALL extras (includes whisperx, pyannote) |
+| `make install-all` | Everything with ALL extras |
+
+**Other useful targets:**
+
+```bash
+make format          # Format code with black
+make lint            # Lint with pylint + black --check
+make test            # Run pytest + mypy
+make build           # Build all packages (sdist + wheel)
+make release         # Build + publish to PyPI
+make lock            # Regenerate uv.lock
+make clean           # Remove build artifacts
+make generate-registry  # Regenerate TOOL_REGISTRY from source
+make bump-patch      # Bump patch version (syncs across all packages)
+```
+
+#### Manual install (without Make)
+
+If you prefer not to use Make:
+
+```bash
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+
+# Full install
+uv sync --all-packages --all-extras
+
+# Or selective extras
+uv sync --extra google --extra openai
+```
+
+### Project layout
+
+```
+ai-parrot/
+├── packages/
+│   ├── ai-parrot/               # Core framework (Cython + Rust/Maturin)
+│   │   └── src/parrot/
+│   ├── ai-parrot-server/        # Server, handlers, MCP/A2A transports
+│   │   └── src/parrot/
+│   ├── ai-parrot-tools/         # 30+ tool implementations
+│   │   └── src/parrot_tools/
+│   ├── ai-parrot-loaders/       # Document loaders for RAG
+│   │   └── src/parrot_loaders/
+│   ├── ai-parrot-embeddings/    # Embedding & vector-store backends
+│   │   └── src/parrot/
+│   ├── ai-parrot-integrations/  # Messaging & voice channels
+│   │   └── src/parrot/
+│   ├── ai-parrot-visualizations/ # Output renderers & charts
+│   │   └── src/parrot/
+│   ├── ai-parrot-pipelines/     # Vision & planogram pipelines
+│   │   └── src/parrot_pipelines/
+│   ├── ai-parrot-advisors/      # Product advisor components
+│   │   └── src/parrot/
+│   └── parrot-formdesigner/     # Form design & rendering
+│       └── src/parrot_formdesigner/
+├── tests/
+├── examples/
+├── Makefile                      # Build, install, test, release shortcuts
+└── pyproject.toml                # uv workspace root
+```
+
+### Releasing to PyPI
+
+AI-Parrot publishes packages on every GitHub release. Each package is independently versioned.
+
+| Package | Build Method |
+|---------|-------------|
+| `ai-parrot` | cibuildwheel (Cython + Rust/Maturin) |
+| `ai-parrot-server` | uv build (pure Python) |
+| `ai-parrot-tools` | uv build (pure Python) |
+| `ai-parrot-loaders` | uv build (pure Python) |
+| `ai-parrot-embeddings` | uv build (pure Python) |
+| `ai-parrot-integrations` | uv build (pure Python) |
+| `ai-parrot-visualizations` | uv build (pure Python) |
+| `ai-parrot-pipelines` | uv build (pure Python) |
+| `ai-parrot-advisors` | uv build (pure Python) |
+| `parrot-formdesigner` | uv build (pure Python) |
+
+**To create a release:**
+
+1. Bump the version in each package's `pyproject.toml` (or use `make bump-patch` to sync all).
+2. Create a GitHub release — the workflow triggers automatically on the `release: created` event.
+
+---
+
+### Guidelines
+
+- All code must be **async-first** — no blocking I/O in async contexts
+- Use **type hints** and **Google-style docstrings** on all public APIs
+- Use **Pydantic** models for structured data
+- Run `pytest` after any logic change
+- Tools with heavy dependencies must use **lazy imports** to avoid bloating the core
+
+### Issues & Support
+
+…(truncated)…

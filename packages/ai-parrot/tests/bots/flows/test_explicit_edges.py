@@ -314,6 +314,131 @@ class TestCycleValidation:
         assert _ran(ctx) == ["a", "b"]
         assert result.status.value == "completed"
 
+    @pytest.mark.asyncio
+    async def test_on_condition_back_edge_does_not_count_as_cycle(self) -> None:
+        """FEAT-377 TASK-1910: an on_condition back-edge (e.g. dev-loop's
+        bounded qa -> development repair-loop edge) must not trip the
+        structural cycle check, even though it is structurally a cycle —
+        the predicate is the bound on the otherwise-infinite loop.
+
+        Shaped like the real dev-loop graph: the back-edge's target
+        ("dev") already has a legitimate unconditional predecessor
+        ("start"), so it is never a pure entry/root node either way — this
+        isolates the cycle-check exemption from node re-entry semantics
+        (which the retry predicate below deliberately never triggers)."""
+        flow = _flow()
+        flow.add_node(StubNode(node_id="start", result="go"))
+        flow.add_node(StubNode(node_id="dev"))
+        flow.add_node(StubNode(node_id="qa", result="passed"))
+        flow.add_node(StubNode(node_id="end"))
+        flow.add_edge("start", "dev")
+        flow.add_edge("dev", "qa")
+        flow.add_edge("qa", "end", predicate=lambda r: True)
+        flow.add_edge("qa", "dev", predicate=lambda r: False)  # never fires
+        ctx = FlowContext(initial_task="")
+        result = await flow.run_flow(ctx)
+        assert _ran(ctx) == ["start", "dev", "qa", "end"]
+        assert result.status.value == "completed"
+
+    @pytest.mark.asyncio
+    async def test_unconditional_cycle_still_raises_alongside_on_condition_edge(
+        self,
+    ) -> None:
+        """An on_condition edge elsewhere must not mask a real unconditional
+        cycle between two other nodes."""
+        flow = _flow()
+        for nid in ("a", "b", "c"):
+            flow.add_node(StubNode(node_id=nid))
+        flow.add_edge("a", "b")
+        flow.add_edge("b", "a")  # unconditional cycle
+        flow.add_edge("a", "c", predicate=lambda r: True)
+        with pytest.raises(ValueError, match="contains a cycle"):
+            await flow.run_flow(FlowContext(initial_task=""))
+
+    @pytest.mark.asyncio
+    async def test_back_edge_actually_retries_and_completes(self) -> None:
+        """FEAT-377 TASK-1910: a bounded repair loop must genuinely re-enter
+        — not merely validate — mirroring dev-loop's qa -> development edge.
+        A counting node fails its predicate on attempt 1, passes on attempt 2."""
+        attempts: dict[str, int] = {"qa": 0}
+
+        class CountingNode(StubNode):
+            def model_post_init(self, __context: Any) -> None:
+                super().model_post_init(__context)
+
+            async def execute(self, ctx: FlowContext, deps: Any, **kwargs: Any) -> Any:
+                ctx.shared_data.setdefault("order", []).append(self.node_id)
+                attempts["qa"] += 1
+                return attempts["qa"]  # 1 on first pass, 2 on retry
+
+        flow = _flow()
+        flow.add_node(StubNode(node_id="dev"))
+        flow.add_node(CountingNode(node_id="qa"))
+        flow.add_node(StubNode(node_id="end"))
+        flow.add_edge("dev", "qa")
+        flow.add_edge("qa", "end", predicate=lambda r: r >= 2)
+        flow.add_edge("qa", "dev", predicate=lambda r: r < 2)
+        ctx = FlowContext(initial_task="")
+        result = await flow.run_flow(ctx)
+        assert result.status.value == "completed"
+        # dev and qa each ran twice (attempt 1 fails the predicate, retries;
+        # attempt 2 passes and reaches "end").
+        assert _ran(ctx) == ["dev", "qa", "dev", "qa", "end"]
+        assert attempts["qa"] == 2
+
+    @pytest.mark.asyncio
+    async def test_join_nodes_forward_edge_not_misclassified_as_back_edge(self) -> None:
+        """Regression (FEAT-377/A): a JOIN node with its OWN outgoing
+        back-edge must not cause the engine to misclassify the ORDINARY
+        forward edge feeding that join as a cyclic back-edge too.
+
+        Mirrors dev-loop feature-mode's shape: ``gate -> router`` (an
+        ordinary forward ``on_condition`` edge, fired on every failure)
+        sits on the same undirected cycle as ``router -> dev`` (the
+        genuine back-edge, also ``on_condition``) once ``router`` also
+        routes back to ``dev``. Before this fix, "cyclic back-edge" was
+        classified by cycle MEMBERSHIP alone (any `on_condition` edge
+        whose target can reach its source), which flagged BOTH edges —
+        so `gate -> router` firing (which happens on every ordinary gate
+        failure, not just a bounded retry) was (mis)treated as a
+        retry-reset trigger, live-locking any run where the gate always
+        routes to the router. The fix uses a proper DFS white/gray/black
+        back-edge test, which classifies only `router -> dev` as cyclic.
+        """
+        calls: dict[str, int] = {"router": 0}
+
+        class RouterNode(StubNode):
+            async def execute(self, ctx: FlowContext, deps: Any, **kwargs: Any) -> Any:
+                ctx.shared_data.setdefault("order", []).append(self.node_id)
+                calls["router"] += 1
+                return "retry" if calls["router"] == 1 else "escalate"
+
+        flow = _flow()
+        flow.add_node(StubNode(node_id="dev"))
+        flow.add_node(StubNode(node_id="synth"))
+        flow.add_node(StubNode(node_id="gate", result="fail"))
+        flow.add_node(RouterNode(node_id="router"))
+        flow.add_node(StubNode(node_id="end"))
+        flow.add_edge("dev", "synth")
+        flow.add_edge("synth", "gate")
+        flow.add_edge("gate", "router", predicate=lambda r: r == "fail")
+        flow.add_edge("router", "dev", predicate=lambda r: r == "retry")
+        flow.add_edge("router", "end", predicate=lambda r: r == "escalate")
+
+        ctx = FlowContext(initial_task="")
+        # A hard timeout — if the misclassification regresses, this test
+        # must fail fast (a bounded loop with two on_condition edges on
+        # its cycle live-locks otherwise) rather than hang the suite.
+        result = await asyncio.wait_for(flow.run_flow(ctx), timeout=5.0)
+
+        assert result.status.value == "completed"
+        assert _ran(ctx) == [
+            "dev", "synth", "gate", "router",
+            "dev", "synth", "gate", "router",
+            "end",
+        ]
+        assert calls["router"] == 2
+
 
 class TestFsmLifecycle:
     @staticmethod

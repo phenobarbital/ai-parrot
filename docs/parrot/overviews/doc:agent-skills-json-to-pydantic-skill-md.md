@@ -1,0 +1,41 @@
+---
+type: Wiki Overview
+title: JSON to Pydantic Skill
+id: doc:agent-skills-json-to-pydantic-skill-md
+tags:
+- overview
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: This skill helps convert raw JSON data or API responses into structured,
+  strongly-typed Python classes using Pydantic.
+---
+
+---
+name: json-to-pydantic
+description: Converts JSON data snippets into Python Pydantic data models.
+---
+
+# JSON to Pydantic Skill
+
+This skill helps convert raw JSON data or API responses into structured, strongly-typed Python classes using Pydantic.
+
+## Instructions
+
+1. **Analyze the Input**: Look at the JSON object provided by the user.
+2. **Infer Types**:
+   - `string` -> `str`
+   - `number` -> `int` or `float`
+   - `boolean` -> `bool`
+   - `array` -> `List[Type]`
+   - `null` -> `Optional[Type]`
+   - Nested Objects -> Create a separate sub-class.
+   
+3. **Follow the Example**:
+   Review `examples/` to see how to structure the output code. notice how nested dictionaries like `preferences` are extracted into their own class.
+   
+   - Input: `examples/input_data.json`
+   - Output: `examples/output_model.py`
+
+## Style Guidelines
+- Use `PascalCase` for class names.
+- Use type hints (`List`, `Optional`) from `typing` module.
+- If a field can be missing or null, default it to `None`.

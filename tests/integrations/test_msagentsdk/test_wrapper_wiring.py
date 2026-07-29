@@ -49,6 +49,12 @@ class TestWrapperAuthWiring:
         }):
             from parrot.integrations.msagentsdk import wrapper as wrapper_mod
             import importlib
+            # An earlier test's patch.dict(sys.modules) can leave the package
+            # attribute ``parrot.integrations.msagentsdk.wrapper`` pointing at a
+            # module object that is no longer registered in ``sys.modules``.
+            # ``importlib.reload`` rejects that desync ("module ... not in
+            # sys.modules"), so re-register the object before reloading.
+            sys.modules[wrapper_mod.__name__] = wrapper_mod
             importlib.reload(wrapper_mod)
             from parrot.integrations.msagentsdk.wrapper import MSAgentSDKWrapper
 

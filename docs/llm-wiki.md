@@ -105,6 +105,9 @@ pytest examples/knowledge_wiki/ -v
 
 ## Read next
 
+- [WikiToolkit as Claude Code infrastructure](./wiki-claude-code.md) —
+  `wikitoolkit build` + `parrot claude install`: the wiki as a
+  codebase knowledge graph for coding assistants.
 - [PageIndex](./pageindex.md)
 - [Memory & Knowledge](./chapters/memory-knowledge.md)
 - [Parent-Child Retrieval](./parent-child-retrieval.md)

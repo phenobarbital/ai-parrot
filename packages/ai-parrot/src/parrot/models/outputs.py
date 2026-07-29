@@ -23,9 +23,6 @@ class OutputType(str, Enum):
     MARKDOWN = "markdown"
     DATAFRAME = "dataframe"
     FOLIUM_MAP = "folium_map"
-    PLOTLY_CHART = "plotly_chart"
-    MATPLOTLIB_FIGURE = "matplotlib_figure"
-    ALTAIR_CHART = "altair_chart"
     PANEL_DASHBOARD = "panel_dashboard"
     HTML_WIDGET = "html_widget"
     IMAGE = "image"
@@ -36,6 +33,7 @@ class OutputType(str, Enum):
 class OutputMode(str, Enum):
     """Output mode enumeration"""
     DEFAULT = "default"          # Keep as-is (BaseModel/dataclass)
+    TEXT = "text"               # Plain conversational text — markdown-free (A2A/Copilot)
     JSON = "json"               # Serialize to JSON (using orjson)
     TERMINAL = "terminal"       # Render for terminal display (using Rich)
     MARKDOWN = "markdown"       # Convert to markdown
@@ -47,10 +45,6 @@ class OutputMode(str, Enum):
     TEMPLATE_REPORT = "template_report"  # Pass to Jinja2 template (using jinja2 templates)
     APPLICATION = "application"  # Wrap in app (Streamlit/React/Svelte/HTML+TS)
     CHART = "chart"               # Generate chart visualization
-    ALTAIR = "altair"           # Generate Altair chart visualization
-    PLOTLY = "plotly"
-    MATPLOTLIB = "matplotlib"
-    SEABORN = "seaborn"
     CODE = "code"
     MAP = "map"                   # Generate map visualization
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>
@@ -67,6 +61,7 @@ class OutputMode(str, Enum):
     STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
     STRUCTURED_TABLE = "structured_table"  # Framework-agnostic table config (FEAT-218)
     STRUCTURED_MAP = "structured_map"      # Framework-agnostic map config (FEAT-221)
+    A2UI = "a2ui"                          # A2UI v1.0 declarative envelope (FEAT-273)
 
 @dataclass
 class StructuredOutputConfig:

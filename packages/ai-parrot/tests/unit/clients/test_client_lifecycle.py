@@ -19,8 +19,8 @@ from parrot.core.events.lifecycle.events import (
     ClientCallFailedEvent,
     ClientStreamChunkEvent,
 )
-from parrot.core.events.lifecycle.trace import TraceContext
-from parrot.core.events.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.registry import EventRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ class TestClientLifecycle:
 
     def test_has_subscribers_broad_lifecycle_matches_chunk(self) -> None:
         """Subscribing to LifecycleEvent also matches ClientStreamChunkEvent."""
-        from parrot.core.events.lifecycle.base import LifecycleEvent
+        from navigator_eventbus.lifecycle.base import LifecycleEvent
         client = _make_stub_client()
 
         async def dummy(e):

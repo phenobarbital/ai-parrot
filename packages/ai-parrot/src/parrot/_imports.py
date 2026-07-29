@@ -18,7 +18,67 @@ This module uses only Python stdlib — no external dependencies.
 """
 
 import importlib
+import sys
 from types import ModuleType
+
+
+# Modules whose package-level import eagerly pulls in ``torchcodec`` and can
+# therefore fail on machines with a missing/incomplete FFmpeg install.
+_TORCHCODEC_HOSTS = ("sentence_transformers",)
+
+
+def _ensure_torchcodec_optional() -> None:
+    """Make a broken/missing ``torchcodec`` non-fatal to import.
+
+    ``sentence_transformers`` (>=5.x) eagerly runs
+    ``from torchcodec.decoders import AudioDecoder, VideoDecoder`` at package
+    import time, guarding it with ``except (ImportError, OSError)``. When the
+    FFmpeg shared libraries are missing or incomplete (e.g. ``libavdevice.so``
+    is absent), ``torchcodec`` raises a ``RuntimeError`` while loading its C
+    extension — which slips past that guard and aborts the whole
+    ``sentence_transformers`` import, crashing agent startup even though
+    ``torchcodec`` (audio/video decoding) is irrelevant to text embeddings.
+
+    This probes the import once. If ``torchcodec`` loads cleanly, nothing is
+    changed and callers get the real module. If it is installed but fails to
+    load, lightweight stub modules exposing ``AudioDecoder``/``VideoDecoder`` as
+    ``None`` are registered so that the downstream guarded import resolves to
+    ``None`` (the same outcome ``sentence_transformers`` intends for the
+    optional-dependency-absent case). If ``torchcodec`` is not installed at all,
+    nothing is stubbed — the host library's own ``ImportError`` guard handles
+    that.
+
+    Idempotent and cheap after the first call: once ``torchcodec`` (real or
+    stub) is in ``sys.modules`` this returns immediately. Relies on the import
+    lock held by ``importlib.import_module`` for thread safety.
+    """
+    if "torchcodec" in sys.modules:
+        return
+    try:
+        importlib.import_module("torchcodec")
+        return  # real torchcodec loaded fine — leave it in place
+    except ModuleNotFoundError:
+        return  # not installed — let the host library's own guard handle it
+    except Exception:  # noqa: BLE001 — installed but failed to load (e.g. RuntimeError)
+        pass
+    # Register minimal stubs so ``from torchcodec.decoders import ...`` succeeds.
+    # A valid ``__spec__`` is required because other libraries (e.g.
+    # ``transformers``) probe availability via ``importlib.util.find_spec``,
+    # which raises ``ValueError`` if a live module's ``__spec__`` is ``None``.
+    from importlib.machinery import ModuleSpec
+
+    torchcodec = ModuleType("torchcodec")
+    torchcodec.__all__ = []
+    torchcodec.__spec__ = ModuleSpec("torchcodec", loader=None)
+    torchcodec.__spec__.submodule_search_locations = []  # mark as a package
+    torchcodec.__path__ = []
+    decoders = ModuleType("torchcodec.decoders")
+    decoders.__spec__ = ModuleSpec("torchcodec.decoders", loader=None)
+    decoders.AudioDecoder = None
+    decoders.VideoDecoder = None
+    torchcodec.decoders = decoders
+    sys.modules["torchcodec"] = torchcodec
+    sys.modules["torchcodec.decoders"] = decoders
 
 
 def lazy_import(
@@ -63,6 +123,10 @@ def lazy_import(
         ImportError: 'weasyprint' is required but not installed.
                      Install it with: pip install ai-parrot[pdf]
     """
+    if module_path.split(".")[0] in _TORCHCODEC_HOSTS:
+        # Neutralize a broken/missing torchcodec so importing this host module
+        # (which pulls torchcodec in eagerly) does not crash on FFmpeg issues.
+        _ensure_torchcodec_optional()
     try:
         return importlib.import_module(module_path)
     except ImportError as exc:

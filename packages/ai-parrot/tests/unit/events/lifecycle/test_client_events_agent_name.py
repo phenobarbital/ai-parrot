@@ -17,7 +17,7 @@ from parrot.core.events.lifecycle.events.client import (
     BeforeClientCallEvent,
     ClientCallFailedEvent,
 )
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 @pytest.fixture

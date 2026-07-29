@@ -73,6 +73,14 @@ class FormSubmission(BaseModel):
         ip: Promoted metadata column — submitter IP address.
         user_agent: Promoted metadata column — submitter User-Agent header.
         locale: Promoted metadata column — BCP-47 locale (e.g. ``en-US``).
+        root_submission_id: Revision-chain anchor — the ``submission_id`` of
+            the first revision in the chain. Equals this record's own
+            ``submission_id`` on revision 1. ``None`` on legacy rows, which
+            readers treat as a single-revision chain.
+        revision: 1-based position within the revision chain. ``None`` on
+            legacy rows.
+        context: Optional per-revision audit context (free-form JSONB), e.g.
+            geofence status, GPS coordinates, and a post-visit flag.
     """
 
     submission_id: str = Field(
@@ -97,6 +105,9 @@ class FormSubmission(BaseModel):
     ip: str | None = None
     user_agent: str | None = None
     locale: str | None = None
+    root_submission_id: str | None = None
+    revision: int | None = None
+    context: dict[str, Any] | None = None
 
 
 class FormSubmissionStorage:
@@ -159,6 +170,8 @@ class FormSubmissionStorage:
         # Index name must be unique per schema; tie it to the table.
         idx_name = f"idx_{self._table}_form_id"
         validate_identifier(idx_name, kind="index")
+        root_idx_name = f"idx_{self._table}_root_submission_id"
+        validate_identifier(root_idx_name, kind="index")
         schema = self._resolve_schema(tenant)
         return f"""
         CREATE TABLE IF NOT EXISTS {qt} (
@@ -179,10 +192,15 @@ class FormSubmissionStorage:
             ip INET,
             user_agent TEXT,
             locale VARCHAR(35),
+            root_submission_id VARCHAR(255),
+            revision INTEGER,
+            context JSONB,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS "{idx_name}"
             ON "{schema}"."{self._table}"(form_id);
+        CREATE INDEX IF NOT EXISTS "{root_idx_name}"
+            ON "{schema}"."{self._table}"(root_submission_id);
         """
 
     def _alter_table_sql(self, tenant: str | None) -> str:
@@ -193,6 +211,9 @@ class FormSubmissionStorage:
         is cheap on existing rows.
         """
         qt = self._qualified(tenant)
+        root_idx_name = f"idx_{self._table}_root_submission_id"
+        validate_identifier(root_idx_name, kind="index")
+        schema = self._resolve_schema(tenant)
         return f"""
         ALTER TABLE {qt}
             ADD COLUMN IF NOT EXISTS user_id VARCHAR(255),
@@ -201,7 +222,12 @@ class FormSubmissionStorage:
             ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS ip INET,
             ADD COLUMN IF NOT EXISTS user_agent TEXT,
-            ADD COLUMN IF NOT EXISTS locale VARCHAR(35);
+            ADD COLUMN IF NOT EXISTS locale VARCHAR(35),
+            ADD COLUMN IF NOT EXISTS root_submission_id VARCHAR(255),
+            ADD COLUMN IF NOT EXISTS revision INTEGER,
+            ADD COLUMN IF NOT EXISTS context JSONB;
+        CREATE INDEX IF NOT EXISTS "{root_idx_name}"
+            ON "{schema}"."{self._table}"(root_submission_id);
         """
 
     def _insert_sql(self, tenant: str | None) -> str:
@@ -211,10 +237,12 @@ class FormSubmissionStorage:
             submission_id, form_id, form_version, data,
             is_valid, forwarded, forward_status, forward_error,
             tenant, created_at,
-            user_id, username, org_id, submitted_at, ip, user_agent, locale
+            user_id, username, org_id, submitted_at, ip, user_agent, locale,
+            root_submission_id, revision, context
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16, $17
+            $11, $12, $13, $14, $15, $16, $17,
+            $18, $19, $20
         )
         """
 
@@ -260,6 +288,11 @@ class FormSubmissionStorage:
         effective_tenant = (
             tenant if tenant is not None else submission.tenant
         )
+        context_json = (
+            json.dumps(submission.context)
+            if submission.context is not None
+            else None
+        )
         async with self._pool.acquire() as conn:
             await conn.execute(
                 self._insert_sql(effective_tenant),
@@ -280,6 +313,9 @@ class FormSubmissionStorage:
                 submission.ip,
                 submission.user_agent,
                 submission.locale,
+                submission.root_submission_id,
+                submission.revision,
+                context_json,
             )
         self.logger.debug(
             "Stored submission %s for form %s in %s",
@@ -288,3 +324,107 @@ class FormSubmissionStorage:
             self._qualified(effective_tenant),
         )
         return submission.submission_id
+
+    # ------------------------------------------------------------------
+    # Read API (revision chain)
+    # ------------------------------------------------------------------
+
+    # Column list for reads — order is not significant (rows are accessed by
+    # name), but it enumerates every column mapped back onto ``FormSubmission``.
+    _SELECT_COLUMNS: str = (
+        "submission_id, form_id, form_version, data, is_valid, "
+        "forwarded, forward_status, forward_error, tenant, created_at, "
+        "user_id, username, org_id, submitted_at, ip, user_agent, locale, "
+        "root_submission_id, revision, context"
+    )
+
+    @staticmethod
+    def _row_to_submission(row: Any) -> FormSubmission:
+        """Map an ``asyncpg.Record`` back onto a :class:`FormSubmission`.
+
+        Handles the type gaps between the DB and the model: JSONB columns
+        (``data``, ``context``) come back as ``str`` unless a codec is set,
+        and ``INET`` (``ip``) comes back as an ``ipaddress`` object.
+        """
+
+        def _load_json(value: Any) -> Any:
+            if value is None or isinstance(value, (dict, list)):
+                return value
+            return json.loads(value)
+
+        ip = row["ip"]
+        return FormSubmission(
+            submission_id=row["submission_id"],
+            form_id=row["form_id"],
+            form_version=row["form_version"],
+            data=_load_json(row["data"]) or {},
+            is_valid=row["is_valid"],
+            forwarded=row["forwarded"],
+            forward_status=row["forward_status"],
+            forward_error=row["forward_error"],
+            tenant=row["tenant"],
+            created_at=row["created_at"],
+            user_id=row["user_id"],
+            username=row["username"],
+            org_id=row["org_id"],
+            submitted_at=row["submitted_at"],
+            ip=str(ip) if ip is not None else None,
+            user_agent=row["user_agent"],
+            locale=row["locale"],
+            root_submission_id=row["root_submission_id"],
+            revision=row["revision"],
+            context=_load_json(row["context"]),
+        )
+
+    async def get_submission(
+        self,
+        submission_id: str,
+        *,
+        tenant: str | None = None,
+    ) -> FormSubmission | None:
+        """Fetch a single submission by ``submission_id``.
+
+        Args:
+            submission_id: The unique submission identifier to look up.
+            tenant: Optional per-call tenant override (schema resolution).
+
+        Returns:
+            The matching :class:`FormSubmission`, or ``None`` if no row
+            exists.
+        """
+        qt = self._qualified(tenant)
+        sql = f"SELECT {self._SELECT_COLUMNS} FROM {qt} WHERE submission_id = $1"
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(sql, submission_id)
+        return self._row_to_submission(row) if row is not None else None
+
+    async def list_revisions(
+        self,
+        root_submission_id: str,
+        *,
+        tenant: str | None = None,
+    ) -> list[FormSubmission]:
+        """Return the full revision chain for a submission, oldest first.
+
+        The chain is every row sharing ``root_submission_id``, ordered by
+        ``revision ASC``. Legacy rows written before the revision-chain
+        columns existed have ``NULL`` ``root_submission_id``/``revision``
+        and are therefore single-revision chains reachable only via their
+        own ``submission_id`` (use :meth:`get_submission` for those).
+
+        Args:
+            root_submission_id: The chain anchor (revision 1's
+                ``submission_id``).
+            tenant: Optional per-call tenant override (schema resolution).
+
+        Returns:
+            The chain ordered by ``revision`` ascending (empty if none).
+        """
+        qt = self._qualified(tenant)
+        sql = (
+            f"SELECT {self._SELECT_COLUMNS} FROM {qt} "
+            "WHERE root_submission_id = $1 ORDER BY revision ASC"
+        )
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(sql, root_submission_id)
+        return [self._row_to_submission(row) for row in rows]

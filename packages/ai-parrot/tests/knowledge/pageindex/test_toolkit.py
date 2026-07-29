@@ -1098,8 +1098,8 @@ def test_set_okf_toolkit_registers_tools(toolkit: PageIndexToolkit, tmp_path: Pa
     all_tools = toolkit.get_tools()
     # Should have the standard toolkit tools + 6 OKF tools.
     assert len(all_tools) > len(toolkit.__class__.mro())  # at least some tools
-    # OKF toolkit returns 6 tools.
-    assert len(okf_tk.get_tools()) == 6
+    # OKF toolkit returns 9 tools (6 read tools + FEAT-216 lint/export/import).
+    assert len(okf_tk.get_tools()) == 9
 
 
 @pytest.mark.asyncio

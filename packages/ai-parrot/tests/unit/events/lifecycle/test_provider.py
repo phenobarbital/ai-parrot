@@ -6,14 +6,14 @@ from __future__ import annotations
 
 import pytest
 
-from parrot.core.events.lifecycle.provider import EventProvider
-from parrot.core.events.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.provider import EventProvider
+from navigator_eventbus.lifecycle.registry import EventRegistry
 from parrot.core.events.lifecycle.events import (
     AfterInvokeEvent,
     BeforeInvokeEvent,
     InvokeFailedEvent,
 )
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 # ---------------------------------------------------------------------------

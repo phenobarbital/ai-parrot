@@ -10,6 +10,7 @@ vector store for similarity search.
 """
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import re
 import warnings
@@ -614,16 +615,22 @@ class CacheManager:
     Args:
         redis_url: Optional Redis connection string.  ``None`` for LRU-only mode.
         vector_store: Optional ``AbstractStore`` for similarity search.
+        owns_vector_store: When ``True`` (default) :meth:`close` disposes the
+            ``vector_store`` (releasing its connection pool / SQLAlchemy engine).
+            Set to ``False`` when the store is shared and its lifecycle is
+            managed elsewhere.
     """
 
     def __init__(
         self,
         redis_url: Optional[str] = None,
         vector_store: Optional["AbstractStore"] = None,
+        owns_vector_store: bool = True,
     ):
         self._redis_url = redis_url
         self._redis_pool: Any = None
         self.vector_store = vector_store
+        self._owns_vector_store = owns_vector_store
         self._partitions: Dict[str, CachePartition] = {}
         self.logger = logging.getLogger("Parrot.CacheManager")
 
@@ -713,7 +720,14 @@ class CacheManager:
     # -- Lifecycle ----------------------------------------------------------
 
     async def close(self) -> None:
-        """Close shared resources (Redis pool)."""
+        """Close shared resources (Redis pool + owned vector store).
+
+        Disposing the ``vector_store`` here is what prevents its SQLAlchemy
+        async engine (e.g. ``PgvectorStore``) from lingering until interpreter
+        teardown, where the event loop is already closing and the pool's
+        ``connection.close()`` raises ``CancelledError``. Skipped when
+        ``owns_vector_store`` is ``False``.
+        """
         if self._redis_pool is not None:
             try:
                 await self._redis_pool.close()
@@ -721,4 +735,16 @@ class CacheManager:
                 self.logger.debug("Error closing Redis pool: %s", exc)
             self._redis_pool = None
         self._partitions.clear()
+        if self._owns_vector_store and self.vector_store is not None:
+            disconnect = getattr(self.vector_store, "disconnect", None) or getattr(
+                self.vector_store, "close", None
+            )
+            if callable(disconnect):
+                try:
+                    result = disconnect()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as exc:
+                    self.logger.debug("Error disposing vector store: %s", exc)
+            self.vector_store = None
         self.logger.info("CacheManager closed")

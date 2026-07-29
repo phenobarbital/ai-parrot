@@ -332,6 +332,38 @@ class TaskStatus:
         }
 
 
+# --- A2UI-A2A extension (FEAT-273 Module 13, display only) ----------------------
+# Single owner of the A2UI-A2A extension identifiers. Display envelopes are carried
+# in a data Part per the official A2UI-A2A extension; action/interaction legs are FEAT-B.
+A2UI_EXTENSION_URI = "https://a2ui.org/extensions/a2a/display/v1"
+A2UI_MEDIA_TYPE = "application/vnd.a2ui.envelope+json"
+
+
+def _reject_action_components(envelope: Dict[str, Any]) -> None:
+    """Raise if a display A2UI envelope contains action-bearing components (v1).
+
+    Best-effort: consults the catalog registry when available; unknown components
+    are left alone (their action-ness cannot be determined here).
+    """
+    try:
+        from parrot.outputs.a2ui.catalog import get_component
+    except ImportError:  # pragma: no cover - a2ui always present in core
+        return
+    for comp in envelope.get("components", []) or []:
+        name = comp.get("component") if isinstance(comp, dict) else None
+        if not name:
+            continue
+        try:
+            entry = get_component(name)
+        except KeyError:
+            continue
+        if entry.definition.requires_actions:
+            raise ValueError(
+                f"Display-only A2A emit (FEAT-273): component {name!r} is action-bearing; "
+                "interactive A2UI over A2A is FEAT-B."
+            )
+
+
 @dataclass
 class Artifact:
     """Output produced by an agent."""
@@ -342,8 +374,64 @@ class Artifact:
     metadata: Optional[Dict[str, Any]] = None
 
     @classmethod
+    def from_a2ui_envelope(
+        cls,
+        envelope: Dict[str, Any],
+        *,
+        name: str = "a2ui-surface",
+        artifact_id: Optional[str] = None,
+    ) -> "Artifact":
+        """Wrap a display A2UI ``CreateSurface`` envelope into an A2A Artifact.
+
+        The already-serialized envelope dict (from ``AIMessage.a2ui_envelope``) is placed
+        verbatim into a data :class:`Part` with the A2UI-A2A extension metadata — the a2a
+        layer never re-shapes it (``parrot.outputs.a2ui.serialization`` owns ``version``).
+
+        Args:
+            envelope: The serialized ``createSurface`` envelope dict.
+            name: Artifact name.
+            artifact_id: Optional explicit id (a UUID4 is generated when omitted).
+
+        Returns:
+            An :class:`Artifact` carrying the envelope per the A2UI-A2A extension.
+
+        Raises:
+            TypeError: If ``envelope`` is not a dict.
+            ValueError: If the envelope is not a display ``createSurface`` or contains
+                action-bearing components (display-only in v1).
+        """
+        if not isinstance(envelope, dict):
+            raise TypeError(f"A2UI envelope must be a dict, got {type(envelope)!r}.")
+        message_type = envelope.get("messageType")
+        if message_type not in (None, "createSurface"):
+            raise ValueError(
+                "Only display 'createSurface' envelopes may be emitted over A2A in v1; "
+                f"got messageType={message_type!r}."
+            )
+        _reject_action_components(envelope)
+        part = Part(
+            data=envelope,
+            metadata={"extensionUri": A2UI_EXTENSION_URI, "mediaType": A2UI_MEDIA_TYPE},
+        )
+        return cls(
+            artifact_id=artifact_id or str(uuid.uuid4()),
+            name=name,
+            parts=[part],
+            metadata={"extensionUri": A2UI_EXTENSION_URI},
+        )
+
+    @classmethod
     def from_response(cls, response: Any, name: str = "response") -> "Artifact":
-        """Create artifact from an AIMessage or string response."""
+        """Create artifact from an AIMessage or string response.
+
+        FEAT-273: when the response carries an ``a2ui_envelope`` (display surface), it is
+        wrapped via :meth:`from_a2ui_envelope`; otherwise the legacy text path is used
+        (byte-identical to before).
+        """
+        envelope = getattr(response, "a2ui_envelope", None)
+        if envelope:
+            return cls.from_a2ui_envelope(envelope, name=name)
+
         if hasattr(response, 'content'):
             # AIMessage
             text = response.content

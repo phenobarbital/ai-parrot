@@ -608,8 +608,17 @@ class GraphClient                    # :76 — NO file-upload methods today (Mod
 - [ ] navigator_auth token-mint API — does the IdP expose creation usable for deep links (decode verified at `stream.py:288`; mint unverified)? First task of Module 8; fallback = Redis opaque one-shot token. — *Owner: Module 8 implementer*
 - [ ] OQ-C lowered-tree fidelity — golden-file review criteria for minimum acceptable Infographic/Report degradation. — *Owner: Module 3 implementer, first component task*
 - [ ] Exact Graph API permission set / upload target (chat message attachment vs OneDrive share link) for Teams upload. — *Owner: Module 7 implementer*
-- [ ] SPK-1 outcome — confirm weasyprint default or split per artifact class. — *Owner: Module 0a*
-- [ ] SPK-3 outcome — retry budget number for Module 9. — *Owner: Module 0b*
+- [x] SPK-1 outcome — *Resolved (TASK-1722)*: **weasyprint confirmed as the default
+  for ALL static artifact classes** (intrinsic determinism, ~3.6× smaller output, no
+  browser dependency); playwright not adopted as a per-class split in v1 (kept as a
+  documented fallback). Companion: ECharts pre-renders to static SVG for the weasyprint
+  path. Evidence: `artifacts/spikes/spk1-rasterization/results.md`.
+- [x] SPK-3 outcome — *Resolved (TASK-1727, evidence-pending)*: recommended
+  **`max_attempts = 3` (1 initial + 2 catalog-validate retries)** for Module 9, grounded
+  in the in-repo `OutputFormatter` `max_retries=2` precedent. First-shot validity % was
+  **NOT measured** in the build environment (both Claude & Gemini returned 404
+  model-not-found — no fabricated numbers). Harness + 22-prompt set committed under
+  `artifacts/spikes/spk3-envelope-fidelity/`; re-run with valid credentials to confirm.
 
 ---
 

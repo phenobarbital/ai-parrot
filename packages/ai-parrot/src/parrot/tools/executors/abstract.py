@@ -144,12 +144,36 @@ def build_envelope_from_tool(
     reconstructed toolkit. ``tool_init_kwargs`` then carries the
     toolkit's constructor arguments (not the ToolkitTool's).
 
+    For :class:`AgentTool` instances (Agents-as-Tools), the wrapped
+    agent cannot travel as a live object; instead the agent's name is
+    shipped as an ``agent_ref`` init kwarg and the worker reconstructs
+    the agent from the agent registry (``parrot.registry``). This
+    requires the agent to be registered under its name on the worker
+    side too, and the worker environment to carry whatever credentials
+    the sub-agent's LLM needs.
+
     Raises:
         ValueError: When the tool's class cannot be imported by path
-            (e.g. defined in ``__main__``). Such tools cannot be
-            executed remotely; fix the test by moving the class into
-            an importable module.
+            (e.g. defined in ``__main__``), or when an ``AgentTool``
+            wraps an agent that is not resolvable through the agent
+            registry. Such tools cannot be executed remotely.
     """
+    # AgentTool needs special handling — the wrapped agent is a live,
+    # non-serializable object, so we ship a registry reference instead.
+    agent_parts = _agent_tool_envelope_parts(tool)
+    if agent_parts is not None:
+        import_path, init_kwargs = agent_parts
+        return ToolExecutionEnvelope(
+            tool_import_path=import_path,
+            tool_init_kwargs=init_kwargs,
+            method_name=None,
+            arguments=dict(arguments),
+            permission_context=project_permission_context(permission_context),
+            trace_context=project_trace_context(trace_context),
+            timeout_seconds=timeout_seconds,
+            webhook_callback_url=webhook_callback_url,
+        )
+
     # ToolkitTool needs special handling — the *toolkit* is what we
     # import on the remote side, not the synthetic ToolkitTool wrapper.
     # We detect this by attribute rather than isinstance to avoid a
@@ -203,6 +227,64 @@ def _strip_executor(init_kwargs: Dict[str, Any]) -> Dict[str, Any]:
     if not init_kwargs:
         return {}
     return {k: v for k, v in init_kwargs.items() if k != "executor"}
+
+
+def _agent_tool_envelope_parts(
+    tool: Any,
+) -> Optional[tuple[str, Dict[str, Any]]]:
+    """Build ``(import_path, init_kwargs)`` for an AgentTool, or None.
+
+    Returns ``None`` for anything that is not an ``AgentTool`` so
+    :func:`build_envelope_from_tool` falls through to the normal paths.
+
+    The wrapped agent travels as an ``agent_ref`` (its registry name);
+    ``parrot.tools.executors.runner`` resolves it back through
+    ``parrot.registry.agent_registry.get_instance()`` on the worker
+    side. Live-only extras (``context_filter``, ``execution_memory``)
+    cannot cross the process boundary and are dropped — cross-
+    pollination state stays on the caller.
+
+    Raises:
+        ValueError: When the wrapped agent is not registered in the
+            agent registry under its name (nothing for the worker to
+            reconstruct).
+    """
+    try:
+        from ..agent import AgentTool
+    except ImportError:  # pragma: no cover - agent module always ships
+        return None
+    if not isinstance(tool, AgentTool):
+        return None
+
+    agent = tool.agent
+    agent_name = getattr(agent, "name", None)
+    metadata = None
+    if agent_name:
+        try:
+            from ...registry import agent_registry
+
+            metadata = agent_registry.get_metadata(agent_name)
+        except ImportError:
+            metadata = None
+    if not agent_name or metadata is None:
+        raise ValueError(
+            f"Cannot build remote execution envelope for AgentTool "
+            f"{tool.name!r}: the wrapped agent {agent_name!r} is not "
+            "resolvable through the agent registry. Register it with "
+            "@register_agent (or agent_registry.register) under the same "
+            "name — the remote worker reconstructs the agent from the "
+            "registry, and its environment must also provide the "
+            "sub-agent's LLM credentials."
+        )
+    return (
+        "parrot.tools.agent:AgentTool",
+        {
+            "agent_ref": agent_name,
+            "tool_name": tool.name,
+            "tool_description": tool.description,
+            "use_conversation_method": tool.use_conversation_method,
+        },
+    )
 
 
 class AbstractToolExecutor(ABC):

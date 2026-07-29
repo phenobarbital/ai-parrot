@@ -23,9 +23,9 @@ from parrot.core.events.lifecycle.events import (
     AgentStatusChangedEvent,
     BeforeInvokeEvent,
 )
-from parrot.core.events.lifecycle.provider import EventProvider
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.provider import EventProvider
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.models.status import AgentStatus
 
 
@@ -63,7 +63,7 @@ class TestAbstractBotLifecycle:
 
     def test_extends_event_emitter_mixin(self, minimal_bot) -> None:
         """AbstractBot exposes self.events (EventRegistry)."""
-        from parrot.core.events.lifecycle.mixin import EventEmitterMixin
+        from navigator_eventbus.lifecycle.mixin import EventEmitterMixin
         assert isinstance(minimal_bot, EventEmitterMixin)
         assert isinstance(minimal_bot.events, EventRegistry)
 

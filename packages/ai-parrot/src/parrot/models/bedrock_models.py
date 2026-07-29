@@ -1,12 +1,13 @@
 """Bedrock model-ID translator for AI-Parrot.
 
-Translates public Anthropic model IDs (e.g. ``claude-sonnet-4-6``) to the
-AWS Bedrock ID format (e.g. ``us.anthropic.claude-sonnet-4-5-20250929-v1:0``).
+Translates public Anthropic/Amazon model IDs (e.g. ``claude-sonnet-4-6``,
+``nova-2-sonic``) to the AWS Bedrock ID format (e.g.
+``us.anthropic.claude-sonnet-4-5-20250929-v1:0``, ``amazon.nova-2-sonic-v1:0``).
 
 Translation strategy (applied in order):
-1. **Pass-through**: IDs that are already Bedrock-shaped (contain ``anthropic.``,
-   start with ``arn:``, or begin with a known region prefix like ``us.`` / ``eu.``
-   / ``apac.``) are returned verbatim.
+1. **Pass-through**: IDs that are already Bedrock-shaped (contain ``anthropic.``
+   or ``amazon.``, start with ``arn:``, or begin with a known region prefix
+   like ``us.`` / ``eu.`` / ``apac.``) are returned verbatim.
 2. **Map**: public ID looked up in a static ``PUBLIC_TO_BEDROCK`` dict; the map
    values are the Bedrock base IDs (``anthropic.<id>-vN:0`` form).
 3. **Region prefix**: when *region_prefix* is provided (e.g. ``"us"``), the
@@ -62,6 +63,24 @@ PUBLIC_TO_BEDROCK: dict[str, str] = {
 
     # ── Not yet available on Bedrock (will warn+passthrough) ──────────────
     # claude-fable-5, claude-opus-4-8, claude-opus-4-7 — Bedrock IDs TBD.
+
+    # ── Amazon Nova (multi-provider, FEAT-302) ─────────────────────────────
+    "nova-sonic":   "amazon.nova-sonic-v1:0",
+    "nova-pro":     "amazon.nova-pro-v1:0",
+    "nova-lite":    "amazon.nova-lite-v1:0",
+    "nova-micro":   "amazon.nova-micro-v1:0",
+    # Nova Premier is geo-inference-only (needs a "us." region_prefix at call
+    # time, e.g. via NovaClient); Legacy on Bedrock, EOL 2026-09-14 (FEAT-315).
+    "nova-premier": "amazon.nova-premier-v1:0",
+    # Nova Canvas/Reel are in-region only (no inference profiles) — the base
+    # IDs below are the only valid ones; do NOT prefix them. Legacy on
+    # Bedrock, EOL 2026-09-30 (FEAT-315, spec §6 Verified AWS Facts).
+    "nova-canvas":  "amazon.nova-canvas-v1:0",
+    "nova-reel":    "amazon.nova-reel-v1:0",
+
+    # ── Amazon Nova 2 ─────────────────────────────────────────────────────
+    "nova-2-sonic": "amazon.nova-2-sonic-v1:0",
+    "nova-2-lite":  "amazon.nova-2-lite-v1:0",
 }
 
 
@@ -77,6 +96,8 @@ def _is_bedrock_id(model_id: str) -> bool:
     if model_id.startswith("arn:"):
         return True
     if "anthropic." in model_id:
+        return True
+    if "amazon." in model_id:
         return True
     for prefix in _REGION_PREFIXES:
         if model_id.startswith(prefix):

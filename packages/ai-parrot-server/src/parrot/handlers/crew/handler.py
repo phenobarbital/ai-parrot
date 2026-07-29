@@ -136,6 +136,24 @@ class CrewHandler(BaseView):
             if tool := self.bot_manager.get_tool(tool_name):
                 crew.add_shared_tool(tool, tool_name)
 
+        # Add deterministic tool nodes (must precede flow relations so
+        # relations can reference them by node_id). Unresolvable tools
+        # raise: a tool node is a structural DAG member.
+        for tool_node_def in crew_def.tool_nodes:
+            tool = self.bot_manager.get_tool(tool_node_def.tool)
+            if not tool:
+                raise ValueError(
+                    f"Tool '{tool_node_def.tool}' not found for tool node "
+                    f"'{tool_node_def.node_id}'"
+                )
+            crew.add_tool_node(
+                tool,
+                tool_node_def.node_id,
+                args=tool_node_def.args,
+                kwargs=tool_node_def.kwargs,
+                description=tool_node_def.description,
+            )
+
         # Setup flow relations if in flow mode
         if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
             for relation in crew_def.flow_relations:
@@ -158,23 +176,13 @@ class CrewHandler(BaseView):
         return crew
 
     def _get_agents_by_ids(self, crew: AgentCrew, agent_ids: list) -> list:
-        """Helper to get agent instances by their IDs/names."""
-        # This helper might also be missing, implementing a simple version based on context
-        # Assumes agent name matches what was set during creation (name or agent_id)
-        # But wait, User snippet used self._get_agents_by_ids so I should check if that exists or add it.
-        # Since I am adding it here, I should implement it.
-        found = []
-        for aid in agent_ids:
-            # Logic to find agent in crew.agents list
-            # The agent.name was set to agent_def.name or agent_def.agent_id
-            # This might be tricky if names are not unique or if we don't know the exact mapping.
-            # Ideally AgentCrew has a method to get agent by valid identifier?
-            # For now, let's iterate.
-            for agent in crew.agents:
-                if agent.name == aid: # weak match?
-                    found.append(agent)
-                    break
-        return found
+        """Resolve crew members (agents or tool nodes) by their id/name.
+
+        ``crew.agents`` is a dict keyed by agent name/node_id, so resolution
+        delegates to ``AgentCrew._resolve_agents_by_ids`` (the same helper
+        ``AgentCrew.from_definition`` uses). Missing ids are skipped.
+        """
+        return AgentCrew._resolve_agents_by_ids(crew.agents, agent_ids)
 
     async def upload(self):
         """
@@ -314,7 +322,10 @@ class CrewHandler(BaseView):
             # if crew_id is provided, then is an update
             if url_crew_id:
                 existing_crew = await self.bot_manager.get_crew(url_crew_id, tenant=tenant)
-                if not existing_crew:
+                # get_crew() returns the truthy tuple (None, None) on a miss,
+                # so guard against a None definition before reading
+                # existing_def.crew_id.
+                if not existing_crew or existing_crew[1] is None:
                     return self.error(
                         response={
                             "message": f"Crew '{url_crew_id}' not found for update"
@@ -411,7 +422,13 @@ class CrewHandler(BaseView):
                 identifier = crew_name or crew_id
                 crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
 
-                if not crew_data:
+                # get_crew() returns the truthy tuple (None, None) when the
+                # crew isn't found (e.g. it was deleted but is still
+                # referenced by a saved execution), so a plain `not crew_data`
+                # check misses it and `crew_def.crew_id` below raises
+                # 'NoneType' object has no attribute 'crew_id'. Validate the
+                # resolved definition explicitly.
+                if not crew_data or crew_data[1] is None:
                     return self.error(
                         response={
                             "message": f"Crew '{identifier}' not found"
@@ -444,6 +461,9 @@ class CrewHandler(BaseView):
             crews = self.bot_manager.list_crews(tenant=tenant)
             crew_list = []
 
+            # Skip any entry whose definition is None so one malformed crew
+            # can't crash the whole listing with 'NoneType' object has no
+            # attribute 'crew_id'.
             crew_list.extend(
                 {
                     "crew_id": crew_def.crew_id,
@@ -455,6 +475,7 @@ class CrewHandler(BaseView):
                     "created_at": crew_def.created_at.isoformat(),
                 }
                 for name, (crew, crew_def) in crews.items()
+                if crew_def is not None
             )
 
             return self.json_response({
@@ -504,9 +525,11 @@ class CrewHandler(BaseView):
 
             identifier = crew_name or crew_id
             
-            # Check if exists first
+            # Check if exists first. get_crew() returns the truthy tuple
+            # (None, None) on a miss, so validate the resolved definition
+            # rather than relying on `not crew_data`.
             crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
-            if not crew_data:
+            if not crew_data or crew_data[1] is None:
                 return self.error(
                     response={"message": f"Crew '{identifier}' not found"},
                     status=404

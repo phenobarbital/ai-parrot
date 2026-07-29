@@ -1,0 +1,57 @@
+{
+  "feature_id": "FEAT-304",
+  "phase": "committed",
+  "mode": "enrichment",
+  "started_at": "2026-07-13T00:00:00Z",
+  "updated_at": "2026-07-13T00:00:00Z",
+  "base_branch": "dev",
+  "type": "feature",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 9,
+    "grep_calls": 7,
+    "git_calls": 0,
+    "depth_reached": 1,
+    "wall_seconds": 0,
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Create a LeadIQTool in ai-parrot-tools to extract company info via the LeadIQ GraphQL API, porting flowtask's LeadIQ component."
+  },
+  "phases": {
+    "plan": {
+      "approved_by_user": true
+    },
+    "research": {
+      "completed_at": "2026-07-13T00:00:00Z",
+      "queries_total": 7,
+      "queries_skipped": 0,
+      "files_read": 9
+    },
+    "synthesis": {
+      "overall_confidence": "high",
+      "claims_high": 5,
+      "claims_medium": 2,
+      "claims_low": 0
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 3,
+      "questions_answered": 3
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/leadiqtool.proposal.md",
+      "commit_sha": "41f80c114c8837d7d1a39bf71a81273e2248192f"
+    }
+  }
+}

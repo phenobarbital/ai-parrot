@@ -291,15 +291,6 @@ def test_agentcrew_flow_execution_respects_dependencies() -> None:
     assert editor2_output in final_reviewer.received_prompts[0]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "AgentCrew.run_loop() has a pre-existing bug: it does `node.fsm = ...` "
-        "on a frozen Pydantic model (CrewAgentNode), causing 'Instance is frozen'. "
-        "This bug pre-dates FEAT-196 — the test was only hidden by a broken import. "
-        "Fix requires modifying AgentCrew.run_loop() (out of TASK-1314 scope)."
-    ),
-    strict=True,
-)
 def test_agentcrew_loop_execution_stops_when_condition_met() -> None:
     """``run_loop`` should reuse outputs and stop when the LLM approves."""
 

@@ -29,7 +29,10 @@ from typing import Any, Dict, Optional, Tuple
 
 from navconfig.logging import logging
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
+# FEAT-317: LifecycleEvent/EventRegistry/TraceContext moved to
+# navigator_eventbus.lifecycle; imported here via the parrot.core.events.lifecycle
+# re-export facade. Flow typed events STAY local.
+from parrot.core.events.lifecycle import EventRegistry, LifecycleEvent, TraceContext
 from parrot.core.events.lifecycle.events.flow import (
     FlowCompletedEvent,
     FlowStartedEvent,
@@ -38,8 +41,6 @@ from parrot.core.events.lifecycle.events.flow import (
     NodeSkippedEvent,
     NodeStartedEvent,
 )
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
 
 logger = logging.getLogger("parrot.flow.telemetry")
 
@@ -98,7 +99,7 @@ class FlowLifecycleAdapter:
     def _resolve_registry(self) -> EventRegistry:
         """Return the target registry, defaulting to the global singleton."""
         if self._registry is None:
-            from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+            from parrot.core.events.lifecycle import (  # noqa: PLC0415
                 get_global_registry,
             )
             self._registry = get_global_registry()

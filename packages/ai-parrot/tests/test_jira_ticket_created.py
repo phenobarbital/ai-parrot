@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from parrot.bots.jira_specialist import Developer, JiraSpecialist
-from parrot.core.hooks.models import HookEvent, HookType
+from navigator_eventbus.hooks.models import HookEvent, HookType
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ class TestAssignmentHandlerReporterDictRegression(unittest.IsolatedAsyncioTestCa
 class TestJiraWebhookReporterPayload(unittest.IsolatedAsyncioTestCase):
     async def test_webhook_reporter_payload_is_dict(self):
         from parrot.core.hooks.jira_webhook import JiraWebhookHook
-        from parrot.core.hooks.models import JiraWebhookConfig
+        from navigator_eventbus.hooks.models import JiraWebhookConfig
 
         hook = JiraWebhookHook(JiraWebhookConfig(url="/hook"))
         captured = []

@@ -65,3 +65,57 @@ def test_payload_without_new_keys_still_works() -> None:
     m = BotModel(name="bare")
     assert m.reranker_config == {}
     assert m.parent_searcher_config == {}
+
+
+# ---------------------------------------------------------------------------
+# Legacy LLM-tuning column tolerance + folding (schema drift).
+# Older navigator.ai_bots tables still carry model_name/temperature/
+# max_tokens/top_k/top_p/embedding_model as standalone columns. Under
+# Meta.strict=True these are passed as kwargs during row hydration; the model
+# must accept them and fold them into the canonical JSONB.
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_columns_do_not_raise_under_strict() -> None:
+    """Passing the legacy columns as kwargs must not raise (strict=True)."""
+    m = BotModel(
+        name="legacy",
+        model_name="gemini-2.5-pro",
+        temperature=0.1,
+        max_tokens=8192,
+        top_k=41,
+        top_p=0.9,
+    )
+    assert m.name == "legacy"
+
+
+def test_legacy_columns_fold_into_model_config() -> None:
+    """Legacy scalar columns backfill model_config when the JSONB is empty."""
+    m = BotModel(name="legacy", model_name="gemini-2.5-pro", temperature=0.1)
+    assert m.model_config["model_name"] == "gemini-2.5-pro"
+    assert m.model_config["temperature"] == 0.1
+    # model_name is mirrored to the 'model' key (callers read either).
+    assert m.model_config["model"] == "gemini-2.5-pro"
+
+
+def test_explicit_model_config_wins_over_legacy_column() -> None:
+    """An explicit model_config value must not be overwritten by the column."""
+    m = BotModel(
+        name="legacy",
+        model_name="gpt-4.5",
+        model_config={"model_name": "gemini-2.5-flash"},
+    )
+    assert m.model_config["model_name"] == "gemini-2.5-flash"
+
+
+def test_legacy_embedding_model_folds_into_vector_store_config() -> None:
+    """Legacy embedding_model column backfills vector_store_config."""
+    emb = {"model_name": "sentence-transformers/all-mpnet-base-v2"}
+    m = BotModel(name="legacy", embedding_model=emb)
+    assert m.vector_store_config["embedding_model"] == emb
+
+
+def test_no_legacy_columns_leaves_model_config_untouched() -> None:
+    """Without legacy columns, model_config stays as provided (no spurious keys)."""
+    m = BotModel(name="plain")
+    assert m.model_config == {}

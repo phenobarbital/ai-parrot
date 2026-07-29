@@ -26,8 +26,12 @@ def mock_pi():
     pi.search = AsyncMock(return_value=[
         {"node_id": "n1", "title": "Page 1", "score": 0.9, "summary": "Snippet 1"},
     ])
-    pi.insert_markdown = AsyncMock(return_value={"node_id": "m1", "status": "ok"})
-    pi.insert_content = AsyncMock(return_value={"nodes_added": 2, "tree_name": "test-wiki"})
+    pi.insert_markdown = AsyncMock(
+        return_value={"tree_name": "test-wiki", "new_node_ids": ["m1"]}
+    )
+    pi.insert_content = AsyncMock(
+        return_value={"tree_name": "test-wiki", "new_node_ids": ["0001", "0002"]}
+    )
     pi.create_tree = AsyncMock(return_value={"tree_name": "test-wiki"})
     return pi
 
@@ -99,10 +103,13 @@ class TestLLMWikiToolkitCreateWiki:
         wiki_toolkit: LLMWikiToolkit,
         wiki_config: WikiConfig,
     ):
-        """create_wiki creates the expected directory structure."""
+        """create_wiki creates the sources dir and the wiki.db plane."""
         await wiki_toolkit.create_wiki("my-wiki")
         assert (wiki_config.storage_dir / "sources").exists()
-        assert (wiki_config.storage_dir / "wiki").exists()
+        # Page content lives in the SQLite retrieval plane, not in
+        # per-category markdown directories.
+        assert (wiki_config.storage_dir / "wiki.db").exists()
+        assert not (wiki_config.storage_dir / "wiki").exists()
 
     @pytest.mark.asyncio
     async def test_create_wiki_writes_index(
@@ -201,12 +208,19 @@ class TestLLMWikiToolkitSearch:
         assert isinstance(results, list)
 
     @pytest.mark.asyncio
-    async def test_search_calls_backends(
+    async def test_search_answered_from_store(
         self, wiki_toolkit: LLMWikiToolkit, mock_pi, mock_gi
     ):
-        """search (combined mode) queries both PageIndex and GraphIndex."""
-        await wiki_toolkit.search("test-wiki", "deep learning", mode="combined")
-        assert mock_pi.search.called or mock_gi.search_hybrid.called
+        """search is answered by the WikiStore plane — no toolkit fan-out."""
+        await wiki_toolkit.create_page(
+            "test-wiki", "Deep Learning", "Deep learning extends neural nets."
+        )
+        results = await wiki_toolkit.search(
+            "test-wiki", "deep learning", mode="combined"
+        )
+        assert results and results[0]["source"] == "lexical"
+        mock_pi.search.assert_not_called()
+        mock_gi.search_hybrid.assert_not_called()
 
 
 class TestLLMWikiToolkitSources:

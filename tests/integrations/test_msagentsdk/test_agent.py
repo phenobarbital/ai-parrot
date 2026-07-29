@@ -208,16 +208,22 @@ class TestParrotM365AgentHandleMessage:
             question="Hello",
             session_id="conv-456",
             user_id="user-123",
+            # FEAT-264: ask() also receives the request context and the caller
+            # PermissionContext so the broker seam can resolve per-user creds.
+            ctx=ANY,
+            permission_context=ANY,
         )
 
     @pytest.mark.asyncio
     async def test_no_from_property(self, agent, mock_context, mock_bot):
-        """Missing from_property results in user_id=None (no crash)."""
+        """Missing from_property falls back to the 'anonymous' user id (no crash)."""
         mock_context.activity.from_property = None
         await agent._handle_message(mock_context)
         mock_bot.ask.assert_called_once()
         call_kwargs = mock_bot.ask.call_args.kwargs
-        assert call_kwargs["user_id"] is None
+        # _extract_user_id() guarantees a non-empty id; with no from_property it
+        # returns the "anonymous" sentinel rather than None.
+        assert call_kwargs["user_id"] == "anonymous"
 
     @pytest.mark.asyncio
     async def test_no_conversation(self, agent, mock_context, mock_bot):

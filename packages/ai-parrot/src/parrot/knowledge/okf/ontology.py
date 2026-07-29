@@ -63,6 +63,16 @@ class ConceptType(str, Enum):
     WIKI_SYNTHESIS = "Wiki Synthesis"
     WIKI_OVERVIEW = "Wiki Overview"
 
+    # --- Work-lineage types (graph-knowledge-persistence) ---
+    RUN = "Run"
+    CLAIM = "Claim"
+
+    # --- Open-vocabulary fallback (FEAT-216) ---
+    # bundle.py maps unknown foreign OKF ``type`` values here on import;
+    # the member was documented since FEAT-216 but never added, so any
+    # foreign-typed bundle import raised AttributeError.
+    OTHER = "Other"
+
 
 class RelationType(str, Enum):
     """Typed edge vocabulary (OKF-superset).
@@ -96,6 +106,11 @@ class RelationType(str, Enum):
     # --- Wiki relation types (FEAT-260) ---
     SUMMARIZES = "summarizes"
     CONTRADICTS = "contradicts"
+
+    # --- Work-lineage relations (graph-knowledge-persistence) ---
+    PRODUCED = "produced"
+    ABOUT = "about"
+    SUPPORTED_BY = "supported_by"
 
 
 class RelatesTo(BaseModel):

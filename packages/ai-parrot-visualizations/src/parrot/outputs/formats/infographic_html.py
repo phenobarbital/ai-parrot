@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import markdown_it
 import orjson
 from markupsafe import escape
+from pydantic import ValidationError
 
 try:
     import nh3 as _nh3
@@ -59,6 +60,29 @@ from ...models.infographic import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Maps a block ``type`` discriminator to its Pydantic model. Used to coerce
+# nested blocks that arrive as raw dicts — inner blocks inside ``TabPane`` and
+# ``AccordionItem`` are typed ``List[Any]``, so Pydantic never parses them into
+# models. Without this, the renderers (which use attribute access) would skip
+# every nested block, leaving tab panes / accordion bodies empty.
+_BLOCK_MODEL_MAP: Dict[str, Any] = {
+    "title": TitleBlock,
+    "hero_card": HeroCardBlock,
+    "summary": SummaryBlock,
+    "chart": ChartBlock,
+    "bullet_list": BulletListBlock,
+    "table": TableBlock,
+    "image": ImageBlock,
+    "quote": QuoteBlock,
+    "callout": CalloutBlock,
+    "divider": DividerBlock,
+    "timeline": TimelineBlock,
+    "progress": ProgressBlock,
+    "checklist": ChecklistBlock,
+    "accordion": AccordionBlock,
+    "tab_view": TabViewBlock,
+}
 
 # ──────────────────────────────────────────────
 # Chart styling defaults
@@ -842,13 +866,37 @@ class InfographicHTMLRenderer(BaseRenderer):
         Returns:
             HTML string for the block, or a comment if max depth exceeded.
         """
-        block_type = getattr(block, "type", None)
+        # Nested blocks inside a TabPane / AccordionItem arrive as raw dicts
+        # (those containers type their children as ``List[Any]``, so Pydantic
+        # never coerces them). Resolve the discriminator from either an
+        # attribute or a dict key, then parse the dict into its model so the
+        # attribute-based renderers work.
+        if isinstance(block, dict):
+            block_type = block.get("type")
+        else:
+            block_type = getattr(block, "type", None)
         if depth > max_depth:
             return f"        <!-- max nesting depth ({max_depth}) exceeded for {block_type} -->"
         renderer = self._block_renderers.get(block_type)
         if renderer is None:
             logger.warning("Unknown block type '%s' — skipping.", block_type)
             return ""
+        if isinstance(block, dict):
+            model_cls = _BLOCK_MODEL_MAP.get(block_type)
+            if model_cls is None:
+                logger.warning(
+                    "No model for block type '%s' — skipping.", block_type
+                )
+                return ""
+            try:
+                block = model_cls.model_validate(block)
+            except ValidationError:
+                logger.warning(
+                    "Failed to parse nested '%s' block — skipping.",
+                    block_type,
+                    exc_info=True,
+                )
+                return ""
         # Pass depth to renderers that support recursive blocks
         if block_type in ("accordion", "tab_view"):
             return renderer(block, depth=depth)

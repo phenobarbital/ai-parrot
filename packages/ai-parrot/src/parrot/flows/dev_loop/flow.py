@@ -25,14 +25,22 @@ The factory is a pure function — no globals, no env reads.
 from __future__ import annotations
 
 import json
+import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
+from parrot import conf
 from parrot.bots.flows import AgentsFlow
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
+from parrot.flows.dev_loop.session_state import (
+    PullRequestLinked,
+    action_from_flow_event,
+)
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Edge predicates
@@ -59,8 +67,78 @@ def _qa_passed(result: Any) -> bool:
 
 
 def _qa_failed(result: Any) -> bool:
-    """True when the QAReport's ``passed`` flag is exactly False."""
+    """True when the QAReport's ``passed`` flag is exactly False.
+
+    Kept as-is (no attempt/retry awareness) — this is also used by
+    ``build_dev_loop_revision_flow`` (``runner.py``), whose QA failure path
+    is NOT retried (spec §7: repair is scoped to the main loop only).
+    """
     return getattr(result, "passed", True) is False
+
+
+def _is_feature(result: Any) -> bool:
+    """True when the classifier result is a ``FeatureBrief`` (FEAT-378).
+
+    Mirrors the CEL predicate ``result.kind == "feature"``
+    (definition.py's ``_CEL_IS_FEATURE``). Checked by ``kind`` value
+    rather than ``isinstance`` so a plain dict-like stub (as used by
+    some tests) still routes correctly.
+    """
+    return getattr(result, "kind", None) == "feature"
+
+
+def _feedback_escalate(result: Any) -> bool:
+    """True when the router's ``FeedbackDecision.decision == "escalate"``."""
+    return getattr(result, "decision", None) == "escalate"
+
+
+def _feedback_accept(result: Any) -> bool:
+    """True when the router's ``FeedbackDecision.decision == "accept_with_notes"``."""
+    return getattr(result, "decision", None) == "accept_with_notes"
+
+
+def _feedback_retry(result: Any) -> bool:
+    """True when the router's ``FeedbackDecision.decision == "retry"``
+    (FEAT-377/A).
+
+    Unlike the bug-mode ``qa -> development`` retry edge (whose CEL/Python
+    predicate encodes the ``attempt < N`` bound directly, because it reads
+    the bound straight off ``QAReport.attempt``), this predicate carries
+    NO bound of its own — ``FeedbackDecision`` has no attempt counter.
+    The bound lives entirely in ``FeedbackRouterNode._retry_allowed()`` /
+    ``_enforce()``: a proposed ``"retry"`` is downgraded to ``"escalate"``
+    in Python, before this predicate is ever evaluated, once
+    ``DEV_LOOP_QA_MAX_RETRIES`` is reached. By the time the engine reads
+    ``result.decision``, it has already been bounded — this predicate
+    only has to route on the (already-enforced) label.
+    """
+    return getattr(result, "decision", None) == "retry"
+
+
+def _make_qa_retry(max_retries: int) -> Callable[[Any], bool]:
+    """Closure: QA failed but the bounded repair loop (FEAT-377 TASK-1910
+    — G1) still has attempts left → redispatch development."""
+
+    def _qa_retry(result: Any) -> bool:
+        return (
+            getattr(result, "passed", True) is False
+            and getattr(result, "attempt", 1) < max_retries
+        )
+
+    return _qa_retry
+
+
+def _make_qa_exhausted(max_retries: int) -> Callable[[Any], bool]:
+    """Closure: QA failed and the repair loop is exhausted → escalate to
+    the failure handler."""
+
+    def _qa_exhausted(result: Any) -> bool:
+        return (
+            getattr(result, "passed", True) is False
+            and getattr(result, "attempt", 1) >= max_retries
+        )
+
+    return _qa_exhausted
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +170,14 @@ class FlowEventPublisher:
         self._redis: Any = None
 
     async def __call__(self, event: str, node_id: str, info: Dict[str, Any]) -> None:
-        """XADD one ``flow.<event>`` envelope to the current run's stream."""
+        """XADD one ``flow.<event>`` envelope to the current run's stream.
+
+        FEAT-322 TASK-1852 (dual-publish): after the legacy XADD, also folds
+        the event into the run's ``SessionHost`` (if seeded in
+        ``shared_data["session_host"]`` by :class:`DevLoopRunner`). The two
+        publish paths are independent failure domains — a legacy-XADD
+        failure never blocks the session-state fold and vice versa.
+        """
         run_id = ""
         run_ctx = info.get("context")
         if run_ctx is not None:
@@ -101,9 +186,10 @@ class FlowEventPublisher:
             run_id = self._holder.get("run_id", "")
         if not run_id:
             return
+        ts = time.time()
         envelope = {
             "kind": f"flow.{event}",
-            "ts": time.time(),
+            "ts": ts,
             "run_id": run_id,
             "node_id": node_id,
             "payload": {k: v for k, v in info.items() if k not in ("flow", "context")},
@@ -112,12 +198,41 @@ class FlowEventPublisher:
             redis_client = await self._ensure_redis()
             await redis_client.xadd(
                 f"flow:{run_id}:flow",
-                {"event": json.dumps(envelope)},
+                {"event": json.dumps(envelope, default=str)},
                 maxlen=10_000,
                 approximate=True,
             )
         except Exception:  # noqa: BLE001 - telemetry must never break the run
             pass
+
+        # Independent failure domain — never affects (or is affected by) the
+        # legacy XADD above.
+        try:
+            session_host = None
+            if run_ctx is not None:
+                session_host = getattr(run_ctx, "shared_data", {}).get("session_host")
+            if session_host is not None:
+                action = action_from_flow_event(
+                    event, node_id, ts,
+                    error=str(info.get("error", "")),
+                    node_result=info.get("node_result"),
+                )
+                if action is not None:
+                    session_host.apply(action)
+                node_result = info.get("node_result")
+                if (
+                    event == "node_completed"
+                    and isinstance(node_result, dict)
+                    and node_result.get("pr_url")
+                ):
+                    session_host.apply(PullRequestLinked(
+                        pr_url=str(node_result["pr_url"]),
+                    ))
+        except Exception:  # noqa: BLE001 - session-state fold must never break the run
+            _logger.debug(
+                "dev-loop session-state fold failed for event %s (node=%s, run=%s)",
+                event, node_id, run_id, exc_info=True,
+            )
 
     async def _ensure_redis(self) -> Any:
         """Return a cached async Redis client, creating it on first call."""
@@ -167,9 +282,17 @@ def build_dev_loop_flow(
     lifecycle_events: bool = True,
     development_dispatcher: Optional[Any] = None,
     development_profile: Optional[Any] = None,
+    development_pool_config: Optional[Any] = None,
+    development_dispatcher_builder: Optional[Any] = None,
+    development_pool_max: int = 4,
     git_toolkit: Optional[Any] = None,
     repos: Optional[list[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
+    require_deployment_approval: bool = False,
+    wiki_search: Optional[Any] = None,
+    graph_memory: Optional[Any] = None,
+    require_plan_approval: bool = False,
+    skip_qa: bool = False,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -207,10 +330,38 @@ def build_dev_loop_flow(
             ``DevelopmentNode``. Defaults to ``dispatcher``.
         development_profile: Optional dispatch profile passed only to
             ``DevelopmentNode``.
+        development_pool_config: Optional :class:`DevAgentPoolConfig`
+            (FEAT-323) propagated to ``DevelopmentNode`` via
+            ``build_dev_loop_node_factories``. ``None`` (default) preserves
+            the single-agent behaviour exactly.
+        development_dispatcher_builder: Optional ``(DevAgentSpec) ->
+            (dispatcher, profile)`` callable (FEAT-323) propagated to
+            ``DevelopmentNode`` for pool-worker/conflict-resolver materialization.
+        development_pool_max: Hard cap on total pool workers (FEAT-323).
+            Defaults to ``4``.
         codereview_dispatcher: Optional ``AbstractCodeReviewDispatcher``
             (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
             to ``None``, in which case ``QANode`` auto-wraps ``dispatcher``
             in a ``ClaudeCodeReviewDispatcher`` (backward compat).
+        require_deployment_approval: FEAT-322 — forwarded to
+            ``DeploymentHandoffNode`` via ``build_dev_loop_node_factories``.
+            Defaults to ``False`` (today's behavior, unchanged); set
+            ``True`` to require a ``deployment_approval`` HITL gate before
+            the Jira "Ready to Deploy" transition (resolved via the REST
+            command layer, TASK-1855). Only takes effect when the run also
+            has a ``SessionHost`` (seeded by ``DevLoopRunner.run()``) —
+            see ``DeploymentHandoffNode``'s docstring.
+        graph_memory: FEAT-377 TASK-1915 — an optional
+            ``DevLoopGraphMemory`` (from ``DevLoopGraphMemory.
+            from_config()``) forwarded to Research/QA/Close/FailureHandler
+            via ``build_dev_loop_node_factories``. ``None`` (default)
+            makes every graph-memory seam a strict no-op.
+        require_plan_approval: FEAT-377 TASK-1916 — forwarded to
+            ``DevelopmentNode`` via ``build_dev_loop_node_factories``.
+            ``False`` (default) preserves current behavior exactly.
+        skip_qa: When ``True``, ``QANode`` returns a synthetic passing
+            ``QAReport`` without running deterministic checks or code
+            review. ``False`` (default) preserves the full QA gate.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -226,10 +377,18 @@ def build_dev_loop_flow(
         redis_url=redis_url,
         development_dispatcher=development_dispatcher,
         development_profile=development_profile,
+        development_pool_config=development_pool_config,
+        development_dispatcher_builder=development_dispatcher_builder,
+        development_pool_max=development_pool_max,
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
+        require_deployment_approval=require_deployment_approval,
+        wiki_search=wiki_search,
+        graph_memory=graph_memory,
+        require_plan_approval=require_plan_approval,
+        skip_qa=skip_qa,
     )
     staged = AgentsFlow.from_definition(
         definition,
@@ -285,9 +444,14 @@ def build_dev_loop_flow(
     flow.add_edge("research", "development")
     flow.add_edge("development", "qa")
 
-    # QA branch: passed=True → handoff, passed=False → failure handler.
+    # QA branch: passed=True → handoff; passed=False → bounded repair retry
+    # to development (FEAT-377 TASK-1910 — G1) while attempts remain, else
+    # escalate to the failure handler once the repair loop is exhausted.
+    # Mirrors definition.py's _cel_qa_retry / _cel_qa_exhausted edge-for-edge.
+    max_retries = int(conf.DEV_LOOP_QA_MAX_RETRIES)
     flow.add_edge("qa", "deployment_handoff", predicate=_qa_passed)
-    flow.add_edge("qa", "failure_handler", predicate=_qa_failed)
+    flow.add_edge("qa", "development", predicate=_make_qa_retry(max_retries))
+    flow.add_edge("qa", "failure_handler", predicate=_make_qa_exhausted(max_retries))
 
     # Success path terminates at the close node (FEAT-250 G7).
     flow.add_edge("deployment_handoff", "close")

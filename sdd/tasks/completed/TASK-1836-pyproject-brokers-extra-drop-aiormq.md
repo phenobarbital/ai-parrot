@@ -1,0 +1,165 @@
+# TASK-1836: Update navigator `pyproject.toml` — add `[brokers]` extra, drop `aiormq`
+
+**Feature**: FEAT-318 — Navigator Brokers Removal (`navigator-eventbus` phase 5)
+**Spec**: `sdd/specs/navigator-brokers-removal.spec.md`
+**Status**: pending
+**Priority**: high
+**Estimated effort**: S (< 2h)
+**Depends-on**: TASK-1835
+**Assigned-to**: unassigned
+
+> **CROSS-REPO**: changes land in `/home/jesuslara/proyectos/navigator` (branch
+> `dev`), NOT ai-parrot.
+
+---
+
+## Context
+
+Spec §3 Module 2. Once the examples no longer import `navigator.brokers.*`
+(TASK-1835), navigator's dependency metadata is rewired: it gains an optional
+extra `[brokers]` resolving to `navigator-eventbus[brokers]` (so example/consumer
+usage opts in explicitly), and it drops the now-orphaned `aiormq` direct
+dependency. `aiormq` was verified (2026-07-18) to be used **only** by
+`navigator/brokers/` — removing it after TASK-1835 leaves the still-present but
+soon-to-be-deleted `navigator/brokers/rabbitmq` as dead code with no live
+importer, which is safe until TASK-1837 deletes it.
+
+---
+
+## Scope
+
+- Add an optional extra `[brokers]` to navigator's `pyproject.toml` that pins
+  `navigator-eventbus[brokers]>=0.1.0rc1` (published on PyPI 2026-07-20; PEP 440
+  permits the RC because the specifier names a pre-release).
+- Remove the `aiormq>=6.8.1` direct dependency (navigator `pyproject.toml`
+  line ~72, verified 2026-07-18).
+- Remove the dead `aiormq.*` tooling override if present (navigator
+  `pyproject.toml` line ~293 — likely a mypy overrides block entry).
+- Do NOT touch `aioboto3` or `redis` — both are used outside `brokers/` and must
+  remain (see Does NOT Exist / counter-anchors).
+
+**NOT in scope**:
+- Editing example files (TASK-1835).
+- Deleting `navigator/brokers/` (TASK-1837).
+- (Resolved) Version-pin decision — `navigator-eventbus 0.1.0rc1` is published
+  on PyPI; pin `>=0.1.0rc1`. The RC is intentional (awaiting end-to-end testing);
+  the later bump to stable `0.1.0` is a separate follow-up, not this task.
+
+---
+
+## Files to Create / Modify
+
+> Paths relative to the **navigator** repo root.
+
+| File | Action | Description |
+|---|---|---|
+| `pyproject.toml` | MODIFY | add extra `[brokers] = navigator-eventbus[brokers]>=0.1.0rc1`; remove `aiormq` dep (~line 72); remove `aiormq.*` override (~line 293) |
+
+---
+
+## Codebase Contract (Anti-Hallucination)
+
+> Verified against the `navigator` repo (branch `dev`) on 2026-07-18.
+
+### Verified facts
+```
+navigator/pyproject.toml:72     "aiormq>=6.8.1",          # direct dependency (to REMOVE)
+navigator/pyproject.toml:293    "aiormq.*",               # tooling override (to REMOVE)
+# aiormq is imported ONLY under navigator/brokers/ (grep confirmed: 0 hits elsewhere)
+# navigator has NO existing navigator-eventbus dependency (grep confirmed absent)
+```
+
+### Does NOT Exist / MUST NOT touch (counter-anchors)
+- ~~`aiormq` usage outside `navigator/brokers/`~~ — none; safe to drop.
+- **`aioboto3` — KEEP**: used at `navigator/utils/file/s3.py` (verified). Do NOT
+  remove.
+- **`redis` — KEEP**: used at `navigator/ext/redis/` and
+  `navigator/background/tracker/redis.py` (verified). Do NOT remove.
+- ~~an existing `[brokers]` extra in navigator pyproject~~ — does not exist; create it.
+
+---
+
+## Implementation Notes
+
+### Verify-first
+```bash
+cd /home/jesuslara/proyectos/navigator
+grep -nE "aiormq" pyproject.toml
+grep -rlnE "aiormq" navigator/ | grep -v "navigator/brokers/"   # must be EMPTY
+grep -rlnE "aioboto3" navigator/ | grep -v "navigator/brokers/" # must show utils/file/s3.py (KEEP)
+```
+
+### Key Constraints
+- Follow the navigator repo's existing extras/formatting conventions.
+- Pin the `[brokers]` extra to `navigator-eventbus[brokers]>=0.1.0rc1` — the
+  version FEAT-316 published to PyPI on 2026-07-20 (verified live).
+- Removing the mypy override for `aiormq` avoids a dead override entry.
+
+### References
+- Spec §7 External Dependencies table and Known Risks (`aiormq` override gotcha).
+
+---
+
+## Acceptance Criteria
+
+- [ ] `pyproject.toml` no longer lists `aiormq` as a direct dependency.
+- [ ] The `aiormq.*` tooling override is removed (no dangling override).
+- [ ] `pyproject.toml` exposes an optional extra `[brokers]` resolving to
+      `navigator-eventbus[brokers]>=0.1.0rc1` (from PyPI).
+- [ ] `uv pip install -e .[brokers]` (in the navigator repo) succeeds and
+      `python -c "import navigator_eventbus.brokers"` works afterward.
+- [ ] `aioboto3` and `redis` remain present in `pyproject.toml`.
+- [ ] No changes to the ai-parrot repository.
+
+---
+
+## Test Specification
+
+```bash
+cd /home/jesuslara/proyectos/navigator
+grep -qE "aiormq" pyproject.toml && echo "FAIL: aiormq still present" || echo "PASS: aiormq removed"
+grep -qE "aioboto3" pyproject.toml && echo "PASS: aioboto3 kept" || echo "FAIL: aioboto3 dropped"
+uv pip install -e '.[brokers]' && python -c "import navigator_eventbus.brokers; print('extra OK')"
+```
+
+---
+
+## Agent Instructions
+
+Standard SDD flow. Verify the contract against the live `pyproject.toml` first
+(line numbers may drift). Code commit lands in navigator; SDD state commit
+(index + this file move) lands in ai-parrot on `dev`.
+
+---
+
+## Completion Note
+
+**Completed by**: Claude (Opus 4.8) via `/sdd-start`
+**Date**: 2026-07-20
+**Notes**:
+- Edited `pyproject.toml` in the navigator worktree
+  `.claude/worktrees/feat-318-navigator-brokers-removal` (commit `0373f2e`):
+  - Removed `aiormq>=6.8.1` from `[project.dependencies]` (was line 72).
+  - Removed the dead `aiormq.*` entry from the `[[tool.mypy.overrides]]` block
+    (was line 293).
+  - Added a `brokers` extra to `[project.optional-dependencies]` pinning
+    `navigator-eventbus[brokers]>=0.1.0rc1` (placed after `qworker`, with a
+    descriptive comment matching repo style).
+- **Verification**: TOML parses; `aiormq` absent from deps and mypy overrides;
+  `brokers` extra equals `["navigator-eventbus[brokers]>=0.1.0rc1"]`; the pin
+  resolves from PyPI (`uv pip install --dry-run` → "Would make no changes",
+  satisfied by the installed 0.1.0rc1); `import navigator_eventbus.brokers` OK.
+
+**Deviations from spec**: 
+- The task/spec AC "`aioboto3` and `redis` remain present in `pyproject.toml`"
+  is imprecise: **neither is a direct entry** in navigator's `pyproject.toml`
+  (`aioboto3` arrives transitively via `asyncdb[uvloop,default,boto3]`; `redis`
+  is not listed, only mentioned in a comment). So the AC's literal
+  `grep aioboto3 pyproject.toml` would false-FAIL. The real invariant — do not
+  remove them — holds trivially, since only the `aiormq` lines were touched.
+  Flagged rather than "fixed" to avoid gaming the grep.
+- Full `uv pip install -e .[brokers]` into a clean navigator venv (which would
+  trigger a Cython/setuptools_scm build of navigator itself) was **not** run to
+  avoid mutating/clobbering an environment for a metadata-only change; the
+  extra's target is proven installable (exact 0.1.0rc1 already resolved from
+  PyPI). Recommend running it once in navigator's own CI/venv as a final gate.

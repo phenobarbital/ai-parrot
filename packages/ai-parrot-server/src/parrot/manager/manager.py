@@ -32,6 +32,7 @@ from ..handlers.agents.data import DataAnalystHandler
 from ..handlers.agents.factory import AgentFactoryHandler
 from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
+from ..handlers.infographic_recipes import RecipeHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
     DatabaseFormatsHandler,
@@ -69,6 +70,9 @@ from ..bots.flows.crew import AgentCrew
 from ..models.crew_definition import CrewDefinition
 from ..handlers.crew.handler import CrewHandler
 from ..handlers.crew.execution_handler import CrewExecutionHandler
+from ..handlers.crew.execution_history_handler import CrewExecutionHistoryHandler
+from ..handlers.crew.tool_catalog import CrewToolCatalogHandler
+from ..handlers.crew.special_nodes import CrewSpecialNodeCatalogHandler
 from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
 from ..conf import (
@@ -1631,6 +1635,32 @@ class BotManager:
             self.app.on_cleanup.append(close_all_fullmode_sessions)
         return registered
 
+    def _register_openai_compat_routes(self, router) -> bool:
+        """Register OpenAI-compatible endpoints (FEAT-247).
+
+        Delegates to ``parrot.handlers.openai_compat.register_openai_compat_routes``,
+        which exposes ``/v1/chat/completions/{session_id}`` and ``/v1/models``
+        so LiveAvatar FULL Mode can call ai-parrot directly as its Custom LLM.
+        Guarded by the same defensive ``ImportError`` pattern used by the other
+        optional route groups so a missing/broken import degrades gracefully
+        instead of crashing boot.
+
+        Args:
+            router: The aiohttp ``UrlDispatcher`` to register routes on.
+
+        Returns:
+            ``True`` if the OpenAI-compat routes were registered, ``False``
+            otherwise.
+        """
+        try:
+            from ..handlers.openai_compat import register_openai_compat_routes
+        except ImportError as exc:
+            self.logger.warning(
+                "OpenAI-compat endpoints disabled (%s).", exc,
+            )
+            return False
+        return register_openai_compat_routes(router)
+
     def _setup_structured_output_transport(self) -> None:
         """Wire the Redis structured-output transport subscriber when enabled (FEAT-249).
 
@@ -1811,6 +1841,19 @@ class BotManager:
             '/api/v1/agents/infographic/{resource:themes}/{theme_name}',
             InfographicTalk,
         )
+        # Deterministic render route (FEAT-327) — bot-less, LLM-free. The
+        # literal `render` resource MUST be registered before the {agent_id}
+        # catch-all below, same reasoning as templates/themes above.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:render}',
+            InfographicTalk,
+        )
+        # Async render job polling (FEAT-327, Module 4) — grouped with the
+        # render route above; also before {agent_id}.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:render}/jobs/{job_id}',
+            InfographicTalk,
+        )
         router.add_view(
             '/api/v1/agents/infographic/{agent_id}',
             InfographicTalk,
@@ -1836,6 +1879,10 @@ class BotManager:
         # Registered under the same optional-integration guard; a missing stack
         # logs a warning instead of crashing boot.
         self._register_fullmode_avatar_routes(router)
+        # OpenAI-compat routes (FEAT-247) — lets LiveAvatar FULL Mode call
+        # ai-parrot directly as its Custom LLM. Registered right after the
+        # FULL mode routes since it depends on FULLMODE_SESSIONS_KEY.
+        self._register_openai_compat_routes(router)
         # Dataset Manager for agents:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',
@@ -1844,6 +1891,24 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}/{dataset_id}',
             DatasetManagerHandler
+        )
+        # Infographic Recipes (FEAT-324): CRUD + on-demand replay. Unlike
+        # DatasetManagerHandler, the recipe store/runner have no per-request
+        # cloning path — configure them via
+        # ``parrot.handlers.infographic_recipes.register_recipe_routes(app,
+        # recipe_store=..., dataset_manager=...)`` at startup; until then the
+        # handler returns a clear 500 ("recipe_store is not configured").
+        router.add_view(
+            '/api/v1/infographic_recipes',
+            RecipeHandler
+        )
+        router.add_view(
+            '/api/v1/infographic_recipes/{name}',
+            RecipeHandler
+        )
+        router.add_view(
+            '/api/v1/infographic_recipes/{name}/run',
+            RecipeHandler
         )
         # Database Agent metadata:
         router.add_view(
@@ -1897,6 +1962,19 @@ class BotManager:
         self.app['stream_handler'] = st
         # Crew Configuration
         if ENABLE_CREWS:
+            router.add_view('/api/v1/crew/tools', CrewToolCatalogHandler)
+            # Must register BEFORE CrewHandler.configure — its '{id:.*}'
+            # catch-all route would otherwise shadow this path.
+            router.add_view(
+                '/api/v1/crew/special_nodes', CrewSpecialNodeCatalogHandler
+            )
+            # Execution-history API (list/detail/replay/schedule/delete).
+            # Must register BEFORE CrewHandler.configure — its '{id:.*}'
+            # catch-all would otherwise shadow '/api/v1/crew/executions' and
+            # resolve 'executions' as a crew id.
+            CrewExecutionHistoryHandler.configure(
+                self.app, '/api/v1/crew/executions'
+            )
             CrewHandler.configure(self.app, '/api/v1/crew')
             CrewExecutionHandler.configure(self.app, '/api/v1/crews')
         # Agent Config CRUD
@@ -2172,7 +2250,15 @@ Available documentation UIs:
         # Add to memory
         self._crews[crew_key] = (crew, crew_def)
 
-        # Persist to Redis
+        # Persist to Redis (only when Redis-backed persistence is enabled)
+        if self.crew_redis is None:
+            self.logger.debug(
+                "Crew persistence disabled (ENABLE_CREWS is False); "
+                "crew '%s' registered in memory only",
+                name,
+            )
+            return
+
         try:
             await self.crew_redis.save_crew(crew_def)
             self.logger.info(
@@ -2233,7 +2319,10 @@ Available documentation UIs:
             else:
                 return (cached_crew, crew_def)
 
-        # 3. If not in memory, try Redis
+        # 3. If not in memory, try Redis (when persistence is enabled)
+        if self.crew_redis is None:
+            return (None, None)
+
         try:
             # Try to load by name first
             crew_def = await self.crew_redis.load_crew(identifier, tenant)
@@ -2322,7 +2411,13 @@ Available documentation UIs:
                     break
 
         if crew_name and crew_def:
-            # Remove from Redis
+            # Remove from Redis (when persistence is enabled)
+            if self.crew_redis is None:
+                self.logger.debug(
+                    "Crew persistence disabled; crew '%s' removed from memory only",
+                    crew_name,
+                )
+                return True
             try:
                 await self.crew_redis.delete_crew(crew_def.name, crew_def.tenant)
                 self.logger.info(
@@ -2378,6 +2473,12 @@ Available documentation UIs:
         This method is called during application startup to restore
         all previously saved crews from Redis into memory.
         """
+        if self.crew_redis is None:
+            self.logger.debug(
+                "Crew persistence disabled (ENABLE_CREWS is False); "
+                "skipping crew loading from Redis"
+            )
+            return
         try:
             # Check Redis connection
             if not await self.crew_redis.ping():
@@ -2431,6 +2532,9 @@ Available documentation UIs:
         1. Loading new crews added by other workers
         2. Removing crews deleted by other workers
         """
+        if self.crew_redis is None:
+            # Redis-backed persistence disabled; nothing to sync (in-memory only)
+            return
         try:
             # Get all crew names from Redis
             remote_entries = await self.crew_redis.list_all_crews()

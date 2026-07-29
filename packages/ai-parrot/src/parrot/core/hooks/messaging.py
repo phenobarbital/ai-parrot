@@ -14,8 +14,8 @@ from typing import Any
 
 from aiohttp import web
 
-from .base import BaseHook
-from .models import HookType, MessagingHookConfig
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import HookType, MessagingHookConfig
 
 
 class _MessagingHookBase(BaseHook):

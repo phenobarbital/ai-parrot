@@ -28,12 +28,12 @@ from parrot.core.events.lifecycle.events import (  # noqa: E402
     InvokeFailedEvent,
     ToolCallFailedEvent,
 )
-from parrot.core.events.lifecycle.provider import EventProvider  # noqa: E402
-from parrot.core.events.lifecycle.registry import EventRegistry  # noqa: E402
+from navigator_eventbus.lifecycle.provider import EventProvider  # noqa: E402
+from navigator_eventbus.lifecycle.registry import EventRegistry  # noqa: E402
 from parrot.core.events.lifecycle.subscribers.opentelemetry import (  # noqa: E402
     OpenTelemetrySubscriber,
 )
-from parrot.core.events.lifecycle.trace import TraceContext  # noqa: E402
+from navigator_eventbus.lifecycle.trace import TraceContext  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

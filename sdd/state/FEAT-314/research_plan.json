@@ -1,0 +1,21 @@
+{
+  "feat_id": "FEAT-314",
+  "mode": "enrichment",
+  "wiki_available": false,
+  "queries": [
+    {"id": "Q001", "type": "read", "target": "packages/ai-parrot/src/parrot/clients/google/__init__.py", "intent": "Google package export pattern (the style reference)", "priority": 1},
+    {"id": "Q002", "type": "read", "target": "packages/ai-parrot/src/parrot/clients/google/client.py", "intent": "GoogleClient structure: how ask/ask_stream/invoke + mixins compose", "priority": 1},
+    {"id": "Q003", "type": "read", "target": "packages/ai-parrot/src/parrot/clients/google/generation.py", "intent": "Generation mixin pattern (image/video) to mirror for Nova Reel/Canvas", "priority": 1},
+    {"id": "Q004", "type": "read", "target": "packages/ai-parrot/src/parrot/clients/nova_sonic.py", "intent": "Current NovaSonicClient: API surface, bidirectional stream usage, Nova-text fallback", "priority": 1},
+    {"id": "Q005", "type": "grep", "target": "NovaSonicClient|nova_sonic", "intent": "All import sites / consumers to assess refactor blast radius", "priority": 1},
+    {"id": "Q006", "type": "read", "target": "packages/ai-parrot/src/parrot/clients/factory.py", "intent": "Client factory/registry: how a new NovaClient registers", "priority": 2},
+    {"id": "Q007", "type": "grep", "target": "AWS_CREDENTIALS", "intent": "parrot.conf credential contract (aws_id) shared with BedrockConverseClient", "priority": 2},
+    {"id": "Q008", "type": "context", "target": "packages/ai-parrot/src/parrot/clients/bedrock.py", "intent": "BedrockConverseClient: credential resolution + Converse loop (already read this session)", "priority": 2},
+    {"id": "Q009", "type": "context", "target": "packages/ai-parrot/src/parrot/models/bedrock_models.py", "intent": "PUBLIC_TO_BEDROCK model map incl. nova-2-lite (already read this session)", "priority": 2},
+    {"id": "Q010", "type": "grep", "target": "nova (case-insensitive) in clients/, integrations/, handlers/", "intent": "Other Nova touchpoints (Reel/Canvas/premier references, handlers, voice endpoints)", "priority": 2},
+    {"id": "Q011", "type": "git_log", "target": "packages/ai-parrot/src/parrot/clients/nova_sonic.py", "intent": "Recent activity / feature lineage (FEAT-302?)", "priority": 3},
+    {"id": "Q012", "type": "grep", "target": "nova in tests/", "intent": "Existing test coverage for NovaSonicClient / bedrock nova", "priority": 3},
+    {"id": "Q013", "type": "read", "target": "packages/ai-parrot/src/parrot/clients/__init__.py", "intent": "Top-level client exports & lazy loading pattern", "priority": 3},
+    {"id": "Q014", "type": "read", "target": "packages/ai-parrot/src/parrot/clients/live.py", "intent": "Gemini Live bidirectional-audio client — closest existing analogue to nova audio.py", "priority": 3}
+  ]
+}

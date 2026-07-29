@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1084-postgres-migration-ontology-curation.md"
+      "file": "sdd/tasks/completed/TASK-1084-postgres-migration-ontology-curation.md"
     },
     {
       "id": "TASK-1085",
@@ -41,7 +41,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1085-ontology-exception-types.md"
+      "file": "sdd/tasks/completed/TASK-1085-ontology-exception-types.md"
     },
     {
       "id": "TASK-1086",
@@ -61,7 +61,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1086-merger-merge-with-overlay.md"
+      "file": "sdd/tasks/completed/TASK-1086-merger-merge-with-overlay.md"
     },
     {
       "id": "TASK-1087",
@@ -79,7 +79,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1087-concept-catalog-models.md"
+      "file": "sdd/tasks/completed/TASK-1087-concept-catalog-models.md"
     },
     {
       "id": "TASK-1088",
@@ -101,7 +101,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1088-concept-catalog-service.md"
+      "file": "sdd/tasks/completed/TASK-1088-concept-catalog-service.md"
     },
     {
       "id": "TASK-1089",
@@ -122,7 +122,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1089-concept-catalog-sync-worker.md"
+      "file": "sdd/tasks/completed/TASK-1089-concept-catalog-sync-worker.md"
     },
     {
       "id": "TASK-1090",
@@ -142,7 +142,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1090-concept-catalog-yaml-seed.md"
+      "file": "sdd/tasks/completed/TASK-1090-concept-catalog-yaml-seed.md"
     },
     {
       "id": "TASK-1091",
@@ -163,7 +163,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1091-concept-catalog-reconciliation.md"
+      "file": "sdd/tasks/completed/TASK-1091-concept-catalog-reconciliation.md"
     },
     {
       "id": "TASK-1092",
@@ -183,7 +183,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1092-concept-catalog-http-routes.md"
+      "file": "sdd/tasks/completed/TASK-1092-concept-catalog-http-routes.md"
     },
     {
       "id": "TASK-1093",
@@ -201,7 +201,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1093-schema-overlay-models.md"
+      "file": "sdd/tasks/completed/TASK-1093-schema-overlay-models.md"
     },
     {
       "id": "TASK-1094",
@@ -223,7 +223,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1094-schema-overlay-validator.md"
+      "file": "sdd/tasks/completed/TASK-1094-schema-overlay-validator.md"
     },
     {
       "id": "TASK-1095",
@@ -246,7 +246,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1095-schema-overlay-service.md"
+      "file": "sdd/tasks/completed/TASK-1095-schema-overlay-service.md"
     },
     {
       "id": "TASK-1096",
@@ -267,7 +267,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1096-schema-overlay-sync-worker.md"
+      "file": "sdd/tasks/completed/TASK-1096-schema-overlay-sync-worker.md"
     },
     {
       "id": "TASK-1097",
@@ -287,7 +287,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1097-schema-overlay-http-routes.md"
+      "file": "sdd/tasks/completed/TASK-1097-schema-overlay-http-routes.md"
     },
     {
       "id": "TASK-1098",
@@ -309,7 +309,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1098-tenant-ontology-manager-extension.md"
+      "file": "sdd/tasks/completed/TASK-1098-tenant-ontology-manager-extension.md"
     },
     {
       "id": "TASK-1099",
@@ -329,7 +329,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1099-ontology-cache-pubsub-subscriber.md"
+      "file": "sdd/tasks/completed/TASK-1099-ontology-cache-pubsub-subscriber.md"
     },
     {
       "id": "TASK-1100",
@@ -349,7 +349,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1100-navadmin-concept-catalog-queue.md"
+      "file": "sdd/tasks/completed/TASK-1100-navadmin-concept-catalog-queue.md"
     },
     {
       "id": "TASK-1101",
@@ -369,7 +369,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1101-navadmin-concept-browser.md"
+      "file": "sdd/tasks/completed/TASK-1101-navadmin-concept-browser.md"
     },
     {
       "id": "TASK-1102",
@@ -389,7 +389,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1102-navadmin-schema-overlay-panel.md"
+      "file": "sdd/tasks/completed/TASK-1102-navadmin-schema-overlay-panel.md"
     },
     {
       "id": "TASK-1103",
@@ -409,7 +409,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
       "completed_at": "2026-05-12T01:59:59+00:00",
-      "file": "sdd/tasks/active/TASK-1103-navigator-auth-role-addition.md"
+      "file": "sdd/tasks/completed/TASK-1103-navigator-auth-role-addition.md"
     }
   ]
 }

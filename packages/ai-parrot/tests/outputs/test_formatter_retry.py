@@ -156,7 +156,6 @@ def test_default_retry_prompts_exist():
     """Test that default retry prompts exist for key modes."""
     assert OutputMode.ECHARTS in DEFAULT_RETRY_PROMPTS
     assert OutputMode.JSON in DEFAULT_RETRY_PROMPTS
-    assert OutputMode.PLOTLY in DEFAULT_RETRY_PROMPTS
     assert OutputMode.YAML in DEFAULT_RETRY_PROMPTS
 
 

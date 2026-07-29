@@ -7,7 +7,7 @@ Covers: before/after/failed agent invocations (ask, ask_stream, conversation).
 from dataclasses import dataclass
 from typing import Optional
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.base import LifecycleEvent
 
 
 @dataclass(frozen=True)

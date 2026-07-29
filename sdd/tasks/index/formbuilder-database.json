@@ -10,7 +10,7 @@
     {
       "id": "TASK-544",
       "slug": "database-form-tool",
-      "title": "DatabaseFormTool \u2014 Core Implementation",
+      "title": "DatabaseFormTool — Core Implementation",
       "feature_id": "FEAT-078",
       "feature": "formbuilder-database",
       "spec": "sdd/specs/formbuilder-database.spec.md",
@@ -19,10 +19,10 @@
       "effort": "L",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Core implementation \u2014 all other tasks depend on this",
+      "parallelism_notes": "Core implementation — all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-04-03T09:45:07.788037+00:00",
-      "file": "sdd/tasks/active/TASK-544-database-form-tool.md",
+      "file": "sdd/tasks/completed/TASK-544-database-form-tool.md",
       "completed_at": "2026-04-03T14:24:42.640904+00:00"
     },
     {
@@ -63,7 +63,7 @@
       "parallelism_notes": "Depends on tool being importable (TASK-544 + TASK-545)",
       "assigned_to": null,
       "started_at": "2026-04-03T14:31:59.241140+00:00",
-      "file": "sdd/tasks/active/TASK-546-example-ui-integration.md",
+      "file": "sdd/tasks/completed/TASK-546-example-ui-integration.md",
       "completed_at": "2026-04-03T14:42:00.938969+00:00"
     },
     {

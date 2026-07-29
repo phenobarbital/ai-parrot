@@ -14,6 +14,7 @@ from parrot.flows.dev_loop.code_review import (
     CodeReviewDispatcherFactory,
     CodexCodeReviewDispatcher,
     GeminiCodeReviewDispatcher,
+    ParallelPerspectiveReviewDispatcher,
 )
 from parrot.flows.dev_loop.models import (
     ClaudeCodeReviewProfile,
@@ -125,6 +126,31 @@ class TestClaudeCodeReviewDispatcher:
         result = await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
         assert result.passed is True
         mock_disp.dispatch.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_review_forwards_session_host(self):
+        """FEAT-322: review(session_host=...) must reach dispatch()."""
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
+        d = ClaudeCodeReviewDispatcher(dispatcher=mock_disp)
+        sentinel_host = object()
+
+        await d.review(
+            brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp",
+            session_host=sentinel_host,
+        )
+
+        assert mock_disp.dispatch.await_args.kwargs["session_host"] is sentinel_host
+
+    @pytest.mark.asyncio
+    async def test_review_session_host_defaults_to_none(self):
+        mock_disp = MagicMock()
+        mock_disp.dispatch = AsyncMock(return_value=CodeReviewVerdict(passed=True))
+        d = ClaudeCodeReviewDispatcher(dispatcher=mock_disp)
+
+        await d.review(brief=MagicMock(), run_id="r1", node_id="qa", cwd="/tmp")
+
+        assert mock_disp.dispatch.await_args.kwargs["session_host"] is None
 
     @pytest.mark.asyncio
     async def test_review_degrades_on_error(self):
@@ -252,6 +278,53 @@ class TestBuildDevLoopNodeFactoriesWiring:
         assert isinstance(node._codereview_dispatcher, ClaudeCodeReviewDispatcher)
 
 
+class TestBuildDevLoopNodeFactoriesRequireDeploymentApproval:
+    """FEAT-322 code-review follow-up: require_deployment_approval threads
+    through the factory chain to a real, production-reachable
+    DeploymentHandoffNode instance (previously only settable via
+    object.__setattr__ from a test)."""
+
+    def test_handoff_factory_defaults_to_false(self):
+        from parrot.bots.flows.flow.definition import NodeDefinition
+        from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+
+        factories = build_dev_loop_node_factories(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            redis_url="redis://localhost:6379/0",
+        )
+        nd = NodeDefinition(id="deployment_handoff", type="dev_loop.deployment_handoff")
+        node = factories["dev_loop.deployment_handoff"](nd, set(), set())
+        assert node._require_deployment_approval is False
+
+    def test_handoff_factory_forwards_true(self):
+        from parrot.bots.flows.flow.definition import NodeDefinition
+        from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
+
+        factories = build_dev_loop_node_factories(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            redis_url="redis://localhost:6379/0",
+            require_deployment_approval=True,
+        )
+        nd = NodeDefinition(id="deployment_handoff", type="dev_loop.deployment_handoff")
+        node = factories["dev_loop.deployment_handoff"](nd, set(), set())
+        assert node._require_deployment_approval is True
+
+    def test_build_dev_loop_flow_forwards_require_deployment_approval(self):
+        from parrot.flows.dev_loop.flow import build_dev_loop_flow
+
+        flow = build_dev_loop_flow(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            log_toolkits={},
+            redis_url="redis://localhost:6379/0",
+            publish_flow_events=False,
+            require_deployment_approval=True,
+        )
+        assert flow._nodes["deployment_handoff"]._require_deployment_approval is True
+
+
 @pytest.fixture
 def qa_ctx() -> dict:
     """Minimal QANode.execute() context, mirroring test_qa_codereview.py."""
@@ -284,7 +357,6 @@ class TestFullQAFlowIntegration:
         underlying = MagicMock()
         underlying.dispatch = AsyncMock(
             side_effect=[
-                QAReport(passed=True, criterion_results=[], lint_passed=True),
                 CodeReviewVerdict(
                     passed=True,
                     findings=[
@@ -300,17 +372,14 @@ class TestFullQAFlowIntegration:
         report = await node.execute(qa_ctx)
         assert report.passed is True
         assert report.code_review_findings == ["fixed null guard"]
-        assert underlying.dispatch.await_count == 3
+        assert underlying.dispatch.await_count == 2
 
     @pytest.mark.asyncio
     async def test_codex_review_fix_rerun(self, qa_ctx):
         """Full QA -> Codex review -> fix -> rerun cycle (separate dispatcher)."""
         qa_dispatcher = MagicMock()
         qa_dispatcher.dispatch = AsyncMock(
-            side_effect=[
-                QAReport(passed=True, criterion_results=[], lint_passed=True),
-                QAReport(passed=True, criterion_results=[], lint_passed=True),
-            ]
+            return_value=QAReport(passed=True, criterion_results=[], lint_passed=True)
         )
         codex_dispatcher = MagicMock()
         codex_dispatcher.dispatch = AsyncMock(
@@ -322,7 +391,7 @@ class TestFullQAFlowIntegration:
         node = QANode(dispatcher=qa_dispatcher, codereview_dispatcher=reviewer)
         report = await node.execute(qa_ctx)
         assert report.passed is True
-        assert qa_dispatcher.dispatch.await_count == 2
+        assert qa_dispatcher.dispatch.await_count == 1
         codex_dispatcher.dispatch.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -418,7 +487,9 @@ class TestServerWiringIntegration:
 
     @pytest.mark.asyncio
     async def test_server_wiring_default(self, monkeypatch):
-        """No DEV_LOOP_CODEREVIEW_AGENT set -> default Claude reviewer."""
+        """No DEV_LOOP_CODEREVIEW_AGENT set -> default Claude reviewer,
+        upgraded to 'parallel' (adversarial review is mandatory in this
+        server — see _resolve_codereview_dispatcher's docstring)."""
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
@@ -430,11 +501,14 @@ class TestServerWiringIntegration:
         app["redis_url"] = "redis://localhost:6379/0"
         await server_mod._on_startup(app)
 
-        assert isinstance(captured["codereview_dispatcher"], ClaudeCodeReviewDispatcher)
+        dispatcher = captured["codereview_dispatcher"]
+        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
+        assert isinstance(dispatcher._primary, ClaudeCodeReviewDispatcher)
 
     @pytest.mark.asyncio
     async def test_server_wiring_codex(self, monkeypatch):
-        """DEV_LOOP_CODEREVIEW_AGENT=codex -> Codex reviewer."""
+        """DEV_LOOP_CODEREVIEW_AGENT=codex -> Codex primary, upgraded to
+        'parallel' (mandatory adversarial review)."""
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
@@ -444,11 +518,14 @@ class TestServerWiringIntegration:
         app["redis_url"] = "redis://localhost:6379/0"
         await server_mod._on_startup(app)
 
-        assert isinstance(captured["codereview_dispatcher"], CodexCodeReviewDispatcher)
+        dispatcher = captured["codereview_dispatcher"]
+        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
+        assert isinstance(dispatcher._primary, CodexCodeReviewDispatcher)
 
     @pytest.mark.asyncio
     async def test_server_wiring_gemini(self, monkeypatch):
-        """DEV_LOOP_CODEREVIEW_AGENT=gemini -> Gemini reviewer."""
+        """DEV_LOOP_CODEREVIEW_AGENT=gemini -> Gemini primary, upgraded to
+        'parallel' (mandatory adversarial review)."""
         captured: dict = {}
         server_mod = _load_server_module()
         self._patch_common(monkeypatch, server_mod, captured)
@@ -458,7 +535,9 @@ class TestServerWiringIntegration:
         app["redis_url"] = "redis://localhost:6379/0"
         await server_mod._on_startup(app)
 
-        assert isinstance(captured["codereview_dispatcher"], GeminiCodeReviewDispatcher)
+        dispatcher = captured["codereview_dispatcher"]
+        assert isinstance(dispatcher, ParallelPerspectiveReviewDispatcher)
+        assert isinstance(dispatcher._primary, GeminiCodeReviewDispatcher)
 
     @pytest.mark.asyncio
     async def test_server_wiring_invalid(self, monkeypatch):

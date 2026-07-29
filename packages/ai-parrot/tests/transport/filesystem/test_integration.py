@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from parrot.core.hooks.models import FilesystemHookConfig
+from navigator_eventbus.hooks.models import FilesystemHookConfig
 from parrot.autonomous.transport.filesystem.feed import ActivityFeed
 from parrot.autonomous.transport.filesystem.hook import FilesystemHook
 from parrot.autonomous.transport.filesystem.transport import FilesystemTransport

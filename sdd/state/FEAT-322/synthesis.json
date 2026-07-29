@@ -1,0 +1,40 @@
+{
+  "feature_id": "FEAT-322",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py", "symbol": null, "role": "NEW module — protocol-agnostic core (state/actions/reducers/SessionHost/shims), from sdd/artifacts/devloop_session_state.py sketch", "confidence": "high", "evidence": ["F001", "F002"] },
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/runner.py", "symbol": "DevLoopRunner (:100)", "role": "AHP-style HOST: owns SessionHost registry keyed by run_id; run()/run_revision() open/close sessions; active_runs is the root-channel catalogue seed", "confidence": "high", "evidence": ["F002", "F003"] },
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/flow.py", "symbol": "FlowEventPublisher.__call__ (:94)", "role": "dual-publish shim point — resolves run_id per-event from context; host lookup must be registry-based", "confidence": "high", "evidence": ["F002", "F004"] },
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py", "symbol": "_merge_manual_results (:301) / execute (:108)", "role": "blocking manual_criterion gates replace passed=True synthesis; resolutions MUST fold into QAReport before return (CEL routes on result.passed)", "confidence": "high", "evidence": ["F002", "F005", "F008"] },
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/deployment_handoff.py", "symbol": "execute (:89)", "role": "deployment_approval gate between PR creation and Jira transition (steps 2→3)", "confidence": "high", "evidence": ["F002", "F006"] },
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/streaming.py", "symbol": "FlowStreamMultiplexer (:51)", "role": "adapter target — new view='state': Snapshot on connect, then envelopes from flow:{run_id}:actions", "confidence": "high", "evidence": ["F002", "F008"] },
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatcher.py", "symbol": "DevLoopCodeDispatcher protocol + 7 implementations", "role": "multi-agent layer: each dispatch = terminal-channel occupant; XADD site is the second shim point", "confidence": "high", "evidence": ["F007"] },
+    { "path": "packages/ai-parrot/src/parrot/flows/dev_loop/webhook.py", "symbol": "register_pull_request_webhook (:292)", "role": "nearest precedent for an external command surface; resolve_gate command path does not exist anywhere yet", "confidence": "medium", "evidence": ["F008"] }
+  ],
+  "constraints": [
+    { "claim": "One AgentsFlow instance is shared across concurrent runs; per-run SessionHost must be resolved by run_id via a registry on the runner, never captured as a single reference on flow/publisher", "confidence": "high", "evidence": ["F003", "F004"] },
+    { "claim": "CEL edge predicates route on node RESULTS (result.passed), so gate outcomes must be folded into QAReport before QANode.execute returns", "confidence": "high", "evidence": ["F005", "F008"] },
+    { "claim": "FEAT-270 review-fix-rerun loop and degrade-to-pass semantics in qa.py must be preserved; gate integration lands after the review loop", "confidence": "high", "evidence": ["F005"] },
+    { "claim": "Event publishing must never break a run (publisher swallows all failures, maxlen~10k); host.apply must fold in-memory even when Redis XADD fails", "confidence": "high", "evidence": ["F004"] },
+    { "claim": "AHP is DRAFT — wire compatibility must stay quarantined behind a future adapter; the stable subset to mirror is: channel-scoped ActionEnvelope{channel, serverSeq, origin, rejectionReason}, Snapshot{resource, state, fromSeq}, reconnect replay-vs-snapshot, root catalogue events, SessionInputNeeded (awaiting_gate) and toolCallReady/Confirmed (gate arbitration)", "confidence": "high", "evidence": ["F001"] },
+    { "claim": "dev_loop files are under active development (FEAT-270, Moonshot/Z.ai dispatchers); anchors must be re-verified at /sdd-task time", "confidence": "medium", "evidence": ["F008"] }
+  ],
+  "hypotheses": [
+    {
+      "statement": "Adopt brainstorm Option B extended one level up per the AHP host model: (L1) session_state.py protocol-agnostic core exactly as sketched, hardened with AHP envelope fields (origin: {client_id, client_seq}, rejection_reason) and an explicit root-channel state (RunRegistryState + RunAdded/RunRemoved/RunSummaryChanged actions) so the runner is a true multi-session HOST; (L2) DevLoopRunner owns Dict[run_id, SessionHost] + a periodic expiry sweep + resolve_gate/cancel command methods; (L3) shims dual-publish from FlowEventPublisher and the dispatchers' XADD path; (L4) QANode + DeploymentHandoffNode open blocking gates; (L5) FlowStreamMultiplexer view='state' serves Snapshot + actions envelopes. Wire protocol (JSON-RPC/auth/ahp-* URIs) stays out of scope for a follow-up adapter spec.",
+      "confidence": "high",
+      "evidence": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008"],
+      "reasoning": "Every integration point verified at HEAD; AHP mapping is structural (host/session/terminal/changeset ≅ runner/run/dispatch-stream/PR) and its stable Redux-shaped subset is exactly what the sketch implements; the only architectural correction to the brainstorm is registry-based host resolution forced by the shared-flow concurrency model."
+    }
+  ],
+  "unknowns": [
+    { "id": "U1", "question": "Blocking manual criteria: opt-in per ManualCriterion (`blocking: bool = False` field on models.py:70) or a flow-level config flag?", "resolves": ["gate integration in qa.py"], "options": ["per-criterion field (default False — preserves current behavior, finer control)", "flow-level DEV_LOOP_BLOCKING_MANUAL_CRITERIA flag", "both: flow-level default + per-criterion override"], "user_answer": "Per-criterion field: add `blocking: bool = False` to ManualCriterion (models.py:70); default False preserves current behavior" },
+    { "id": "U2", "question": "Scope of the root channel (multi-run catalogue): include parrot-root:// state (RunRegistry + RunAdded/RunRemoved actions + listSessions-like snapshot) in this feature, or keep FEAT-322 session-scoped and defer root to the wire-adapter spec?", "resolves": ["hypothesis L1/L2 scope", "runner surface"], "options": ["include root channel now (true AHP host shape; nav-admin run list gets snapshot semantics too)", "defer root; session channel only (smaller diff, run list keeps polling active_runs)"], "user_answer": "Include root channel now: RunRegistryState + RunAdded/RunRemoved/RunSummaryChanged actions owned by the runner" },
+    { "id": "U3", "question": "Client command transport for resolve_gate / cancel: extend the existing FlowStreamMultiplexer WebSocket with client→server command messages (AHP-like, single socket), or add REST endpoints on the aiohttp app (webhook.py pattern)?", "resolves": ["adapter layer", "nav-admin integration"], "options": ["WS commands on the multiplexer socket (mirrors AHP dispatchAction; one connection per run)", "REST POST /runs/{run_id}/gates/{gate_id}/resolve (simpler auth/audit, no socket state)", "both: WS for subscribe/stream, REST for commands"], "user_answer": "WS + REST: WS multiplexer socket for subscribe/snapshot/stream; REST POST /runs/{run_id}/gates/{gate_id}/resolve (and cancel) for commands" }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "High-confidence localization, zero anchor drift, design sketch already contract-complete; brainstorm recommends per-spec isolation — spec dev-loop-session-state (core + host + shims + streaming view) first, layering dev-loop-approval-gates on its frozen contracts."
+  }
+}

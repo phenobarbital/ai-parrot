@@ -104,7 +104,8 @@ def _row_with_all_live_types() -> dict:
                 "data_type": data_type,
                 "description": f"Q {data_type}",
                 "options": (
-                    [{"option_id": 1, "option_label": "A"}]
+                    [{"is_active": True, "option_id": 1, "column_name": 1000 + i,
+                      "option_value": "A"}]
                     if data_type
                     in ("FIELD_SELECT", "FIELD_SELECT_RADIO", "FIELD_MULTISELECT")
                     else []
@@ -337,6 +338,93 @@ def test_epson_validation_set_auto_mapping():
     )
     rate = auto / total
     assert rate >= 0.95, f"weighted auto-map rate {rate:.2%} < 95%"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-325 — form_metadata.options as the primary select-option source
+# ---------------------------------------------------------------------------
+
+
+def test_feat300_all_live_types_options():
+    """Integration fixture uses ``option_value`` (not ``option_label``);
+    SELECT/RADIO/MULTISELECT fields carry populated options."""
+    row = _row_with_all_live_types()
+    schema, _ = _service().import_with_report(row)
+
+    fields_by_id = {f.field_id: f for f in schema.iter_all_fields()}
+    metadata_by_col = {m["column_name"]: m for m in row["metadata"]}
+
+    select_family = ("FIELD_SELECT", "FIELD_SELECT_RADIO", "FIELD_MULTISELECT")
+    checked = 0
+    for col, meta in metadata_by_col.items():
+        if meta["data_type"] not in select_family:
+            continue
+        field = fields_by_id[f"field_{col}"]
+        assert field.options, (
+            f"{meta['data_type']} field '{col}' expected populated options"
+        )
+        opt = field.options[0]
+        assert opt.value == "1"
+        assert opt.label == "A"
+        checked += 1
+
+    assert checked == 3, "expected FIELD_SELECT, FIELD_SELECT_RADIO, FIELD_MULTISELECT to be checked"
+
+
+async def test_end_to_end_metadata_form():
+    """A row modeling a live metadata-backed select imports with populated,
+    id-keyed options and consistent conditions."""
+    row = {
+        "formid": 5000, "orgid": 1, "form_name": "Metadata E2E", "description": None,
+        "question_blocks": [{
+            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
+            "questions": [
+                {
+                    "question_id": 1, "question_column_name": "20001",
+                    "question_description": "Role", "validations": [],
+                    "question_logic_groups": [],
+                },
+                {
+                    "question_id": 2, "question_column_name": "20002",
+                    "question_description": "Follow-up", "validations": [],
+                    "question_logic_groups": [{
+                        "conditions": [{
+                            "condition_logic": "EQUALS",
+                            "condition_question_reference_id": 1,
+                            "condition_comparison_value": "Field Merchandiser",
+                        }],
+                    }],
+                },
+            ],
+        }],
+        "metadata": [
+            {"column_id": 1, "column_name": "20001", "data_type": "FIELD_SELECT",
+             "description": "Role", "options": [
+                 {"is_active": True, "option_id": "6091", "column_name": 20001,
+                  "option_value": "Field Merchandiser"},
+                 {"is_active": False, "option_id": "6092", "column_name": 20001,
+                  "option_value": "Retired Role"},
+             ]},
+            {"column_id": 2, "column_name": "20002", "data_type": "FIELD_TEXT",
+             "description": "Follow-up", "options": []},
+        ],
+    }
+    schema, report = _service().import_with_report(row)
+
+    role_field = next(f for f in schema.iter_all_fields() if f.field_id == "field_20001")
+    followup_field = next(f for f in schema.iter_all_fields() if f.field_id == "field_20002")
+
+    assert {o.value for o in role_field.options} == {"6091", "6092"}
+    assert next(o for o in role_field.options if o.value == "6092").disabled is True
+
+    assert followup_field.depends_on is not None
+    assert followup_field.depends_on.conditions[0].value == "6091"
+
+    entry = next(e for e in report.fields if e.column_name == "20001")
+    assert entry.options_source == "metadata"
+
+    rendered = await HTML5Renderer().render(schema)
+    assert rendered.content
 
 
 # ---------------------------------------------------------------------------

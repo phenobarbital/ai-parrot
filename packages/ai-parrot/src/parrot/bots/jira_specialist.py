@@ -46,7 +46,9 @@ from parrot.models.google import GoogleModel
 from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.context import UserContext
-from parrot.core.hooks.models import HookEvent, TransitionAction, TransitionActionType
+# FEAT-317: HookEvent/TransitionAction(Type) moved to navigator_eventbus.hooks;
+# imported here via the parrot.core.hooks re-export facade.
+from parrot.core.hooks import HookEvent, TransitionAction, TransitionActionType
 
 # ──────────────────────────────────────────────────────────────
 # Models

@@ -38,8 +38,10 @@ then asks targeted questions about genuine unknowns.
 
 ## Guardrails
 
-- **Research before questioning.** The codebase is the primary evidence source.
-  Never ask the user something the repo can answer.
+- **Wiki-first, then grep, then ask.** The codebase knowledge graph
+  (``wikitoolkit``) is the fastest orientation source. Query it before
+  grep/glob/read. The codebase itself is the primary evidence source.
+  Never ask the user something the repo or wiki can answer.
 - **No fabricated paths or symbols.** Every code reference in the proposal must
   trace to a finding ID. Validated by the synthesis linter (Step 3.5).
 - **Honest confidence.** If research is thin, the proposal must say so — not
@@ -138,11 +140,22 @@ Update `state.json`:
 
 ### 3. Phase 1 — Generate Research Plan
 
-#### 3a. Run the planner prompt
+#### 3a. Check wiki availability
+
+Before generating the plan, probe whether the knowledge graph is built:
+```bash
+wikitoolkit status 2>&1
+```
+If the output contains "Wiki not built", set `wiki_available: false` in
+`state.json` and inform the planner so it omits `wiki_*` query types.
+Otherwise set `wiki_available: true`.
+
+#### 3b. Run the planner prompt
 
 Invoke the prompt at `sdd/templates/research_plan.prompt.md`, passing:
 - contents of `${STATE_DIR}/source.md`
 - the budget block
+- `wiki_available` flag (so the planner knows whether to emit wiki queries)
 - repository top-level structure (`ls -la` of repo root, plus `find . -type d -maxdepth 3`)
 
 The planner produces a JSON document conforming to
@@ -190,14 +203,26 @@ For each query in the approved plan, in priority order:
 
 1. **Budget check.** Compare `consumed` vs `budget`. If any limit will be
    exceeded by this query, skip it and record `queries_skipped++`.
+   **Wiki queries (`wiki_query`, `wiki_page`, `wiki_related`) are free —
+   always execute them regardless of budget.**
 2. **Execute** the query using the appropriate tool:
+   - `wiki_query` → `wikitoolkit query "<question>"` — returns ranked
+     page stubs with IDs, scores, and summaries. Record page IDs for
+     follow-up `wiki_page`/`wiki_related` queries.
+   - `wiki_page` → `wikitoolkit page <id>` — returns full page content
+     (file summary, API outline, content). Use the page ID returned by
+     a prior `wiki_query`.
+   - `wiki_related` → `wikitoolkit related <id>` — returns typed edges
+     (`contains`, `references`) to neighbouring files/modules. Use to
+     discover integration points and dependencies.
    - `grep` / `glob` → use the agent's search tools
    - `read` → read the target file (or specified line range)
    - `git_log` → `git log --follow --since=<window> -- <path>`
    - `tree` → `find <path> -type f -maxdepth N`
 3. **Persist a digest** at `${STATE_DIR}/findings/F<NNN>-<slug>.md` using the
    format in `sdd/templates/finding.md`. The digest is **compact** — never
-   inline full file content; cite line ranges and excerpts only.
+   inline full file content; cite line ranges and excerpts only. For wiki
+   findings, cite the wiki page ID and score alongside file paths.
 4. **Decide on recursion.** If a finding surfaces a new file/symbol that
    strongly warrants exploration AND `depth_reached < max_depth`, add a
    follow-up query to the plan with `parent_id: F<NNN>` and re-enter the loop.

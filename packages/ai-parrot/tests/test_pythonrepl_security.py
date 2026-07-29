@@ -40,13 +40,23 @@ def test_python_repl_blocks_sensitive_runtime_access(repl, code):
     )
 
 
-def test_python_repl_redacts_secret_like_output(repl):
+def test_python_repl_redacts_secret_like_output_when_flagged(repl):
+    """Redaction is opt-in per agent: a flagged tool scrubs secret-like output."""
+    repl.enable_redaction = True
     result = repl.execute_sync('{"JIRA_API_TOKEN": "super-secret-value", "NORMAL": "ok"}')
 
     assert "super-secret-value" not in result
     # FEAT-252: OutputScrubber emits reason-tagged markers; legacy [REDACTED] also accepted
     assert "REDACTED" in result
     assert "NORMAL" in result
+
+
+def test_python_repl_no_redaction_by_default(repl):
+    """Unflagged agents (default) get their REPL output verbatim — no scrubbing."""
+    result = repl.execute_sync('{"JIRA_API_TOKEN": "super-secret-value", "NORMAL": "ok"}')
+
+    assert "super-secret-value" in result
+    assert "REDACTED" not in result
 
 
 # =============================================================================

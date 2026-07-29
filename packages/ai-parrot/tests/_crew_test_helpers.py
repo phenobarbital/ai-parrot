@@ -28,6 +28,47 @@ class DummyToolManager:
         return list(self._tools.keys())
 
 
+class DummyTool:
+    """AbstractTool stand-in for ToolNode tests.
+
+    Records every call in ``calls`` and returns a canned ``ToolResult``.
+
+    Args:
+        name: Tool identity.
+        result: Payload placed in ``ToolResult.result`` on success.
+        fail: If True, ``execute()`` returns a failed ``ToolResult``.
+        delay: Optional asyncio sleep before returning.
+    """
+
+    def __init__(
+        self,
+        name: str = "dummy_tool",
+        result: Any = "tool-output",
+        *,
+        fail: bool = False,
+        delay: float = 0.0,
+    ) -> None:
+        self.name = name
+        self.description = f"Dummy tool {name}"
+        self._result = result
+        self._fail = fail
+        self._delay = delay
+        self.calls: List[tuple] = []
+
+    async def execute(self, *args: Any, **kwargs: Any) -> Any:
+        """Record the call and return a canned ToolResult."""
+        from parrot.tools.abstract import ToolResult
+
+        self.calls.append((args, kwargs))
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        if self._fail:
+            return ToolResult(
+                success=False, status="error", result=None, error="boom"
+            )
+        return ToolResult(success=True, status="success", result=self._result)
+
+
 class DummyAgent:
     """Deterministic agent for testing AgentCrew.
 

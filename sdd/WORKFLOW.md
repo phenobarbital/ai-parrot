@@ -271,6 +271,57 @@ the authoritative design rationale.
 
 ---
 
+## TASK/FEAT ID Allocation (FEAT-387)
+
+`TASK-<NNN>` and `FEAT-<NNN>` numbers are allocated by a tiny, git-native
+compare-and-swap ledger, not by scanning existing files for the highest
+number and incrementing — that scan-and-increment approach has no lock and
+no re-check against `origin/<base_branch>` immediately before committing,
+so two `/sdd-task`/`/sdd-spec` runs racing each other (e.g. concurrent
+dev-loop planner dispatches) can silently allocate the same number to two
+different features. Different filenames mean git's merge machinery never
+flags the collision — this is exactly how six real `TASK-<NNN>` collisions
+between FEAT-380 (sandbox-hardening) and two unrelated features went
+undetected until `/sdd-done`'s closeout tooling stumbled on them.
+
+- **`sdd/tasks/.id_ledger.json`** — the ledger itself: a single, git-tracked
+  JSON file holding `next_task_id` and `next_feature_id`. Every allocation
+  reads this file, computes a reservation, and races to commit+push an
+  update — the push itself is the compare-and-swap (a non-fast-forward
+  rejection means someone else already advanced the counter).
+- **`scripts/sdd/id_ledger.py`** — the `IdLedger` Pydantic model plus
+  `load_ledger`/`save_ledger` and the one-time `bootstrap_ledger()` used to
+  seed the ledger strictly ahead of every ID already in use.
+- **`scripts/sdd/reserve_ids.py`** — the allocator `/sdd-task` and
+  `/sdd-spec` call instead of hand-computing a number:
+  ```bash
+  python -m scripts.sdd.reserve_ids --kind task --count 8 \
+    --base-branch dev --label <feature-slug>
+  ```
+  Reads the ledger, commits a *ledger-only* update, and pushes to
+  `origin/<base_branch>`; on a rejected (non-fast-forward) push it fetches,
+  re-reads the now-current ledger, recomputes, and retries (bounded, with
+  jittered backoff) instead of silently succeeding with a stale, already-
+  claimed number. Prints the reserved IDs one per line.
+- **`scripts/sdd/check_id_collisions.py`** — an independent, read-only
+  defense-in-depth backstop (no dependency on the ledger/allocator): scans
+  `sdd/tasks/index/*.json`, `sdd/tasks/active/*.md`, and
+  `sdd/tasks/completed/*.md` for any `TASK-<NNN>` number claimed by more
+  than one distinct feature. Wired into CI (`.github/workflows/ci.yml`,
+  `lint-and-registry` job) against a one-time baseline exception file
+  (`scripts/sdd/.collision_baseline.json`) so historical, pre-ledger
+  collisions don't retroactively fail the build — only a genuinely NEW
+  collision does. `FEAT-<NNN>` reuse across specs (an accepted,
+  intentional pattern — e.g. FEAT-380 split across three specs) is
+  reported informationally and never fails the build.
+
+An intentional, explicit `FEAT-<NNN>` reuse (splitting one initiative
+across multiple specs, the FEAT-380 pattern) skips the reservation call
+via a `reuse_feature_id: FEAT-<NNN>` frontmatter field — see
+`.claude/commands/sdd-spec.md`.
+
+---
+
 ## Parallelism Rules
 
 Claude Code agents can work in parallel when tasks have no shared dependencies:
