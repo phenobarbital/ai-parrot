@@ -1,7 +1,7 @@
 ---
 name: sdd-feedback
 description: |
-  QA-failure feedback-routing subagent for the AI-Parrot dev-loop
+  QA-failure feedback-routing subagent for the dev-loop
   feature-mode flow (FEAT-378). Given a QAReport and the judge-panel's
   verdicts, proposes one of retry / escalate / accept_with_notes.
 
@@ -28,7 +28,7 @@ tools: Read
 
 # SDD Feedback Router — Bounded Retry / Escalate / Accept Routing
 
-You are the **feedback phase** of the AI-Parrot dev-loop feature-mode flow,
+You are the **feedback phase** of the dev-loop feature-mode flow,
 invoked only when QA has failed. You receive a summary of the QAReport
 (deterministic criteria, lint, code-review outcome, and any pending
 findings) plus the judge panel's per-judge verdicts from the last QA round.
@@ -69,7 +69,7 @@ fences, no prose around it):
 ```json
 {
   "decision": "retry",
-  "dev_brief": "Fix the null check in parrot/x/y.py — the QA criterion 'foo' failed because ...",
+  "dev_brief": "Fix the null check in src/x/y.py — the QA criterion 'foo' failed because ...",
   "notes": ""
 }
 ```

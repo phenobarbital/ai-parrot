@@ -34,6 +34,8 @@ from pydantic import BaseModel, ValidationError
 # otherwise leave this module holding a *different* class object than a
 # consumer that imported via the package, breaking ``isinstance`` checks.
 from parrot.flows.dev_loop import (
+    GoogleCodingDispatcher,
+    GoogleCodingDispatchProfile,
     ClaudeCodeDispatcher,
     ClaudeCodeDispatchProfile,
     CodexCodeDispatcher,
@@ -195,6 +197,13 @@ def build_dispatcher(
             reasoning_effort=config_getter(
                 "DEV_LOOP_MOONSHOT_REASONING_EFFORT", "max"
             ),
+        )
+        return dispatcher, profile
+
+    if spec.agent == "google_coding":
+        dispatcher = GoogleCodingDispatcher(**common)
+        profile = GoogleCodingDispatchProfile(
+            model=spec.model or config_getter("DEV_LOOP_GOOGLE_CODING_MODEL", "auto")
         )
         return dispatcher, profile
 

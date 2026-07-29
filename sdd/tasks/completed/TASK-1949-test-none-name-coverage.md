@@ -3,7 +3,7 @@
 **Feature**: msword-loader-none-name-fix
 **Feature ID**: FEAT-385
 **Spec**: sdd/specs/msword-loader-none-name-fix.spec.md
-**Status**: [ ] pending
+**Status**: [x] done
 **Priority**: high
 **Effort**: S
 **Depends-on**: TASK-1948
@@ -98,4 +98,7 @@ When complete:
 3. Commit with message: `test: add coverage for para.style None in MSWordLoader (NAV-9269)`
 
 ### Completion Note
-(Agent fills this in when done)
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-07-27
+**Notes**: Created `tests/loaders/test_mswordloader_none_name_fix.py` with 7 tests (one extra: `test_none_style_name_treated_as_body` for the `style.name is None` edge case). All 7 tests pass. `ruff check` exits 0.
+**Deviations from spec**: 7 tests instead of 4 — added `test_none_style_no_attribute_error` (explicit `pytest.raises` guard) and `test_load_succeeds_with_none_style_paragraph` (async `_load()` integration), plus the `style.name is None` edge case test.
