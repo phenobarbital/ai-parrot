@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import Any, Callable, Optional
 
 from parrot.registry.routing.cache import DecisionCache, build_cache_key
 from parrot.registry.routing.llm_helper import run_llm_ranking
@@ -30,10 +30,7 @@ from parrot.registry.routing.models import (
 from parrot.registry.routing.ontology_signal import OntologyPreAnnotator
 from parrot.registry.routing.rules import DEFAULT_STORE_RULES, apply_rules
 from parrot.stores.abstract import AbstractStore
-from parrot.models import StoreType
-
-if TYPE_CHECKING:  # pragma: no cover — MultiStoreSearchTool ships from ai-parrot-tools
-    from parrot_tools.multistoresearch import MultiStoreSearchTool
+from parrot.models import MultiSearch, StoreType
 
 _logger = logging.getLogger(__name__)
 
@@ -186,7 +183,7 @@ class StoreRouter:
         decision: StoreRoutingDecision,
         query: str,
         stores: dict[StoreType, "AbstractStore"],
-        multistore_tool: Optional["MultiStoreSearchTool"] = None,
+        multistore_tool: Optional[MultiSearch] = None,
         **search_kwargs: Any,
     ) -> list:
         """Execute retrieval according to *decision*.
@@ -196,7 +193,7 @@ class StoreRouter:
             query: The user query (forwarded to ``similarity_search``).
             stores: Dict of available :class:`~parrot.stores.abstract.AbstractStore`
                 instances keyed by :class:`~parrot.models.StoreType`.
-            multistore_tool: Optional :class:`~parrot_tools.multistoresearch.MultiStoreSearchTool`
+            multistore_tool: Optional :class:`~parrot.models.MultiSearch`-satisfying
                 instance used when ``fallback_policy=FAN_OUT``.
             **search_kwargs: Extra keyword arguments forwarded to
                 ``similarity_search`` (e.g. ``limit``, ``score_threshold``).
@@ -300,7 +297,7 @@ class StoreRouter:
         self,
         query: str,
         stores: dict[StoreType, AbstractStore],
-        multistore_tool: Optional[MultiStoreSearchTool],
+        multistore_tool: Optional[MultiSearch],
         **search_kwargs: Any,
     ) -> list:
         """Execute the configured ``StoreFallbackPolicy``."""
@@ -308,7 +305,7 @@ class StoreRouter:
 
         if policy == StoreFallbackPolicy.FAN_OUT:
             if multistore_tool is not None:
-                return await multistore_tool._execute(query, **search_kwargs)
+                return await multistore_tool.search(query, **search_kwargs)
             # No multistore tool — parallel fan-out across all stores.
             if not stores:
                 return []

@@ -64,25 +64,25 @@ impl CompiledRuleSet {
         ctx: &Bound<'_, PyDict>,
     ) -> Option<usize> {
         let map = extract_context(ctx);
-        py.allow_threads(|| self.first_match(&map))
+        py.detach(|| self.first_match(&map))
     }
 
     /// True when every rule matches.
     fn evaluate_all(&self, py: Python<'_>, ctx: &Bound<'_, PyDict>) -> bool {
         let map = extract_context(ctx);
-        py.allow_threads(|| self.rules.iter().all(|r| r.matches(&map)))
+        py.detach(|| self.rules.iter().all(|r| r.matches(&map)))
     }
 
     /// True when at least one rule matches.
     fn evaluate_any(&self, py: Python<'_>, ctx: &Bound<'_, PyDict>) -> bool {
         let map = extract_context(ctx);
-        py.allow_threads(|| self.rules.iter().any(|r| r.matches(&map)))
+        py.detach(|| self.rules.iter().any(|r| r.matches(&map)))
     }
 
     /// Indices of every matching rule.
     fn matching_rules(&self, py: Python<'_>, ctx: &Bound<'_, PyDict>) -> Vec<usize> {
         let map = extract_context(ctx);
-        py.allow_threads(|| {
+        py.detach(|| {
             self.rules
                 .iter()
                 .enumerate()
@@ -101,7 +101,7 @@ impl CompiledRuleSet {
         // Extraction needs the GIL; matching does not.
         let maps: Vec<HashMap<String, Value>> =
             ctxs.iter().map(|d| extract_context(d)).collect();
-        py.allow_threads(|| {
+        py.detach(|| {
             maps.par_iter().map(|m| self.first_match(m)).collect()
         })
     }

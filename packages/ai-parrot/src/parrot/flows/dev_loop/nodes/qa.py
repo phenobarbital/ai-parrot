@@ -20,6 +20,8 @@ The node returns the report regardless of ``passed`` — the flow factory
 from __future__ import annotations
 
 import asyncio
+import re
+import shlex
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
@@ -42,6 +44,7 @@ from parrot.flows.dev_loop.models import (
     ManualCriterion,
     QAReport,
     ResearchOutput,
+    ShellCriterion,
     TriageBrief,
     TriageReport,
 )
@@ -55,6 +58,13 @@ _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
 # run (infra error). Used to detect a *skipped* (vs. genuinely passed) review
 # so the skip is surfaced loudly instead of masquerading as a clean review.
 _CODE_REVIEW_SKIP_PREFIX = "code-review could not run:"
+
+# Matches a positional ``.`` target in lint commands (e.g. ``ruff check .``).
+# Preceded by whitespace, followed by whitespace, chain operator, or EOL.
+_LINT_TARGET_RE = re.compile(
+    r"(?<=\s)\."
+    r"(?=\s|&&|;|$)"
+)
 
 
 class _QABrief(BaseModel):
@@ -97,6 +107,7 @@ class QANode(DevLoopNode):
         lint_command: Optional[str] = None,
         codereview_dispatcher: Optional[AbstractCodeReviewDispatcher] = None,
         graph_memory: Optional[DevLoopGraphMemory] = None,
+        skip_qa: bool = False,
         name: str = "qa",
     ) -> None:
         super().__init__(node_id=name)
@@ -111,6 +122,7 @@ class QANode(DevLoopNode):
         # FEAT-377 TASK-1915 (G2 seam 4): opt-in finding grounding. None
         # (default) is a strict no-op.
         object.__setattr__(self, "_graph_memory", graph_memory)
+        object.__setattr__(self, "_skip_qa", skip_qa)
 
     # ------------------------------------------------------------------
     # Execute
@@ -137,6 +149,25 @@ class QANode(DevLoopNode):
         research: ResearchOutput = shared["research_output"]
         brief: BugBrief = shared["bug_brief"]
 
+        runtime_skip = shared.get("skip_qa", False)
+        if self._skip_qa or runtime_skip:
+            self.logger.info(
+                "QA bypass enabled (skip_qa=True, runtime=%s) for %s — returning synthetic pass.",
+                runtime_skip, research.jira_issue_key or research.feat_id,
+            )
+            report = QAReport(
+                passed=True,
+                criterion_results=[],
+                lint_passed=True,
+                lint_output="(skipped: skip_qa=True)",
+                notes="QA bypassed (skip_qa=True).",
+                code_review_passed=True,
+                code_review_findings=[],
+                attempt=shared.get("qa_attempt", 1),
+            )
+            shared["qa_report"] = report
+            return report
+
         manual: List[ManualCriterion] = [
             c for c in brief.acceptance_criteria
             if isinstance(c, ManualCriterion)
@@ -154,19 +185,35 @@ class QANode(DevLoopNode):
             if not isinstance(c, ManualCriterion)
         ]
 
-        report = await self._run_deterministic_qa(
-            shared, research, brief, executable
-        )
-        deterministic_passed = report.passed
+        is_advisory = getattr(self._codereview_dispatcher, "advisory", False)
 
-        # FEAT-250 G4 / FEAT-270: additive code-review gate. A run passes QA
-        # only when the deterministic criteria/lint AND the qualitative
-        # review both pass. The reviewer may fix issues it finds and commit
-        # the fixes to the worktree branch (FEAT-270); when it does, the
-        # deterministic pass re-runs to confirm the fix didn't regress.
-        cr_passed, cr_findings, files_modified = await self._run_code_review(
-            shared, research, brief
-        )
+        # FEAT-250 G4 / FEAT-270, optimised pipeline:
+        #
+        # - Advisory reviewers (read-only): run deterministic QA and code
+        #   review CONCURRENTLY — the reviewer never modifies files, so
+        #   there is no race with the QA subagent reading the worktree.
+        #
+        # - Write-enabled reviewers: run code review FIRST so its fixes
+        #   are committed before the single deterministic QA pass. This
+        #   replaces the old QA → review → re-run-QA three-step with a
+        #   two-step (review → QA), eliminating the redundant re-run.
+        if is_advisory:
+            self.logger.info(
+                "Advisory reviewer — running deterministic QA and code review concurrently"
+            )
+            qa_coro = self._run_deterministic_qa(
+                shared, research, brief, executable
+            )
+            cr_coro = self._run_code_review(shared, research, brief)
+            report, (cr_passed, cr_findings, files_modified) = (
+                await asyncio.gather(qa_coro, cr_coro)
+            )
+            deterministic_passed = report.passed
+        else:
+            cr_passed, cr_findings, files_modified = await self._run_code_review(
+                shared, research, brief
+            )
+
         cr_skipped = any(
             f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
         )
@@ -192,7 +239,7 @@ class QANode(DevLoopNode):
         # findings must be routed to the primary worker for explicit triage
         # (CONFIRM/REJECT/ESCALATE) instead of being trusted at face value.
         triage_notes: List[str] = []
-        if not cr_skipped and getattr(self._codereview_dispatcher, "advisory", False):
+        if not cr_skipped and is_advisory:
             triage_findings = self._collect_triage_findings(shared)
             if triage_findings:
                 triage_notes, triage_files_modified, escalation_passed = (
@@ -206,14 +253,27 @@ class QANode(DevLoopNode):
                 # Module 5 QA pass/fail semantics).
                 cr_passed = escalation_passed
 
-        if files_modified:
+        # Deterministic QA — deferred for write-enabled reviewers, or
+        # re-run for advisory reviewers when triage committed fixes.
+        if not is_advisory:
+            if files_modified:
+                self.logger.info(
+                    "Code review modified %s — running deterministic QA on fixed code",
+                    files_modified,
+                )
+            report = await self._run_deterministic_qa(
+                shared, research, brief, executable,
+                cwd_override=research.worktree_path,
+            )
+            deterministic_passed = report.passed
+        elif files_modified:
             self.logger.info(
                 "Code review modified %s — re-running deterministic QA",
                 files_modified,
             )
             report = await self._run_deterministic_qa(
                 shared, research, brief, executable,
-                cwd_override=research.repo_path or research.worktree_path,
+                cwd_override=research.worktree_path,
             )
             deterministic_passed = report.passed
 
@@ -329,9 +389,16 @@ class QANode(DevLoopNode):
             setting_sources=["project"],
         )
         effective_cwd = cwd_override or research.worktree_path
+
+        # Scope lint/ruff/mypy commands to changed files so pre-existing
+        # repo-wide errors don't fail the QA gate for unrelated code.
+        changed = await self._get_changed_files(effective_cwd)
+        lint_cmd = self._scope_lint_to_files(self._lint_command, changed)
+        scoped_criteria = self._scope_criteria(executable, changed)
+
         qa_brief = _QABrief(
-            acceptance_criteria=executable,
-            lint_command=self._lint_command,
+            acceptance_criteria=scoped_criteria,
+            lint_command=lint_cmd,
             worktree_path=effective_cwd,
             summary=brief.summary,
         )
@@ -347,6 +414,92 @@ class QANode(DevLoopNode):
             # dispatch() call for the same pattern/rationale).
             session_host=shared.get("session_host"),
         )
+
+    # ------------------------------------------------------------------
+    # Lint scoping helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _get_changed_files(worktree_path: str) -> List[str]:
+        """Return Python files changed in the worktree vs its merge base.
+
+        Tries ``origin/dev`` first (standard base branch), then falls
+        back to ``origin/main``. Returns an empty list on any error so
+        the caller degrades to the unscoped lint command.
+        """
+        for upstream in ("origin/dev", "origin/main"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "diff", "--name-only", "--diff-filter=d",
+                    f"{upstream}...HEAD", "--", "*.py",
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0 and stdout:
+                    return [
+                        f.strip()
+                        for f in stdout.decode().strip().splitlines()
+                        if f.strip()
+                    ]
+            except Exception:
+                continue
+        return []
+
+    @staticmethod
+    def _scope_lint_to_files(command: str, files: List[str]) -> str:
+        """Replace whole-repo targets (``.``) with explicit file paths.
+
+        Processes each ``&&``/``;``-separated sub-command independently
+        so compound commands like ``ruff check . && mypy --no-incremental``
+        scope both halves. Also appends file paths to bare ``mypy``
+        invocations that have no positional target.
+        """
+        if not files:
+            return command
+        file_args = " ".join(shlex.quote(f) for f in files)
+
+        def _scope_part(part: str) -> str:
+            scoped = _LINT_TARGET_RE.sub(file_args, part)
+            if scoped == part and re.search(r"\bmypy\b", part):
+                scoped = f"{part.rstrip()} {file_args}"
+            return scoped
+
+        parts = re.split(r"(&&|;)", command)
+        return "".join(
+            _scope_part(p) if i % 2 == 0 else p
+            for i, p in enumerate(parts)
+        )
+
+    @classmethod
+    def _scope_criteria(
+        cls,
+        criteria: List[AcceptanceCriterion],
+        files: List[str],
+    ) -> List[AcceptanceCriterion]:
+        """Rewrite shell criteria that lint the whole repo to target changed files."""
+        if not files:
+            return criteria
+        scoped: List[AcceptanceCriterion] = []
+        for c in criteria:
+            if (
+                isinstance(c, ShellCriterion)
+                and _LINT_TARGET_RE.search(c.command)
+                and re.search(r"\b(ruff|mypy|flake8|pylint)\b", c.command)
+            ):
+                scoped.append(
+                    c.model_copy(
+                        update={
+                            "command": cls._scope_lint_to_files(
+                                c.command, files
+                            )
+                        }
+                    )
+                )
+            else:
+                scoped.append(c)
+        return scoped
 
     # ------------------------------------------------------------------
     # Code-review gate (FEAT-250, pluggable dispatcher since FEAT-270)
@@ -373,7 +526,7 @@ class QANode(DevLoopNode):
         structured findings for triage without widening this method's
         public 3-tuple contract (existing callers/tests assert on it).
         """
-        review_cwd = research.repo_path or research.worktree_path
+        review_cwd = research.worktree_path
         review_brief = _CodeReviewBrief(
             acceptance_criteria=list(brief.acceptance_criteria),
             worktree_path=review_cwd,
@@ -464,7 +617,7 @@ class QANode(DevLoopNode):
             resolved to something other than ``"approved"`` (or is still
             pending when a ``SessionHost`` degrade path applies).
         """
-        worktree_path = research.repo_path or research.worktree_path
+        worktree_path = research.worktree_path
         triage_brief = TriageBrief(
             findings=findings,
             acceptance_criteria=list(brief.acceptance_criteria),

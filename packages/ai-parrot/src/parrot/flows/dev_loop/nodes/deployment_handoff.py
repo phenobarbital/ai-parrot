@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 from typing import Any, Dict, Optional, Union
 
@@ -126,6 +127,10 @@ class DeploymentHandoffNode(DevLoopNode):
         qa_report: QAReport = shared.get("qa_report")
         issue_key = research.jira_issue_key
 
+        # Bug fixes branch from main; the PR target must match.
+        if getattr(brief, "kind", "bug") == "bug":
+            object.__setattr__(self, "_base_branch", "main")
+
         # 1. Push.
         try:
             await self._push_branch(
@@ -199,30 +204,37 @@ class DeploymentHandoffNode(DevLoopNode):
                 "gate."
             )
 
-        # 3. Transition Jira.
-        try:
-            await transition_issue_with_candidates(
-                self._jira,
-                issue_key,
-                conf.DEV_LOOP_JIRA_TRANSITIONS_READY,
-                logger=self.logger,
+        # 3. Transition Jira (skipped when skip_jira is active).
+        skip_jira = shared.get("skip_jira", False)
+        if skip_jira:
+            self.logger.info(
+                "Jira bypass enabled (skip_jira=True) — skipping "
+                "transition and comment for %s", pr_url,
             )
-        except Exception as exc:  # noqa: BLE001 - degraded path
-            self.logger.warning(
-                "Jira transition failed (continuing): %s", exc
-            )
+        else:
+            try:
+                await transition_issue_with_candidates(
+                    self._jira,
+                    issue_key,
+                    conf.DEV_LOOP_JIRA_TRANSITIONS_READY,
+                    logger=self.logger,
+                )
+            except Exception as exc:  # noqa: BLE001 - degraded path
+                self.logger.warning(
+                    "Jira transition failed (continuing): %s", exc
+                )
 
-        # 4. Comment with PR link.
-        try:
-            await self._jira.jira_add_comment(
-                issue=issue_key,
-                body=(
-                    f"flow-bot: PR opened — {pr_url}\n"
-                    f"QA passed all acceptance criteria."
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001 - degraded path
-            self.logger.warning("Jira add_comment failed: %s", exc)
+            # 4. Comment with PR link.
+            try:
+                await self._jira.jira_add_comment(
+                    issue=issue_key,
+                    body=(
+                        f"flow-bot: PR opened — {pr_url}\n"
+                        f"QA passed all acceptance criteria."
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 - degraded path
+                self.logger.warning("Jira add_comment failed: %s", exc)
 
         return {
             "status": "ready_to_deploy",
@@ -317,9 +329,19 @@ class DeploymentHandoffNode(DevLoopNode):
         return int(tail) if tail.isdigit() else None
 
     async def _create_pr(self, branch: str, title: str, body: str) -> str:
-        """Open a DRAFT PR; return the PR URL (number derived by the caller)."""
+        """Open a DRAFT PR; return the PR URL (number derived by the caller).
+
+        Tries ``gh`` first (respects user's auth session), then falls
+        back to the REST API when ``gh`` is absent OR fails (e.g. expired
+        OAuth token, 401).
+        """
         if self._gh_available():
-            return await self._create_pr_with_gh(branch, title, body)
+            try:
+                return await self._create_pr_with_gh(branch, title, body)
+            except RuntimeError as exc:
+                self.logger.warning(
+                    "gh CLI failed, falling back to REST API: %s", exc
+                )
         return await self._create_pr_via_rest(branch, title, body)
 
     async def _create_pr_with_gh(
@@ -351,6 +373,39 @@ class DeploymentHandoffNode(DevLoopNode):
         # The last line of `gh pr create` output is the PR URL.
         return text.splitlines()[-1] if text else ""
 
+    _GITHUB_REMOTE_RE = re.compile(
+        r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$"
+    )
+
+    async def _detect_target_repo(self, cwd: str = ".") -> str:
+        """Derive ``owner/repo`` from ``git remote get-url origin``."""
+        proc = await asyncio.create_subprocess_exec(
+            "git", "-C", cwd, "remote", "get-url", "origin",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        if proc.returncode != 0 or not out:
+            return ""
+        m = self._GITHUB_REMOTE_RE.search(out.decode().strip())
+        return f"{m['owner']}/{m['repo']}" if m else ""
+
+    async def _resolve_github_token(self) -> str:
+        """Return a GitHub PAT from ``GITHUB_TOKEN`` or ``gh auth token``."""
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if token:
+            return token
+        gh = self._gh_cli_path or "gh"
+        if not shutil.which(gh):
+            return ""
+        proc = await asyncio.create_subprocess_exec(
+            gh, "auth", "token",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        return out.decode().strip() if proc.returncode == 0 else ""
+
     async def _create_pr_via_rest(
         self, branch: str, title: str, body: str
     ) -> str:
@@ -358,12 +413,13 @@ class DeploymentHandoffNode(DevLoopNode):
         # can monkeypatch the helper without aiohttp involvement at all.
         import aiohttp  # noqa: WPS433 - intentional lazy import
 
-        token = os.environ.get("GITHUB_TOKEN", "")
-        if not self._target_repo or not token:
+        token = await self._resolve_github_token()
+        repo = self._target_repo or await self._detect_target_repo()
+        if not repo or not token:
             raise RuntimeError(
                 "GitHub REST fallback requires target_repo + GITHUB_TOKEN"
             )
-        url = f"https://api.github.com/repos/{self._target_repo}/pulls"
+        url = f"https://api.github.com/repos/{repo}/pulls"
         payload = {
             "title": title,
             "body": body,

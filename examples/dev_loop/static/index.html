@@ -12,31 +12,42 @@
    token and class it referenced is defined here.
    ───────────────────────────────────────────────────────────────────── */
 :root {
-  --color-bg: #0d0f12;
-  --color-surface: #14171c;
-  --color-text: #e8e6e1;
-  --color-divider: #262a31;
-  --color-accent: #e8913a;
-  --color-accent-100: #3a2a17;
-  --color-accent-700: #f0a55c;
-  --color-accent-800: #f7bd85;
-  --color-accent-900: #c4442e;
+  --color-bg: #0b1120;
+  --color-surface: #111827;
+  --color-text: #e2e8f0;
+  --color-divider: #1e293b;
+  --color-accent: #3b82f6;
+  --color-accent-100: #1e3a5f;
+  --color-accent-700: #60a5fa;
+  --color-accent-800: #93c5fd;
+  --color-accent-900: #dc2626;
   --font-heading: ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-body: ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: light) {
-  :root {
-    --color-bg: #f6f4ef;
-    --color-surface: #fffefb;
-    --color-text: #16181d;
-    --color-divider: #d8d3c8;
-    --color-accent: #b4620a;
-    --color-accent-100: #f7e4cd;
-    --color-accent-700: #8e4c05;
-    --color-accent-800: #6b3903;
-    --color-accent-900: #a32f1c;
+  :root:not([data-theme="dark"]) {
+    --color-bg: #f1f5f9;
+    --color-surface: #ffffff;
+    --color-text: #0f172a;
+    --color-divider: #cbd5e1;
+    --color-accent: #2563eb;
+    --color-accent-100: #dbeafe;
+    --color-accent-700: #1d4ed8;
+    --color-accent-800: #1e40af;
+    --color-accent-900: #dc2626;
   }
+}
+:root[data-theme="light"] {
+  --color-bg: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-text: #0f172a;
+  --color-divider: #cbd5e1;
+  --color-accent: #2563eb;
+  --color-accent-100: #dbeafe;
+  --color-accent-700: #1d4ed8;
+  --color-accent-800: #1e40af;
+  --color-accent-900: #dc2626;
 }
 * { box-sizing: border-box; }
 body {
@@ -71,7 +82,7 @@ a:hover { color: var(--color-accent); text-decoration: underline; }
 .btn:hover:not(:disabled) { border-color: var(--color-accent); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-primary { background: var(--color-accent); border-color: var(--color-accent);
-               color: #10120f; font-weight: 700; }
+               color: #fff; font-weight: 700; }
 .btn-primary:hover:not(:disabled) { background: var(--color-accent-700); }
 .btn-ghost { border-color: transparent; }
 .btn-danger { border-color: var(--color-accent-900); color: var(--color-accent-900); }
@@ -163,7 +174,13 @@ textarea.input { resize: vertical; }
 .judge-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.3fr) 38px;
              gap: 8px; align-items: end; }
 @media (max-width: 1000px) { .cols-2 { grid-template-columns: 1fr !important; } }
+
+#theme-toggle { font-size: 18px; padding: 6px 10px; line-height: 1; border-color: var(--color-divider); }
+#theme-toggle:hover { border-color: var(--color-accent); }
 </style>
+<script>
+(function(){var t=localStorage.getItem('afd-theme');if(t)document.documentElement.setAttribute('data-theme',t)})();
+</script>
 </head>
 <body>
 
@@ -173,7 +190,9 @@ textarea.input { resize: vertical; }
   </span>
   <span class="mono muted" style="font-size:12px" id="run-label">no run yet</span>
   <span class="tag tag-outline"><i class="dot" id="conn-dot"></i><span id="conn-label">idle</span></span>
+  <button class="btn btn-danger hidden" type="button" id="stop-btn">Stop run</button>
   <button class="btn" type="button" id="restart-btn">Restart run</button>
+  <button class="btn" type="button" id="theme-toggle" title="Toggle dark/light mode"></button>
 </div>
 
 <div class="wrap">
@@ -397,7 +416,7 @@ const app = {
     affectedComponent: "", existingIssueKey: "", jiraIssueKey: "",
     logGroup: "", timeWindow: "60",
     devAgents: [], devIsolation: "shared",
-    judges: [],
+    judges: [], skipQa: false, skipJira: false,
   },
 };
 
@@ -589,6 +608,18 @@ function connect(runId) {
     if (isTerminal(app.s.phase) && app.phase === "running") finish();
     scheduleRender();
   });
+  sts.addEventListener("close", () => {
+    if (app.phase === "running") {
+      if (isTerminal(app.s.phase)) {
+        finish();
+      } else {
+        markNodesTerminal();
+        app.s.phase = "closed";
+        finish();
+      }
+      scheduleRender();
+    }
+  });
   app.wsState = sts;
 }
 
@@ -603,6 +634,12 @@ function closeSockets() {
 function finish() {
   app.phase = "done";
   $("summary-section").classList.remove("hidden");
+}
+
+function markNodesTerminal() {
+  for (const n of Object.values(app.s.nodes)) {
+    if (n.status === "running") n.status = "completed";
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -631,6 +668,7 @@ function renderChrome() {
     : app.phase === "done" ? "stream closed" : "idle";
   $("conn-dot").className = "dot" +
     (app.phase === "running" && app.connected ? " running" : app.phase === "done" ? " completed" : "");
+  $("stop-btn").classList.toggle("hidden", app.phase !== "running");
   $("submit-label").textContent = app.phase === "idle" ? "Dispatch run" : "Re-dispatch run";
 }
 
@@ -676,6 +714,8 @@ function renderReady() {
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "planner-sized"],
         ["judges", `${effectiveJudges().length} · majority`],
         ["jira", f.jiraIssueKey || "none (optional)"],
+        ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["Jira", f.skipJira ? "SKIPPED" : "active"],
       ]
     : [
         ["kind", app.kind],
@@ -683,6 +723,8 @@ function renderReady() {
         ["criteria", criteriaSummary()],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "server default"],
         ["review", `${app.config?.defaults?.codereview_agent || "parallel"} + adversary`],
+        ["QA", f.skipQa ? "SKIPPED" : "full"],
+        ["Jira", f.skipJira ? "SKIPPED" : "active"],
       ];
   $("ready-rows").innerHTML = rows.map(([k, v]) => `
     <span style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px">
@@ -1162,17 +1204,16 @@ function tabBodyHtml(tab) {
   }
   if (tab === "review") {
     const judges = f.judges.length ? f.judges : (app.config?.default_judge_panel || []);
-    const editable = app.mode === "feature";
     const advBackend = app.config?.adversarial_backend || "codex";
     const adv = app.config?.adversarial_review || {};
     const rows = judges.map((j, i) => {
       const locked = j.agent === advBackend;
       return `<div class="judge-row">
         <div class="field"><span class="field-label">Judge ${i + 1}${locked ? " · adversarial" : ""}</span>
-          <select class="input" data-judge-field="agent" data-idx="${i}" ${editable && !locked ? "" : "disabled"}>${backendOptions("judge", j.agent)}</select></div>
+          <select class="input" data-judge-field="agent" data-idx="${i}" ${locked ? "disabled" : ""}>${backendOptions("judge", j.agent)}</select></div>
         <div class="field"><span class="field-label">Model</span>
-          <select class="input" data-judge-field="model" data-idx="${i}" ${editable ? "" : "disabled"}>${modelOptions(j.agent, j.model)}</select></div>
-        ${editable && !locked
+          <select class="input" data-judge-field="model" data-idx="${i}">${modelOptions(j.agent, j.model)}</select></div>
+        ${!locked
           ? `<button type="button" class="btn btn-danger" data-judge-del="${i}" style="padding:8px 10px" title="Remove">✕</button>`
           : `<span></span>`}
       </div>`;
@@ -1187,14 +1228,31 @@ function tabBodyHtml(tab) {
         <span class="muted" style="font-size:12px">${esc(adv.note || "")} Scope: <span class="mono">${esc(adv.scope || "uncommitted")}</span>${
           adv.base_ref ? ` · base <span class="mono">${esc(adv.base_ref)}</span>` : ""}</span>
       </div>
-      <span class="field-label">QA judge panel${editable ? "" : " — feature mode only; bug-mode runs use the parallel reviewer above"}</span>
+      <span class="field-label">QA judge panel</span>
       ${rows}
-      ${editable ? `<button type="button" class="btn" id="add-judge-btn" style="align-self:flex-start">+ Add judge</button>` : ""}
-      <p class="hint" style="margin:0">Simple majority. A tie, or an abstention that breaks majority, escalates rather than passing.</p>
+      <button type="button" class="btn" id="add-judge-btn" style="align-self:flex-start">+ Add judge</button>
+      <p class="hint" style="margin:0">Simple majority. A tie, or an abstention that breaks majority, escalates rather than passing.${
+        app.mode !== "feature" ? " Judge overrides apply to feature-mode runs only." : ""}</p>
     </div>`;
   }
   // guardrails
+  const skipQaChecked = f.skipQa ? "checked" : "";
+  const skipJiraChecked = f.skipJira ? "checked" : "";
   return grid(`
+    <div class="field" style="grid-column:1/-1">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="chk-skip-qa" ${skipQaChecked} style="width:16px;height:16px" />
+        <span class="field-label" style="margin:0">Skip QA for this run</span>
+      </label>
+      <p class="hint">Bypasses deterministic acceptance tests and code review — returns a synthetic pass. Use for trivial fixes (typos, syntax) where the 7-minute QA cycle is not worth the wait. Server default: <span class="mono">${d.skip_qa ? "on" : "off"}</span></p>
+    </div>
+    <div class="field" style="grid-column:1/-1">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="chk-skip-jira" ${skipJiraChecked} style="width:16px;height:16px" />
+        <span class="field-label" style="margin:0">Skip Jira for this run</span>
+      </label>
+      <p class="hint">No ticket creation, no transitions, no comments. Research still runs (logs + triage + sdd-research dispatch) but without Jira integration. Use for local experiments or when Jira is down.</p>
+    </div>
     <div class="field"><span class="field-label">QA repair retries (DEV_LOOP_QA_MAX_RETRIES)</span>
       <input class="input mono" value="${esc(String(d.qa_max_retries ?? "—"))}" disabled /></div>
     <div class="field"><span class="field-label">Concurrent runs (FLOW_MAX_CONCURRENT_RUNS)</span>
@@ -1266,6 +1324,8 @@ function buildPayload() {
     if (f.jiraIssueKey.trim()) payload.jira_issue_key = f.jiraIssueKey.trim();
     if (f.devAgents.length) payload.dev_agents = f.devAgents;
     if (f.judges.length) payload.judge_panel = f.judges;
+    if (f.skipQa) payload.skip_qa = true;
+    if (f.skipJira) payload.skip_jira = true;
     return payload;
   }
   const payload = {
@@ -1282,6 +1342,8 @@ function buildPayload() {
     payload.dev_agents = f.devAgents;
     payload.dev_isolation = f.devIsolation;
   }
+  if (f.skipQa) payload.skip_qa = true;
+  if (f.skipJira) payload.skip_jira = true;
   return payload;
 }
 
@@ -1339,6 +1401,22 @@ async function submit(ev) {
     showError(err.message);
   } finally {
     $("submit-btn").disabled = false;
+  }
+}
+
+async function stopRun() {
+  if (!app.runId || app.phase !== "running") return;
+  $("stop-btn").disabled = true;
+  try {
+    const res = await fetch(`/api/flow/${app.runId}/cancel`, { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.warn("stop failed:", data.error || res.statusText);
+    }
+  } catch (err) {
+    console.warn("stop failed:", err);
+  } finally {
+    $("stop-btn").disabled = false;
   }
 }
 
@@ -1435,6 +1513,8 @@ document.addEventListener("click", (e) => {
       renderTabs(); renderReady(); break;
     case "edit-request-btn":
       app.requestOpen = true; applyRequestCollapse(); break;
+    case "stop-btn":
+      stopRun(); break;
     case "restart-btn":
     case "another-btn":
       restart(); break;
@@ -1442,6 +1522,14 @@ document.addEventListener("click", (e) => {
       if (app.runId) loadReport(); break;
     case "bundle-btn":
       if (app.runId) location.href = `/api/flow/${app.runId}/bundle?format=md&download=1`;
+      break;
+    case "chk-skip-qa":
+      app.form.skipQa = t.checked;
+      renderReady();
+      break;
+    case "chk-skip-jira":
+      app.form.skipJira = t.checked;
+      renderReady();
       break;
   }
 });
@@ -1494,9 +1582,28 @@ $("request-form").addEventListener("submit", submit);
     };
   }
   app.form.timeWindow = String(app.config.defaults?.time_window_minutes ?? 60);
+  app.form.skipQa = !!app.config.defaults?.skip_qa;
   applyMode();
   render();
 })();
+
+// Theme toggle
+function isDark() {
+  const attr = document.documentElement.getAttribute("data-theme");
+  if (attr) return attr === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function updateThemeIcon() {
+  $("theme-toggle").textContent = isDark() ? "☀" : "☾";
+  $("theme-toggle").title = isDark() ? "Switch to light mode" : "Switch to dark mode";
+}
+$("theme-toggle").addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("afd-theme", next);
+  updateThemeIcon();
+});
+updateThemeIcon();
 
 // Keep elapsed timers moving while a run streams.
 setInterval(() => { if (app.phase === "running") scheduleRender(); }, 1000);

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-27T18:18:42+02:00",
-  "completed_at": null,
+  "completed_at": "2026-07-28T13:18:16+00:00",
   "tasks": [
     {
       "id": "TASK-1939",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Independent one-line-plus-config change (Module 1/G10/AC1); lands on dev immediately, shares no new code with the worker architecture. Only edit point (pythonrepl.py:970) is also touched later by TASK-1943, so land this FIRST.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1939-repl-dedicated-executor.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1939-repl-dedicated-executor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1940",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Freezes the control protocol every later task builds on; per spec Worktree Strategy the feature runs sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1940-repl-worker-protocol-entrypoint.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1940-repl-worker-protocol-entrypoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1941",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Imports the protocol/worker from TASK-1940.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1941-repl-worker-handle-deadline.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1941-repl-worker-handle-deadline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1942",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "Builds on WorkerHandle from TASK-1941.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1942-repl-worker-pool-lifecycle.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1942-repl-worker-pool-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1943",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -101,8 +105,9 @@
       "parallelism_notes": "Rewires pythonrepl.py onto handle+pool; also touches the line TASK-1939 modified.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1943-pythonrepl-worker-integration.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1943-pythonrepl-worker-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1944",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,8 +126,9 @@
       "parallelism_notes": "Consumes the namespace API from TASK-1943; shares pythonpandas.py with TASK-1945 — keep sequential.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1944-port-namespace-callsites.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1944-port-namespace-callsites.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1945",
@@ -131,7 +137,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -142,8 +148,9 @@
       "parallelism_notes": "Depends on Module 5 (spec); shares pythonpandas.py/manager.py with TASK-1944's seeding path — sequential to avoid conflicts (ToolResult-compression freeze also watches these files).",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1945-dataframe-arrow-transport.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1945-dataframe-arrow-transport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1946",
@@ -152,7 +159,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +169,9 @@
       "parallelism_notes": "Needs Modules 2-5 operational (spec Module 8); edits protocol.py default, so keep in the same worktree sequence.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1946-rlimit-as-calibration.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1946-rlimit-as-calibration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1960",
@@ -172,7 +180,7 @@
       "feature_id": "FEAT-380",
       "feature": "sandbox-hardening",
       "spec": "sdd/specs/sandbox-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +193,9 @@
       "parallelism_notes": "Docs describe the code as merged (Modules 1-7); written last.",
       "assigned_to": null,
       "started_at": "2026-07-27T16:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1960-docs-and-windows-degradation.md"
+      "completed_at": "2026-07-28T13:18:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1960-docs-and-windows-degradation.md",
+      "verification": "verified"
     }
   ]
 }

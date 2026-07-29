@@ -227,10 +227,107 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-28
 **Notes**:
+- **`bots/data.py`**: `_get_repl_locals()` and `_infer_data_variable_from_tools()`
+  now `async def`, using `pandas_tool.snapshot()`/targeted `get_var()` calls
+  instead of `.locals` membership checks (candidate values cached locally so
+  the column-match tiebreaker doesn't re-fetch). `_inject_data_from_variable()`
+  / `_inject_multi_data_from_variables()` (already async) ported to
+  `get_var()` for the top-level lookup + `execution_results` fallback.
+- **`bots/agent.py`**: `_wire_tool_namespaces_into_working_memory()` is now
+  `async def` (uses `await tool.snapshot()`) and moved from `__init__` (sync,
+  can't await) to a new `async def configure()` override — the framework's
+  own async setup hook (`super().configure(app)` then the wiring call).
+  Snapshot semantics (frozen at wiring time) replace the old live-reference
+  semantics, per spec's explicit decision.
+- **`tools/agent.py`**: `_inject_context_to_repl()` (already async) ported
+  `python_repl.globals[...] = ...` writes to `await python_repl.set_var(...)`.
+- **`outputs/formats/base.py`**: kept `tool.locals` — see Deviations below,
+  this is the ONE documented, tested exception to AC13.
+- **`tools/pythonpandas.py`**: `PythonPandasTool` now implements **worker
+  seeding** — `_get_worker_handle()` override diffs `df_locals` against a
+  `_seeded_df_names` tracking set and `set_var()`s anything new/changed into
+  the worker (the worker's OWN `PythonREPLTool` instance has an empty
+  namespace and knows nothing about `df_locals`). `_process_dataframes()`
+  resets the tracking set whenever `df_locals` is rebuilt (so a name mapping
+  to a NEW DataFrame object gets re-pushed, not skipped as "already seeded").
+  `reset_environment()`/`clear_dataframes()` also reset it.
+  `create_session_clone()` now sets the TASK-1943 worker-identity attributes
+  (`_session_id`, `_worker_pool=None`, `_pending_worker_reset`,
+  `_worker_config`, `_worker_repl_kwargs`, `_seeded_df_names`) that
+  `object.__new__` bypasses, giving the clone its OWN worker (never the
+  source's — required for G7 session isolation); also fixed `df_locals`
+  being dropped entirely for a no-`dataset_manager` clone (contradicted the
+  method's own docstring promise that eagerly-loaded DataFrames are copied).
+- **Regression fix for the async conversions** (necessary, not scope creep):
+  ~40 test failures surfaced from existing `MagicMock`-based mocks of
+  `_get_repl_locals`/`_repl_locals_getter` across `test_infographic_toolkit.py`,
+  `test_infographic_toolkit_enhance.py`, `test_infographic_build_block.py`,
+  `test_infographic_e2e.py`, `test_dataset_manager.py` — fixed by switching
+  those ROOT mock constructions to `AsyncMock` (mechanical, not a logic
+  change). Verified via `git stash` diff against `dev`-equivalent state that
+  every REMAINING failure (8 in the infographic/dataset-manager suite, plus
+  `test_setup_mcp_servers`/`test_agent_real_integration`/`test_agent_module.py`
+  errors) is 100% pre-existing (same failures with zero changes applied).
+- `pytest packages/ai-parrot/tests/repl_worker/
+  packages/ai-parrot/tests/test_pythonrepl_security.py
+  packages/ai-parrot/tests/test_pythonrepl_executor.py -q` → 108 passed (incl.
+  6 new in `test_callsites.py`); `ruff check` on all 8 modified source files
+  matches pre-existing per-file error counts exactly (0 new anywhere).
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **`outputs/formats/base.py:153` (`execute_code()`'s `pandas_tool` branch)
+   deliberately KEEPS `tool.locals`** — the one AC13 exception, explicitly
+   documented in-code and in `test_callsites.py`'s `_KNOWN_EXCEPTIONS`. This
+   branch calls `tool.execute_sync()` (TASK-1943's separate, pre-existing
+   SYNCHRONOUS in-process escape hatch) immediately before the read; the
+   worker is never started on this path, so `snapshot()`/`get_var()` (which
+   always read the WORKER's namespace) would silently return an unrelated,
+   empty namespace instead of `execute_sync()`'s own just-produced result.
+   Correctly porting this would require ALSO routing `execute_sync()`
+   through the worker — explicitly out of TASK-1943's scope. Verified this
+   branch has ZERO real callers anywhere in `src/`/`tests/` today (grep
+   confirmed) — a live risk, not a currently-exercised bug.
+2. **Extended beyond the 5-file/6-file table**: `dataset_manager/tool.py`
+   (`_repl_locals_getter` callback type + call site → async, since its ONLY
+   caller — `store_dataframe` — is already async) and `infographic_toolkit.py`
+   (`_get_repl_locals()` wrapper + `_resolve_blocks()` → async, since ALL
+   their callers — `render`, `validate_blocks`, `build_block`-family methods
+   — are already async) were both required for `bots/data.py`'s
+   `_get_repl_locals()` async conversion to not silently break its real
+   callers. `working_memory/tool.py` got a docstring-only fix (a stale
+   example literally showed the old `pandas_tool.locals` live-reference
+   pattern the grep guard would have flagged, and the doc already
+   anticipated `configure()`-based wiring — a nice independent confirmation
+   the `configure()` approach matches this codebase's own convention).
+3. **The task's own audit undercounted `pythonpandas.py`'s `.locals` usage**:
+   many more read/write sites exist beyond `:122,128-130,229-236,292`
+   (`register_dataframes`, `sync_from_manager`, `_rebind_drifted_dataframes`,
+   `execution_results` handling, etc., ~15+ more lines). None of these are
+   caught by the AC13 grep pattern (`(pandas_tool|python_repl|tool)\.`) since
+   they're all `self.locals`/`self.df_locals` — the tool's OWN internal
+   state, not an EXTERNAL host module reading through a variable named
+   `pandas_tool`/`tool`/`python_repl`. Left untouched (same "host bootstrap
+   stays populated for backward compat" reasoning already established in
+   TASK-1943): a full port of PythonPandasTool's entire internal namespace
+   bookkeeping to the worker-only model is a substantially larger
+   undertaking than this task's M-effort scope suggests, and is a strong
+   candidate for its own dedicated follow-up task.
+4. **`clear_dataframes()` cannot un-set an already-pushed worker variable** —
+   the namespace API (TASK-1943, spec-frozen) has no `del_var`/`unset_var`.
+   Documented in a docstring note; a full `reset_environment()` is the only
+   current way to truly clear a live worker's namespace.
+5. **Pre-existing worktree environment gap, resolved as a side effect**: two
+   Cython extensions (`parrot/utils/types.pyx`,
+   `parrot/utils/parsers/toml.pyx`) were missing their compiled `.so` in this
+   fresh worktree checkout (gitignored build artifacts present in the main
+   repo but not shared across worktrees) — this blocked importing
+   `parrot.bots.data`/`parrot.bots.agent` entirely, and was silently masking
+   my ability to test-verify this task's changes. Built both in-place
+   (`cythonize` + `build_ext --inplace`, no source changes) purely to unblock
+   verification; this is a local build artifact, not committed, and every
+   test file that previously errored on `ModuleNotFoundError:
+   parrot.utils.types`/`parrot.utils.parsers.toml` now imports and runs
+   normally in this worktree.

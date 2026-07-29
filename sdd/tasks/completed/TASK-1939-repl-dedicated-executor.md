@@ -208,10 +208,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
+**Notes**: Added `executor_max_workers: int = 4` kwarg to `PythonREPLTool.__init__`;
+created `self._repl_executor = ThreadPoolExecutor(max_workers=executor_max_workers,
+thread_name_prefix="python-repl")` right after the execution-environment init,
+logged via `self.logger.debug`. Swapped `run_in_executor(None, ...)` →
+`run_in_executor(self._repl_executor, ...)` at the single call site in
+`_execute()` (`:990`, was `:970` pre-edit). Verified via grep this was the only
+`run_in_executor` occurrence in the file. Return contract (G5) untouched.
+All 38 tests pass (`test_pythonrepl_executor.py` + `test_pythonrepl_security.py`).
+`ruff check` on the modified file shows the same 18 pre-existing errors as
+`dev` HEAD (verified via `git stash` diff) — zero new errors introduced; the
+new test file lints clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The task's Test Specification scaffold for
+`test_exec_runs_on_named_repl_thread` (`import threading` inside sandboxed
+code passed to `tool._execute(...)`) is not achievable unmodified: `threading`
+is categorically denied by the (out-of-scope) allowlist gate's
+`deny_data_io` set regardless of profile (`python_sanitizer.py`
+`_DATA_IO_IMPORTS`). Per task scope ("touching the sanitizer or AST gate" is
+NOT in scope), the test was adapted to verify the same property — that
+`_execute()`'s dedicated named pool (`tool._repl_executor`) is real and
+functional — by dispatching directly to `tool._repl_executor` via
+`loop.run_in_executor` and asserting the resulting thread name, instead of
+routing through sandboxed code text. AC1 (no `run_in_executor(None, ...)` in
+the exec path) is covered separately by `test_default_executor_not_used`
+(source inspection) and a passing grep.

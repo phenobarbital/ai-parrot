@@ -34,6 +34,8 @@ from pydantic import BaseModel, ValidationError
 # otherwise leave this module holding a *different* class object than a
 # consumer that imported via the package, breaking ``isinstance`` checks.
 from parrot.flows.dev_loop import (
+    GoogleCodingDispatcher,
+    GoogleCodingDispatchProfile,
     ClaudeCodeDispatcher,
     ClaudeCodeDispatchProfile,
     CodexCodeDispatcher,
@@ -198,6 +200,13 @@ def build_dispatcher(
         )
         return dispatcher, profile
 
+    if spec.agent == "google_coding":
+        dispatcher = GoogleCodingDispatcher(**common)
+        profile = GoogleCodingDispatchProfile(
+            model=spec.model or config_getter("DEV_LOOP_GOOGLE_CODING_MODEL", "auto")
+        )
+        return dispatcher, profile
+
     raise ValueError(f"Unknown DevAgentBackend: {spec.agent!r}")
 
 
@@ -243,6 +252,8 @@ def resolve_pool_max(config_getter: ConfigGetter, *, default: int = 4) -> int:
         The resolved cap, always ``>= 1``.
     """
     raw = config_getter("DEV_LOOP_DEV_POOL_MAX", default)
+    if raw is None:
+        return default
     try:
         return max(1, int(raw))
     except (TypeError, ValueError):

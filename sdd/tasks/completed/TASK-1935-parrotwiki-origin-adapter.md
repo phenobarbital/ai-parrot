@@ -165,10 +165,21 @@ async def test_fts_search_passes_category():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-07-27
+**Notes**: Implemented `ParrotWikiOrigin` calling `BaseWikiStore` directly
+(no `WikiCombinedSearch` import). `search` uses the vector leg only when
+an `embedder` is configured (embeds query → `store.search_vector`),
+otherwise the FTS leg (`store.search_fts(query, category=..., limit=k)`);
+`fts_search` always uses the FTS leg regardless of embedder config.
+`supports_fts` is always `True`. 9 unit tests with a fake store plus a
+real `SQLiteWikiStore` (tmp file) integration test, all passing;
+`ruff check` clean; full `multistoresearch/` suite now at 34 tests.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The task's illustrative test-spec sample used
+`page_id`/`content` row keys as a sketch; the REAL
+`SQLiteWikiStore.search_fts`/`search_vector` row shape (verified in
+`parrot/knowledge/wiki/store.py:803,841`) uses `concept_id`, `node_id`,
+`title`, `category`, `summary`, `source_id`, `token_count`, `score` — no
+`content` field at all (only `summary`). The adapter and its tests use
+the real keys; `OriginHit.content` is built from `title` + `summary`.

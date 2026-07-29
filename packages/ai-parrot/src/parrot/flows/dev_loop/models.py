@@ -17,7 +17,7 @@ See ``sdd/specs/feat-129-upgrades.spec.md`` §3 Module 1 for the FEAT-132
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Literal, Optional, Union
 
 from pydantic import (
     AliasChoices,
@@ -381,7 +381,7 @@ class ResearchOutput(BaseModel):
 # ─────────────────────────────────────────────────────────────────────
 
 DevAgentBackend = Literal[
-    "claude-code", "codex", "gemini", "nvidia", "grok", "zai", "moonshot"
+    "claude-code", "codex", "gemini", "nvidia", "grok", "zai", "moonshot", "google_coding"
 ]
 
 
@@ -500,9 +500,9 @@ class CriterionResult(BaseModel):
     """Result of running a single acceptance criterion in QA."""
 
     name: str
-    kind: Literal["flowtask", "shell", "manual"]
-    exit_code: int
-    duration_seconds: float
+    kind: Literal["flowtask", "shell", "manual"] = "shell"
+    exit_code: int = 0
+    duration_seconds: float = 0.0
     stdout_tail: str = Field("", max_length=4000)
     stderr_tail: str = Field("", max_length=4000)
     passed: bool
@@ -533,6 +533,24 @@ class QAReport(BaseModel):
         default_factory=list,
         description="Qualitative findings emitted by the code-review gate.",
     )
+
+    @field_validator("code_review_findings", mode="before")
+    @classmethod
+    def _coerce_finding_dicts(cls, v: Any) -> Any:
+        """Coerce structured finding dicts to plain strings.
+
+        The sdd-qa agent sees the full QAReport schema and may return
+        CodeReviewFinding-shaped dicts instead of strings.
+        """
+        if isinstance(v, list):
+            return [
+                item.get("message", "") or str(item)
+                if isinstance(item, dict)
+                else item
+                for item in v
+            ]
+        return v
+
     attempt: int = Field(
         default=1,
         ge=1,
@@ -634,6 +652,22 @@ class GeminiCodeDispatchProfile(BaseModel):
         description="Whether to run the gemini session in a sandbox.",
     )
     approval_mode: Literal["default", "auto_edit", "yolo", "plan"] = "auto_edit"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class GoogleCodingDispatchProfile(BaseModel):
+    """Declarative profile consumed by ``GoogleCodingDispatcher.dispatch()``.
+
+    Targets the Google Antigravity CLI console (``agy``) in headless mode.
+    """
+
+    subagent: Literal["sdd-worker", "sdd-secondopinion", "sdd-research", "sdd-qa", "sdd-planner", "sdd-feedback"] = "sdd-worker"
+    model: str = "auto"
+    agent: Optional[str] = None
+    effort: Optional[Literal["low", "medium", "high"]] = None
+    mode: Literal["accept-edits", "plan"] = "accept-edits"
+    dangerously_skip_permissions: bool = True
+    sandbox: bool = True
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 
@@ -822,17 +856,39 @@ class CodeReviewVerdict(BaseModel):
     summary: str = ""
     files_modified: List[str] = Field(default_factory=list)
 
+    _SEVERITY_ALIASES: ClassVar[Dict[str, str]] = {
+        "blocker": "critical",
+        "blocking": "critical",
+        "error": "major",
+        "warning": "minor",
+        "medium": "minor",
+        "low": "nit",
+        "info": "nit",
+        "trivial": "nit",
+        "high": "major",
+    }
+
     @field_validator("findings", mode="before")
     @classmethod
-    def _coerce_plain_strings(cls, v: Any) -> Any:
-        if isinstance(v, list):
-            return [
-                CodeReviewFinding(message=item, severity="minor")
-                if isinstance(item, str)
-                else item
-                for item in v
-            ]
-        return v
+    def _coerce_findings(cls, v: Any) -> Any:
+        if not isinstance(v, list):
+            return v
+        out = []
+        for item in v:
+            if isinstance(item, str):
+                out.append(CodeReviewFinding(message=item, severity="minor"))
+            elif isinstance(item, dict):
+                if "message" not in item:
+                    item = {**item, "message": item.get("summary", item.get("description", "(no message)"))}
+                if "severity" not in item:
+                    item = {**item, "severity": "minor"}
+                sev = item.get("severity", "")
+                if isinstance(sev, str) and sev.lower() in cls._SEVERITY_ALIASES:
+                    item = {**item, "severity": cls._SEVERITY_ALIASES[sev.lower()]}
+                out.append(item)
+            else:
+                out.append(item)
+        return out
 
 
 class AdversarialFinding(CodeReviewFinding):
@@ -850,6 +906,14 @@ class AdversarialFinding(CodeReviewFinding):
             "file/message text equality (which an LLM may paraphrase)."
         ),
     )
+
+    @field_validator("disposition", mode="before")
+    @classmethod
+    def _normalize_disposition(cls, v: Any) -> Any:
+        """Accept uppercase dispositions from subagents (CONFIRM → confirm)."""
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 
 class TriageBrief(BaseModel):
@@ -951,6 +1015,19 @@ class GeminiCodeReviewProfile(GeminiCodeDispatchProfile):
     model: str = "auto"
     sandbox: bool = False
     approval_mode: Literal["default", "auto_edit", "yolo", "plan"] = "auto_edit"
+    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+
+
+class GoogleCodingCodeReviewProfile(GoogleCodingDispatchProfile):
+    """Review profile for the GoogleCoding code review dispatcher.
+
+    Inherits ``GoogleCodingDispatchProfile`` for write-enabled review use case.
+    """
+
+    subagent: Literal["sdd-worker"] = "sdd-worker"
+    model: str = "auto"
+    sandbox: bool = False
+    dangerously_skip_permissions: bool = True
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
 
 

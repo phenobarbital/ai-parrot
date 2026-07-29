@@ -192,12 +192,12 @@ class TestShouldFanOut:
 
 @pytest.mark.asyncio
 class TestFanOutWiring:
-    """FEAT-377 TASK-1913: should_fan_out wired into the pool-vs-single
-    decision in DevelopmentNode.execute()."""
+    """Pool path is always taken when pool config + dispatcher_builder
+    are present, regardless of wave size or slot count."""
 
-    async def test_development_degrades_to_single_agent_on_chain(self, tmp_path):
-        """A straight dependency chain (every wave size 1) runs
-        single-agent even with a 4-worker pool configured."""
+    async def test_chain_uses_pool_path_sequentially(self, tmp_path):
+        """A straight dependency chain (every wave size 1) still uses
+        the pool path — tasks run sequentially through the pool."""
         _write_index(
             tmp_path,
             "FEAT-323",
@@ -209,28 +209,64 @@ class TestFanOutWiring:
             ],
         )
         research = _research(str(tmp_path))
-        dispatcher = MagicMock()
-        dev_out = DevelopmentOutput(files_changed=["x.py"], commit_shas=["s"], summary="single")
-        dispatcher.dispatch = AsyncMock(return_value=dev_out)
+        single_dispatcher = MagicMock()
+        single_dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=["x.py"], commit_shas=["s"], summary="single")
+        )
+        pool_dispatcher = FakeDispatcher()
         pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=4)])
         node = DevelopmentNode(
-            dispatcher=dispatcher,
+            dispatcher=single_dispatcher,
             pool_config=pool_config,
-            dispatcher_builder=_dispatcher_builder_factory([FakeDispatcher()]),
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
             pool_max=4,
         )
 
         ctx = {"run_id": "r1", "research_output": research}
         result = await node.execute(ctx)
 
-        # Single-agent path taken: the injected single dispatcher was
-        # called, not any pool worker.
-        assert result is dev_out
-        dispatcher.dispatch.assert_awaited_once()
+        # Pool path taken: pool dispatcher handled all three tasks
+        # sequentially; the single-agent dispatcher was NOT called.
+        single_dispatcher.dispatch.assert_not_awaited()
+        dispatched = [c[0] for c in pool_dispatcher.calls]
+        assert dispatched == ["TASK-1", "TASK-2", "TASK-3"]
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
+
+    async def test_single_slot_pool_uses_pool_path(self, tmp_path):
+        """A pool with count=1 dispatches through the pool path
+        (sequentially), not the legacy single-agent path."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        single_dispatcher = MagicMock()
+        single_dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="unused")
+        )
+        pool_dispatcher = FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=1)])
+        node = DevelopmentNode(
+            dispatcher=single_dispatcher,
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        await node.execute(ctx)
+
+        single_dispatcher.dispatch.assert_not_awaited()
+        dispatched_tasks = {c[0] for c in pool_dispatcher.calls}
+        assert dispatched_tasks == {"TASK-1", "TASK-2"}
 
     async def test_development_takes_pool_path_when_wave_has_two_tasks(self, tmp_path):
         """A first wave with 2 independent tasks + a multi-slot pool
-        takes the pool path (unchanged from pre-TASK-1913 behavior)."""
+        takes the pool path with true parallelism."""
         _write_index(
             tmp_path,
             "FEAT-323",

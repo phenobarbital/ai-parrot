@@ -116,7 +116,7 @@ TOOL_REGISTRY: dict[str, str] = {
 
     # --- Individual Tools (Batch 3 — DB / finance / analysis) ---
     "arangodb_search": "parrot_tools.arangodbsearch.ArangoDBSearchTool",
-    "multi_store_search": "parrot_tools.multistoresearch.MultiStoreSearchTool",
+    "multi_store_search_toolkit": "parrot_tools.multistoresearch.MultiStoreSearchToolkit",
     "ibisworld": "parrot_tools.ibisworld.tool.IBISWorldTool",
     "bloomberg": "parrot_tools.bloomberg.BloombergTool",
     "composite_score": "parrot_tools.composite_score.CompositeScoreTool",

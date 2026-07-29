@@ -216,10 +216,65 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-27
 **Notes**:
+- `handle.py`: `WorkerHandle` implements the full spec interface
+  (`start`/`execute`/`inject_dataframe`/`get_var`/`set_var`/`list_vars`/
+  `snapshot`/`reset`/`ping`/`kill`). Spawns via `subprocess.Popen` (wrapped
+  in `run_in_executor` to stay off the event loop) talking over a
+  **dedicated pipe pair** (`os.pipe()` x2 + `pass_fds`), consistent with
+  TASK-1940's finding that stdin/stdout carries this framework's colorized
+  log output and cannot be used as the binary framing channel.
+- Deadline enforcement: `_send()` wraps the blocking round-trip
+  (`run_in_executor` + `read_frame`/`write_frame` from TASK-1940) in
+  `asyncio.wait_for(timeout=deadline_ms + 250ms grace)`; on
+  `asyncio.TimeoutError` it SIGKILLs via `Popen.kill()` (POSIX SIGKILL /
+  Windows `TerminateProcess`, AC16) and attaches a done-callback to the
+  orphaned executor future so its eventual `EOFError` (once the pipe
+  closes) doesn't surface as an "exception never retrieved" warning.
+  Single `asyncio.Lock` serializes all requests (the worker handles one
+  `exec` at a time, per spec).
+- Cause differentiation (AC11): `"timeout"` when the host's own deadline
+  fired; otherwise `_classify_death()` reaps the process and greps its
+  captured stderr for memory-pressure markers (`MemoryError`,
+  `failed to map segment`, `bad_alloc`, `Cannot allocate memory`, `Killed`,
+  `OOM`) to report `"memory"`, else falls back to `"crash"`. The
+  `NamespaceLossError` model (TASK-1940) is used internally to build a
+  single rendered message embedded in the standard G5
+  `{"status": "error", "result": ..., "error": ...}` dict — differentiated
+  cause, the `known_vars` name-shadow list, and an explicit instruction to
+  recreate state before retrying, all in one string (AC11 doesn't require
+  the Pydantic model itself to travel in the dict, just that shape).
+- 10 new tests in `test_handle.py`, all spawning real worker subprocesses;
+  `pytest packages/ai-parrot/tests/repl_worker/ -v` → 41 passed (protocol +
+  worker + handle). `ruff check` on `repl_worker/` is clean.
 
-**Deviations from spec**: none
+**Deviations from spec / notable findings**:
+1. **`test_memory_limit_kills_worker` triggers the crash at worker-boot
+   time, not via a runtime allocation inside `exec`.** Investigated
+   whether a large in-REPL allocation (e.g. `bytearray(10**10)`) reliably
+   *crashes* the process under a tight `RLIMIT_AS`: it does not — CPython's
+   `malloc`/`mmap` failure path for a single large allocation is normally
+   caught cleanly and raised as a catchable `MemoryError` (handled by
+   `_execute_code`'s own exception handling, returned as ordinary error
+   *text*, worker survives). The reproducible **process-killing** memory
+   failure in this environment is a `RLIMIT_AS` too small for
+   `PythonREPLTool.__init__` to finish importing pandas/numpy/matplotlib
+   in the first place — `numpy.random`'s compiled extensions fail to
+   `mmap` under 512 MiB (and even 1 GiB), which crashes the interpreter
+   with a fatal `ImportError` traceback (not a catchable Python
+   exception) before the worker ever reads a frame. `WorkerHandle.execute()`
+   still correctly reports this as cause=`"memory"` (the traceback's
+   "failed to map segment from shared object" matches the memory-marker
+   heuristic) rather than `"timeout"`, satisfying the qualitative intent
+   of AC3 ("memory pressure kills the worker, not the test runner, and is
+   distinguishable from a timeout") even though the *trigger* is import-
+   time rather than a runtime user-code allocation. This is the same
+   `RLIMIT_AS` calibration risk the spec flags for Module 8.
+2. `ping()`'s health-check timeout defaults to 10s (not a tight value) —
+   a `ping()` sent immediately after `start()` can race the worker's own
+   pandas/numpy/matplotlib import + bootstrap, which legitimately takes a
+   few seconds under load; a short timeout produced a flaky false-negative
+   in local testing. `execute()`'s deadline enforcement is unaffected
+   (governed by the caller's `WorkerConfig.deadline_ms`, not by `ping()`).

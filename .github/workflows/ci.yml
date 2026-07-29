@@ -29,6 +29,20 @@ jobs:
       - name: Check registry freshness
         run: uv run python scripts/generate_tool_registry.py --check
 
+      # FEAT-387: fails the build on any NEW TASK-<NNN> collision (a task
+      # number reused across two different features). scripts/sdd/.collision_baseline.json
+      # is a one-time baseline exception listing every TASK-ID collision that
+      # already existed in the repo's history before this check was added
+      # (this history predates the git-native reserve_ids.py allocator and
+      # includes far more than the six FEAT-380-era collisions originally
+      # discovered — most stem from pre-per-spec-index-era per-feature task
+      # numbering) — those are left untouched (see the spec's Non-Goals) and
+      # do NOT fail the build; only a genuinely new collision does.
+      - name: Check SDD TASK-ID collisions (FEAT-387)
+        run: |
+          uv run python -m scripts.sdd.check_id_collisions \
+            --baseline scripts/sdd/.collision_baseline.json
+
   test-core:
     name: "Test ai-parrot (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest

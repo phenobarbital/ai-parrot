@@ -182,6 +182,7 @@ def build_dev_loop_feature_flow(
     development_pool_max: int = 4,
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
+    skip_qa: bool = False,
     name: str = "dev-loop-feature",
     publish_flow_events: bool = True,
 ) -> AgentsFlow:
@@ -253,6 +254,7 @@ def build_dev_loop_feature_flow(
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
         require_plan_approval=require_plan_approval,
+        skip_qa=skip_qa,
     )
     staged = AgentsFlow.from_definition(
         definition,

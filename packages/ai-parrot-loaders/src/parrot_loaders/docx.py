@@ -1,7 +1,6 @@
 from typing import List
 from pathlib import PurePath
 import re
-import mammoth
 import docx
 from markdownify import markdownify as md
 from parrot.stores.models import Document
@@ -20,7 +19,7 @@ class MSWordLoader(AbstractLoader):
 
         # Parse paragraphs and basic styles
         for para in doc.paragraphs:
-            style = para.style.name.lower()
+            style = (para.style.name or "").lower() if para.style is not None else ""
             text = para.text.strip()
             if not text:
                 continue
