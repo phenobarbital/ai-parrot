@@ -516,16 +516,43 @@ from parrot.knowledge.graphindex.schema import (
 
 ## Open Questions
 
-- [ ] Should canvas files (`.canvas`) be treated as first-class documents with
-  their own node type, or as metadata on the notes they reference? — *Owner: Jesus*
-- [ ] Which markdown parser to use? `marko` is more extensible for custom syntax
+- [x] Should canvas files (`.canvas`) be treated as first-class documents with
+  their own node type, or as metadata on the notes they reference? — *Owner: Jesus*:
+  First-class documents. Each canvas becomes a `NodeKind.DOCUMENT` node with
+  `domain_tags: {"obsidian_type": "canvas"}`. Canvas card→note references become
+  `EdgeKind.REFERENCES` edges; canvas connections between cards become additional
+  `REFERENCES` edges. No new `NodeKind` needed.
+- [x] Which markdown parser to use? `marko` is more extensible for custom syntax
   (wikilinks), `markdown-it-py` is faster. `python-frontmatter` handles YAML
-  frontmatter but not the full markdown AST. — *Owner: Jesus*
-- [ ] Should `EdgeKind` and `NodeKind` be extended with Obsidian-specific types
+  frontmatter but not the full markdown AST. — *Owner: Jesus*:
+  Use `python-frontmatter` (v1.3.0, installed) for YAML frontmatter extraction
+  as a pre-processing step, then `marko` (v2.2.3, installed) for body parsing.
+  `marko`'s extensible renderer/parser architecture makes adding custom
+  `[[wikilink]]` and `![[embed]]` inline elements clean. Both are already
+  project dependencies.
+- [x] Should `EdgeKind` and `NodeKind` be extended with Obsidian-specific types
   (`TAGGED_WITH`, `ALIAS_OF`, `EMBEDS`, `TAG`, `FOLDER`) or should we use
-  generic string-based kinds? — *Owner: Jesus*
-- [ ] For the server-mode HTTP API, should vault access be restricted to
+  generic string-based kinds? — *Owner: Jesus*:
+  Use existing enums + `domain_tags` for Obsidian-specific semantics. Mapping:
+  note → `NodeKind.DOCUMENT`, `[[wikilink]]` → `EdgeKind.REFERENCES`,
+  `![[embed]]` → `EdgeKind.REFERENCES` + `domain_tags: {"embed": true}`,
+  `#tag` → `NodeKind.CONCEPT` + `domain_tags: {"obsidian_type": "tag"}`,
+  folder → `NodeKind.DOCUMENT` + `domain_tags: {"obsidian_type": "folder"}`,
+  folder→note → `EdgeKind.CONTAINS`, aliases → stored as
+  `domain_tags: {"aliases": [...]}` on the note node. Avoids coupling the
+  core schema to a specific integration.
+- [x] For the server-mode HTTP API, should vault access be restricted to
   pre-configured directories (security), or can the API accept any path? —
-  *Owner: Jesus*
-- [ ] Should dataview queries be evaluated (requires a dataview parser) or just
-  stored as raw text in note metadata? — *Owner: Jesus*
+  *Owner: Jesus*:
+  Restricted to pre-configured directories. The HTTP API only accepts paths
+  under directories listed in server config (`allowed_vault_dirs` in
+  `parrot.conf` or environment variable). Arbitrary path access is a
+  path-traversal vulnerability. The local Python API (direct usage) does not
+  need this restriction.
+- [x] Should dataview queries be evaluated (requires a dataview parser) or just
+  stored as raw text in note metadata? — *Owner: Jesus*:
+  Store as raw text in metadata (`metadata: {"dataview_queries": [...]}`).
+  Mark the content region as `[dataview-query]` in parsed output so downstream
+  consumers know it's a query, not content. Evaluating Dataview queries would
+  require reimplementing the DQL parser — massive scope expansion with
+  questionable value. Raw queries are preserved for future evaluation if needed.
