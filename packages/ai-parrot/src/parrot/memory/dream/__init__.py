@@ -14,6 +14,7 @@ from .models import (
     save_state,
 )
 from .runner import DreamCycleRunner
+from .scheduler import DreamScheduler
 
 __all__ = [
     "BrainStore",
@@ -21,6 +22,7 @@ __all__ = [
     "DreamConfig",
     "DreamCycleReport",
     "DreamCycleRunner",
+    "DreamScheduler",
     "DreamState",
     "load_state",
     "save_state",
