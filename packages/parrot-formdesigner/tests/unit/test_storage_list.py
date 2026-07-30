@@ -124,6 +124,7 @@ def storage_factory():
 async def test_list_forms_localized_title_flattens(storage_factory) -> None:
     """Localized title dict should be flattened to the first value."""
     rows = [_StubRow(
+        form_uid="uid-f-1",
         form_id="f-1",
         version="1.0",
         schema_json=json.dumps({
@@ -136,6 +137,7 @@ async def test_list_forms_localized_title_flattens(storage_factory) -> None:
     )]
     out = await storage_factory(rows).list_forms()
     assert out == [{
+        "form_uid": "uid-f-1",
         "form_id": "f-1",
         "version": "1.0",
         "title": "Hello",
@@ -150,6 +152,7 @@ async def test_list_forms_description_missing_or_none(storage_factory) -> None:
     """Missing or null description should produce None in the result dict."""
     rows = [
         _StubRow(
+            form_uid="uid-a",
             form_id="a",
             version="1.0",
             schema_json=json.dumps({"title": "A"}),
@@ -158,6 +161,7 @@ async def test_list_forms_description_missing_or_none(storage_factory) -> None:
             updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         ),
         _StubRow(
+            form_uid="uid-b",
             form_id="b",
             version="1.0",
             schema_json=json.dumps({"title": "B", "description": None}),
@@ -175,6 +179,7 @@ async def test_list_forms_description_missing_or_none(storage_factory) -> None:
 async def test_list_forms_created_at_none_defensive(storage_factory) -> None:
     """NULL created_at in the row (defensive case) should produce None."""
     rows = [_StubRow(
+        form_uid="uid-x",
         form_id="x",
         version="1.0",
         schema_json=json.dumps({"title": "X"}),
@@ -190,6 +195,7 @@ async def test_list_forms_created_at_none_defensive(storage_factory) -> None:
 async def test_list_forms_malformed_schema_json(storage_factory) -> None:
     """Malformed schema_json should fall back to title='', description=None."""
     rows = [_StubRow(
+        form_uid="uid-bad",
         form_id="bad",
         version="1.0",
         schema_json="not-json",
@@ -209,6 +215,7 @@ async def test_list_forms_multiple_rows_preserve_order(storage_factory) -> None:
     """Multiple rows should be returned in the same order the DB provides."""
     rows = [
         _StubRow(
+            form_uid="uid-a",
             form_id="a",
             version="1.0",
             schema_json=json.dumps({"title": "A"}),
@@ -217,6 +224,7 @@ async def test_list_forms_multiple_rows_preserve_order(storage_factory) -> None:
             updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         ),
         _StubRow(
+            form_uid="uid-b",
             form_id="b",
             version="1.0",
             schema_json=json.dumps({"title": "B"}),
@@ -235,3 +243,9 @@ def test_form_storage_list_forms_docstring_contract() -> None:
     for key in ("form_id", "version", "title", "description", "created_at"):
         assert key in doc, f"docstring should mention {key}"
     assert "ISO-8601" in doc or "isoformat" in doc.lower()
+
+
+def test_postgres_storage_list_forms_includes_form_uid() -> None:
+    """PostgresFormStorage.list_forms docstring documents form_uid (FEAT-389)."""
+    doc = PostgresFormStorage.list_forms.__doc__ or ""
+    assert "form_uid" in doc

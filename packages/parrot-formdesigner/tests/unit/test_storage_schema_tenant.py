@@ -156,8 +156,10 @@ class TestPostgresFormStorageConfig:
         await storage.save(_form(), tenant="epson")
         sql, args = pool.conn.executed[0]
         assert '"epson"."form_schemas"' in sql
-        # tenant value persisted into the row (5th positional, 1-indexed)
-        assert args[4] == "epson"
+        # tenant value persisted into the row (6th positional, 1-indexed —
+        # FEAT-389 inserted form_uid as the new first positional param,
+        # shifting tenant from index 4 to index 5).
+        assert args[5] == "epson"
 
     @pytest.mark.asyncio
     async def test_save_uses_form_tenant_when_no_override(self) -> None:
@@ -166,7 +168,7 @@ class TestPostgresFormStorageConfig:
         await storage.save(_form(tenant="pokemon"))
         sql, args = pool.conn.executed[0]
         assert '"pokemon"."form_schemas"' in sql
-        assert args[4] == "pokemon"
+        assert args[5] == "pokemon"
 
     @pytest.mark.asyncio
     async def test_save_uses_default_tenant_when_form_has_none(self) -> None:

@@ -1019,18 +1019,22 @@ class FormRegistry:
 
         count = 0
         for item in form_list:
-            form_id = item.get("form_id")
-            if not form_id:
+            # FEAT-389: storage.list_forms() dicts now include form_uid;
+            # storage.load() is form_uid-keyed (TASK-1974). register() itself
+            # re-keys by form.form_uid regardless, but load() must be called
+            # with the right identifier to find the row at all.
+            form_uid = item.get("form_uid")
+            if not form_uid:
                 continue
             try:
-                form = await self._storage.load(form_id, tenant=resolved)
+                form = await self._storage.load(form_uid, tenant=resolved)
                 if form is not None:
                     await self.register(form, overwrite=True, tenant=resolved)
                     count += 1
             except Exception as exc:
                 self.logger.warning(
-                    "Failed to load form %s from storage (tenant=%s): %s",
-                    form_id,
+                    "Failed to load form form_uid=%s from storage (tenant=%s): %s",
+                    form_uid,
                     resolved,
                     exc,
                 )

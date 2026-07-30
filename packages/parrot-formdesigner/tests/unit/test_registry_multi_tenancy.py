@@ -282,8 +282,8 @@ class TestRegistryMultiTenancy:
         mock_storage = AM()
         mock_storage.list_forms = AM(
             side_effect=[
-                [{"form_id": "f"}],  # epson call
-                [{"form_id": "f"}],  # pokemon call
+                [{"form_uid": epson_form.form_uid, "form_id": "f"}],  # epson call
+                [{"form_uid": pokemon_form.form_uid, "form_id": "f"}],  # pokemon call
             ]
         )
         mock_storage.load = AM(side_effect=[epson_form, pokemon_form])
