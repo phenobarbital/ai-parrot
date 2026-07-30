@@ -327,10 +327,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-07-30
+**Notes**: Implemented `FormAssembler` at
+`packages/parrot-formdesigner/src/parrot_formdesigner/assembler.py` with all
+seven public methods (`detect_format`, `expand_shortcuts`, `assemble`,
+`assemble_from_sections`, `assemble_from_fields`, `assemble_field`,
+`assemble_section`) plus private helpers `_expand_section`/`_expand_field`
+and module-level `_slugify`/`_field_id_from_label`/`_as_text` utilities
+mirroring `create_form.py`'s `_slugify`. `assemble()` delegates to
+`JsonSchemaExtractor.extract()` for JSON Schema input and
+`FormSchema.model_validate()` for native input. Field ID collisions are
+resolved with a numeric suffix (`name`, `name_2`) as required by the spec's
+"Known Risks" section. Added 21 unit tests in
+`packages/parrot-formdesigner/tests/unit/test_assembler.py` covering the
+task's full Test Specification plus a few extra edge cases (sequential
+section IDs, collision suffixing, non-mutation of input). All 21 tests
+pass; `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
