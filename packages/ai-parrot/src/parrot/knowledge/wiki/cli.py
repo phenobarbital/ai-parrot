@@ -735,6 +735,9 @@ def build(
         )
     if scan.skipped and not quiet:
         click.echo(f"Skipped {len(scan.skipped)} binary/oversized files.")
+        if len(scan.skipped) <= 10:
+            for path in scan.skipped:
+                click.echo(f"  - {path}")
 
 
 def _changed_files_from_git(root: Path) -> list[str]:
