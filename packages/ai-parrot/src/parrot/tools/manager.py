@@ -1926,9 +1926,19 @@ class ToolManager(MCPToolManagerMixin):
         (via ``ToolkitTool.bound_method.__self__``), and calls ``cleanup()``
         or ``stop()`` on each. Failures are logged and isolated so one
         misbehaving toolkit cannot block the rest.
+
+        FEAT-391: before the existing ``cleanup()``/``stop()`` call, releases
+        any resources acquired via the ``_open()``/``_ensure_open()`` lazy
+        lifecycle by calling ``_close()`` on every toolkit (Phase 1) and on
+        every standalone (non-toolkit) tool (Phase 2) that has ``_opened``
+        set. ``_close()`` errors are caught and logged, matching the
+        existing error-isolation pattern, so one broken toolkit/tool never
+        blocks cleanup of the rest.
         """
         from .toolkit import ToolkitTool
         seen: set[int] = set()
+
+        # --- Phase 1: close and clean up toolkits ---
         for tool in self._tools.values():
             if not isinstance(tool, ToolkitTool):
                 continue
@@ -1942,6 +1952,17 @@ class ToolManager(MCPToolManagerMixin):
             if tk_id in seen:
                 continue
             seen.add(tk_id)
+
+            # FEAT-391: release resources acquired via _open() first.
+            if getattr(toolkit, '_opened', False):
+                try:
+                    await toolkit._close()
+                except Exception as exc:
+                    self.logger.debug(
+                        "Error in _close() for toolkit %s: %s",
+                        type(toolkit).__name__, exc,
+                    )
+
             cleanup_fn = getattr(toolkit, 'cleanup', None) or getattr(toolkit, 'stop', None)
             if cleanup_fn and callable(cleanup_fn):
                 try:
@@ -1952,4 +1973,17 @@ class ToolManager(MCPToolManagerMixin):
                     self.logger.debug(
                         "Error cleaning up toolkit %s: %s",
                         type(toolkit).__name__, exc,
+                    )
+
+        # --- Phase 2: close standalone tools (non-ToolkitTool) ---
+        for tool in self._tools.values():
+            if isinstance(tool, ToolkitTool):
+                continue
+            if getattr(tool, '_opened', False):
+                try:
+                    await tool._close()
+                except Exception as exc:
+                    self.logger.debug(
+                        "Error in _close() for tool %s: %s",
+                        tool.name, exc,
                     )
