@@ -21,12 +21,28 @@ def registry():
 
 @pytest.fixture
 def public_form():
-    return FormSchema(form_id="contact", title="Contact", sections=[], is_public=True)
+    # Fixed form_uid (FEAT-389): public_form/private_form represent the SAME
+    # form transitioning its is_public flag on re-registration — the
+    # is_public-diff detection in register() keys off form_uid, so both
+    # fixtures must share one to exercise a real "update in place".
+    return FormSchema(
+        form_uid="728e811f-aa81-4b5f-88c6-7dc677e5b28a",
+        form_id="contact",
+        title="Contact",
+        sections=[],
+        is_public=True,
+    )
 
 
 @pytest.fixture
 def private_form():
-    return FormSchema(form_id="contact", title="Contact", sections=[], is_public=False)
+    return FormSchema(
+        form_uid="728e811f-aa81-4b5f-88c6-7dc677e5b28a",
+        form_id="contact",
+        title="Contact",
+        sections=[],
+        is_public=False,
+    )
 
 
 @pytest.mark.asyncio
@@ -79,28 +95,28 @@ class TestPublicToggleOnUnregister:
         callback = AsyncMock()
         await registry.register(public_form)
         registry.set_public_toggle_callback(callback)
-        await registry.unregister("contact")
+        await registry.unregister(public_form.form_uid)
         callback.assert_awaited_once_with("contact", False)
 
     async def test_delete_private_form_no_callback(self, registry, private_form):
         callback = AsyncMock()
         await registry.register(private_form)
         registry.set_public_toggle_callback(callback)
-        await registry.unregister("contact")
+        await registry.unregister(private_form.form_uid)
         callback.assert_not_awaited()
 
     async def test_delete_nonexistent_form_no_callback(self, registry):
         """Unregistering a form that doesn't exist: no callback, returns False."""
         callback = AsyncMock()
         registry.set_public_toggle_callback(callback)
-        result = await registry.unregister("nonexistent")
+        result = await registry.unregister("nonexistent-uid")
         assert result is False
         callback.assert_not_awaited()
 
     async def test_no_callback_no_error_on_unregister(self, registry, public_form):
         """No callback set: unregister must not raise."""
         await registry.register(public_form)
-        await registry.unregister("contact")
+        await registry.unregister(public_form.form_uid)
 
 
 @pytest.mark.asyncio
