@@ -454,12 +454,13 @@ class TestWhitespaceNormalization:
         result = builder.build({})
         assert "<a>\n    indented content\n</a>" == result
 
-    def test_yaml_style_backstory_dedented(self):
+    def test_yaml_style_backstory_trailing_ws_cleaned(self):
+        """Backstory with trailing whitespace and blank-line runs is cleaned."""
         backstory = (
-            "    You are an expert in AI.\n"
-            "    You specialize in NLP.\n"
-            "\n"
-            "    Your main goal is to help users."
+            "You are an expert in AI.   \n"
+            "You specialize in NLP.\t\n"
+            "\n\n\n"
+            "Your main goal is to help users."
         )
         layer = PromptLayer(
             name="identity", priority=10,
@@ -469,8 +470,18 @@ class TestWhitespaceNormalization:
         builder = PromptBuilder([layer])
         builder.configure({"backstory": backstory})
         result = builder.build({})
-        assert "    You are" not in result
+        assert "AI.   \n" not in result
+        assert "NLP.\t\n" not in result
+        assert "\n\n\n" not in result
         assert "You are an expert in AI." in result
+
+    def test_uniformly_indented_layer_dedented(self):
+        """A layer whose entire template is indented (e.g. from Python source)."""
+        template = "    <agent>\n        You are helpful.\n    </agent>"
+        layer = PromptLayer(name="ws", priority=10, template=template)
+        builder = PromptBuilder([layer])
+        result = builder.build({})
+        assert result == "<agent>\n    You are helpful.\n</agent>"
 
     def test_normalization_applies_to_segments(self):
         layer = PromptLayer(
