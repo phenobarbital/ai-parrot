@@ -52,7 +52,7 @@
       "feature_id": "FEAT-391",
       "feature": "per-tool-connection",
       "spec": "sdd/specs/per-tool-connection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on _close() existing on both AbstractTool and AbstractToolkit",
       "assigned_to": null,
       "started_at": "2026-07-30T18:47:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1993-toolmanager-cleanup-integration.md"
+      "completed_at": "2026-07-30T23:08:30+00:00",
+      "file": "sdd/tasks/completed/TASK-1993-toolmanager-cleanup-integration.md"
     },
     {
       "id": "TASK-1994",
