@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
 
 from parrot.memory.abstract import ConversationMemory
 from parrot.memory.episodic.models import MemoryNamespace
@@ -17,6 +17,9 @@ from parrot.memory.episodic.store import EpisodicMemoryStore
 from .context import ContextAssembler
 from .models import MemoryConfig, MemoryContext
 from .routing import CrossDomainRouter
+
+if TYPE_CHECKING:
+    from parrot.memory.dream import BrainStore
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +87,8 @@ class UnifiedMemoryManager:
         skill_registry: Optional[Any] = None,
         config: Optional[MemoryConfig] = None,
         cross_domain_router: Optional[CrossDomainRouter] = None,
+        brain: Optional[BrainStore] = None,
+        org_brain: Optional[BrainStore] = None,
     ) -> None:
         self.namespace = namespace
         self.conversation = conversation_memory
@@ -92,6 +97,8 @@ class UnifiedMemoryManager:
         self.config = config or MemoryConfig()
         self._assembler = ContextAssembler(self.config)
         self._cross_domain_router = cross_domain_router
+        self.brain = brain
+        self.org_brain = org_brain
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     # ------------------------------------------------------------------
@@ -151,17 +158,20 @@ class UnifiedMemoryManager:
         episodic_task = self._get_episodic_warnings(query)
         skills_task = self._get_relevant_skills(query)
         conversation_task = self._get_conversation(user_id, session_id)
+        brain_task = self._get_brain_knowledge(query)
 
-        episodic_text, skills_text, conv_text = await asyncio.gather(
+        episodic_text, skills_text, conv_text, brain_text = await asyncio.gather(
             episodic_task,
             skills_task,
             conversation_task,
+            brain_task,
         )
 
         return self._assembler.assemble(
             episodic_warnings=episodic_text,
             relevant_skills=skills_text,
             conversation=conv_text,
+            semantic_knowledge=brain_text,
         )
 
     async def record_interaction(
@@ -319,6 +329,42 @@ class UnifiedMemoryManager:
             self.logger.warning("Conversation retrieval failed: %s", exc)
             return ""
 
+    async def _get_brain_knowledge(self, query: str) -> str:
+        """Retrieve distilled knowledge from the agent's brain wiki (FEAT-390).
+
+        Queries ``brain`` and, when configured, ``org_brain`` in sequence
+        (both fast, in-process SQLite reads); non-empty results are joined
+        with a blank-line separator. Any failure — or no brain configured
+        at all — degrades to an empty string; this must never raise or
+        delay the surrounding ``asyncio.gather``.
+
+        Args:
+            query: Current user query.
+
+        Returns:
+            Packed brain-knowledge text, or ``""`` when unavailable.
+        """
+        if self.brain is None:
+            return ""
+
+        parts: list[str] = []
+        try:
+            agent_result = await self.brain.search(query)
+            if agent_result:
+                parts.append(agent_result)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Brain retrieval failed: %s", exc)
+
+        if self.org_brain is not None:
+            try:
+                org_result = await self.org_brain.search(query)
+                if org_result:
+                    parts.append(org_result)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Org-brain retrieval failed: %s", exc)
+
+        return "\n\n".join(parts)
+
     async def _record_episodic(
         self,
         query: str,
@@ -365,6 +411,8 @@ class UnifiedMemoryManager:
                 ("episodic", self.episodic),
                 ("skills", self.skills),
                 ("conversation", self.conversation),
+                ("brain", self.brain),
+                ("org_brain", self.org_brain),
             ]
             if obj is not None
         ]
