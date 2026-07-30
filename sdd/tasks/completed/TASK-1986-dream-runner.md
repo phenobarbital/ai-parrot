@@ -241,10 +241,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-30
+**Notes**: Implemented `DreamCycleRunner` (`parrot/memory/dream/runner.py`)
+per spec §2 Overview: `_collect` filters `get_recent(since=state.last_run)`
+by (`importance>=threshold` OR `lesson_learned`) AND not already
+`consolidated_into`, sorted **ascending** by `created_at` (a deliberate
+implementation detail — see Deviations); `_cluster` embeds
+`situation + lesson_learned` via the store's `_embedding` provider
+(greedy single-pass, cosine >= 0.75, first episode = centroid) or falls
+back to `(category, sorted related_tools)` grouping; `_distill` makes one
+LLM call per group via `AbstractClient.ask(structured_output=
+DistilledKnowledge)` (same extraction idiom as `ReflectionEngine`,
+verified against `reflection.py` before writing) with a deterministic
+heuristic fallback when no `llm_client` is configured; `_archive` calls
+`brain.remember()` and aborts the cycle cleanly (watermark untouched) if
+it raises; `_mark` calls the TASK-1985 `mark_consolidated()`; `_promote`
+copies to `org_brain` once `reinforcement_counts[page_id] >=
+org_promotion_cycles`. Confidence < 0.3 forces `category="note"`. 14 new
+unit tests pass covering collect eligibility/watermark/consolidated-skip,
+embedding + fallback clustering, group cap, LLM JSON contract + malformed
+JSON skip + heuristic fallback + low-confidence override, idempotent
+double-run, watermark advance, promotion after N cycles, and clean abort
+on archive failure. `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The spec's watermark rule ("advances to the
+`created_at` of the newest **consolidated** episode... so the excess is
+picked up next cycle") only holds correctly if excess/deferred groups are
+never *older* than the watermark advanced from processed groups —
+otherwise a deferred-but-older episode would fall outside next cycle's
+`since` filter and be silently lost. Backend `get_recent()` returns
+episodes newest-first (DESC), so `_collect` explicitly re-sorts the
+eligible episodes **ascending** by `created_at` before clustering/capping,
+guaranteeing capped/deferred groups are always the newest ones (i.e.
+always newer than the watermark advanced from the processed, older
+groups). This is an implementation detail filling a gap the spec doesn't
+spell out explicitly, not a behavioral deviation from the stated
+acceptance criteria — `test_group_cap_and_watermark`-equivalent coverage
+(`TestCluster::test_group_cap_defers_excess`,
+`TestCycle::test_watermark_advances_to_newest_consolidated`) passes.
