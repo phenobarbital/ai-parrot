@@ -13,12 +13,14 @@ from .models import (
     load_state,
     save_state,
 )
+from .runner import DreamCycleRunner
 
 __all__ = [
     "BrainStore",
     "DistilledKnowledge",
     "DreamConfig",
     "DreamCycleReport",
+    "DreamCycleRunner",
     "DreamState",
     "load_state",
     "save_state",
