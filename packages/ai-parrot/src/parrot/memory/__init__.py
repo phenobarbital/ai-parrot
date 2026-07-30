@@ -1,13 +1,24 @@
-from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
-from .mem import InMemoryConversation
-from .redis import RedisConversation
-from .file import FileConversationMemory
-from .agent import AnswerMemory, AgentMemory
+from .abstract import ConversationHistory, ConversationMemory, ConversationTurn
+from .agent import AgentMemory, AnswerMemory
+from .dream import (
+    BrainStore,
+    DistilledKnowledge,
+    DreamConfig,
+    DreamCycleReport,
+    DreamCycleRunner,
+    DreamScheduler,
+    DreamState,
+    load_state,
+    save_state,
+)
 from .episodic import (
     EpisodicMemoryMixin,
     EpisodicMemoryStore,
     EpisodicMemoryToolkit,
 )
+from .file import FileConversationMemory
+from .mem import InMemoryConversation
+from .redis import RedisConversation
 from .unified import (
     ContextAssembler,
     LongTermMemoryMixin,
@@ -16,22 +27,30 @@ from .unified import (
     UnifiedMemoryManager,
 )
 
-
 __all__ = [
-    "ConversationMemory",
-    "ConversationHistory",
-    "ConversationTurn",
-    "InMemoryConversation",
-    "FileConversationMemory",
-    "RedisConversation",
-    "AnswerMemory",
     "AgentMemory",
+    "AnswerMemory",
+    "BrainStore",
+    "ContextAssembler",
+    "ConversationHistory",
+    "ConversationMemory",
+    "ConversationTurn",
+    "DistilledKnowledge",
+    "DreamConfig",
+    "DreamCycleReport",
+    "DreamCycleRunner",
+    "DreamScheduler",
+    "DreamState",
     "EpisodicMemoryMixin",
     "EpisodicMemoryStore",
     "EpisodicMemoryToolkit",
-    "ContextAssembler",
+    "FileConversationMemory",
+    "InMemoryConversation",
     "LongTermMemoryMixin",
     "MemoryConfig",
     "MemoryContext",
+    "RedisConversation",
     "UnifiedMemoryManager",
+    "load_state",
+    "save_state",
 ]
