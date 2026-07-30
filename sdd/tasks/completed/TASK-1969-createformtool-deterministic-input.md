@@ -287,10 +287,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-07-30
+**Notes**: Extended `CreateFormInput` with optional `schema`, `sections`,
+`fields` fields (kept the field name `schema` verbatim per the spec's
+"Known Risks" guidance — verified via a quick throwaway script that Pydantic
+v2 only emits a `UserWarning` on class definition, not an error, and no
+test filter turns warnings into failures); made `prompt` optional. Added
+deterministic branching at the top of `_execute()` (both-provided /
+neither-provided validation, then delegation to a new private
+`_execute_from_schema()` helper that mirrors the LLM path's `ToolResult`
+shape, `FormValidator.check_schema()` call, and `persist`/registry
+behavior). `_execute_from_schema()` defaults `title` to `form_id or "Form"`
+for the `sections`/`fields` paths since `CreateFormInput` has no dedicated
+top-level `title` field — `FormSchema.title` is required and
+`assemble_from_sections`/`assemble_from_fields` don't invent one on their
+own (by design — not in TASK-1968 scope to change). Added
+`self._assembler = FormAssembler()` in `__init__`. Created 8 unit tests in
+`test_create_form_deterministic.py` (7 from the task's Test Specification
+plus one extra `test_prompt_unchanged_uses_llm_path` verifying backward
+compatibility against the existing LLM mock pattern from
+`test_create_form_tool.py`). All 8 new tests pass; full existing
+`test_create_form_tool.py` suite (59 tests) still passes unchanged. Ran
+the whole `tests/unit/` directory (1270 tests): 14 pre-existing failures
+confirmed unrelated to this change (verified by stashing my diff and
+re-running the same failing tests against the pre-TASK-1969 commit — same
+failures, in unrelated modules: controls registry, venue service, core
+models, field helpers). `ruff check` on the modified file shows only the
+same 4 pre-existing `BLE001`/`G201` findings that existed in the file
+before this task (verified against `git show HEAD~2:...create_form.py`),
+plus one new occurrence of the same established `except Exception` pattern
+in the new `_execute_from_schema()` method, consistent with surrounding
+code; the import-sort finding was fixed via `ruff check --fix`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
