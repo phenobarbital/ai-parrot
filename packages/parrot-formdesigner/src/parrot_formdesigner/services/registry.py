@@ -665,19 +665,56 @@ class FormRegistry:
         async with self._lock:
             return list(self._forms.get(resolved, {}).keys())
 
-    async def contains(self, form_id: str, *, tenant: str | None = None) -> bool:
+    async def contains(
+        self,
+        form_id: str,
+        *,
+        tenant: str | None = None,
+        include_storage: bool = False,
+    ) -> bool:
         """Check if a form is registered under a specific tenant.
+
+        By default this is an in-memory lookup only.  Pass
+        ``include_storage=True`` to also probe the persistence backend — the
+        in-memory cache is hydrated per tenant (see :meth:`load_from_storage`),
+        so a persisted form belonging to a tenant that has not been hydrated
+        yet is invisible to the memory-only check.  Callers that use the answer
+        to decide whether creating a form would *clobber* an existing one MUST
+        pass ``include_storage=True``: ``PostgresFormStorage.save`` upserts
+        (``ON CONFLICT ... DO UPDATE``) and would silently overwrite.
+
+        A storage error is treated as "cannot prove absence" and returns
+        ``True`` — refusing to create is safer than overwriting.
 
         Args:
             form_id: Form identifier to check.
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
+            include_storage: Also query the storage backend when the form is
+                not in memory.
 
         Returns:
-            True if the form is registered under the resolved tenant.
+            True if the form is registered under the resolved tenant (or, with
+            ``include_storage=True``, persisted under it).
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            return form_id in self._forms.get(resolved, {})
+            if form_id in self._forms.get(resolved, {}):
+                return True
+
+        if not include_storage or self._storage is None:
+            return False
+
+        try:
+            return await self._storage.load(form_id, tenant=resolved) is not None
+        except Exception as exc:
+            self.logger.warning(
+                "contains(%s, tenant=%s): storage probe failed, assuming the "
+                "form exists to avoid an overwrite: %s",
+                form_id,
+                resolved,
+                exc,
+            )
+            return True
 
     async def clear(self, *, tenant: str | None = None) -> None:
         """Clear all registered forms for a specific tenant only.
