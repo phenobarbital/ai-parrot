@@ -7,10 +7,21 @@ effects.
 
 from __future__ import annotations
 
+import re
+import uuid
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import web
+
+
+#: Accepted shape for a ``form_id`` supplied by a client. Deliberately
+#: narrower than "any string": form ids are interpolated into URLs
+#: (``/api/v1/forms/{form_id}``) and used as storage keys, so slashes,
+#: spaces, dots and path traversal sequences are rejected up-front.
+#: Anchored with ``\Z`` rather than ``$`` — ``$`` also matches just before a
+#: trailing newline, which would let ``"my-form\n"`` through.
+FORM_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 
 
 def _get_request_tenant(request: "web.Request") -> str | None:
@@ -99,6 +110,47 @@ def _loc_to_str(value: object) -> str | None:
     if not value:
         return None
     return str(value)
+
+
+def is_valid_form_id(value: object) -> bool:
+    """Return ``True`` when ``value`` is a safe, URL-embeddable form id.
+
+    Args:
+        value: Candidate form id (any type — non-strings return ``False``).
+
+    Returns:
+        ``True`` if the value matches :data:`FORM_ID_RE`.
+    """
+    return isinstance(value, str) and bool(FORM_ID_RE.match(value))
+
+
+def slugify_form_id(text: str) -> str:
+    """Derive a URL-safe ``form_id`` slug from free-form text.
+
+    Mirrors ``parrot_formdesigner.tools.create_form._slugify`` so the
+    manual (no-LLM) creation path and the natural-language path produce
+    ids of the same shape. Falls back to a random slug when ``text``
+    contains no usable characters.
+
+    Examples:
+        ``"Store Visit 2026"`` → ``"store-visit-2026"``
+        ``"¿Encuesta?"`` → ``"encuesta"``
+        ``"!!!"`` → ``"form-1a2b3c4d"``
+
+    Args:
+        text: Arbitrary human-entered text (typically the form title).
+
+    Returns:
+        A lowercase hyphenated slug of at most 50 characters, guaranteed
+        to match :data:`FORM_ID_RE`.
+    """
+    slug = text.lower().strip()
+    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = re.sub(r"[\s-]+", "-", slug).strip("-")
+    slug = slug[:50].strip("-")
+    if not is_valid_form_id(slug):
+        return f"form-{uuid.uuid4().hex[:8]}"
+    return slug
 
 
 def _bump_version(version: str) -> str:

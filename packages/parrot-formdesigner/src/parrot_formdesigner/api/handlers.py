@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import TYPE_CHECKING, get_args
 
 from aiohttp import web
@@ -25,7 +26,14 @@ from ..services.csrf import issue_form_csrf_token, validate_form_csrf_token
 from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
-from ._utils import _bump_version, _deep_merge, _loc_to_str
+from ._utils import (
+    FORM_ID_RE,
+    _bump_version,
+    _deep_merge,
+    _loc_to_str,
+    is_valid_form_id,
+    slugify_form_id,
+)
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -72,6 +80,21 @@ class FormAPIHandler:
             but never blocks requests. Set to ``True`` only when nav-auth
             policies are fully configured. Consistent with ``Policy.enforcing=False``.
     """
+
+    #: ``FormSchema`` keys the manual creation path owns — a client cannot set
+    #: them through ``POST /forms``. Everything else in the body is passed
+    #: through to ``FormSchema.model_validate``.
+    _BLANK_FORM_RESERVED_KEYS = frozenset(
+        {
+            "prompt",
+            "form_id",
+            "title",
+            "version",
+            "published_version",
+            "created_at",
+            "tenant",
+        }
+    )
 
     def __init__(
         self,
@@ -743,9 +766,70 @@ class FormAPIHandler:
         )
 
     async def create_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms — Create a form from a natural language prompt."""
+        """POST /api/v1/forms — Create a form, with or without an LLM.
+
+        Two mutually exclusive modes, selected by the presence of ``prompt``
+        in the request body:
+
+        **Natural language** (``{"prompt": "..."}``) — delegates to
+        ``CreateFormTool``; requires a configured LLM client (503 otherwise).
+        Returns ``200`` with ``{"form_id", "title", "url"}``.
+
+        **Manual / blank** (no ``prompt``) — the form-builder path. Builds a
+        ``FormSchema`` straight from the body with no LLM involved, so a
+        "New form" button can POST an empty body and immediately start
+        adding controls via ``PATCH /forms/{form_id}/operations``. Returns
+        ``201`` with the full ``FormSchema`` JSON (mirroring ``clone_form``).
+
+        Manual-mode body (all keys optional):
+            form_id (str): Explicit id. Must match ``FORM_ID_RE``. When
+                omitted it is derived from ``title``, with a random suffix
+                appended if that slug is already taken.
+            title (str | dict): Form title. Defaults to ``"Untitled Form"``.
+            sections (list): Sections to seed. When the key is absent, a
+                single empty section (``section_id="section_1"``) is created
+                so ``add_field`` has a target. Pass ``[]`` explicitly for a
+                form with no sections at all.
+            Any other ``FormSchema`` field (``description``, ``form_type``,
+                ``metadata``, ``meta``, ``submit``, ``cancel_allowed``,
+                ``events``, ``is_public``, ``product_bindings``) is honoured.
+
+        ``version`` is always ``"1.0"``, ``published_version`` is always
+        ``None`` (publishing goes through ``POST /forms/{id}/publish``), and
+        ``tenant`` is taken from the session — never from the body.
+
+        Returns:
+            ``200``/``201`` on success; ``400`` on a malformed body or
+            invalid ``form_id``; ``409`` when the id is taken; ``422`` on
+            schema validation errors; ``503`` when ``prompt`` was sent but
+            no LLM client is configured.
+        """
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "create_form")
+
+        # An empty body is a valid "give me a blank form" request, so read the
+        # raw payload instead of letting request.json() raise on b"".
+        raw = (await request.text()).strip()
+        if raw:
+            try:
+                body = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                return JSONResponse({"error": "Invalid JSON body"}, status=400)
+        else:
+            body = {}
+
+        if not isinstance(body, dict):
+            return JSONResponse(
+                {"error": "Request body must be a JSON object"}, status=400
+            )
+
+        # Mode selection is by KEY PRESENCE, not truthiness: a caller that sent
+        # "prompt" clearly wanted the LLM path, so an empty/null prompt stays
+        # the 400 it has always been instead of silently creating a blank form.
+        if "prompt" not in body:
+            # Manual (no-LLM) form-builder path.
+            return await self._create_blank_form(request, body)
+
         # _create_tool was initialised with the client available at construction
         # time. Check its client directly rather than calling _get_llm_client()
         # again, so the guard accurately reflects the tool's actual state.
@@ -754,10 +838,6 @@ class FormAPIHandler:
                 {"error": "No LLM client configured for form creation"},
                 status=503,
             )
-        try:
-            body = await request.json()
-        except (json.JSONDecodeError, ValueError):
-            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         prompt = body.get("prompt")
         if not prompt:
@@ -792,6 +872,119 @@ class FormAPIHandler:
             "title": title,
             "url": f"{prefix}/forms/{form_id}",
         })
+
+    async def _create_blank_form(
+        self, request: web.Request, body: dict
+    ) -> web.Response:
+        """Create a form from an explicit (possibly empty) body — no LLM.
+
+        Backs the manual branch of :meth:`create_form`. Separated so the
+        natural-language path stays readable and so the no-LLM contract can
+        be unit-tested without a client.
+
+        Args:
+            request: Incoming HTTP request (session provides the tenant).
+            body: Already-parsed JSON object (``{}`` for a blank form).
+
+        Returns:
+            ``201`` with the full ``FormSchema`` JSON on success; ``400`` on
+            an invalid ``form_id``; ``409`` when the id is taken; ``422`` on
+            schema validation failure.
+        """
+        tenant = self._get_tenant(request)
+        title = body.get("title") or "Untitled Form"
+
+        explicit_id = body.get("form_id")
+        if explicit_id is not None:
+            if not is_valid_form_id(explicit_id):
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"Invalid form_id {explicit_id!r}: must match "
+                            f"{FORM_ID_RE.pattern}"
+                        )
+                    },
+                    status=400,
+                )
+            form_id = explicit_id
+            # include_storage=True: a persisted form under a not-yet-hydrated
+            # tenant is absent from memory, and storage.save() upserts — so a
+            # memory-only check would let creation overwrite it.
+            if await self.registry.contains(
+                form_id, tenant=tenant, include_storage=True
+            ):
+                return JSONResponse(
+                    {"error": f"Form '{form_id}' already exists"}, status=409
+                )
+        else:
+            # Derived id: never 409 on a plain "New form" click — a taken
+            # slug gets a random suffix instead of rejecting the request.
+            form_id = slugify_form_id(_loc_to_str(title) or "form")
+            if await self.registry.contains(
+                form_id, tenant=tenant, include_storage=True
+            ):
+                form_id = f"{form_id[:50]}-{uuid.uuid4().hex[:6]}"
+
+        payload = {
+            key: value
+            for key, value in body.items()
+            if key not in self._BLANK_FORM_RESERVED_KEYS
+        }
+        payload["form_id"] = form_id
+        payload["title"] = title
+        payload["version"] = "1.0"
+        # published_version is immutable from the API surface — only
+        # FormVersionService.publish() may set it (parity with PUT/PATCH).
+        payload["published_version"] = None
+        # Tenant comes from the session, never from the body — prevents a
+        # caller from writing into another tenant's bucket.
+        payload["tenant"] = tenant
+        # A canvas needs at least one drop target for add_field. Callers that
+        # genuinely want zero sections pass "sections": [] explicitly.
+        if "sections" not in payload:
+            payload["sections"] = [{"section_id": "section_1", "fields": []}]
+
+        try:
+            form = FormSchema.model_validate(payload)
+        except ValidationError as exc:
+            return JSONResponse(
+                {"errors": exc.errors(include_url=False)}, status=422
+            )
+
+        schema_errors = self.validator.check_schema(form)
+        if schema_errors:
+            return JSONResponse({"errors": schema_errors}, status=422)
+
+        await self.registry.register(
+            form,
+            persist=self.registry.has_storage,
+            overwrite=False,
+            tenant=tenant,
+        )
+
+        # register(overwrite=False) is a silent no-op when the id was taken
+        # between the check above and this call. Confirm OUR object won the
+        # race — otherwise we would return 201 describing a form that was
+        # never stored, and the client's subsequent /operations calls would
+        # edit somebody else's form.
+        stored = await self.registry.get(form_id, tenant=tenant)
+        if stored is not form:
+            self.logger.warning(
+                "Create lost a concurrent race for form '%s' (tenant=%s)",
+                form_id,
+                tenant,
+            )
+            return JSONResponse(
+                {"error": f"Form '{form_id}' already exists"}, status=409
+            )
+
+        self.logger.info(
+            "Created form '%s' manually (tenant=%s, sections=%d)",
+            form_id,
+            tenant,
+            len(form.sections),
+        )
+        return JSONResponse(form.model_dump(mode="json"), status=201)
 
     async def edit_form(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_id}/edit — Edit a form using natural language.

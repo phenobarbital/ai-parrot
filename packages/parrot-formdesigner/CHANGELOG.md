@@ -6,6 +6,34 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ### Added
 
+- **No-LLM form creation**: `POST /api/v1/forms` is now dual-mode. A body
+  carrying `prompt` keeps the existing natural-language path
+  (`CreateFormTool`, 503 without an LLM client); any other body — including
+  an empty one — builds the `FormSchema` directly with no LLM involved and
+  returns `201` with the full schema. This closes the gap that forced the
+  form builder to go through the LLM (or `from-db` / `clone`) just to get a
+  canvas to work on: a "New form" button can `POST /forms` with `{}` and
+  then add controls with `PATCH /forms/{form_id}/operations`.
+  - Blank forms are seeded with one empty section (`section_1`) so
+    `add_field` has a target; pass `"sections": []` for none.
+  - `form_id` is taken from the body when valid (`FORM_ID_RE`, `409` when
+    taken) or derived from `title`, with a random suffix on collision so
+    clicking "New" repeatedly never fails.
+  - `version` (`"1.0"`), `published_version` (`None`) and `tenant`
+    (session-derived) are handler-controlled and ignored from the body.
+  - Mode selection is by key *presence*: `{"prompt": ""}` keeps its historical
+    `400 prompt is required` instead of creating a blank form.
+  - Duplicate detection consults storage, not just memory, and a lost
+    creation race answers `409` rather than a `201` for a form that was
+    never stored.
+- **`FormRegistry.contains(..., include_storage=True)`**: opt-in storage probe
+  for the memory-only membership check. Needed because the in-memory cache is
+  hydrated per tenant while `PostgresFormStorage.save()` upserts
+  (`ON CONFLICT ... DO UPDATE`) — a memory-only check would let a "new" form
+  silently overwrite a persisted one belonging to a non-hydrated tenant. A
+  storage error returns `True` ("cannot prove absence") so the caller refuses
+  to create rather than overwriting.
+
 - **FEAT-188 — Form Lifecycle Events**: declarative interceptor hooks
   (`onBeforeOpen`, `onSchemaLoaded`, `onBeforeSubmit`, `onAfterSubmit`,
   `onError`) per form. Register async handlers via

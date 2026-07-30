@@ -205,6 +205,9 @@ def setup_form_api(
 
     # CRUD + listing
     app.router.add_get(f"{bp}/forms", _wrap_auth(handler.list_forms))
+    # Dual-mode: a body with "prompt" creates via LLM (503 without a client);
+    # any other body — including an empty one — creates the form directly from
+    # the payload, which is the no-LLM form-builder path.
     app.router.add_post(f"{bp}/forms", _wrap_auth(handler.create_form))
     app.router.add_post(f"{bp}/forms/from-db", _wrap_auth(handler.load_from_db))
     app.router.add_get(f"{bp}/forms/{{form_id}}", _wrap_auth(handler.get_form))
