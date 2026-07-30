@@ -32,7 +32,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches only dream/brain.py + wiki plane; shares no files with TASK-1985 (episodic backends) — the two can run in parallel after TASK-1983.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1984-brainstore.md"
+      "completed_at": "2026-07-30T18:11:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1984-brainstore.md"
     },
     {
       "id": "TASK-1985",
