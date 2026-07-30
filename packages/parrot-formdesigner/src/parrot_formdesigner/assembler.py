@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 def _slugify(text: str) -> str:
     """Convert text to a kebab-case slug suitable for form_id/section_id.
 
-    Mirrors ``_slugify`` in ``tools/create_form.py`` so deterministic and
-    LLM-generated forms produce identically-shaped IDs.
+    Shared by `tools/create_form.py` (re-exported from here) so
+    deterministic and LLM-generated forms produce identically-shaped IDs.
 
     Args:
         text: Input string (e.g. a form title).

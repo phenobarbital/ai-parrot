@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-import uuid
+import warnings
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -40,7 +40,7 @@ except ImportError as exc:
     raise ImportError(
         "parrot-formdesigner tools require the 'ai-parrot' package. " "Install it with: uv add ai-parrot"
     ) from exc
-from ..assembler import FormAssembler
+from ..assembler import FormAssembler, _slugify
 from ..core.schema import FormSchema
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
@@ -194,21 +194,6 @@ CRITICAL RULES:
 """
 
 
-def _slugify(text: str) -> str:
-    """Convert text to a slug suitable for form_id.
-
-    Args:
-        text: Input string.
-
-    Returns:
-        Lowercase slug with hyphens.
-    """
-    text = text.lower().strip()
-    text = re.sub(r"[^a-z0-9\s-]", "", text)
-    text = re.sub(r"[\s-]+", "-", text)
-    return text[:50] or f"form-{uuid.uuid4().hex[:8]}"
-
-
 def _extract_json(text: str) -> str:
     """Extract JSON from LLM response (handles markdown code blocks).
 
@@ -232,6 +217,24 @@ def _extract_json(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Input schema
 # ---------------------------------------------------------------------------
+
+# `schema` is a valid Pydantic v2 field name (v2 dropped the v1 reserved-name
+# restriction — see FEAT-388 spec's "Known Risks / Gotchas"), but Pydantic
+# still emits a UserWarning at class-definition time because the name
+# shadows BaseModel's deprecated v1 `.schema()` classmethod. Nothing in the
+# codebase calls `.schema()` on tool-arg instances (AbstractTool uses
+# `model_json_schema()` instead — see `parrot.tools.abstract`), so this
+# warning is suppressed rather than renaming the field: renaming to
+# `form_schema`/`alias="schema"` would change what `AbstractTool.execute()`
+# passes to `_execute()` (it calls `validated_args.model_dump()`, which
+# emits field names, not aliases), altering the tool's public argument
+# contract — an open design question left to a follow-up decision, not a
+# warning-suppression fix.
+warnings.filterwarnings(
+    "ignore",
+    message=r'Field name "schema" in "CreateFormInput" shadows an attribute',
+    category=UserWarning,
+)
 
 
 class CreateFormInput(BaseModel):
