@@ -332,6 +332,37 @@ class TestTee:
             _CODEC_REGISTRY.pop("always_lossy_test_3", None)
 
 
+class TestG3MinimalCap:
+    async def test_capped_columnar_compresses_losslessly_without_tee(
+        self, tmp_path, row_oriented_payload,
+    ):
+        # The scenario behind the runtime G3 warning: a tool configured
+        # columnar/NORMAL in a session with no tee. `_effective_level()`
+        # caps the level to MINIMAL — and now that the columnar codec
+        # honors MINIMAL as lossless, the result must actually be
+        # compressed (lossy=False, no tee needed) instead of warning and
+        # falling back to the original payload with `tee_failed`.
+        d = tmp_path / ".parrot"
+        d.mkdir()
+        (d / "compressors.toml").write_text(
+            '[compressor."*"]\ncodec = "columnar"\nlevel = "normal"\n'
+        )
+        stage = CompressionStage(
+            registry=CompressorRegistry.load(project_root=tmp_path),
+            router=BudgetRouter(),
+            tee=None,
+        )
+        out, meta = await stage.run(
+            "db_query", row_oriented_payload, status="success", metadata={},
+            return_direct=False,
+        )
+        assert "compression_skipped" not in meta
+        assert meta["_compressed"] is True
+        assert meta["compression_level"] == FilterLevel.MINIMAL.value
+        assert meta["compression_teed"] is False
+        assert "columns" in out
+
+
 class TestBudgetIntegration:
     async def test_budget_passthrough_returns_original(self, tmp_path):
         d = tmp_path / ".parrot"

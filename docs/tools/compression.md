@@ -35,7 +35,7 @@ names no longer repeat once per row). Measure, don't assume — see
 | Level | Behavior | Lossy? |
 |---|---|---|
 | `NONE` | Passthrough — compression never runs. | No |
-| `MINIMAL` | **Default when nothing is configured.** Lossless only: JSON separator compaction, null-key elision, exact sibling dedup. | No |
+| `MINIMAL` | **Default when nothing is configured.** Lossless only: JSON separator compaction, null-key elision, exact sibling dedup (`json_compact`); for `columnar`, the column split + constant factoring still run (only when every row has an identical key set — `row.get()` would conflate absent-with-null otherwise), an all-null column is factored into `constants` as `null` instead of dropped, and per-row null-key elision is skipped — the outcome is never lossy. | No |
 | `NORMAL` | Bounded lossy transformations: columnar splitting (row-oriented data), constant-column factoring, long-field clipping. Arms the [tee](#tee-recovery-flow) when anything is actually dropped. | Possibly |
 | `AGGRESSIVE` | Structural summary only — reserved for future codecs; no built-in codec currently emits an `AGGRESSIVE`-specific behavior beyond what `NORMAL` already does for `columnar`/`json_compact`. | Yes |
 
@@ -165,7 +165,13 @@ lost.
 **Degradation**: if no `WorkingMemoryToolkit` is registered, the tee is
 unavailable and (per the effective-level precedence above) `NORMAL`/
 `AGGRESSIVE` are capped to `MINIMAL` — nothing ever goes lossy without a
-recovery path.
+recovery path. Every codec honors `MINIMAL` as strictly lossless (for
+`columnar` this means: lossless column split + constant factoring only,
+no null elision of any kind), so a tee-less session still gets most of
+the byte savings silently instead of a G3 warning and a fallback to the
+uncompressed original. The runtime G3 guard in the stage remains as
+defense in depth for the case where a tee IS registered but a specific
+`store()` call fails at runtime.
 
 ## Extending it: third-party codecs and manifests
 
