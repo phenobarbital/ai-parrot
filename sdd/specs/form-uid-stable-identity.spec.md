@@ -131,10 +131,14 @@ class FormRegistry:
         """Lookup by form_uid (primary key)."""
 
     async def get_by_slug(self, form_id: str, *, tenant: str | None = None) -> FormSchema | None:
-        """Lookup by form_id slug (secondary index)."""
+        """Lookup by tenant_form_slug ({tenant}_{form_id}) secondary index."""
 
     async def list_form_uids(self, *, tenant: str | None = None) -> list[str]:
         """List all form_uids for a tenant."""
+
+    @staticmethod
+    def _make_slug_key(tenant: str, form_id: str) -> str:
+        """Build tenant_form_slug composite key: '{tenant}_{form_id}'."""
 
 # UUID validation helper
 def extract_form_uid(request: web.Request) -> str:
@@ -157,17 +161,34 @@ class FormAPIHandler:
 
 ### Module 2: FormRegistry — Reindex on form_uid
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/registry.py`
-- **Responsibility**: Change primary index to `form_uid`, add `_slug_index`,
-  implement `get_by_slug()` and `list_form_uids()`. Update `register()`,
-  `get()`, `unregister()`, `contains()`, `clone_form()`.
+- **Responsibility**: Change primary index to `form_uid`, add `_slug_index`
+  keyed by `tenant_form_slug` (`{tenant}_{form_id}`), implement `get_by_slug()`
+  and `list_form_uids()`. Enforce slug uniqueness per tenant on `register()`
+  (reject if `tenant_form_slug` already maps to a different `form_uid`).
+  Update `register()`, `get()`, `unregister()`, `contains()`, `clone_form()`.
 - **Depends on**: Module 1
 
-### Module 3: PostgresFormStorage — DDL migration and query updates
+### Module 3: PostgresFormStorage — DDL and query updates (greenfield)
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/storage.py`
-- **Responsibility**: Add `form_uid` column to DDL, change UNIQUE constraint to
-  `(form_uid, version)`, update all SQL queries to use `form_uid`. Add index
-  on `form_id` for slug search. Migration populates `form_uid` from existing `id`.
+- **Responsibility**: Update `_create_table_sql` for greenfield installs: add
+  `form_uid VARCHAR(36) NOT NULL` column, change UNIQUE constraint to
+  `(form_uid, version)`, add `UNIQUE(tenant, form_id, version)` for slug
+  uniqueness enforcement. Update all SQL queries (`_upsert_sql`, `_load_sql`,
+  `_list_sql`, `delete`) to use `form_uid`. Add `load_by_slug()` method.
 - **Depends on**: Module 1
+
+### Module 3b: Migration scripts
+- **Path**: `packages/parrot-formdesigner/migrations/`
+- **Responsibility**: Create migration artifacts:
+  (a) `001_add_form_uid.sql` — DDL migration for `form_schemas` table: add
+  `form_uid` column, populate from existing `id` UUID, add constraints/indexes.
+  (b) `002_add_form_uid_submissions.sql` — DDL migration for `form_data` table:
+  add `form_uid` column, backfill via JOIN to `form_schemas`, add index.
+  (c) `003_migrate_form_data.py` — Python migration script for any forms in
+  the in-memory registry or blob storage references that need `form_uid`
+  backfill. Produces a migration report of orphaned submissions (form deleted).
+  All SQL migrations must be idempotent (safe to re-run).
+- **Depends on**: Module 3
 
 ### Module 4: API Routes and Handlers — Path param and UUID validation
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py`,
@@ -214,8 +235,10 @@ class FormAPIHandler:
 - **Responsibility**: Update all test helpers/fixtures to include `form_uid`.
   Update API test URLs from `/{form_id}` to `/{form_uid}`. Add new tests
   for: blank form creation, slug search, UUID validation (400 on invalid),
-  form rename stability, registry dual-index, storage migration integrity.
-- **Depends on**: Module 1–9
+  form rename stability, registry dual-index with `tenant_form_slug`,
+  slug uniqueness per tenant enforcement, storage migration integrity,
+  migration script idempotency.
+- **Depends on**: Module 1–9, Module 3b
 
 ---
 
@@ -240,6 +263,12 @@ class FormAPIHandler:
 | `test_create_tool_refine_by_uid` | Module 6 | Refinement looks up existing form by `form_uid` |
 | `test_submission_stores_form_uid` | Module 7 | `FormSubmission` includes `form_uid` in saved data |
 | `test_blob_key_uses_form_uid` | Module 8 | `_build_key()` uses `form_uid` in path |
+| `test_registry_slug_unique_per_tenant` | Module 2 | Registering duplicate slug in same tenant raises error |
+| `test_registry_slug_allowed_across_tenants` | Module 2 | Same slug in different tenants is allowed |
+| `test_registry_tenant_form_slug_key` | Module 2 | `_make_slug_key()` produces `{tenant}_{form_id}` |
+| `test_migration_populates_form_uid` | Module 3b | Migration script populates `form_uid` from DB `id` |
+| `test_migration_idempotent` | Module 3b | Running migration twice produces same result |
+| `test_migration_orphan_report` | Module 3b | Orphaned submissions flagged with `form_uid = NULL` |
 
 ### Integration Tests
 
@@ -251,6 +280,9 @@ class FormAPIHandler:
 | `test_rename_form_stable_url` | Change `form_id` via PATCH, same `form_uid` URL still works |
 | `test_full_lifecycle_with_uid` | Create → edit → submit → retrieve, all by `form_uid` |
 | `test_clone_gets_new_uid` | Clone via API returns new `form_uid`, original unchanged |
+| `test_duplicate_slug_same_tenant_rejected` | `POST /forms/blank` with duplicate slug in same tenant returns 409 |
+| `test_same_slug_different_tenant_ok` | Same slug accepted across different tenants |
+| `test_migration_end_to_end` | Run migration scripts against seeded DB, verify all forms have `form_uid` |
 
 ### Test Data / Fixtures
 
@@ -283,13 +315,20 @@ def sample_form(sample_form_uid):
 - [ ] `POST /api/v1/forms/blank` creates empty form without LLM, returns `form_uid`
 - [ ] `GET /api/v1/forms?slug=<slug>` searches by slug
 - [ ] `PostgresFormStorage` uses `UNIQUE(form_uid, version)` constraint
+- [ ] `PostgresFormStorage` enforces `UNIQUE(tenant, form_id, version)` for slug uniqueness
+- [ ] `FormRegistry` uses `tenant_form_slug` (`{tenant}_{form_id}`) as slug index key
+- [ ] Duplicate slug in same tenant is rejected on `register()`
+- [ ] Same slug across different tenants is allowed
 - [ ] `FormSubmission` includes `form_uid` field
 - [ ] `BlobStorage` keys use `form_uid` in path
 - [ ] Renaming a form (`form_id` change) does not change its `form_uid` or break its URL
 - [ ] `CreateFormTool` generates and injects `form_uid`
 - [ ] All existing tests updated and passing
 - [ ] New tests for blank form, slug search, UUID validation, rename stability
-- [ ] SQL migration scripts populate `form_uid` from existing DB `id` UUID
+- [ ] Migration scripts in `packages/parrot-formdesigner/migrations/` for existing installs
+- [ ] SQL migration populates `form_uid` from existing DB `id` UUID
+- [ ] Submissions backfill migration with orphan report
+- [ ] Migration scripts are idempotent (safe to re-run)
 
 ---
 
@@ -424,7 +463,9 @@ class _ManagerBackedBlobStorage(AbstractBlobStorage):  # line 180
 - ~~`FormSchema.form_uid`~~ — does not exist. Must be added.
 - ~~`FormRegistry.get_by_slug()`~~ — does not exist. Must be created.
 - ~~`FormRegistry.get_by_uid()`~~ — does not exist. `get()` will be repurposed.
-- ~~`FormRegistry._slug_index`~~ — does not exist. Must be created.
+- ~~`FormRegistry._slug_index`~~ — does not exist. Must be created (keyed by `tenant_form_slug`).
+- ~~`FormRegistry._make_slug_key()`~~ — does not exist. Must be created.
+- ~~`packages/parrot-formdesigner/migrations/`~~ — directory does not exist. Must be created.
 - ~~`FormRegistry.list_form_uids()`~~ — does not exist. Must be created.
 - ~~`FormSubmission.form_uid`~~ — does not exist. Must be added.
 - ~~`BlobMetadata.form_uid`~~ — does not exist. Must be added.
@@ -466,11 +507,20 @@ No new external dependencies required.
 
 ## 8. Open Questions
 
-- [ ] Should `form_id` (slug) be globally unique per tenant, or can two forms
-  share the same slug? Current design allows slug collisions since `form_uid`
-  is the primary key. — *Owner: Jesus*
-- [ ] Should the SQL migration be a separate migration script or embedded in
-  `_create_table_sql` with idempotent checks? — *Owner: Jesus*
+- [x] Should `form_id` (slug) be globally unique per tenant, or can two forms
+  share the same slug? — *Resolved*: Slugs must be unique per tenant (preserves
+  current semantics). Additionally, introduce a `tenant_form_slug` composite key
+  (`{tenant}_{form_id}`) for unambiguous cross-tenant slug resolution. The
+  `_slug_index` in FormRegistry uses `tenant_form_slug` as key. The DB gets a
+  `UNIQUE(tenant, form_id, version)` constraint (or indexed `tenant_form_slug`
+  column) to enforce this at the storage layer.
+- [x] Should the SQL migration be a separate migration script or embedded in
+  `_create_table_sql` with idempotent checks? — *Resolved*: Separate migration
+  artifacts. Create migration scripts in `packages/parrot-formdesigner/migrations/`
+  covering: (a) SQL DDL migration for `form_schemas` and `form_data` tables,
+  (b) data migration to populate `form_uid` from existing DB `id` UUID and
+  backfill `form_uid` in submissions. `_create_table_sql` is updated for new
+  tables only (greenfield installs); existing installs run the migration scripts.
 
 ---
 
@@ -478,8 +528,9 @@ No new external dependencies required.
 
 - **Isolation**: per-spec (all tasks run sequentially in one worktree).
 - **Parallelism**: Module 1 (FormSchema) must be done first. Modules 3, 7, 8
-  can run in parallel after Module 2. Module 4 and 5 can run in parallel after
-  Module 2. Module 10 (tests) runs last.
+  can run in parallel after Module 2. Module 3b (migrations) depends on Module 3.
+  Module 4 and 5 can run in parallel after Module 2. Module 10 (tests) runs last
+  and depends on all modules including 3b.
 - **Cross-feature dependencies**: FEAT-388 (deterministic CreateFormTool) is in
   a separate worktree and not yet merged. This spec does not depend on it, but
   FEAT-388's FormAssembler will need a follow-up patch to generate `form_uid`
@@ -492,3 +543,4 @@ No new external dependencies required.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-30 | Jesus Lara | Initial draft |
+| 0.2 | 2026-07-30 | Jesus Lara | Resolve open questions: slug uniqueness via tenant_form_slug, separate migration artifacts |
