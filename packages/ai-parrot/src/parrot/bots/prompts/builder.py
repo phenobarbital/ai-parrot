@@ -11,11 +11,24 @@ See spec: sdd/specs/composable-prompt-layer.spec.md (Section 3.3)
 """
 from __future__ import annotations
 
+import re
+import textwrap
 from copy import deepcopy
 from typing import Optional, Dict, Any, List
 
 from .layers import PromptLayer, LayerPriority, RenderPhase
 from .segments import CacheableSegment
+
+_BLANK_LINE_RUN = re.compile(r'\n{3,}')
+_TRAILING_WS = re.compile(r'[ \t]+$', re.MULTILINE)
+
+
+def _normalize_whitespace(text: str) -> str:
+    """Dedent, strip trailing whitespace per line, collapse blank-line runs."""
+    text = textwrap.dedent(text)
+    text = _TRAILING_WS.sub('', text)
+    text = _BLANK_LINE_RUN.sub('\n\n', text)
+    return text.strip()
 
 
 class PromptBuilder:
@@ -263,9 +276,9 @@ $rationale
         for layer in sorted_layers:
             rendered = layer.render(context)
             if rendered is not None:
-                stripped = rendered.strip()
-                if stripped:
-                    parts.append(stripped)
+                normalized = _normalize_whitespace(rendered)
+                if normalized:
+                    parts.append(normalized)
 
         return "\n\n".join(parts)
 
@@ -296,11 +309,11 @@ $rationale
         for layer in sorted_layers:
             rendered = layer.render(context)
             if rendered is not None:
-                stripped = rendered.strip()
-                if stripped:
+                normalized = _normalize_whitespace(rendered)
+                if normalized:
                     segments.append(
                         CacheableSegment(
-                            text=stripped,
+                            text=normalized,
                             cacheable=bool(layer.cacheable),
                         )
                     )

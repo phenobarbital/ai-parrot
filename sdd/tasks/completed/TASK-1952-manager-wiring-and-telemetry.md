@@ -333,21 +333,76 @@ def test_result_hooks_contract_untouched():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**:
 
-**Completed by**: sdd-worker (autonomous, Sonnet) + adversarial code-review fix pass
-**Date**: 2026-07-28
-**Notes**: Implemented per spec in the FEAT-380 worktree
-(`feat-FEAT-380-tool-result-compression`); acceptance criteria verified via
-`pytest packages/ai-parrot/tests/tools/compression/` (144 passed, 6 skipped)
-and, where applicable, `cargo test` in `codec-rs/` (12 passed). An
-adversarial code review (Claude subagent + Codex, independently verified)
-found 3 BLOCKING and 4 SHOULD-FIX cross-cutting issues after all 15 tasks
-landed; all were fixed in a follow-up commit
-(`fix(tool-result-compression): resolve adversarial code-review findings`)
-with 9 additional regression tests, re-verified green.
+- Wired `CompressionStage` into `ToolManager.__init__` (registry+router
+  constructed once per manager; a malformed manifest/unknown codec now
+  raises at construction) and into `execute_tool()` at the verified
+  `manager.py:1490-1506` fragment, exactly after `_postprocess_result()` /
+  `_run_result_hooks()` (Q1) — the `forbidden` early return and the
+  `status == "error"` raise are byte-identical, untouched.
+  `meta.update(comp_meta)` merges the stage's output into the SAME dict
+  object as `result.metadata` (when `result` is a `ToolResult`), so the
+  `_compressed` marker travels with it.
+- Extended `AfterToolCallEvent` with 5 new defaulted fields
+  (`compression_codec`, `compression_level`, `result_size_bytes_original`,
+  `compression_duration_ms`, `compression_teed`) and re-documented
+  `result_size_bytes` as post-compression.
+- `clone()`: `_compression_registry` and `_compression_stage._registry` are
+  now shared by reference; each clone's own `__init__` already gives it a
+  fresh `BudgetRouter`/`CircuitBreaker` (metrics never shared). Docstring
+  list extended.
+- **Discovered-and-fixed wiring gap** (within this task's own file scope):
+  `CompressorRegistry.load()` at manager construction validates the core
+  manifest's `codec = "json_compact"` entry against `known_codecs()`, but
+  nothing previously imported `compression.codecs` to trigger the
+  `@register_codec` side effect before that validation ran — every
+  `ToolManager()` construction would have raised `ValueError: Unknown codec
+  'json_compact'`. Fixed with one import line in `manager.py`:
+  `from .compression import codecs as _compression_codecs  # noqa: F401`.
+- **Known limitation, flagged rather than silently expanded scope**: this
+  task's file list is `manager.py` + `events/tool.py` only. The actual
+  `AfterToolCallEvent(...)` emission call lives in `abstract.py:738`
+  (`AbstractTool.execute()`), which fires at `tool.execute()` time —
+  strictly BEFORE `ToolManager.execute_tool()`'s compression stage runs
+  (`ToolManager` has no `EventEmitterMixin`/`self.events` of its own; only
+  `AbstractTool` instances do). So the *specific event object* emitted for
+  a compressed call still carries its original defaults
+  (`compression_codec=""`, pre-compression `result_size_bytes`, etc.) — the
+  new fields exist, are documented, and default safely, but populating
+  them at the actual emission site would require editing `abstract.py`,
+  which is outside this task's authorized scope. The compression metadata
+  itself IS correctly computed and merged into `ToolResult.metadata` by
+  this task's `manager.py` wiring (verified by
+  `test_after_tool_call_event_fields`, which captures the metadata dict via
+  a result hook rather than asserting on the abstract.py-emitted event
+  instance). Recommend a follow-up task if event-instance-level population
+  is required by an OTel/observability consumer.
+- The task's own `Test Specification` scaffold for
+  `test_after_tool_call_event_new_fields_have_defaults` omitted
+  `trace_context`, a required (no-default) field on the `LifecycleEvent`
+  base — verified via `dataclasses.fields()` and every other
+  `AfterToolCallEvent(...)` call site in the repo. Corrected in the actual
+  test per the anti-hallucination protocol.
+- Verification: full compression suite 74/74 green;
+  `test_toolmanager_load_tool.py` + `test_toolmanager_confirmation.py` +
+  `test_tool_manager_mcp.py` + `tests/tools/test_grants.py` 62/64 (2
+  pre-existing failures, `web_scraping_tool`/`web_scraping` — traced to a
+  missing compiled Cython `.so` for an unrelated toolkit in this worktree,
+  confirmed present on the unmodified `dev` checkout too); broader
+  `tests/tools/` (excl. compression) 603/654, with the identical 51
+  failures reproduced byte-for-byte via `git stash` on the pre-TASK-1952
+  code (databasequery/dataset-manager fixtures, unrelated to compression).
+  `tests/manager/` has a pre-existing pytest-collection
+  `ModuleNotFoundError: parrot.tools.pythonrepl` (namespace-package import
+  ordering under pytest, unrelated to compression) — reproduced identically
+  via `git stash` on the pre-TASK-1952 code. `ruff check manager.py` has
+  one pre-existing `F821 Undefined name 'AbstractToolkit'` finding (a stale
+  forward-ref type hint predating this task, confirmed via `git stash`);
+  `events/tool.py` lints clean.
 
-**Deviations from spec**: none beyond what each task's own file documents
-(e.g. TASK-1959's latency recalibration, TASK-1961's truncation
-demotion) — see the code-review fix commit for the post-hoc corrections
-above.
+**Deviations from spec**: `AfterToolCallEvent` field *population at the
+actual emission site* is not wired (see "Known limitation" above) —
+everything else in scope is implemented as specified.

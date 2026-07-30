@@ -4,6 +4,16 @@ Run agent tools (and Agents-as-Tools) inside Docker containers instead of
 in-process, and declare per-agent which tools/toolkits are dispatched
 remotely and through which executor.
 
+> **Note:** `PythonREPLTool` also has its own, separate isolation layer —
+> generated code runs in a dedicated, resource-limited worker **process**
+> per tool instance (rlimits, deadline enforcement, no in-process fallback),
+> independent of whether an `executor=` is configured here. See
+> [`docs/repl-worker-sandbox.md`](../repl-worker-sandbox.md) for that model.
+> The two layers are complementary: `executor=` relocates the *whole* tool
+> call to another runtime (this document); the worker-process model
+> describes what happens *within* `PythonREPLTool._execute()` regardless of
+> where it runs.
+
 ## Why
 
 Tools like shell wrappers, `PythonREPLTool`, or third-party API toolkits run

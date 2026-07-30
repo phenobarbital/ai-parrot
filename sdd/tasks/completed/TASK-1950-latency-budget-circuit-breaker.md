@@ -282,21 +282,24 @@ class TestCircuitBreaker:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `budget.py`: `Route` enum, `estimate_size()` (cheap
+sample-first-row-and-multiply heuristic, never fully walks a large list),
+`is_rust_available()` (cached `lazy_import("parrot_codec")` detection,
+absence logged once at debug), `CircuitBreaker` (per-codec rolling window
+of 100 calls OR 60s, whichever first; 3 consecutive over-budget windows
+opens the breaker; half-open single-probe re-arm after a 5-minute
+cooldown; `threading.Lock`-guarded state; rolling p99 exposed for
+TASK-1957), and `BudgetRouter` wrapping both with all spec-default,
+overridable thresholds. Added a time-based `_expire_if_stale` path (called
+from both `is_open()` and `record()`) so a window can close purely on
+elapsed time with zero calls without advancing the consecutive-over-budget
+count, matching the "empty window" constraint. Exported `Route` and
+`BudgetRouter` from `compression/__init__.py`. 29 new tests pass (routing
+table, no-rust passthrough, breaker degrade/rearm/reopen, per-codec
+isolation, empty-window handling, p99 exposure, size estimation without
+full serialization); every test runs with the Rust extension absent. Full
+compression suite: 47/47 green. `ruff check` clean.
 
-**Completed by**: sdd-worker (autonomous, Sonnet) + adversarial code-review fix pass
-**Date**: 2026-07-28
-**Notes**: Implemented per spec in the FEAT-380 worktree
-(`feat-FEAT-380-tool-result-compression`); acceptance criteria verified via
-`pytest packages/ai-parrot/tests/tools/compression/` (144 passed, 6 skipped)
-and, where applicable, `cargo test` in `codec-rs/` (12 passed). An
-adversarial code review (Claude subagent + Codex, independently verified)
-found 3 BLOCKING and 4 SHOULD-FIX cross-cutting issues after all 15 tasks
-landed; all were fixed in a follow-up commit
-(`fix(tool-result-compression): resolve adversarial code-review findings`)
-with 9 additional regression tests, re-verified green.
-
-**Deviations from spec**: none beyond what each task's own file documents
-(e.g. TASK-1959's latency recalibration, TASK-1961's truncation
-demotion) — see the code-review fix commit for the post-hoc corrections
-above.
+**Deviations from spec**: none

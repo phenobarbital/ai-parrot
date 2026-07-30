@@ -265,21 +265,63 @@ def test_result_hooks_contract_untouched():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: sdd-worker (autonomous, Sonnet) + adversarial code-review fix pass
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
 **Date**: 2026-07-28
-**Notes**: Implemented per spec in the FEAT-380 worktree
-(`feat-FEAT-380-tool-result-compression`); acceptance criteria verified via
-`pytest packages/ai-parrot/tests/tools/compression/` (144 passed, 6 skipped)
-and, where applicable, `cargo test` in `codec-rs/` (12 passed). An
-adversarial code review (Claude subagent + Codex, independently verified)
-found 3 BLOCKING and 4 SHOULD-FIX cross-cutting issues after all 15 tasks
-landed; all were fixed in a follow-up commit
-(`fix(tool-result-compression): resolve adversarial code-review findings`)
-with 9 additional regression tests, re-verified green.
+**Notes**:
 
-**Deviations from spec**: none beyond what each task's own file documents
-(e.g. TASK-1959's latency recalibration, TASK-1961's truncation
-demotion) — see the code-review fix commit for the post-hoc corrections
-above.
+- Implemented all five spec Sec 4 integration tests against a real
+  `ToolManager`, real `WorkingMemoryToolkit`, real codecs — no mocked
+  stage. Extended `conftest.py` (TASK-1954's file) with
+  `tool_manager_with_wm` / `tool_manager_without_wm` / `compressors_toml`
+  fixtures plus three test tools: `DQExecuteTool` (registered under the
+  VERIFIED real prefixed name `dq_execute_database_query` —
+  `databasequery/toolkit.py:147`'s `tool_prefix="dq"` — so it matches the
+  core manifest's columnar/NORMAL/tee=true entry with zero registry
+  overrides), `PlainBulkyTool`, and `BulkyToolkit` (both tool routes, G1).
+- **One acceptance criterion I could NOT prove literally as scaffolded,
+  and corrected instead of faking**: the given test spec's
+  `evt.compression_codec == "columnar"` assertion (reading compression
+  fields off the captured `AfterToolCallEvent` instance) is impossible to
+  satisfy given the CURRENT implementation — TASK-1952's own Completion
+  Note already documents that `AfterToolCallEvent` fires inside
+  `AbstractTool.execute()`, strictly BEFORE `ToolManager`'s compression
+  stage runs (`ToolManager` has no event emitter of its own), so the
+  event instance's `compression_*` fields stay at their zero-value
+  defaults. Verified this is still true (`evt.compression_codec == ""`,
+  asserted explicitly with the reasoning inlined as a comment) and proved
+  the REAL compression metrics via a result-hook-captured metadata dict
+  instead (`meta["compression_codec"] == "columnar"`,
+  `meta["result_size_bytes"] < meta["result_size_bytes_original"]`) — the
+  same substitution TASK-1952's own tests use. Lifecycle-event emission
+  itself IS verified (the event fires, `evt.tool_name` is correct),
+  proving the "AfterToolCallEvent emitted" half of the criterion; only the
+  literal field-population half is a known, pre-existing, documented gap.
+- Corrected several other stale references in the task's own test
+  scaffold (anti-hallucination protocol): `WorkingMemoryToolkit.get_result()`
+  returns `raw_data`, not `raw` (verified: `working_memory/tool.py:277`);
+  `ToolManager` has no `get_toolkit()` method — used the
+  `_find_working_memory_toolkit()` helper TASK-1953 added instead; the
+  tool name is `dq_execute_database_query`, not the spec's illustrative
+  `execute_database_query` (same correction as TASK-1954).
+- `test_e2e_kill_switch_restores_behavior` captures its baseline
+  dynamically via `await tool._execute()` (bypassing the whole pipeline),
+  never a hardcoded literal — verified `disabled == raw_baseline` and
+  `disabled != enabled`.
+- G1 grep test (`test_compression_logic_exists_in_exactly_one_place`)
+  uses an ABSOLUTE path derived from `Path(__file__).resolve().parents[3]`
+  rather than a CWD-relative string literal — the relative-path pattern
+  used in the task's own scaffold (and in TASK-1961's equivalent test)
+  turned out to be fragile in this environment: it failed intermittently
+  depending on how pytest was invoked, even though `os.getcwd()` looked
+  correct from a plain shell. The absolute-path form is deterministic
+  regardless of invocation style.
+- Verification: full compression suite 128/128 green (6 benchmark tests
+  correctly skipped, TASK-1959); broader `tests/tools/` unchanged at 51
+  pre-existing failures; `ruff check` clean on both new/modified files
+  (one pre-existing, untouched `F401` in `test_stage.py` from TASK-1953,
+  unrelated).
+
+**Deviations from spec**: `evt.compression_codec` cannot be asserted
+non-empty on the captured `AfterToolCallEvent` instance — see the
+detailed note above; the underlying compression behavior IS verified,
+just via metadata rather than the event instance's fields.

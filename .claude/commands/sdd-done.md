@@ -1,5 +1,5 @@
 ---
-model: haiku
+model: haiku-4-5
 description: Verify that a feature's tasks were implemented, push the branch, optionally resolve the linked Jira ticket, and clean up the worktree.
 ---
 

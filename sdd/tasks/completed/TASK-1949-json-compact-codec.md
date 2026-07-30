@@ -257,21 +257,20 @@ class TestJsonCompact:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `JsonCompactCodec` (`codecs/json_compact.py`) with
+the three lossless transformations: separator-compact serialization via
+`datamodel.parsers.json.json_encoder`, recursive null-key elision
+(all-null dict guard keeps `{}` rather than dropping the parent key),
+and exact sibling dedup (`{"_repeat": N, "_value": v}` marker for runs
+>= 2, with a guard against re-collapsing an already-marker-shaped value).
+`FilterLevel.NONE` and non-serializable payloads both passthrough with
+`lossy=False`; any internal exception is caught and also passes through
+(defense in depth). `codecs/__init__.py` now imports the module so
+`@register_codec` fires on package import. 15 new tests pass (round-trip
+losslessness, 100x determinism, non-serializable passthrough, dedup
+marker shape, dedup-disabled param, marker-recollapse guard, always
+`lossy=False`); full compression suite is 29/29 green. `ruff check` clean.
 
-**Completed by**: sdd-worker (autonomous, Sonnet) + adversarial code-review fix pass
-**Date**: 2026-07-28
-**Notes**: Implemented per spec in the FEAT-380 worktree
-(`feat-FEAT-380-tool-result-compression`); acceptance criteria verified via
-`pytest packages/ai-parrot/tests/tools/compression/` (144 passed, 6 skipped)
-and, where applicable, `cargo test` in `codec-rs/` (12 passed). An
-adversarial code review (Claude subagent + Codex, independently verified)
-found 3 BLOCKING and 4 SHOULD-FIX cross-cutting issues after all 15 tasks
-landed; all were fixed in a follow-up commit
-(`fix(tool-result-compression): resolve adversarial code-review findings`)
-with 9 additional regression tests, re-verified green.
-
-**Deviations from spec**: none beyond what each task's own file documents
-(e.g. TASK-1959's latency recalibration, TASK-1961's truncation
-demotion) — see the code-review fix commit for the post-hoc corrections
-above.
+**Deviations from spec**: none

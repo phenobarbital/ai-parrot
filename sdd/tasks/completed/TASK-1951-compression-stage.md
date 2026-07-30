@@ -341,21 +341,27 @@ class TestMetrics:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-07-27
+**Notes**: Implemented `CompressionStage` (`stage.py`) exactly per the
+given pattern: three entry gates (kill switch, `return_direct`,
+`_compressed` marker) each short-circuit with a `compression_skipped`
+reason before the tee callback could ever be invoked; 5-rule effective-level
+precedence (`_effective_level`, with rules 3+4 delegated to
+`CompressorRegistry.resolve()`'s exact>glob>wildcard match, rule 5 as a
+defensive MINIMAL fallback for an entry-less registry); codec dispatch via
+`BudgetRouter.route()` → inline / `run_in_executor` (via `functools.partial`)
+/ passthrough; the whole dispatch wrapped in `try/except/finally` so a
+broken codec always returns the original payload with a warning and
+`BudgetRouter.record()` always fires. Metadata dict built fresh (never
+mutates the caller's `metadata`) with all 7 documented keys plus
+`compression_tee_key` when teed. Did NOT touch `manager.py` or the events
+package (verified out of scope). Exported `CompressionStage` from
+`compression/__init__.py`. 36 new tests pass (gates never invoking tee,
+all 5 precedence rules incl. override-outranks-error-status, codec
+exception safety, record-called-on-exception, unknown-codec passthrough via
+a hand-built unvalidated registry, tee invocation on lossy outcomes with and
+without a callback, budget passthrough/executor routes). Full compression
+suite: 65/65 green. `ruff check` clean.
 
-**Completed by**: sdd-worker (autonomous, Sonnet) + adversarial code-review fix pass
-**Date**: 2026-07-28
-**Notes**: Implemented per spec in the FEAT-380 worktree
-(`feat-FEAT-380-tool-result-compression`); acceptance criteria verified via
-`pytest packages/ai-parrot/tests/tools/compression/` (144 passed, 6 skipped)
-and, where applicable, `cargo test` in `codec-rs/` (12 passed). An
-adversarial code review (Claude subagent + Codex, independently verified)
-found 3 BLOCKING and 4 SHOULD-FIX cross-cutting issues after all 15 tasks
-landed; all were fixed in a follow-up commit
-(`fix(tool-result-compression): resolve adversarial code-review findings`)
-with 9 additional regression tests, re-verified green.
-
-**Deviations from spec**: none beyond what each task's own file documents
-(e.g. TASK-1959's latency recalibration, TASK-1961's truncation
-demotion) — see the code-review fix commit for the post-hoc corrections
-above.
+**Deviations from spec**: none
