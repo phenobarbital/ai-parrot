@@ -251,10 +251,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-07-30
+**Notes**: Added `add_field_from_schema(section_id, field_schema, position=None)`
+and `add_section_from_schema(section_schema, position=None)` to `EditToolkit`,
+following the exact pattern given in the task: instantiate `FormAssembler()`
+inline, catch `(ValidationError, ValueError)` and return an error dict, then
+delegate to the existing `add_field()`/`add_section()` via
+`validated.model_dump()`. Added `from ..assembler import FormAssembler`.
+Created 7 unit tests in `test_edit_toolkit_schema.py` matching the task's Test
+Specification exactly. All 7 pass; the pre-existing 65 tests across
+`tests/test_edit_toolkit.py` and `tests/unit/test_edit_toolkit_rules.py` still
+pass unchanged. `ruff check` on `edit_toolkit.py` shows the same 11
+pre-existing findings (10 `BLE001` + 1 `RUF059`) that existed before this
+task (verified via `git show HEAD~4:...edit_toolkit.py`) — no new findings.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Because `EditToolkit` (`AbstractToolkit`) auto-discovers every public async
+method as an LLM-callable tool, the two new methods are automatically
+exposed as `add_field_from_schema`/`add_section_from_schema` tools — this
+is the intended behavior per the task's own Context ("so that LLM agents
+... can add fields and sections from raw JSON dicts"), not a deviation.
+This surfaced that `tests/test_edit_toolkit.py::TestEditToolkitTools::
+test_tool_definitions_count` and `::test_tool_definitions_has_required_names`
+hard-code a stale tool count/name set (documented as "15 tools") that was
+**already wrong before this task** — the toolkit actually exposes 20 tools
+today (5 dependency-rule tools — `add_dependency`, `update_dependency`,
+`remove_dependency`, `add_post_dependency`, `remove_post_dependency` — were
+added by a prior feature without updating this test). Verified via
+`git stash` that both tests fail identically on the pre-TASK-1970 commit.
+Since `test_edit_toolkit.py` is not in this task's declared file list and
+the failure is pre-existing/unrelated, I left it untouched per the File
+Fidelity rule and reverted an earlier over-eager fix attempt. Flagging here
+for a follow-up task to refresh that test against the toolkit's actual
+tool surface (now 22 with this task's 2 additions).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

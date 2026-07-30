@@ -52,7 +52,7 @@
       "feature_id": "FEAT-388",
       "feature": "deterministic-creationformtool",
       "spec": "sdd/specs/deterministic-creationformtool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Parallel with TASK-1969 — modifies edit_toolkit.py (no overlap with create_form.py)",
       "assigned_to": null,
       "started_at": "2026-07-30T00:53:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1970-edit-toolkit-schema-methods.md"
+      "completed_at": "2026-07-30T01:21:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1970-edit-toolkit-schema-methods.md"
     },
     {
       "id": "TASK-1971",
