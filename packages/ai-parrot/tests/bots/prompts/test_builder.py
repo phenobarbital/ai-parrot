@@ -410,3 +410,84 @@ class TestEdgeCases:
         })
         assert "fact " in prompt
         assert "<knowledge_context>" in prompt
+
+
+# ── Whitespace normalization tests ────────────────────────────
+
+
+class TestWhitespaceNormalization:
+
+    def test_trailing_whitespace_stripped_per_line(self):
+        layer = PromptLayer(
+            name="ws", priority=10,
+            template="<a>line one   \nline two\t\nline three</a>",
+        )
+        builder = PromptBuilder([layer])
+        result = builder.build({})
+        assert "line one   \n" not in result
+        assert "line two\t\n" not in result
+        assert "line one\nline two\nline three" in result
+
+    def test_blank_line_runs_collapsed(self):
+        layer = PromptLayer(
+            name="ws", priority=10,
+            template="<a>para one\n\n\n\n\npara two</a>",
+        )
+        builder = PromptBuilder([layer])
+        result = builder.build({})
+        assert "\n\n\n" not in result
+        assert "para one\n\npara two" in result
+
+    def test_single_blank_line_preserved(self):
+        layer = PromptLayer(
+            name="ws", priority=10,
+            template="<a>para one\n\npara two</a>",
+        )
+        builder = PromptBuilder([layer])
+        result = builder.build({})
+        assert "para one\n\npara two" in result
+
+    def test_common_indentation_removed(self):
+        template = "    <a>\n        indented content\n    </a>"
+        layer = PromptLayer(name="ws", priority=10, template=template)
+        builder = PromptBuilder([layer])
+        result = builder.build({})
+        assert "<a>\n    indented content\n</a>" == result
+
+    def test_yaml_style_backstory_dedented(self):
+        backstory = (
+            "    You are an expert in AI.\n"
+            "    You specialize in NLP.\n"
+            "\n"
+            "    Your main goal is to help users."
+        )
+        layer = PromptLayer(
+            name="identity", priority=10,
+            phase=RenderPhase.CONFIGURE,
+            template="<agent>\n$backstory\n</agent>",
+        )
+        builder = PromptBuilder([layer])
+        builder.configure({"backstory": backstory})
+        result = builder.build({})
+        assert "    You are" not in result
+        assert "You are an expert in AI." in result
+
+    def test_normalization_applies_to_segments(self):
+        layer = PromptLayer(
+            name="ws", priority=10,
+            template="<a>line one   \n\n\n\nline two</a>",
+        )
+        builder = PromptBuilder([layer], prompt_caching=True)
+        segments = builder.build_segments({})
+        assert len(segments) == 1
+        text = segments[0].text
+        assert "line one   \n" not in text
+        assert "\n\n\n" not in text
+
+    def test_normalization_preserves_content(self):
+        builder = PromptBuilder.default()
+        builder.configure(CONFIGURE_CTX)
+        prompt = builder.build(REQUEST_CTX)
+        assert "TestBot" in prompt
+        assert "helpful assistant" in prompt
+        assert "Some knowledge facts" in prompt
