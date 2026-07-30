@@ -14,7 +14,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all others depend on this",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1972-formschema-add-form-uid.md"
+      "completed_at": "2026-07-30T15:02:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1972-formschema-add-form-uid.md"
     },
     {
       "id": "TASK-1973",
