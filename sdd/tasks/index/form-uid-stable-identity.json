@@ -19,7 +19,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task \u2014 all others depend on this",
+      "parallelism_notes": "Foundation task — all others depend on this",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
       "completed_at": "2026-07-30T15:02:00+00:00",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Must complete before API/UI route tasks",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1973-registry-reindex-form-uid.md"
+      "completed_at": "2026-07-30T21:09:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1973-registry-reindex-form-uid.md"
     },
     {
       "id": "TASK-1974",
@@ -59,7 +59,7 @@
         "TASK-1972"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of registry changes \u2014 only needs FormSchema.form_uid",
+      "parallelism_notes": "Independent of registry changes — only needs FormSchema.form_uid",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
       "completed_at": null,
@@ -88,7 +88,7 @@
     {
       "id": "TASK-1976",
       "slug": "api-routes-form-uid",
-      "title": "API routes and handlers \u2014 path param + UUID validation",
+      "title": "API routes and handlers — path param + UUID validation",
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
@@ -141,7 +141,7 @@
         "TASK-1973"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of API/storage \u2014 only needs FormSchema + Registry",
+      "parallelism_notes": "Independent of API/storage — only needs FormSchema + Registry",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
       "completed_at": null,
@@ -161,7 +161,7 @@
         "TASK-1972"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent \u2014 only needs FormSchema.form_uid to exist",
+      "parallelism_notes": "Independent — only needs FormSchema.form_uid to exist",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
       "completed_at": null,
@@ -181,7 +181,7 @@
         "TASK-1972"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent \u2014 only needs FormSchema.form_uid to exist",
+      "parallelism_notes": "Independent — only needs FormSchema.form_uid to exist",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
       "completed_at": null,
@@ -201,7 +201,7 @@
         "TASK-1973"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of API handlers \u2014 only needs registry on form_uid",
+      "parallelism_notes": "Independent of API handlers — only needs registry on form_uid",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
       "completed_at": null,
@@ -210,7 +210,7 @@
     {
       "id": "TASK-1982",
       "slug": "tests-form-uid",
-      "title": "Tests \u2014 update existing and add new",
+      "title": "Tests — update existing and add new",
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
@@ -231,7 +231,7 @@
         "TASK-1990"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task \u2014 validates all modules work together",
+      "parallelism_notes": "Final task — validates all modules work together",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
       "completed_at": null,
@@ -240,7 +240,7 @@
     {
       "id": "TASK-1990",
       "slug": "remaining-registry-consumers-form-uid",
-      "title": "Remaining FormRegistry/storage consumers \u2014 form_uid only",
+      "title": "Remaining FormRegistry/storage consumers — form_uid only",
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
