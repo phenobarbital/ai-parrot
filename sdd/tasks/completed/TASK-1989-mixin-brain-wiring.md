@@ -116,7 +116,13 @@ class UnifiedMemoryManager:
     async def cleanup(self) -> None                   # :116
 
 # packages/ai-parrot/src/parrot/memory/episodic/models.py:214
-class MemoryNamespace(BaseModel):  # org_id + agent_id available for wiki names
+class MemoryNamespace(BaseModel):
+    # STALE CONTRACT FIX (verified 2026-07-31): this model has NO `org_id`
+    # field. Fields are: tenant_id, agent_id, user_id, session_id, room_id,
+    # crew_id (models.py:227-244). Use `namespace.tenant_id` (described as
+    # "Multi-tenant isolation") as the org identifier for `org-<org_id>`
+    # wiki naming — it is the closest existing field to the brainstorm's
+    # "org_id" concept.
 ```
 
 ### Does NOT Exist
@@ -215,10 +221,61 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Read `mixin.py` fully and `parrot/memory/__init__.py` before
+editing, per the task's own instruction. `LongTermMemoryMixin` gained the
+six brain flags plus `_dream_scheduler` runtime state. Extended
+`_configure_long_term_memory()` additively: `MemoryConfig(...,
+enable_brain=self.enable_brain)` is now constructed with the flag from
+the start (not mutated after construction) so its conditional
+sum-to-one/rebalance validator (TASK-1988) actually runs correctly. Brain
+setup lives in its own `_configure_brain()` helper with an isolated
+try/except — deliberately NOT inside the outer method's single
+try/except — so a brain-construction failure can never wipe out an
+otherwise-successful episodic/skill/conversation manager (verified with
+`test_brain_disabled_noop`, which also configures the base manager
+successfully). `_configure_brain()` resolves `brain_storage_dir` (default
+`~/.parrot/brains/<agent_id>`, per spec §8's open-question decision),
+builds `BrainStore`(+ org `BrainStore` when `brain_promote_to_org`),
+`DreamConfig` from the flags, `DreamCycleRunner` (LLM client via
+defensive `getattr(self, "_llm", None)` — never assumed), and starts a
+`DreamScheduler` against `<dir>/dream_state.json`; returns `(None, None)`
+when there's no episodic store to consolidate from (brain requires one).
+Added `_cleanup_long_term_memory()` (new method — `UnifiedMemoryManager.
+cleanup()` was verified to be dead code today, called from nowhere in
+`parrot/bots/`, so there was nothing existing to "mirror"; this new hook
+stops the scheduler then calls `manager.cleanup()`, ready for a bot's
+`cleanup()` to invoke — wiring `AbstractBot` itself is explicitly out of
+scope). `parrot/memory/dream/__init__.py` already exported the full
+final API from TASK-1986/1987 — no change needed. `parrot/memory/
+__init__.py` already re-exports `.unified`/`.episodic` eagerly, so added
+a matching `.dream` re-export block (confirmed lightweight: no agent-
+framework imports pulled in). 5 new integration tests in
+`tests/memory/dream/test_integration.py` cover end-to-end (record →
+`run_now()` → page in brain wiki + `SQLiteWikiStore` interop read →
+`get_context_for_query` surfaces it in `semantic_knowledge`), crash
+recovery (rerun with a never-persisted `DreamState` after simulating a
+crash — no duplicate pages since the mark lives durably on the episodic
+backend, independent of the lost watermark), a dedicated brain/wiki.db
+interop check, and mixin lifecycle (`enable_brain=False` no-op vs.
+`enable_brain=True` start+stop). All tests deliberately avoid a real
+embedding provider (FAISS backend with `embedding_provider=None`) so
+clustering uses the category+tools fallback and no sentence-transformers
+model download is ever triggered — genuinely offline. Full regression:
+`pytest tests/memory/dream/ packages/ai-parrot/tests/memory/unified/
+packages/ai-parrot/tests/memory/episodic/` → 223 passed. `ruff check`
+clean on every file I touched.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: (1) Fixed a stale Codebase Contract entry in
+this task file itself before implementing (Cardinal Rule 4): the
+contract's `MemoryNamespace` note claimed "org_id + agent_id available
+for wiki names", but `MemoryNamespace` (models.py:214) has no `org_id`
+field — only `tenant_id`, `agent_id`, `user_id`, `session_id`, `room_id`,
+`crew_id`. Used `namespace.tenant_id` (described as "Multi-tenant
+isolation") as the org identifier for `org-<org_id>` wiki naming — the
+closest existing field to the brainstorm's "org_id" concept. (2)
+`UnifiedMemoryManager.cleanup()` was verified unused by any caller in
+`parrot/bots/` today (see Notes) — `_cleanup_long_term_memory()` is a
+genuinely new hook rather than an extension of an existing invoked path,
+since there was no existing invocation to mirror.
