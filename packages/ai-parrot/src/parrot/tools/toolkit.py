@@ -168,6 +168,13 @@ class ToolkitTool(AbstractTool):
             Method result (possibly transformed by ``_post_execute``).
         """
         toolkit = getattr(self.bound_method, "__self__", None)
+
+        # FEAT-391: lazy resource acquisition for the toolkit (opt-in via
+        # auto_open), before the _pre_execute() hook so the toolkit's
+        # resources are available to it.
+        if isinstance(toolkit, AbstractToolkit) and toolkit.auto_open:
+            await toolkit._ensure_open()
+
         if isinstance(toolkit, AbstractToolkit):
             # Rebuild hook_kwargs: tool params + the permission context that
             # AbstractTool.execute() popped from kwargs before validation.
@@ -293,6 +300,13 @@ class AbstractToolkit(ABC):
     #: Override per-instance via the ``credential_provider`` constructor kwarg.
     credential_provider: Optional[str] = None
 
+    #: FEAT-391: opt-in lazy resource lifecycle. When True, the first tool
+    #: call on this toolkit triggers ``_ensure_open()`` (which calls
+    #: ``_open()`` at most once) before ``_pre_execute()`` runs. Toolkits
+    #: that don't manage external resources leave this False (default) —
+    #: fully backward compatible, no automatic I/O.
+    auto_open: bool = False
+
     def __init__(self, **kwargs):
         """
         Initialize the toolkit.
@@ -334,6 +348,11 @@ class AbstractToolkit(ABC):
         self._tools_generated = False
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        # FEAT-391: per-instance lazy-resource-lifecycle flag. Must be set
+        # here (not as a class attribute) so it is never shared across
+        # instances of the same toolkit class.
+        self._opened: bool = False
+
     async def start(self) -> None:
         """
         Optional startup logic for the toolkit.
@@ -354,6 +373,41 @@ class AbstractToolkit(ABC):
         Override in subclasses if needed.
         """
         pass
+
+    # ── FEAT-391: per-tool connection lifecycle ─────────────────────────────
+
+    async def _open(self) -> None:
+        """
+        Acquire external resources (connections, sessions, pools).
+
+        No-op by default. Subclasses that need a resource lifecycle
+        (database connections, HTTP sessions, broker channels, etc.)
+        should override this. Called at most once per instance lifetime
+        via :meth:`_ensure_open`, and only when ``auto_open`` is True.
+        """
+
+    async def _close(self) -> None:
+        """
+        Release external resources acquired by :meth:`_open`.
+
+        No-op by default. Subclasses that override :meth:`_open` should
+        override this to release the corresponding resources. Always
+        resets ``_opened`` to ``False`` so the toolkit can be re-opened
+        (via :meth:`_ensure_open`) afterwards.
+        """
+        self._opened = False
+
+    async def _ensure_open(self) -> None:
+        """
+        Idempotent gate that calls :meth:`_open` at most once.
+
+        If ``_open()`` raises, ``_opened`` is left ``False`` so the next
+        call retries resource acquisition (recovers from transient
+        errors automatically).
+        """
+        if not self._opened:
+            await self._open()
+            self._opened = True
 
     async def _prepare_kwargs(self, tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Hook called before argument filtering, allowing subclasses to inject or modify kwargs.
