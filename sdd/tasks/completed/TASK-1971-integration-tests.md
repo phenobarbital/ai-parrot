@@ -59,10 +59,20 @@ from parrot_formdesigner.services.validators import FormValidator  # services/va
 
 ### Existing Signatures to Use
 ```python
-# packages/parrot-formdesigner/src/parrot_formdesigner/renderers/jsonschema.py
-class JsonSchemaRenderer:
-    def render(self, form: FormSchema, **kwargs) -> dict:
-        # Renders FormSchema → JSON Schema dict (draft-07 with x- extensions)
+# packages/parrot-formdesigner/src/parrot_formdesigner/renderers/jsonschema.py:112
+class JsonSchemaRenderer(AbstractFormRenderer):
+    async def render(
+        self,
+        form: FormSchema,
+        style: StyleSchema | None = None,
+        *,
+        locale: str = "en",
+        prefilled: dict[str, Any] | None = None,
+        errors: dict[str, str] | None = None,
+    ) -> RenderedForm:
+        # CORRECTED (was stale): render() is async and returns a RenderedForm
+        # (core/schema.py), not a dict. The JSON Schema dict is on
+        # RenderedForm.content — e.g. `(await renderer.render(form)).content["properties"]`.
 
 # packages/parrot-formdesigner/src/parrot_formdesigner/services/validators.py
 class FormValidator:
@@ -73,6 +83,10 @@ class FormValidator:
 ### Does NOT Exist
 - ~~`JsonSchemaRenderer.to_dict()`~~ — use `render()` method, not `to_dict`
 - ~~`FormValidator.validate()`~~ — use `check_schema()`, not `validate`
+- ~~`JsonSchemaRenderer.render()` returning a plain `dict` synchronously~~ — CORRECTED:
+  it is `async def render(...) -> RenderedForm`; call `await renderer.render(form)`
+  and read `.content` for the JSON Schema dict (verified at
+  `renderers/jsonschema.py:167`).
 
 ---
 
@@ -117,7 +131,8 @@ from parrot_formdesigner.services.validators import FormValidator
 
 
 class TestRoundtrip:
-    def test_jsonschema_roundtrip(self):
+    @pytest.mark.asyncio
+    async def test_jsonschema_roundtrip(self):
         """JSON Schema → assemble → render preserves field structure."""
         original = {
             "type": "object",
@@ -133,7 +148,9 @@ class TestRoundtrip:
         form = assembler.assemble(original, form_id="feedback")
 
         renderer = JsonSchemaRenderer()
-        rendered = renderer.render(form)
+        # CORRECTED: render() is async and returns a RenderedForm — see the
+        # Codebase Contract fix above (was documented as a sync dict-return).
+        rendered = (await renderer.render(form)).content
 
         assert "name" in rendered.get("properties", {})
         assert "email" in rendered.get("properties", {})
@@ -234,10 +251,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (session continuation)
+**Date**: 2026-07-30
+**Notes**: Created `test_deterministic_integration.py` exactly per the Test
+Specification (roundtrip, equivalence, end-to-end, validator-integration).
+Before implementing, verified the Codebase Contract against the actual
+source: `JsonSchemaRenderer.render()` is `async` and returns a
+`RenderedForm` (not a sync `dict`), so the contract's stale "Existing
+Signatures" and the Test Specification's `renderer.render(form)` call were
+corrected in-place to `(await renderer.render(form)).content` (this
+correction had already been applied to the task file and test draft in a
+prior session; verified accurate against `renderers/jsonschema.py:167` and
+adopted as-is). All other imports/signatures (`FormAssembler.assemble` /
+`assemble_from_fields`, `CreateFormTool.execute(schema=...)` via
+`AbstractTool.execute()` → `_execute()`, `EditToolkit.add_field_from_schema`,
+`FormValidator.check_schema`) were verified against source and matched the
+contract exactly.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+All 4 tests pass (`pytest packages/parrot-formdesigner/tests/unit/test_deterministic_integration.py -v`).
+Ran the full `packages/parrot-formdesigner/tests/unit/` suite (1267 passed,
+14 pre-existing failures in `controls/`, `test_core_models.py`,
+`test_field_helpers.py`, `test_init_imports_metadata_only.py`,
+`test_venue_service.py` — none of these files are touched by this feature
+branch per `git diff dev...HEAD --stat`, confirming the failures pre-date
+FEAT-388 and are unrelated).
 
-**Deviations from spec**: none | describe if any
+Note: this worktree's `parrot-formdesigner` editable install resolves to
+the main checkout, not the worktree — tests must be run with
+`PYTHONPATH="$(pwd)/packages/parrot-formdesigner/src:$PYTHONPATH"` prefixed
+to pick up the worktree's own source.
+
+**Deviations from spec**: none
