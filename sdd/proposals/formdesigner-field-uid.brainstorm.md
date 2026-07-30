@@ -80,6 +80,10 @@ Decisions locked during interactive discovery (4 rounds):
 - **Question bank**: bank entries are templates; every insertion into a form
   **mints a fresh `field_uid`** (bank's own `ReusableField.field_id` is already an
   unrelated minted UUID — see Code Context).
+- **Question bank rename** (refinement 2026-07-31): the bank's `field_id`
+  identifier — which has NO relation to `FormField.field_id` — is renamed to
+  **`question_id`** across model, DDL, SQL, and call sites, eliminating the
+  naming collision as part of the same clean break.
 - Clean break: no dual-routing, no deprecation shims, no backward-compatible
   payloads (consistent with FEAT-389's approved posture).
 
@@ -276,8 +280,15 @@ operation (new field + data migration) instead of an in-place edit.
   rename mid-session doesn't orphan saved answers, and maps back on read.
   (Flagged as open question — see below.)
 - **Question bank**: `resolve_ref` insertion path mints a fresh `field_uid` for
-  the inserted `FormField` (bank `ReusableField.field_id` — itself a minted
-  UUID, unrelated to `FormField.field_id` — is untouched).
+  the inserted `FormField`. The bank's own identifier is **renamed
+  `field_id` → `question_id`** end to end: `ReusableField.question_id`,
+  `ReusableFieldRef.question_id` (replacing `bank_field_id`), the
+  `question_bank` DDL column + `UNIQUE(question_id, tenant)`, all SQL
+  statements (`_INSERT_SQL`, `_SELECT_SQL`, `_SELECT_ALL_SQL`,
+  `_INCREMENT_SQL`), method parameters (`get_field(question_id)`,
+  `increment_usage(question_id, ...)`), and the in-memory fallback keys.
+  Method names themselves are unchanged. An idempotent
+  `ALTER TABLE ... RENAME COLUMN` migration covers existing installs.
 - **Storage/migration**: `form_schemas.schema_json` stays JSONB. Numbered,
   idempotent migration artifacts (FEAT-389 convention): SQL where columns are
   typed (`form_uid` VARCHAR(36) → UUID retrofit), plus a Python backfill that
@@ -317,8 +328,9 @@ operation (new field + data migration) instead of an in-place edit.
 - `formdesigner-field-uid`: stable UUID identity (`field_uid`, `section_uid`,
   `subsection_uid`) for all structural form elements, with validation-layer
   uniqueness, UID-addressed edit operations, UID-keyed rules and blob storage,
-  build-time `field_id → field_uid` rule resolution, and the `form_uid`
-  str → UUID type retrofit.
+  build-time `field_id → field_uid` rule resolution, the `form_uid`
+  str → UUID type retrofit, and the question-bank `field_id → question_id`
+  identifier rename (collision cleanup).
 
 ### Modified Capabilities
 - `form-uid-stable-identity` (FEAT-389): `form_uid` type changes `str → uuid.UUID`
@@ -348,7 +360,7 @@ operation (new field + data migration) instead of an in-place edit.
 | `services/rule_evaluator.py` | modifies | `_topo_order`/condition reads resolve UID → `field_id` for answers |
 | `services/blob_storage.py` | modifies | `BlobMetadata.field_uid`; `_build_key` uses `form_uid`/`field_uid` |
 | `services/partial_saves.py` | modifies | internal UID keying (open question 1) |
-| `services/question_bank.py` | modifies (light) | fresh `field_uid` minted on `resolve_ref` insertion |
+| `services/question_bank.py` | modifies | fresh `field_uid` minted on `resolve_ref` insertion; rename `field_id → question_id` (model, `ReusableFieldRef.bank_field_id → question_id`, DDL column + unique constraint, SQL, params) + idempotent column-rename migration |
 | `services/storage.py` + `migrations/` | modifies | `form_uid` column type retrofit; JSONB backfill script for element UIDs |
 | `services/submissions.py` | modifies (light) | `form_uid` type retrofit only; answer keying unchanged |
 | Renderers (`html5`, `adaptive_card`, `jsonschema`, `pdf`, `xforms`, `telegram`, `audio`) | unchanged / light | output names stay `field_id`; optional `data-field-uid` attribute; `RenderWarning` may carry UID |
@@ -562,9 +574,10 @@ from parrot_formdesigner.services.blob_storage import BlobMetadata
       (already drifted: missing `post_depends`, 10 FormSchema fields): mirror
       the UID change, or delete the fallback branch of the shim entirely?
       — *Owner: Jesus*
-- [ ] Question bank column `field_id` (a minted bank UUID, NOT a
-      FormField.field_id) — rename to `bank_field_id` in this clean break to
-      kill the naming collision, or leave as-is? — *Owner: Jesus*
+- [x] Question bank column `field_id` (a minted bank UUID, NOT a
+      FormField.field_id) — rename to kill the naming collision?
+      — *Owner: Jesus*: yes — rename to `question_id` (more descriptive than
+      `bank_field_id`) across model, ref, DDL, SQL, and params, in this spec.
 - [ ] Audio WS wire protocol: keep `field_id` keys in WS messages (answer
       payload semantics) with UID only in internal manifests — confirm.
       — *Owner: Jesus*
