@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime
+import asyncio
 import time
 import traceback
 from urllib.parse import urlparse, urlunparse
@@ -152,6 +153,11 @@ class AbstractTool(EventEmitterMixin, ABC):
     # agent (via ToolManager) stamps this flag on its tools when the agent is
     # created with ``enable_redaction=True``; unflagged agents skip scrubbing.
     enable_redaction: bool = False
+    # FEAT-391: opt-in lazy resource lifecycle. When True, execute() calls
+    # _ensure_open() (which calls _open() at most once) before the first
+    # _execute(). Tools that don't manage external resources leave this
+    # False (default) — fully backward compatible, no automatic I/O.
+    auto_open: bool = False
 
     def __init__(
         self,
@@ -219,6 +225,16 @@ class AbstractTool(EventEmitterMixin, ABC):
 
         # Initialize permission context (per-call, set in execute())
         self._current_pctx: Optional[Any] = None
+
+        # FEAT-391: per-instance lazy-resource-lifecycle flag. Must be set
+        # here (not as a class attribute) so it is never shared across
+        # instances of the same tool class.
+        self._opened: bool = False
+        # Guards _ensure_open() against a first-open race: two coroutines
+        # calling execute() concurrently on the same instance before either
+        # has set _opened=True must not both invoke _open(). asyncio.Lock()
+        # is safe to construct here without a running loop (3.10+).
+        self._open_lock: asyncio.Lock = asyncio.Lock()
 
         # Set up logging
         self.logger = logging.getLogger(
@@ -288,6 +304,55 @@ class AbstractTool(EventEmitterMixin, ABC):
         """
         clone_kwargs = self._get_clone_kwargs()
         return self.__class__(**clone_kwargs)
+
+    # ── FEAT-391: per-tool connection lifecycle ─────────────────────────────
+
+    async def _open(self) -> None:
+        """
+        Acquire external resources (connections, sessions, pools).
+
+        No-op by default. Subclasses that need a resource lifecycle
+        (database connections, HTTP sessions, broker channels, etc.)
+        should override this. Called at most once per instance lifetime
+        via :meth:`_ensure_open`, and only when ``auto_open`` is True.
+
+        If this raises after partially acquiring a resource, ``_opened``
+        stays ``False`` (see :meth:`_ensure_open`), so ``_close()`` will
+        NOT be invoked automatically for the partial state. Overrides that
+        can partially succeed before raising are responsible for releasing
+        whatever they already acquired before re-raising.
+        """
+
+    async def _close(self) -> None:
+        """
+        Release external resources acquired by :meth:`_open`.
+
+        No-op by default. Subclasses that override :meth:`_open` should
+        override this to release the corresponding resources. Always
+        resets ``_opened`` to ``False`` so the tool can be re-opened
+        (via :meth:`_ensure_open`) afterwards. Overrides MUST call
+        ``await super()._close()`` (or reset ``self._opened = False``
+        themselves) — otherwise the tool can never be re-opened.
+        """
+        self._opened = False
+
+    async def _ensure_open(self) -> None:
+        """
+        Idempotent gate that calls :meth:`_open` at most once.
+
+        Guarded by :attr:`_open_lock` so two coroutines racing into this
+        method concurrently (e.g. two tool calls fired in the same agent
+        turn) cannot both observe ``_opened is False`` and both invoke
+        :meth:`_open` (double-acquiring the underlying resource).
+
+        If ``_open()`` raises, ``_opened`` is left ``False`` so the next
+        call retries resource acquisition (recovers from transient
+        errors automatically).
+        """
+        async with self._open_lock:
+            if not self._opened:
+                await self._open()
+                self._opened = True
 
     @abstractmethod
     async def _execute(self, **kwargs) -> Any:
@@ -599,6 +664,16 @@ class AbstractTool(EventEmitterMixin, ABC):
 
         # ── Normal execution ─────────────────────────────────────────────────
         try:
+            # FEAT-391: lazy resource acquisition (opt-in via auto_open).
+            # Skipped when a remote executor is configured — _execute()
+            # runs inside the worker process in that case (see the
+            # `self.executor is not None` branch below), so opening
+            # resources here (the caller/local process) would be both
+            # pointless and wrong. The worker opens its own resources via
+            # run_envelope_inprocess() (executors/runner.py) instead.
+            if self.auto_open and self.executor is None:
+                await self._ensure_open()
+
             self.logger.info("Executing tool: %s", self.name)
 
             # Validate arguments

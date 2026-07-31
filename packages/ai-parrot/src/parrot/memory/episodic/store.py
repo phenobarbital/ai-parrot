@@ -574,6 +574,37 @@ class EpisodicMemoryStore:
 
     # ── Maintenance API ──
 
+    async def mark_consolidated(
+        self,
+        episode_ids: list[str],
+        page_id: str,
+    ) -> int:
+        """Mark episodes as consolidated into a dream-cycle brain wiki page.
+
+        Thin passthrough over ``backend.update_metadata()`` (FEAT-390).
+        Never deletes episodes — existing TTL/compaction keeps pruning.
+        Backends that do not implement ``update_metadata`` are tolerated
+        (watermark-only mode): this returns 0 with a WARNING logged.
+
+        Args:
+            episode_ids: Episode ids to mark as consolidated.
+            page_id: Brain wiki page id the episodes were distilled into.
+
+        Returns:
+            Number of episodes actually updated.
+        """
+        if not hasattr(self._backend, "update_metadata"):
+            logger.warning(
+                "Backend %s has no update_metadata(); mark_consolidated() "
+                "is a no-op (watermark-only mode)",
+                type(self._backend).__name__,
+            )
+            return 0
+
+        return await self._backend.update_metadata(
+            episode_ids, {"consolidated_into": page_id}
+        )
+
     async def cleanup_expired(self) -> int:
         """Delete expired episodes from the backend.
 

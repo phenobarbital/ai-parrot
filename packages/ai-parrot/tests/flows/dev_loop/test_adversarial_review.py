@@ -204,3 +204,15 @@ def test_adversarial_build_review_profile_defaults():
     assert profile.sandbox == "read-only"
     assert profile.subagent == "sdd-secondopinion"
     assert profile.review_scope == "uncommitted"
+
+
+def test_adversarial_profile_timeout_is_bounded():
+    """A read-only diff review must not get the 30-minute dev timeout.
+
+    The reviewer cannot run tests (nothing is writable in a read-only
+    codex sandbox, not even /tmp), so a long timeout only pays for
+    retry spirals when the model attempts a command anyway.
+    """
+    dispatcher = CodexAdversarialReviewDispatcher(dispatcher=_StubDispatcher(CodeReviewVerdict()))
+    profile = dispatcher.build_review_profile()
+    assert profile.timeout_seconds == 600
