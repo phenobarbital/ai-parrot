@@ -289,6 +289,21 @@ class TestUpsert:
         assert result.exit_code == 0
         assert "No wiki-relevant files" in result.output
 
+    def test_upsert_ignores_a_nested_wiki_bundle(self, runner, repo):
+        # Incremental upsert must apply the same guardrail as a full
+        # build: a directory that is itself a wiki export is not content.
+        _build(runner, repo)
+        bundle = repo / "docs" / "legacy_wiki"
+        bundle.mkdir(parents=True, exist_ok=True)
+        (bundle / "wiki_stats.json").write_text("{}", encoding="utf-8")
+        (bundle / "index.md").write_text("# Legacy wiki\n", encoding="utf-8")
+
+        result = runner.invoke(
+            wiki, ["upsert", "docs/legacy_wiki/index.md", "--path", str(repo)]
+        )
+        assert result.exit_code == 0
+        assert "No wiki-relevant files" in result.output
+
     def test_upsert_before_build_is_noop(self, runner, tmp_path):
         (tmp_path / "a.py").write_text("x = 1", encoding="utf-8")
         result = runner.invoke(
