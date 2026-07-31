@@ -199,8 +199,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Implemented `LanguageOutline`/`LanguageScanner` ABC in `base.py`,
+the explicit-registration suffix registry (`scanner_for`/`all_scanners`/
+`scanned_suffixes`) in `__init__.py` (empty `_SCANNERS` dict — no plugins
+registered yet), and the cached never-raising `get_parser()` in
+`treesitter.py` (grammar-module map for php/javascript/typescript/rust,
+process-level cache, catches any load failure). All acceptance criteria
+verified: imports work, `scanner_for(".cfg")` → `None`,
+`get_parser("nonexistent")` → `None` without raising and is cached.
+7/7 new tests pass; `ruff check` clean on new files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
