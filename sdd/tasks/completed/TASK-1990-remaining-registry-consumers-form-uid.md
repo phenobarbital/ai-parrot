@@ -54,15 +54,54 @@ alongside a spec-faithful `FormRegistry`.
 `services/metadata_enricher.py`, `services/public_forms.py`,
 `services/rest_field_resolver.py`, `renderers/pdf.py`, `renderers/xforms.py`,
 `renderers/jsonschema.py`, `renderers/html5.py`,
-`renderers/telegram/renderer.py`, `renderers/telegram/models.py`,
+`renderers/telegram/models.py`,
 `extractors/*.py`, `tools/database_form.py`, `tools/edit_toolkit.py`,
 `tools/request_form.py`, `tools/services/networkninja.py`,
-`ui/templates.py`, `core/partial.py`, `core/events.py` — these use
+`core/partial.py`, `core/events.py` — these use
 `form_id` as a human-readable label, a YAML/JSON source field, or a
 config/event lookup key (never as a `FormRegistry`/`PostgresFormStorage`
 primary-key lookup). Changing them would be scope creep per the spec's own
 Goals section ("Keep `form_id` as a human-readable slug for display and
 search — never as a primary key").
+
+**CORRECTED (found during this task's own execution)**:
+`renderers/telegram/renderer.py` was originally listed above as fully
+excluded, but one line in it is NOT a label — `TelegramRenderer.render()`'s
+WebApp-mode branch builds
+`webapp_url = f"{self.base_url}/forms/{form.form_id}/telegram"`, which is
+a real dispatch URL that must match the `ui/routes.py` Telegram route
+(renamed to `{form_uid}` by TASK-1981). Left as `form.form_id` it would
+send Telegram users to a URL that 404s against the renamed route — a
+direct consequence of this task's own item #9 (`ui/telegram.py`) and
+TASK-1981 landing. This ONE line was corrected to
+`f"{self.base_url}/forms/{form.form_uid}/telegram"` as part of this task
+(not deferred further — it directly depends on/duplicates this task's own
+route-consistency work). Every OTHER `form_id` use in that same file
+(`TelegramFormPayload.form_id`, the `metadata["form_id"]` field, and the
+`_form_hash(form.form_id)` call used only for the INLINE mode's per-field
+keyboard callback tagging — confirmed opaque/decorative, never compared
+against `router.py`'s own independently-computed `_form_hash`, see this
+task's Completion Note) remains untouched — those really are labels/opaque
+tags, not lookups or dispatch keys.
+
+**SECOND correction (also found during this task's own execution, same
+class of gap)**: `ui/templates.py` was likewise originally listed above as
+fully excluded, but `schema_page()` builds FIVE real navigable URLs, not
+labels — a "View Form" link to `{prefix}/forms/{form_id}` (the UI route
+renamed to `{form_uid}` by TASK-1981) and four "API Endpoints" example
+URLs under `{prefix}/api/v1/forms/{form_id}/...` (the REST routes renamed
+to `{form_uid}` by TASK-1976). `schema_page()`'s `form_id` parameter was
+renamed to `form_uid` and used in all five interpolations (the one purely
+descriptive line, "Structural JSON Schema for form ...", now also shows
+the uid instead of the slug — a minor, accepted display trade-off in
+exchange for the four URLs being correct; the page's `<h1>` title still
+shows the human-readable form title separately, unaffected). Its sole
+caller, `ui/handlers.py::view_schema()` (already in this task's own scope,
+item #8), was updated to pass the resolved `form_uid` instead of the old
+`form_id` local variable. No other function in `ui/templates.py`
+(`gallery_page`, `form_page`, `index_page`, `error_page`, `page_shell`,
+etc.) builds a `/forms/{form_id}`-shaped URL — verified via a full grep of
+the file — so nothing else in it needed to change.
 
 ---
 
@@ -203,6 +242,10 @@ listed in the "Explicitly NOT covered" list above.
 | `packages/parrot-formdesigner/src/parrot_formdesigner/renderers/audio.py` | MODIFY | `ws_endpoint` + `AudioFormManifest` construction use `form_uid` |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/services/form_version.py` | MODIFY | `form_id` → `form_uid` throughout; registry/storage calls |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/renderers/telegram/router.py` | MODIFY | `start_form()` resolves via `get_by_slug()`, threads `form_uid` internally |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/renderers/telegram/renderer.py` | MODIFY (scoped exception — see Scope note above) | ONE line: `webapp_url` built from `form.form_uid`, not `form.form_id` |
+| `packages/parrot-formdesigner/tests/unit/test_telegram_renderer.py` | MODIFY | `test_webapp_render_produces_url` asserted a hardcoded slug-based URL; updated to assert against `form.form_uid` |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/ui/templates.py` | MODIFY (scoped exception — see Scope note above) | `schema_page()`'s `form_id` param renamed to `form_uid`; used in its 5 URL/label interpolations |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/renderers/templates/telegram_webapp.html.j2` | MODIFY | `FORM_ID`/`_form_id` JS constant + payload key renamed to `FORM_UID`/`_form_uid` (companion to `ui/telegram.py` + `renderers/telegram/router.py`'s `_handle_webapp_data`, both of which read this wire key) |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/ui/handlers.py` | MODIFY | `form_uid` path param, registry lookup, gallery links |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/ui/telegram.py` | MODIFY | `form_uid` path param, registry lookup, fallback URL |
 | `packages/parrot-formdesigner/tests/unit/test_telegram_router.py` | MODIFY | Update mocks: `mock_registry.get_by_slug` instead of/alongside `.get` |
@@ -212,14 +255,14 @@ listed in the "Explicitly NOT covered" list above.
 | `packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_handler.py` | MODIFY | Update fixtures for `form_uid` |
 | `packages/parrot-formdesigner/tests/formdesigner/test_audio_form_renderer.py` | MODIFY | Update `AudioFormManifest`/`ws_endpoint` assertions |
 | `packages/parrot-formdesigner/tests/formdesigner/test_audio_models.py` | MODIFY | Update model field assertions (`form_id` → `form_uid`) |
-| `packages/parrot-formdesigner/tests/integration/test_render_pdf.py` | MODIFY (verify) | Check for `form_id`-based render URLs |
-| `packages/parrot-formdesigner/tests/integration/test_render_xml.py` | MODIFY (verify) | Check for `form_id`-based render URLs |
+| `packages/parrot-formdesigner/tests/integration/test_render_pdf.py` | MODIFY | Verified broken: route registration + request URL used `form_id`; renamed both to `form_uid` |
+| `packages/parrot-formdesigner/tests/integration/test_render_xml.py` | MODIFY | Same fix as `test_render_pdf.py` |
 | `packages/parrot-formdesigner/tests/unit/api/test_render_dispatcher.py` | MODIFY | Update URLs/assertions for `form_uid` |
 | `packages/parrot-formdesigner/tests/integration/test_upload_rest.py` | MODIFY | Update URLs/assertions for `form_uid` |
 | `packages/parrot-formdesigner/tests/unit/ui/test_setup_form_ui_protect_pages.py` | MODIFY (verify) | Check for `form_id`-based UI URLs |
-| `packages/parrot-formdesigner/tests/integration/test_feat300_integration.py` | MODIFY (verify) | Check `FormVersionService` call sites |
-| `packages/parrot-formdesigner/tests/unit/test_version_backfill.py` | MODIFY (verify) | Check `FormVersionService` call sites |
-| `packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py` | MODIFY (verify) | Check `FormVersionService` call sites |
+| `packages/parrot-formdesigner/tests/integration/test_feat300_integration.py` | MODIFY | Verified broken: `test_inflight_response_keeps_version` called `svc.publish("recap", ...)`/`get_published("recap", ...)`/`registry.get("recap", ...)` — switched to `original.form_uid` |
+| `packages/parrot-formdesigner/tests/unit/test_version_backfill.py` | MODIFY | Verified broken: `reg.get(<slug>, ...)` → `reg.get_by_slug(<slug>, ...)`; `svc.list_versions(<slug>, ...)` → `form.form_uid` (captured from `_legacy_form()`'s return) |
+| `packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py` | MODIFY | Verified broken: `_registry_with_form()` now returns `(registry, form)` with a fixed shared `form_uid` default; `InMemoryStorage` test double rekeyed from `form_id` to `form_uid` (mirrors TASK-1974's production rekey — otherwise `save()` and `load()` never agreed on a key); all `svc.publish/get_published/list_versions/safe_delete` and `registry.get`/`_make_request(form_id=...)` call sites updated to `form_uid` |
 | `packages/parrot-formdesigner/tests/unit/test_form_version.py` | MODIFY | Update `FormVersionService` tests for `form_uid` |
 
 The "(verify)" files may or may not need changes — read each first; only
@@ -396,4 +439,48 @@ async def PostgresFormStorage.load_by_slug(self, form_id: str, tenant: str, vers
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+All 9 in-scope source files migrated to `form_uid` exactly per Scope,
+including both discovered corrections (telegram renderer's `webapp_url`,
+`ui/templates.py::schema_page`'s 5 URL/label interpolations). All listed
+test files updated except two verified genuinely unaffected (see below).
+
+**Verified unaffected (left untouched, per instructions)**:
+- `tests/formdesigner/test_audio_routes.py` — zero `form_id`/`form_uid`
+  references (route-mounting/renderer-seeding tests only).
+- `tests/unit/ui/test_setup_form_ui_protect_pages.py` — same, zero
+  references.
+
+**Pre-existing bug discovered during validation (NOT a TASK-1990 defect)**:
+While running the full acceptance-criteria test suite
+(`pytest packages/parrot-formdesigner/tests/ -v`), 3 tests in
+`tests/formdesigner/test_audio_integration.py::TestHybridVoiceFlows`
+(`test_ws_low_confidence_confirm`, `test_ws_low_confidence_reject_reprompts`,
+`test_ws_high_confidence_auto_advance`) were found to **hang indefinitely**
+in `AudioFormWSHandler`'s binary audio-frame / confirm-answer flow.
+Root-caused as **pre-existing and unrelated to FEAT-389**: reproduced
+identically against an unmodified `dev` checkout (byte-for-byte identical
+code path once FEAT-389's `form_id`→`form_uid` renames are excluded from
+the diff). Filed separately as **FEAT-395**
+(`sdd/specs/audio-ws-confirm-answer-deadlock.spec.md`) per user decision;
+all 3 tests are `@pytest.mark.skip`-annotated with a pointer to that spec
+(this task's file list already included `test_audio_integration.py`, so
+the skip markers land here rather than in TASK-1982).
+
+**Separately discovered regression, deferred to TASK-1982**: the full
+suite also surfaced 40 genuine `KeyError: 'form_uid'` failures in
+`tests/test_partial_handlers.py`, `tests/test_partial_saves_integration.py`,
+and `tests/test_submit_merge.py` — caused by TASK-1976's `api/handlers.py`
+route rename (`extract_form_uid(request)` now requires
+`match_info["form_uid"]`), but those 3 test files were never in TASK-1990's
+or TASK-1982's original file lists. Confirmed via a `dev`-baseline diff
+that these are NEW failures (not present on unmodified `dev`), so this is
+in-scope for FEAT-389, not FEAT-395. Handed to TASK-1982 (whose Scope
+already says "Update ALL API test URLs from `/{form_id}` to `/{form_uid}`
+paths") with its file list extended accordingly, rather than pulled into
+this task (out of TASK-1990's own file scope, and TASK-1982 is the
+test-only closer task for the whole feature).
+
+Acceptance criteria met: all 9 source files migrated, `pytest` run
+performed (see notes above for the 2 deferred/skip items), no files
+touched outside this task's list.
