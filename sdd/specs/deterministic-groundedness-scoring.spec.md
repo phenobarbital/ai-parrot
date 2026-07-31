@@ -5,7 +5,7 @@ base_branch: dev
 
 # Feature Specification: Deterministic Groundedness Scoring (Anti-Hallucination, Detection-Only)
 
-**Feature ID**: FEAT-325
+**Feature ID**: FEAT-398
 **Date**: 2026-07-22
 **Author**: Jesús Lara (spec drafted with Claude Code)
 **Status**: draft

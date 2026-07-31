@@ -127,7 +127,7 @@ from parrot.bots.guardrails.pipeline import GuardrailPipeline
 - ~~Channel-egress scrub for all modes~~ — today limited to 4 chat modes
   (TELEGRAM, MSTEAMS, SLACK, WHATSAPP at `:1442-1445`)
 - ~~FEAT-324 PII guardrail~~ — socket reserved, not implemented
-- ~~FEAT-325 groundedness guardrail~~ — socket reserved, not implemented
+- ~~FEAT-398 groundedness guardrail~~ — socket reserved, not implemented
 
 ---
 

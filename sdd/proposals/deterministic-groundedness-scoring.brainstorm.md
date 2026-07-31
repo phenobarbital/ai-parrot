@@ -11,8 +11,8 @@ base_branch: dev
 **Status**: exploration
 **Recommended Option**: A
 
-> Candidate feature id: FEAT-325 (assigned at spec time; highest on main is
-> FEAT-323, FEAT-324 is the in-flight PII spec on this branch).
+> Candidate feature id: FEAT-398 (renumbered from FEAT-325 which collided
+> with networkninja-metadata-select-options; FEAT-324 is the companion PII spec).
 > Companion docs: `pii-detection-redaction.brainstorm.md` / `.comparison.md`
 > (FEAT-324) — this feature reuses its catalog/engine machinery and seams.
 

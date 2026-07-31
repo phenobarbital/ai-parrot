@@ -13,7 +13,7 @@ base_branch: dev
 
 > Candidate feature id: FEAT-396 (assigned at spec time; highest on dev is
 > FEAT-395). Supersedes the *integration layers* of FEAT-324
-> (`pii-detection-redaction`) and FEAT-325
+> (`pii-detection-redaction`) and FEAT-398
 > (`deterministic-groundedness-scoring`) — their engines are unchanged;
 > their seam wiring becomes guardrail plugins of this infrastructure.
 
@@ -50,7 +50,7 @@ verified on `dev` @ `58829cf9`):
    (`flows/dev_loop/nodes/base.py:39`), server-side `_redact()`
    (`ai-parrot-server .../handlers/agents/users.py:37`).
 
-Meanwhile two spec'd features (FEAT-324 PII, FEAT-325 groundedness) are
+Meanwhile two spec'd features (FEAT-324 PII, FEAT-398 groundedness) are
 about to add *more* per-feature seam wiring, and there is **no content
 moderation at all**. Every new control repeats the same work: find the
 seams, invent a config toggle, decide error semantics, wire telemetry.
@@ -117,7 +117,7 @@ New subpackage (structural sibling of `bots/mixins/`):
   `PromptInjectionGuardrail` (migrates `_sanitize_question` logic; INPUT;
   can BLOCK), `SecretsGuardrail` (wraps `OutputScrubber`; TOOL_OUTPUT +
   OUTPUT; TRANSFORM), `PIIGuardrail` + `PseudonymizeGuardrail` (FEAT-324
-  engines), `GroundednessGuardrail` (FEAT-325 scorer; OUTPUT; FLAG-only),
+  engines), `GroundednessGuardrail` (FEAT-398 scorer; OUTPUT; FLAG-only),
   `ModerationGuardrail` (reference interface + stub backend — concrete
   backends are a follow-up).
 - Seam integration replaces the ad-hoc wiring: the 3
@@ -234,7 +234,7 @@ middleware); add an output twin; wire features one by one.
   a contract (swallowed exceptions, transform-only) that disqualifies
   itself for security checks, and Option B converges to Option A after
   discarding checks we already proved unusable in the hot path.
-- It is the cheapest path for the *in-flight* work: FEAT-324 and FEAT-325
+- It is the cheapest path for the *in-flight* work: FEAT-324 and FEAT-398
   each planned bespoke seam wiring; as plugins they reuse one pipeline,
   one config surface, one telemetry stream — and their engines (the hard
   part, already prototyped and benchmarked) are untouched.
@@ -298,7 +298,7 @@ abstraction at exactly four stages and one result type.
 - BLOCK short-circuits the remaining pipeline; already-applied TRANSFORMs
   are discarded in favor of the canned response.
 - Streaming: only `StreamingGuardrail`-capable plugins run per-chunk;
-  others run at stream close on the final text (FEAT-325 semantics).
+  others run at stream close on the final text (FEAT-398 semantics).
 - Empty pipeline == today's behavior; zero overhead when nothing is
   registered (guard on `has_guardrails`, mirroring `has_middlewares`).
 - Double-wrapping protection: pipeline stamps processed content
@@ -323,7 +323,7 @@ abstraction at exactly four stages and one result type.
   re-targeted to guardrail plugins (`PIIGuardrail`,
   `PseudonymizeGuardrail`, streaming via `StreamingGuardrail`); engines
   (`parrot/security/pii/`, `pii-rs`) unchanged.
-- `deterministic-groundedness-scoring` (FEAT-325): Module 3 reporting
+- `deterministic-groundedness-scoring` (FEAT-398): Module 3 reporting
   becomes `GroundednessGuardrail` (FLAG-only); engine unchanged.
 
 ---
@@ -339,7 +339,7 @@ abstraction at exactly four stages and one result type.
 | `bots/middleware.py` | deprecates | kept working; wrapped as legacy TRANSFORM guardrail; the two registration sites (`bots/search.py:119`, `skills/mixin.py:178`) migrate |
 | `bots/base.py:1445` channel egress scrub | modifies | folds into OUTPUT pipeline (all modes, not just 4 chat modes) |
 | `security/` package | unchanged | engines stay; export surface intact |
-| FEAT-324 / FEAT-325 specs | modified | v-bump: integration sections re-targeted (see Modified Capabilities) |
+| FEAT-324 / FEAT-398 specs | modified | v-bump: integration sections re-targeted (see Modified Capabilities) |
 | Provider guardrails (Bedrock/Google) | unchanged | out of scope; potential future `ProviderGuardrail` wrapper noted |
 
 No breaking changes: defaults preserve today's behavior exactly.
