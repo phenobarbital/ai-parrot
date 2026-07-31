@@ -309,6 +309,12 @@ class AbstractTool(EventEmitterMixin, ABC):
         (database connections, HTTP sessions, broker channels, etc.)
         should override this. Called at most once per instance lifetime
         via :meth:`_ensure_open`, and only when ``auto_open`` is True.
+
+        If this raises after partially acquiring a resource, ``_opened``
+        stays ``False`` (see :meth:`_ensure_open`), so ``_close()`` will
+        NOT be invoked automatically for the partial state. Overrides that
+        can partially succeed before raising are responsible for releasing
+        whatever they already acquired before re-raising.
         """
 
     async def _close(self) -> None:
@@ -318,7 +324,9 @@ class AbstractTool(EventEmitterMixin, ABC):
         No-op by default. Subclasses that override :meth:`_open` should
         override this to release the corresponding resources. Always
         resets ``_opened`` to ``False`` so the tool can be re-opened
-        (via :meth:`_ensure_open`) afterwards.
+        (via :meth:`_ensure_open`) afterwards. Overrides MUST call
+        ``await super()._close()`` (or reset ``self._opened = False``
+        themselves) — otherwise the tool can never be re-opened.
         """
         self._opened = False
 
