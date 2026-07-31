@@ -266,8 +266,37 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Implemented `RustScanner`. Heuristic mode uses the exact regex
+patterns from the Codebase Contract (`pub struct/enum/trait/fn`, `impl`,
+`mod`/`pub mod`, `use crate|super|self::...`) plus a `///`-run finder for
+doc-comment association (whitespace-only gap check, mirroring the PHP
+plugin's approach). `impl` blocks render as `"impl Name:"` verbatim (no
+doc suffix — matches the literal Outline Format example) with their
+`pub fn` methods indented via the same brace-depth ownership heuristic
+used by the PHP plugin. `mod foo;` imports as `"mod:{name}"` (prefix
+needed so `resolve_import` can distinguish it from `crate::`/`super::`/
+`self::` specifiers); group `use crate::a::{b, c};` expands to full
+paths. `resolve_import` follows crate-layout conventions: `mod:` resolves
+relative to the declaring file's own directory; `crate::` resolves via
+the nearest ancestor directory holding a `lib.rs`/`main.rs` (returns
+`None`, never raises, when no crate root is found); best-effort `super::`/
+`self::` handling added beyond the given pseudocode (not required by the
+task's own Acceptance Criteria/Test Specification, which only exercise
+`mod:`/`crate::`, but matches the Scope bullet listing `super::`/`self::`
+as extractable imports). A best-effort tree-sitter path is implemented
+but untestable here (no grammar installed until TASK-2016's extra).
+Registered as `"rust"` for `.rs`. 13/13 new tests pass (all against
+literally the given `SAMPLE_RUST`/`test_rust_mod_resolution`/
+`test_rust_use_crate_resolution` fixtures — no fixture inconsistency this
+time, unlike TASK-2014); full `tests/knowledge/wiki/` suite (499 tests)
+passes; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Struct field listing (`    pub field_name:
+Type`) and bare (non-`pub`) trait-interior method signatures shown in the
+Outline Format example are not extracted — no regex for either is given
+in the Codebase Contract, and the task's own Acceptance Criteria/Test
+Specification don't require them (`test_rust_outline_pub_items` only
+checks for `Parser`/`Format`/`Serializable`/`new`/`parse`, all satisfied
+without field/trait-method extraction).
