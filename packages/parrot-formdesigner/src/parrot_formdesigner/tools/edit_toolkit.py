@@ -17,8 +17,8 @@ import re
 from typing import Any
 
 try:
-    from parrot.tools.toolkit import AbstractToolkit
     from parrot.tools.abstract import ToolResult
+    from parrot.tools.toolkit import AbstractToolkit
 except ImportError as exc:
     raise ImportError(
         "parrot-formdesigner EditToolkit requires the 'ai-parrot' package. "
@@ -44,8 +44,10 @@ from ..api.operations import (
     _apply_update_form_meta,
     _apply_update_section_meta,
 )
+from ..assembler import FormAssembler
 from ..core.constraints import DependencyRule, PostDependency
 from ..core.schema import FormField, FormSchema, FormSection
+
 
 class EditToolkit(AbstractToolkit):
     """Toolkit exposing FormSchema inspection and mutation as LLM-callable tools.
@@ -359,6 +361,37 @@ class EditToolkit(AbstractToolkit):
             self.logger.error("add_field unexpected error: %s", exc)
             return {"error": str(exc)}
 
+    async def add_field_from_schema(
+        self,
+        section_id: str,
+        field_schema: dict,
+        position: int | None = None,
+    ) -> dict:
+        """Add a field from a raw schema dict with shortcut expansion.
+
+        Delegates to `FormAssembler.assemble_field()` (FEAT-388, Module 1)
+        to expand convenience shortcuts (auto-generated `field_id` from
+        `label`, string `field_type` coercion) before validating and
+        applying the mutation via the existing `add_field()`.
+
+        Args:
+            section_id: ID of the section to add the field to.
+            field_schema: Dict with field definition (supports shortcuts:
+                auto-generated field_id from label, string field_type).
+            position: Optional 0-based insertion index. Appends if None.
+
+        Returns:
+            Success dict with added field_id, or error dict on failure.
+        """
+        try:
+            assembler = FormAssembler()
+            validated_field = assembler.assemble_field(field_schema)
+        except (ValidationError, ValueError) as exc:
+            self.logger.warning("add_field_from_schema validation error: %s", exc)
+            return {"error": f"Invalid field schema: {exc}"}
+
+        return await self.add_field(section_id, validated_field.model_dump(), position)
+
     async def remove_field(self, section_id: str, field_id: str) -> dict:
         """Remove a field from a section.
 
@@ -627,6 +660,35 @@ class EditToolkit(AbstractToolkit):
         except Exception as exc:
             self.logger.error("add_section unexpected error: %s", exc)
             return {"error": str(exc)}
+
+    async def add_section_from_schema(
+        self,
+        section_schema: dict,
+        position: int | None = None,
+    ) -> dict:
+        """Add a section from a raw schema dict with shortcut expansion.
+
+        Delegates to `FormAssembler.assemble_section()` (FEAT-388, Module 1)
+        to expand convenience shortcuts (auto-generated `section_id`,
+        per-field shortcuts) before validating and applying the mutation via
+        the existing `add_section()`.
+
+        Args:
+            section_schema: Dict with section definition (supports
+                shortcuts: auto-generated section_id, field shortcuts).
+            position: Optional 0-based insertion index. Appends if None.
+
+        Returns:
+            Success dict with added section_id, or error dict on failure.
+        """
+        try:
+            assembler = FormAssembler()
+            validated_section = assembler.assemble_section(section_schema)
+        except (ValidationError, ValueError) as exc:
+            self.logger.warning("add_section_from_schema validation error: %s", exc)
+            return {"error": f"Invalid section schema: {exc}"}
+
+        return await self.add_section(validated_section.model_dump(), position)
 
     async def update_section(self, section_id: str, patch: dict) -> dict:
         """Apply an RFC 7396 merge-patch to a section's ``meta`` dict.

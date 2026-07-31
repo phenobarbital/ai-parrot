@@ -199,10 +199,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Added `auto_open: bool = False` class attribute (near `credential_provider`),
+`self._opened: bool = False` instance attribute (set at the end of `__init__`), and
+`_open()` / `_close()` / `_ensure_open()` async methods to `AbstractToolkit`,
+placed right after `cleanup()` and before `_prepare_kwargs()`. Modified
+`ToolkitTool._execute()` to call `await toolkit._ensure_open()` when
+`isinstance(toolkit, AbstractToolkit) and toolkit.auto_open`, immediately
+after resolving `toolkit` and before the existing `_pre_execute()` call.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Verified manually with a `TrackingToolkit` (auto_open=True): `_open()` fires
+exactly once across two tool-method calls via `get_tools()` + `execute()`,
+`_close()` resets state, and generated tool names never include `_open`/
+`_close`/`_ensure_open` (confirmed `_generate_tools()` skips underscore-prefixed
+methods at toolkit.py:521). A `NoAutoOpenToolkit` (default `auto_open=False`)
+never triggers `_open()`.
 
-**Deviations from spec**: none | describe if any
+`ruff check` on `toolkit.py`: 30 pre-existing errors, unchanged before/after.
+`pytest packages/ai-parrot/tests/tools/ -v`: 51 failed / 674 passed / 8 skipped —
+identical to the unmodified `dev` baseline; all failures are pre-existing and
+unrelated (databasequery toolkit / auto-registration hook tests).
+
+**Deviations from spec**: none.

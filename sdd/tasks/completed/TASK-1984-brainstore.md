@@ -225,10 +225,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-30
+**Notes**: Implemented `BrainStore` in `parrot/memory/dream/brain.py`,
+replicating `LLMWikiToolkit.remember()` page-id/record semantics
+byte-for-byte (verified against `toolkit.py:660-725` before writing code).
+`search()` uses `search_fts` + `pack_results` and degrades to `""` on any
+exception or empty result set (never raises). `copy_page_to()` reads the
+full page via `get_page(include_body=True)` and upserts it into the
+destination store's `_store`, preserving `asserted_by`. 8 unit tests pass
+(idempotency, page-id scheme match, FTS search, empty search, copy
++ attribution preservation, missing-page copy, and a direct
+`SQLiteWikiStore` interop read of the produced `wiki.db`). `ruff check`
+clean (2 auto-fixes applied: unnecessary UTF-8 encode args, quoted forward
+self-reference type annotation resolved by `from __future__ import
+annotations`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The scope note says `search()` should do
+"`search_fts` (plus `search_vector` merge when embeddings exist)". The
+`BrainStore.__init__` signature specified in the spec/task
+(`storage_dir, wiki_name, asserted_by`) does not accept an embedding
+provider, and `search_vector` requires a pre-computed query embedding
+vector — there is no verified, in-scope way to produce one here (that
+wiring is TASK-1988's job, per the task's own "NOT in scope" list:
+"unified-layer retrieval wiring (TASK-1988)"). Implemented FTS-only
+search for this task; TASK-1988 can extend `search()` (or call
+`search_vector` separately) once an embedding path is wired in. All
+listed acceptance criteria for this task (idempotent remember, matching
+page-id scheme, FTS search, empty-search degrade, copy_page_to,
+`wiki.db` interop) are met.

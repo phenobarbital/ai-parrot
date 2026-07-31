@@ -1,10 +1,12 @@
-"""CreateFormTool — LLM-driven form generation tool.
+"""CreateFormTool — LLM-driven and deterministic form generation tool.
 
-Accepts a natural language prompt and returns a validated FormSchema.
+Accepts either a natural language prompt (LLM path) or fully structured
+input (`schema`, `sections`, `fields` — deterministic path via
+`FormAssembler`, zero LLM calls) and returns a validated FormSchema.
 Supports iterative refinement: when refine_form_id is provided, loads
 the existing form and asks the LLM to modify it.
 
-Flow:
+LLM flow (prompt-only):
 1. Build a structured system prompt with FormSchema JSON structure
 2. If refine_form_id, load existing form from registry and include in prompt
 3. Call LLM client to generate JSON
@@ -12,6 +14,14 @@ Flow:
 5. Validate generated form using FormValidator (circular dependency check)
 6. Optionally register in FormRegistry with persist=True
 7. Return FormSchema in ToolResult metadata
+
+Deterministic flow (schema/sections/fields — FEAT-388):
+1. Detect which structured input was provided
+2. Delegate to `FormAssembler` for format detection, shortcut expansion,
+   and assembly — no LLM call
+3. Validate generated form using FormValidator (circular dependency check)
+4. Optionally register in FormRegistry with persist=True
+5. Return FormSchema in ToolResult metadata (same shape as the LLM path)
 """
 
 from __future__ import annotations
@@ -19,10 +29,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-import uuid
+import warnings
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     from parrot.tools.abstract import AbstractTool, ToolResult
@@ -30,11 +40,15 @@ except ImportError as exc:
     raise ImportError(
         "parrot-formdesigner tools require the 'ai-parrot' package. " "Install it with: uv add ai-parrot"
     ) from exc
-from ..services.registry import FormRegistry
+from ..assembler import FormAssembler, _slugify
 from ..core.schema import FormSchema
-from .edit_toolkit import EditToolkit
-from .field_helpers import get_form_field_schema_snippets, list_supported_form_field_types
+from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
+from .edit_toolkit import EditToolkit
+from .field_helpers import (
+    get_form_field_schema_snippets,
+    list_supported_form_field_types,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -180,21 +194,6 @@ CRITICAL RULES:
 """
 
 
-def _slugify(text: str) -> str:
-    """Convert text to a slug suitable for form_id.
-
-    Args:
-        text: Input string.
-
-    Returns:
-        Lowercase slug with hyphens.
-    """
-    text = text.lower().strip()
-    text = re.sub(r"[^a-z0-9\s-]", "", text)
-    text = re.sub(r"[\s-]+", "-", text)
-    return text[:50] or f"form-{uuid.uuid4().hex[:8]}"
-
-
 def _extract_json(text: str) -> str:
     """Extract JSON from LLM response (handles markdown code blocks).
 
@@ -219,20 +218,73 @@ def _extract_json(text: str) -> str:
 # Input schema
 # ---------------------------------------------------------------------------
 
+# `schema` is a valid Pydantic v2 field name (v2 dropped the v1 reserved-name
+# restriction — see FEAT-388 spec's "Known Risks / Gotchas"), but Pydantic
+# still emits a UserWarning at class-definition time because the name
+# shadows BaseModel's deprecated v1 `.schema()` classmethod. Nothing in the
+# codebase calls `.schema()` on tool-arg instances (AbstractTool uses
+# `model_json_schema()` instead — see `parrot.tools.abstract`), so this
+# warning is suppressed rather than renaming the field: renaming to
+# `form_schema`/`alias="schema"` would change what `AbstractTool.execute()`
+# passes to `_execute()` (it calls `validated_args.model_dump()`, which
+# emits field names, not aliases), altering the tool's public argument
+# contract — an open design question left to a follow-up decision, not a
+# warning-suppression fix.
+warnings.filterwarnings(
+    "ignore",
+    message=r'Field name "schema" in "CreateFormInput" shadows an attribute',
+    category=UserWarning,
+)
+
 
 class CreateFormInput(BaseModel):
     """Input schema for the create_form tool.
 
+    Exactly one of `prompt` (LLM path) or a structured input — `schema`,
+    `sections`, `fields` (deterministic path, FEAT-388) — must be provided.
+    Providing both, or neither, is a validation error raised at execution
+    time (see `CreateFormTool._execute`).
+
     Attributes:
-        prompt: Natural language description of the form to create.
+        prompt: Natural language description of the form to create or
+            modification to apply. Required only when no structured input
+            is given.
+        schema: Complete form definition as a dict. Accepts either:
+            (1) Standard JSON Schema (draft-07) — detected by 'type'+
+            'properties' keys; (2) FormSchema-native JSON (with optional
+            shortcuts like auto-generated IDs). No LLM call is made.
+        sections: List of section dicts to assemble into a form. No LLM
+            call is made.
+        fields: Flat list of field dicts. Auto-wrapped in a single default
+            section. No LLM call is made.
         form_id: Custom form ID. Auto-generated if not provided.
         persist: Whether to save the form to the registry storage.
         refine_form_id: ID of an existing form to load and modify.
     """
 
-    prompt: str = Field(
-        ...,
-        description="Natural language description of the form to create or modification to apply",
+    prompt: str | None = Field(
+        default=None,
+        description=(
+            "Natural language description of the form to create or modification to apply. "
+            "Required only when no structured input (schema/sections/fields) is provided."
+        ),
+    )
+    schema: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Complete form definition as a dict. Accepts either: "
+            "(1) Standard JSON Schema (draft-07) — detected by 'type'+'properties' keys; "
+            "(2) FormSchema-native JSON (with optional shortcuts like auto-generated IDs). "
+            "No LLM call is made."
+        ),
+    )
+    sections: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="List of section dicts to assemble into a form. No LLM call is made.",
+    )
+    fields: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Flat list of field dicts. Auto-wrapped in a single default section. No LLM call is made.",
     )
     form_id: str | None = Field(
         default=None,
@@ -308,6 +360,7 @@ class CreateFormTool(AbstractTool):
         self._model = model
         self._tenant = tenant
         self._validator = FormValidator()
+        self._assembler = FormAssembler()
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -321,24 +374,70 @@ class CreateFormTool(AbstractTool):
 
     async def _execute(
         self,
-        prompt: str,
+        prompt: str | None = None,
         form_id: str | None = None,
         persist: bool = False,
         refine_form_id: str | None = None,
+        schema: dict[str, Any] | None = None,
+        sections: list[dict[str, Any]] | None = None,
+        fields: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> ToolResult:
-        """Generate and validate a FormSchema via LLM.
+        """Generate and validate a FormSchema — deterministically or via LLM.
+
+        If any of `schema`, `sections`, or `fields` is provided, the form is
+        assembled deterministically via `FormAssembler` (FEAT-388) — zero LLM
+        calls. Otherwise, `prompt` drives the existing LLM-based generation
+        path (unchanged).
 
         Args:
             prompt: Natural language form description or modification request.
+                Required only when no structured input is provided.
             form_id: Custom form_id. Auto-generated if not provided.
             persist: If True, register the form in the registry.
-            refine_form_id: If set, load existing form and modify it.
+            refine_form_id: If set, load existing form and modify it (LLM
+                path only).
+            schema: Complete form definition dict (JSON Schema or
+                FormSchema-native). Triggers the deterministic path.
+            sections: List of section dicts to assemble. Triggers the
+                deterministic path.
+            fields: Flat list of field dicts to assemble into a single
+                default section. Triggers the deterministic path.
 
         Returns:
             ToolResult with success=True and form dict in metadata["form"],
             or success=False with error details on failure.
         """
+        has_structured = schema is not None or sections is not None or fields is not None
+
+        if has_structured and prompt is not None:
+            return ToolResult(
+                success=False,
+                status="error",
+                result=None,
+                metadata={
+                    "error": "Provide either 'prompt' or structured input (schema/sections/fields), not both"
+                },
+            )
+        if not has_structured and not prompt:
+            return ToolResult(
+                success=False,
+                status="error",
+                result=None,
+                metadata={
+                    "error": "Either 'prompt' or structured input (schema/sections/fields) is required"
+                },
+            )
+
+        if has_structured:
+            return await self._execute_from_schema(
+                schema=schema,
+                sections=sections,
+                fields=fields,
+                form_id=form_id,
+                persist=persist,
+            )
+
         try:
             existing: FormSchema | None = None
             if refine_form_id and self._registry is not None:
@@ -426,6 +525,81 @@ class CreateFormTool(AbstractTool):
                 result=None,
                 metadata={"error": str(exc)},
             )
+
+    async def _execute_from_schema(
+        self,
+        schema: dict[str, Any] | None,
+        sections: list[dict[str, Any]] | None,
+        fields: list[dict[str, Any]] | None,
+        form_id: str | None,
+        persist: bool,
+    ) -> ToolResult:
+        """Assemble a FormSchema deterministically from structured input.
+
+        Delegates to `FormAssembler` (FEAT-388, Module 1) — no LLM call is
+        made. Exactly one of `schema`, `sections`, `fields` is expected to
+        be non-``None`` (enforced by the caller).
+
+        Args:
+            schema: Complete form definition dict (JSON Schema or
+                FormSchema-native), or ``None``.
+            sections: List of section dicts to assemble, or ``None``.
+            fields: Flat list of field dicts to assemble, or ``None``.
+            form_id: Optional form_id override. Also used as the fallback
+                form title for the `sections`/`fields` paths, which have no
+                dedicated title input.
+            persist: If True, register the assembled form in the registry.
+
+        Returns:
+            ToolResult in the same shape as the LLM path: success=True with
+            the form dict in metadata["form"], or success=False with error
+            details in metadata["error"] on invalid structured input.
+        """
+        try:
+            if schema is not None:
+                form = self._assembler.assemble(schema, form_id=form_id)
+            elif sections is not None:
+                form = self._assembler.assemble_from_sections(
+                    sections, form_id=form_id, title=form_id or "Form"
+                )
+            else:
+                form = self._assembler.assemble_from_fields(
+                    fields, form_id=form_id, title=form_id or "Form"
+                )
+        except (ValidationError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                status="error",
+                result=None,
+                metadata={"error": str(exc)},
+            )
+
+        # Check for structural schema issues (circular dependencies) —
+        # same as the LLM path.
+        circular_errors = self._validator.check_schema(form)
+        if circular_errors:
+            self.logger.warning(
+                "Deterministically assembled form has circular dependencies: %s",
+                circular_errors,
+            )
+
+        if persist and self._registry is not None:
+            try:
+                await self._registry.register(
+                    form, persist=True, overwrite=False, tenant=self._tenant,
+                )
+            except Exception as exc:
+                self.logger.warning("Failed to persist form %s: %s", form.form_id, exc)
+
+        return ToolResult(
+            success=True,
+            status="success",
+            result={"form_id": form.form_id, "title": str(form.title)},
+            metadata={
+                "form": form.model_dump(),
+                "circular_dependency_errors": circular_errors or [],
+            },
+        )
 
     def _build_creation_messages(self, prompt: str) -> list[dict[str, str]]:
         """Build LLM messages for new form creation.

@@ -229,10 +229,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Modified `ToolManager.cleanup_toolkits()` exactly per the task's specified
+structure: Phase 1 (existing toolkit loop) now calls `await toolkit._close()` before
+`cleanup()`/`stop()` when `getattr(toolkit, '_opened', False)` is truthy, wrapped in
+its own try/except that logs via `self.logger.debug` (never raises). Added a new
+Phase 2 loop over standalone (non-`ToolkitTool`) tools that calls `await
+tool._close()` under the same `_opened` guard and same catch-log pattern.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Verified manually: a toolkit with `auto_open=True` gets `_close()` called exactly
+once during `cleanup_toolkits()` (and `_opened` reset to False by the base
+`_close()`); a standalone tool with `auto_open=True` gets the same treatment; a
+tool whose `_close()` raises has the error caught and logged without blocking
+cleanup of the other tools/toolkits (confirmed the `good` tool's `_close()` still
+ran after the `broken` tool's `_close()` raised).
 
-**Deviations from spec**: none | describe if any
+`ruff check` on `manager.py`: 134 pre-existing errors -> 136 after (net +2,
+both `BLE001` "blind Exception catch" on the two new `except Exception as exc:`
+blocks — this matches the exact pattern already used one line above them in the
+same function, per the task's own Codebase Contract code sample; no new
+violation categories introduced).
+`pytest packages/ai-parrot/tests/tools/ -v`: 51 failed / 674 passed / 8 skipped —
+identical to the unmodified `dev` baseline; all failures are pre-existing and
+unrelated (databasequery toolkit / auto-registration hook tests).
+
+**Deviations from spec**: none.

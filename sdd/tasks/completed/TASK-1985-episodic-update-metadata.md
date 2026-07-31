@@ -202,10 +202,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-30
+**Notes**: Added `update_metadata(episode_ids, patch) -> int` to
+`AbstractEpisodeBackend` and implemented it in all three backends after
+reading each one's storage layout first: PgVector uses a single
+parameterized `UPDATE ... SET metadata = COALESCE(metadata, '{}'::jsonb)
+|| $1::jsonb WHERE episode_id = ANY($2::uuid[])` (JSONB merge, never a
+full-column overwrite); Redis reads+merges the `metadata` HASH field only
+(vector/other fields untouched); FAISS merges the in-memory
+`EpisodicMemory.metadata` dict and triggers `save()` when persistence is
+configured. `EpisodicMemoryStore.mark_consolidated()` is a thin passthrough
+guarded by `hasattr(self._backend, "update_metadata")`, returning 0 +
+WARNING for backends lacking it (watermark-only mode). 12 new unit tests
+pass (FAISS real incl. a save/reload persistence round-trip; PgVector/Redis
+mocked; Protocol conformance; store passthrough + bare-backend fallback).
+`ruff check` clean on every line I added (pre-existing lint debt elsewhere
+in these files — BLE001/UP017/PYI034/etc. on code I did not touch — was
+left as-is, out of scope). Regression-checked the real, pre-existing
+episodic suite: `pytest packages/ai-parrot/tests/memory/episodic/ -v` →
+72 passed, 0 failures.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: (1) The AC's literal command
+`pytest tests/ -k episodic -v` matches zero tests — the actual pre-existing
+episodic backend/store tests live under `packages/ai-parrot/tests/memory/
+episodic/` (this task's own per-spec convention places NEW dream-cycle
+tests under the top-level `tests/memory/dream/`, matching TASK-1983/1984,
+but the pre-existing episodic suite was never there). Ran the real
+regression suite at its actual location instead (72/72 passed — see
+Notes). (2) Discovered and worked around a pre-existing, unrelated
+worktree environment gotcha while writing `test_update_metadata.py`: the
+repo-root `conftest.py`'s Cython-extension stub for the uncompiled
+`parrot.utils.types` (`SafeDict`) is injected partway through its own
+execution; if an earlier line in that same `conftest.py` transitively
+imports `parrot.memory.episodic.backends.faiss` first, that module's
+`import faiss` fails against the not-yet-stubbed `parrot.utils`, and
+`_FAISS_AVAILABLE=False` gets permanently cached in `sys.modules` for the
+rest of the pytest session — breaking EVERY test that instantiates
+`FAISSBackend`, independent of any code in this task (reproduced with
+`git stash` on a clean checkout). Added a one-line, test-file-scoped
+`sys.modules.pop("parrot.memory.episodic.backends.faiss", None)` at the
+top of `test_update_metadata.py` (before the `FAISSBackend` import) to
+force a fresh re-import once the stub is guaranteed present — this does
+NOT touch `conftest.py` or any file outside this task's list. Flagging
+for visibility: `packages/ai-parrot/tests/test_episodic_memory.py` (a
+pre-existing file, untouched by this task) fails to even collect under
+its own sub-rootdir (`packages/ai-parrot/pyproject.toml`) for the same
+underlying reason — the fix-up root `conftest.py` isn't an ancestor of
+that rootdir resolution, so `parrot.utils.types` is never stubbed there
+at all. This is pre-existing worktree tooling debt, not a regression from
+this task.

@@ -213,10 +213,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Implemented `DreamScheduler` (`parrot/memory/dream/scheduler.py`)
+with the plain-asyncio background-task lifecycle from the Implementation
+Notes: `start()` loads state, clears a stale lock (`running_since` > 2x
+interval, WARNING logged) or bails out on a fresh lock, schedules
+`next_due = now + interval` on first run (no immediate cycle), and runs a
+jittered catch-up cycle when `next_due <= now` before spawning the loop
+task. `stop()` cancels the task and persists cleared lock state. `run_now()`
+loads state on demand, refuses a concurrent run under a fresh lock
+(returns an aborted stub report), otherwise delegates to the same
+`_run_locked_cycle()` helper `start()`/the loop use — lock set + persisted
+before the call, cleared + persisted + rescheduled after. Aborted reports
+reschedule at `interval / failure_backoff_divisor` instead of the full
+interval. `agent_id` is derived from `runner._namespace.agent_id` (no
+public accessor exists on `DreamCycleRunner`, consistent with the
+private-reach pattern already used in `runner.py` for
+`EpisodicMemoryStore._backend`/`._embedding`). 8 new unit tests pass
+(catch-up, first-run-schedules-only, stale-lock-ignored,
+fresh-lock-prevents-second-loop, explicit trigger, lock-prevents-concurrent,
+backoff, stop persists+clears). Tests use `DreamConfig(startup_jitter_seconds=0)`
+instead of monkeypatching `random.uniform` (task note: "tests can patch") —
+avoids any real sleep without patching library internals. `ruff check`
+clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none.

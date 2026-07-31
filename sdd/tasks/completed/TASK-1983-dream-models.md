@@ -203,10 +203,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-30
+**Notes**: Implemented `DreamState`, `DreamConfig`, `DistilledKnowledge`,
+`DreamCycleReport` verbatim per spec §2, plus atomic `save_state`/`load_state`
+JSON sidecar helpers (tempfile-suffix write + `os.replace`, tolerant load on
+missing/corrupt file). 7 unit tests pass; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The Codebase Contract listed
+`from parrot.memory.episodic.models import MemoryNamespace` as a verified
+import, but none of the four model shapes in spec §2 actually reference
+`MemoryNamespace` — it is not used by `DreamState`/`DreamConfig`/
+`DistilledKnowledge`/`DreamCycleReport`. Omitted the unused import to keep
+the module lint-clean and import-light per the task's own constraint ("No
+wiki/episodic-store imports here"); `MemoryNamespace` is expected to be
+consumed directly by `DreamCycleRunner` (TASK-1986) instead.

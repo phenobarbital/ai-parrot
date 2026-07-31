@@ -14,7 +14,7 @@
       "feature_id": "FEAT-391",
       "feature": "per-tool-connection",
       "spec": "sdd/specs/per-tool-connection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all others depend on it",
       "assigned_to": null,
       "started_at": "2026-07-30T18:47:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1991-abstracttool-connection-lifecycle.md"
+      "completed_at": "2026-07-30T22:29:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1991-abstracttool-connection-lifecycle.md"
     },
     {
       "id": "TASK-1992",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-391",
       "feature": "per-tool-connection",
       "spec": "sdd/specs/per-tool-connection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Mirrors TASK-1991 pattern on AbstractToolkit; depends on shared design",
       "assigned_to": null,
       "started_at": "2026-07-30T18:47:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1992-abstracttoolkit-connection-lifecycle.md"
+      "completed_at": "2026-07-30T23:05:30+00:00",
+      "file": "sdd/tasks/completed/TASK-1992-abstracttoolkit-connection-lifecycle.md"
     },
     {
       "id": "TASK-1993",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-391",
       "feature": "per-tool-connection",
       "spec": "sdd/specs/per-tool-connection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on _close() existing on both AbstractTool and AbstractToolkit",
       "assigned_to": null,
       "started_at": "2026-07-30T18:47:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1993-toolmanager-cleanup-integration.md"
+      "completed_at": "2026-07-30T23:08:30+00:00",
+      "file": "sdd/tasks/completed/TASK-1993-toolmanager-cleanup-integration.md"
     },
     {
       "id": "TASK-1994",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-391",
       "feature": "per-tool-connection",
       "spec": "sdd/specs/per-tool-connection.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Tests all three prior tasks; must run last",
       "assigned_to": null,
       "started_at": "2026-07-30T18:47:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1994-connection-lifecycle-tests.md"
+      "completed_at": "2026-07-30T23:44:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1994-connection-lifecycle-tests.md"
     }
   ]
 }

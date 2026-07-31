@@ -255,10 +255,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Created `packages/ai-parrot/tests/tools/test_tool_connection_lifecycle.py`
+with 16 tests covering all scope items: `AbstractTool` auto_open True/False paths,
+`_ensure_open()` idempotency, `_close()` resetting `_opened` (and being safe to call
+twice), `_open()` failure keeping `_opened=False` with retry (both a
+permanently-failing tool and a tool that recovers on the second attempt),
+`AbstractToolkit` auto_open on first tool call (and the False no-op path),
+`_ensure_open()` running before `_pre_execute()` (verified via `monkeypatch` call-
+order tracking), confirmation that `_open`/`_close`/`_ensure_open` are never
+generated as LLM-callable tool names, and `ToolManager.cleanup_toolkits()`
+integration (closes opened toolkits, skips never-opened ones, closes standalone
+tools, isolates `_close()` errors without raising, and one broken toolkit's
+`_close()` error doesn't block another toolkit's `_close()` from running).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+One test-authoring bug found and fixed during development: the original
+`test_cleanup_close_error_does_not_block_other_toolkits` gave both toolkits a
+method named `greet`, which collided in `ToolManager`'s name-keyed tool
+registry (`ToolManager` logged "Tool 'greet' is already registered." and
+silently dropped the second registration) — masking the toolkit-isolation
+behavior actually under test. Renamed one toolkit's tool method to `wave` to
+give each toolkit a distinct tool name; test now correctly exercises and
+verifies the isolation.
 
-**Deviations from spec**: none | describe if any
+`ruff check` on the new test file: clean (one `I001` import-order fix applied via
+`ruff check --fix`, no other issues).
+`pytest tests/tools/test_tool_connection_lifecycle.py -v`: 16 passed.
+`pytest packages/ai-parrot/tests/tools/ -v`: 51 failed / 690 passed / 8 skipped —
+same 51 pre-existing, unrelated failures as the `dev` baseline, plus all 16 new
+tests passing (674 baseline passed + 16 new = 690).
+
+**Deviations from spec**: none — all listed scope items and acceptance criteria
+are covered; the `greet`/`wave` naming fix above is a test-implementation detail,
+not a scope deviation.
