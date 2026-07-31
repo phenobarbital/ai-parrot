@@ -97,6 +97,18 @@ search — never as a primary key").
   `AudioSessionConfig`/`AudioSessionState`, see below) and update the
   `ws_endpoint=f"/api/v1/forms/{form_id}/audio/ws"` f-string to use
   `form_uid`.
+- **Added during TASK-1979**: `FormSubmission(form_id=session.form_id, ...)`
+  at ~line 1095 must also pass `form_uid=` — `FormSubmission.form_uid` is
+  now a REQUIRED field (TASK-1979), so this construction currently raises
+  `ValidationError` on every audio-form submission attempt. This is caught
+  by the surrounding `try/except` (logs a warning, session continues
+  without a persisted submission) — a graceful-but-silent failure, not a
+  crash, and no worse than the PRE-EXISTING breakage where this same call
+  site read an already-stale `form_id` from a route that TASK-1976 renamed
+  to `{form_uid}`. Fix both in the same pass: use `form_uid=` (renamed from
+  `session.form_id`, see the `AudioSessionState` rename above) alongside
+  `form_id=` if a slug is still available on the session, or omit `form_id`
+  if none is tracked.
 
 ### 4. `audio/models.py`
 - Rename `form_id: str` → `form_uid: str` on `AudioSessionConfig`,
