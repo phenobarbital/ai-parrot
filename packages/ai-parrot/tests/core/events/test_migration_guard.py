@@ -4,8 +4,13 @@ Asserts that the bus core / lifecycle machinery / generic hooks deleted in
 TASK-1827-1829 are genuinely gone from ai-parrot, and that the surviving
 facades (`parrot.core.events.lifecycle`, `parrot.core.hooks`) still resolve
 their public surface from `navigator_eventbus`.
+
+FEAT-381 extends the guard with a PyPI-source assertion for
+`navigator-eventbus` (TASK-1941).
 """
 import importlib
+import importlib.metadata
+import re
 
 import pytest
 
@@ -80,3 +85,20 @@ def test_facade_reexports() -> None:
     from navigator_eventbus.lifecycle.base import LifecycleEvent as PkgLE
 
     assert issubclass(BeforeInvokeEvent, PkgLE)
+
+
+def test_navigator_eventbus_from_pypi() -> None:
+    """FEAT-381: navigator-eventbus must be installed from PyPI, not a VCS URL."""
+    version = importlib.metadata.version("navigator-eventbus")
+    assert re.match(r"^\d+\.\d+\.\d+", version), (
+        f"Expected semver version, got {version!r} — "
+        "may indicate a git-URL or editable install"
+    )
+    # A well-formed semver (X.Y.Z) is the primary signal of a PyPI release.
+    # VCS/editable installs typically carry a local-version segment or a
+    # dirty tag that breaks the strict X.Y.Z prefix match above.
+    parts = version.split(".")
+    assert len(parts) >= 3 and all(p.isdigit() for p in parts[:3]), (
+        f"navigator-eventbus version {version!r} is not a proper semver release — "
+        "expected at least X.Y.Z with numeric components"
+    )
