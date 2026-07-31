@@ -36,6 +36,7 @@ from parrot.knowledge.wiki.context import (
     pack_results,
     truncate_to_tokens,
 )
+from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     WikiProjectConfig,
@@ -525,6 +526,7 @@ def _write_build_stats(
         "categories": store_stats.get("categories", {}),
         "okf": okf_report,
         "graph": graph_stats,
+        "languages": {name: s.mode for name, s in all_scanners().items()},
     }
     (output_dir / "wiki_stats.json").write_text(
         json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8",
@@ -1088,6 +1090,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
         "stats": stats,
         "sources": len(entries),
         "stale_sources": len(stale),
+        "languages": {name: s.mode for name, s in all_scanners().items()},
     }
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -1101,6 +1104,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
         f"~{stats.get('total_tokens', 0)} tokens"
     )
     click.echo(f"Categories: {stats.get('categories', {})}")
+    click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
