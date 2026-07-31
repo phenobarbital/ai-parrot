@@ -63,6 +63,23 @@ class _FakeAIMessage:
         self.to_text = text
 
 
+class FlakyLLMClient:
+    """Fails distill on the first call (malformed JSON), succeeds after."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def ask(self, **kwargs):
+        self.call_count += 1
+        if self.call_count == 1:
+            return _FakeAIMessage("not json")
+        return _FakeAIMessage(
+            json.dumps(
+                {"title": "T2", "body": "B2", "category": "lesson", "confidence": 0.9}
+            )
+        )
+
+
 @pytest.fixture
 def namespace() -> MemoryNamespace:
     return MemoryNamespace(agent_id="test-agent")
@@ -214,6 +231,40 @@ class TestDistill:
 
 
 class TestCycle:
+    async def test_watermark_never_skips_a_failed_group(
+        self, episodic_store, backend, namespace, brain
+    ):
+        """Regression (Codex review, FEAT-390): a later group succeeding must
+        not advance the watermark past an earlier group that failed to
+        distill — otherwise the failed group's episodes would never be
+        retried, since future `_collect(since=...)` calls would exclude
+        them."""
+        t_old = datetime.now(UTC) - timedelta(hours=2)
+        t_new = datetime.now(UTC) - timedelta(hours=1)
+        old_ep = _make_episode(
+            importance=8,
+            category=EpisodeCategory.TOOL_EXECUTION,
+            related_tools=["a"],
+            created_at=t_old,
+        )
+        new_ep = _make_episode(
+            importance=8,
+            category=EpisodeCategory.DECISION,
+            related_tools=[],
+            created_at=t_new,
+        )
+        await _seed(backend, [old_ep, new_ep])
+
+        flaky = FlakyLLMClient()
+        runner = DreamCycleRunner(episodic_store, brain, namespace, llm_client=flaky)
+        state = DreamState(agent_id="test-agent")
+        report = await runner.run_cycle(state)
+
+        assert report.groups_skipped == 1
+        assert report.groups_distilled == 1
+        assert state.last_run is not None
+        assert state.last_run < t_old
+
     async def test_idempotent_two_runs(self, episodic_store, backend, namespace, brain):
         ep = _make_episode(importance=8, lesson_learned="always check X")
         await _seed(backend, [ep])

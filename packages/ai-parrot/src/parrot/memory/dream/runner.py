@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..episodic.models import EpisodicMemory, MemoryNamespace
@@ -38,6 +38,16 @@ _MAX_BODY_CHARS = 4000
 
 # confidence below this threshold never masquerades as a learned rule.
 _LOW_CONFIDENCE_THRESHOLD = 0.3
+
+# Generous per-cycle fetch size for _collect(). AbstractEpisodeBackend has no
+# offset/cursor pagination (get_recent only supports since + limit), so a
+# single get_recent(since=..., limit=...) call fetching the newest N episodes
+# is the best this protocol supports. If more than this many INELIGIBLE
+# episodes land after the watermark in one interval, older eligible episodes
+# would be starved until enough ineligible ones age past future limits — a
+# known, accepted limitation of the read-path contract (out of scope for this
+# feature to change; see spec §7 / TASK-1985's "no read-path changes" note).
+_COLLECT_LIMIT = 5000
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -112,9 +122,27 @@ class DreamCycleRunner:
             groups = await self._cluster(episodes)
             report.groups_formed = len(groups)
             groups_to_process = groups[: self._config.max_groups_per_cycle]
+            deferred_groups = groups[self._config.max_groups_per_cycle :]
 
             newest_consolidated: datetime | None = None
             reinforced_this_cycle: set[str] = set()
+
+            # Tracks the earliest created_at among episodes that are NOT
+            # consolidated this cycle (deferred past the cap, or skipped on
+            # distill failure). The watermark must never advance to or past
+            # this point, or those episodes would be silently excluded from
+            # every future `_collect(since=...)` call — even though they
+            # were never actually consolidated. Codex review finding.
+            pending_min_created_at: datetime | None = None
+
+            def _note_pending(pending_group: list[EpisodicMemory]) -> None:
+                nonlocal pending_min_created_at
+                group_min = min(ep.created_at for ep in pending_group)
+                if pending_min_created_at is None or group_min < pending_min_created_at:
+                    pending_min_created_at = group_min
+
+            for deferred_group in deferred_groups:
+                _note_pending(deferred_group)
 
             for group in groups_to_process:
                 try:
@@ -126,6 +154,7 @@ class DreamCycleRunner:
                         len(group),
                         e,
                     )
+                    _note_pending(group)
                     continue
 
                 category = distilled.category
@@ -180,6 +209,17 @@ class DreamCycleRunner:
                         )
 
             if newest_consolidated is not None:
+                if (
+                    pending_min_created_at is not None
+                    and newest_consolidated >= pending_min_created_at
+                ):
+                    # A skipped/deferred episode is older than (or equal to)
+                    # our would-be watermark — cap it strictly before that
+                    # episode so it remains eligible (`since` is exclusive)
+                    # on the next cycle instead of being silently dropped.
+                    newest_consolidated = pending_min_created_at - timedelta(
+                        microseconds=1
+                    )
                 state.last_run = newest_consolidated
             state.cycles_completed += 1
             report.finished_at = datetime.now(UTC)
@@ -212,7 +252,7 @@ class DreamCycleRunner:
         backend = self._episodic_store._backend
         episodes = await backend.get_recent(
             namespace_filter=namespace_filter,
-            limit=1000,
+            limit=_COLLECT_LIMIT,
             since=state.last_run,
         )
         eligible = [
