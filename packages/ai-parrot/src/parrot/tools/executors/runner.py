@@ -119,6 +119,17 @@ async def run_envelope_inprocess(envelope: ToolExecutionEnvelope) -> Any:
       ``arguments``. This mirrors what :meth:`ToolkitTool._execute`
       would do, minus the ``_pre_execute`` / ``_post_execute`` hooks
       because we want the remote runtime to behave like a pure worker.
+
+    FEAT-391: this runner instantiates a *fresh* ``instance`` per
+    envelope and never goes through ``AbstractTool.execute()`` /
+    ``ToolkitTool._execute()`` — so the ``auto_open`` lazy-lifecycle
+    wiring in those methods never runs here. If ``instance.auto_open`` is
+    True (only present on tool/toolkit classes built on this feature),
+    this function calls ``_ensure_open()`` itself before invoking
+    ``_execute()``/the bound method, and — because the instance is
+    ephemeral (discarded after this single call, never pooled across
+    envelopes) — always calls ``_close()`` afterwards in a ``finally`` so
+    resources opened for this one call don't leak.
     """
     cls = _import_class(envelope.tool_import_path)
     # Defensive: tool_init_kwargs comes from a Pydantic-validated
@@ -146,24 +157,45 @@ async def run_envelope_inprocess(envelope: ToolExecutionEnvelope) -> Any:
 
     arguments = dict(envelope.arguments or {})
 
-    if envelope.method_name is None:
-        # AbstractTool subclass path
-        return await instance._execute(**arguments)
+    # FEAT-391: worker-side auto_open wiring (see docstring). `instance`
+    # is either the reconstructed AbstractTool (plain path) or the
+    # reconstructed toolkit (toolkit-bound path) — both expose the same
+    # auto_open/_ensure_open/_close contract, so this branch is uniform
+    # for both. Duck-typed via getattr to avoid importing AbstractTool/
+    # AbstractToolkit here (this module stays import-light for workers).
+    opened_here = bool(getattr(instance, "auto_open", False))
+    if opened_here:
+        await instance._ensure_open()
 
-    # Toolkit path — find the bound method, call it.
-    bound = getattr(instance, envelope.method_name, None)
-    if bound is None:
-        raise AttributeError(
-            f"Toolkit {envelope.tool_import_path!r} has no method "
-            f"{envelope.method_name!r}."
-        )
-    if not callable(bound):
-        raise TypeError(
-            f"{envelope.tool_import_path}.{envelope.method_name} is not callable."
-        )
-    result = bound(**arguments)
-    # Toolkit methods are async by contract; await coroutines, return
-    # plain values directly so tests / sync stubs still work.
-    if hasattr(result, "__await__"):
-        result = await result
-    return result
+    try:
+        if envelope.method_name is None:
+            # AbstractTool subclass path
+            return await instance._execute(**arguments)
+
+        # Toolkit path — find the bound method, call it.
+        bound = getattr(instance, envelope.method_name, None)
+        if bound is None:
+            raise AttributeError(
+                f"Toolkit {envelope.tool_import_path!r} has no method "
+                f"{envelope.method_name!r}."
+            )
+        if not callable(bound):
+            raise TypeError(
+                f"{envelope.tool_import_path}.{envelope.method_name} is not callable."
+            )
+        result = bound(**arguments)
+        # Toolkit methods are async by contract; await coroutines, return
+        # plain values directly so tests / sync stubs still work.
+        if hasattr(result, "__await__"):
+            result = await result
+        return result
+    finally:
+        if opened_here:
+            try:
+                await instance._close()
+            except Exception:  # pragma: no cover - best-effort, never mask the real result/error
+                logger.debug(
+                    "Error in _close() for worker-side instance %s",
+                    envelope.tool_import_path,
+                    exc_info=True,
+                )

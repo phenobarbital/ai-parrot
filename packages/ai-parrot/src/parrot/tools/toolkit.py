@@ -1,6 +1,7 @@
 """
 AbstractToolkit for creating collections of tools from class methods.
 """
+import asyncio
 import inspect
 from abc import ABC
 from collections.abc import Callable as CallableType
@@ -168,14 +169,15 @@ class ToolkitTool(AbstractTool):
             Method result (possibly transformed by ``_post_execute``).
         """
         toolkit = getattr(self.bound_method, "__self__", None)
+        is_toolkit = isinstance(toolkit, AbstractToolkit)
 
         # FEAT-391: lazy resource acquisition for the toolkit (opt-in via
         # auto_open), before the _pre_execute() hook so the toolkit's
         # resources are available to it.
-        if isinstance(toolkit, AbstractToolkit) and toolkit.auto_open:
+        if is_toolkit and toolkit.auto_open:
             await toolkit._ensure_open()
 
-        if isinstance(toolkit, AbstractToolkit):
+        if is_toolkit:
             # Rebuild hook_kwargs: tool params + the permission context that
             # AbstractTool.execute() popped from kwargs before validation.
             # Always inject _permission_context (even when None) so that
@@ -185,7 +187,7 @@ class ToolkitTool(AbstractTool):
             hook_kwargs["_permission_context"] = pctx
             await toolkit._pre_execute(self.name, **hook_kwargs)
 
-        if isinstance(toolkit, AbstractToolkit):
+        if is_toolkit:
             kwargs = await toolkit._prepare_kwargs(self.name, kwargs)
 
         sig = inspect.signature(self.bound_method)
@@ -203,7 +205,7 @@ class ToolkitTool(AbstractTool):
 
         result = await self.bound_method(**kwargs)
 
-        if isinstance(toolkit, AbstractToolkit):
+        if is_toolkit:
             # NOTE: _post_execute intentionally receives only tool params (kwargs),
             # not _permission_context.  Per-call auth context is only needed in
             # _pre_execute for credential resolution (e.g., JiraToolkit oauth2_3lo).
@@ -352,6 +354,13 @@ class AbstractToolkit(ABC):
         # here (not as a class attribute) so it is never shared across
         # instances of the same toolkit class.
         self._opened: bool = False
+        # Guards _ensure_open() against a first-open race: every
+        # ToolkitTool generated from this toolkit shares the same
+        # toolkit instance, so concurrent tool calls in the same agent
+        # turn can race into _ensure_open() before either sets
+        # _opened=True. asyncio.Lock() is safe to construct here without
+        # a running loop (3.10+).
+        self._open_lock: asyncio.Lock = asyncio.Lock()
 
     async def start(self) -> None:
         """
@@ -409,13 +418,20 @@ class AbstractToolkit(ABC):
         """
         Idempotent gate that calls :meth:`_open` at most once.
 
+        Guarded by :attr:`_open_lock` so two coroutines racing into this
+        method concurrently (e.g. two tool calls from the same toolkit
+        fired in the same agent turn) cannot both observe
+        ``_opened is False`` and both invoke :meth:`_open` (double-
+        acquiring the underlying resource).
+
         If ``_open()`` raises, ``_opened`` is left ``False`` so the next
         call retries resource acquisition (recovers from transient
         errors automatically).
         """
-        if not self._opened:
-            await self._open()
-            self._opened = True
+        async with self._open_lock:
+            if not self._opened:
+                await self._open()
+                self._opened = True
 
     async def _prepare_kwargs(self, tool_name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Hook called before argument filtering, allowing subclasses to inject or modify kwargs.

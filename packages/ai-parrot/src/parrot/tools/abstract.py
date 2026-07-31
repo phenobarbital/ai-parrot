@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime
+import asyncio
 import time
 import traceback
 from urllib.parse import urlparse, urlunparse
@@ -229,6 +230,11 @@ class AbstractTool(EventEmitterMixin, ABC):
         # here (not as a class attribute) so it is never shared across
         # instances of the same tool class.
         self._opened: bool = False
+        # Guards _ensure_open() against a first-open race: two coroutines
+        # calling execute() concurrently on the same instance before either
+        # has set _opened=True must not both invoke _open(). asyncio.Lock()
+        # is safe to construct here without a running loop (3.10+).
+        self._open_lock: asyncio.Lock = asyncio.Lock()
 
         # Set up logging
         self.logger = logging.getLogger(
@@ -334,13 +340,19 @@ class AbstractTool(EventEmitterMixin, ABC):
         """
         Idempotent gate that calls :meth:`_open` at most once.
 
+        Guarded by :attr:`_open_lock` so two coroutines racing into this
+        method concurrently (e.g. two tool calls fired in the same agent
+        turn) cannot both observe ``_opened is False`` and both invoke
+        :meth:`_open` (double-acquiring the underlying resource).
+
         If ``_open()`` raises, ``_opened`` is left ``False`` so the next
         call retries resource acquisition (recovers from transient
         errors automatically).
         """
-        if not self._opened:
-            await self._open()
-            self._opened = True
+        async with self._open_lock:
+            if not self._opened:
+                await self._open()
+                self._opened = True
 
     @abstractmethod
     async def _execute(self, **kwargs) -> Any:
@@ -652,8 +664,14 @@ class AbstractTool(EventEmitterMixin, ABC):
 
         # ── Normal execution ─────────────────────────────────────────────────
         try:
-            # FEAT-391: lazy resource acquisition (opt-in via auto_open)
-            if self.auto_open:
+            # FEAT-391: lazy resource acquisition (opt-in via auto_open).
+            # Skipped when a remote executor is configured — _execute()
+            # runs inside the worker process in that case (see the
+            # `self.executor is not None` branch below), so opening
+            # resources here (the caller/local process) would be both
+            # pointless and wrong. The worker opens its own resources via
+            # run_envelope_inprocess() (executors/runner.py) instead.
+            if self.auto_open and self.executor is None:
                 await self._ensure_open()
 
             self.logger.info("Executing tool: %s", self.name)

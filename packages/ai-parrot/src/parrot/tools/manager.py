@@ -1934,6 +1934,13 @@ class ToolManager(MCPToolManagerMixin):
         set. ``_close()`` errors are caught and logged, matching the
         existing error-isolation pattern, so one broken toolkit/tool never
         blocks cleanup of the rest.
+
+        Resetting ``_opened`` is framework-enforced here, not merely left
+        to each ``_close()`` override's discipline: this method always
+        sets ``_opened = False`` after attempting ``_close()`` — whether it
+        succeeded, raised, or was a subclass override that forgot to call
+        ``super()._close()`` — so a forgetful override cannot permanently
+        wedge the toolkit/tool into "always considered open".
         """
         from .toolkit import ToolkitTool
         seen: set[int] = set()
@@ -1954,6 +1961,9 @@ class ToolManager(MCPToolManagerMixin):
             seen.add(tk_id)
 
             # FEAT-391: release resources acquired via _open() first.
+            # _opened is force-reset in `finally` regardless of outcome —
+            # framework-owned, not left to the override calling
+            # super()._close() (see docstring above).
             if getattr(toolkit, '_opened', False):
                 try:
                     await toolkit._close()
@@ -1962,6 +1972,8 @@ class ToolManager(MCPToolManagerMixin):
                         "Error in _close() for toolkit %s: %s",
                         type(toolkit).__name__, exc,
                     )
+                finally:
+                    toolkit._opened = False
 
             cleanup_fn = getattr(toolkit, 'cleanup', None) or getattr(toolkit, 'stop', None)
             if cleanup_fn and callable(cleanup_fn):
@@ -1979,6 +1991,7 @@ class ToolManager(MCPToolManagerMixin):
         for tool in self._tools.values():
             if isinstance(tool, ToolkitTool):
                 continue
+            # FEAT-391: same framework-enforced reset as Phase 1 above.
             if getattr(tool, '_opened', False):
                 try:
                     await tool._close()
@@ -1987,3 +2000,5 @@ class ToolManager(MCPToolManagerMixin):
                         "Error in _close() for tool %s: %s",
                         tool.name, exc,
                     )
+                finally:
+                    tool._opened = False
