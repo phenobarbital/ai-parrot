@@ -254,6 +254,39 @@ class FAISSBackend:
             if _matches_filter(ep, namespace_filter)
         )
 
+    async def update_metadata(
+        self,
+        episode_ids: list[str],
+        patch: dict[str, Any],
+    ) -> int:
+        """Merge ``patch`` into the in-memory ``metadata`` dict of episodes.
+
+        Auto-saves afterwards (when persistence is enabled) so the patch
+        survives a save/load round-trip. Unknown ids are ignored.
+
+        Args:
+            episode_ids: Episode ids to patch.
+            patch: Key-value pairs merged into each episode's ``metadata``.
+
+        Returns:
+            Number of episodes actually updated.
+        """
+        if not episode_ids:
+            return 0
+
+        updated = 0
+        for episode_id in episode_ids:
+            episode = self._episodes.get(episode_id)
+            if episode is None:
+                continue
+            episode.metadata.update(patch)
+            updated += 1
+
+        if updated and self._persistence_path:
+            await self.save()
+
+        return updated
+
     # ── Persistence ──
 
     async def save(self) -> None:

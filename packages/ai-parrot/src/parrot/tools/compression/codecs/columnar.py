@@ -83,16 +83,21 @@ class ColumnarCodec:
        across every row (when there is more than one row) moves to
        ``constants`` and drops out of ``columns``/``rows``.
     3. **Null-column elision** — an all-null column is dropped entirely
-       (logged for discoverability).
+       (logged for discoverability). ``NORMAL``/``AGGRESSIVE`` only: at
+       ``MINIMAL`` (the lossless-only level, and what the stage caps
+       ``NORMAL`` down to when no tee is available, G3) an all-null column
+       is factored into ``constants`` as ``None`` instead of dropped, so
+       the outcome is never lossy.
 
     Passthrough guards, each a "no gain" outcome:
 
     - fewer than ``min_rows`` rows (default 20, per-tool configurable via
       ``params``) — the ORIGINAL object is returned unchanged.
     - heterogeneous rows (key union/intersection ratio > 1.5, configurable)
-      — null-key elision only, no columnarization.
+      — null-key elision only, no columnarization (unchanged passthrough at
+      ``MINIMAL``: per-row null-key elision is lossy).
     - any nested ``dict``/``list`` value — no flattening; null-key elision
-      only.
+      only (unchanged passthrough at ``MINIMAL``).
     - non-``list[dict]`` (and non-``QueryResult``-shaped) input — unchanged
       passthrough.
 
@@ -117,7 +122,10 @@ class ColumnarCodec:
                 a ``QueryResult``-shaped ``dict``, or either pre-serialized
                 as ``bytes``/``str`` JSON.
             level: Effective :class:`FilterLevel`. ``NONE`` is a strict
-                passthrough.
+                passthrough. ``MINIMAL`` restricts the codec to lossless
+                transformations only (column split + constant factoring;
+                no null elision of any kind), so the outcome is never
+                ``lossy`` and never needs the tee.
             params: Recognized keys: ``min_rows`` (int, default 20),
                 ``heterogeneity_ratio`` (float, default 1.5).
 
@@ -131,6 +139,7 @@ class ColumnarCodec:
         """
         if level is FilterLevel.NONE:
             return self._passthrough(result)
+        lossless_only = level is FilterLevel.MINIMAL
 
         try:
             before = self._safe_size(result)
@@ -157,10 +166,25 @@ class ColumnarCodec:
                 return self._passthrough(result, before)
 
             if self._is_heterogeneous(rows, het_ratio) or self._has_nested_values(rows):
+                if lossless_only:
+                    # Per-row null-key elision drops which keys were null —
+                    # lossy, so not allowed at MINIMAL.
+                    return self._passthrough(result, before)
                 return self._null_elision_only(working, rows, container_key, before)
 
+            if lossless_only and not self._uniform_keys(rows):
+                # `_columnarize` fills a missing key with None via
+                # `row.get()`, conflating absent-with-null — e.g. a `note:
+                # None` present in ONE row would be factored into
+                # `constants` as if every row had it (code-review finding).
+                # Only identical key sets are provably lossless.
+                return self._passthrough(result, before)
+
             original_columns = self._first_seen_columns(rows)
-            transformed = self._dispatch_columnarize(rows, container_key, raw_bytes, min_rows)
+            transformed = self._dispatch_columnarize(
+                rows, container_key, raw_bytes, min_rows,
+                elide_nulls=not lossless_only,
+            )
             kept = set(transformed["columns"]) | set(transformed["constants"])
             dropped_or_factored = [c for c in original_columns if c not in kept]
             if dropped_or_factored:
@@ -197,12 +221,18 @@ class ColumnarCodec:
         container_key: "str | None",
         raw_bytes: "bytes | None",
         min_rows: int,
+        *,
+        elide_nulls: bool = True,
     ) -> dict[str, Any]:
         """Run the core columnarization, via Rust when eligible+available,
         else the pure-Python reference path. Both MUST produce identical
         ``{"columns", "rows", "constants"}`` output for the same input
-        (TASK-1954's suite is the executable spec both must satisfy)."""
-        if raw_bytes is not None:
+        (TASK-1954's suite is the executable spec both must satisfy).
+
+        ``elide_nulls=False`` (the MINIMAL lossless path) always takes the
+        pure-Python path: ``parrot_codec.columnarize`` elides all-null
+        columns internally and has no flag to disable it."""
+        if elide_nulls and raw_bytes is not None:
             rust = _rust()
             if rust is not None:
                 # A bare row-array input crosses with NO re-serialization
@@ -216,7 +246,9 @@ class ColumnarCodec:
                 out_bytes = rust.columnarize(rows_bytes, min_rows)
                 return json_decoder(out_bytes.decode("utf-8"))
 
-        columns, out_rows, constants, _null_cols, _factored_cols = self._columnarize(rows)
+        columns, out_rows, constants, _null_cols, _factored_cols = self._columnarize(
+            rows, elide_nulls=elide_nulls,
+        )
         return {"columns": columns, "rows": out_rows, "constants": constants}
 
     # -- passthrough / size / (de)serialization helpers -------------------
@@ -305,6 +337,15 @@ class ColumnarCodec:
         return (len(union) / len(inter)) > het_ratio
 
     @staticmethod
+    def _uniform_keys(rows: list[dict]) -> bool:
+        """True when every row has exactly the same key set — the only
+        shape where columnarization is provably lossless (``MINIMAL``
+        requires it; ``row.get()`` fills a missing key with ``None``,
+        conflating absent-with-null otherwise)."""
+        first = set(rows[0])
+        return all(set(row) == first for row in rows)
+
+    @staticmethod
     def _has_nested_values(rows: list[dict]) -> bool:
         """True when any row value is itself a ``dict``/``list`` (no
         flattening is attempted — null-elision only in that case)."""
@@ -345,14 +386,23 @@ class ColumnarCodec:
     @staticmethod
     def _columnarize(
         rows: list[dict],
+        *,
+        elide_nulls: bool = True,
     ) -> "tuple[list[str], list[list[Any]], dict[str, Any], list[str], list[str]]":
         """Split ``rows`` into ``(columns, out_rows, constants, null_cols,
         factored_cols)`` — the pure-Python reference implementation the
-        optional Rust path (TASK-1955) must match byte-for-byte."""
+        optional Rust path (TASK-1955) must match byte-for-byte.
+
+        With ``elide_nulls=False`` (MINIMAL), an all-null column is not
+        dropped — constant factoring picks it up as ``constants[col] =
+        None`` instead (every value equals ``None``), preserving the
+        column losslessly at nearly the same byte savings."""
         columns = ColumnarCodec._first_seen_columns(rows)
 
-        null_cols = [c for c in columns if all(row.get(c) is None for row in rows)]
-        columns = [c for c in columns if c not in null_cols]
+        null_cols: list[str] = []
+        if elide_nulls:
+            null_cols = [c for c in columns if all(row.get(c) is None for row in rows)]
+            columns = [c for c in columns if c not in null_cols]
 
         constants: dict[str, Any] = {}
         factored_cols: list[str] = []

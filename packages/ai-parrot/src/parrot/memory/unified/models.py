@@ -29,6 +29,10 @@ class MemoryContext(BaseModel):
         default="",
         description="Recent conversation turns",
     )
+    semantic_knowledge: str = Field(
+        default="",
+        description="Distilled long-term knowledge from the agent's brain wiki (FEAT-390)",
+    )
     tokens_used: int = Field(
         default=0,
         ge=0,
@@ -72,6 +76,13 @@ class MemoryContext(BaseModel):
                 "</recent_conversation>"
             )
 
+        if self.semantic_knowledge:
+            sections.append(
+                "<brain_knowledge>\n"
+                f"{self.semantic_knowledge}\n"
+                "</brain_knowledge>"
+            )
+
         return "\n\n".join(sections)
 
 
@@ -94,6 +105,10 @@ class MemoryConfig(BaseModel):
     enable_conversation: bool = Field(
         default=True,
         description="Enable conversation history retrieval",
+    )
+    enable_brain: bool = Field(
+        default=False,
+        description="Enable brain-wiki (dream cycle) retrieval — FEAT-390",
     )
 
     # Token budget
@@ -134,6 +149,12 @@ class MemoryConfig(BaseModel):
         le=1.0,
         description="Fraction of token budget for conversation history",
     )
+    brain_weight: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of token budget for brain-wiki knowledge (FEAT-390)",
+    )
 
     # Skill auto-extraction
     skill_auto_extract: bool = Field(
@@ -143,13 +164,54 @@ class MemoryConfig(BaseModel):
 
     @model_validator(mode="after")
     def _weights_sum_to_one(self) -> MemoryConfig:
-        """Validate that the three weight fields sum to 1.0 (±0.01 tolerance)."""
-        total = self.episodic_weight + self.skill_weight + self.conversation_weight
+        """Validate weight fields sum to 1.0 (±0.01 tolerance).
+
+        When ``enable_brain`` is False (default), validates the original
+        three weights exactly as before — existing three-weight configs
+        keep validating unchanged (FEAT-390 zero-breaking-changes
+        requirement).
+
+        When ``enable_brain`` is True, the fourth weight (``brain_weight``)
+        joins the sum-to-one check. If the caller did not explicitly
+        override ANY of the four weight fields, they are rebalanced to the
+        FEAT-390 defaults (0.25 / 0.25 / 0.30 / 0.20 —
+        episodic/skill/conversation/brain) before validating.
+        """
+        if not self.enable_brain:
+            total = self.episodic_weight + self.skill_weight + self.conversation_weight
+            if abs(total - 1.0) > 0.01:
+                raise ValueError(
+                    f"Weights must sum to 1.0, got {total:.3f} "
+                    f"(episodic={self.episodic_weight}, "
+                    f"skill={self.skill_weight}, "
+                    f"conversation={self.conversation_weight})"
+                )
+            return self
+
+        weight_fields = {
+            "episodic_weight",
+            "skill_weight",
+            "conversation_weight",
+            "brain_weight",
+        }
+        if not (weight_fields & self.model_fields_set):
+            self.episodic_weight = 0.25
+            self.skill_weight = 0.25
+            self.conversation_weight = 0.30
+            self.brain_weight = 0.20
+
+        total = (
+            self.episodic_weight
+            + self.skill_weight
+            + self.conversation_weight
+            + self.brain_weight
+        )
         if abs(total - 1.0) > 0.01:
             raise ValueError(
                 f"Weights must sum to 1.0, got {total:.3f} "
                 f"(episodic={self.episodic_weight}, "
                 f"skill={self.skill_weight}, "
-                f"conversation={self.conversation_weight})"
+                f"conversation={self.conversation_weight}, "
+                f"brain={self.brain_weight})"
             )
         return self

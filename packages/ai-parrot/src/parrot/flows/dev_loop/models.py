@@ -1000,7 +1000,11 @@ class CodexAdversarialReviewProfile(CodexCodeDispatchProfile):
         default=False,
         description="G6: use `codex exec resume --last` to continue the existing review session.",
     )
-    timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+    # A read-only diff review needs minutes, not half an hour: the reviewer
+    # cannot run tests (nothing is writable in the read-only sandbox, not
+    # even /tmp), so a long timeout only pays for retry spirals when the
+    # model attempts a command anyway.
+    timeout_seconds: int = Field(default=600, ge=60, le=7200)
 
 
 class GeminiCodeReviewProfile(GeminiCodeDispatchProfile):

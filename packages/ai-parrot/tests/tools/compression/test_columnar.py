@@ -122,6 +122,67 @@ class TestColumnar:
         out = codec.compress(row_oriented_payload, level=FilterLevel.NORMAL, params={})
         assert out.est_tokens_saved == max(0, out.bytes_before - out.bytes_after) // 4
 
+    def test_minimal_splits_columns_losslessly(self, codec, row_oriented_payload):
+        # MINIMAL is the lossless-only level: the column split and constant
+        # factoring still happen (both preserve every value), but the
+        # all-null `notes` column must NOT be dropped — it is factored into
+        # `constants` as None instead, so no information is lost.
+        out = codec.compress(row_oriented_payload, level=FilterLevel.MINIMAL, params={})
+        p = out.payload
+        assert set(p) >= {"columns", "rows"}
+        assert p["constants"]["region"] == "south"
+        assert p["constants"]["active"] is True
+        assert p["constants"]["notes"] is None
+        assert out.lossy is False
+        assert out.bytes_after < out.bytes_before
+
+    def test_minimal_heterogeneous_skips_null_elision(self, codec):
+        # NORMAL would elide the all-null `shared` key per row (lossy);
+        # MINIMAL must pass the payload through unchanged instead.
+        rows = [{f"k{i}": i, "shared": None} for i in range(30)]
+        out = codec.compress(rows, level=FilterLevel.MINIMAL, params={})
+        assert out.payload is rows
+        assert out.lossy is False
+
+    def test_minimal_nested_values_passthrough(self, codec):
+        rows = [{"a": {"nested": 1}, "b": None} for _ in range(30)]
+        out = codec.compress(rows, level=FilterLevel.MINIMAL, params={})
+        assert out.payload is rows
+        assert out.lossy is False
+
+    def test_minimal_nonuniform_keys_passthrough(self, codec):
+        # Code-review finding (Codex P2): `row.get()` fills a missing key
+        # with None, conflating absent-with-null. One row carrying an extra
+        # `note: None` stays under the heterogeneity ratio, so pre-guard it
+        # would reach `_columnarize` and factor `note` into constants as if
+        # EVERY row had it. MINIMAL must pass non-uniform key sets through.
+        rows = [{"a": i, "b": i, "c": i} for i in range(29)]
+        rows.append({"a": 1, "b": 2, "c": 3, "note": None})
+        out = codec.compress(rows, level=FilterLevel.MINIMAL, params={})
+        assert out.payload is rows
+        assert out.lossy is False
+
+    def test_normal_nonuniform_keys_still_columnarizes(self, codec):
+        # Contrast pin: the same shape at NORMAL keeps today's behavior —
+        # columnarized, all-null `note` column elided, lossy → tee-armed.
+        rows = [{"a": i, "b": i, "c": i} for i in range(29)]
+        rows.append({"a": 1, "b": 2, "c": 3, "note": None})
+        out = codec.compress(rows, level=FilterLevel.NORMAL, params={})
+        assert "columns" in out.payload
+        assert "note" not in out.payload["columns"]
+        assert out.lossy is True
+
+    def test_minimal_serialized_input_keeps_null_columns(self, codec, row_oriented_payload):
+        # The Rust transform elides null columns internally, so MINIMAL must
+        # not dispatch to it even for the bytes/str input shape that is
+        # normally Rust-eligible.
+        import json
+        out = codec.compress(
+            json.dumps(row_oriented_payload), level=FilterLevel.MINIMAL, params={},
+        )
+        assert out.payload["constants"]["notes"] is None
+        assert out.lossy is False
+
     def test_single_row_no_constants(self, codec):
         # len(rows) > 1 is required for constant factoring — a single row
         # trivially has "constant" columns for everything, which would be
