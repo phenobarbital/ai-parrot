@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import re
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Optional
@@ -81,6 +82,46 @@ DEFAULT_MAX_FILE_BYTES = 512 * 1024
 DEFAULT_BODY_MAX_CHARS = 16_000
 
 _SUMMARY_MAX_CHARS = 240
+
+#: Opens and closes a YAML frontmatter block.
+_FRONTMATTER_DELIMITER = "---"
+
+#: Frontmatter keys consulted for a document summary, in priority order.
+_FRONTMATTER_SUMMARY_KEYS = ("summary", "title")
+
+#: A top-level YAML mapping key, used to tell a frontmatter block from a
+#: document that merely opens with a horizontal rule.
+_YAML_KEY_RE = re.compile(r"^[A-Za-z_][\w-]*:")
+
+#: Scalar values that carry no summary: YAML block-scalar indicators
+#: (the text lives on following lines) and the delimiter itself.
+_EMPTY_YAML_SCALARS = frozenset({"|", "|-", "|+", ">", ">-", ">+", "---"})
+
+
+def _frontmatter_lead(block: list[str]) -> str:
+    """Best summary carried by a YAML frontmatter block, if any.
+
+    Deliberately not a YAML parse: only top-level ``key: value`` scalars
+    are read, which is all a summary needs and keeps this dependency-free
+    on the hot ingest path.
+
+    Args:
+        block: Lines between the frontmatter delimiters.
+
+    Returns:
+        The first usable value among :data:`_FRONTMATTER_SUMMARY_KEYS`,
+        or ``""`` when the block carries none.
+    """
+    for key in _FRONTMATTER_SUMMARY_KEYS:
+        prefix = f"{key}:"
+        for line in block:
+            if not line.startswith(prefix):  # top-level keys only
+                continue
+            value = line[len(prefix):].strip().strip("\"'").strip()
+            if value and value not in _EMPTY_YAML_SCALARS:
+                return value
+            break  # key present but unusable — try the next one
+    return ""
 
 
 # --------------------------------------------------------------------------
@@ -426,10 +467,49 @@ def _python_outline(source: str) -> tuple[str, list[str], list[str]]:
 
 
 def _markdown_summary(content: str) -> str:
-    """Summary for a markdown/rst document: first heading or first line."""
-    for line in content.splitlines():
+    """Summary for a markdown/rst document.
+
+    Resolution order, first hit wins:
+
+    1. the ``summary`` field of a leading YAML frontmatter block,
+    2. its ``title`` field,
+    3. the first heading or non-empty line of the body after the block.
+
+    Frontmatter is metadata, not prose. Reading straight from the top
+    of such a file yields its ``---`` delimiter, which is useless in a
+    search result *and* gets indexed by FTS as though it were content —
+    the same meaningless token repeated across every document that has
+    a frontmatter block.
+
+    Args:
+        content: Raw document text.
+
+    Returns:
+        The summary line, truncated to :data:`_SUMMARY_MAX_CHARS`.
+    """
+    lines = content.splitlines()
+    body = lines
+    if lines and lines[0].strip() == _FRONTMATTER_DELIMITER:
+        for idx in range(1, len(lines)):
+            if lines[idx].strip() != _FRONTMATTER_DELIMITER:
+                continue
+            block = lines[1:idx]
+            # Position is not enough: a document may simply open with a
+            # horizontal rule. Without a single top-level `key:` this is
+            # not metadata, and consuming it would drop the real lead.
+            if not any(_YAML_KEY_RE.match(line) for line in block):
+                break
+            lead = _frontmatter_lead(block)
+            if lead:
+                return lead[:_SUMMARY_MAX_CHARS]
+            body = lines[idx + 1:]
+            break
+        # No closing delimiter: not a frontmatter block after all. Fall
+        # through and read the document, delimiter line skipped below.
+
+    for line in body:
         stripped = line.strip().lstrip("#").strip()
-        if stripped:
+        if stripped and stripped != _FRONTMATTER_DELIMITER:
             return stripped[:_SUMMARY_MAX_CHARS]
     return ""
 
