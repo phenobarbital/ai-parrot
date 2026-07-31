@@ -346,16 +346,23 @@ class FormRegistry:
             form: FormSchema to register.
             persist: If True, also save to storage backend.
                 Logs a warning (does not raise) if no storage is configured.
-            overwrite: If True, overwrite existing registration (default True).
+            overwrite: If True (default), permit updating THIS form_uid's
+                own existing registration. Never grants permission to take
+                a DIFFERENT form_uid's slug — see ``FormAlreadyExistsError``
+                below, which is raised unconditionally in that case.
             tenant: Explicit tenant override.  ``None`` means "use
                 form.tenant or default_tenant".
 
         Raises:
             ValueError: When ``require_tenant=True`` and both ``tenant=``
-                kwarg and ``form.tenant`` are ``None``, OR when
-                ``overwrite=False`` and ``form.form_id`` (slug) is already
+                kwarg and ``form.tenant`` are ``None``.
+            FormAlreadyExistsError: When ``form.form_id`` (slug) is already
                 in use by a DIFFERENT ``form_uid`` within the resolved
-                tenant (slug uniqueness enforcement, FEAT-389).
+                tenant (slug uniqueness enforcement, FEAT-389) — raised
+                regardless of ``overwrite``, which only governs updating
+                this form_uid's own prior registration. Subclasses
+                ``ValueError`` so existing ``except ValueError`` call sites
+                keep working.
         """
         # Determine whether resolution would fall all the way to default_tenant
         # because no explicit information was provided.
@@ -389,16 +396,20 @@ class FormRegistry:
         async with self._lock:
             tenant_bucket = self._forms.setdefault(resolved, {})
 
-            # Slug uniqueness enforcement (FEAT-389): reject if the slug is
-            # already claimed by a DIFFERENT form_uid and overwrite is not
-            # permitted.
+            # Slug uniqueness enforcement (FEAT-389, code-review fix):
+            # reject if the slug is already claimed by a DIFFERENT
+            # form_uid — ALWAYS, independent of `overwrite`. `overwrite`
+            # governs whether THIS form_uid's own existing registration may
+            # be updated (see the `form.form_uid in tenant_bucket` check
+            # below) — it must never be read as "permission to take
+            # someone else's slug." Gating this check on `not overwrite`
+            # was a real bug: `overwrite` defaults to True and is exactly
+            # what the rename path (api/handlers.py::update_form, PUT) uses,
+            # so a PUT rename to a slug already owned by an unrelated form
+            # used to succeed silently and corrupt both forms' index state.
             existing_slug_uid = self._slug_index.get(slug_key)
-            if (
-                existing_slug_uid is not None
-                and existing_slug_uid != form.form_uid
-                and not overwrite
-            ):
-                raise ValueError(
+            if existing_slug_uid is not None and existing_slug_uid != form.form_uid:
+                raise FormAlreadyExistsError(
                     f"Slug '{form.form_id}' already in use by "
                     f"form_uid={existing_slug_uid!r} in tenant {resolved!r}"
                 )
@@ -859,23 +870,38 @@ class FormRegistry:
         """Clear all registered forms for a specific tenant only.
 
         Never aggregates.  Drops only ``resolved_tenant``'s forms and removes
-        the outer key so :meth:`list_tenants` stays accurate.
+        the outer key so :meth:`list_tenants` stays accurate. Also drops the
+        cleared forms' ``_slug_index``/``_uid_to_slug`` entries (code-review
+        fix, FEAT-389) — leaving them behind let a subsequent
+        ``register(overwrite=False)`` for the SAME slug in this now-empty
+        tenant incorrectly raise "already in use" against a form_uid that no
+        longer exists anywhere in ``_forms``.
 
         Args:
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            self._forms.pop(resolved, None)
+            removed = self._forms.pop(resolved, None)
+            if removed:
+                for form_uid in removed:
+                    slug_key = self._uid_to_slug.pop(form_uid, None)
+                    if slug_key is not None:
+                        self._slug_index.pop(slug_key, None)
 
     async def clear_all(self) -> None:
         """Drop every tenant's forms.
 
         Use for test teardown and maintenance only — not for single-tenant
-        operations (use :meth:`clear` for those).
+        operations (use :meth:`clear` for those). Also drops
+        ``_slug_index``/``_uid_to_slug`` entirely (code-review fix,
+        FEAT-389) — see :meth:`clear`'s docstring for why leaving them
+        behind is a correctness bug, not just clutter.
         """
         async with self._lock:
             self._forms.clear()
+            self._slug_index.clear()
+            self._uid_to_slug.clear()
 
     async def list_tenants(self) -> list[str]:
         """Return a sorted list of tenants that have at least one registered form.

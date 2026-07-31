@@ -297,6 +297,58 @@ class TestM1PublishedVersionImmutable:
 
 
 # ---------------------------------------------------------------------------
+# FEAT-389 code-review fix — PUT rename cannot steal another form's slug
+# ---------------------------------------------------------------------------
+
+
+class TestPutRenameSlugCollision:
+    """register()'s slug-uniqueness check must fire for ANY register() call
+    with a DIFFERENT form_uid than the slug's current owner — not just when
+    overwrite=False. PUT (update_form) always calls register(overwrite=True),
+    which used to skip the check entirely, letting a rename silently steal
+    another form's slug and corrupt both forms' index state."""
+
+    async def test_put_rename_to_other_forms_slug_returns_409(self) -> None:
+        registry = FormRegistry()
+        victim = _make_form("victim-slug", "t1")
+        await registry.register(victim, tenant="t1")
+        renamer = _make_form("renamer-slug", "t1")
+        await registry.register(renamer, tenant="t1")
+
+        handler = _make_handler(registry)
+        body = renamer.model_dump(mode="json")
+        body["form_id"] = "victim-slug"  # attempt to steal victim's slug
+
+        resp = await handler.update_form(
+            _make_request(method="PUT", form_uid=renamer.form_uid, body=body)
+        )
+
+        assert resp.status == 409
+        # Neither form's state was corrupted by the rejected rename.
+        assert (await registry.get_by_slug("victim-slug", tenant="t1")).form_uid == victim.form_uid
+        assert (await registry.get_by_slug("renamer-slug", tenant="t1")).form_uid == renamer.form_uid
+
+    async def test_put_rename_to_free_slug_still_succeeds(self) -> None:
+        """The fix must not block legitimate renames to an unclaimed slug."""
+        registry = FormRegistry()
+        form = _make_form("old-slug", "t1")
+        await registry.register(form, tenant="t1")
+
+        handler = _make_handler(registry)
+        body = form.model_dump(mode="json")
+        body["form_id"] = "new-free-slug"
+
+        resp = await handler.update_form(
+            _make_request(method="PUT", form_uid=form.form_uid, body=body)
+        )
+
+        assert resp.status == 200
+        assert await registry.get_by_slug("old-slug", tenant="t1") is None
+        renamed = await registry.get_by_slug("new-free-slug", tenant="t1")
+        assert renamed is not None and renamed.form_uid == form.form_uid
+
+
+# ---------------------------------------------------------------------------
 # M2 — formula placeholder escapes HTML
 # ---------------------------------------------------------------------------
 

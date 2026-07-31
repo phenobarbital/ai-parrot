@@ -36,11 +36,22 @@ UPDATE form_schemas SET form_uid = id::text WHERE form_uid IS NULL;
 -- Step 3: Enforce NOT NULL now that every row has a form_uid.
 -- Idempotent: ALTER COLUMN ... SET NOT NULL is a no-op if already set.
 -- ---------------------------------------------------------------------
+-- NOTE (code-review fix): every guard below is scoped to the table actually
+-- resolved by the CURRENT search_path (`table_schema = current_schema()` /
+-- `conrelid = 'form_schemas'::regclass`) — NOT just a bare name match. This
+-- migration is explicitly documented above to run once per physical
+-- multi-tenant schema (`epson.form_schemas`, `pokemon.form_schemas`, ...).
+-- An unscoped `WHERE table_name = 'form_schemas'` / `WHERE conname = '...'`
+-- would see ANY schema's already-migrated table/constraint and silently
+-- skip this schema's own — a real bug: e.g. `epson` migrated first would
+-- make `pokemon`'s run silently no-op Steps 3-5, leaving `pokemon.
+-- form_schemas.form_uid` nullable and unconstrained.
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'form_schemas'
+        WHERE table_schema = current_schema()
+          AND table_name = 'form_schemas'
           AND column_name = 'form_uid'
           AND is_nullable = 'YES'
     ) THEN
@@ -56,7 +67,9 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'uq_form_schemas_form_uid_version'
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'form_schemas'::regclass
+          AND conname = 'uq_form_schemas_form_uid_version'
     ) THEN
         ALTER TABLE form_schemas ADD CONSTRAINT uq_form_schemas_form_uid_version
             UNIQUE (form_uid, version);
@@ -71,7 +84,9 @@ END$$;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'uq_form_schemas_tenant_form_id_version'
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'form_schemas'::regclass
+          AND conname = 'uq_form_schemas_tenant_form_id_version'
     ) THEN
         ALTER TABLE form_schemas ADD CONSTRAINT uq_form_schemas_tenant_form_id_version
             UNIQUE (tenant, form_id, version);

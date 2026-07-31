@@ -105,20 +105,46 @@ async def backfill_form_uid(
     report = MigrationReport(dry_run=dry_run)
 
     async with pool.acquire() as conn:
+        # Keyset pagination on `fd.id` (NOT a plain `WHERE form_uid IS NULL
+        # LIMIT n` re-fetch) — this is load-bearing, not a style choice.
+        # `form_uid` only becomes non-NULL when a row is BOTH matched AND
+        # written (`if not dry_run: UPDATE ...`), so a plain re-fetch of
+        # `WHERE form_uid IS NULL` never shrinks past:
+        #   - orphaned rows (no matching form_schemas row — never written,
+        #     any mode), or
+        #   - EVERY row, in `--dry-run` mode (nothing is ever written).
+        # Either case reproduces the exact same batch forever. Tracking a
+        # strictly-increasing `last_id` cursor guarantees each row is
+        # visited exactly once per run, independent of whether it was
+        # written, orphaned, or in dry-run mode.
+        last_id: object | None = None
         while True:
-            rows = await conn.fetch(
-                f"""
-                SELECT fd.id AS row_id, fd.form_id AS form_id
-                FROM {form_data_qt} fd
-                WHERE fd.form_uid IS NULL
-                LIMIT $1
-                """,
-                batch_size,
-            )
+            if last_id is None:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT fd.id AS row_id, fd.form_id AS form_id
+                    FROM {form_data_qt} fd
+                    WHERE fd.form_uid IS NULL
+                    ORDER BY fd.id
+                    LIMIT $1
+                    """,
+                    batch_size,
+                )
+            else:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT fd.id AS row_id, fd.form_id AS form_id
+                    FROM {form_data_qt} fd
+                    WHERE fd.form_uid IS NULL AND fd.id > $1
+                    ORDER BY fd.id
+                    LIMIT $2
+                    """,
+                    last_id,
+                    batch_size,
+                )
             if not rows:
                 break
 
-            any_progress = False
             for row in rows:
                 match = await conn.fetchrow(
                     f"""
@@ -131,27 +157,22 @@ async def backfill_form_uid(
                 )
                 if match is None:
                     report.orphaned.append(str(row["row_id"]))
-                    continue
+                else:
+                    if not dry_run:
+                        await conn.execute(
+                            f"""
+                            UPDATE {form_data_qt}
+                            SET form_uid = $1
+                            WHERE id = $2
+                            """,
+                            match["form_uid"],
+                            row["row_id"],
+                        )
+                    report.backfilled += 1
 
-                if not dry_run:
-                    await conn.execute(
-                        f"""
-                        UPDATE {form_data_qt}
-                        SET form_uid = $1
-                        WHERE id = $2
-                        """,
-                        match["form_uid"],
-                        row["row_id"],
-                    )
-                report.backfilled += 1
-                any_progress = True
-
-            if dry_run and not any_progress:
-                # Every row in this batch was an orphan — dry-run never
-                # writes, so form_uid stays NULL and the next fetch would
-                # return the SAME rows forever. Break to avoid an infinite
-                # loop; the orphan list already reflects the full batch.
-                break
+                # Advance the cursor regardless of match/orphan/dry_run —
+                # this row must never be reconsidered in a later batch.
+                last_id = row["row_id"]
 
     return report
 

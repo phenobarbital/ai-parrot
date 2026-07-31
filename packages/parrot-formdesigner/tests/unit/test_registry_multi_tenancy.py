@@ -173,6 +173,41 @@ class TestRegistryMultiTenancy:
         assert await registry.list_tenants() == []
         assert len(registry) == 0
 
+    async def test_clear_drops_slug_index_too(self, registry: FormRegistry) -> None:
+        """Regression (code-review fix, FEAT-389): clear(tenant=...) must
+        also drop the cleared forms' _slug_index/_uid_to_slug entries — an
+        earlier version only popped `_forms`, so re-registering the SAME
+        slug in the now-empty tenant with overwrite=False incorrectly
+        raised 'already in use' against a form_uid that no longer existed
+        anywhere."""
+        form = _make_form("reused-slug", tenant="epson")
+        await registry.register(form, tenant="epson")
+
+        await registry.clear(tenant="epson")
+
+        assert await registry.get_by_slug("reused-slug", tenant="epson") is None
+        new_form = _make_form("reused-slug", tenant="epson")
+        # Must NOT raise — the old slug claim is gone along with the form.
+        await registry.register(new_form, tenant="epson", overwrite=False)
+        result = await registry.get_by_slug("reused-slug", tenant="epson")
+        assert result is not None
+        assert result.form_uid == new_form.form_uid
+
+    async def test_clear_all_drops_slug_index_too(
+        self, registry: FormRegistry
+    ) -> None:
+        """Same regression as above, for clear_all()."""
+        form = _make_form("reused-slug", tenant="epson")
+        await registry.register(form, tenant="epson")
+
+        await registry.clear_all()
+
+        new_form = _make_form("reused-slug", tenant="epson")
+        await registry.register(new_form, tenant="epson", overwrite=False)
+        result = await registry.get_by_slug("reused-slug", tenant="epson")
+        assert result is not None
+        assert result.form_uid == new_form.form_uid
+
     async def test_list_tenants_sorted(self, registry: FormRegistry) -> None:
         """list_tenants() returns alphabetically sorted keys."""
         await registry.register(_make_form("x", tenant="pokemon"))

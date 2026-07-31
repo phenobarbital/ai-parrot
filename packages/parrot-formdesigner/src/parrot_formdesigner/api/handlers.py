@@ -1084,7 +1084,17 @@ class FormAPIHandler:
             return JSONResponse({"errors": schema_errors}, status=422)
 
         persist = self.registry.has_storage
-        await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
+        try:
+            await self.registry.register(
+                form, persist=persist, overwrite=True, tenant=tenant
+            )
+        except FormAlreadyExistsError as exc:
+            # PUT may rename form_id (slug) — register() rejects the rename
+            # if the target slug is already owned by a DIFFERENT form_uid
+            # in this tenant (code-review fix: this check is now enforced
+            # unconditionally, not just when overwrite=False, so a rename
+            # can no longer silently steal another form's slug).
+            return JSONResponse({"error": str(exc)}, status=409)
         self.logger.info(
             "PUT form_uid=%s (slug=%s) → version %s", form_uid, form.form_id, form.version
         )

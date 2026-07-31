@@ -13,6 +13,7 @@ against an in-memory asyncpg-like stub pool, mirroring the pattern used in
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 from pathlib import Path
@@ -60,6 +61,25 @@ def test_001_add_form_uid_sql_exists_and_idempotent() -> None:
     assert "pg_constraint" in sql
 
 
+def test_001_add_form_uid_sql_guards_are_schema_scoped() -> None:
+    """Regression (code review): the file's own header documents running
+    this migration once PER PHYSICAL SCHEMA (epson.form_schemas,
+    pokemon.form_schemas, ...). An unscoped `WHERE table_name = '...'` /
+    `WHERE conname = '...'` guard would see ANY schema's already-migrated
+    table/constraint and silently skip a DIFFERENT, not-yet-migrated
+    schema's own Step 3/4/5 — leaving that schema's form_uid nullable and
+    unconstrained. Every idempotency guard must scope to the schema
+    actually resolved by search_path at run time.
+    """
+    sql = (MIGRATIONS_DIR / "001_add_form_uid.sql").read_text()
+    assert "table_schema = current_schema()" in sql
+    assert "conrelid = 'form_schemas'::regclass" in sql
+    # Both constraint guards (Step 4 and Step 5) must be scoped, not just
+    # one — each ADD CONSTRAINT's own DO block needs its own IF NOT EXISTS
+    # check against pg_constraint filtered by conrelid.
+    assert sql.count("WHERE conrelid = 'form_schemas'::regclass") == 2
+
+
 def test_002_add_form_uid_submissions_sql_exists_and_idempotent() -> None:
     sql = (MIGRATIONS_DIR / "002_add_form_uid_submissions.sql").read_text()
     assert "ADD COLUMN IF NOT EXISTS form_uid" in sql
@@ -86,22 +106,51 @@ def test_readme_documents_execution_order() -> None:
 class _StubConn:
     """asyncpg connection stub for backfill_form_uid()'s batched queries.
 
-    `form_data_rows` are consumed one LIMIT-sized batch at a time (FIFO by
-    insertion order) to simulate `SELECT ... WHERE form_uid IS NULL LIMIT $1`.
-    `schema_lookup` maps form_id -> form_uid for the per-row "find the
-    owning form_schemas row" query; a missing key simulates an orphan.
+    Models real Postgres semantics closely enough to catch the class of bug
+    an earlier version of this stub masked: rows only leave the
+    `WHERE form_uid IS NULL` result set once actually WRITTEN (never for
+    orphans, never in `--dry-run` mode). `fetch()` re-evaluates that
+    predicate — plus the keyset cursor (`fd.id > $last_id`) the real query
+    now uses — on every call, so a stub that just "consumed" a fixed list
+    up front (regardless of write outcome) would let a genuinely-infinite
+    production loop pass silently. `schema_lookup` maps form_id -> form_uid
+    for the per-row "find the owning form_schemas row" query; a missing key
+    simulates an orphan.
     """
 
     def __init__(self, form_data_rows, schema_lookup) -> None:
-        self._remaining = list(form_data_rows)
+        # row_id -> {"form_id": ..., "form_uid": None}
+        self._rows: dict[str, dict] = {
+            row["row_id"]: {"form_id": row["form_id"], "form_uid": None}
+            for row in form_data_rows
+        }
         self._schema_lookup = dict(schema_lookup)
         self.executed: list[tuple[str, tuple]] = []
         self.backfilled_ids: list[str] = []
+        self.fetch_call_count = 0
 
-    async def fetch(self, sql: str, limit: int):
-        batch = self._remaining[:limit]
-        self._remaining = self._remaining[limit:]
-        return batch
+    async def fetch(self, sql: str, *args):
+        """Simulate both call shapes `backfill_form_uid()` issues:
+        `fetch(sql, limit)` on the first page, `fetch(sql, last_id, limit)`
+        on every subsequent page.
+        """
+        self.fetch_call_count += 1
+        if len(args) == 1:
+            (limit,) = args
+            last_id = None
+        else:
+            last_id, limit = args
+
+        candidates = sorted(
+            row_id
+            for row_id, data in self._rows.items()
+            if data["form_uid"] is None and (last_id is None or row_id > last_id)
+        )
+        page = candidates[:limit]
+        return [
+            {"row_id": row_id, "form_id": self._rows[row_id]["form_id"]}
+            for row_id in page
+        ]
 
     async def fetchrow(self, sql: str, form_id: str):
         form_uid = self._schema_lookup.get(form_id)
@@ -112,6 +161,7 @@ class _StubConn:
     async def execute(self, sql: str, form_uid: str, row_id: str) -> str:
         self.executed.append((sql, (form_uid, row_id)))
         self.backfilled_ids.append(row_id)
+        self._rows[row_id]["form_uid"] = form_uid
         return "UPDATE 1"
 
 
@@ -197,6 +247,63 @@ async def test_backfill_mixed_batch(migration_003) -> None:
 
     assert report.backfilled == 1
     assert report.orphaned == ["sub-2"]
+
+
+@pytest.mark.asyncio
+async def test_backfill_all_orphans_multi_batch_terminates(migration_003) -> None:
+    """Regression test: an all-orphan run spanning multiple batches must
+    terminate. Orphaned rows are never written, so a plain re-fetch of
+    `WHERE form_uid IS NULL` (with no keyset cursor) would return the SAME
+    batch forever — this used to hang indefinitely against a real database
+    (confirmed via code review). Guarded by asyncio.wait_for so a
+    regression fails fast instead of hanging the test suite.
+    """
+    conn = _StubConn(
+        form_data_rows=[
+            {"row_id": f"sub-{i}", "form_id": "deleted-form"} for i in range(5)
+        ],
+        schema_lookup={},  # every row is an orphan
+    )
+    pool = _StubPool(conn)
+
+    report = await asyncio.wait_for(
+        migration_003.backfill_form_uid(pool, schema="navigator", batch_size=2),
+        timeout=2.0,
+    )
+
+    assert report.backfilled == 0
+    assert sorted(report.orphaned) == [f"sub-{i}" for i in range(5)]
+    # 5 orphans / batch_size=2 -> 3 pages, then one empty page to stop.
+    assert conn.fetch_call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_backfill_dry_run_multi_batch_terminates(migration_003) -> None:
+    """Regression test: `--dry-run` never writes, so a plain re-fetch of
+    `WHERE form_uid IS NULL` would return the SAME rows forever whenever
+    ANY row in the run matches — this used to hang indefinitely on
+    essentially any real, non-empty dataset in dry-run mode (confirmed via
+    code review). Guarded by asyncio.wait_for so a regression fails fast.
+    """
+    conn = _StubConn(
+        form_data_rows=[
+            {"row_id": f"sub-{i}", "form_id": "my-form"} for i in range(5)
+        ],
+        schema_lookup={"my-form": "uid-1"},  # every row matches
+    )
+    pool = _StubPool(conn)
+
+    report = await asyncio.wait_for(
+        migration_003.backfill_form_uid(
+            pool, schema="navigator", batch_size=2, dry_run=True
+        ),
+        timeout=2.0,
+    )
+
+    assert report.backfilled == 5
+    assert report.orphaned == []
+    assert conn.executed == []  # dry-run: zero writes, but still terminates
+    assert conn.fetch_call_count == 4
 
 
 def test_migration_report_summary_lists_orphans(migration_003) -> None:
