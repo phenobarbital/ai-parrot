@@ -280,3 +280,18 @@ spell out explicitly, not a behavioral deviation from the stated
 acceptance criteria — `test_group_cap_and_watermark`-equivalent coverage
 (`TestCluster::test_group_cap_defers_excess`,
 `TestCycle::test_watermark_advances_to_newest_consolidated`) passes.
+
+**Post-review fix (2026-07-31, adversarial Codex review during the
+code-review stage)**: the ascending-sort mitigation above did NOT cover
+the case where an EARLIER (older) group fails to distill while a LATER
+(newer) group succeeds in the same cycle — the watermark advanced to the
+newer group's `created_at`, permanently excluding the older failed
+group's episodes from every future `_collect(since=...)`. Fixed in commit
+`68ecbd909`: `run_cycle` now tracks the earliest `created_at` among
+skipped/deferred episodes each cycle and caps the watermark strictly
+before it. Also bumped `_collect`'s fetch limit 1000→5000 to reduce (not
+eliminate — no offset/pagination exists on
+`AbstractEpisodeBackend.get_recent`, out of scope per TASK-1985) a second,
+related starvation case Codex flagged. Added
+`TestCycle::test_watermark_never_skips_a_failed_group` regression
+coverage.
