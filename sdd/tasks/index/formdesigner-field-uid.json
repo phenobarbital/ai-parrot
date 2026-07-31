@@ -15,7 +15,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Root of the dependency chain; touches files FEAT-389 rewrites — gated on its merge.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1995-form-uid-uuid-retrofit.md"
+      "completed_at": "2026-07-31T17:21:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1995-form-uid-uuid-retrofit.md"
     },
     {
       "id": "TASK-1996",
