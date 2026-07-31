@@ -32,7 +32,7 @@
       "feature_id": "FEAT-394",
       "feature": "wikitoolkit-language-plugins",
       "spec": "sdd/specs/wikitoolkit-language-plugins.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Must complete before TASK-2012 wires the registry into repo_scan.py.",
       "assigned_to": null,
       "started_at": "2026-07-31T11:59:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2011-python-scanner-plugin.md"
+      "completed_at": "2026-07-31T12:06:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2011-python-scanner-plugin.md"
     },
     {
       "id": "TASK-2012",

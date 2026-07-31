@@ -220,8 +220,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Moved `_python_outline`/`_module_index`/the `build_import_edges`
+resolve loop into `PythonScanner` in `languages/python.py`, verbatim
+(including the `rstrip(": ")` quirk). Registered as `"python"` in the
+registry (`scanner_for(".py")`/`scanner_for(".pyi")` now return the same
+`PythonScanner` instance). `_python_outline`/`_module_index` deliberately
+left in place in `repo_scan.py` — TASK-2012 removes them once the
+registry is wired in. Byte-identical comparison tests added against the
+legacy functions; full `tests/knowledge/wiki/test_repo_scan.py` (43
+tests) + new language tests (14) all pass unchanged. `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
