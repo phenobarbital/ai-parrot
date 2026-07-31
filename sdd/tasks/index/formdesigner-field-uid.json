@@ -193,7 +193,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -203,8 +203,8 @@
       "parallelism_notes": "Additive-only; could parallelize but per-spec isolation keeps it in-worktree.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2004-audio-manifests-uid.md"
+      "completed_at": "2026-07-31T18:47:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2004-audio-manifests-uid.md"
     },
     {
       "id": "TASK-2005",
