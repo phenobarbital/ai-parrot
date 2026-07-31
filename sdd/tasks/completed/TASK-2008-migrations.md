@@ -142,10 +142,97 @@ def test_report_lists_legacy_blob_refs(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+Read FEAT-389's existing 3 migration artifacts (`001_add_form_uid.sql`,
+`002_add_form_uid_submissions.sql`, `003_migrate_form_data.py`) and its
+`README.md`/test file (`tests/unit/test_migrations_form_uid.py`) first to
+match style exactly before writing anything: `ls migrations/` showed
+`001`/`002`/`003` already used, so this task's artifacts are numbered
+`004`/`005`/`006`.
+
+**SQL A** (`004_form_uid_uuid_type.sql`): retrofits `form_schemas.form_uid`
+and `form_data.form_uid` from `VARCHAR(36)` to native `UUID`, each guarded
+by an `information_schema.columns` check on `data_type <> 'uuid'` AND
+scoped to `table_schema = current_schema()` — the same
+per-physical-schema scoping FEAT-389's `001` uses (and which its own
+regression test explicitly checks for), so one tenant's already-migrated
+table never masks another's. `form_data.form_uid` is nullable
+(orphan-tolerant, per FEAT-389); `NULL::uuid` casts without error so no
+separate guard was needed there.
+
+**SQL B** (`005_question_bank_question_id.sql`): renames the EXISTING
+`field_bank.field_id` column (and its `UNIQUE(field_id, tenant)`
+constraint, under Postgres's default auto-generated name) to
+`question_id`, guarded so the column rename only fires if the OLD name
+exists AND the NEW one doesn't (safe against a partial/interrupted prior
+run), and the constraint rename only fires if the OLD constraint name
+still exists in `pg_constraint`.
+
+**Python C** (`006_backfill_element_uids.py`): implemented as a PURE,
+directly-testable `migrate_schema_document(data: dict) ->
+DocumentMigrationResult` core, wrapped by a DB-batch runner
+(`backfill_element_uids`) mirroring `003`'s keyset-pagination pattern
+(guards against the exact infinite-loop class FEAT-389's own tests
+specifically regression-test for — a plain `WHERE ... IS NULL` re-fetch
+never shrinks for orphaned/unchanged/dry-run rows). Key implementation
+decision: `migrate_schema_document` round-trips the document through
+`FormSchema.model_validate()` rather than a hand-rolled tree walk — this
+already mints a fresh `field_uid`/`section_uid`/`subsection_uid` via each
+model's own `default_factory=uuid.uuid4` for any level missing one, while
+preserving already-present UIDs unchanged (verified idempotent). This
+ALSO means `FormSchema._validate_unique_identity` (added in TASK-1996,
+Module 2) catches duplicate `field_id`s for free — `model_validate` raises
+a `pydantic.ValidationError` wrapping the model_validator's "Duplicate
+field_id '...'" message, which is regex-extracted into a clean, specific
+`skipped_reason="duplicate_field_id"` + `duplicate_field_ids` report
+entry (a generic `validation_error: ...` fallback also exists for any
+other validation failure, so a malformed document can never crash the
+whole batch run). After validation, `resolve_rule_references(form)`
+rewrites `depends_on`/`post_depends` field_id references to field_uid
+(idempotent by construction, per its own docstring).
+
+Legacy blob-ref detection (`find_legacy_blob_refs` / `is_legacy_blob_ref`)
+scans `form_data.data` (submission answers) for blob_ref-shaped strings
+(`s3://`/`gs://`/`file://`/`temp://` prefixes) and classifies each by
+whether ANY two ADJACENT path segments both parse as UUIDs (new pattern)
+— report only, `scan_legacy_blob_refs` never issues an UPDATE.
+
+Created `tests/unit/migrations/` (new package, `__init__.py` matching
+`unit/services/`'s one-line convention) with
+`test_feat393_migrations.py` — 19 tests total, all passing:
+- SQL content/idempotency-guard assertions for 004 and 005 (matching
+  FEAT-389's `test_001_add_form_uid_sql_exists_and_idempotent` style).
+- All 5 Test-Specification-named tests:
+  `test_backfill_injects_all_uid_levels`, `test_backfill_rewrites_rule_refs`,
+  `test_backfill_idempotent`, `test_backfill_skips_and_reports_duplicates`,
+  `test_report_lists_legacy_blob_refs`.
+- Additional stub-pool DB-flow tests for `backfill_element_uids`/
+  `scan_legacy_blob_refs` (migrate-and-write, dry-run writes nothing,
+  duplicate skip writes nothing, already-migrated is a no-op) — matching
+  FEAT-389's `_StubConn`/`_StubPool` depth per the task's "MATCH their
+  style" instruction, beyond the 5 explicitly named pure-function tests.
+- `test_arg_parser_requires_dsn_and_schema` / `test_main_handles_unreachable_dsn_gracefully`
+  mirroring 003's CLI-boundary coverage.
+
+Full suite: `pytest packages/parrot-formdesigner/tests/ -q` → 1849 passed
+(19 new), exactly the same 20 pre-existing/unrelated baseline failures as
+every prior task in this feature. FEAT-389's own
+`test_migrations_form_uid.py` (15 tests) re-verified passing unmodified.
+`ruff check` on the two new Python files: 5 findings on first pass, all
+fixed (`EXE001` — matched `003`'s executable bit via `chmod +x`; 2×
+`UP037` — removed unnecessary quotes from `asyncpg.Pool` annotations,
+safe since `from __future__ import annotations` makes them lazy anyway;
+2× `RUF019` in the test file — replaced `"key" in dict and dict["key"]`
+with `dict.get("key")`). Note: `ruff check` does not lint `.sql` files
+(not a SQL linter) — the 380-error false alarm on first invocation was
+ruff mis-parsing `004_form_uid_uuid_type.sql` as Python when passed
+directly; scoping to `.py` files only resolved this immediately and is
+reflected in the Acceptance Criteria checklist below as SQL content
+verified via direct string assertions instead.
+
+**Deviations from spec**: none — every file created is exactly the one
+named in the task's "Files to Create/Modify" table, at the next free
+migration numbers (004/005/006) as instructed.

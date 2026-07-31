@@ -163,10 +163,83 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+- Verified the FEAT-389 gate: `form_uid` existed as `str` in
+  `core/schema.py` on the merged worktree before starting; re-verified every
+  Codebase Contract anchor by grep (all had shifted from the pre-merge
+  anchors, as warned) before editing.
+- Retrofitted `form_uid` from `str` to `uuid.UUID` (`Field(default_factory=
+  uuid.uuid4)`) in `FormSchema` (`core/schema.py`), `FormSubmission`
+  (`services/submissions.py`), and `BlobMetadata` (`services/blob_storage.py`).
+- `extract_form_uid()` (`api/handlers.py`) now returns `uuid.UUID`, raising
+  `HTTPBadRequest` on parse failure (unchanged behavior otherwise).
+- `FormRegistry` (`services/registry.py`): retyped the primary index
+  (`_forms`), `_slug_index`, `_uid_to_slug`, and every public method taking
+  or returning a form_uid (`get`, `unregister`, `clone_form`,
+  `list_form_uids`, `contains`, `set_public_toggle_callback`,
+  `on_unregister`) to `uuid.UUID`. Fixed a real bug found along the way:
+  `clone_form()` did `clone.form_uid = str(uuid.uuid4())` via direct
+  attribute assignment (`FormSchema` has no `validate_assignment`), which
+  would have silently left `form_uid` as a plain `str` on every cloned form.
+- `PostgresFormStorage` (`services/storage.py`): `load()`/`delete()` now
+  take `uuid.UUID`; since the DB column is still `VARCHAR(36)` until
+  TASK-2008's migration, every SQL boundary call explicitly does
+  `str(form_uid)` with a `# TASK-2008` marker comment, per the task's own
+  guidance.
+- `CreateFormTool` (`tools/create_form.py`): `CreateFormInput.form_uid` /
+  `refine_form_uid` and the internal `_execute`/`_generate_with_retry`
+  parameters are now `uuid.UUID | None`; `effective_form_uid = form_uid or
+  uuid.uuid4()` (was `str(uuid.uuid4())`).
+- Added `packages/parrot-formdesigner/tests/unit/core/test_form_uid_type.py`
+  (new file, within the task's `tests/` bucket) covering the type itself,
+  client-supplied UUID/str values, invalid-UUID rejection, and the JSON
+  wire-shape round trip (canonical string, unchanged from FEAT-389).
+- Updated ~13 existing FEAT-389 test files for the type change (fixture
+  literals that were not well-formed UUIDs, `== str` assertions that needed
+  `str(...)` on one side, `model_copy(update=...)` calls that bypass
+  Pydantic coercion, and mocked-request `match_info` helpers that must hold
+  raw path **strings** exactly like real aiohttp, not `uuid.UUID` objects).
+
+**Deviations from spec / file list**:
+- Two files **outside** the task's stated "Files to Create/Modify" list
+  were touched with a minimal, mechanical, type-only one-line fix each,
+  because the merged suite could not pass otherwise (both are genuine
+  runtime crashes caused directly by this task's `form_uid` type change,
+  not pre-existing issues):
+  - `renderers/html5.py` (`_inject_lifecycle`): `json.dumps(form.form_uid)`
+    → `json.dumps(str(form.form_uid))` — stdlib `json` cannot serialize a
+    `uuid.UUID` (unlike `JSONResponse`'s `json_encoder`, which the rest of
+    the API surface already goes through).
+  - `renderers/audio.py` (`AudioFormRenderer.render`): `AudioFormManifest(
+    form_uid=form.form_uid, ...)` → `form_uid=str(form.form_uid)` —
+    `AudioFormManifest.form_uid` is a wire-facing `str` field
+    (`audio/models.py`), left untouched (out of TASK-1995's scope; that
+    model belongs to Module 10 / TASK-2004).
+  - Flagging both explicitly per Cardinal Rule 4 rather than silently
+    expanding scope. No other files were touched beyond the stated list
+    and `tests/`.
+- `api/uploads.py`, `api/audio_ws.py`, `renderers/telegram/*`,
+  `services/form_version.py`, `services/public_forms.py`,
+  `ui/templates.py` still type-hint `form_uid: str` (stale) but were
+  verified NOT to break at runtime (either they read the raw
+  `request.match_info` string directly without going through
+  `extract_form_uid()`, or Python's lack of runtime type enforcement means
+  they keep working transparently once the value flows through
+  consistently). Left untouched — correcting their type hints belongs to
+  the modules that own them (TASK-1999/2002/2008 etc.), per file fidelity.
+
+**Verification**:
+- `pytest packages/parrot-formdesigner/tests/ -v` → 1760 passed, 3 skipped,
+  20 failed. Verified via `git stash` that the same 20 failures are 100%
+  pre-existing and unrelated to this task (control-registry counts, field
+  type enum counts, venue_service, msteams import, edit_toolkit tool
+  counts) — identical failure set before and after this task's diff.
+- `ruff check packages/parrot-formdesigner/src/` → 332 pre-existing
+  findings; diffed ruff output on every file this task touched
+  (before/after via `git stash`) — byte-identical, confirming zero new
+  lint findings introduced.
+- `from parrot.forms import FormField, FormSchema` (the ai-parrot legacy
+  shim) still imports and round-trips `form_uid` as `uuid.UUID` correctly.

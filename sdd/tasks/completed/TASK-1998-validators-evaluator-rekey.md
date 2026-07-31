@@ -147,10 +147,88 @@ def test_result_maps_keyed_by_field_id(form_with_rules): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+- `services/validators.py`: `validate_rules`'s `field_map`/`field_order` are
+  now keyed by `str(f.field_uid)`; condition ref reads use `str(cond.
+  field_uid) if cond.field_uid else ""`; `_validate_operation`'s
+  operand/target checks operate directly against the resolved UID strings
+  already on `op.operands`/`op.target`. All human-facing error strings
+  report `field.field_id`/`ref_field.field_id`, never the raw UID.
+  `_detect_circular_dependencies`'s graph/edges are keyed by `str(f.
+  field_uid)`, with a parallel `field_map` used ONLY to translate the DFS
+  cycle path back to a `field_id` chain for the final message.
+- `services/rule_evaluator.py`: added two small ref-translation helpers,
+  `_ref_to_field_id` and `_answer_for_ref` (both best-effort: a
+  non-UID-shaped or unresolvable ref returns unchanged, never raises).
+  `_eval_condition` now reads `resolve_answer(form, condition.field_uid,
+  answers) if condition.field_uid else None` for `source="field"`
+  conditions; `_apply_operation`'s operand reads go through
+  `_answer_for_ref`. Both needed `form` threaded through as an explicit
+  parameter (`_eval_condition`, `_eval_logic`, `_apply_operation`,
+  `_apply_pre_dependency`, `_apply_post_dependencies`) since none of them
+  previously received it. `_topo_order` is now keyed by `str(f.field_uid)`
+  (edges from `cond.field_uid`/`op.operands`, already-resolved UID
+  strings) — kept the cycle → warn-and-degrade-to-declaration-order
+  fallback unchanged. **Result maps stay `field_id`-keyed**: `dep_op.
+  target`/`post.target` (both resolved UID strings) are translated back to
+  the field's CURRENT `field_id` via `_ref_to_field_id` before being used
+  as `computed`/`visible`/`required`/`cleared` keys — this is necessary
+  for the acceptance criterion, not optional, since those dicts feed
+  renderers/clients unchanged.
+- Updated `tests/unit/services/test_rule_evaluator.py`,
+  `test_rule_validation.py`, and `tests/unit/test_feat301_location_
+  variables.py`: centralized `resolve_rule_references()` into each file's
+  shared form-building helper (`_form()`/`_form_with_rule()`) so every
+  test form is resolved before validation/evaluation — mirroring the real
+  pipeline (extractors/CreateFormTool/edit APIs always resolve before
+  storing/validating/evaluating a form). Two `TestUnknownReferences` tests
+  in `test_rule_validation.py` construct an already-"resolved" condition
+  with a random orphan `field_uid` directly (bypassing the auto-resolving
+  helper) — a genuinely dangling AUTHORED `field_id` is now caught much
+  earlier, at `resolve_rule_references()` time (TASK-1997), so testing
+  `validate_rules`'s OWN defense requires simulating an orphaned UID
+  (e.g. a field deleted after its rule was resolved), not an unresolved
+  authored reference.
+
+**Known, expected fallout — NOT a regression, deferred to TASK-1999/2000/2001**:
+10 tests fail as a direct, foreseeable consequence of re-keying
+`validate_rules` onto `field_uid` while `EditToolkit.add_dependency`/
+`add_post_dependency` (TASK-2000 scope: "accept authored field_id
+references and route through the resolution pass") and `CreateFormTool`'s
+LLM-generated rules (TASK-2001 scope) do NOT yet call
+`resolve_rule_references()` before their internal re-validation call. Until
+those tasks wire the resolution pass in, any freshly-authored (unresolved)
+rule added through those two paths fails `check_schema()`'s revalidation
+with "unknown field ''" (empty `field_uid`) — confirmed by inspecting every
+one of the 10 failures directly, all root-caused to this exact gap, none to
+a defect in this task's re-keying:
+- `tests/unit/test_edit_toolkit_rules.py` (6): `add_dependency`/
+  `add_post_dependency`/`execute_tool` round-trips.
+- `tests/integration/test_integration_conditional.py` (4): toolkit-driven
+  dependency/post-dependency addition, and `CreateFormTool` output
+  validation.
+These are the SAME 10 tests whether or not this task's changes exist in
+isolation from TASK-1999–2001 landing — re-verify once TASK-2000 (EditToolkit)
+and TASK-2001 (CreateFormTool) are complete; expect all 10 to go green then.
+
+**Verification**:
+- `pytest packages/parrot-formdesigner/tests/unit/services/test_rule_
+  evaluator.py packages/parrot-formdesigner/tests/unit/services/
+  test_validators_rest.py packages/parrot-formdesigner/tests/unit/services/
+  test_rule_validation.py packages/parrot-formdesigner/tests/unit/
+  test_feat301_location_variables.py -v` → all pass.
+- `pytest packages/parrot-formdesigner/tests/ -v` → 1779 passed, 3 skipped,
+  30 failed = 20 pre-existing/unrelated (TASK-1995 baseline) + 10 expected
+  cross-task fallout (see above) — zero new failures beyond those two
+  known categories.
+- `ruff check` on both touched source files: diffed against the
+  pre-TASK-1998 baseline (`git stash`) — no new finding categories
+  introduced, only the pre-existing import-sort finding's line range grew
+  to include the 2 new imports.
+
+**Deviations from spec**: none — the EditToolkit/CreateFormTool fallout
+above is an inherent sequencing gap in the spec's own module boundaries
+(Module 4 vs. Modules 6/7), not a deviation from Module 4's instructions.

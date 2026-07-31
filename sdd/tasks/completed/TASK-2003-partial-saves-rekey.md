@@ -145,10 +145,76 @@ async def test_deleted_field_uid_dropped_on_read(client): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+Implemented the Module 9 blueprint verbatim in `FormAPIHandler.save_partial`'s
+answer loop: unknown `field_id`s are now rejected (`field_errors[field_id] =
+["unknown field_id"]`, NOT stored) instead of the prior silent-accept
+behavior; known fields are re-keyed to `str(field.field_uid)` before calling
+`PartialSaveStore.save`, and `validator.validate_field` now also receives
+`all_data=answers` as shown in the blueprint. `services/partial_saves.py`
+and `core/partial.py` code is unchanged — only docstrings updated to
+describe the field_uid-keyed `data` contract.
+
+Added `FormAPIHandler._remap_partial_to_field_ids(form, partial)` — the
+single shared helper (next to `_find_field`) that maps Redis-persisted
+`field_uid` string keys back to the CURRENT `field_id` via
+`find_field_by_uid`, dropping unresolvable UIDs (deleted field, or a
+deleted/None form) silently. Applied at every read site that surfaces
+`partial.data` on the wire:
+- `get_partial` (the dedicated GET endpoint — the primary "read flow"
+  named in the spec).
+- `save_partial`'s `answers: {}` short-circuit branch (returns the current
+  cached state — same wire contract as GET).
+- `save_partial`'s main response (after storing UID-keyed, map back before
+  serializing).
+- `submit_data`'s `?merge_partials=true` path — NOT explicitly named in the
+  task's Scope, but genuinely broken by this same contract change (cached
+  data is now field_uid-keyed, so `{**cached.data, **data}` was silently
+  losing every cached field not also present in the submission — confirmed
+  via actual failing test output, e.g. `test_merge_combines_cached_and_submitted`
+  losing "name"/"age"). Fixed with the same remap helper before merging.
+
+`field_errors` is deliberately NOT remapped anywhere — it is built fresh
+from the CURRENT `field_id` at write time and is response-only (never
+persisted key-transformed), per the Codebase Contract's "Does NOT Exist"
+list.
+
+Test fallout (root-caused individually):
+- `tests/test_partial_handlers.py` — 4 tests mocked `store.save`/`store.get`
+  to return field_id-keyed `data` (e.g. `{"name": "Alice"}`), which the new
+  remap step now correctly treats as unresolvable and drops. Updated each
+  to key by the fixture form's actual `field.field_uid`, and gave
+  `test_get_returns_cached` a `form=` (previously omitted, so the handler
+  had no form to remap against).
+- `tests/test_submit_merge.py::test_merge_combines_cached_and_submitted` —
+  same root cause via the `submit_data` merge path; fixed the same way.
+  Note: 3 sibling tests in this file (`test_merge_submitted_overrides_cached`,
+  `test_merge_cleanup_after_submit`, `test_delete_not_called_on_validation_failure`)
+  still construct field_id-keyed mock cache fixtures and now pass only
+  "by accident" (their assertions happen to not depend on the now-dropped
+  cached values) — left as-is per no-scope-creep; flagged here for
+  visibility rather than silently fixed.
+
+Created `tests/unit/api/test_partial_saves_uid.py` per the Test
+Specification with all 5 named tests: `test_partial_save_rekeyed_by_uid`,
+`test_partial_save_response_keyed_by_field_id`,
+`test_partial_save_survives_rename` (rename simulated via
+`field.model_copy(update={"field_id": ...})`, same `field_uid` — mirrors
+`_apply_update_field`'s allowed rename from TASK-1999),
+`test_unknown_field_rejected_not_stored`, `test_deleted_field_uid_dropped_on_read`.
+
+Full suite: `pytest packages/parrot-formdesigner/tests/ -q` → 1816 passed,
+exactly the same 20 pre-existing/unrelated baseline failures as every prior
+task in this feature. `ruff check` diffed via `git stash` before/after on
+all touched files: zero new findings (only line-shifted pre-existing hits,
+plus two trivial issues in the new test file — an unused import and an
+unused-unpack var — fixed directly).
+
+**Deviations from spec**: `tests/test_submit_merge.py` was modified even
+though not listed in the task's "Files to Create/Modify" table — it
+exercises `submit_data`'s `merge_partials` path, directly broken by this
+task's own `PartialFormData.data` re-keying, matching the same "genuine
+runtime-breaking fallout" precedent from prior tasks (TASK-1995/1998/1999/2002).

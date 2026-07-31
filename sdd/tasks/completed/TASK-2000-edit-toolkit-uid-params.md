@@ -149,10 +149,96 @@ async def test_summary_pairs_uid_and_id(toolkit): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+- `_find_field_and_section(field_uid: uuid.UUID)` now delegates to
+  `core.resolution.find_field_by_uid` — reaches subsection/GROUP/ARRAY
+  fields the old top-level-only scan missed.
+- 9 tool params switched to UID strings, parsed to `uuid.UUID` at entry
+  with a structured `{"error": ...}` dict on malformed input (never a raw
+  exception): `get_field(field_uid)`, `update_field(section_uid,
+  field_uid, patch)`, `remove_field(section_uid, field_uid)`,
+  `move_field(from_section_uid, field_uid, to_section_uid, position)`,
+  `add_dependency(field_uid, rule)`, `update_dependency(field_uid,
+  patch)`, `remove_dependency(field_uid)`, `add_post_dependency(field_uid,
+  post)`, `remove_post_dependency(field_uid, target)` (target is now also
+  a UID — the resolved `field_uid` of the post_depends target).
+- `add_field`/`add_field_from_schema` also switched their `section_id`
+  param to `section_uid` (needed since the underlying `AddField` op model,
+  TASK-1999, now requires `section_uid`) and `add_field`'s result now
+  returns the minted `field_uid` alongside `field_id`.
+- `update_section` (a section-level tool, explicitly NOT in this task's
+  UID-param list) keeps its LLM-facing `section_id` parameter unchanged,
+  but now resolves it to `section.section_uid` internally via
+  `_find_section` before constructing `UpdateSectionMeta` — required
+  because TASK-1999 changed that op model to `section_uid`-only. Purely
+  an internal fix, no LLM-facing signature change.
+- `search_fields` keeps matching by `field_id`/label; each result gains
+  `"field_uid": str(f.field_uid)`.
+- `get_form_summary` emits `section_uid`+`section_id` per section and
+  `field_uid`+`field_id` per field.
+- Dependency tools (`add_dependency`, `add_post_dependency`): after
+  building the candidate rule/post from an authored `field_id` dict and
+  swapping it into a temp form copy, the temp form is routed through
+  `core.resolution.resolve_rule_references` (catching `ValueError` as a
+  structured error) BEFORE `_check_rules` runs — this is what makes the
+  stored rule UID-addressed and lets `FormValidator.validate_rules`
+  (re-keyed onto `field_uid` since TASK-1998) accept it.
+- `_replace_field_in_form` now takes `field_uid` only (no `section_id`
+  needed — the field is found form-wide) and is subsection-aware
+  (mirrors `api/operations.py`'s `_locate_field` from TASK-1999) — a
+  necessary consistency fix, since `_find_field_and_section` can now
+  locate a field inside a subsection but the old top-level-only replace
+  couldn't have written it back.
+- Updated `tools/create_form.py`'s `_TOOLKIT_SYSTEM_PROMPT` (the LLM's
+  tool-usage instructions) for every renamed signature, and to state that
+  `get_form_summary`/`search_fields` are where the LLM obtains
+  `field_uid`/`section_uid` values, and that rule/post dicts still
+  reference OTHER fields by authored `field_id`.
+- Rewrote all 4 existing EditToolkit test files for UID addressing
+  (`tests/test_edit_toolkit.py`, `tests/unit/test_edit_toolkit_rules.py`,
+  `tests/unit/test_edit_toolkit_schema.py`,
+  `tests/test_create_form_toolkit.py`) plus 3 tests in
+  `tests/integration/test_integration_conditional.py` and 1 in
+  `tests/unit/test_deterministic_integration.py` that exercise
+  `EditToolkit`/`FormValidator` directly — every fixture now reads its
+  randomly-generated `field_uid`/`section_uid` off the constructed
+  `FormField`/`FormSection` objects (or via a small `_field_uid`/
+  `_section_uid` lookup helper) rather than hardcoding a slug.
+
+**Known, expected fallout — NOT a regression, deferred to TASK-2001**:
+`tests/integration/test_integration_conditional.py::
+TestCreateFormToolEmitsRules::test_create_form_tool_output_validates` — the
+form CreateFormTool's LLM-generation path emits still has UNRESOLVED rule
+references (`FieldCondition.field_uid` stays `None`) because
+`resolve_rule_references()` is not yet called from `CreateFormTool`'s
+generation flow — that wiring is explicitly TASK-2001's scope ("Extractors
++ CreateFormTool — UID minting and rule resolution"), not this task's
+(whose scope note explicitly excludes "prompt-contract changes for form
+GENERATION"). Confirmed root cause via the exact failure: `"Field
+'subcategory': depends_on condition references unknown field ''"` — same
+signature as every other resolution-gap failure already fixed in this and
+prior tasks.
+
+**Verification**:
+- `pytest packages/parrot-formdesigner/tests/test_edit_toolkit.py
+  packages/parrot-formdesigner/tests/unit/test_edit_toolkit_rules.py
+  packages/parrot-formdesigner/tests/unit/test_edit_toolkit_schema.py
+  packages/parrot-formdesigner/tests/test_create_form_toolkit.py -v` →
+  all pass except the 2 pre-existing tool-count baseline failures
+  (`test_tool_definitions_count`/`test_tool_definitions_has_required_names`
+  — unrelated tool-count mismatch, confirmed via `git stash` baseline in
+  TASK-1995).
+- `pytest packages/parrot-formdesigner/tests/ -v` → 1798 passed, 3
+  skipped, 21 failed = 20 pre-existing/unrelated (TASK-1995 baseline) + 1
+  deferred to TASK-2001 (see above) — every EditToolkit-coupled failure
+  from TASK-1998/1999's cross-task fallout (21 tests) is now fixed.
+- `ruff check` on `tools/edit_toolkit.py` and `tools/create_form.py`:
+  diffed against the pre-task baseline (`git stash`) — no new finding
+  categories; `edit_toolkit.py`'s finding COUNT actually dropped (66→60)
+  because renaming an unused tuple-unpack to `_section` incidentally
+  fixed a pre-existing RUF059.
+
+**Deviations from spec**: none.

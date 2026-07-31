@@ -124,10 +124,54 @@ def test_audio_template_data_field_uid(audio_field): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+Implemented exactly per Scope/blueprint:
+- `renderers/html5.py`: the REST-uploader `<div>` (the only `data-field-id`
+  emission site in this file — task's ":1089" anchor had drifted to :1101,
+  re-verified via grep before editing) now also emits
+  `data-field-uid="{html.escape(str(field.field_uid), quote=True)}"`. The
+  FORMULA-fallback `RenderWarning` (:340) gains `field_uid=_field.field_uid`.
+- `renderers/fields/audio.py`: the field wrapper `<div>` (:106) gains
+  `data-field-uid="{field_uid}"` (HTML-escaped, same pattern as the
+  existing `field_id` local). All derived DOM ids (`{field_id}-btn`,
+  `{field_id}-transcript`, etc.) and the JS `fieldId` literal are
+  UNCHANGED — still field_id-based, per the explicit non-goal.
+- `renderers/adaptive_card.py` / `renderers/pdf.py`: their single
+  `RenderWarning(...)` emission sites each gain
+  `field_uid=field.field_uid`. No control `id`/`name`/AcroForm widget name
+  changed.
+
+Test Specification — all 5 named tests added:
+- `test_html5_data_field_uid_attr`, `test_html5_control_name_still_field_id`
+  → `tests/unit/renderers/test_rest_html5.py` (existing REST-uploader
+  fixture already gives a `field_uid` to assert against).
+- `test_render_warning_field_uid_html5` (formula_form fixture),
+  `test_render_warning_field_uid_pdf` (signature_form fixture) → new file
+  `tests/unit/renderers/test_render_warnings_uid.py` — no existing test
+  file covered FORMULA/SIGNATURE RenderWarning emission, so a small
+  dedicated file was created (mirrors the TASK-2002/2003 precedent for a
+  Test-Specification-mandated file with no natural existing home).
+- `test_audio_template_data_field_uid` → added to
+  `tests/formdesigner/test_audio_field_renderer.py`, which already defines
+  the exact `audio_field` fixture named in the spec.
+
+Verified control-surface non-goals directly: `data-field-id`/control
+`name=`/AcroForm widget `name=` assertions in the pre-existing test suite
+(`test_rest_html5.py`, `test_pdf.py`, `test_audio_field_renderer.py`,
+JSON-Schema/XForms/Telegram renderer tests) all pass unmodified — no byte
+change to any control-surface output.
+
+Full suite: `pytest packages/parrot-formdesigner/tests/ -q` → 1825 passed,
+exactly the same 20 pre-existing/unrelated baseline failures as every
+prior task in this feature. `ruff check` diffed via `git stash`
+before/after: zero new findings on the pre-existing files (line-shifted
+only); the one new file had a trivial import-order issue, fixed via
+`ruff check --fix`.
+
+**Deviations from spec**: none — every touched file was in the task's
+"Files to Create/Modify" table (renderer sources) or is a natural
+test-file home already anticipated by "attr + warning assertions"
+(no non-scoped production files required changes for this task).
