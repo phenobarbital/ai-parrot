@@ -12,6 +12,7 @@ from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanne
 from parrot.knowledge.wiki.languages.javascript import JavaScriptScanner
 from parrot.knowledge.wiki.languages.php import PhpScanner
 from parrot.knowledge.wiki.languages.python import PythonScanner
+from parrot.knowledge.wiki.languages.rust import RustScanner
 
 __all__ = [
     "LanguageOutline",
@@ -27,6 +28,7 @@ _SCANNERS: dict[str, LanguageScanner] = {
     "python": PythonScanner(),
     "php": PhpScanner(),
     "javascript": JavaScriptScanner(),
+    "rust": RustScanner(),
 }
 
 #: suffix -> scanner name, derived from ``_SCANNERS`` for O(1) lookup.
