@@ -213,7 +213,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -223,8 +223,8 @@
       "parallelism_notes": "Additive-only renderer attributes; sequential per per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2005-renderers-data-field-uid.md"
+      "completed_at": "2026-07-31T18:52:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2005-renderers-data-field-uid.md"
     },
     {
       "id": "TASK-2006",
