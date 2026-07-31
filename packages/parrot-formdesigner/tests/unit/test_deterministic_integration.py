@@ -96,7 +96,7 @@ class TestEndToEnd:
         form = FormSchema.model_validate(result.metadata["form"])
         toolkit = EditToolkit(form)
         add_result = await toolkit.add_field_from_schema(
-            "s1",
+            str(form.sections[0].section_uid),
             {"label": "Email", "field_type": "email", "required": True},
         )
         assert add_result["success"] is True

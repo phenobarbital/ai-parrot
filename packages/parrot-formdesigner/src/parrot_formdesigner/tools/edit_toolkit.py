@@ -14,6 +14,7 @@ Tool categories:
 from __future__ import annotations
 
 import re
+import uuid
 from typing import Any
 
 try:
@@ -46,7 +47,8 @@ from ..api.operations import (
 )
 from ..assembler import FormAssembler
 from ..core.constraints import DependencyRule, PostDependency
-from ..core.schema import FormField, FormSchema, FormSection
+from ..core.resolution import find_field_by_uid, resolve_rule_references
+from ..core.schema import FormField, FormSchema, FormSection, FormSubsection
 
 
 class EditToolkit(AbstractToolkit):
@@ -111,20 +113,22 @@ class EditToolkit(AbstractToolkit):
         return None
 
     def _find_field_and_section(
-        self, field_id: str
+        self, field_uid: uuid.UUID
     ) -> tuple[FormField, FormSection] | tuple[None, None]:
-        """Search all sections for *field_id*.
+        """Search the form for *field_uid* (FEAT-393).
 
-        Iterates over all FormField items in each section's fields list.
+        Delegates to the canonical ``find_field_by_uid`` lookup — reaches
+        fields inside subsections, GROUP ``children``, and ARRAY
+        ``item_template`` (not just top-level section fields).
+
+        Args:
+            field_uid: The field's immutable UID.
 
         Returns:
             Tuple of (FormField, FormSection) if found, or (None, None).
         """
-        for section in self._form.sections:
-            for field in section.fields:
-                if isinstance(field, FormField) and field.field_id == field_id:
-                    return field, section
-        return None, None
+        found = find_field_by_uid(self._form, field_uid)
+        return found if found else (None, None)
 
     def _iter_section_fields(self, section: FormSection) -> list[FormField]:
         """Return all FormField items in a section.
@@ -145,12 +149,19 @@ class EditToolkit(AbstractToolkit):
         """Return a compact outline of the form structure.
 
         The summary includes form-level metadata and a condensed view of each
-        section: section_id, title, and for each field only field_id, label,
-        and field_type.  Options, constraints, children, and meta are omitted
-        to keep the response small (at most 5% of the full JSON for large forms).
+        section: section_id/section_uid, title, and for each field only
+        field_id/field_uid, label, and field_type.  Options, constraints,
+        children, and meta are omitted to keep the response small (at most
+        5% of the full JSON for large forms).
+
+        ``field_uid`` (FEAT-393) is the immutable identity to pass into
+        ``update_field``/``remove_field``/``move_field``/``get_field``;
+        ``field_id`` stays the human-readable key for rule authoring
+        (``add_dependency``/``add_post_dependency``).
 
         Returns:
-            Compact dict with form outline including section/field IDs and types.
+            Compact dict with form outline including section/field
+            uid+id pairs and types.
         """
         form = self._form
         summary: dict[str, Any] = {
@@ -163,6 +174,7 @@ class EditToolkit(AbstractToolkit):
 
         for section in form.sections:
             section_entry: dict[str, Any] = {
+                "section_uid": str(section.section_uid),
                 "section_id": section.section_id,
                 "title": section.title,
                 "field_count": len(self._iter_section_fields(section)),
@@ -172,6 +184,7 @@ class EditToolkit(AbstractToolkit):
             for field in self._iter_section_fields(section):
                 section_entry["fields"].append(
                     {
+                        "field_uid": str(field.field_uid),
                         "field_id": field.field_id,
                         "label": field.label,
                         "field_type": field.field_type,
@@ -200,23 +213,32 @@ class EditToolkit(AbstractToolkit):
             }
         return section.model_dump(mode="json")
 
-    async def get_field(self, field_id: str) -> dict:
-        """Return the full JSON for a single field by field_id.
+    async def get_field(self, field_uid: str) -> dict:
+        """Return the full JSON for a single field by ``field_uid``.
 
-        Searches across all sections.
+        Searches the entire form, including subsections and nested
+        GROUP/ARRAY fields (FEAT-393).
 
         Args:
-            field_id: ID of the field to retrieve.
+            field_uid: UUID string of the field to retrieve — obtain from
+                ``get_form_summary`` or ``search_fields``. Example:
+                ``"3c3b0847-56fb-493f-bb84-2554b502a31e"``.
 
         Returns:
-            Full field data dict with containing section_id, or an error dict.
+            Full field data dict with containing ``section_uid``/
+            ``section_id``, or an error dict.
         """
-        field, section = self._find_field_and_section(field_id)
+        try:
+            uid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{field_uid}' is not a valid field_uid (UUID string)."}
+        field, section = self._find_field_and_section(uid)
         if field is None:
             return {
-                "error": f"Field '{field_id}' not found in any section.",
+                "error": f"Field '{field_uid}' not found in any section.",
             }
         return {
+            "section_uid": str(section.section_uid),
             "section_id": section.section_id,
             "field": field.model_dump(mode="json"),
         }
@@ -236,7 +258,9 @@ class EditToolkit(AbstractToolkit):
             field_type: Optional field type filter (e.g. "text", "email").
 
         Returns:
-            List of match dicts with section_id, field_id, label, field_type.
+            List of match dicts with section_id, field_id, field_uid (str,
+            FEAT-393 — feed this into update_field/remove_field/move_field/
+            get_field), label, field_type.
         """
         results: list[dict] = []
         query_lower = query.lower()
@@ -270,6 +294,7 @@ class EditToolkit(AbstractToolkit):
                         {
                             "section_id": section.section_id,
                             "field_id": field.field_id,
+                            "field_uid": str(field.field_uid),
                             "label": field.label,
                             "field_type": field.field_type,
                         }
@@ -282,33 +307,45 @@ class EditToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
 
     async def update_field(
-        self, section_id: str, field_id: str, patch: dict
+        self, section_uid: str, field_uid: str, patch: dict
     ) -> dict:
-        """Apply an RFC 7396 merge-patch to a single field.
+        """Apply an RFC 7396 merge-patch to a single field, addressed by UID.
 
         Keys present in *patch* override the existing value; keys absent in
         *patch* are preserved; explicit ``null`` values remove the key.
+        ``patch`` MAY rename ``field_id`` (subject to per-form uniqueness);
+        a patch touching ``field_uid`` is rejected — the identity is
+        immutable.
 
         Args:
-            section_id: ID of the section containing the field.
-            field_id: ID of the field to update.
+            section_uid: UUID string of the section containing the field —
+                obtain from ``get_form_summary``. Example:
+                ``"3c3b0847-56fb-493f-bb84-2554b502a31e"``.
+            field_uid: UUID string of the field to update — obtain from
+                ``get_form_summary`` or ``search_fields``.
             patch: RFC 7396 merge-patch dict with fields to update.
 
         Returns:
             Success dict with updated field data, or error dict on failure.
         """
         try:
+            section_uuid = uuid.UUID(section_uid)
+            field_uuid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": "section_uid and field_uid must be valid UUID strings."}
+        try:
             op = UpdateField(
                 op="update_field",
-                section_id=section_id,
-                field_id=field_id,
+                section_uid=section_uuid,
+                field_uid=field_uuid,
                 patch=patch,
             )
             self._form = _apply_update_field(self._form, op)
-            updated_field, _ = self._find_field_and_section(field_id)
+            updated_field, _ = self._find_field_and_section(field_uuid)
             return {
                 "success": True,
-                "field_id": field_id,
+                "field_uid": field_uid,
+                "field_id": updated_field.field_id if updated_field else None,
                 "updated_field": (
                     updated_field.model_dump(mode="json") if updated_field else None
                 ),
@@ -322,32 +359,43 @@ class EditToolkit(AbstractToolkit):
 
     async def add_field(
         self,
-        section_id: str,
+        section_uid: str,
         field: dict,
         position: int | None = None,
     ) -> dict:
         """Add a new field to a section at an optional position.
 
+        ``field`` may carry a client-supplied ``field_uid`` (upsert
+        origin); when omitted, a fresh one is minted automatically
+        (FEAT-393) and returned in the result.
+
         Args:
-            section_id: ID of the section to add the field to.
+            section_uid: UUID string of the section to add the field to —
+                obtain from ``get_form_summary``.
             field: Dict representation of the FormField to add.
             position: Optional 0-based insertion index. Appends if None.
 
         Returns:
-            Success dict with added field_id, or error dict on failure.
+            Success dict with the added field's ``field_uid``/``field_id``,
+            or error dict on failure.
         """
+        try:
+            section_uuid = uuid.UUID(section_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{section_uid}' is not a valid section_uid (UUID string)."}
         try:
             validated_field = FormField.model_validate(field)
             op = AddField(
                 op="add_field",
-                section_id=section_id,
+                section_uid=section_uuid,
                 field=validated_field,
                 position=position,
             )
             self._form = _apply_add_field(self._form, op)
             return {
                 "success": True,
-                "section_id": section_id,
+                "section_uid": section_uid,
+                "field_uid": str(validated_field.field_uid),
                 "field_id": validated_field.field_id,
                 "position": position,
             }
@@ -363,7 +411,7 @@ class EditToolkit(AbstractToolkit):
 
     async def add_field_from_schema(
         self,
-        section_id: str,
+        section_uid: str,
         field_schema: dict,
         position: int | None = None,
     ) -> dict:
@@ -375,13 +423,15 @@ class EditToolkit(AbstractToolkit):
         applying the mutation via the existing `add_field()`.
 
         Args:
-            section_id: ID of the section to add the field to.
+            section_uid: UUID string of the section to add the field to —
+                obtain from ``get_form_summary``.
             field_schema: Dict with field definition (supports shortcuts:
                 auto-generated field_id from label, string field_type).
             position: Optional 0-based insertion index. Appends if None.
 
         Returns:
-            Success dict with added field_id, or error dict on failure.
+            Success dict with added field's ``field_uid``/``field_id``, or
+            error dict on failure.
         """
         try:
             assembler = FormAssembler()
@@ -390,30 +440,37 @@ class EditToolkit(AbstractToolkit):
             self.logger.warning("add_field_from_schema validation error: %s", exc)
             return {"error": f"Invalid field schema: {exc}"}
 
-        return await self.add_field(section_id, validated_field.model_dump(), position)
+        return await self.add_field(section_uid, validated_field.model_dump(), position)
 
-    async def remove_field(self, section_id: str, field_id: str) -> dict:
-        """Remove a field from a section.
+    async def remove_field(self, section_uid: str, field_uid: str) -> dict:
+        """Remove a field from a section, addressed by UID.
 
         Args:
-            section_id: ID of the section containing the field.
-            field_id: ID of the field to remove.
+            section_uid: UUID string of the section containing the field —
+                obtain from ``get_form_summary``.
+            field_uid: UUID string of the field to remove — obtain from
+                ``get_form_summary`` or ``search_fields``.
 
         Returns:
             Success dict, or error dict on failure.
         """
         try:
+            section_uuid = uuid.UUID(section_uid)
+            field_uuid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": "section_uid and field_uid must be valid UUID strings."}
+        try:
             op = RemoveField(
                 op="remove_field",
-                section_id=section_id,
-                field_id=field_id,
+                section_uid=section_uuid,
+                field_uid=field_uuid,
             )
             self._form = _apply_remove_field(self._form, op)
             return {
                 "success": True,
-                "section_id": section_id,
-                "field_id": field_id,
-                "message": f"Field '{field_id}' removed from section '{section_id}'.",
+                "section_uid": section_uid,
+                "field_uid": field_uid,
+                "message": f"Field '{field_uid}' removed from section '{section_uid}'.",
             }
         except OperationError as exc:
             self.logger.warning("remove_field failed: %s", exc)
@@ -426,150 +483,202 @@ class EditToolkit(AbstractToolkit):
     # Dependency / post-dependency CRUD (FEAT-234)
     # ------------------------------------------------------------------
 
-    async def add_dependency(self, field_id: str, rule: dict) -> dict:
+    async def add_dependency(self, field_uid: str, rule: dict) -> dict:
         """Set or replace the ``depends_on`` rule on a field.
 
         Validates the rule dict via :class:`DependencyRule` and runs the
         form-level rule-integrity pass before applying.  Returns an error dict
         (form unchanged) if validation fails.
 
+        ``rule``'s conditions/operations may reference other fields by their
+        authored ``field_id`` (LLM ergonomics) — after applying, the form is
+        routed through ``core.resolution.resolve_rule_references`` (FEAT-393)
+        so the stored rule is UID-addressed before the integrity check runs.
+
         Args:
-            field_id: ID of the field to update.
-            rule: Dict representation of a :class:`DependencyRule`.
+            field_uid: UUID string of the field to update — obtain from
+                ``get_form_summary`` or ``search_fields``.
+            rule: Dict representation of a :class:`DependencyRule` — field
+                references inside ``conditions``/``operations`` use authored
+                ``field_id`` strings.
 
         Returns:
-            Success dict with the updated ``depends_on``, or an error dict.
+            Success dict with the updated ``depends_on`` (UID-resolved), or
+            an error dict.
         """
+        try:
+            field_uuid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{field_uid}' is not a valid field_uid (UUID string)."}
         try:
             validated_rule = DependencyRule.model_validate(rule)
         except ValidationError as exc:
             return {"error": f"Invalid DependencyRule: {exc.errors()}"}
 
-        field, section = self._find_field_and_section(field_id)
+        field, _section = self._find_field_and_section(field_uuid)
         if field is None:
-            return {"error": f"Field '{field_id}' not found."}
+            return {"error": f"Field '{field_uid}' not found."}
 
         # Build a temporary form copy with the new rule applied to validate integrity
         updated_field = field.model_copy(update={"depends_on": validated_rule})
-        temp_form = self._replace_field_in_form(self._form, section.section_id, field_id, updated_field)
+        temp_form = self._replace_field_in_form(self._form, field_uuid, updated_field)
+
+        try:
+            temp_form = resolve_rule_references(temp_form)
+        except ValueError as exc:
+            return {"error": "Rule integrity check failed", "details": [str(exc)]}
 
         rule_errors = await self._check_rules(temp_form)
         if rule_errors:
             return {"error": "Rule integrity check failed", "details": rule_errors}
 
         self._form = temp_form
+        resolved_field, _ = self._find_field_and_section(field_uuid)
         return {
             "success": True,
-            "field_id": field_id,
-            "depends_on": validated_rule.model_dump(mode="json"),
+            "field_uid": field_uid,
+            "depends_on": resolved_field.depends_on.model_dump(mode="json"),
         }
 
-    async def update_dependency(self, field_id: str, patch: dict) -> dict:
+    async def update_dependency(self, field_uid: str, patch: dict) -> dict:
         """Merge-patch the existing ``depends_on`` rule on a field.
 
         The ``patch`` is merged into the current rule dict.  If the field has
         no existing rule, ``patch`` is used as the full new rule.
 
         Args:
-            field_id: ID of the field to update.
+            field_uid: UUID string of the field to update — obtain from
+                ``get_form_summary`` or ``search_fields``.
             patch: Partial dict to merge into the existing DependencyRule.
 
         Returns:
             Success dict with the updated ``depends_on``, or an error dict.
         """
-        field, section = self._find_field_and_section(field_id)
+        try:
+            field_uuid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{field_uid}' is not a valid field_uid (UUID string)."}
+        field, _section = self._find_field_and_section(field_uuid)
         if field is None:
-            return {"error": f"Field '{field_id}' not found."}
+            return {"error": f"Field '{field_uid}' not found."}
 
         current = field.depends_on.model_dump() if field.depends_on else {}
         merged = {**current, **patch}
-        return await self.add_dependency(field_id, merged)
+        return await self.add_dependency(field_uid, merged)
 
-    async def remove_dependency(self, field_id: str) -> dict:
+    async def remove_dependency(self, field_uid: str) -> dict:
         """Clear the ``depends_on`` rule from a field.
 
         Args:
-            field_id: ID of the field to clear.
+            field_uid: UUID string of the field to clear — obtain from
+                ``get_form_summary`` or ``search_fields``.
 
         Returns:
             Success dict, or error dict if the field is not found.
         """
-        field, section = self._find_field_and_section(field_id)
+        try:
+            field_uuid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{field_uid}' is not a valid field_uid (UUID string)."}
+        field, _section = self._find_field_and_section(field_uuid)
         if field is None:
-            return {"error": f"Field '{field_id}' not found."}
+            return {"error": f"Field '{field_uid}' not found."}
 
         updated_field = field.model_copy(update={"depends_on": None})
-        self._form = self._replace_field_in_form(
-            self._form, section.section_id, field_id, updated_field
-        )
-        return {"success": True, "field_id": field_id, "depends_on": None}
+        self._form = self._replace_field_in_form(self._form, field_uuid, updated_field)
+        return {"success": True, "field_uid": field_uid, "depends_on": None}
 
-    async def add_post_dependency(self, field_id: str, post: dict) -> dict:
+    async def add_post_dependency(self, field_uid: str, post: dict) -> dict:
         """Append a :class:`PostDependency` to a field's ``post_depends`` list.
 
         Validates the post-dependency dict and runs rule-integrity before
         applying.  Returns an error dict (form unchanged) if validation fails.
 
+        ``post``'s ``target``/conditions/operation may reference other
+        fields by their authored ``field_id`` (LLM ergonomics) — after
+        applying, the form is routed through ``core.resolution.
+        resolve_rule_references`` (FEAT-393) so stored references are
+        UID-addressed before the integrity check runs.
+
         Args:
-            field_id: ID of the field to update.
-            post: Dict representation of a :class:`PostDependency`.
+            field_uid: UUID string of the field to update — obtain from
+                ``get_form_summary`` or ``search_fields``.
+            post: Dict representation of a :class:`PostDependency` — field
+                references use authored ``field_id`` strings.
 
         Returns:
-            Success dict with the full updated ``post_depends`` list, or an error dict.
+            Success dict with the full updated ``post_depends`` list
+            (UID-resolved), or an error dict.
         """
+        try:
+            field_uuid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{field_uid}' is not a valid field_uid (UUID string)."}
         try:
             validated_post = PostDependency.model_validate(post)
         except ValidationError as exc:
             return {"error": f"Invalid PostDependency: {exc.errors()}"}
 
-        field, section = self._find_field_and_section(field_id)
+        field, _section = self._find_field_and_section(field_uuid)
         if field is None:
-            return {"error": f"Field '{field_id}' not found."}
+            return {"error": f"Field '{field_uid}' not found."}
 
         existing = list(field.post_depends or [])
         existing.append(validated_post)
         updated_field = field.model_copy(update={"post_depends": existing})
-        temp_form = self._replace_field_in_form(self._form, section.section_id, field_id, updated_field)
+        temp_form = self._replace_field_in_form(self._form, field_uuid, updated_field)
+
+        try:
+            temp_form = resolve_rule_references(temp_form)
+        except ValueError as exc:
+            return {"error": "Rule integrity check failed", "details": [str(exc)]}
 
         rule_errors = await self._check_rules(temp_form)
         if rule_errors:
             return {"error": "Rule integrity check failed", "details": rule_errors}
 
         self._form = temp_form
+        resolved_field, _ = self._find_field_and_section(field_uuid)
         return {
             "success": True,
-            "field_id": field_id,
-            "post_depends": [p.model_dump(mode="json") for p in existing],
+            "field_uid": field_uid,
+            "post_depends": [p.model_dump(mode="json") for p in resolved_field.post_depends],
         }
 
-    async def remove_post_dependency(self, field_id: str, target: str) -> dict:
-        """Remove a specific post-dependency (by target field_id) from a field.
+    async def remove_post_dependency(self, field_uid: str, target: str) -> dict:
+        """Remove a specific post-dependency (by target ``field_uid``) from a field.
 
         Args:
-            field_id: ID of the owning field.
-            target: The ``target`` field_id of the PostDependency to remove.
+            field_uid: UUID string of the owning field — obtain from
+                ``get_form_summary`` or ``search_fields``.
+            target: UUID string — the resolved ``target`` field_uid of the
+                PostDependency to remove (as stored after
+                ``resolve_rule_references`` has run, e.g. via
+                ``add_post_dependency``).
 
         Returns:
             Success dict with the remaining ``post_depends`` list, or an error dict.
         """
-        field, section = self._find_field_and_section(field_id)
+        try:
+            field_uuid = uuid.UUID(field_uid)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{field_uid}' is not a valid field_uid (UUID string)."}
+        field, _section = self._find_field_and_section(field_uuid)
         if field is None:
-            return {"error": f"Field '{field_id}' not found."}
+            return {"error": f"Field '{field_uid}' not found."}
 
         existing = list(field.post_depends or [])
         updated = [p for p in existing if p.target != target]
         if len(updated) == len(existing):
             return {
-                "error": f"No post_depends with target='{target}' found on field '{field_id}'."
+                "error": f"No post_depends with target='{target}' found on field '{field_uid}'."
             }
 
         updated_field = field.model_copy(update={"post_depends": updated or None})
-        self._form = self._replace_field_in_form(
-            self._form, section.section_id, field_id, updated_field
-        )
+        self._form = self._replace_field_in_form(self._form, field_uuid, updated_field)
         return {
             "success": True,
-            "field_id": field_id,
+            "field_uid": field_uid,
             "removed_target": target,
             "post_depends": [p.model_dump(mode="json") for p in updated],
         }
@@ -581,16 +690,17 @@ class EditToolkit(AbstractToolkit):
     def _replace_field_in_form(
         self,
         form: FormSchema,
-        section_id: str,
-        field_id: str,
+        field_uid: uuid.UUID,
         new_field: FormField,
     ) -> FormSchema:
-        """Return a deep copy of *form* with *field_id* replaced by *new_field*.
+        """Return a deep copy of *form* with the field matching *field_uid*
+        replaced by *new_field* (FEAT-393).
+
+        Searches section-level fields AND every subsection's fields.
 
         Args:
             form: The source FormSchema.
-            section_id: Section containing the field.
-            field_id: The field to replace.
+            field_uid: The UID of the field to replace.
             new_field: The replacement FormField.
 
         Returns:
@@ -598,14 +708,19 @@ class EditToolkit(AbstractToolkit):
         """
         new_sections = []
         for section in form.sections:
-            if section.section_id != section_id:
-                new_sections.append(section)
-                continue
-            new_fields = [
-                new_field if (isinstance(f, FormField) and f.field_id == field_id) else f
-                for f in section.fields
-            ]
-            new_sections.append(section.model_copy(update={"fields": new_fields}))
+            new_items = []
+            for item in section.fields:
+                if isinstance(item, FormField) and item.field_uid == field_uid:
+                    new_items.append(new_field)
+                elif isinstance(item, FormSubsection):
+                    new_sub_fields = [
+                        new_field if f.field_uid == field_uid else f
+                        for f in item.fields
+                    ]
+                    new_items.append(item.model_copy(update={"fields": new_sub_fields}))
+                else:
+                    new_items.append(item)
+            new_sections.append(section.model_copy(update={"fields": new_items}))
         return form.model_copy(update={"sections": new_sections})
 
     async def _check_rules(self, form: FormSchema) -> list[str]:
@@ -704,10 +819,16 @@ class EditToolkit(AbstractToolkit):
         Returns:
             Success dict, or error dict on failure.
         """
+        section = self._find_section(section_id)
+        if section is None:
+            return {
+                "error": f"Section '{section_id}' not found.",
+                "available_sections": [s.section_id for s in self._form.sections],
+            }
         try:
             op = UpdateSectionMeta(
                 op="update_section_meta",
-                section_id=section_id,
+                section_uid=section.section_uid,
                 patch=patch,
             )
             self._form = _apply_update_section_meta(self._form, op)
@@ -725,17 +846,19 @@ class EditToolkit(AbstractToolkit):
 
     async def move_field(
         self,
-        from_section: str,
-        field_id: str,
-        to_section: str,
+        from_section_uid: str,
+        field_uid: str,
+        to_section_uid: str,
         position: int | None = None,
     ) -> dict:
-        """Move a field within or across sections.
+        """Move a field within or across sections, addressed by UID.
 
         Args:
-            from_section: ID of the source section.
-            field_id: ID of the field to move.
-            to_section: ID of the destination section.
+            from_section_uid: UUID string of the source section — obtain
+                from ``get_form_summary``.
+            field_uid: UUID string of the field to move — obtain from
+                ``get_form_summary`` or ``search_fields``.
+            to_section_uid: UUID string of the destination section.
             position: Optional 0-based insertion index in the destination section.
 
         Returns:
@@ -745,16 +868,16 @@ class EditToolkit(AbstractToolkit):
             op = MoveField(
                 op="move_field",
                 **{
-                    "from": {"section_id": from_section, "field_id": field_id},
-                    "to": {"section_id": to_section, "position": position},
+                    "from": {"section_uid": from_section_uid, "field_uid": field_uid},
+                    "to": {"section_uid": to_section_uid, "position": position},
                 },
             )
             self._form = _apply_move_field(self._form, op)
             return {
                 "success": True,
-                "field_id": field_id,
-                "from_section": from_section,
-                "to_section": to_section,
+                "field_uid": field_uid,
+                "from_section_uid": from_section_uid,
+                "to_section_uid": to_section_uid,
                 "position": position,
             }
         except OperationError as exc:

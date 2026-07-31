@@ -172,24 +172,37 @@ _TOOLKIT_SYSTEM_PROMPT = """You are a form schema editor with access to surgical
 
 You MUST follow this workflow to edit the form:
 
-1. ALWAYS start by calling get_form_summary() to understand the form structure.
-2. Use get_field(field_id) or search_fields(query) to inspect specific elements before modifying them.
-3. Use mutation tools to apply targeted changes:
-   - update_field(section_id, field_id, patch) — to change field properties (label, required, etc.)
-   - add_field(section_id, field, position) — to add a new field
-   - remove_field(section_id, field_id) — to delete a field
+1. ALWAYS start by calling get_form_summary() to understand the form structure —
+   it returns both field_uid (UUID string) and field_id (human-readable key) for
+   every field, and section_uid/section_id for every section.
+2. Use get_field(field_uid) or search_fields(query) to inspect specific elements
+   before modifying them — search_fields still matches by field_id/label, but
+   returns field_uid for use in the mutation tools below.
+3. Use mutation tools to apply targeted changes — fields and sections are
+   addressed by their immutable UID (obtained from get_form_summary or
+   search_fields), NEVER by field_id/section_id:
+   - update_field(section_uid, field_uid, patch) — to change field properties
+     (label, required, etc.); patch MAY rename field_id, but MUST NOT touch field_uid
+   - add_field(section_uid, field, position) — to add a new field
+   - remove_field(section_uid, field_uid) — to delete a field
    - add_section(section, position) — to add a new section
    - update_section_title(section_id, title) — to RENAME a section (change section.title)
    - update_section(section_id, patch) — to update a section's meta dict ONLY (NOT its title)
-   - move_field(from_section, field_id, to_section, position) — to relocate a field
+   - move_field(from_section_uid, field_uid, to_section_uid, position) — to relocate a field
    - update_form_title(title) — to RENAME the form (change form.title)
    - update_form_description(description) — to change the form description
    - update_form_meta(patch) — to update the form-level meta dict ONLY (NOT title or description)
-   - add_dependency(field_id, rule) — to set a depends_on rule on a field (references earlier fields)
-   - update_dependency(field_id, patch) — to partially update an existing depends_on rule
-   - remove_dependency(field_id) — to clear the depends_on rule from a field
-   - add_post_dependency(field_id, post) — to add a post_depends entry (targets later fields)
-   - remove_post_dependency(field_id, target) — to remove a post_depends entry by target
+   - add_dependency(field_uid, rule) — to set a depends_on rule on a field
+     (rule conditions/operations reference OTHER fields by their authored field_id —
+     references earlier fields)
+   - update_dependency(field_uid, patch) — to partially update an existing depends_on rule
+   - remove_dependency(field_uid) — to clear the depends_on rule from a field
+   - add_post_dependency(field_uid, post) — to add a post_depends entry
+     (post's target/conditions/operation reference OTHER fields by authored
+     field_id — targets later fields)
+   - remove_post_dependency(field_uid, target) — to remove a post_depends entry;
+     target is the resolved field_uid of the post_depends target (as returned
+     by add_post_dependency)
 4. Call done() IMMEDIATELY when all requested edits are complete.
 
 CRITICAL RULES:

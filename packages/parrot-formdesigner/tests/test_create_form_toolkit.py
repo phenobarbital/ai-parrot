@@ -192,9 +192,14 @@ class TestToolkitIntegration:
             update_tool = tool_map.get("update_field")
             done_tool = tool_map.get("done")
             if update_tool:
+                name_field = next(
+                    f
+                    for f in small_form.sections[0].fields
+                    if isinstance(f, FormField) and f.field_id == "name"
+                )
                 await update_tool.execute(
-                    section_id="main",
-                    field_id="name",
+                    section_uid=str(small_form.sections[0].section_uid),
+                    field_uid=str(name_field.field_uid),
                     patch={"label": "Full Name"},
                 )
             if done_tool:
