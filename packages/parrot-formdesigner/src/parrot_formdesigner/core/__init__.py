@@ -24,6 +24,7 @@ from .events import (
     VisitEventName,
 )
 from .options import FieldOption, OptionsSource
+from .resolution import find_field_by_uid, resolve_answer, resolve_rule_references
 from .schema import (
     BUILTIN_METADATA_SOURCE_NAMES,
     FormField,
@@ -65,6 +66,10 @@ __all__ = [
     # Options
     "FieldOption",
     "OptionsSource",
+    # Resolution (FEAT-393, Module 3)
+    "resolve_rule_references",
+    "find_field_by_uid",
+    "resolve_answer",
     # Schema
     "FormField",
     "FormSubsection",
