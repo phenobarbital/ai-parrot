@@ -109,10 +109,10 @@ is sufficient evidence once enabled.
 
 ## Acceptance Criteria
 
-- [ ] Re-verified: `_handle_answer_audio` rejects `b"fake-audio-frame"` (16 bytes) via `_MIN_AUDIO_BYTES` and returns after one `EMPTY_AUDIO` message
-- [ ] Re-verified: `_handle_confirm_answer`/`_advance_session`/`_send_question` are not implicated — no lock/deadlock exists there
-- [ ] Reproduction command confirms the hang (`timeout 20 pytest ... test_ws_low_confidence_confirm` → exit 124) on the current `dev` HEAD
-- [ ] Root cause documented in the Completion Note below
+- [x] Re-verified: `_handle_answer_audio` rejects `b"fake-audio-frame"` (16 bytes) via `_MIN_AUDIO_BYTES` and returns after one `EMPTY_AUDIO` message
+- [x] Re-verified: `_handle_confirm_answer`/`_advance_session`/`_send_question` are not implicated — no lock/deadlock exists there
+- [x] Reproduction command confirms the hang (`timeout 20 pytest ... test_ws_low_confidence_confirm` → exit 124) on the current `dev` HEAD
+- [x] Root cause documented in the Completion Note below
 
 ---
 
@@ -136,10 +136,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-07-31
+**Notes**: Re-verified the spec's confirmed root cause against current `dev`
+code in the worktree:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+1. Read `api/audio_ws.py:68-99` — `_MIN_AUDIO_BYTES = 256` and
+   `_sniff_audio_suffix` unchanged from what the spec documents.
+2. Read `api/audio_ws.py:653-704` (`_handle_answer_audio`) — confirmed the
+   `len(audio_bytes) < _MIN_AUDIO_BYTES` check (line 689) fires and
+   returns after sending one `EMPTY_AUDIO` error, *before* the suffix
+   check and before ever reaching the transcriber/confirm logic.
+3. Reproduced the hang live: temporarily stripped the three
+   `@pytest.mark.skip` decorators from a working-tree copy of
+   `test_audio_integration.py` (never committed — reverted via
+   `git checkout --` immediately after), then ran
+   `timeout 20 pytest ...::test_ws_low_confidence_confirm` → **exit 124**,
+   confirming the hang reproduces on current `dev` HEAD.
+4. Ran the same reproduction with `--log-cli-level=DEBUG`, capturing the
+   handler's own debug line:
+   `Received audio frame: 16 bytes, magic=66 61 6b 65 2d 61 75 64,
+   detected=unknown` — proving the 16-byte `b"fake-audio-frame"` payload
+   is what's rejected, and that only one message (`EMPTY_AUDIO`) is ever
+   sent back, explaining why the test's second `receive_json()` blocks
+   forever.
+5. Confirmed `_handle_confirm_answer`, `_advance_session`, and
+   `_send_question` are never reached by any of the three hanging tests
+   — the stall is entirely upstream, in `_handle_answer_audio`'s payload
+   gate. No lock, semaphore, or unresolved `await` exists in those
+   methods.
 
-**Deviations from spec**: none | describe if any
+**Root cause (confirmed)**: stale test fixture, not a production deadlock.
+See spec §2 "Root Cause (CONFIRMED)" for the full writeup — this task
+independently re-verified it against the current worktree's code and a
+live reproduction, and found no discrepancy.
+
+**Deviations from spec**: none. The working tree was left clean (no
+diff) after the temporary skip-removal used for reproduction — that
+change was never committed and was reverted before finishing this task.
