@@ -16,6 +16,7 @@ from ..core.constraints import (
     PostDependency,
 )
 from ..core.options import FieldOption, OptionsSource
+from ..core.resolution import resolve_rule_references
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType
 
@@ -120,7 +121,7 @@ class JsonSchemaExtractor:
             )
             fields.append(field)
 
-        return FormSchema(
+        form = FormSchema(
             form_id=resolved_form_id,
             title=resolved_title,
             sections=[
@@ -131,6 +132,11 @@ class JsonSchemaExtractor:
                 )
             ],
         )
+        # FEAT-393: mint UIDs (free — model default_factory) and resolve any
+        # rule references before returning. JSON Schema itself carries no
+        # depends_on/post_depends, but this keeps every extractor's output
+        # uniformly resolved before it reaches the registry/storage.
+        return resolve_rule_references(form)
 
     def _resolve_ref(self, ref: str, root_schema: dict[str, Any]) -> dict[str, Any]:
         """Resolve a JSON Schema $ref to the referenced schema dict.
@@ -267,8 +273,11 @@ class JsonSchemaExtractor:
                 if "$ref" in items_schema:
                     items_schema = self._resolve_ref(items_schema["$ref"], root_schema)
                 item_type = self._map_type(items_schema)
+                # FEAT-393: suffix with the parent's name — a bare "item"
+                # collides form-wide (walk_fields visits item_template) when
+                # a form has more than one ARRAY field.
                 item_template = FormField(
-                    field_id="item",
+                    field_id=f"{name}_item",
                     field_type=item_type,
                     label="Item",
                 )
