@@ -10,8 +10,8 @@ from botbuilder.dialogs import (
 )
 from botbuilder.core import MessageFactory, CardFactory
 from parrot.forms import FormSchema, StyleSchema
-from parrot.forms.renderers import AdaptiveCardRenderer
-from parrot.forms.validators import FormValidator
+from parrot_formdesigner.renderers import AdaptiveCardRenderer
+from parrot_formdesigner.services.validators import FormValidator
 
 
 # Turn state keys

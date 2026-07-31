@@ -7,7 +7,12 @@ _WORKTREE_ROOT = Path(__file__).parents[4]
 
 class TestMSTeamsIntegrationImports:
     def test_adaptive_card_renderer_import(self):
-        from parrot.forms.renderers.adaptive_card import AdaptiveCardRenderer
+        # FEAT-393 (TASK-2007): the parrot.forms.renderers.* submodule path
+        # was a local fallback-copy artifact and no longer exists — the
+        # shim only re-exports parrot.forms's top-level symbol surface.
+        # The equivalent, still-supported deep-import path is the real
+        # parrot_formdesigner module.
+        from parrot_formdesigner.renderers.adaptive_card import AdaptiveCardRenderer
         assert AdaptiveCardRenderer is not None
 
     def test_form_schema_import(self):
