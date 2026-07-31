@@ -850,6 +850,554 @@ def _find_field_and_section(self, field_id: str)                    # :111-125 �
 
 ---
 
+## 9. Implementation Blueprints (per module)
+
+> Concrete code to apply per module — authoritative guidance for `/sdd-task`
+> decomposition and implementing agents. Snippets were derived from the real
+> hunks (line anchors per §6). "Before" code is verbatim from `dev` at
+> `94d8fc543`; "after" code is the target shape. Agents adapt mechanically
+> (imports, docstrings) but MUST NOT redesign.
+
+### Convention used by every blueprint
+
+- UID model fields: `uuid.UUID` + `Field(default_factory=uuid.uuid4)`.
+- Rule reference strings (`DependencyOperation.operands/target`,
+  `PostDependency.target`) hold **canonical UUID strings** after resolution
+  (`str(uuid.UUID(...))`); `FieldCondition` gets a typed `field_uid` field.
+- After resolution, `field_uid` is authoritative on conditions; a condition's
+  authored `field_id` is retained as informational input only and is ignored
+  at evaluation time (it goes stale on rename by design).
+
+### Module 1 — form_uid str → UUID retrofit
+
+FEAT-389 is unmerged; exact anchors will shift. Pattern to apply everywhere
+`form_uid` appears after merge:
+
+```python
+# core/schema.py — FormSchema (and FormSubmission, BlobMetadata)
+# BEFORE (FEAT-389 as specced)
+form_uid: str = Field(default_factory=lambda: str(uuid.uuid4()))
+# AFTER
+form_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
+
+# api helper — extract_form_uid
+# BEFORE: returns str after regex/uuid check
+# AFTER
+def extract_form_uid(request: web.Request) -> uuid.UUID:
+    raw = request.match_info["form_uid"]
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        raise web.HTTPBadRequest(reason=f"invalid form_uid: {raw!r}")
+```
+
+- Registry dict keys: `uuid.UUID` directly (hashable); `_slug_index` values
+  become `uuid.UUID`.
+- asyncpg binds `uuid.UUID` natively to `UUID` columns — after the Module 14
+  column-type migration, drop any `str(...)` conversions at the SQL boundary.
+- JSON responses: Pydantic serializes UUID → canonical string; assert wire
+  shape unchanged in tests.
+
+### Module 2 — Core model UIDs + canonical traversal + uniqueness validator
+
+```python
+# core/schema.py — model additions (FormField :74 area, FormSubsection :116, FormSection :146)
+class FormField(BaseModel):
+    field_uid: uuid.UUID = Field(default_factory=uuid.uuid4)   # NEW, first field
+    field_id: str                                              # unchanged
+    ...
+class FormSubsection(BaseModel):
+    subsection_uid: uuid.UUID = Field(default_factory=uuid.uuid4)  # NEW
+    subsection_id: str
+    ...
+class FormSection(BaseModel):
+    section_uid: uuid.UUID = Field(default_factory=uuid.uuid4)     # NEW
+    section_id: str
+    ...
+# keep FormField.model_rebuild() at :93
+
+# core/schema.py — THE canonical recursive traversal (module-level)
+def walk_fields(items: Iterable["SectionItem"]) -> Iterator["FormField"]:
+    """Yield every FormField, recursing subsections, GROUP children and ARRAY item_template."""
+    for item in items:
+        if isinstance(item, FormSubsection):
+            yield from walk_fields(item.fields)
+            continue
+        yield item
+        if item.children:
+            yield from walk_fields(item.children)
+        if item.item_template is not None:
+            yield from walk_fields([item.item_template])
+
+class FormSchema(BaseModel):
+    ...
+    def iter_fields_recursive(self) -> Iterator[FormField]:
+        for section in self.sections:
+            yield from walk_fields(section.fields)
+
+    @model_validator(mode="after")
+    def _validate_unique_identity(self) -> "FormSchema":
+        seen_uids: set[uuid.UUID] = set()
+        seen_fids: set[str] = set()
+        for section in self.sections:
+            if section.section_uid in seen_uids:
+                raise ValueError(f"Duplicate section_uid {section.section_uid} in form {self.form_id!r}")
+            seen_uids.add(section.section_uid)
+            for item in section.fields:
+                if isinstance(item, FormSubsection):
+                    if item.subsection_uid in seen_uids:
+                        raise ValueError(f"Duplicate subsection_uid {item.subsection_uid} in form {self.form_id!r}")
+                    seen_uids.add(item.subsection_uid)
+        for field in self.iter_fields_recursive():
+            if field.field_uid in seen_uids:
+                raise ValueError(f"Duplicate field_uid {field.field_uid} in form {self.form_id!r}")
+            seen_uids.add(field.field_uid)
+            if field.field_id in seen_fids:
+                raise ValueError(f"Duplicate field_id {field.field_id!r} in form {self.form_id!r}")
+            seen_fids.add(field.field_id)
+        return self
+
+# RenderWarning (:376-390)
+class RenderWarning(BaseModel):
+    field_id: str
+    field_uid: uuid.UUID | None = None   # NEW
+    ...
+```
+
+- `iter_all_fields()` (:324) stays for renderer layout order (sections +
+  subsections, NO nesting); docstring must state it is NOT the uniqueness
+  traversal. `_validate_metadata` (:329) keeps using `iter_all_fields`.
+
+### Module 3 — Rule models + `core/resolution.py`
+
+```python
+# core/constraints.py — FieldCondition (:144-164); keep NO extra="forbid"
+class FieldCondition(BaseModel):
+    field_id: str | None = None                 # authored reference (was required str)
+    field_uid: uuid.UUID | None = None          # NEW — authoritative after resolution
+    operator: ConditionOperator
+    value: Any = None
+    source: str = "field"
+    key: str | None = None
+# DependencyOperation.operands/target, PostDependency.target: types UNCHANGED
+# (list[str]/str) — values become canonical UUID strings after resolution.
+# Update the docstrings at :211-213, :233-234, :282 accordingly.
+
+# NEW file: core/resolution.py
+def resolve_rule_references(form: FormSchema) -> FormSchema:
+    """Rewrite authored field_id rule references to field_uid. Mutates & returns form."""
+    by_fid: dict[str, FormField] = {}
+    for f in form.iter_fields_recursive():
+        if f.field_id in by_fid:
+            raise ValueError(f"Cannot resolve rules: duplicate field_id {f.field_id!r} in form {form.form_id!r}")
+        by_fid[f.field_id] = f
+    known_uids = {str(f.field_uid) for f in by_fid.values()}
+
+    def _uid_for(ref: str, owner: str, kind: str) -> str:
+        if not ref:
+            raise ValueError(f"Field {owner!r}: {kind} has an empty field reference")
+        try:
+            u = str(uuid.UUID(ref))          # already a UID (idempotent re-run)
+            if u not in known_uids:
+                raise ValueError(f"Field {owner!r}: {kind} references unknown field_uid {ref!r}")
+            return u
+        except ValueError:
+            pass                              # not UUID-shaped → treat as field_id
+        if ref not in by_fid:
+            raise ValueError(f"Field {owner!r}: {kind} references unknown field_id {ref!r}")
+        return str(by_fid[ref].field_uid)
+
+    def _resolve_condition(cond: FieldCondition, owner: str) -> None:
+        if (cond.source or "field") != "field":
+            return                            # location_variable / visit_context: key-based, no field ref
+        if cond.field_uid is not None:
+            return                            # already resolved
+        cond.field_uid = uuid.UUID(_uid_for(cond.field_id or "", owner, "condition"))
+
+    for f in form.iter_fields_recursive():
+        if f.depends_on:
+            for c in f.depends_on.conditions:
+                _resolve_condition(c, f.field_id)
+            for op in f.depends_on.operations or []:
+                op.operands = [_uid_for(o, f.field_id, "operation operand") for o in op.operands]
+                op.target = _uid_for(op.target, f.field_id, "operation target")
+        for post in f.post_depends or []:
+            post.target = _uid_for(post.target, f.field_id, "post_depends target")
+            for c in post.conditions or []:
+                _resolve_condition(c, f.field_id)
+            if post.operation:
+                post.operation.operands = [_uid_for(o, f.field_id, "post operation operand") for o in post.operation.operands]
+                post.operation.target = _uid_for(post.operation.target, f.field_id, "post operation target")
+    return form
+```
+
+Idempotent by construction (UID-shaped refs validate-and-pass). Also add here:
+
+```python
+def find_field_by_uid(form: FormSchema, field_uid: uuid.UUID) -> tuple[FormField, FormSection] | None:
+    for section in form.sections:
+        for f in walk_fields(section.fields):
+            if f.field_uid == field_uid:
+                return f, section
+    return None
+
+def resolve_answer(form: FormSchema, field_uid: uuid.UUID, answers: dict[str, Any]) -> Any:
+    found = find_field_by_uid(form, field_uid)
+    return answers.get(found[0].field_id) if found else None
+```
+
+### Module 4 — Validators + rule evaluator re-keying
+
+```python
+# services/validators.py — validate_rules (:791): re-key maps on UID strings
+# BEFORE (:819-820)
+field_map: dict[str, FormField] = {f.field_id: f for f in all_fields}
+field_order: dict[str, int] = {f.field_id: i for i, f in enumerate(all_fields)}
+# AFTER
+field_map = {str(f.field_uid): f for f in all_fields}
+field_order = {str(f.field_uid): i for i, f in enumerate(all_fields)}
+# ref reads change from `ref = cond.field_id` (:830, :882) to:
+ref = str(cond.field_uid) if cond.field_uid else ""
+# Error messages: report BOTH ids for humans, e.g.
+#   f"Field '{fid}': depends_on references unknown field {ref!r}"
+# where fid stays field.field_id (human-facing).
+# _detect_circular_dependencies (:974): graph/edges keyed by str(f.field_uid);
+# emit cycle paths as field_id chains via field_map lookup (human-readable).
+
+# services/rule_evaluator.py — condition read (:118-124)
+# BEFORE
+raw = answers.get(condition.field_id)
+# AFTER (answers stay field_id-keyed; form is in scope in the evaluator)
+raw = resolve_answer(form, condition.field_uid, answers) if condition.field_uid else None
+# _topo_order (:355-410): field_map/edges keyed by str(f.field_uid); edge
+# sources from cond.field_uid / op.operands (already UID strings).
+# Keep warn-and-degrade on cycle. Result maps (visible/required/computed/
+# cleared) STAY keyed by field_id — they feed renderers/clients.
+```
+
+### Module 5 — Edit operations API (`api/operations.py`)
+
+```python
+# Models (:60-119) — clean break
+class AddField(_OpBase):
+    op: Literal["add_field"]
+    section_uid: uuid.UUID          # was section_id: str
+    field: FormField                # may carry client field_uid (upsert); default mints
+    position: int | None = None
+
+class RemoveField(_OpBase):
+    op: Literal["remove_field"]
+    section_uid: uuid.UUID
+    field_uid: uuid.UUID
+
+class UpdateField(_OpBase):
+    op: Literal["update_field"]
+    section_uid: uuid.UUID
+    field_uid: uuid.UUID
+    patch: dict[str, Any]
+
+class MoveField(_OpBase):
+    op: Literal["move_field"]
+    from_: dict = Field(alias="from")   # {"section_uid": ..., "field_uid": ...}
+    to: dict                            # {"section_uid": ..., "position": ...}
+
+class DuplicateField(_OpBase):
+    op: Literal["duplicate_field"]
+    from_: dict = Field(alias="from")
+    as_field_id: str                    # new editable key; fresh field_uid ALWAYS minted
+
+# Section ops (AddSection stays; UpdateSectionMeta gains section_uid target):
+class UpdateSectionMeta(_OpBase):
+    op: Literal["update_section_meta"]
+    section_uid: uuid.UUID
+    patch: dict[str, Any]
+
+# Helpers — replace _section_index (:171), _field_index (:178),
+# _check_unique_field_id (:187), _check_unique_section_id (:196) with:
+def _section_index_by_uid(form: FormSchema, section_uid: uuid.UUID) -> int:
+    for i, sec in enumerate(form.sections):
+        if sec.section_uid == section_uid:
+            return i
+    raise OperationError(-1, "?", f"section '{section_uid}' not found")
+
+def _locate_field(section: FormSection, field_uid: uuid.UUID) -> tuple[list, int]:
+    """Return (containing_list, index) — searches section.fields AND each
+    subsection's fields so subsection fields are addressable (fixes :180-181)."""
+    for i, item in enumerate(section.fields):
+        if isinstance(item, FormField) and item.field_uid == field_uid:
+            return section.fields, i
+    for item in section.fields:
+        if isinstance(item, FormSubsection):
+            for j, f in enumerate(item.fields):
+                if f.field_uid == field_uid:
+                    return item.fields, j
+    raise OperationError(-1, "?", f"field '{field_uid}' not found")
+
+def _check_unique_in_form(form: FormSchema, field: FormField) -> None:
+    """Per-FORM checks (replaces per-section :187-193)."""
+    for f in form.iter_fields_recursive():
+        if f.field_uid == field.field_uid:
+            raise OperationError(-1, "?", f"duplicate field_uid '{field.field_uid}'")
+        if f.field_id == field.field_id:
+            raise OperationError(-1, "?", f"duplicate field_id '{field.field_id}'")
+
+# _apply_update_field (:271-283) — allow field_id rename, reject uid change:
+def _apply_update_field(form: FormSchema, op: UpdateField) -> FormSchema:
+    si = _section_index_by_uid(form, op.section_uid)
+    container, fi = _locate_field(form.sections[si], op.field_uid)
+    if "field_uid" in op.patch and str(op.patch["field_uid"]) != str(op.field_uid):
+        raise OperationError(-1, "update_field", "field_uid is immutable")
+    existing = container[fi].model_dump()
+    merged = _deep_merge(existing, op.patch)
+    merged["field_uid"] = str(op.field_uid)          # identity pin moves to the UID
+    new_field_id = merged.get("field_id")
+    if new_field_id != existing["field_id"]:         # rename → per-form uniqueness check
+        if any(f.field_id == new_field_id for f in form.iter_fields_recursive()
+               if f.field_uid != op.field_uid):
+            raise OperationError(-1, "update_field", f"duplicate field_id '{new_field_id}'")
+    try:
+        container[fi] = FormField.model_validate(merged)
+    except ValidationError as exc:
+        raise OperationError(-1, "update_field", str(exc)) from exc
+    return form
+
+# _apply_duplicate_field (:315-338):
+clone_dict = src.model_dump()
+clone_dict["field_id"] = op.as_field_id
+clone_dict.pop("field_uid", None)                    # fresh identity minted by default_factory
+# _apply_add_field (:214-222): _check_unique_in_form(form, op.field)
+# handle_operations (:358): after applying all ops, run resolve_rule_references(form)
+# then FormSchema.model_validate — rules touched by renames stay coherent (UID refs).
+```
+
+### Module 6 — EditToolkit (`tools/edit_toolkit.py`)
+
+```python
+# _find_field_and_section (:111-125) — delegate to the canonical lookup:
+def _find_field_and_section(self, field_uid: uuid.UUID) -> tuple[FormField, FormSection] | tuple[None, None]:
+    found = find_field_by_uid(self._form, field_uid)
+    return found if found else (None, None)
+
+# Tool signature changes (params accept UUID strings — LLM-facing):
+#   get_field(field_uid: str)                       (:201)
+#   update_field(section_uid: str, field_uid: str, patch: dict)   (:282)
+#   remove_field(section_uid: str, field_uid: str)  (:362)
+#   move_field(from_section_uid, field_uid, to_section_uid, position)  (:664)
+#   add_dependency(field_uid: str, rule: dict)      (:396) — rule dict may
+#     reference other fields by field_id; route through resolve_rule_references
+#     after applying (same for add_post_dependency :474).
+# search_fields (:222): still matches query against field_id/label; each
+#   result dict gains "field_uid": str(f.field_uid).
+# get_form_summary (:142): emit both "field_uid" and "field_id" per field.
+# _replace_field_in_form (:548): match on f.field_uid == field_uid.
+```
+
+### Module 7 — Extractors + CreateFormTool
+
+```python
+# extractors/yaml.py — condition parsing (:450-463)
+# BEFORE (:452)
+field_id = cond.get("field_id", "")
+# AFTER
+field_id = cond.get("field_id")
+if not field_id:
+    raise ValueError("dependency condition is missing 'field_id'")
+# All four extractors: as the LAST step before returning the FormSchema:
+form = resolve_rule_references(form)
+# (UID minting itself is free — model default_factory covers it.)
+
+# tools/create_form.py — after LLM generation, before registration:
+try:
+    form = resolve_rule_references(form)
+except ValueError as exc:
+    # feed back into the existing retry loop with the error text so the
+    # LLM can fix duplicate/unknown field_ids on the next attempt
+    ...
+# Prompt contract additions (near :61): "field_uid/section_uid are generated
+# by the server — NEVER include *_uid keys in your JSON."
+```
+
+### Module 8 — Blob storage + upload route
+
+```python
+# services/blob_storage.py — BlobMetadata (:55-74)
+class BlobMetadata(BaseModel):
+    form_uid: uuid.UUID          # FEAT-389 field, type per Module 1
+    form_id: str                 # kept, descriptive
+    field_uid: uuid.UUID         # NEW — key construction
+    field_id: str                # kept, descriptive
+    ...
+# _build_key (:211-220)
+# BEFORE
+return f"{self._prefix}{metadata.form_id}/{metadata.field_id}/{blob_id}"
+# AFTER
+return f"{self._prefix}{metadata.form_uid}/{metadata.field_uid}/{blob_id}"
+# _from_ref (:232-254): UNCHANGED — parses refs opaquely; old refs stay resolvable.
+
+# api/routes.py (:261)
+# BEFORE: POST {bp}/forms/{form_id}/fields/{field_id}/upload
+# AFTER:  POST {bp}/forms/{form_uid}/fields/{field_uid}/upload
+# api/uploads.py (:233, :249)
+field_uid = extract_uid(request, "field_uid")        # 400 on invalid UUID
+found = find_field_by_uid(form, field_uid)           # 404 if None
+# BlobMetadata(..., field_uid=field_uid, field_id=found[0].field_id, ...)
+# RestCallbackInput: ADD field_uid: uuid.UUID, KEEP field_id (passthrough payload).
+# extract_uid lives beside extract_form_uid:
+def extract_uid(request: web.Request, param: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(request.match_info[param])
+    except (KeyError, ValueError):
+        raise web.HTTPBadRequest(reason=f"invalid {param}")
+```
+
+### Module 9 — Partial saves (re-key at the handler boundary)
+
+`PartialSaveService` stays schema-agnostic; translation happens in
+`FormAPIHandler.save_partial` (:306), which already loads the form:
+
+```python
+# api/handlers.py — save_partial answer loop (:380-385)
+# BEFORE: unknown field_ids silently accepted; stored keyed by field_id
+# AFTER:
+uid_answers: dict[str, Any] = {}
+field_errors: dict[str, list[str]] = {}
+for field_id, value in answers.items():
+    field = self._find_field(form, field_id)          # existing helper :284
+    if field is None:
+        field_errors[field_id] = ["unknown field_id"]  # reject, don't store
+        continue
+    errors = await validator.validate_field(field, value, all_data=answers)
+    if errors:
+        field_errors[field_id] = errors
+    uid_answers[str(field.field_uid)] = value
+partial = await self._partial_saves.save(form_id, session_id, uid_answers)
+# On read (get flow): map back {str(uid): value} → {current field_id: value}
+# via find_field_by_uid; UIDs whose field was deleted are dropped silently.
+```
+
+`services/partial_saves.py` code is unchanged except docstrings (:84 "Mapping
+of field_uid to new values"); Redis key builder (:174) untouched.
+
+### Module 10 — Audio manifests
+
+```python
+# audio/models.py
+class AudioQuestion(BaseModel):
+    field_uid: uuid.UUID          # NEW
+    field_id: str                 # kept — WS wire key
+class AudioAnswer(BaseModel):
+    field_uid: uuid.UUID | None = None   # NEW
+    field_id: str
+# renderers/audio.py (:358): AudioQuestion(field_uid=field.field_uid, field_id=field.field_id, ...)
+# api/audio_ws.py: wire messages KEEP "field_id" keys; internal lookups
+# (_question_for_field :915, turn gate :928-956) unchanged semantics.
+```
+
+### Module 11 — Renderers
+
+```python
+# renderers/html5.py — next to data-field-id (:1089):
+f'data-field-uid="{html.escape(str(field.field_uid), quote=True)}"'
+# renderers/fields/audio.py (:88): add data-field-uid alongside existing attrs.
+# RenderWarning emissions gain field_uid=field.field_uid at:
+#   html5.py:337-345, adaptive_card.py:209-219, pdf.py:452-459
+# NOTHING ELSE changes: control id/name, AcroForm names, JSON-Schema property
+# keys, XForms element names, Telegram callback encoding all stay field_id-based.
+```
+
+### Module 12 — Question bank rename + fresh UID on insertion
+
+```python
+# services/question_bank.py — models (:29-67)
+class ReusableField(BaseModel):
+    question_id: str              # RENAMED from field_id (:43)
+    definition: FormField
+    ...
+class ReusableFieldRef(BaseModel):
+    question_id: str              # RENAMED from bank_field_id (:66)
+    overrides: dict[str, Any] | None = None
+
+# DDL (:74-85): column field_id → question_id; UNIQUE(question_id, tenant)
+# SQL (:87-102): all four statements use question_id
+# _row_to_entry (:303-322): question_id=row["question_id"]
+# create_field (:176-190), get_field (:209), increment_usage (:244): param → question_id
+# in-memory dict keys (:151, :226): keyed by question_id
+
+# resolve_ref (:271-297) — fresh field identity per insertion:
+definition_dict = copy.deepcopy(entry.definition.model_dump())
+definition_dict.pop("field_uid", None)        # NEW — default_factory mints a fresh one
+if ref.overrides:
+    if "field_uid" in ref.overrides:
+        raise ValueError("overrides may not set field_uid")   # NEW guard
+    definition_dict.update(ref.overrides)
+return FormField.model_validate(definition_dict)
+```
+
+### Module 13 — Legacy fallback removal
+
+```python
+# packages/ai-parrot/src/parrot/forms/__init__.py — replace try/except shim with:
+"""Universal Form Abstraction Layer — thin re-export of parrot-formdesigner."""
+try:
+    from parrot_formdesigner.core import (...)        # same symbol list as today
+    from parrot_formdesigner.extractors import (...)
+    from parrot_formdesigner.renderers import (...)
+    from parrot_formdesigner.services import (...)
+    from parrot_formdesigner.tools import (...)
+except ImportError as exc:
+    raise ImportError(
+        "parrot.forms requires the 'parrot-formdesigner' package: "
+        "pip install parrot-formdesigner"
+    ) from exc
+# DELETE: parrot/forms/{schema,constraints,options,style,types,validators,
+#   registry,cache,storage}.py and parrot/forms/{extractors,renderers,tools}/
+# Then: grep ai-parrot for `parrot.forms.<submodule>` imports (they bypass
+# __init__) and repoint to parrot_formdesigner.*; fix/delete
+# packages/ai-parrot/tests/unit/forms/ tests that exercised the copies.
+```
+
+### Module 14 — Migrations (numbered, idempotent, FEAT-389 convention)
+
+```sql
+-- 00X_form_uid_uuid_type.sql (guard: skip if already uuid)
+ALTER TABLE {schema}.form_schemas
+  ALTER COLUMN form_uid TYPE UUID USING form_uid::uuid;
+ALTER TABLE {schema}.form_data
+  ALTER COLUMN form_uid TYPE UUID USING form_uid::uuid;
+
+-- 00Y_question_bank_question_id.sql (guard: only if column field_id exists)
+ALTER TABLE {schema}.field_bank RENAME COLUMN field_id TO question_id;
+-- recreate/rename the UNIQUE(field_id, tenant) constraint accordingly
+```
+
+```python
+# 00Z_backfill_element_uids.py — outline
+# for each row in form_schemas:
+#   doc = row.schema_json
+#   walk sections/subsections/fields/children/item_template (same order as
+#     walk_fields) and inject missing *_uid keys (str(uuid.uuid4()))
+#   build field_id → field_uid map; DUPLICATE field_id → append to report,
+#     SKIP the form (manual repair), do not write
+#   rewrite rule refs (depends_on/post_depends conditions field_id→field_uid;
+#     operations operands/target; post targets) — reuse resolve_rule_references
+#     by round-tripping through FormSchema.model_validate(doc)
+#   idempotency: docs already carrying *_uid keys and UID-shaped refs are no-ops
+#   re-save via _upsert_sql; final report: migrated / skipped-duplicates /
+#     blobs still on legacy {form_id}/{field_id}/ keys (list only, no rewrite)
+```
+
+### Module 15 — Tests
+
+- Shared fixtures land in `packages/parrot-formdesigner/tests/conftest.py`
+  (`form_with_nested_fields`, `form_with_rules`, `legacy_schema_json` — §4).
+- Bulk-update existing fixtures: adding UID fields is backward-transparent
+  (default_factory), but tests asserting exact `model_dump()` shapes or
+  operations payloads (`section_id`/`field_id` params) need mechanical updates
+  to UID addressing.
+- Delete/port `packages/ai-parrot/tests/unit/forms/` per Module 13.
+
+---
+
 ## Worktree Strategy
 
 - **Default isolation unit**: `per-spec` — all tasks sequential in one
@@ -878,3 +1426,4 @@ def _find_field_and_section(self, field_id: str)                    # :111-125 �
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-31 | Jesus Lara | Initial draft from brainstorm (incl. question-bank `question_id` refinement) |
+| 0.2 | 2026-07-31 | Jesus Lara | §9 Implementation Blueprints added — per-module before/after code from verified hunks, for higher-fidelity task decomposition |
