@@ -71,7 +71,10 @@ def _make_form(
 
 def _make_request_get(form_uid: str) -> MagicMock:
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_uid": form_uid}
+    # aiohttp's real match_info always holds raw path strings — mirror that
+    # here so a caller passing FormSchema.form_uid (uuid.UUID, FEAT-393)
+    # round-trips through extract_form_uid() exactly like a live request.
+    req.match_info = {"form_uid": str(form_uid)}
     req.method = "GET"
     req.headers = {}
     req.__contains__ = MagicMock(return_value=False)
@@ -88,7 +91,7 @@ def _make_request_post(
     extra_match: dict | None = None,
 ) -> MagicMock:
     req = MagicMock(spec=web.Request)
-    match = {"form_uid": form_uid}
+    match = {"form_uid": str(form_uid)}
     if extra_match:
         match.update(extra_match)
     req.match_info = match
@@ -376,7 +379,7 @@ class TestRemoteEventCSRFRoundTrip:
         self, form_uid: str, session_id: str = "sess_e2e"
     ) -> MagicMock:
         req = MagicMock(spec=web.Request)
-        req.match_info = {"form_uid": form_uid}
+        req.match_info = {"form_uid": str(form_uid)}
         req.method = "GET"
         req.headers = {}
         req.query = {}
@@ -418,7 +421,7 @@ class TestRemoteEventCSRFRoundTrip:
 
         # 2. POST /forms/{id}/events/onBeforeSubmit with the issued token
         remote_req = MagicMock(spec=web.Request)
-        remote_req.match_info = {"form_uid": form.form_uid, "event_name": "onBeforeSubmit"}
+        remote_req.match_info = {"form_uid": str(form.form_uid), "event_name": "onBeforeSubmit"}
         remote_req.method = "POST"
         headers = {"X-CSRF-Token": token}
         remote_req.headers = headers

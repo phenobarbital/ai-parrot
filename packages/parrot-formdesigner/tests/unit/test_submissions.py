@@ -19,7 +19,7 @@ class TestFormSubmission:
             data={"name": "John"},
             is_valid=True,
         )
-        assert sub.form_uid == _TEST_FORM_UID
+        assert str(sub.form_uid) == _TEST_FORM_UID
         assert sub.form_id == "test-form"
         assert sub.form_version == "1.0"
         assert sub.is_valid is True
@@ -99,7 +99,7 @@ class TestFormSubmission:
         d = sub.model_dump()
         restored = FormSubmission.model_validate(d)
         assert restored.submission_id == "sub-001"
-        assert restored.form_uid == _TEST_FORM_UID
+        assert str(restored.form_uid) == _TEST_FORM_UID
         assert restored.form_id == "test-form"
         assert restored.data == {"key": "value"}
 

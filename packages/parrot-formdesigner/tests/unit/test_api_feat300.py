@@ -20,6 +20,7 @@ validation with 400 before ever reaching the "not found" 404 path).
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -84,7 +85,10 @@ def _make_request(
 
     req = MagicMock(spec=web.Request)
     req.method = method
-    match_info: dict[str, str] = {"form_uid": form_uid}
+    # aiohttp's real match_info always holds raw path strings — mirror that
+    # here so a caller passing FormSchema.form_uid (uuid.UUID, FEAT-393)
+    # round-trips through extract_form_uid() exactly like a live request.
+    match_info: dict[str, str] = {"form_uid": str(form_uid)}
     if version is not None:
         match_info["version"] = version
     req.match_info = match_info
@@ -147,7 +151,7 @@ class TestPublishForm:
 
         assert resp.status == 200
         body = json.loads(resp.body)
-        assert body["form_uid"] == form.form_uid
+        assert body["form_uid"] == str(form.form_uid)
         assert "version" in body
         assert body["version"]  # non-empty version string
 
@@ -301,7 +305,7 @@ class TestListVersions:
 
         assert resp.status == 200
         body = json.loads(resp.body)
-        assert body["form_uid"] == form.form_uid
+        assert body["form_uid"] == str(form.form_uid)
         assert isinstance(body["versions"], list)
         assert len(body["versions"]) >= 1
         v = body["versions"][0]
@@ -359,7 +363,7 @@ class TestGetVersion:
 
         assert resp.status == 200
         body = json.loads(resp.body)
-        assert body["form_uid"] == form.form_uid
+        assert body["form_uid"] == str(form.form_uid)
         assert body["published_version"] == published_version
 
     async def test_get_version_endpoint_404(self):
@@ -428,7 +432,9 @@ class TestGetImportReport:
                 ),
             ],
         )
-        handler._import_reports[("t1", _UNKNOWN_FORM_UID)] = report
+        # Keyed by the parsed uuid.UUID — matches what extract_form_uid()
+        # returns (FEAT-393), not the raw path string.
+        handler._import_reports[("t1", uuid.UUID(_UNKNOWN_FORM_UID))] = report
 
         req = _make_request(method="GET", form_uid=_UNKNOWN_FORM_UID)
         resp = await handler.get_import_report(req)

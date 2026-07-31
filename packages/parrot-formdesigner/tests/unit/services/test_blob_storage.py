@@ -324,7 +324,7 @@ class TestBlobMetadataFormUid:
             content_type="image/jpeg",
             size_bytes=1,
         )
-        assert meta.form_uid == _TEST_FORM_UID
+        assert str(meta.form_uid) == _TEST_FORM_UID
 
     def test_blob_metadata_requires_form_uid(self) -> None:
         """BlobMetadata raises a validation error without form_uid."""
@@ -351,8 +351,8 @@ class TestBlobMetadataFormUid:
     async def test_key_stability_across_form_rename(self, tmp_path: Path) -> None:
         """Changing form_id does not change the blob key (same form_uid)."""
         storage = LocalBlobStorage(base_path=tmp_path)
-        meta_before = _make_metadata(form_uid="uid-123", form_id="old-name")
-        meta_after = _make_metadata(form_uid="uid-123", form_id="new-name")
+        meta_before = _make_metadata(form_uid=_TEST_FORM_UID, form_id="old-name")
+        meta_after = _make_metadata(form_uid=_TEST_FORM_UID, form_id="new-name")
 
         key_before = storage._build_key(meta_before)
         key_after = storage._build_key(meta_after)
@@ -361,4 +361,4 @@ class TestBlobMetadataFormUid:
         # blob_id segment is a fresh uuid4 each call, so compare prefixes).
         prefix_before = key_before.rsplit("/", 1)[0]
         prefix_after = key_after.rsplit("/", 1)[0]
-        assert prefix_before == prefix_after == "uid-123/photo"
+        assert prefix_before == prefix_after == f"{_TEST_FORM_UID}/photo"

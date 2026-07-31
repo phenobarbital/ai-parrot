@@ -405,7 +405,10 @@ class AudioFormRenderer(AbstractFormRenderer):
         form_title = _resolve(form.title, locale) if form.title else form.form_id
 
         manifest = AudioFormManifest(
-            form_uid=form.form_uid,
+            # FEAT-393 (TASK-1995): form.form_uid is now uuid.UUID (was str
+            # under FEAT-389); AudioFormManifest.form_uid stays a wire-facing
+            # str field, so stringify explicitly.
+            form_uid=str(form.form_uid),
             title=form_title,
             total_questions=len(questions),
             questions=questions,

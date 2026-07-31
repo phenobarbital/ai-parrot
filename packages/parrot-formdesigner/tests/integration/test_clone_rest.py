@@ -92,9 +92,9 @@ async def test_clone_rest_success(aiohttp_client, source_form: FormSchema) -> No
     assert resp.status == 201
     data = await resp.json()
     assert data["form_id"] == "cloned-form"
-    assert data["form_uid"] != source_form.form_uid
+    assert data["form_uid"] != str(source_form.form_uid)
     assert data["version"] == "1.0"
-    assert data["meta"]["cloned_from"] == source_form.form_uid
+    assert data["meta"]["cloned_from"] == str(source_form.form_uid)
     assert "sections" in data
 
 

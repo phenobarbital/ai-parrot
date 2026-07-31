@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any
 
 from ._identifiers import qualified_table, validate_identifier
@@ -337,7 +338,8 @@ class PostgresFormStorage(FormStorage):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 self._upsert_sql(effective_tenant),
-                form.form_uid,
+                # TASK-2008: form_uid column is VARCHAR(36) until migrated.
+                str(form.form_uid),
                 form.form_id,
                 version,
                 schema_json,
@@ -357,7 +359,7 @@ class PostgresFormStorage(FormStorage):
 
     async def load(
         self,
-        form_uid: str,
+        form_uid: uuid.UUID,
         version: str | None = None,
         *,
         tenant: str | None = None,
@@ -376,13 +378,15 @@ class PostgresFormStorage(FormStorage):
             FormSchema if found, None otherwise.
         """
         self._require_pool()
+        # TASK-2008: form_uid column is VARCHAR(36) until migrated.
+        form_uid_param = str(form_uid)
         async with self._pool.acquire() as conn:
             if version is not None:
                 row = await conn.fetchrow(
-                    self._load_version_sql(tenant), form_uid, version
+                    self._load_version_sql(tenant), form_uid_param, version
                 )
             else:
-                row = await conn.fetchrow(self._load_sql(tenant), form_uid)
+                row = await conn.fetchrow(self._load_sql(tenant), form_uid_param)
 
         if row is None:
             return None
@@ -475,7 +479,7 @@ class PostgresFormStorage(FormStorage):
 
     async def delete(
         self,
-        form_uid: str,
+        form_uid: uuid.UUID,
         *,
         tenant: str | None = None,
     ) -> bool:
@@ -492,7 +496,8 @@ class PostgresFormStorage(FormStorage):
         """
         self._require_pool()
         async with self._pool.acquire() as conn:
-            result = await conn.execute(self._delete_sql(tenant), form_uid)
+            # TASK-2008: form_uid column is VARCHAR(36) until migrated.
+            result = await conn.execute(self._delete_sql(tenant), str(form_uid))
 
         try:
             count = int(result.split()[-1])

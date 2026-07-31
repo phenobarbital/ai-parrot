@@ -18,7 +18,7 @@ LLM flow (prompt-only):
 7. Return FormSchema in ToolResult metadata (including form_uid)
 
 FEAT-389: the LLM never generates form_uid — it is always injected by this
-tool. New forms get a fresh `str(uuid.uuid4())` (or a caller-supplied
+tool. New forms get a fresh `uuid.uuid4()` (or a caller-supplied
 `form_uid`); refinements preserve the existing form's form_uid unchanged
 (only form_id/slug and content may change via a refinement prompt).
 
@@ -302,7 +302,7 @@ class CreateFormInput(BaseModel):
         default=None,
         description="Custom form ID (slug). Auto-generated from title if not provided.",
     )
-    form_uid: str | None = Field(
+    form_uid: uuid.UUID | None = Field(
         default=None,
         description="Optional UUID for the form. Auto-generated if not provided.",
     )
@@ -310,7 +310,7 @@ class CreateFormInput(BaseModel):
         default=False,
         description="Save the generated form to the registry (and storage if configured)",
     )
-    refine_form_uid: str | None = Field(
+    refine_form_uid: uuid.UUID | None = Field(
         default=None,
         description=(
             "form_uid of an existing form to load and refine. "
@@ -393,9 +393,9 @@ class CreateFormTool(AbstractTool):
         self,
         prompt: str | None = None,
         form_id: str | None = None,
-        form_uid: str | None = None,
+        form_uid: uuid.UUID | None = None,
         persist: bool = False,
-        refine_form_uid: str | None = None,
+        refine_form_uid: uuid.UUID | None = None,
         schema: dict[str, Any] | None = None,
         sections: list[dict[str, Any]] | None = None,
         fields: list[dict[str, Any]] | None = None,
@@ -463,7 +463,7 @@ class CreateFormTool(AbstractTool):
 
         try:
             existing: FormSchema | None = None
-            effective_form_uid: str
+            effective_form_uid: uuid.UUID
             if refine_form_uid and self._registry is not None:
                 existing = await self._registry.get(refine_form_uid, tenant=self._tenant)
                 if existing is None:
@@ -508,7 +508,7 @@ class CreateFormTool(AbstractTool):
                         messages, effective_form_id, effective_form_uid
                     )
             else:
-                effective_form_uid = form_uid or str(uuid.uuid4())
+                effective_form_uid = form_uid or uuid.uuid4()
                 messages = self._build_creation_messages(prompt)
                 form = await self._generate_with_retry(messages, form_id, effective_form_uid)
 
@@ -715,7 +715,7 @@ class CreateFormTool(AbstractTool):
         self,
         messages: list[dict[str, str]],
         form_id: str | None,
-        form_uid: str | None = None,
+        form_uid: uuid.UUID | None = None,
     ) -> FormSchema | None:
         """Generate and validate FormSchema with retry on validation failure.
 

@@ -71,7 +71,7 @@ class BlobMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    form_uid: str = Field(..., description="Immutable UUID of the parent form")
+    form_uid: uuid.UUID = Field(..., description="Immutable UUID of the parent form")
     form_id: str = Field(..., description="Human-readable form slug (for logging)")
     field_id: str
     submission_id: str | None = None

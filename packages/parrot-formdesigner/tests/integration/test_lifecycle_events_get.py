@@ -60,7 +60,10 @@ def _make_request(form_uid: str = _UNKNOWN_FORM_UID) -> MagicMock:
             registered UUID for "not found" tests.
     """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_uid": form_uid}
+    # aiohttp's real match_info always holds raw path strings — mirror that
+    # here so a caller passing FormSchema.form_uid (uuid.UUID, FEAT-393)
+    # round-trips through extract_form_uid() exactly like a live request.
+    req.match_info = {"form_uid": str(form_uid)}
     req.method = "GET"
     req.headers = {}
     # No auth context set

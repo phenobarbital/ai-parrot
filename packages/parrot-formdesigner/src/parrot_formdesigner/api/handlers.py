@@ -29,7 +29,7 @@ from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
 
 
-def extract_form_uid(request: web.Request) -> str:
+def extract_form_uid(request: web.Request) -> _uuid.UUID:
     """Extract and validate ``form_uid`` from the request path (FEAT-389).
 
     Args:
@@ -38,21 +38,20 @@ def extract_form_uid(request: web.Request) -> str:
             pattern registered in ``api/routes.py``).
 
     Returns:
-        The validated ``form_uid`` string.
+        The validated ``form_uid`` as a ``uuid.UUID``.
 
     Raises:
         web.HTTPBadRequest: If the path segment is not a well-formed UUID.
             The response is JSON: ``{"error": "..."}``.
     """
-    form_uid = request.match_info["form_uid"]
+    raw = request.match_info["form_uid"]
     try:
-        _uuid.UUID(form_uid)
+        return _uuid.UUID(raw)
     except ValueError:
         raise web.HTTPBadRequest(
-            text=json.dumps({"error": f"Invalid form_uid: {form_uid!r} is not a valid UUID"}),
+            text=json.dumps({"error": f"Invalid form_uid: {raw!r} is not a valid UUID"}),
             content_type="application/json",
         )
-    return form_uid
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -377,7 +376,10 @@ class FormAPIHandler:
             )
 
         if not answers:
-            existing = await self._partial_store.get(form_uid, session_id)
+            # PartialSaveStore's PartialFormData.form_id field is still str
+            # (Module 9 / TASK-2003 territory) — form_uid is uuid.UUID since
+            # FEAT-393, so stringify at this internal-service boundary.
+            existing = await self._partial_store.get(str(form_uid), session_id)
             if existing is not None:
                 return JSONResponse(existing.model_dump(mode="json"), status=200)
             return JSONResponse(
@@ -393,7 +395,7 @@ class FormAPIHandler:
 
         # Save merged answers to store
         try:
-            partial = await self._partial_store.save(form_uid, session_id, answers)
+            partial = await self._partial_store.save(str(form_uid), session_id, answers)
         except Exception as exc:
             self.logger.warning(
                 "PartialSaveStore.save failed for %s/%s: %s", form_uid, session_id, exc
@@ -458,7 +460,7 @@ class FormAPIHandler:
             )
 
         try:
-            partial = await self._partial_store.get(form_uid, session_id)
+            partial = await self._partial_store.get(str(form_uid), session_id)
         except Exception as exc:
             self.logger.warning(
                 "PartialSaveStore.get failed for %s/%s: %s", form_uid, session_id, exc
@@ -502,7 +504,7 @@ class FormAPIHandler:
             )
 
         try:
-            await self._partial_store.delete(form_uid, session_id)
+            await self._partial_store.delete(str(form_uid), session_id)
         except Exception as exc:
             self.logger.warning(
                 "PartialSaveStore.delete failed for %s/%s: %s",
@@ -578,6 +580,15 @@ class FormAPIHandler:
                 fuid = row.get("form_uid")
                 if not fuid:
                     continue
+                # storage.list_forms() returns form_uid as a raw string (the
+                # DB column is still VARCHAR(36) until TASK-2008) — normalize
+                # to uuid.UUID so lookups against the in-memory descriptors
+                # (keyed by FormSchema.form_uid, now uuid.UUID) actually match.
+                if isinstance(fuid, str):
+                    try:
+                        fuid = _uuid.UUID(fuid)
+                    except ValueError:
+                        continue
                 existing = descriptors.get(fuid)
                 if existing is not None:
                     # In both: registry wins for title/description/version,
@@ -1063,7 +1074,7 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        if not isinstance(body, dict) or body.get("form_uid") != form_uid:
+        if not isinstance(body, dict) or str(body.get("form_uid")) != str(form_uid):
             return JSONResponse(
                 {"error": "form_uid in URL and body must match"}, status=400
             )
@@ -1265,7 +1276,7 @@ class FormAPIHandler:
                 _merge_session_id = self._extract_session_id(request)
                 if _merge_session_id:
                     try:
-                        cached = await self._partial_store.get(form_uid, _merge_session_id)
+                        cached = await self._partial_store.get(str(form_uid), _merge_session_id)
                         if cached:
                             # cached values fill gaps; submitted values win on overlap
                             data = {**cached.data, **data}
@@ -1403,7 +1414,7 @@ class FormAPIHandler:
             # Cleanup: delete cached partial after successful submission
             if merge_partials and _merge_session_id and self._partial_store is not None:
                 try:
-                    await self._partial_store.delete(form_uid, _merge_session_id)
+                    await self._partial_store.delete(str(form_uid), _merge_session_id)
                     self.logger.debug(
                         "Deleted cached partial for %s/%s after successful submit",
                         form_uid,
@@ -1616,7 +1627,7 @@ class FormAPIHandler:
             self.logger.exception("publish_form failed for '%s': %s", form_uid, exc)
             return web.json_response({"error": str(exc)}, status=500)
         self.logger.info("Published form '%s' → version '%s'", form_uid, version)
-        return web.json_response({"form_uid": form_uid, "version": version})
+        return web.json_response({"form_uid": str(form_uid), "version": version})
 
     async def list_fields(self, request: web.Request) -> web.Response:
         """GET /api/v1/fields — List all reusable fields for the current tenant.
@@ -1684,7 +1695,7 @@ class FormAPIHandler:
         current_version = form.published_version or form.version
 
         return web.json_response({
-            "form_uid": form_uid,
+            "form_uid": str(form_uid),
             "versions": [
                 {
                     "version": m.version,

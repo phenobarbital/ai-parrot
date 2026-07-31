@@ -533,7 +533,10 @@ class HTML5Renderer(AbstractFormRenderer):
             # real regression this migration introduced. FORM_ID is kept
             # for the DOM element-id lookup and event-payload labels above,
             # which are unaffected by the route rename.
-            .replace("__FORM_UID__", json.dumps(form.form_uid))
+            # FEAT-393 (TASK-1995): form.form_uid is now uuid.UUID (was str
+            # under FEAT-389) — stdlib json.dumps() cannot serialize UUID
+            # objects directly, so stringify explicitly.
+            .replace("__FORM_UID__", json.dumps(str(form.form_uid)))
             .replace("__EVENTS_CONFIG__", json.dumps(events_config))
         )
 

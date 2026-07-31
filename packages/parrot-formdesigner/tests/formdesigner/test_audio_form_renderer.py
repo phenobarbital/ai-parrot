@@ -197,7 +197,7 @@ class TestRender:
         """render() returns correct manifest structure."""
         result = await renderer.render(simple_form)
         # FEAT-389: manifest identity is form_uid, not the mutable form_id slug.
-        assert result.content["form_uid"] == simple_form.form_uid
+        assert result.content["form_uid"] == str(simple_form.form_uid)
         assert result.content["total_questions"] == 2
         assert "questions" in result.content
 
@@ -208,7 +208,7 @@ class TestRender:
         """render() manifest includes WebSocket endpoint path."""
         result = await renderer.render(simple_form)
         assert "/audio/ws" in result.content["ws_endpoint"]
-        assert simple_form.form_uid in result.content["ws_endpoint"]
+        assert str(simple_form.form_uid) in result.content["ws_endpoint"]
 
     @pytest.mark.asyncio
     async def test_manifest_locale(

@@ -308,7 +308,7 @@ class FormSchema(BaseModel):
             them. (FEAT-241)
     """
 
-    form_uid: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    form_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
     form_id: str
     version: str = "1.0"
     title: LocalizedString

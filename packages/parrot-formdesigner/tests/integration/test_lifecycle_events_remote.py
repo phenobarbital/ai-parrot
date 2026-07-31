@@ -78,7 +78,10 @@ def _make_get_form_request(form_uid: str = _UNKNOWN_FORM_UID, session_id: str = 
             MUST be a well-formed UUID string.
     """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_uid": form_uid}
+    # aiohttp's real match_info always holds raw path strings — mirror that
+    # here so a caller passing FormSchema.form_uid (uuid.UUID, FEAT-393)
+    # round-trips through extract_form_uid() exactly like a live request.
+    req.match_info = {"form_uid": str(form_uid)}
     req.method = "GET"
     req.headers = {}
     req.query = {}
@@ -110,7 +113,7 @@ def _make_remote_request(
             MUST be a well-formed UUID string.
     """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_uid": form_uid, "event_name": event_name}
+    req.match_info = {"form_uid": str(form_uid), "event_name": event_name}
     req.method = "POST"
 
     headers: dict[str, str] = {}
