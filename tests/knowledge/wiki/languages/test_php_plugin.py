@@ -8,6 +8,7 @@ outline test uses the ``force_heuristic`` fixture to be explicit and
 environment-independent.
 """
 
+from parrot.knowledge.wiki import languages as languages_module
 from parrot.knowledge.wiki.languages import scanner_for
 from parrot.knowledge.wiki.languages.php import PhpScanner
 
@@ -69,11 +70,49 @@ def test_php_docblock_first_line_used(force_heuristic):
 
 
 def test_php_psr4_resolution():
+    # No real composer.json exists on disk for this fixture, so the PSR-4
+    # map is empty and resolution falls through to namespace-tail
+    # matching — still enough to resolve this unambiguous case.
     scanner = PhpScanner()
     rel_paths = ["src/Models/User.php", "src/Base/Model.php", "composer.json"]
     index = scanner.build_reference_index(rel_paths)
     target = scanner.resolve_import("App\\Base\\Model", "src/Models/User.php", index)
     assert target == "src/Base/Model.php"
+
+
+def test_php_psr4_resolution_uses_scan_root_not_cwd(tmp_path, monkeypatch):
+    """PSR-4 resolution must read ``composer.json`` relative to the
+    *scanned repo root*, not the process CWD — the common case for
+    ``wikitoolkit build --path /other/repo`` where the two differ."""
+    (tmp_path / "src" / "Models").mkdir(parents=True)
+    (tmp_path / "src" / "Base").mkdir(parents=True)
+    (tmp_path / "src" / "Models" / "User.php").write_text("<?php\n")
+    (tmp_path / "src" / "Base" / "Model.php").write_text("<?php\n")
+    (tmp_path / "composer.json").write_text(
+        '{"autoload": {"psr-4": {"App\\\\": "src/"}}}'
+    )
+    # CWD is genuinely different from the scanned root.
+    monkeypatch.chdir(tmp_path.parent)
+    monkeypatch.setattr(languages_module, "_scan_root", tmp_path)
+
+    scanner = PhpScanner()
+    rel_paths = ["src/Models/User.php", "src/Base/Model.php", "composer.json"]
+    index = scanner.build_reference_index(rel_paths)
+    psr4_map, _file_set = index
+    assert psr4_map == {"App\\": "src/"}
+    target = scanner.resolve_import("App\\Base\\Model", "src/Models/User.php", index)
+    assert target == "src/Base/Model.php"
+
+
+def test_php_psr4_falls_back_to_cwd_without_scan_root(monkeypatch):
+    """With no scan root recorded, PSR-4 lookup degrades to the pre-fix
+    CWD-relative behaviour rather than raising."""
+    monkeypatch.setattr(languages_module, "_scan_root", None)
+    scanner = PhpScanner()
+    rel_paths = ["src/Models/User.php", "composer.json"]
+    index = scanner.build_reference_index(rel_paths)  # composer.json absent from CWD
+    psr4_map, _file_set = index
+    assert psr4_map == {}
 
 
 def test_php_require_relative():

@@ -336,12 +336,29 @@ class PhpScanner(LanguageScanner):
 
     @staticmethod
     def _load_psr4_map(file_set: frozenset[str]) -> dict[str, str]:
-        """Parse the first readable ``composer.json``'s PSR-4 autoload map."""
+        """Parse the first readable ``composer.json``'s PSR-4 autoload map.
+
+        ``build_reference_index`` only receives relative-path strings — no
+        repository root (the :class:`LanguageScanner` ABC is frozen) — so
+        ``composer.json`` is read relative to the root
+        :func:`~parrot.knowledge.wiki.languages.set_scan_root` recorded for
+        the scan in progress. Falls back to the process CWD (the pre-fix
+        behaviour) when no scan has set one, e.g. a scanner method called
+        directly outside :func:`~parrot.knowledge.wiki.repo_scan.scan_repository`.
+        """
+        # Local import: `parrot.knowledge.wiki.languages` (the package
+        # __init__) imports this module during its own initialization, so
+        # a module-level import of a sibling name from it here would be
+        # circular. By call time, package init has long finished.
+        from parrot.knowledge.wiki.languages import get_scan_root
+
+        scan_root = get_scan_root()
         for candidate in sorted(file_set):
             if PurePosixPath(candidate).name != "composer.json":
                 continue
+            path = (scan_root / candidate) if scan_root is not None else Path(candidate)
             try:
-                data = json.loads(Path(candidate).read_text(encoding="utf-8"))
+                data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:
                 logger.debug("Could not read/parse %s: %s", candidate, exc)
                 continue

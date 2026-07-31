@@ -67,6 +67,25 @@ def test_rust_impl_header_rendered(force_heuristic):
     assert "impl Parser:" in result.outline
 
 
+def test_rust_doc_survives_attribute_macro(force_heuristic):
+    # #[derive(...)] (near-universal on public Rust items, and mandated
+    # by this repo's own PyO3 rules for pyclasses) sits between the doc
+    # comment and the struct it documents — must not break association.
+    source = (
+        "/// A configuration value.\n"
+        "#[derive(Debug, Clone)]\n"
+        "pub struct Config {\n"
+        "    pub name: String,\n"
+        "}\n"
+    )
+    scanner = RustScanner()
+    result = scanner.outline(source, "src/config.rs")
+    assert any(
+        "Config" in line and "A configuration value." in line
+        for line in result.outline
+    )
+
+
 def test_rust_doc_comments(force_heuristic):
     scanner = RustScanner()
     result = scanner.outline(SAMPLE_RUST, "src/parser.rs")

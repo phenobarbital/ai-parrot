@@ -83,13 +83,24 @@ def _find_doc_blocks(source: str) -> list[tuple[int, int, str]]:
     return blocks
 
 
+def _is_attribute_line(line: str) -> bool:
+    """Whether ``line`` is a single-line attribute macro (``#[derive(...)]``,
+    ``#[pyclass]``, etc.) — these commonly sit between a doc comment and
+    the item it documents, and must not break the association."""
+    stripped = line.strip()
+    return stripped.startswith("#[") and stripped.endswith("]")
+
+
 def _doc_for(source: str, docblocks: list[tuple[int, int, str]], decl_start: int) -> str:
-    """Doc-comment first line immediately (whitespace only) preceding
-    ``decl_start``."""
+    """Doc-comment first line preceding ``decl_start``, tolerating only
+    blank lines and single-line attribute macros in between."""
     best = ""
     best_end = -1
     for _start, end, first_line in docblocks:
-        if end < decl_start and end > best_end and source[end:decl_start].strip() == "":
+        if end >= decl_start or end <= best_end:
+            continue
+        gap_lines = source[end:decl_start].splitlines()
+        if all(not ln.strip() or _is_attribute_line(ln) for ln in gap_lines):
             best_end = end
             best = first_line
     return best
@@ -245,6 +256,11 @@ class RustScanner(LanguageScanner):
 
         def _leading_doc(node: Any) -> str:
             prev = node.prev_sibling
+            # Attribute macros (`#[derive(...)]`, `#[pyclass]`, etc.) are
+            # near-universal on public Rust items and commonly sit between
+            # the doc comment and the item — walk past them.
+            while prev is not None and prev.type == "attribute_item":
+                prev = prev.prev_sibling
             if prev is not None and prev.type in ("line_comment", "doc_comment"):
                 text = _text(prev)
                 if text.startswith("///"):

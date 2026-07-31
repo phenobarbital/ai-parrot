@@ -101,6 +101,20 @@ def test_jsts_imports_only_relative():
     assert "react" not in result.imports
 
 
+def test_jsts_multiline_import_extracted(force_heuristic):
+    # Common Prettier/ESLint output style — the import specifier's
+    # `from '...'` clause lands on its own line, well after `import`.
+    source = (
+        "import {\n"
+        "    Model,\n"
+        "    Config,\n"
+        "} from './base/model';\n"
+    )
+    scanner = JavaScriptScanner()
+    result = scanner.outline(source, "src/services/user.ts")
+    assert "./base/model" in result.imports
+
+
 def test_jsts_bare_package_resolves_to_none():
     scanner = JavaScriptScanner()
     rel_paths = ["src/services/user.ts"]

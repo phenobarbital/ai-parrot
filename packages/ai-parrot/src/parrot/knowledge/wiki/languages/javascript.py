@@ -57,7 +57,11 @@ _RE_FUNCTION = re.compile(
 )
 
 _RE_IMPORT_FROM = re.compile(
-    r"""(?:import|export)\s+.*?\s+from\s+['"]([^'"]+)['"]""", re.MULTILINE
+    # DOTALL so a multi-line `import {\n  a,\n  b,\n} from './x'` (common
+    # Prettier/ESLint output) still matches — the lazy `.*?` before the
+    # required `from` literal keeps this bounded, not catastrophic.
+    r"""(?:import|export)\s+.*?\s+from\s+['"]([^'"]+)['"]""",
+    re.MULTILINE | re.DOTALL,
 )
 _RE_IMPORT_SIDE_EFFECT = re.compile(r"""import\s+['"]([^'"]+)['"]""", re.MULTILINE)
 _RE_REQUIRE = re.compile(r"""require\s*\(\s*['"]([^'"]+)['"]\s*\)""", re.MULTILINE)

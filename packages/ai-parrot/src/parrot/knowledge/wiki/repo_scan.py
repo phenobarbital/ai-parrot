@@ -35,7 +35,12 @@ from typing import Iterable, Optional
 
 from pydantic import BaseModel, Field
 
-from parrot.knowledge.wiki.languages import all_scanners, scanned_suffixes, scanner_for
+from parrot.knowledge.wiki.languages import (
+    all_scanners,
+    scanned_suffixes,
+    scanner_for,
+    set_scan_root,
+)
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
 
@@ -787,6 +792,7 @@ def scan_repository(
         A fully populated :class:`RepoScan`.
     """
     root = root.resolve()
+    set_scan_root(root)
     if rel_paths is None:
         discovered = discover_repo_files(
             root, suffixes=suffixes, exclude_dirs=exclude_dirs, use_git=use_git
