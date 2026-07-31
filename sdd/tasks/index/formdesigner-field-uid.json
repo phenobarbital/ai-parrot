@@ -133,7 +133,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "File-independent of 1998-2000 but sequential per per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2001-extractors-createform-resolution.md"
+      "completed_at": "2026-07-31T18:15:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2001-extractors-createform-resolution.md"
     },
     {
       "id": "TASK-2002",
