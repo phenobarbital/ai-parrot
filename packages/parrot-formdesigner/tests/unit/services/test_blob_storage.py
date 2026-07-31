@@ -36,12 +36,14 @@ async def _chunks(*parts: bytes):
 
 
 _TEST_FORM_UID = "550e8400-e29b-41d4-a716-446655440000"
+_TEST_FIELD_UID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
 
 def _make_metadata(**kwargs) -> BlobMetadata:
     defaults = dict(
         form_uid=_TEST_FORM_UID,
         form_id="form1",
+        field_uid=_TEST_FIELD_UID,
         field_id="photo",
         content_type="image/jpeg",
         size_bytes=5,
@@ -144,8 +146,8 @@ class TestS3BlobStoragePut:
         mock.assert_awaited_once()
         # First positional arg = key, second = bytes
         args, _ = mock.call_args
-        # FEAT-389: keys are built from form_uid, not form_id.
-        assert args[0].startswith(f"forms/{_TEST_FORM_UID}/photo/")
+        # FEAT-389/FEAT-393: keys are built from form_uid/field_uid, not form_id/field_id.
+        assert args[0].startswith(f"forms/{_TEST_FORM_UID}/{_TEST_FIELD_UID}/")
         assert args[1] == b"hello"
 
     @pytest.mark.asyncio
@@ -222,6 +224,7 @@ class TestS3BlobStoragePrePersistHook:
             metadata=BlobMetadata(
                 form_uid=_TEST_FORM_UID,
                 form_id="f1",
+                field_uid=_TEST_FIELD_UID,
                 field_id="x",
                 content_type="text/plain",
                 size_bytes=0,
@@ -320,6 +323,7 @@ class TestBlobMetadataFormUid:
         meta = BlobMetadata(
             form_uid=_TEST_FORM_UID,
             form_id="my-form",
+            field_uid=_TEST_FIELD_UID,
             field_id="photo",
             content_type="image/jpeg",
             size_bytes=1,
@@ -340,12 +344,14 @@ class TestBlobMetadataFormUid:
 
     @pytest.mark.asyncio
     async def test_build_key_uses_form_uid(self, tmp_path: Path) -> None:
-        """_build_key() constructs the key using form_uid, not form_id."""
+        """_build_key() constructs the key using form_uid/field_uid, not
+        form_id/field_id (FEAT-389 / FEAT-393)."""
         storage = LocalBlobStorage(base_path=tmp_path)
         meta = _make_metadata(form_uid=_TEST_FORM_UID, form_id="my-form")
         key = storage._build_key(meta)
-        assert key.startswith(f"{_TEST_FORM_UID}/photo/")
+        assert key.startswith(f"{_TEST_FORM_UID}/{_TEST_FIELD_UID}/")
         assert "my-form" not in key
+        assert "photo" not in key
 
     @pytest.mark.asyncio
     async def test_key_stability_across_form_rename(self, tmp_path: Path) -> None:
@@ -361,4 +367,4 @@ class TestBlobMetadataFormUid:
         # blob_id segment is a fresh uuid4 each call, so compare prefixes).
         prefix_before = key_before.rsplit("/", 1)[0]
         prefix_after = key_after.rsplit("/", 1)[0]
-        assert prefix_before == prefix_after == f"{_TEST_FORM_UID}/photo"
+        assert prefix_before == prefix_after == f"{_TEST_FORM_UID}/{_TEST_FIELD_UID}"

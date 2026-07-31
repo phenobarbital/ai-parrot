@@ -53,6 +53,34 @@ def extract_form_uid(request: web.Request) -> _uuid.UUID:
             content_type="application/json",
         )
 
+
+def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
+    """Extract and validate a named UUID path param (FEAT-393).
+
+    Generalizes :func:`extract_form_uid` to any ``{param}`` path segment
+    (e.g. ``field_uid`` on the upload route).
+
+    Args:
+        request: Incoming aiohttp request with ``param`` in
+            ``request.match_info``.
+        param: Name of the path param to extract (e.g. ``"field_uid"``).
+
+    Returns:
+        The validated UUID.
+
+    Raises:
+        web.HTTPBadRequest: If the path segment is missing or not a
+            well-formed UUID. The response is JSON: ``{"error": "..."}``.
+    """
+    raw = request.match_info.get(param)
+    try:
+        return _uuid.UUID(raw)
+    except (KeyError, TypeError, ValueError):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": f"Invalid {param}: {raw!r} is not a valid UUID"}),
+            content_type="application/json",
+        )
+
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 

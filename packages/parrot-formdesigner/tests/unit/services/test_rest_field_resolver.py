@@ -6,6 +6,7 @@ configuration-error scenarios.
 
 from __future__ import annotations
 
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -27,6 +28,8 @@ from parrot_formdesigner.services.rest_field_resolver import (
     RestFieldSpec,
 )
 
+_TEST_FIELD_UID = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -45,6 +48,7 @@ def _make_payload(**kwargs) -> RestCallbackInput:
     defaults = dict(
         form_id="form1",
         field_id="photo",
+        field_uid=_TEST_FIELD_UID,
         session_id=None,
         user_id=None,
         tenant=None,
