@@ -14,14 +14,14 @@
       "feature_id": "FEAT-395",
       "feature": "audio-ws-confirm-answer-deadlock",
       "spec": "sdd/specs/audio-ws-confirm-answer-deadlock.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Verification-only task, no shared files with TASK-2018; sequenced first since TASK-2018 depends on its confirmed findings.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-31T16:25:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2017-root-cause-confirm-answer-hang.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-395",
       "feature": "audio-ws-confirm-answer-deadlock",
       "spec": "sdd/specs/audio-ws-confirm-answer-deadlock.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-2017"],
+      "depends_on": [
+        "TASK-2017"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-2017's confirmed root cause before applying the fix.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-07-31T16:25:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2018-fix-audio-frame-test-fixture.md"
     }
