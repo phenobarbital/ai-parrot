@@ -33,6 +33,81 @@ PY_A = '"""Mod A does things."""\nfrom pkg.b import x\n\n\nclass Alpha:\n    """
 PY_B = '"""Mod B."""\nx = 1\n'
 
 
+class TestFrontmatterSummary:
+    """A YAML frontmatter block is metadata, not the document's lead.
+
+    Taking the first non-empty line of such a file yields the ``---``
+    delimiter, which is both useless in search results and indexed by
+    FTS as if it were content.
+    """
+
+    def _summary(self, tmp_path: Path, body: str) -> str:
+        _write(tmp_path, "doc.md", body)
+        slice_ = build_file_slice(tmp_path, "doc.md")
+        assert slice_ is not None
+        return slice_.record.summary
+
+    def test_prefers_the_frontmatter_summary_field(self, tmp_path: Path):
+        got = self._summary(
+            tmp_path,
+            "---\ntitle: query()\nsummary: Scoped question against the KB.\n"
+            "---\n\n# query\n\nBody text.\n",
+        )
+        assert got == "Scoped question against the KB."
+
+    def test_falls_back_to_the_frontmatter_title(self, tmp_path: Path):
+        got = self._summary(
+            tmp_path, "---\ntype: Concept\ntitle: query()\n---\n\n# query\n"
+        )
+        assert got == "query()"
+
+    def test_falls_back_to_the_first_heading_after_the_block(self, tmp_path: Path):
+        got = self._summary(
+            tmp_path, "---\ntype: Concept\ntags:\n- a\n---\n\n# Real Heading\n\nText.\n"
+        )
+        assert got == "Real Heading"
+
+    def test_strips_quotes_from_frontmatter_values(self, tmp_path: Path):
+        got = self._summary(tmp_path, '---\nsummary: "Quoted lead."\n---\n\n# H\n')
+        assert got == "Quoted lead."
+
+    def test_ignores_an_empty_frontmatter_summary(self, tmp_path: Path):
+        got = self._summary(tmp_path, "---\nsummary:\ntitle: The Title\n---\n\n# H\n")
+        assert got == "The Title"
+
+    def test_ignores_a_block_scalar_summary(self, tmp_path: Path):
+        # `summary: |` introduces a folded block; the indicator itself
+        # is not a summary.
+        got = self._summary(tmp_path, "---\nsummary: |\ntitle: The Title\n---\n\n# H\n")
+        assert got == "The Title"
+
+    def test_never_returns_the_delimiter(self, tmp_path: Path):
+        got = self._summary(tmp_path, "---\ntype: Concept\n---\n\nPlain lead line.\n")
+        assert got == "Plain lead line."
+
+    def test_unterminated_frontmatter_does_not_swallow_the_document(
+        self, tmp_path: Path
+    ):
+        got = self._summary(tmp_path, "---\nnot really frontmatter\n\n# Heading\n")
+        assert got
+        assert got != "---"
+
+    def test_a_document_without_frontmatter_is_unchanged(self, tmp_path: Path):
+        got = self._summary(tmp_path, "# Project Title\n\nSome text.\n")
+        assert got == "Project Title"
+
+    def test_a_leading_horizontal_rule_is_not_frontmatter(self, tmp_path: Path):
+        # Position alone does not make a block frontmatter: without any
+        # `key:` line this is a rule, and swallowing it would silently
+        # discard the document's real lead.
+        got = self._summary(tmp_path, "---\nIntro line.\n---\n\nAfter the rule.\n")
+        assert got == "Intro line."
+
+    def test_a_horizontal_rule_mid_document_is_not_frontmatter(self, tmp_path: Path):
+        got = self._summary(tmp_path, "# Heading\n\n---\n\nAfter the rule.\n")
+        assert got == "Heading"
+
+
 class TestWikiBundleGuardrail:
     """A wiki must never ingest another wiki's exported bundle."""
 
