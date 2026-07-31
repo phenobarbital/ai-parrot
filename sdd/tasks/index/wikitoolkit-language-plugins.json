@@ -73,7 +73,7 @@
       "feature_id": "FEAT-394",
       "feature": "wikitoolkit-language-plugins",
       "spec": "sdd/specs/wikitoolkit-language-plugins.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Independent of TASK-2014 (JS/TS) and TASK-2015 (Rust) — different files, no shared state. Could run in parallel worktrees but spec recommends sequential (shared conftest/registry).",
       "assigned_to": null,
       "started_at": "2026-07-31T11:59:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2013-php-scanner-plugin.md"
+      "completed_at": "2026-07-31T12:22:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2013-php-scanner-plugin.md"
     },
     {
       "id": "TASK-2014",
