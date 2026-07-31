@@ -161,10 +161,97 @@ def test_handle_operations_reresolves_rules(aiohttp_client_fixture): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+- Rewrote op payload models: `AddField.section_uid`, `RemoveField.
+  section_uid/field_uid`, `UpdateField.section_uid/field_uid`,
+  `UpdateSectionMeta.section_uid` (all `uuid.UUID`). `MoveField.from_/to`
+  and `DuplicateField.from_` are still plain dicts but now carry
+  `section_uid`/`field_uid` keys. `AddSection` is UNCHANGED (still
+  `section_id`-based per spec — section-slug uniqueness stays a separate,
+  section-level concern). Added wire-example docstrings (UUID strings) to
+  every rewritten op model.
+- Replaced `_field_index`/`_check_unique_field_id` with `_locate_field`
+  (searches `section.fields` AND every subsection's fields, returns
+  `(containing_list, index)` — fixes the "subsection fields
+  unaddressable" bug) and `_check_unique_in_form` (per-FORM, via
+  `iter_fields_recursive()` — fixes the "uniqueness per-section-only"
+  bug). Added `_section_index_by_uid`. Kept `_section_index`/
+  `_check_unique_section_id` (section_id/slug-based) for `AddSection`,
+  unchanged.
+- `_apply_update_field`: implemented the spec's blueprint verbatim —
+  allows `field_id` rename (with per-form uniqueness check excluding the
+  field's own `field_uid`), explicitly rejects any patch touching
+  `field_uid` (`OperationError`, not a silent pin — fixes the "field_id
+  renames silently reverted" bug, replaced by the new "field_uid
+  immutable" guard).
+- `_apply_duplicate_field`: `from_` now uses `section_uid`/`field_uid`;
+  `clone_dict.pop("field_uid", None)` so the clone gets a fresh UID from
+  `FormField`'s `default_factory`; added an explicit form-wide
+  `as_field_id` collision check (`_check_unique_in_form`-equivalent logic)
+  since the old per-section `_check_unique_field_id` call was removed.
+- `_apply_move_field`/`_apply_remove_field`: re-addressed via
+  `_section_index_by_uid`/`_locate_field`; preserved the rollback-insert-
+  before-raise behavior on a duplicate-destination `field_uid` (verified
+  by a new regression test).
+- `handle_operations`: added a `resolve_rule_references(working)` call
+  (wrapped in `try/except ValueError` → 422) between the per-op apply loop
+  and `FormValidator().check_schema()`, per the spec — catches renames/
+  additions that introduce a rule needing (re-)resolution. Updated the
+  handler's docstring step list (now 10 steps, was 9).
+- Rewrote `tests/unit/api/test_operations.py` (25 tests, was 16) and
+  `tests/integration/test_operations_e2e.py` (10 tests, was 7) entirely
+  for UID addressing — every test builds a form first and reads its
+  randomly-generated `section_uid`/`field_uid` off the fixture rather than
+  hardcoding a slug string. Added the acceptance-criteria regression tests
+  by name: `test_remove_field_inside_subsection`,
+  `test_move_field_duplicate_destination_rolls_back` (constructs a
+  pre-existing duplicate by mutating the field list directly post-
+  construction, bypassing `FormSchema`'s own construction-time
+  uniqueness validator — Pydantic doesn't re-validate on plain attribute/
+  list mutation without `validate_assignment`), `test_duplicate_field_
+  mints_fresh_uid`, `test_add_field_client_uid_upsert_and_conflict`,
+  `test_update_field_renames_field_id`,
+  `test_update_field_rejects_field_uid_change`,
+  `test_operations_envelope_rejects_unknown_keys`,
+  `test_handle_operations_reresolves_rules`.
+- Fixed one new ruff finding (SIM102, nested `if` in the new
+  `_apply_update_field`) by combining with `and` — behavior-identical,
+  zero net-new lint debt versus the pre-task baseline (verified via
+  `git stash` diff).
+
+**Known, expected fallout — NOT a regression, deferred to TASK-2000**:
+`EditToolkit` (`tools/edit_toolkit.py`) constructs `AddField`/`RemoveField`/
+`UpdateField`/etc. instances FROM THIS MODULE directly (`from
+..api.operations import AddField, ...`) using its OWN `section_id`/
+`field_id`-based internal params — confirmed by inspecting the actual
+failure (`AddField` validation error: `section_uid` missing, `section_id`
+extra-forbidden). Since `EditToolkit`'s UID-param rewrite is explicitly
+TASK-2000's scope ("EditToolkit — UID params for all field tools"), this
+task's model rename surfaces as an EXPECTED, foreseeable 11-test failure
+bloc on top of the 10 already-known TASK-1998→TASK-2000/2001 fallout from
+the previous task (`tests/test_edit_toolkit.py::TestEditToolkitMutation`
+(6), `tests/unit/test_edit_toolkit_schema.py::TestAddFieldFromSchema` (3),
+`tests/test_create_form_toolkit.py::test_toolkit_edit_applies_mutation`
+(1), `tests/unit/test_deterministic_integration.py::test_create_then_edit`
+(1)) — all root-caused to the same `EditToolkit` coupling, none to a
+defect in this task. Expect all of it (21 tests total, on top of the 20
+pre-existing/unrelated baseline) to go green once TASK-2000 lands.
+
+**Verification**:
+- `pytest packages/parrot-formdesigner/tests/unit/api/test_operations.py
+  packages/parrot-formdesigner/tests/integration/test_operations_e2e.py -v`
+  → 35 passed.
+- `pytest packages/parrot-formdesigner/tests/ -v` → 1776 passed, 3 skipped,
+  41 failed = 20 pre-existing (TASK-1995 baseline) + 21 EditToolkit
+  cross-task fallout (see above) — zero unexplained new failures.
+- `ruff check packages/parrot-formdesigner/src/parrot_formdesigner/api/
+  operations.py` → clean (0 findings; fixed the one new SIM102 this task
+  introduced).
+
+**Deviations from spec**: none — the EditToolkit fallout is the same
+inherent Module 5 → Module 6 sequencing gap already documented in
+TASK-1998's Completion Note, now also touching operations.py's renamed
+models.
