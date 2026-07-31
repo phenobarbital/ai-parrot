@@ -16,6 +16,22 @@ base_branch: dev
 > both ranges were claimed by the eventbus workstream (FEAT-316–319) while
 > this spec was in flight; final id is **FEAT-324** (highest on main: 323).
 
+> **v0.4 — Guardrails repositioning.** This feature is now a **plugin of
+> the unified guardrails infrastructure** (FEAT-396,
+> `sdd/proposals/guardrails-infrastructure.brainstorm.md`). Unchanged:
+> the engines and their acceptance criteria — catalog, `python_engine`,
+> `pii-rs` crate, validators, pseudonym store, benchmark gates
+> (Modules 1–2 engine work, Module 3 stores). Re-targeted: all *seam
+> wiring* described in this spec (the FEAT-252 tool-hook extension,
+> `get_response()`/`ask_stream` integration, bot kwargs
+> `enable_pii_protection`/`pii_policy`, the sliding-window streaming
+> filter) is delivered as guardrail plugins — `PIIGuardrail`,
+> `PseudonymizeGuardrail`, and a `StreamingGuardrail` adapter — attached
+> to the TOOL_OUTPUT / OUTPUT / OUTPUT_STREAM pipelines of
+> `parrot/bots/guardrails/`. Implementation depends on FEAT-396
+> `guardrails-core`. Where this spec's integration sections conflict with
+> the guardrails spec, the guardrails spec wins.
+
 ---
 
 ## 1. Motivation & Business Requirements
@@ -652,3 +668,4 @@ def encrypt_credential(...)   # line 19 — AES-GCM via navigator_session.vault.
 | 0.1 | 2026-07-20 | Jesús Lara / Claude Code | Initial draft from `pii-detection-redaction.brainstorm.md`; FEAT id corrected 316→319 |
 | 0.2 | 2026-07-22 | Jesús Lara / Claude Code | Adopt Unicode normalization + `detect_encoded_pii` from the OpenAI-Guardrails comparison; add measured Presidio baseline (`pii-detection-redaction.comparison.md`) |
 | 0.3 | 2026-07-22 | Jesús Lara / Claude Code | Renumber FEAT-319 → FEAT-324 (id claimed by `eventbus-consolidation.spec.md` on main) |
+| 0.4 | 2026-07-24 | Jesús Lara / Claude Code | Repositioned as plugin of the unified guardrails infrastructure (FEAT-396): seam wiring → `PIIGuardrail`/`PseudonymizeGuardrail`/`StreamingGuardrail`; engines unchanged |
