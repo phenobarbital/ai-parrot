@@ -58,8 +58,8 @@ def test_import_from_services_package():
 def test_reusable_field_model():
     """ReusableField is a valid Pydantic v2 model with required fields."""
     field = _text_field()
-    entry = ReusableField(field_id="uuid-123", definition=field, tenant="t1")
-    assert entry.field_id == "uuid-123"
+    entry = ReusableField(question_id="uuid-123", definition=field, tenant="t1")
+    assert entry.question_id == "uuid-123"
     assert entry.definition.field_id == "q1"
     assert entry.usage_forms == 0
     assert entry.usage_responses == 0
@@ -67,8 +67,8 @@ def test_reusable_field_model():
 
 def test_reusable_field_ref_model():
     """ReusableFieldRef is a valid Pydantic v2 model."""
-    ref = ReusableFieldRef(bank_field_id="uuid-123", overrides={"label": "New"})
-    assert ref.bank_field_id == "uuid-123"
+    ref = ReusableFieldRef(question_id="uuid-123", overrides={"label": "New"})
+    assert ref.question_id == "uuid-123"
     assert ref.overrides == {"label": "New"}
 
 
@@ -83,11 +83,11 @@ async def test_question_bank_create_and_retrieve(bank):
     created = await bank.create_field(field)
 
     assert isinstance(created, ReusableField)
-    assert created.field_id  # minted UUID
+    assert created.question_id  # minted UUID
     assert created.tenant == "t1"
     assert created.definition.field_id == "q1"
 
-    fetched = await bank.get_field(created.field_id)
+    fetched = await bank.get_field(created.question_id)
     assert fetched is not None
     assert fetched.definition.field_id == "q1"
 
@@ -120,7 +120,7 @@ async def test_question_bank_usage_counter(bank):
     """increment_usage() increments both forms and responses counters."""
     field = _text_field()
     created = await bank.create_field(field)
-    fid = created.field_id
+    fid = created.question_id
 
     await bank.increment_usage(fid, forms=1, responses=2)
     updated = await bank.get_field(fid)
@@ -132,7 +132,7 @@ async def test_question_bank_usage_counter(bank):
 async def test_question_bank_usage_counter_additive(bank):
     """Multiple increment_usage() calls accumulate."""
     created = await bank.create_field(_text_field())
-    fid = created.field_id
+    fid = created.question_id
 
     await bank.increment_usage(fid, forms=1, responses=0)
     await bank.increment_usage(fid, forms=0, responses=3)
@@ -157,7 +157,7 @@ async def test_question_bank_resolve_ref(bank):
     created = await bank.create_field(field)
 
     resolved = await bank.resolve_ref(
-        ReusableFieldRef(bank_field_id=created.field_id)
+        ReusableFieldRef(question_id=created.question_id)
     )
     assert isinstance(resolved, FormField)
     assert resolved.field_id == "q1"
@@ -171,7 +171,7 @@ async def test_question_bank_resolve_ref_with_overrides(bank):
 
     resolved = await bank.resolve_ref(
         ReusableFieldRef(
-            bank_field_id=created.field_id,
+            question_id=created.question_id,
             overrides={"label": "New Label"},
         )
     )
@@ -183,16 +183,16 @@ async def test_question_bank_resolve_ref_does_not_mutate_bank(bank):
     """resolve_ref() deep-copies: the bank entry is never mutated."""
     field = _text_field("q1", "Original")
     created = await bank.create_field(field)
-    fid = created.field_id
+    fid = created.question_id
 
     await bank.resolve_ref(
-        ReusableFieldRef(bank_field_id=fid, overrides={"label": "Mutated?"})
+        ReusableFieldRef(question_id=fid, overrides={"label": "Mutated?"})
     )
     original = await bank.get_field(fid)
     assert original.definition.label == "Original"
 
 
 async def test_question_bank_resolve_ref_unknown_raises(bank):
-    """resolve_ref() raises KeyError for unknown bank_field_id."""
+    """resolve_ref() raises KeyError for unknown question_id."""
     with pytest.raises(KeyError):
-        await bank.resolve_ref(ReusableFieldRef(bank_field_id="no-such-id"))
+        await bank.resolve_ref(ReusableFieldRef(question_id="no-such-id"))

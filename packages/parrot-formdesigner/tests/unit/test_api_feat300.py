@@ -253,7 +253,9 @@ class TestCreateField:
 
         assert resp.status == 201
         body = json.loads(resp.body)
-        assert "field_id" in body
+        # FEAT-393: the bank-entry ReusableField.field_id was renamed to
+        # question_id — has no relation to the submitted FormField.field_id.
+        assert "question_id" in body
         assert body["definition"]["label"] == "Full Name"
 
     async def test_create_field_bad_json(self):

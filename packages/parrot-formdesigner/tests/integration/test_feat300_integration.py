@@ -244,7 +244,7 @@ async def test_question_bank_reuse_in_two_forms():
 
     forms = []
     for n in (1, 2):
-        resolved = await bank.resolve_ref(ReusableFieldRef(bank_field_id=entry.field_id))
+        resolved = await bank.resolve_ref(ReusableFieldRef(question_id=entry.question_id))
         forms.append(
             FormSchema(
                 form_id=f"form-{n}",
@@ -253,10 +253,10 @@ async def test_question_bank_reuse_in_two_forms():
                 tenant="t1",
             )
         )
-        await bank.increment_usage(entry.field_id, forms=1)
+        await bank.increment_usage(entry.question_id, forms=1)
 
     assert len(forms) == 2
-    refreshed = await bank.get_field(entry.field_id)
+    refreshed = await bank.get_field(entry.question_id)
     assert refreshed.usage_forms == 2
 
 
