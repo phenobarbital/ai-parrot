@@ -77,6 +77,14 @@ def mock_transcriber() -> AsyncMock:
     return transcriber
 
 
+# A minimal WAV container (RIFF/....WAVE magic, padded to clear
+# _MIN_AUDIO_BYTES = 256) that satisfies AudioFormWSHandler's payload
+# validation (_sniff_audio_suffix + size gate, api/audio_ws.py:68-99).
+# Content beyond the magic bytes is irrelevant — mock_transcriber is an
+# AsyncMock and never actually decodes this file (FEAT-395).
+_VALID_AUDIO_FRAME = b"RIFF" + b"\x00" * 4 + b"WAVE" + b"\x00" * 244
+
+
 @pytest.fixture
 def mock_token_validator() -> AsyncMock:
     """Mock TokenValidator that accepts any token."""
@@ -582,14 +590,6 @@ class TestHybridVoiceFlows:
             assert complete["answers"]["doc"]["value"] == "blob://doc-1"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(
-        reason=(
-            "Pre-existing deadlock in AudioFormWSHandler's confirm_answer "
-            "flow — hangs indefinitely, confirmed unrelated to FEAT-389 "
-            "(reproduces identically on unmodified dev). Tracked separately: "
-            "FEAT-395 (sdd/specs/audio-ws-confirm-answer-deadlock.spec.md)."
-        )
-    )
     async def test_ws_low_confidence_confirm(
         self, aiohttp_client, mixed_app: web.Application,
         mock_transcriber: AsyncMock,
@@ -603,7 +603,7 @@ class TestHybridVoiceFlows:
             "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
-            await ws.send_bytes(b"fake-audio-frame")
+            await ws.send_bytes(_VALID_AUDIO_FRAME)
             await ws.receive_json()  # transcription
             confirm = await ws.receive_json()
             assert confirm["type"] == "confirm_request"
@@ -617,14 +617,6 @@ class TestHybridVoiceFlows:
             assert ack["value"] == "Alice"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(
-        reason=(
-            "Pre-existing deadlock — sibling of test_ws_low_confidence_confirm, "
-            "hangs identically (confirmed unrelated to FEAT-389, reproduces on "
-            "unmodified dev). Tracked separately: FEAT-395 "
-            "(sdd/specs/audio-ws-confirm-answer-deadlock.spec.md)."
-        )
-    )
     async def test_ws_low_confidence_reject_reprompts(
         self, aiohttp_client, mixed_app: web.Application,
         mock_transcriber: AsyncMock,
@@ -638,7 +630,7 @@ class TestHybridVoiceFlows:
             "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
-            await ws.send_bytes(b"fake-audio-frame")
+            await ws.send_bytes(_VALID_AUDIO_FRAME)
             await ws.receive_json()  # transcription
             await ws.receive_json()  # confirm_request
 
@@ -650,17 +642,6 @@ class TestHybridVoiceFlows:
             assert requeued["field_id"] == "name"
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(
-        reason=(
-            "Pre-existing deadlock — same root cause as "
-            "test_ws_low_confidence_confirm, but this test proves the fault "
-            "is NOT in _handle_confirm_answer (this path never sends "
-            "confirm_answer at all): it hangs on the shared binary "
-            "audio-frame path (_handle_answer_audio). Confirmed unrelated to "
-            "FEAT-389. Tracked separately: FEAT-395 "
-            "(sdd/specs/audio-ws-confirm-answer-deadlock.spec.md)."
-        )
-    )
     async def test_ws_high_confidence_auto_advance(
         self, aiohttp_client, mixed_app: web.Application,
         mock_transcriber: AsyncMock,
@@ -674,7 +655,7 @@ class TestHybridVoiceFlows:
             "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
-            await ws.send_bytes(b"fake-audio-frame")
+            await ws.send_bytes(_VALID_AUDIO_FRAME)
             await ws.receive_json()  # transcription
             nxt = await ws.receive_json()
             # Next message is answer_accepted, then the next question — never a

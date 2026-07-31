@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-31T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-31T21:27:56+00:00",
   "notes": "HARD GATE: FEAT-389 (form-uid-stable-identity) must be merged to dev before creating the worktree or starting TASK-1995.",
   "tasks": [
     {
@@ -23,8 +23,9 @@
       "parallelism_notes": "Root of the dependency chain; touches files FEAT-389 rewrites — gated on its merge.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T17:21:33+00:00",
-      "file": "sdd/tasks/completed/TASK-1995-form-uid-uuid-retrofit.md"
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1995-form-uid-uuid-retrofit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1996",
@@ -43,8 +44,9 @@
       "parallelism_notes": "core/schema.py is the shared root of every later task.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T17:26:00+00:00",
-      "file": "sdd/tasks/completed/TASK-1996-core-model-uids-validator.md"
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1996-core-model-uids-validator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1997",
@@ -63,8 +65,9 @@
       "parallelism_notes": "Creates helpers (resolve_rule_references, find_field_by_uid) consumed by 1998-2003.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T17:30:52+00:00",
-      "file": "sdd/tasks/completed/TASK-1997-rule-models-resolution.md"
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1997-rule-models-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1998",
@@ -83,8 +86,9 @@
       "parallelism_notes": "Sequential in the per-spec worktree; distinct files from 1999/2001-2007 but shares fixtures.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T17:44:21+00:00",
-      "file": "sdd/tasks/completed/TASK-1998-validators-evaluator-rekey.md"
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1998-validators-evaluator-rekey.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1999",
@@ -103,8 +107,9 @@
       "parallelism_notes": "Independent files from 1998, but per-spec isolation keeps it sequential.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T17:51:55+00:00",
-      "file": "sdd/tasks/completed/TASK-1999-operations-uid-addressing.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1999-operations-uid-addressing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2000",
@@ -123,8 +128,9 @@
       "parallelism_notes": "Builds operations payloads defined in TASK-1999.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T18:05:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2000-edit-toolkit-uid-params.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2000-edit-toolkit-uid-params.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2001",
@@ -143,8 +149,9 @@
       "parallelism_notes": "File-independent of 1998-2000 but sequential per per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T18:15:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2001-extractors-createform-resolution.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2001-extractors-createform-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2002",
@@ -163,8 +170,9 @@
       "parallelism_notes": "Needs find_field_by_uid + extract_uid pattern; touches routes shared with FEAT-389 output.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T18:29:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2002-blob-uploads-field-uid.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2002-blob-uploads-field-uid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2003",
@@ -183,8 +191,9 @@
       "parallelism_notes": "Handler-boundary change; shares api/handlers.py with other API tasks.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T18:39:52+00:00",
-      "file": "sdd/tasks/completed/TASK-2003-partial-saves-rekey.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2003-partial-saves-rekey.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2004",
@@ -203,8 +212,9 @@
       "parallelism_notes": "Additive-only; could parallelize but per-spec isolation keeps it in-worktree.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T18:47:08+00:00",
-      "file": "sdd/tasks/completed/TASK-2004-audio-manifests-uid.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2004-audio-manifests-uid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2005",
@@ -223,8 +233,9 @@
       "parallelism_notes": "Additive-only renderer attributes; sequential per per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T18:52:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2005-renderers-data-field-uid.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2005-renderers-data-field-uid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2006",
@@ -243,8 +254,9 @@
       "parallelism_notes": "Self-contained service rename; TASK-2008 depends on its final DDL shape.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T18:59:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2006-question-bank-question-id.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2006-question-bank-question-id.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2007",
@@ -263,8 +275,9 @@
       "parallelism_notes": "Touches ai-parrot package only, but must follow the model changes it re-exports.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T19:16:44+00:00",
-      "file": "sdd/tasks/completed/TASK-2007-legacy-forms-fallback-removal.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2007-legacy-forms-fallback-removal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2008",
@@ -285,8 +298,9 @@
       "parallelism_notes": "Depends on final model, resolution pass, and bank DDL shapes.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T19:27:13+00:00",
-      "file": "sdd/tasks/completed/TASK-2008-migrations.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2008-migrations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2009",
@@ -318,8 +332,9 @@
       "parallelism_notes": "Final gate over all modules.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": "2026-07-31T19:52:02+00:00",
-      "file": "sdd/tasks/completed/TASK-2009-tests-fixtures-integration.md"
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2009-tests-fixtures-integration.md",
+      "verification": "verified"
     }
   ]
 }
