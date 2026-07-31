@@ -12,6 +12,7 @@ from parrot_formdesigner.core import (
     FormSchema,
     FormSection,
     PostDependency,
+    resolve_rule_references,
 )
 from parrot_formdesigner.services import RuleEvaluator, RuleResolution
 
@@ -26,11 +27,18 @@ def _field(field_id: str, field_type: FieldType = FieldType.TEXT, **kwargs) -> F
 
 
 def _form(*fields: FormField) -> FormSchema:
-    return FormSchema(
+    """Build a FormSchema and resolve its rule references (FEAT-393).
+
+    RuleEvaluator reads conditions/operations via field_uid — every test
+    form must go through resolve_rule_references() before evaluation, same
+    as any real build boundary (extractors, CreateFormTool, edit APIs).
+    """
+    form = FormSchema(
         form_id="test",
         title="Test",
         sections=[FormSection(section_id="s1", fields=list(fields))],
     )
+    return resolve_rule_references(form)
 
 
 def _cond(field_id: str, operator: str = "eq", value: str = "yes") -> FieldCondition:
@@ -639,6 +647,16 @@ class TestPostDependencies:
 class TestSafeOnMissingValues:
     @pytest.mark.asyncio
     async def test_no_crash_on_missing_condition_field(self) -> None:
+        """A condition whose field_uid was never resolved (form skipped
+        core.resolution.resolve_rule_references()) must not crash the
+        evaluator — it degrades to "no answer" (condition false).
+
+        A genuinely dangling field_id reference is instead caught much
+        earlier, at resolution time (FEAT-393) — see
+        test_resolution.py::test_unknown_reference_errors. Deliberately
+        NOT using the _form() helper here (it auto-resolves), so
+        condition.field_uid stays None, exercising this exact fallback.
+        """
         f1 = _field("f1")
         f2 = FormField(
             field_id="f2",
@@ -650,7 +668,11 @@ class TestSafeOnMissingValues:
                 effect="show",
             ),
         )
-        form = _form(f1, f2)
+        form = FormSchema(
+            form_id="test",
+            title="Test",
+            sections=[FormSection(section_id="s1", fields=[f1, f2])],
+        )
         evaluator = RuleEvaluator()
         # No answers at all — should not raise
         result = await evaluator.resolve(form, {})
@@ -659,6 +681,10 @@ class TestSafeOnMissingValues:
 
     @pytest.mark.asyncio
     async def test_operation_with_missing_operand_is_noop(self) -> None:
+        """An operand reference that was never resolved to a field_uid is
+        treated as missing — the operation still completes using the
+        values it CAN find. Deliberately NOT using the _form() helper
+        (see test_no_crash_on_missing_condition_field for why)."""
         fa = _field("a", FieldType.NUMBER)
         fb = FormField(
             field_id="b",
@@ -673,7 +699,11 @@ class TestSafeOnMissingValues:
                 ],
             ),
         )
-        form = _form(fa, fb)
+        form = FormSchema(
+            form_id="test",
+            title="Test",
+            sections=[FormSection(section_id="s1", fields=[fa, fb])],
+        )
         evaluator = RuleEvaluator()
         # "ghost" is missing — add should still work with available values
         result = await evaluator.resolve(form, {"a": 10})

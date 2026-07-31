@@ -816,43 +816,53 @@ class FormValidator:
         for section in form.sections:
             all_fields.extend(self._collect_fields(section))
 
-        field_map: dict[str, FormField] = {f.field_id: f for f in all_fields}
-        field_order: dict[str, int] = {f.field_id: i for i, f in enumerate(all_fields)}
+        # FEAT-393 (Module 4): lookups are keyed by field_uid (str) — rule
+        # references are resolved to field_uid by
+        # core.resolution.resolve_rule_references() at every build boundary.
+        # Human-facing error strings still report field.field_id.
+        field_map: dict[str, FormField] = {str(f.field_uid): f for f in all_fields}
+        field_order: dict[str, int] = {str(f.field_uid): i for i, f in enumerate(all_fields)}
 
         for field in all_fields:
             fid = field.field_id
-            pos = field_order[fid]
+            pos = field_order[str(field.field_uid)]
 
             # --- pre-dependency checks ---
             if field.depends_on:
                 rule = field.depends_on
                 for cond in rule.conditions:
-                    ref = cond.field_id
+                    # A condition with field_uid=None (source="field") means
+                    # an unresolved form reached validation — report it,
+                    # don't crash. Non-field sources (location_variable /
+                    # visit_context) also have no field_uid and fall through
+                    # the same "unknown" path (unchanged failure mode).
+                    ref = str(cond.field_uid) if cond.field_uid else ""
                     if ref not in field_map:
                         errors.append(
                             f"Field '{fid}': depends_on condition references unknown"
-                            f" field_id '{ref}'"
+                            f" field {ref!r}"
                         )
                         continue
 
                     # Ordering: depends_on must reference earlier fields
+                    ref_field = field_map[ref]
                     if field_order.get(ref, -1) >= pos:
                         errors.append(
                             f"Field '{fid}': depends_on condition references field"
-                            f" '{ref}' which is declared at the same position or later"
-                            f" (pre-dependency must reference earlier fields)"
+                            f" '{ref_field.field_id}' which is declared at the same"
+                            f" position or later (pre-dependency must reference"
+                            f" earlier fields)"
                         )
 
                     # Operator/type compatibility
-                    ref_field = field_map[ref]
                     if (
                         cond.operator in self._NUMERIC_OPERATORS
                         and ref_field.field_type not in self._NUMERIC_FIELD_TYPES
                     ):
                         errors.append(
                             f"Field '{fid}': depends_on uses numeric operator"
-                            f" '{cond.operator.value}' on non-numeric field '{ref}'"
-                            f" (type={ref_field.field_type.value!r})"
+                            f" '{cond.operator.value}' on non-numeric field"
+                            f" '{ref_field.field_id}' (type={ref_field.field_type.value!r})"
                         )
 
                 # Operations on the rule
@@ -863,27 +873,29 @@ class FormValidator:
 
             # --- post-dependency checks ---
             for post in field.post_depends or []:
-                target = post.target
+                target = post.target  # resolved field_uid string
                 if target not in field_map:
                     errors.append(
-                        f"Field '{fid}': post_depends targets unknown field_id '{target}'"
+                        f"Field '{fid}': post_depends targets unknown field {target!r}"
                     )
                 else:
                     # Ordering: post_depends.target must be declared later
                     if field_order[target] <= pos:
+                        target_field = field_map[target]
                         errors.append(
-                            f"Field '{fid}': post_depends targets field '{target}'"
-                            f" which is declared at the same position or earlier"
-                            f" (post-dependency must target a later field)"
+                            f"Field '{fid}': post_depends targets field"
+                            f" '{target_field.field_id}' which is declared at the"
+                            f" same position or earlier (post-dependency must"
+                            f" target a later field)"
                         )
 
                 # Conditions on the post-dependency
                 for cond in post.conditions or []:
-                    ref = cond.field_id
+                    ref = str(cond.field_uid) if cond.field_uid else ""
                     if ref not in field_map:
                         errors.append(
-                            f"Field '{fid}': post_depends condition references unknown"
-                            f" field_id '{ref}'"
+                            f"Field '{fid}': post_depends condition references"
+                            f" unknown field {ref!r}"
                         )
                         continue
                     ref_field = field_map[ref]
@@ -892,9 +904,9 @@ class FormValidator:
                         and ref_field.field_type not in self._NUMERIC_FIELD_TYPES
                     ):
                         errors.append(
-                            f"Field '{fid}': post_depends condition uses numeric operator"
-                            f" '{cond.operator.value}' on non-numeric field '{ref}'"
-                            f" (type={ref_field.field_type.value!r})"
+                            f"Field '{fid}': post_depends condition uses numeric"
+                            f" operator '{cond.operator.value}' on non-numeric field"
+                            f" '{ref_field.field_id}' (type={ref_field.field_type.value!r})"
                         )
 
                 # Operation on the post-dependency
@@ -920,8 +932,10 @@ class FormValidator:
         Args:
             op: The operation to validate.
             owner_fid: The field_id of the field that owns this operation.
-            field_map: Mapping of all field_ids to FormField objects.
-            field_order: Mapping of field_id to 0-based declaration order.
+            field_map: Mapping of all field_uid strings (FEAT-393) to
+                FormField objects.
+            field_order: Mapping of field_uid string to 0-based declaration
+                order.
             owner_pos: Declaration order of the owning field.
 
         Returns:
@@ -929,12 +943,16 @@ class FormValidator:
         """
         errors: list[str] = []
 
-        # Check operands reference known fields
+        # Check operands reference known fields. op.operands/op.target hold
+        # resolved field_uid strings (core.resolution.resolve_rule_references,
+        # FEAT-393) — an unresolved value simply won't be a known key, which
+        # degrades to the same "unknown reference" error as a genuinely
+        # unknown reference (no crash).
         for ref in op.operands:
             if ref not in field_map:
                 errors.append(
                     f"Field '{owner_fid}': operation '{op.op}' references unknown"
-                    f" operand field_id '{ref}'"
+                    f" operand field {ref!r}"
                 )
                 continue
             # Arithmetic ops: operands must be numeric
@@ -943,7 +961,7 @@ class FormValidator:
                 if ref_field.field_type not in self._NUMERIC_FIELD_TYPES:
                     errors.append(
                         f"Field '{owner_fid}': arithmetic operation '{op.op}'"
-                        f" references non-numeric operand field '{ref}'"
+                        f" references non-numeric operand field '{ref_field.field_id}'"
                         f" (type={ref_field.field_type.value!r})"
                     )
 
@@ -951,7 +969,7 @@ class FormValidator:
         if op.target not in field_map:
             errors.append(
                 f"Field '{owner_fid}': operation '{op.op}' targets unknown"
-                f" field_id '{op.target}'"
+                f" field {op.target!r}"
             )
 
         return errors
@@ -996,40 +1014,45 @@ class FormValidator:
         for section in form.sections:
             all_fields.extend(self._collect_fields(section))
 
-        # Build adjacency list: field_id -> set of referenced field_ids
-        graph: dict[str, set[str]] = {f.field_id: set() for f in all_fields}
+        # FEAT-393 (Module 4): graph is keyed by field_uid (str) — rule
+        # references are resolved to field_uid at build time. field_map is
+        # kept alongside purely to translate the UID chain back to
+        # human-readable field_id names when reporting a cycle.
+        field_map: dict[str, FormField] = {str(f.field_uid): f for f in all_fields}
+        graph: dict[str, set[str]] = {str(f.field_uid): set() for f in all_fields}
         known: set[str] = set(graph.keys())
 
         for field in all_fields:
-            fid = field.field_id
+            field_uid = str(field.field_uid)
 
-            # Pre-dependency conditions: A -> condition.field_id
+            # Pre-dependency conditions: A -> condition.field_uid
             if field.depends_on:
                 for condition in field.depends_on.conditions:
-                    if condition.field_id in known:
-                        graph[fid].add(condition.field_id)
+                    ref = str(condition.field_uid) if condition.field_uid else None
+                    if ref in known:
+                        graph[field_uid].add(ref)
                 # Pre-dep operations: A -> operand (and target -> A)
                 for op in field.depends_on.operations or []:
                     for operand in op.operands:
                         if operand in known:
-                            graph[fid].add(operand)
+                            graph[field_uid].add(operand)
                     if op.target in known:
                         # target receives from A's operation: target -> A (reverse edge)
-                        graph[op.target].add(fid)
+                        graph[op.target].add(field_uid)
 
             # Post-dependency: A -> target (forward effect)
             for post in field.post_depends or []:
                 if post.target in known:
-                    graph[fid].add(post.target)
+                    graph[field_uid].add(post.target)
                 # Post-dep operation operands: A -> operand
                 if post.operation:
                     for operand in post.operation.operands:
                         if operand in known:
-                            graph[fid].add(operand)
+                            graph[field_uid].add(operand)
 
         # DFS cycle detection
         UNVISITED, VISITING, VISITED = 0, 1, 2
-        state: dict[str, int] = {fid: UNVISITED for fid in graph}
+        state: dict[str, int] = {field_uid: UNVISITED for field_uid in graph}
         cycles: list[str] = []
 
         def dfs(node: str, path: list[str]) -> None:
@@ -1040,16 +1063,17 @@ class FormValidator:
                     # Found a cycle
                     cycle_start = path.index(neighbor)
                     cycle = path[cycle_start:] + [neighbor]
+                    cycle_field_ids = [field_map[uid].field_id for uid in cycle]
                     cycles.append(
-                        f"Circular dependency detected: {' -> '.join(cycle)}"
+                        f"Circular dependency detected: {' -> '.join(cycle_field_ids)}"
                     )
                 elif state.get(neighbor) == UNVISITED:
                     dfs(neighbor, path)
             path.pop()
             state[node] = VISITED
 
-        for field_id in list(graph.keys()):
-            if state[field_id] == UNVISITED:
-                dfs(field_id, [])
+        for field_uid in list(graph.keys()):
+            if state[field_uid] == UNVISITED:
+                dfs(field_uid, [])
 
         return cycles

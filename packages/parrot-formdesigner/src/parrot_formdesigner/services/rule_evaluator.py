@@ -25,6 +25,7 @@ Design notes (spec §8):
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import date, datetime
 from typing import Any
 
@@ -37,6 +38,7 @@ from ..core.constraints import (
     FieldCondition,
     PostDependency,
 )
+from ..core.resolution import find_field_by_uid, resolve_answer
 from ..core.schema import FormField, FormSchema
 
 
@@ -91,9 +93,57 @@ def _to_comparable(value: Any) -> Any:
     return str(value)
 
 
+def _ref_to_field_id(ref: str, form: FormSchema) -> str:
+    """Translate a rule reference (authored ``field_id`` or resolved
+    ``field_uid`` string, FEAT-393) to the referenced field's CURRENT
+    ``field_id`` — for use as a result-map key (``visible``/``required``/
+    ``computed``/``cleared`` stay ``field_id``-keyed per spec).
+
+    Best-effort, never raises: a reference that isn't UID-shaped, or that
+    doesn't resolve to a known field, is returned unchanged.
+
+    Args:
+        ref: The rule reference (``dep_op.target`` / ``post.target`` /
+            an operand string).
+        form: The form the reference belongs to.
+
+    Returns:
+        The referenced field's current ``field_id``, or ``ref`` unchanged
+        if it cannot be resolved.
+    """
+    try:
+        field_uid = uuid.UUID(ref)
+    except (ValueError, TypeError, AttributeError):
+        return ref
+    found = find_field_by_uid(form, field_uid)
+    return found[0].field_id if found else ref
+
+
+def _answer_for_ref(ref: str, form: FormSchema, answers: dict[str, Any]) -> Any:
+    """Read an answer value for a rule reference (authored ``field_id`` or
+    resolved ``field_uid`` string, FEAT-393) from a ``field_id``-keyed
+    answers dict.
+
+    Args:
+        ref: The rule reference (an operation operand string).
+        form: The form the reference belongs to.
+        answers: Current answer dict, keyed by ``field_id``.
+
+    Returns:
+        The answer value, or ``None`` if the reference cannot be resolved
+        or has no answer.
+    """
+    try:
+        field_uid = uuid.UUID(ref)
+    except (ValueError, TypeError, AttributeError):
+        return answers.get(ref)
+    return resolve_answer(form, field_uid, answers)
+
+
 def _eval_condition(
     condition: FieldCondition,
     answers: dict[str, Any],
+    form: FormSchema,
     location_vars: dict[str, Any] | None = None,
     visit_context: dict[str, Any] | None = None,
 ) -> bool:
@@ -102,6 +152,9 @@ def _eval_condition(
     Args:
         condition: The condition to evaluate.
         answers: Current answer dict keyed by ``field_id``.
+        form: The form ``condition`` belongs to (FEAT-393) — used to resolve
+            ``condition.field_uid`` back to the field's current
+            ``field_id`` for the answers-dict read.
         location_vars: Org-graph location variables (FEAT-301), keyed by name.
         visit_context: Visit-level metadata (FEAT-301), keyed by name.
 
@@ -111,7 +164,8 @@ def _eval_condition(
         operators and ``True`` for ``is_empty`` (key-missing semantics).
 
     The value source is selected by ``condition.source``:
-    ``"field"`` (default) → ``answers[field_id]``;
+    ``"field"`` (default) → ``answers[field_id]`` (resolved via
+    ``condition.field_uid``, FEAT-393);
     ``"location_variable"`` → ``location_vars[key]``;
     ``"visit_context"`` → ``visit_context[key]``.
     """
@@ -121,7 +175,7 @@ def _eval_condition(
     elif source == "visit_context":
         raw = (visit_context or {}).get(condition.key)
     else:
-        raw = answers.get(condition.field_id)
+        raw = resolve_answer(form, condition.field_uid, answers) if condition.field_uid else None
     op = condition.operator
     expected = condition.value
 
@@ -180,6 +234,7 @@ def _eval_logic(
     conditions: list[FieldCondition],
     logic: str,
     answers: dict[str, Any],
+    form: FormSchema,
     location_vars: dict[str, Any] | None = None,
     visit_context: dict[str, Any] | None = None,
 ) -> bool:
@@ -189,6 +244,8 @@ def _eval_logic(
         conditions: List of :class:`FieldCondition` instances.
         logic: One of ``"and"``, ``"or"``, ``"xor"``, ``"not"``.
         answers: Current answer dict.
+        form: The form ``conditions`` belong to (FEAT-393) — threaded
+            through to :func:`_eval_condition`.
 
     Returns:
         Boolean result of the combined evaluation.
@@ -196,7 +253,9 @@ def _eval_logic(
     if not conditions:
         # No conditions → rule always fires (spec §8: empty condition list = unconditional)
         return True
-    results = [_eval_condition(c, answers, location_vars, visit_context) for c in conditions]
+    results = [
+        _eval_condition(c, answers, form, location_vars, visit_context) for c in conditions
+    ]
     match logic:
         case "and":
             return all(results)
@@ -215,18 +274,22 @@ def _eval_logic(
 def _apply_operation(
     dep_op: DependencyOperation,
     answers: dict[str, Any],
+    form: FormSchema,
 ) -> Any:
     """Apply a :class:`~parrot_formdesigner.core.constraints.DependencyOperation`.
 
     Args:
         dep_op: The operation to apply.
         answers: Current answer dict.
+        form: The form ``dep_op`` belongs to (FEAT-393) — used to resolve
+            ``dep_op.operands`` (resolved ``field_uid`` strings) back to
+            each field's current ``field_id`` for the answers-dict read.
 
     Returns:
         The computed value, or ``None`` if the operation cannot be applied
         safely (missing/invalid operands — never raises).
     """
-    operand_values = [answers.get(fid) for fid in dep_op.operands]
+    operand_values = [_answer_for_ref(ref, form, answers) for ref in dep_op.operands]
 
     try:
         match dep_op.op:
@@ -357,8 +420,12 @@ def _topo_order(fields: list[FormField]) -> list[FormField]:
     """Return ``fields`` in topological evaluation order.
 
     Uses a depth-first-search topological sort based on ``depends_on`` and
-    ``post_depends`` edges.  If a cycle is detected (should not happen after
+    ``post_depends`` edges. If a cycle is detected (should not happen after
     validation) the algorithm falls back to the original field order.
+
+    FEAT-393: ``field_map``/edges are keyed by ``field_uid`` (str) — rule
+    references (``cond.field_uid``, ``dep_op.operands``) are resolved
+    UUIDs, not ``field_id``s.
 
     Args:
         fields: List of form fields to sort.
@@ -366,42 +433,43 @@ def _topo_order(fields: list[FormField]) -> list[FormField]:
     Returns:
         Fields in topological order (sources first, dependants later).
     """
-    field_map: dict[str, FormField] = {f.field_id: f for f in fields}
+    field_map: dict[str, FormField] = {str(f.field_uid): f for f in fields}
     # Build forward edges: for each field, collect which fields it depends on
-    edges: dict[str, set[str]] = {f.field_id: set() for f in fields}
+    edges: dict[str, set[str]] = {str(f.field_uid): set() for f in fields}
     for field in fields:
+        field_uid = str(field.field_uid)
         if field.depends_on:
             for cond in field.depends_on.conditions:
-                src = cond.field_id
+                src = str(cond.field_uid) if cond.field_uid else None
                 if src in field_map:
-                    edges[field.field_id].add(src)
+                    edges[field_uid].add(src)
             if field.depends_on.operations:
                 for dep_op in field.depends_on.operations:
-                    for op_fid in dep_op.operands:
-                        if op_fid in field_map:
-                            edges[field.field_id].add(op_fid)
+                    for op_ref in dep_op.operands:
+                        if op_ref in field_map:
+                            edges[field_uid].add(op_ref)
 
     visited: set[str] = set()
     in_stack: set[str] = set()
     order: list[str] = []
     has_cycle = False
 
-    def _dfs(fid: str) -> None:
+    def _dfs(field_uid: str) -> None:
         nonlocal has_cycle
-        if fid in in_stack:
+        if field_uid in in_stack:
             has_cycle = True
             return
-        if fid in visited:
+        if field_uid in visited:
             return
-        in_stack.add(fid)
-        for dep in edges.get(fid, set()):
+        in_stack.add(field_uid)
+        for dep in edges.get(field_uid, set()):
             _dfs(dep)
-        in_stack.discard(fid)
-        visited.add(fid)
-        order.append(fid)
+        in_stack.discard(field_uid)
+        visited.add(field_uid)
+        order.append(field_uid)
 
     for field in fields:
-        _dfs(field.field_id)
+        _dfs(str(field.field_uid))
 
     if has_cycle:
         logger.warning(
@@ -410,7 +478,7 @@ def _topo_order(fields: list[FormField]) -> list[FormField]:
         )
         return fields
 
-    result_map = {fid: field_map[fid] for fid in order if fid in field_map}
+    result_map = {uid: field_map[uid] for uid in order if uid in field_map}
     return list(result_map.values())
 
 
@@ -478,11 +546,13 @@ class RuleEvaluator:
         ordered = _topo_order(all_fields)
 
         for field in ordered:
-            await self._apply_pre_dependency(field, answers, visible, required, computed, location_vars, visit_context)
+            await self._apply_pre_dependency(
+                field, answers, form, visible, required, computed, location_vars, visit_context
+            )
 
         for field in ordered:
             await self._apply_post_dependencies(
-                field, answers, visible, required, computed, cleared,
+                field, answers, form, visible, required, computed, cleared,
                 location_vars, visit_context,
             )
 
@@ -497,6 +567,7 @@ class RuleEvaluator:
         self,
         field: FormField,
         answers: dict[str, Any],
+        form: FormSchema,
         visible: dict[str, bool],
         required: dict[str, bool],
         computed: dict[str, Any],
@@ -508,6 +579,8 @@ class RuleEvaluator:
         Args:
             field: The field whose pre-dependency to evaluate.
             answers: Current answers.
+            form: The form ``field`` belongs to (FEAT-393) — threaded
+                through to condition/operation reference resolution.
             visible: Mutable visibility dict to update.
             required: Mutable required dict to update.
             computed: Mutable computed dict for operation results.
@@ -516,7 +589,7 @@ class RuleEvaluator:
         if rule is None:
             return
 
-        fired = _eval_logic(rule.conditions, rule.logic, answers, location_vars, visit_context)
+        fired = _eval_logic(rule.conditions, rule.logic, answers, form, location_vars, visit_context)
 
         # Apply visibility/required effect
         effect = rule.effect
@@ -541,14 +614,15 @@ class RuleEvaluator:
         if rule.operations:
             for dep_op in rule.operations:
                 if fired:
-                    result = _apply_operation(dep_op, answers)
+                    result = _apply_operation(dep_op, answers, form)
                     if result is not None:
-                        computed[dep_op.target] = result
+                        computed[_ref_to_field_id(dep_op.target, form)] = result
 
     async def _apply_post_dependencies(
         self,
         field: FormField,
         answers: dict[str, Any],
+        form: FormSchema,
         visible: dict[str, bool],
         required: dict[str, bool],
         computed: dict[str, Any],
@@ -561,6 +635,8 @@ class RuleEvaluator:
         Args:
             field: The field whose post-dependencies to evaluate.
             answers: Current answers.
+            form: The form ``field`` belongs to (FEAT-393) — threaded
+                through to condition/operation reference resolution.
             visible: Mutable visibility dict to update.
             required: Mutable required dict to update.
             computed: Mutable computed dict for operation results.
@@ -570,18 +646,24 @@ class RuleEvaluator:
         if not post_list:
             return
 
-        # Use the owner field's current answer as implicit source when no conditions
+        # Use the owner field's current answer as implicit source when no
+        # conditions — the owner is a field OBJECT here (not a reference),
+        # so the read stays via field.field_id (FEAT-393: unaffected).
         owner_answer = answers.get(field.field_id)
 
         for post in post_list:
             # Evaluate conditions (if any)
             if post.conditions:
-                fired = _eval_logic(post.conditions, post.logic, answers, location_vars, visit_context)
+                fired = _eval_logic(
+                    post.conditions, post.logic, answers, form, location_vars, visit_context
+                )
             else:
                 # No conditions: post-dep fires if the owner field has a non-empty value
                 fired = owner_answer is not None and owner_answer != "" and owner_answer != []
 
-            target = post.target
+            # post.target is a resolved field_uid string (FEAT-393); result
+            # maps stay field_id-keyed, so translate it back.
+            target = _ref_to_field_id(post.target, form)
 
             match post.effect:
                 case "show":
@@ -595,12 +677,12 @@ class RuleEvaluator:
                         required[target] = True
                 case "set":
                     if fired and post.operation is not None:
-                        result = _apply_operation(post.operation, answers)
+                        result = _apply_operation(post.operation, answers, form)
                         if result is not None:
                             computed[target] = result
                 case "calc":
                     if fired and post.operation is not None:
-                        result = _apply_operation(post.operation, answers)
+                        result = _apply_operation(post.operation, answers, form)
                         if result is not None:
                             computed[target] = result
                 case "reload_options":
