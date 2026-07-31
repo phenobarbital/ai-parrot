@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid as _uuid
 from typing import TYPE_CHECKING, get_args
 
 from aiohttp import web
@@ -26,6 +27,32 @@ from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
+
+
+def extract_form_uid(request: web.Request) -> str:
+    """Extract and validate ``form_uid`` from the request path (FEAT-389).
+
+    Args:
+        request: Incoming aiohttp request with ``form_uid`` in
+            ``request.match_info`` (populated by the ``{form_uid}`` route
+            pattern registered in ``api/routes.py``).
+
+    Returns:
+        The validated ``form_uid`` string.
+
+    Raises:
+        web.HTTPBadRequest: If the path segment is not a well-formed UUID.
+            The response is JSON: ``{"error": "..."}``.
+    """
+    form_uid = request.match_info["form_uid"]
+    try:
+        _uuid.UUID(form_uid)
+    except ValueError:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": f"Invalid form_uid: {form_uid!r} is not a valid UUID"}),
+            content_type="application/json",
+        )
+    return form_uid
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -122,7 +149,7 @@ class FormAPIHandler:
         self._question_banks: "dict[str, QuestionBankService]" = {}
 
         # FEAT-300 — per-form import diff reports (populated by import flows).
-        # Keyed by (tenant, form_id) to prevent cross-tenant leaks (review M3).
+        # Keyed by (tenant, form_uid) to prevent cross-tenant leaks (review M3).
         self._import_reports: "dict[tuple[str, str], ImportDiffReport]" = {}
 
     def _get_llm_client(self) -> "AbstractClient | None":
@@ -329,7 +356,7 @@ class FormAPIHandler:
                 {"error": "Partial save service not configured"}, status=503
             )
 
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
@@ -350,26 +377,26 @@ class FormAPIHandler:
             )
 
         if not answers:
-            existing = await self._partial_store.get(form_id, session_id)
+            existing = await self._partial_store.get(form_uid, session_id)
             if existing is not None:
                 return JSONResponse(existing.model_dump(mode="json"), status=200)
             return JSONResponse(
-                {"form_id": form_id, "session_id": session_id, "data": {}, "field_errors": {}},
+                {"form_uid": form_uid, "session_id": session_id, "data": {}, "field_errors": {}},
                 status=200,
             )
 
-        form = await self.registry.get(form_id)
+        form = await self.registry.get(form_uid)
         if form is None:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         # Save merged answers to store
         try:
-            partial = await self._partial_store.save(form_id, session_id, answers)
+            partial = await self._partial_store.save(form_uid, session_id, answers)
         except Exception as exc:
             self.logger.warning(
-                "PartialSaveStore.save failed for %s/%s: %s", form_id, session_id, exc
+                "PartialSaveStore.save failed for %s/%s: %s", form_uid, session_id, exc
             )
             return JSONResponse(
                 {"error": "Partial save service unavailable"}, status=503
@@ -396,7 +423,7 @@ class FormAPIHandler:
             except Exception as exc:
                 self.logger.warning(
                     "PartialSaveStore: failed to persist field_errors for %s/%s: %s",
-                    form_id,
+                    form_uid,
                     session_id,
                     exc,
                 )
@@ -422,7 +449,7 @@ class FormAPIHandler:
                 {"error": "Partial save service not configured"}, status=503
             )
 
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
@@ -431,10 +458,10 @@ class FormAPIHandler:
             )
 
         try:
-            partial = await self._partial_store.get(form_id, session_id)
+            partial = await self._partial_store.get(form_uid, session_id)
         except Exception as exc:
             self.logger.warning(
-                "PartialSaveStore.get failed for %s/%s: %s", form_id, session_id, exc
+                "PartialSaveStore.get failed for %s/%s: %s", form_uid, session_id, exc
             )
             return JSONResponse(
                 {"error": "Partial save service unavailable"}, status=503
@@ -466,7 +493,7 @@ class FormAPIHandler:
                 {"error": "Partial save service not configured"}, status=503
             )
 
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
@@ -475,11 +502,11 @@ class FormAPIHandler:
             )
 
         try:
-            await self._partial_store.delete(form_id, session_id)
+            await self._partial_store.delete(form_uid, session_id)
         except Exception as exc:
             self.logger.warning(
                 "PartialSaveStore.delete failed for %s/%s: %s",
-                form_id,
+                form_uid,
                 session_id,
                 exc,
             )
@@ -490,23 +517,47 @@ class FormAPIHandler:
         """GET /api/v1/forms — List all registered forms with rich metadata.
 
         Merges in-memory FormRegistry entries with persisted FormStorage rows
-        (when a storage backend is configured). Each entry includes form_id,
-        title, description, version, source ("memory" | "db"), and an
-        ISO-8601 created_at (or None).
+        (when a storage backend is configured). Each entry includes form_uid,
+        form_id, title, description, version, source ("memory" | "db"), and
+        an ISO-8601 created_at (or None).
+
+        Supports ``?slug=<form_id>`` (FEAT-389) to filter results down to
+        forms whose slug matches — resolved via
+        ``FormRegistry.get_by_slug()`` rather than scanning the full list.
 
         Args:
             request: Incoming HTTP request.
 
         Returns:
-            JSON response ``{"forms": [<descriptor>, ...]}`` sorted by form_id.
+            JSON response ``{"forms": [<descriptor>, ...]}`` sorted by
+            form_id (slug — stable, human-meaningful ordering; form_uid is
+            random and would not produce a stable order).
         """
         tenant = self._get_tenant(request)
+
+        slug = request.query.get("slug")
+        if slug:
+            form = await self.registry.get_by_slug(slug, tenant=tenant)
+            if form is None:
+                return JSONResponse({"forms": []})
+            ts = form.created_at
+            return JSONResponse({"forms": [{
+                "form_uid": form.form_uid,
+                "form_id": form.form_id,
+                "title": _loc_to_str(form.title),
+                "description": _loc_to_str(form.description),
+                "version": form.version,
+                "source": "memory",
+                "created_at": ts.isoformat() if ts is not None else None,
+            }]})
+
         in_memory = await self.registry.list_forms(tenant=tenant)
         descriptors: dict[str, dict] = {}
 
         for form in in_memory:
             ts = form.created_at
-            descriptors[form.form_id] = {
+            descriptors[form.form_uid] = {
+                "form_uid": form.form_uid,
                 "form_id": form.form_id,
                 "title": _loc_to_str(form.title),
                 "description": _loc_to_str(form.description),
@@ -524,10 +575,10 @@ class FormAPIHandler:
                 persisted = []
 
             for row in persisted:
-                fid = row.get("form_id")
-                if not fid:
+                fuid = row.get("form_uid")
+                if not fuid:
                     continue
-                existing = descriptors.get(fid)
+                existing = descriptors.get(fuid)
                 if existing is not None:
                     # In both: registry wins for title/description/version,
                     # storage wins for created_at; mark source as "db".
@@ -535,8 +586,9 @@ class FormAPIHandler:
                     if row.get("created_at") is not None:
                         existing["created_at"] = row["created_at"]
                 else:
-                    descriptors[fid] = {
-                        "form_id": fid,
+                    descriptors[fuid] = {
+                        "form_uid": fuid,
+                        "form_id": row.get("form_id"),
                         "title": _loc_to_str(row.get("title")),
                         "description": _loc_to_str(row.get("description")),
                         "version": row.get("version", "1.0"),
@@ -544,7 +596,7 @@ class FormAPIHandler:
                         "created_at": row.get("created_at"),
                     }
 
-        forms = sorted(descriptors.values(), key=lambda d: d["form_id"])
+        forms = sorted(descriptors.values(), key=lambda d: d["form_id"] or "")
         return JSONResponse({"forms": forms})
 
     @staticmethod
@@ -567,12 +619,12 @@ class FormAPIHandler:
         return False
 
     async def get_form(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_id} — Get full FormSchema as JSON."""
-        form_id = request.match_info["form_id"]
+        """GET /api/v1/forms/{form_uid} — Get full FormSchema as JSON."""
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         # lifecycle: onBeforeOpen — can abort or mutate (abort only in MVP)
         try:
             await dispatch(
@@ -593,17 +645,17 @@ class FormAPIHandler:
             session_id = self._extract_session_id(request)
             if session_id:
                 response.headers["X-Form-CSRF-Token"] = issue_form_csrf_token(
-                    session_id, form_id
+                    session_id, form_uid
                 )
         return response
 
     async def get_schema(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_id}/schema — Get JSON Schema (structural)."""
-        form_id = request.match_info["form_id"]
+        """GET /api/v1/forms/{form_uid}/schema — Get JSON Schema (structural)."""
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         rendered: RenderedForm = await self.schema_renderer.render(form)
         # lifecycle: onSchemaLoaded — can apply shallow schema_overrides
         try:
@@ -626,24 +678,24 @@ class FormAPIHandler:
         return JSONResponse(content)
 
     async def get_style(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_id}/style — Get style schema."""
-        form_id = request.match_info["form_id"]
+        """GET /api/v1/forms/{form_uid}/style — Get style schema."""
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         style = form.meta.get("style") if form.meta else None
         return JSONResponse(style or {})
 
     async def remote_event(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_id}/events/{event_name} — Remote event bridge.
+        """POST /api/v1/forms/{form_uid}/events/{event_name} — Remote event bridge.
 
         Called by the HTML5 renderer when a binding declares ``remote: true``.
         Validates a per-session per-form CSRF token, dispatches the lifecycle
         event, and returns the ``EventResolution`` as JSON.
 
         Args:
-            request: Incoming POST request with ``form_id`` and ``event_name``
+            request: Incoming POST request with ``form_uid`` and ``event_name``
                 in the URL, ``X-CSRF-Token`` header, and a JSON body optionally
                 containing ``payload`` and ``schema_dump``.
 
@@ -654,7 +706,7 @@ class FormAPIHandler:
             404 — Form not found.
             status from FormEventAbort.status_code — when a handler aborts.
         """
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         event_name = request.match_info["event_name"]
 
         # 1. Validate event_name against the FormEventName Literal
@@ -665,10 +717,10 @@ class FormAPIHandler:
 
         # 2. Load form
         tenant = self._get_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         # 3. CSRF validation
@@ -679,7 +731,7 @@ class FormAPIHandler:
         if (
             not session_id
             or not token
-            or not validate_form_csrf_token(session_id, form_id, token)
+            or not validate_form_csrf_token(session_id, form_uid, token)
         ):
             return JSONResponse(
                 {"error": "CSRF token invalid or missing"}, status=403
@@ -698,7 +750,7 @@ class FormAPIHandler:
             self.logger.warning(
                 "remote_event: _build_auth_context failed for form=%r event=%r — "
                 "falling back to scheme=none. Error: %s",
-                form_id,
+                form_uid,
                 event_name,
                 _auth_exc,
             )
@@ -724,12 +776,12 @@ class FormAPIHandler:
         return JSONResponse(resolution.model_dump(mode="json", exclude_none=True))
 
     async def validate(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_id}/validate — Validate form submission."""
-        form_id = request.match_info["form_id"]
+        """POST /api/v1/forms/{form_uid}/validate — Validate form submission."""
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         try:
             data = await request.json()
         except (json.JSONDecodeError, ValueError):
@@ -740,6 +792,68 @@ class FormAPIHandler:
         return JSONResponse(
             {"is_valid": result.is_valid, "errors": result.errors},
             status=status,
+        )
+
+    async def create_blank_form(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/blank — Create an empty form without an LLM (FEAT-389).
+
+        Requires ``title`` in the JSON body. ``form_id`` (slug) is optional —
+        if omitted, one is derived from ``title`` via the same slugify
+        helper used by ``CreateFormTool``. ``form_uid`` is always freshly
+        auto-generated by ``FormSchema``'s default factory.
+
+        Request body::
+
+            {"title": "My Form", "form_id": "my-form"}   # form_id optional
+
+        Returns:
+            201 — ``{"form_uid": str, "form_id": str, "title": str, "url": str}``.
+            400 — invalid JSON body or missing ``title``.
+            409 — ``form_id`` (slug) already exists in this tenant.
+        """
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        title = body.get("title")
+        if not title:
+            return JSONResponse({"error": "title is required"}, status=400)
+
+        from ..tools.create_form import _slugify
+        form_id = body.get("form_id") or _slugify(_loc_to_str(title))
+
+        tenant = self._get_tenant(request)
+        try:
+            form = FormSchema(
+                form_id=form_id,
+                title=title,
+                sections=[],
+                tenant=tenant,
+            )
+        except ValidationError as exc:
+            return JSONResponse({"errors": exc.errors()}, status=422)
+
+        persist = self.registry.has_storage
+        try:
+            await self.registry.register(
+                form, persist=persist, overwrite=False, tenant=tenant
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status=409)
+
+        self.logger.info(
+            "Created blank form form_uid=%s (slug=%s)", form.form_uid, form.form_id
+        )
+        prefix = request.app.get("_form_prefix", "")
+        return JSONResponse(
+            {
+                "form_uid": form.form_uid,
+                "form_id": form.form_id,
+                "title": _loc_to_str(title),
+                "url": f"{prefix}/forms/{form.form_uid}",
+            },
+            status=201,
         )
 
     async def create_form(self, request: web.Request) -> web.Response:
@@ -779,22 +893,23 @@ class FormAPIHandler:
             )
 
         form_data = result.metadata.get("form", {})
-        form_id = form_data.get("form_id")
-        if not form_id:
+        form_uid = form_data.get("form_uid")
+        if not form_uid:
             return JSONResponse(
-                {"error": "Form creation succeeded but form_id missing"},
+                {"error": "Form creation succeeded but form_uid missing"},
                 status=500,
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
         return JSONResponse({
-            "form_id": form_id,
+            "form_uid": form_uid,
+            "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/forms/{form_id}",
+            "url": f"{prefix}/forms/{form_uid}",
         })
 
     async def edit_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_id}/edit — Edit a form using natural language.
+        """POST /api/v1/forms/{form_uid}/edit — Edit a form using natural language.
 
         Loads the existing form from the registry, passes its JSON schema to the
         LLM along with the user's edit prompt, and returns the updated form.
@@ -808,12 +923,12 @@ class FormAPIHandler:
                 status=503,
             )
 
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        existing = await self.registry.get(form_id, tenant=tenant)
+        existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         try:
@@ -833,7 +948,12 @@ class FormAPIHandler:
         )
         result = await create_tool.execute(
             prompt=prompt,
-            refine_form_id=form_id,
+            # NOTE: CreateFormInput's parameter is still named `refine_form_id`
+            # until TASK-1978 renames it to `refine_form_uid` — but per
+            # TASK-1973, `self._registry.get(refine_form_id, ...)` inside
+            # CreateFormTool is ALREADY form_uid-keyed, so passing form_uid
+            # here (not the old slug) is what actually works post-FEAT-389.
+            refine_form_id=form_uid,
             persist=True,
         )
 
@@ -844,26 +964,28 @@ class FormAPIHandler:
             )
 
         form_data = result.metadata.get("form", {})
-        updated_form_id = form_data.get("form_id")
-        if not updated_form_id:
+        updated_form_uid = form_data.get("form_uid")
+        if not updated_form_uid:
             return JSONResponse(
-                {"error": "Form editing succeeded but form_id missing"},
+                {"error": "Form editing succeeded but form_uid missing"},
                 status=500,
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
         return JSONResponse({
-            "form_id": updated_form_id,
+            "form_uid": updated_form_uid,
+            "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/forms/{updated_form_id}",
+            "url": f"{prefix}/forms/{updated_form_uid}",
         })
 
     async def clone_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_id}/clone — Clone a form under a new ID.
+        """POST /api/v1/forms/{form_uid}/clone — Clone a form under a new slug.
 
-        Creates a deep copy of the source form identified by ``form_id``,
-        assigns ``new_form_id`` from the request body, optionally applies an
-        RFC 7396 merge-patch, validates the result, and persists it.
+        Creates a deep copy of the source form identified by ``form_uid``,
+        assigns ``new_form_id`` (slug) from the request body and a freshly
+        generated ``form_uid``, optionally applies an RFC 7396 merge-patch,
+        validates the result, and persists it.
 
         Request body (JSON):
             new_form_id (str): Required. Slug for the cloned form.
@@ -877,7 +999,7 @@ class FormAPIHandler:
             409 if ``new_form_id`` already exists.
             422 if the patch produces an invalid schema.
         """
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
 
         try:
             body = await request.json()
@@ -897,14 +1019,14 @@ class FormAPIHandler:
 
         try:
             clone = await self.registry.clone_form(
-                form_id,
+                form_uid,
                 new_form_id,
                 patch,
                 tenant=tenant,
             )
         except KeyError:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
         except FormAlreadyExistsError as exc:
             return JSONResponse({"error": str(exc)}, status=409)
@@ -912,26 +1034,30 @@ class FormAPIHandler:
             return JSONResponse({"error": str(exc)}, status=422)
 
         self.logger.info(
-            "Cloned form '%s' -> '%s'", form_id, clone.form_id
+            "Cloned form form_uid=%s -> form_uid=%s (slug=%s)",
+            form_uid, clone.form_uid, clone.form_id,
         )
         return JSONResponse(clone.model_dump(mode="json"), status=201)
 
     async def update_form(self, request: web.Request) -> web.Response:
-        """PUT /api/v1/forms/{form_id} — Fully replace a registered form.
+        """PUT /api/v1/forms/{form_uid} — Fully replace a registered form.
 
-        Accepts a complete ``FormSchema`` JSON body. The ``form_id`` in the URL
-        must match the ``form_id`` in the body. Runs structural validation via
-        ``FormValidator.check_schema()`` before persisting. Automatically bumps
-        the form version.
+        Accepts a complete ``FormSchema`` JSON body. The ``form_uid`` in the
+        URL must match the ``form_uid`` in the body — the immutable identity
+        cannot change via PUT. The ``form_id`` (slug) MAY differ from the
+        existing form's slug — this is how a form is renamed (FEAT-389); the
+        registry's slug index is updated accordingly on re-registration. Runs
+        structural validation via ``FormValidator.check_schema()`` before
+        persisting. Automatically bumps the form version.
         """
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "update_form")
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        existing = await self.registry.get(form_id, tenant=tenant)
+        existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         try:
@@ -939,9 +1065,9 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        if not isinstance(body, dict) or body.get("form_id") != form_id:
+        if not isinstance(body, dict) or body.get("form_uid") != form_uid:
             return JSONResponse(
-                {"error": "form_id in URL and body must match"}, status=400
+                {"error": "form_uid in URL and body must match"}, status=400
             )
 
         body["version"] = _bump_version(existing.version)
@@ -961,25 +1087,29 @@ class FormAPIHandler:
 
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
-        self.logger.info("PUT form '%s' → version %s", form_id, form.version)
+        self.logger.info(
+            "PUT form_uid=%s (slug=%s) → version %s", form_uid, form.form_id, form.version
+        )
         return JSONResponse(form.model_dump(mode="json", exclude_none=True))
 
     async def patch_form(self, request: web.Request) -> web.Response:
-        """PATCH /api/v1/forms/{form_id} — Partially update a registered form.
+        """PATCH /api/v1/forms/{form_uid} — Partially update a registered form.
 
         Applies RFC 7396 JSON merge-patch semantics to the existing form.
         Arrays (sections, fields) are replaced entirely — not merged
-        element-by-element. ``form_id`` cannot be changed via PATCH.
-        Runs structural validation after merging. Automatically bumps version.
+        element-by-element. Neither ``form_uid`` nor ``form_id`` (slug) can
+        be changed via PATCH (unchanged policy from before FEAT-389 — use
+        PUT for renames). Runs structural validation after merging.
+        Automatically bumps version.
         """
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "patch_form")
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        existing = await self.registry.get(form_id, tenant=tenant)
+        existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         try:
@@ -995,8 +1125,9 @@ class FormAPIHandler:
         existing_dict = existing.model_dump()
         merged = _deep_merge(existing_dict, body)
         merged["version"] = _bump_version(existing.version)
-        # Prevent form_id change via PATCH
-        merged["form_id"] = form_id
+        # Prevent form_uid AND form_id (slug) change via PATCH.
+        merged["form_uid"] = form_uid
+        merged["form_id"] = existing.form_id
         # published_version is immutable from the API surface — only
         # FormVersionService.publish() may set it (review M1).
         merged["published_version"] = existing.published_version
@@ -1012,11 +1143,13 @@ class FormAPIHandler:
 
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
-        self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
+        self.logger.info(
+            "PATCH form_uid=%s (slug=%s) → version %s", form_uid, form.form_id, form.version
+        )
         return JSONResponse(form.model_dump(mode="json", exclude_none=True))
 
     async def delete_form(self, request: web.Request) -> web.Response:
-        """DELETE /api/v1/forms/{form_id} — Remove a registered form.
+        """DELETE /api/v1/forms/{form_uid} — Remove a registered form.
 
         Unregisters the form from the in-memory registry and, when a
         ``FormStorage`` backend is configured, deletes the persisted row as
@@ -1026,44 +1159,47 @@ class FormAPIHandler:
         """
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "delete_form")
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        existing = await self.registry.get(form_id, tenant=tenant)
+        existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         # Spec invariant (FEAT-300 §8, Vision IQ parity): a form with ≥1
         # response can never be deleted — only deactivated.
+        # NOTE: FormVersionService itself is rekeyed to form_uid by TASK-1990,
+        # not this task — passing form_uid here is what the eventual, fixed
+        # FormVersionService.can_delete() will expect.
         version_svc = self._get_version_service()
-        if not await version_svc.can_delete(form_id, tenant=tenant):
+        if not await version_svc.can_delete(form_uid, tenant=tenant):
             return web.json_response(
                 {
                     "error": (
-                        f"Form '{form_id}' has responses and cannot be deleted. "
+                        f"Form '{form_uid}' has responses and cannot be deleted. "
                         "Deactivate it instead."
                     )
                 },
                 status=409,
             )
 
-        await self.registry.unregister(form_id, tenant=tenant)
+        await self.registry.unregister(form_uid, tenant=tenant)
 
         storage = self.registry.storage
         if storage is not None:
             try:
-                await storage.delete(form_id, tenant=existing.tenant)
+                await storage.delete(form_uid, tenant=existing.tenant)
             except Exception as exc:
                 self.logger.warning(
-                    "FormStorage.delete failed for %s: %s", form_id, exc
+                    "FormStorage.delete failed for %s: %s", form_uid, exc
                 )
 
-        self.logger.info("DELETE form '%s'", form_id)
+        self.logger.info("DELETE form_uid=%s", form_uid)
         return web.Response(status=204)
 
     async def submit_data(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_id}/data — Receive and process a form submission.
+        """POST /api/v1/forms/{form_uid}/data — Receive and process a form submission.
 
         Flow:
         1. Load the form from registry (404 if not found).
@@ -1087,12 +1223,12 @@ class FormAPIHandler:
         )
         from ..services.submissions import FormSubmission
 
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         try:
@@ -1121,20 +1257,20 @@ class FormAPIHandler:
                 _merge_session_id = self._extract_session_id(request)
                 if _merge_session_id:
                     try:
-                        cached = await self._partial_store.get(form_id, _merge_session_id)
+                        cached = await self._partial_store.get(form_uid, _merge_session_id)
                         if cached:
                             # cached values fill gaps; submitted values win on overlap
                             data = {**cached.data, **data}
                             self.logger.debug(
                                 "Merged %d cached partial fields into submit for %s/%s",
                                 len(cached.data),
-                                form_id,
+                                form_uid,
                                 _merge_session_id,
                             )
                     except Exception as exc:
                         self.logger.warning(
                             "Failed to load partial for merge %s/%s: %s",
-                            form_id,
+                            form_uid,
                             _merge_session_id,
                             exc,
                         )
@@ -1179,10 +1315,14 @@ class FormAPIHandler:
                     status=422,
                 )
 
-            # Build submission record
+            # Build submission record.
+            # NOTE: FormSubmission gains a form_uid field in TASK-1979 (not
+            # this task) — until then, form_id is the only identifier it
+            # accepts. Use form.form_id (the loaded form's actual slug), NOT
+            # the URL's form_uid, since they are different values now.
             submission = FormSubmission(
                 submission_id=str(uuid.uuid4()),
-                form_id=form_id,
+                form_id=form.form_id,
                 form_version=form.version,
                 data=result.sanitized_data,
                 is_valid=True,
@@ -1256,16 +1396,16 @@ class FormAPIHandler:
             # Cleanup: delete cached partial after successful submission
             if merge_partials and _merge_session_id and self._partial_store is not None:
                 try:
-                    await self._partial_store.delete(form_id, _merge_session_id)
+                    await self._partial_store.delete(form_uid, _merge_session_id)
                     self.logger.debug(
                         "Deleted cached partial for %s/%s after successful submit",
-                        form_id,
+                        form_uid,
                         _merge_session_id,
                     )
                 except Exception as exc:
                     self.logger.warning(
                         "Failed to delete partial after submit %s/%s: %s",
-                        form_id,
+                        form_uid,
                         _merge_session_id,
                         exc,
                     )
@@ -1313,7 +1453,7 @@ class FormAPIHandler:
                 # Surface friendly message in the request for outer error handlers
                 request["_lifecycle_user_message"] = _user_message
             self.logger.exception(
-                "submit_data failed for form %r: %s", form_id, exc
+                "submit_data failed for form %r: %s", form_uid, exc
             )
             raise
 
@@ -1373,28 +1513,32 @@ class FormAPIHandler:
             return JSONResponse({"error": error_msg}, status=status)
 
         form_data = result.metadata.get("form", {})
+        form_uid = form_data.get("form_uid")
         form_id = form_data.get("form_id")
-        if not form_id:
+        if not form_uid:
             return JSONResponse(
-                {"error": "Form load succeeded but form_id missing"},
+                {"error": "Form load succeeded but form_uid missing"},
                 status=500,
             )
 
         # FEAT-300: persist the per-field ImportDiffReport so
-        # GET /forms/{form_id}/import-report can serve it (review H2).
+        # GET /forms/{form_uid}/import-report can serve it (review H2).
+        # FEAT-389: keyed by (tenant, form_uid) — both the write site here
+        # and the read site in get_import_report live in this same file.
         report_data = result.metadata.get("import_report")
         if report_data:
             from ..tools.services.networkninja import ImportDiffReport
-            self._import_reports[(tenant, form_id)] = (
+            self._import_reports[(tenant, form_uid)] = (
                 ImportDiffReport.model_validate(report_data)
             )
 
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
         return JSONResponse({
+            "form_uid": form_uid,
             "form_id": form_id,
             "title": title,
-            "url": f"{prefix}/forms/{form_id}",
+            "url": f"{prefix}/forms/{form_uid}",
         })
 
     # ------------------------------------------------------------------
@@ -1439,33 +1583,33 @@ class FormAPIHandler:
     # ------------------------------------------------------------------
 
     async def publish_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_id}/publish — Publish current form as immutable snapshot.
+        """POST /api/v1/forms/{form_uid}/publish — Publish current form as immutable snapshot.
 
         Bumps the form's semver minor tag and freezes the current state as a
         published snapshot. Returns ``409`` when the computed tag already
         exists (immutability guard). Returns ``404`` when the form is not found.
 
         Args:
-            request: Incoming HTTP request (path param: ``form_id``).
+            request: Incoming HTTP request (path param: ``form_uid``).
 
         Returns:
-            ``{"form_id": str, "version": str}`` on success (200),
+            ``{"form_uid": str, "version": str}`` on success (200),
             ``{"error": str}`` on 404 (not found) or 409 (frozen conflict).
         """
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
         svc = self._get_version_service()
         try:
-            version = await svc.publish(form_id, tenant=tenant)
+            version = await svc.publish(form_uid, tenant=tenant)
         except KeyError as exc:
             return web.json_response({"error": str(exc)}, status=404)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=409)
         except Exception as exc:
-            self.logger.exception("publish_form failed for '%s': %s", form_id, exc)
+            self.logger.exception("publish_form failed for '%s': %s", form_uid, exc)
             return web.json_response({"error": str(exc)}, status=500)
-        self.logger.info("Published form '%s' → version '%s'", form_id, version)
-        return web.json_response({"form_id": form_id, "version": version})
+        self.logger.info("Published form '%s' → version '%s'", form_uid, version)
+        return web.json_response({"form_uid": form_uid, "version": version})
 
     async def list_fields(self, request: web.Request) -> web.Response:
         """GET /api/v1/fields — List all reusable fields for the current tenant.
@@ -1510,30 +1654,30 @@ class FormAPIHandler:
         return web.json_response(entry.model_dump(mode="json"), status=201)
 
     async def list_versions(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_id}/versions — List published version history.
+        """GET /api/v1/forms/{form_uid}/versions — List published version history.
 
         Each entry includes ``version``, ``published_at`` (ISO-8601),
         ``published_by`` (``null`` when not tracked), and ``is_current``
         (``True`` for the form's active published version).
 
         Args:
-            request: Incoming HTTP request (path param: ``form_id``).
+            request: Incoming HTTP request (path param: ``form_uid``).
 
         Returns:
-            ``{"form_id": str, "versions": [...]}`` (200), ``404`` if not found.
+            ``{"form_uid": str, "versions": [...]}`` (200), ``404`` if not found.
         """
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
+            return web.json_response({"error": f"Form '{form_uid}' not found"}, status=404)
 
         svc = self._get_version_service()
-        meta_list = await svc.list_versions(form_id, tenant=tenant)
+        meta_list = await svc.list_versions(form_uid, tenant=tenant)
         current_version = form.published_version or form.version
 
         return web.json_response({
-            "form_id": form_id,
+            "form_uid": form_uid,
             "versions": [
                 {
                     "version": m.version,
@@ -1546,48 +1690,48 @@ class FormAPIHandler:
         })
 
     async def get_version(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_id}/versions/{version} — Retrieve a frozen snapshot.
+        """GET /api/v1/forms/{form_uid}/versions/{version} — Retrieve a frozen snapshot.
 
         Returns the immutable ``FormSchema`` snapshot for the requested semver
         tag. Returns ``404`` when the form or version is not found.
 
         Args:
-            request: Incoming HTTP request (path params: ``form_id``, ``version``).
+            request: Incoming HTTP request (path params: ``form_uid``, ``version``).
 
         Returns:
             Full ``FormSchema`` JSON (200) or ``{"error": str}`` (404).
         """
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         version = request.match_info["version"]
         tenant = self._get_tenant(request)
         svc = self._get_version_service()
-        snap = await svc.get_published(form_id, version=version, tenant=tenant)
+        snap = await svc.get_published(form_uid, version=version, tenant=tenant)
         if snap is None:
             return web.json_response(
-                {"error": f"Version '{version}' of form '{form_id}' not found"},
+                {"error": f"Version '{version}' of form '{form_uid}' not found"},
                 status=404,
             )
         return web.json_response(snap.model_dump(mode="json"))
 
     async def get_import_report(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_id}/import-report — Latest ImportDiffReport.
+        """GET /api/v1/forms/{form_uid}/import-report — Latest ImportDiffReport.
 
         Returns the per-field mapping report generated when this form was last
         imported from an external source (e.g. Networkninja). Returns ``404``
         when no import history exists for this form.
 
         Args:
-            request: Incoming HTTP request (path param: ``form_id``).
+            request: Incoming HTTP request (path param: ``form_uid``).
 
         Returns:
             ``ImportDiffReport`` JSON (200) or ``{"error": str}`` (404).
         """
-        form_id = request.match_info["form_id"]
+        form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
-        report = self._import_reports.get((tenant, form_id))
+        report = self._import_reports.get((tenant, form_uid))
         if report is None:
             return web.json_response(
-                {"error": f"No import report found for form '{form_id}'"},
+                {"error": f"No import report found for form '{form_uid}'"},
                 status=404,
             )
         return web.json_response(report.model_dump(mode="json"))

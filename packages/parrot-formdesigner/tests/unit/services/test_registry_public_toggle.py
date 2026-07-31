@@ -7,6 +7,12 @@ Tests cover:
 - Deleting a public form invokes callback with False
 - Deleting a private form does NOT invoke callback
 - No callback set: no error in register/unregister
+
+FEAT-389: the callback is keyed by ``form_uid``, not ``form_id`` — it drives
+``public_form_paths()`` URL-exclusion patterns, and routes are ``form_uid``-
+based (TASK-1976). ``public_form``/``private_form`` share a fixed
+``form_uid`` so register()'s is_public-diff detection (keyed on form_uid)
+treats them as the same form transitioning state, not two different forms.
 """
 import pytest
 from unittest.mock import AsyncMock
@@ -51,7 +57,9 @@ class TestPublicToggleOnRegister:
         callback = AsyncMock()
         registry.set_public_toggle_callback(callback)
         await registry.register(public_form)
-        callback.assert_awaited_once_with("contact", True)
+        # FEAT-389: callback keyed by form_uid (URL-exclusion patterns are
+        # built from form_uid since routes are form_uid-based, TASK-1976).
+        callback.assert_awaited_once_with(public_form.form_uid, True)
 
     async def test_true_to_false_invokes_callback(self, registry, public_form, private_form):
         callback = AsyncMock()
@@ -59,7 +67,7 @@ class TestPublicToggleOnRegister:
         await registry.register(public_form)
         callback.reset_mock()
         await registry.register(private_form)
-        callback.assert_awaited_once_with("contact", False)
+        callback.assert_awaited_once_with(private_form.form_uid, False)
 
     async def test_no_change_no_callback_false_false(self, registry, private_form):
         """False → False: no callback."""
@@ -96,7 +104,7 @@ class TestPublicToggleOnUnregister:
         await registry.register(public_form)
         registry.set_public_toggle_callback(callback)
         await registry.unregister(public_form.form_uid)
-        callback.assert_awaited_once_with("contact", False)
+        callback.assert_awaited_once_with(public_form.form_uid, False)
 
     async def test_delete_private_form_no_callback(self, registry, private_form):
         callback = AsyncMock()
@@ -123,7 +131,7 @@ class TestPublicToggleOnUnregister:
 class TestToggleCallbackFailureSafety:
     async def test_callback_failure_does_not_raise(self, registry, public_form):
         """A failing callback must be caught and logged, not re-raised."""
-        async def bad_callback(form_id: str, is_public: bool) -> None:
+        async def bad_callback(form_uid: str, is_public: bool) -> None:
             raise RuntimeError("Auth service unreachable")
 
         registry.set_public_toggle_callback(bad_callback)

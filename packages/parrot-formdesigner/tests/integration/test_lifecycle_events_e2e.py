@@ -69,9 +69,9 @@ def _make_form(
     )
 
 
-def _make_request_get(form_id: str) -> MagicMock:
+def _make_request_get(form_uid: str) -> MagicMock:
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    req.match_info = {"form_uid": form_uid}
     req.method = "GET"
     req.headers = {}
     req.__contains__ = MagicMock(return_value=False)
@@ -83,12 +83,12 @@ def _make_request_get(form_id: str) -> MagicMock:
 
 
 def _make_request_post(
-    form_id: str,
+    form_uid: str,
     body: dict | None = None,
     extra_match: dict | None = None,
 ) -> MagicMock:
     req = MagicMock(spec=web.Request)
-    match = {"form_id": form_id}
+    match = {"form_uid": form_uid}
     if extra_match:
         match.update(extra_match)
     req.match_info = match
@@ -178,16 +178,16 @@ class TestFullLifecycle:
         handler = _make_handler(form=form, valid=True)
 
         # 1. GET /forms/{id}
-        r1 = await handler.get_form(_make_request_get(form_id))
+        r1 = await handler.get_form(_make_request_get(form.form_uid))
         assert r1.status == 200
 
         # 2. GET /forms/{id}/schema
-        r2 = await handler.get_schema(_make_request_get(form_id))
+        r2 = await handler.get_schema(_make_request_get(form.form_uid))
         assert r2.status == 200
 
         # 3. POST /forms/{id}/data (success path)
         r3 = await handler.submit_data(
-            _make_request_post(form_id, body={"name": "Alice"})
+            _make_request_post(form.form_uid, body={"name": "Alice"})
         )
         assert r3.status == 200
 
@@ -210,7 +210,7 @@ class TestBackwardCompat:
         """Forms without events in get_form do not emit X-Form-CSRF-Token."""
         form = _make_form("compat_form", events=None)
         handler = _make_handler(form=form)
-        resp = await handler.get_form(_make_request_get("compat_form"))
+        resp = await handler.get_form(_make_request_get(form.form_uid))
 
         assert resp.status == 200
         body = json.loads(resp.body)
@@ -223,7 +223,7 @@ class TestBackwardCompat:
         """Forms without events in get_schema return plain schema dict."""
         form = _make_form("compat_form", events=None)
         handler = _make_handler(form=form)
-        resp = await handler.get_schema(_make_request_get("compat_form"))
+        resp = await handler.get_schema(_make_request_get(form.form_uid))
 
         assert resp.status == 200
         body = json.loads(resp.body)
@@ -235,7 +235,7 @@ class TestBackwardCompat:
         form = _make_form("compat_form", events=None)
         handler = _make_handler(form=form, valid=True)
         resp = await handler.submit_data(
-            _make_request_post("compat_form", body={"name": "Alice"})
+            _make_request_post(form.form_uid, body={"name": "Alice"})
         )
 
         assert resp.status == 200
@@ -285,7 +285,7 @@ class TestOnBeforeSubmitPayloadReplacement:
             return await orig(f, data)
 
         handler.validator.validate = capture
-        req = _make_request_post(form_id, body={"name": "RAW"})
+        req = _make_request_post(form.form_uid, body={"name": "RAW"})
 
         resp = await handler.submit_data(req)
 
@@ -324,7 +324,7 @@ class TestAbortNotRoutedThroughOnError:
         )
         handler = _make_handler(form=form, valid=True)
         resp = await handler.submit_data(
-            _make_request_post(form_id, body={})
+            _make_request_post(form.form_uid, body={})
         )
 
         assert resp.status == 409
@@ -357,7 +357,7 @@ class TestOnErrorOnValidationFailure:
         )
         handler = _make_handler(form=form, valid=False)
         resp = await handler.submit_data(
-            _make_request_post(form_id, body={})
+            _make_request_post(form.form_uid, body={})
         )
 
         assert resp.status == 422
@@ -373,10 +373,10 @@ class TestRemoteEventCSRFRoundTrip:
     """Issue token via get_form, use it in remote_event."""
 
     async def _make_get_request_with_session(
-        self, form_id: str, session_id: str = "sess_e2e"
+        self, form_uid: str, session_id: str = "sess_e2e"
     ) -> MagicMock:
         req = MagicMock(spec=web.Request)
-        req.match_info = {"form_id": form_id}
+        req.match_info = {"form_uid": form_uid}
         req.method = "GET"
         req.headers = {}
         req.query = {}
@@ -410,7 +410,7 @@ class TestRemoteEventCSRFRoundTrip:
         handler = _make_handler(form=form)
 
         # 1. GET /forms/{id} — picks up CSRF token
-        get_req = await self._make_get_request_with_session(form_id)
+        get_req = await self._make_get_request_with_session(form.form_uid)
         get_resp = await handler.get_form(get_req)
         assert get_resp.status == 200
         token = get_resp.headers.get("X-Form-CSRF-Token", "")
@@ -418,7 +418,7 @@ class TestRemoteEventCSRFRoundTrip:
 
         # 2. POST /forms/{id}/events/onBeforeSubmit with the issued token
         remote_req = MagicMock(spec=web.Request)
-        remote_req.match_info = {"form_id": form_id, "event_name": "onBeforeSubmit"}
+        remote_req.match_info = {"form_uid": form.form_uid, "event_name": "onBeforeSubmit"}
         remote_req.method = "POST"
         headers = {"X-CSRF-Token": token}
         remote_req.headers = headers

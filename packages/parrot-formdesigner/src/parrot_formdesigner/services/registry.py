@@ -240,7 +240,9 @@ class FormRegistry:
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
         self._on_unregister: list[Callable[[str, str], Awaitable[None]]] = []
         # FEAT-241: optional callback invoked when a form's is_public flag changes.
-        # Signature: async (form_id: str, is_public: bool) -> None
+        # Signature: async (form_uid: str, is_public: bool) -> None
+        # (FEAT-389: keyed by form_uid, not form_id — see register()/unregister()
+        # firing sites for why.)
         self._public_toggle_callback: Callable[[str, bool], Awaitable[None]] | None = None
         self.logger = logging.getLogger(__name__)
 
@@ -436,17 +438,21 @@ class FormRegistry:
             self._uid_to_slug[form.form_uid] = slug_key
 
         # Fire is_public toggle callback if is_public changed (FEAT-241).
-        # Keyed by form.form_id (human-readable slug) — is_public routing
-        # consumes the slug, not the internal form_uid (unchanged by FEAT-389).
+        # Keyed by form.form_uid (FEAT-389 correction): the callback is used
+        # by setup_form_api()'s auth-exclusion wiring to build URL patterns
+        # via public_form_paths() — since routes are now {form_uid}-based
+        # (TASK-1976), the exclusion patterns must be built from form_uid too,
+        # or they'd silently exempt URLs that no longer exist while leaving
+        # the real (form_uid-keyed) public form URLs auth-protected.
         if self._public_toggle_callback is not None:
             old_is_public = _old_form.is_public if _old_form is not None else False
             if old_is_public != form.is_public:
                 try:
-                    await self._public_toggle_callback(form.form_id, form.is_public)
+                    await self._public_toggle_callback(form.form_uid, form.is_public)
                 except Exception as exc:
                     self.logger.warning(
                         "public_toggle_callback failed on register(%s, is_public=%s): %s",
-                        form.form_id,
+                        form.form_uid,
                         form.is_public,
                         exc,
                     )
@@ -492,13 +498,15 @@ class FormRegistry:
     ) -> None:
         """Register a callback invoked when a form's ``is_public`` flag changes.
 
-        The callback is called with ``(form_id, True)`` when the form becomes
-        public, and ``(form_id, False)`` when it becomes private or is deleted.
+        The callback is called with ``(form_uid, True)`` when the form becomes
+        public, and ``(form_uid, False)`` when it becomes private or is deleted.
         Only called when the ``is_public`` value actually changes (no-op on
-        same-value re-registration).
+        same-value re-registration). Keyed by ``form_uid`` (FEAT-389) since
+        the callback drives URL-pattern auth exclusions and routes are
+        ``form_uid``-based (TASK-1976).
 
         Args:
-            callback: Async callable ``(form_id: str, is_public: bool) -> None``.
+            callback: Async callable ``(form_uid: str, is_public: bool) -> None``.
         """
         self._public_toggle_callback = callback
 
@@ -600,11 +608,12 @@ class FormRegistry:
                 del self._forms[resolved]
 
         # Fire is_public toggle callback if the deleted form was public
-        # (FEAT-241). Keyed by the form's slug (form_id), not form_uid —
-        # consistent with the register() firing site.
+        # (FEAT-241). Keyed by form_uid — consistent with the register()
+        # firing site (see comment there for why: URL-exclusion patterns
+        # are built from form_uid since routes are form_uid-based).
         if self._public_toggle_callback is not None and _existing is not None and _existing.is_public:
             try:
-                await self._public_toggle_callback(_existing.form_id, False)
+                await self._public_toggle_callback(form_uid, False)
             except Exception as exc:
                 self.logger.warning(
                     "public_toggle_callback failed on unregister(%s): %s",
