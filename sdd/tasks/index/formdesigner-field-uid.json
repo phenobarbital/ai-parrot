@@ -273,7 +273,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -285,8 +285,8 @@
       "parallelism_notes": "Depends on final model, resolution pass, and bank DDL shapes.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2008-migrations.md"
+      "completed_at": "2026-07-31T19:27:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2008-migrations.md"
     },
     {
       "id": "TASK-2009",
