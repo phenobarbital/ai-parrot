@@ -948,12 +948,10 @@ class FormAPIHandler:
         )
         result = await create_tool.execute(
             prompt=prompt,
-            # NOTE: CreateFormInput's parameter is still named `refine_form_id`
-            # until TASK-1978 renames it to `refine_form_uid` — but per
-            # TASK-1973, `self._registry.get(refine_form_id, ...)` inside
-            # CreateFormTool is ALREADY form_uid-keyed, so passing form_uid
-            # here (not the old slug) is what actually works post-FEAT-389.
-            refine_form_id=form_uid,
+            # FEAT-389 / TASK-1978: CreateFormInput's refinement parameter
+            # is now refine_form_uid (renamed from refine_form_id) and is
+            # form_uid-keyed throughout CreateFormTool.
+            refine_form_uid=form_uid,
             persist=True,
         )
 
