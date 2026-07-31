@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-395
 **Date**: 2026-07-31
 **Author**: Claude (sdd-worker, discovered while continuing FEAT-389)
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 ---
