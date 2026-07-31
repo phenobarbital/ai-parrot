@@ -432,17 +432,36 @@ class TestReadOnlyFallback:
         await store.upsert_pages([_page("p1")])
         fresh = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
 
-        def locked(self, sql):
+        def locked(self, sql, *args, **kwargs):
             raise sqlite3.OperationalError("database is locked")
 
-        with mock.patch.object(
-            aiosqlite.Connection, "executescript", locked
-        ):
+        with mock.patch.object(aiosqlite.Connection, "execute", locked):
             with pytest.raises(sqlite3.OperationalError, match="locked"):
                 await fresh.get_page("p1")
         # The store recovers once the contention is gone — including writes.
         assert await fresh.get_page("p1") is not None
         await fresh.upsert_pages([_page("p2")])
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_longlived_instance_survives_readonly_transition(
+        self, tmp_path: Path
+    ):
+        """A store that already served writes keeps serving reads after
+        the filesystem turns read-only mid-life (remount, snapshot swap)
+        — the presence probe forces the lazy open before yield on every
+        connection, so the fallback is reachable for the SAME instance."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        assert await store.get_page("p1") is not None
+        (tmp_path / "wiki.db").chmod(0o444)
+        tmp_path.chmod(0o555)
+        try:
+            page = await store.get_page("p1")  # same instance, degraded
+            assert page is not None and "needle" not in (page["body"] or "")
+        finally:
+            tmp_path.chmod(0o755)
+            (tmp_path / "wiki.db").chmod(0o644)
 
     @_skip_root
     @pytest.mark.asyncio
@@ -515,11 +534,12 @@ class TestReadOnlyFallback:
             (tmp_path / "wiki.db").chmod(0o644)
 
     @pytest.mark.asyncio
-    async def test_schema_ensured_once_per_store(self, tmp_path: Path):
-        """The schema replay runs on the first connection only."""
+    async def test_schema_replay_skipped_when_schema_present(
+        self, tmp_path: Path
+    ):
+        """The schema replay runs only when the presence probe misses."""
         store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
         await store.upsert_pages([_page("p1")])
-        assert store._schema_ready is True
         scripts: list[str] = []
         orig = aiosqlite.Connection.executescript
 
@@ -530,3 +550,37 @@ class TestReadOnlyFallback:
         with mock.patch.object(aiosqlite.Connection, "executescript", spy):
             assert await store.get_page("p1") is not None
         assert scripts == []
+
+    @pytest.mark.asyncio
+    async def test_replaced_database_heals(self, tmp_path: Path):
+        """An externally deleted/replaced database is re-initialized by
+        the same store instance instead of failing with 'no such table'."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        for suffix in ("", "-wal", "-shm"):
+            (tmp_path / f"wiki.db{suffix}").unlink(missing_ok=True)
+        assert await store.get_page("p1") is None  # fresh plane, no crash
+        await store.upsert_pages([_page("p2")])
+        assert await store.get_page("p2") is not None
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_hot_rollback_journal_refuses_immutable(
+        self, tmp_path: Path
+    ):
+        """A hot -journal is refused like a live WAL — an immutable read
+        would serve un-rolled-back data."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        (tmp_path / "wiki.db-journal").write_bytes(b"\x00" * 32)
+        (tmp_path / "wiki.db").chmod(0o444)
+        tmp_path.chmod(0o555)
+        try:
+            fresh = create_wiki_store(
+                tmp_path, wiki_name="w", backend="sqlite"
+            )
+            with pytest.raises(sqlite3.OperationalError):
+                await fresh.get_page("p1")
+        finally:
+            tmp_path.chmod(0o755)
+            (tmp_path / "wiki.db").chmod(0o644)
