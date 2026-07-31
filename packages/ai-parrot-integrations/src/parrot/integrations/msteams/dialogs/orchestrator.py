@@ -14,9 +14,9 @@ import json
 from botbuilder.core import TurnContext
 
 from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
-from parrot.forms.tools import RequestFormTool
+from parrot_formdesigner.tools import RequestFormTool
 from parrot.forms import FormSchema
-from parrot.forms.extractors.tool import ToolExtractor
+from parrot_formdesigner.extractors.tool import ToolExtractor
 from .factory import FormDialogFactory
 from parrot.forms import FormCache
 from ....models.outputs import OutputMode

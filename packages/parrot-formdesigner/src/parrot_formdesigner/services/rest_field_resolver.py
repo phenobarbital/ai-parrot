@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from typing import Annotated, Any, Literal, Union
 from urllib.parse import urlparse
 
@@ -209,6 +210,9 @@ class RestCallbackInput(BaseModel):
 
     Attributes:
         form_id: ID of the parent form.
+        field_uid: Immutable UUID of the field triggering the upload
+            (FEAT-393). Passthrough payload attribute — the resolver never
+            reads it directly.
         field_id: ID of the field triggering the upload.
         session_id: User session ID (may be ``None``).
         user_id: Authenticated user ID (may be ``None``).
@@ -221,6 +225,7 @@ class RestCallbackInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     form_id: str
+    field_uid: uuid.UUID
     field_id: str
     session_id: str | None
     user_id: str | None

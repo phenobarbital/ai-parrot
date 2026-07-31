@@ -452,6 +452,7 @@ class PdfRenderer(AbstractFormRenderer):
             # Fallback: render as placeholder textfield + emit RenderWarning
             render_warnings.append(RenderWarning(
                 field_id=field.field_id,
+                field_uid=field.field_uid,
                 field_type=field.field_type.value,
                 renderer="pdf",
                 reason=(

@@ -16,6 +16,7 @@ Each test class maps to one finding from the pre-merge review:
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 import pytest
@@ -100,7 +101,12 @@ async def _registry_with_form(
     form_id: str = "f1", tenant: str = "t1", form_uid: str = _FIXED_FORM_UID
 ) -> tuple[FormRegistry, FormSchema]:
     registry = FormRegistry()
-    form = _make_form(form_id, tenant).model_copy(update={"form_uid": form_uid})
+    # model_copy(update=...) bypasses Pydantic validation/coercion — pass a
+    # real uuid.UUID so the registry's primary index (keyed by
+    # FormSchema.form_uid, uuid.UUID since FEAT-393) actually matches.
+    form = _make_form(form_id, tenant).model_copy(
+        update={"form_uid": uuid.UUID(form_uid)}
+    )
     await registry.register(form, tenant=tenant)
     return registry, form
 

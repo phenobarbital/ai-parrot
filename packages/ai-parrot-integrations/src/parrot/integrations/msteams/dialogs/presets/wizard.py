@@ -10,7 +10,7 @@ from botbuilder.dialogs import (
 )
 from .base import BaseFormDialog
 from parrot.forms import FormSchema, StyleSchema
-from parrot.forms.validators import FormValidator
+from parrot_formdesigner.services.validators import FormValidator
 
 
 async def _section_has_errors(

@@ -6,6 +6,7 @@ with tool-specific metadata (name, description) and field filtering.
 
 from typing import Any
 
+from ..core.resolution import resolve_rule_references
 from ..core.schema import FormField, FormSchema, FormSection
 from .pydantic import PydanticExtractor
 
@@ -97,7 +98,7 @@ class ToolExtractor:
                 if field.field_id not in excluded:
                     filtered_fields.append(field)
 
-        return FormSchema(
+        form = FormSchema(
             form_id=f"{tool_name}_form",
             title=self._format_tool_title(tool_name),
             description=tool_description,
@@ -109,6 +110,11 @@ class ToolExtractor:
                 )
             ],
         )
+        # FEAT-393: resolve any rule references before returning — this is a
+        # freshly (re)assembled FormSchema (filtered field subset), so run
+        # the pass again even though PydanticExtractor already resolved the
+        # full schema it delegated to.
+        return resolve_rule_references(form)
 
     @staticmethod
     def _format_tool_title(tool_name: str) -> str:

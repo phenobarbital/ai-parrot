@@ -8,6 +8,7 @@ Added by FEAT-224 (FormDesigner Audio Renderer).
 
 from __future__ import annotations
 
+import uuid
 from enum import Enum
 from typing import Literal, Optional
 
@@ -74,6 +75,9 @@ class AudioQuestion(BaseModel):
     Attributes:
         index: Zero-based position in the sequential question list.
         field_id: The FormField.field_id this question maps to.
+        field_uid: Immutable UUID of the FormField this question maps to
+            (FEAT-393). WS wire messages still key on field_id by design
+            (spec §8) — this is additive session-manifest identity only.
         field_type: The FieldType value string (e.g. 'text', 'select').
         label: Resolved question text shown/spoken to the user.
         description: Optional extended description or help text.
@@ -98,6 +102,7 @@ class AudioQuestion(BaseModel):
 
     index: int
     field_id: str
+    field_uid: uuid.UUID
     field_type: str
     label: str
     description: Optional[str] = None
@@ -141,6 +146,9 @@ class AudioAnswer(BaseModel):
 
     Attributes:
         field_id: The field_id this answer corresponds to.
+        field_uid: Immutable UUID of the FormField this answer corresponds
+            to (FEAT-393), when known. Optional — answers may be
+            reconstructed from wire data that carries no UID.
         value: The answer text (either typed or transcribed).
         source: Origin of the answer — 'text' for keyboard input,
             'speech' for STT-transcribed audio, 'selection' for a UI
@@ -152,6 +160,7 @@ class AudioAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     field_id: str
+    field_uid: Optional[uuid.UUID] = None
     value: str
     source: Literal["text", "speech", "selection"] = "text"
     confidence: Optional[float] = None

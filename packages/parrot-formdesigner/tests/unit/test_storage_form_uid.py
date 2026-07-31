@@ -12,6 +12,8 @@ Uses in-memory asyncpg stubs — no real PostgreSQL required.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from parrot_formdesigner.core.schema import FormSchema
 from parrot_formdesigner.services.storage import PostgresFormStorage
@@ -114,46 +116,51 @@ def test_upsert_sql_updates_form_id_on_conflict() -> None:
 async def test_save_passes_form_uid_as_first_param() -> None:
     """save() includes form.form_uid as the first positional query param."""
     storage, conn = _make_storage()
-    form = FormSchema(form_uid="test-uid-001", form_id="my-form", title="My Form", sections=[])
+    uid = str(uuid.uuid4())
+    form = FormSchema(form_uid=uid, form_id="my-form", title="My Form", sections=[])
     await storage.save(form)
 
     _, args = conn.executed[0]
-    assert args[0] == "test-uid-001"
+    # TASK-2008: form_uid column is VARCHAR(36) until migrated — the storage
+    # boundary binds the canonical UUID string, not the uuid.UUID object.
+    assert args[0] == uid
     assert args[1] == "my-form"
 
 
 @pytest.mark.asyncio
 async def test_save_and_load_by_form_uid() -> None:
     """Save a form, then load it back by form_uid."""
-    form = FormSchema(form_uid="test-uid-001", form_id="my-form", title="My Form", sections=[])
+    uid = str(uuid.uuid4())
+    form = FormSchema(form_uid=uid, form_id="my-form", title="My Form", sections=[])
     storage, conn = _make_storage()
 
     await storage.save(form)
 
     conn.fetchrow_queue.append({"schema_json": form.model_dump_json(), "created_at": None})
-    loaded = await storage.load("test-uid-001")
+    loaded = await storage.load(uuid.UUID(uid))
 
     assert loaded is not None
-    assert loaded.form_uid == "test-uid-001"
+    assert loaded.form_uid == uuid.UUID(uid)
 
     sql, load_args = conn.fetchrow_calls[0]
     assert "form_uid" in sql
-    assert load_args[0] == "test-uid-001"
+    assert load_args[0] == uid
 
 
 @pytest.mark.asyncio
 async def test_load_with_version_queries_form_uid_and_version() -> None:
     """load(form_uid, version=...) uses the versioned query."""
-    form = FormSchema(form_uid="test-uid-005", form_id="versioned", title="V", sections=[], version="2.0")
+    uid = str(uuid.uuid4())
+    form = FormSchema(form_uid=uid, form_id="versioned", title="V", sections=[], version="2.0")
     storage, conn = _make_storage()
     conn.fetchrow_queue.append({"schema_json": form.model_dump_json(), "created_at": None})
 
-    loaded = await storage.load("test-uid-005", version="2.0")
+    loaded = await storage.load(uuid.UUID(uid), version="2.0")
 
     assert loaded is not None
     sql, args = conn.fetchrow_calls[0]
     assert "form_uid" in sql and "version" in sql
-    assert args == ("test-uid-005", "2.0")
+    assert args == (uid, "2.0")
 
 
 # ---------------------------------------------------------------------------
@@ -164,14 +171,15 @@ async def test_load_with_version_queries_form_uid_and_version() -> None:
 @pytest.mark.asyncio
 async def test_load_by_slug() -> None:
     """load_by_slug() resolves a form by (tenant, form_id)."""
-    form = FormSchema(form_uid="test-uid-002", form_id="slug-form", title="Slug Form", sections=[])
+    uid = str(uuid.uuid4())
+    form = FormSchema(form_uid=uid, form_id="slug-form", title="Slug Form", sections=[])
     storage, conn = _make_storage()
     conn.fetchrow_queue.append({"schema_json": form.model_dump_json(), "created_at": None})
 
     loaded = await storage.load_by_slug("slug-form", tenant="default")
 
     assert loaded is not None
-    assert loaded.form_uid == "test-uid-002"
+    assert loaded.form_uid == uuid.UUID(uid)
 
     sql, args = conn.fetchrow_calls[0]
     assert "form_id" in sql and "tenant" in sql
@@ -189,7 +197,7 @@ async def test_load_by_slug_not_found_returns_none() -> None:
 @pytest.mark.asyncio
 async def test_load_by_slug_stamps_tenant_when_missing() -> None:
     """load_by_slug() stamps the resolved tenant onto forms with tenant=None."""
-    form = FormSchema(form_uid="test-uid-006", form_id="no-tenant-form", title="T", sections=[])
+    form = FormSchema(form_uid=str(uuid.uuid4()), form_id="no-tenant-form", title="T", sections=[])
     assert form.tenant is None
     storage, conn = _make_storage()
     conn.fetchrow_queue.append({"schema_json": form.model_dump_json(), "created_at": None})

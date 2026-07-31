@@ -217,11 +217,11 @@ class FormRegistry:
                 When ``False``, such forms are silently sealed to
                 ``default_tenant``.
         """
-        self._forms: dict[str, dict[str, FormSchema]] = {}
+        self._forms: dict[str, dict[uuid.UUID, FormSchema]] = {}
         # FEAT-389: secondary index mapping tenant_form_slug
         # ("{tenant}_{form_id}") -> form_uid, for slug-based lookups
         # (get_by_slug) and slug-uniqueness enforcement on register().
-        self._slug_index: dict[str, str] = {}
+        self._slug_index: dict[str, uuid.UUID] = {}
         # FEAT-389: reverse of _slug_index (form_uid -> its current slug_key).
         # Deliberately NOT derived from `form.form_id` at cleanup time —
         # FormSchema instances are stored by reference, so a caller that
@@ -231,19 +231,19 @@ class FormRegistry:
         # caller's object; by the time register() runs, its `.form_id` may
         # already reflect the NEW slug). Tracking the slug_key independently
         # per form_uid keeps rename cleanup correct regardless of aliasing.
-        self._uid_to_slug: dict[str, str] = {}
+        self._uid_to_slug: dict[uuid.UUID, str] = {}
         self._lock = asyncio.Lock()
         self._storage = storage
         self._default_tenant = default_tenant
         self._require_tenant = require_tenant
         self._app: "web.Application | None" = None
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
-        self._on_unregister: list[Callable[[str, str], Awaitable[None]]] = []
+        self._on_unregister: list[Callable[[uuid.UUID, str], Awaitable[None]]] = []
         # FEAT-241: optional callback invoked when a form's is_public flag changes.
-        # Signature: async (form_uid: str, is_public: bool) -> None
+        # Signature: async (form_uid: uuid.UUID, is_public: bool) -> None
         # (FEAT-389: keyed by form_uid, not form_id — see register()/unregister()
         # firing sites for why.)
-        self._public_toggle_callback: Callable[[str, bool], Awaitable[None]] | None = None
+        self._public_toggle_callback: Callable[[uuid.UUID, bool], Awaitable[None]] | None = None
         self.logger = logging.getLogger(__name__)
 
         if app is not None:
@@ -505,7 +505,7 @@ class FormRegistry:
 
     def set_public_toggle_callback(
         self,
-        callback: Callable[[str, bool], Awaitable[None]],
+        callback: Callable[[uuid.UUID, bool], Awaitable[None]],
     ) -> None:
         """Register a callback invoked when a form's ``is_public`` flag changes.
 
@@ -517,7 +517,7 @@ class FormRegistry:
         ``form_uid``-based (TASK-1976).
 
         Args:
-            callback: Async callable ``(form_uid: str, is_public: bool) -> None``.
+            callback: Async callable ``(form_uid: uuid.UUID, is_public: bool) -> None``.
         """
         self._public_toggle_callback = callback
 
@@ -580,7 +580,7 @@ class FormRegistry:
         except Exception as exc:
             self.logger.error("FormRegistry: storage close() failed: %s", exc)
 
-    async def unregister(self, form_uid: str, *, tenant: str | None = None) -> bool:
+    async def unregister(self, form_uid: uuid.UUID, *, tenant: str | None = None) -> bool:
         """Unregister a form schema from a specific tenant.
 
         If removing the form leaves the tenant bucket empty, the outer key
@@ -645,7 +645,7 @@ class FormRegistry:
 
     async def clone_form(
         self,
-        source_form_uid: str,
+        source_form_uid: uuid.UUID,
         new_form_id: str,
         patch: dict[str, Any] | None = None,
         *,
@@ -706,7 +706,7 @@ class FormRegistry:
 
         clone = source.model_copy(deep=True)
 
-        clone.form_uid = str(uuid.uuid4())
+        clone.form_uid = uuid.uuid4()
         clone.form_id = new_form_id
         clone.version = "1.0"
         clone.created_at = None
@@ -767,7 +767,7 @@ class FormRegistry:
     # Public API — read paths
     # ------------------------------------------------------------------
 
-    async def get(self, form_uid: str, *, tenant: str | None = None) -> FormSchema | None:
+    async def get(self, form_uid: uuid.UUID, *, tenant: str | None = None) -> FormSchema | None:
         """Get a form schema by ``form_uid`` (primary key) within a tenant.
 
         Args:
@@ -838,20 +838,20 @@ class FormRegistry:
         async with self._lock:
             return [form.form_id for form in self._forms.get(resolved, {}).values()]
 
-    async def list_form_uids(self, *, tenant: str | None = None) -> list[str]:
+    async def list_form_uids(self, *, tenant: str | None = None) -> list[uuid.UUID]:
         """List all registered ``form_uid`` values for a specific tenant.
 
         Args:
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            List of ``form_uid`` strings under the resolved tenant.
+            List of ``form_uid`` values under the resolved tenant.
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
             return list(self._forms.get(resolved, {}).keys())
 
-    async def contains(self, form_uid: str, *, tenant: str | None = None) -> bool:
+    async def contains(self, form_uid: uuid.UUID, *, tenant: str | None = None) -> bool:
         """Check if a form is registered under a specific tenant.
 
         Args:
@@ -1124,15 +1124,15 @@ class FormRegistry:
         self._on_register.append(callback)
 
     def on_unregister(
-        self, callback: Callable[[str, str], Awaitable[None]]
+        self, callback: Callable[[uuid.UUID, str], Awaitable[None]]
     ) -> None:
         """Register a callback invoked when a form is unregistered.
 
         BREAKING change from the pre-FEAT-183 signature: callbacks now
-        receive ``(form_id, tenant)`` rather than just ``form_id``.
+        receive ``(form_uid, tenant)`` rather than just ``form_id``.
 
         Args:
-            callback: Async callable receiving ``(form_id: str,
+            callback: Async callable receiving ``(form_uid: uuid.UUID,
                 tenant: str)`` — the tenant is the resolved tenant captured
                 at :meth:`unregister` call time (never ``None``).
         """

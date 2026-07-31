@@ -86,6 +86,7 @@ class AudioFieldRenderer:
             and inline JavaScript.
         """
         field_id = html.escape(field.field_id, quote=True)
+        field_uid = html.escape(str(field.field_uid), quote=True)
         label_text = html.escape(_resolve_label(field.label, locale), quote=True)
         required_attr = " required" if field.required else ""
         error_html = (
@@ -103,7 +104,7 @@ class AudioFieldRenderer:
             )
 
         return f"""\
-<div class="form-field form-field--audio" data-field-type="audio" data-field-id="{field_id}">
+<div class="form-field form-field--audio" data-field-type="audio" data-field-id="{field_id}" data-field-uid="{field_uid}">
   <label class="field-label" for="{field_id}-transcript">{label_text}</label>
   {description_html}
   <div class="audio-recorder" id="{field_id}-recorder">

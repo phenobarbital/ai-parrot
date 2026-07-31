@@ -152,7 +152,7 @@ class TestRenderEndpoint:
         assert resp.status == 200
 
         data = await resp.json()
-        assert data["form_uid"] == sample_form.form_uid
+        assert data["form_uid"] == str(sample_form.form_uid)
         assert data["total_questions"] == 2
         assert "questions" in data
         assert "ws_endpoint" in data
@@ -201,7 +201,7 @@ class TestRenderEndpoint:
         client = await aiohttp_client(render_app)
         resp = await client.get(f"/api/v1/forms/{sample_form.form_uid}/render/audio")
         data = await resp.json()
-        assert sample_form.form_uid in data["ws_endpoint"]
+        assert str(sample_form.form_uid) in data["ws_endpoint"]
         assert "audio/ws" in data["ws_endpoint"]
 
     @pytest.mark.asyncio

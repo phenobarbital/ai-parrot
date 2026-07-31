@@ -12,13 +12,14 @@ from __future__ import annotations
 import json
 import logging
 import uuid as _uuid
-from typing import TYPE_CHECKING, get_args
+from typing import TYPE_CHECKING, Any, get_args
 
 from aiohttp import web
 from pydantic import ValidationError
 from navigator.responses import JSONResponse
 from ..core.events import FormEventAbort, FormEventName
 
+from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
@@ -29,7 +30,7 @@ from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
 
 
-def extract_form_uid(request: web.Request) -> str:
+def extract_form_uid(request: web.Request) -> _uuid.UUID:
     """Extract and validate ``form_uid`` from the request path (FEAT-389).
 
     Args:
@@ -38,25 +39,53 @@ def extract_form_uid(request: web.Request) -> str:
             pattern registered in ``api/routes.py``).
 
     Returns:
-        The validated ``form_uid`` string.
+        The validated ``form_uid`` as a ``uuid.UUID``.
 
     Raises:
         web.HTTPBadRequest: If the path segment is not a well-formed UUID.
             The response is JSON: ``{"error": "..."}``.
     """
-    form_uid = request.match_info["form_uid"]
+    raw = request.match_info["form_uid"]
     try:
-        _uuid.UUID(form_uid)
+        return _uuid.UUID(raw)
     except ValueError:
         raise web.HTTPBadRequest(
-            text=json.dumps({"error": f"Invalid form_uid: {form_uid!r} is not a valid UUID"}),
+            text=json.dumps({"error": f"Invalid form_uid: {raw!r} is not a valid UUID"}),
             content_type="application/json",
         )
-    return form_uid
+
+
+def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
+    """Extract and validate a named UUID path param (FEAT-393).
+
+    Generalizes :func:`extract_form_uid` to any ``{param}`` path segment
+    (e.g. ``field_uid`` on the upload route).
+
+    Args:
+        request: Incoming aiohttp request with ``param`` in
+            ``request.match_info``.
+        param: Name of the path param to extract (e.g. ``"field_uid"``).
+
+    Returns:
+        The validated UUID.
+
+    Raises:
+        web.HTTPBadRequest: If the path segment is missing or not a
+            well-formed UUID. The response is JSON: ``{"error": "..."}``.
+    """
+    raw = request.match_info.get(param)
+    try:
+        return _uuid.UUID(raw)
+    except (KeyError, TypeError, ValueError):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": f"Invalid {param}: {raw!r} is not a valid UUID"}),
+            content_type="application/json",
+        )
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from ..core.partial import PartialFormData
     from ..services.form_version import FormVersionService
     from ..services.forwarder import SubmissionForwarder
     from ..services.org_graph import OrgGraphService
@@ -326,6 +355,43 @@ class FormAPIHandler:
                     return field
         return None
 
+    def _remap_partial_to_field_ids(
+        self, form: FormSchema | None, partial: PartialFormData
+    ) -> PartialFormData:
+        """Map Redis-persisted ``field_uid`` keys back to CURRENT ``field_id``s.
+
+        ``PartialSaveStore`` persists ``partial.data`` keyed by ``field_uid``
+        (FEAT-393 / TASK-2003) so a mid-session ``field_id`` rename never
+        orphans a saved answer. The wire contract (request/response) stays
+        ``field_id``-keyed, so every read path must translate back via
+        :func:`find_field_by_uid` before serializing.
+
+        Args:
+            form: The current ``FormSchema``, or ``None`` if the parent form
+                no longer exists in the registry.
+            partial: The ``PartialFormData`` as read from ``PartialSaveStore``.
+
+        Returns:
+            A copy of ``partial`` with ``data`` re-keyed by current
+            ``field_id``. Entries whose ``field_uid`` no longer resolves to a
+            field (deleted field, or — when ``form`` is ``None`` — deleted
+            form) are dropped silently.
+        """
+        if form is None:
+            return partial.model_copy(update={"data": {}})
+        remapped: dict[str, Any] = {}
+        for uid_str, value in partial.data.items():
+            try:
+                field_uid = _uuid.UUID(uid_str)
+            except ValueError:
+                continue
+            found = find_field_by_uid(form, field_uid)
+            if found is None:
+                continue
+            field, _section = found
+            remapped[field.field_id] = value
+        return partial.model_copy(update={"data": remapped})
+
     # ------------------------------------------------------------------
     # Partial-save REST endpoints
     # ------------------------------------------------------------------
@@ -377,8 +443,15 @@ class FormAPIHandler:
             )
 
         if not answers:
-            existing = await self._partial_store.get(form_uid, session_id)
+            # PartialSaveStore's PartialFormData.form_id field is still str
+            # (Module 9 / TASK-2003 territory) — form_uid is uuid.UUID since
+            # FEAT-393, so stringify at this internal-service boundary.
+            existing = await self._partial_store.get(str(form_uid), session_id)
             if existing is not None:
+                # Stored data is field_uid-keyed (TASK-2003) — map back to
+                # the CURRENT field_id for the wire response.
+                form_for_remap = await self.registry.get(form_uid)
+                existing = self._remap_partial_to_field_ids(form_for_remap, existing)
                 return JSONResponse(existing.model_dump(mode="json"), status=200)
             return JSONResponse(
                 {"form_uid": form_uid, "session_id": session_id, "data": {}, "field_errors": {}},
@@ -391,9 +464,27 @@ class FormAPIHandler:
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
-        # Save merged answers to store
+        # Resolve each incoming field_id to its field_uid BEFORE storing —
+        # unknown field_ids are rejected (field error, not stored) instead of
+        # being silently accepted; known fields are re-keyed by field_uid so
+        # a mid-session field_id rename never orphans a saved answer
+        # (FEAT-393 / TASK-2003). Storage stays UID-keyed; the wire
+        # request/response contract stays field_id-keyed.
+        uid_answers: dict[str, Any] = {}
+        field_errors: dict[str, list[str]] = {}
+        for field_id, value in answers.items():
+            field = self._find_field(form, field_id)
+            if field is None:
+                field_errors[field_id] = ["unknown field_id"]
+                continue
+            errors = await self.validator.validate_field(field, value, all_data=answers)
+            if errors:
+                field_errors[field_id] = errors
+            uid_answers[str(field.field_uid)] = value
+
+        # Save merged (UID-keyed) answers to store
         try:
-            partial = await self._partial_store.save(form_uid, session_id, answers)
+            partial = await self._partial_store.save(str(form_uid), session_id, uid_answers)
         except Exception as exc:
             self.logger.warning(
                 "PartialSaveStore.save failed for %s/%s: %s", form_uid, session_id, exc
@@ -401,15 +492,6 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": "Partial save service unavailable"}, status=503
             )
-
-        # Per-field validation (non-blocking — store all, report errors)
-        field_errors: dict[str, list[str]] = {}
-        for field_id, value in answers.items():
-            field = self._find_field(form, field_id)
-            if field is not None:
-                errors = await self.validator.validate_field(field, value)
-                if errors:
-                    field_errors[field_id] = errors
 
         # Attach field_errors to the PartialFormData using model_copy
         if field_errors:
@@ -427,6 +509,11 @@ class FormAPIHandler:
                     session_id,
                     exc,
                 )
+
+        # Map the UID-keyed stored data back to CURRENT field_ids for the
+        # response (wire contract stays field_id-keyed); UIDs whose field
+        # was deleted are dropped silently.
+        partial = self._remap_partial_to_field_ids(form, partial)
 
         return JSONResponse(
             partial.model_dump(mode="json"), status=200
@@ -458,7 +545,7 @@ class FormAPIHandler:
             )
 
         try:
-            partial = await self._partial_store.get(form_uid, session_id)
+            partial = await self._partial_store.get(str(form_uid), session_id)
         except Exception as exc:
             self.logger.warning(
                 "PartialSaveStore.get failed for %s/%s: %s", form_uid, session_id, exc
@@ -472,6 +559,12 @@ class FormAPIHandler:
                 {"error": "No partial save found for this form and session"},
                 status=404,
             )
+
+        # Stored data is field_uid-keyed (TASK-2003) — map back to CURRENT
+        # field_ids for the wire response; UIDs whose field was deleted
+        # (or whose form no longer exists) are dropped silently.
+        form = await self.registry.get(form_uid)
+        partial = self._remap_partial_to_field_ids(form, partial)
 
         return JSONResponse(
             partial.model_dump(mode="json"), status=200
@@ -502,7 +595,7 @@ class FormAPIHandler:
             )
 
         try:
-            await self._partial_store.delete(form_uid, session_id)
+            await self._partial_store.delete(str(form_uid), session_id)
         except Exception as exc:
             self.logger.warning(
                 "PartialSaveStore.delete failed for %s/%s: %s",
@@ -578,6 +671,15 @@ class FormAPIHandler:
                 fuid = row.get("form_uid")
                 if not fuid:
                     continue
+                # storage.list_forms() returns form_uid as a raw string (the
+                # DB column is still VARCHAR(36) until TASK-2008) — normalize
+                # to uuid.UUID so lookups against the in-memory descriptors
+                # (keyed by FormSchema.form_uid, now uuid.UUID) actually match.
+                if isinstance(fuid, str):
+                    try:
+                        fuid = _uuid.UUID(fuid)
+                    except ValueError:
+                        continue
                 existing = descriptors.get(fuid)
                 if existing is not None:
                     # In both: registry wins for title/description/version,
@@ -1063,7 +1165,7 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        if not isinstance(body, dict) or body.get("form_uid") != form_uid:
+        if not isinstance(body, dict) or str(body.get("form_uid")) != str(form_uid):
             return JSONResponse(
                 {"error": "form_uid in URL and body must match"}, status=400
             )
@@ -1265,8 +1367,12 @@ class FormAPIHandler:
                 _merge_session_id = self._extract_session_id(request)
                 if _merge_session_id:
                     try:
-                        cached = await self._partial_store.get(form_uid, _merge_session_id)
+                        cached = await self._partial_store.get(str(form_uid), _merge_session_id)
                         if cached:
+                            # Stored data is field_uid-keyed (TASK-2003) — map
+                            # back to CURRENT field_ids before merging into
+                            # the field_id-keyed submission payload.
+                            cached = self._remap_partial_to_field_ids(form, cached)
                             # cached values fill gaps; submitted values win on overlap
                             data = {**cached.data, **data}
                             self.logger.debug(
@@ -1403,7 +1509,7 @@ class FormAPIHandler:
             # Cleanup: delete cached partial after successful submission
             if merge_partials and _merge_session_id and self._partial_store is not None:
                 try:
-                    await self._partial_store.delete(form_uid, _merge_session_id)
+                    await self._partial_store.delete(str(form_uid), _merge_session_id)
                     self.logger.debug(
                         "Deleted cached partial for %s/%s after successful submit",
                         form_uid,
@@ -1616,7 +1722,7 @@ class FormAPIHandler:
             self.logger.exception("publish_form failed for '%s': %s", form_uid, exc)
             return web.json_response({"error": str(exc)}, status=500)
         self.logger.info("Published form '%s' → version '%s'", form_uid, version)
-        return web.json_response({"form_uid": form_uid, "version": version})
+        return web.json_response({"form_uid": str(form_uid), "version": version})
 
     async def list_fields(self, request: web.Request) -> web.Response:
         """GET /api/v1/fields — List all reusable fields for the current tenant.
@@ -1684,7 +1790,7 @@ class FormAPIHandler:
         current_version = form.published_version or form.version
 
         return web.json_response({
-            "form_uid": form_uid,
+            "form_uid": str(form_uid),
             "versions": [
                 {
                     "version": m.version,
