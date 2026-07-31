@@ -295,7 +295,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -318,8 +318,8 @@
       "parallelism_notes": "Final gate over all modules.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2009-tests-fixtures-integration.md"
+      "completed_at": "2026-07-31T19:52:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2009-tests-fixtures-integration.md"
     }
   ]
 }
