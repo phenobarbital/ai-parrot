@@ -59,10 +59,13 @@ fix belongs here, tracked independently.
 - Root-cause the hang in the WebSocket confirm-answer flow
   (`AudioFormWSHandler._handle_confirm_answer` →
   `_advance_session`/`_send_question`, `api/audio_ws.py`).
-- Make `test_ws_low_confidence_confirm` pass without hanging, with no
-  regression to the 21 sibling tests in the same file (all currently
+- Make `test_ws_low_confidence_confirm` AND its sibling
+  `test_ws_low_confidence_reject_reprompts` (see updated Suspected Area
+  below — also confirmed hanging) pass without hanging, with no
+  regression to the other 20 tests in the same file (all currently
   green).
-- Remove the `@pytest.mark.skip` this spec's discovery added in FEAT-389.
+- Remove both `@pytest.mark.skip` markers this spec's discovery added in
+  FEAT-389 (TASK-1990).
 
 ### Non-Goals (explicitly out of scope)
 - Any `form_id`/`form_uid` identity work — that is FEAT-389's domain and
@@ -81,26 +84,42 @@ symptom, isolation, and reproduction steps gathered during FEAT-389's
 validation pass. The implementing task must do the actual root-cause
 investigation (see Open Questions).
 
-### Suspected Area (unconfirmed — needs investigation)
+### Suspected Area (UPDATED — narrowed, still unconfirmed root cause)
 
-`test_ws_low_confidence_confirm` is the only test in
-`TestHybridVoiceFlows` that exercises the **`confirm_answer` message
-type** end-to-end (low-confidence transcript → `confirm_request` →
-client sends `confirm_answer` with `confirmed: true` → expects
-`answer_accepted`). Its sibling `test_ws_low_confidence_reject_reprompts`
-(confirmed: false path) was NOT independently verified in this
-investigation — an early next step should be checking whether the
-`confirmed: false` branch also hangs, which would narrow the fault to
-`_handle_confirm_answer` itself (`api/audio_ws.py:599-651` on `dev`)
-rather than specifically the `confirmed: true` → `_advance_session` path.
+**CONFIRMED**: `test_ws_low_confidence_reject_reprompts` (the `confirmed:
+false` sibling) **also hangs**, isolated and reproduced independently
+(`timeout 20 pytest ...::test_ws_low_confidence_reject_reprompts` → exit
+124). This narrows the fault: both tests share an *identical* prefix —
+
+```python
+await _start(ws)                                          # shared
+await ws.send_bytes(b"fake-audio-frame")                   # shared
+await ws.receive_json()  # transcription                   # shared
+await ws.receive_json()  # confirm_request                 # shared
+await ws.send_json({"type": "confirm_answer", ...})        # diverges only in `confirmed` value
+ack_or_requeued = await ws.receive_json()                   # both then hang here or earlier
+```
+
+— and diverge ONLY in the `confirmed` boolean sent and the expected
+reply type. Since BOTH hang, the fault is much more likely in logic
+common to both branches — the shared prefix (`_handle_answer_audio`'s
+confidence-gate / `confirm_request` send, `api/audio_ws.py:653-799` on
+`dev`) or the shared entry of `_handle_confirm_answer` itself
+(`api/audio_ws.py:599-632`, before the `if confirmed:` branch at line
+634) — rather than something specific to the `confirmed: true` →
+`_advance_session` path alone. The implementing task should instrument
+(logging / `faulthandler.dump_traceback_later`) to find the exact
+`await` that never resolves, starting with the shared prefix before
+looking at either branch.
 
 ### Reproduction
 
 ```bash
 cd packages/parrot-formdesigner
 pytest "tests/formdesigner/test_audio_integration.py::TestHybridVoiceFlows::test_ws_low_confidence_confirm" -v
-# Hangs indefinitely — no output, no exception, no timeout without an
-# external `timeout` wrapper. Confirmed via: timeout 30 pytest ... → exit 124.
+pytest "tests/formdesigner/test_audio_integration.py::TestHybridVoiceFlows::test_ws_low_confidence_reject_reprompts" -v
+# BOTH hang indefinitely — no output, no exception, no timeout without an
+# external `timeout` wrapper. Confirmed via: timeout 20-30 pytest ... → exit 124.
 ```
 
 Reproduces identically on `dev` HEAD as of this writing (commit
@@ -136,8 +155,10 @@ but in unrelated areas; it neither introduced nor fixed this deadlock).
 
 ### Module 2: Fix + regression coverage
 - **Path**: `packages/parrot-formdesigner/tests/formdesigner/test_audio_integration.py`
-- **Responsibility**: Remove the `@pytest.mark.skip` FEAT-389 added to
-  `test_ws_low_confidence_confirm`; verify it and all 21 siblings in
+- **Responsibility**: Remove both `@pytest.mark.skip` markers FEAT-389
+  added to `test_ws_low_confidence_confirm` AND
+  `test_ws_low_confidence_reject_reprompts`; verify both and all 20
+  other siblings in
   `TestHybridVoiceFlows`/`TestWebSocketSession`/`TestRenderEndpoint`/
   `TestAudioRendererSeed` still pass.
 - **Depends on**: Module 1
@@ -150,7 +171,7 @@ but in unrelated areas; it neither introduced nor fixed this deadlock).
 | Test | Module | Description |
 |---|---|---|
 | `test_ws_low_confidence_confirm` | Module 2 | Must complete (not hang) and pass — the originally-reported symptom |
-| `test_ws_low_confidence_reject_reprompts` | Module 2 | Verify the `confirmed: false` sibling path is unaffected (or was already also broken — check first) |
+| `test_ws_low_confidence_reject_reprompts` | Module 2 | CONFIRMED also hangs (see Suspected Area) — must complete (not hang) and pass |
 
 ### Integration Tests
 | Test | Description |
@@ -165,9 +186,10 @@ but in unrelated areas; it neither introduced nor fixed this deadlock).
 
 - [ ] Root cause of the deadlock is identified and documented in this spec's Completion Note (or a linked task's)
 - [ ] `test_ws_low_confidence_confirm` passes within normal test-suite time (no `timeout` wrapper needed)
-- [ ] `test_ws_low_confidence_reject_reprompts` and all other `TestHybridVoiceFlows`/`TestWebSocketSession` tests still pass
+- [ ] `test_ws_low_confidence_reject_reprompts` (CONFIRMED also hanging) passes within normal test-suite time too
+- [ ] All other `TestHybridVoiceFlows`/`TestWebSocketSession` tests still pass (no regression)
 - [ ] Full suite passes: `pytest packages/parrot-formdesigner/tests/ -v` completes without any hang, in normal CI time
-- [ ] The `@pytest.mark.skip` added by FEAT-389 (TASK-1982) is removed
+- [ ] Both `@pytest.mark.skip` markers added by FEAT-389 (TASK-1990) are removed
 - [ ] No unrelated `form_id`/`form_uid` changes are made — this is a pure bug fix
 
 ---
@@ -236,10 +258,17 @@ class AudioFormWSHandler:
 
 ## 8. Open Questions
 
-- [ ] Does `test_ws_low_confidence_reject_reprompts` (the `confirmed:
-      false` sibling) also hang? Not verified in this investigation —
-      first thing the implementing task should check, as it narrows the
-      fault location significantly. — *Owner: implementer*
+- [x] Does `test_ws_low_confidence_reject_reprompts` (the `confirmed:
+      false` sibling) also hang? **ANSWERED: yes**, confirmed via
+      isolated reproduction (`timeout 20 pytest ...` → exit 124). See
+      the updated Suspected Area section — this narrows the fault to
+      logic shared by both branches (the confidence-gate/`confirm_request`
+      send in `_handle_answer_audio`, or `_handle_confirm_answer`'s
+      shared entry before the `if confirmed:` split).
+- [ ] Given both siblings hang identically, is the true fault actually in
+      `_handle_answer_audio`'s confirm_request send (`api/audio_ws.py:
+      765-779` on `dev`) rather than in `_handle_confirm_answer` at all?
+      — *Owner: implementer*
 - [ ] Is this deadlock present in any deployed/production path, or only
       reachable via this specific test's exact message sequence? —
       *Owner: implementer*
