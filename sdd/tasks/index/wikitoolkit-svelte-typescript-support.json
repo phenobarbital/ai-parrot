@@ -50,7 +50,7 @@
       "feature_id": "FEAT-396",
       "feature": "wikitoolkit-svelte-typescript-support",
       "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,9 +60,9 @@
       "parallel": false,
       "parallelism_notes": "Module 3. Hard-sequential: lang-based grammar selection is inert until TASK-2019 makes get_parser('typescript') return a Parser, and .svelte files do not reach this scanner until TASK-2020 claims the suffix. Edits javascript.py outline().",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2021-svelte-script-extraction-lang-grammar.md"
+      "started_at": "2026-07-31T22:40:00+00:00",
+      "completed_at": "2026-07-31T23:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2021-svelte-script-extraction-lang-grammar.md"
     },
     {
       "id": "TASK-2022",

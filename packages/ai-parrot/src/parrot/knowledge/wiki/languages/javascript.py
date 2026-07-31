@@ -1,16 +1,24 @@
 """JavaScript/TypeScript plugin for the wiki repo scanner.
 
 A single scanner claims every JS/TS suffix (``.js``/``.jsx``/``.mjs``/
-``.ts``/``.tsx``, FEAT-394): an API outline (exported and non-exported
-classes, functions, consts, interfaces, type aliases, with their JSDoc
-first line) via tree-sitter when the optional ``ai-parrot[wiki-languages]``
-extra is installed, or a bounded, line-anchored regex heuristic
-otherwise. Only **relative** import specifiers (``./``, ``../``) are
-resolved — bare package names (``react``, ``lodash``) are dropped at
-extraction time, never even reaching :meth:`resolve_import`. Relative
-specifiers resolve via extension guessing (``.ts``/``.tsx``/``.js``/
-``.jsx``/``.mjs``, then ``/index.*``); ``tsconfig.json`` path aliases are
-explicitly out of scope for v1 (per spec).
+``.ts``/``.tsx``, FEAT-394) plus ``.svelte`` (FEAT-396): an API outline
+(exported and non-exported classes, functions, consts, interfaces, type
+aliases, with their JSDoc first line) via tree-sitter when the optional
+``ai-parrot[wiki-languages]`` extra is installed, or a bounded,
+line-anchored regex heuristic otherwise. Only **relative** import
+specifiers (``./``, ``../``) are resolved — bare package names
+(``react``, ``lodash``) are dropped at extraction time, never even
+reaching :meth:`resolve_import`. Relative specifiers resolve via
+extension guessing (``.ts``/``.tsx``/``.js``/``.jsx``/``.mjs``, then
+``/index.*``); ``tsconfig.json`` path aliases are explicitly out of scope
+for v1 (per spec).
+
+Svelte components are handled by extraction, not by a separate scanner:
+:func:`_extract_script_blocks` pulls the ``<script>`` bodies out before
+parsing (the markup is not valid JS/TS and would break the tree), and the
+grammar is chosen from the block's declared ``lang`` rather than the file
+suffix. Only the ``<script>`` block is analysed — markup semantics
+(component usage, ``{#if}``/``{#each}``, slots) are out of scope.
 """
 
 from __future__ import annotations
@@ -65,6 +73,27 @@ _RE_IMPORT_FROM = re.compile(
 )
 _RE_IMPORT_SIDE_EFFECT = re.compile(r"""import\s+['"]([^'"]+)['"]""", re.MULTILINE)
 _RE_REQUIRE = re.compile(r"""require\s*\(\s*['"]([^'"]+)['"]\s*\)""", re.MULTILINE)
+
+#: Single-file-component suffix whose ``<script>`` block is JS/TS.
+_SVELTE_SUFFIX = ".svelte"
+
+#: A ``<script …>`` open tag's attribute text, then its body up to the
+#: closing tag. Bounded like the patterns above: ``[^>]*`` cannot cross the
+#: tag boundary and the lazy body is anchored by the required ``</script>``
+#: literal, so there is no nested quantifier to backtrack on.
+_RE_SVELTE_SCRIPT = re.compile(
+    r"<script([^>]*)>(.*?)</script\s*>", re.DOTALL | re.IGNORECASE
+)
+
+#: The ``lang`` attribute within a ``<script>`` open tag, either quoting
+#: style. The leading ``(?:^|\s)`` keeps it from matching a lookalike
+#: attribute such as ``data-lang=``.
+_RE_SCRIPT_LANG = re.compile(
+    r"""(?:^|\s)lang\s*=\s*['"]([^'"]*)['"]""", re.IGNORECASE
+)
+
+#: ``lang`` values that select the TypeScript grammar.
+_TYPESCRIPT_LANGS: frozenset[str] = frozenset({"ts", "typescript"})
 
 #: Rendering label + start-of-line pattern for each exported construct
 #: that has no distinct "params" group.
@@ -122,6 +151,74 @@ def _extract_imports(source: str) -> list[str]:
     return ordered
 
 
+def _extract_script_blocks(source: str, suffix: str) -> tuple[str, str | None]:
+    """Split a single-file component into its script body and ``lang``.
+
+    Only ``.svelte`` is treated as a component; every other suffix is
+    returned unchanged so JS/TS behaviour is byte-identical to before this
+    seam existed. Both the instance block and a ``<script module>`` /
+    ``<script context="module">`` block are included, in document order,
+    joined by a newline — the surrounding markup is dropped, since it is
+    not valid JS/TS and would break the parse.
+
+    A component with no ``<script>`` at all (markup only, or a
+    self-closing ``<script />``) yields an empty body, which parses to an
+    empty outline rather than raising.
+
+    Args:
+        source: Raw file content.
+        suffix: The file's suffix, including the leading dot.
+
+    Returns:
+        ``(script_source, lang)``. ``lang`` is the declared language of
+        the script blocks, lower-cased, or ``None`` when undeclared. When
+        blocks disagree, a TypeScript declaration wins: the TS grammar
+        also parses plain JS, so preferring it cannot lose symbols.
+    """
+    if suffix != _SVELTE_SUFFIX:
+        return source, None
+
+    bodies: list[str] = []
+    langs: list[str] = []
+    for match in _RE_SVELTE_SCRIPT.finditer(source):
+        attributes, body = match.group(1), match.group(2)
+        bodies.append(body)
+        lang_match = _RE_SCRIPT_LANG.search(attributes)
+        if lang_match is not None:
+            declared = lang_match.group(1).strip().lower()
+            if declared:
+                langs.append(declared)
+
+    lang: str | None = None
+    for candidate in langs:
+        if candidate in _TYPESCRIPT_LANGS:
+            lang = candidate
+            break
+    else:
+        lang = langs[0] if langs else None
+
+    return "\n".join(bodies), lang
+
+
+def _grammar_for(suffix: str, lang: str | None) -> str:
+    """Pick the tree-sitter grammar name for one file.
+
+    A ``.svelte`` suffix says nothing about the script block's language,
+    so components are selected by their declared ``lang`` instead. Every
+    other suffix keeps the original suffix-based rule.
+
+    Args:
+        suffix: The file's suffix, including the leading dot.
+        lang: The ``lang`` returned by :func:`_extract_script_blocks`.
+
+    Returns:
+        ``"typescript"`` or ``"javascript"``.
+    """
+    if suffix == _SVELTE_SUFFIX:
+        return "typescript" if lang in _TYPESCRIPT_LANGS else "javascript"
+    return "typescript" if suffix in (".ts", ".tsx") else "javascript"
+
+
 def _normalize_posix(path: PurePosixPath) -> str:
     """Collapse ``.``/``..`` segments in a (possibly non-existent) path."""
     parts: list[str] = []
@@ -162,15 +259,19 @@ class JavaScriptScanner(LanguageScanner):
             failure degrades to an empty outline rather than raising.
         """
         try:
+            # Imports come from the RAW source: the extractor already
+            # works on Svelte markup, and reading them here keeps
+            # non-component files byte-identical to the pre-seam
+            # behaviour.
             imports = _extract_imports(source)
-            language = "typescript" if PurePosixPath(rel_path).suffix in (
-                ".ts", ".tsx"
-            ) else "javascript"
+            suffix = PurePosixPath(rel_path).suffix
+            script_source, lang = _extract_script_blocks(source, suffix)
+            language = _grammar_for(suffix, lang)
             parser = treesitter.get_parser(language)
             if parser is not None:
-                summary, lines = self._outline_treesitter(parser, source)
+                summary, lines = self._outline_treesitter(parser, script_source)
             else:
-                summary, lines = self._outline_heuristic(source)
+                summary, lines = self._outline_heuristic(script_source)
         except Exception as exc:  # noqa: BLE001 - degrade, never raise
             logger.debug("JS/TS outline extraction failed on %s: %s", rel_path, exc)
             return LanguageOutline()

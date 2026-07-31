@@ -374,10 +374,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session (Opus 5), with Emmanuel Arroyo
+**Date**: 2026-07-31
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
 
-**Deviations from spec**: none | describe if any
+Two module-level helpers plus a rewired `outline()`, all inside `javascript.py`:
+
+- `_extract_script_blocks(source, suffix) -> tuple[str, str | None]` — for
+  `.svelte`, the concatenated `<script>` bodies in document order and the declared
+  `lang`; for every other suffix, `(source, None)` unchanged.
+- `_grammar_for(suffix, lang) -> str` — `.svelte` selects on `lang`, every other
+  suffix keeps the original suffix rule verbatim.
+
+`outline()` now extracts imports from the **raw** source (unchanged), then feeds
+the **script body** to `_outline_treesitter` / `_outline_heuristic`. The
+`except Exception` guard and the never-raising contract are untouched.
+
+Measured on a two-block component:
+
+```
+              before (TASK-2020)   after
+outline       []                   export const prerender
+                                   export function greet: Renders a widget.
+                                   export interface Props
+summary       ''                   ''      (no file-level JSDoc; never the <script> line)
+imports       ['./util']           ['./util']   (unchanged)
+```
+
+The JSDoc attached to `greet` survives, and the `<script module>` block's
+`prerender` is included — both blocks are analysed, markup is not.
+
+Two design calls worth recording, neither of which the task pinned down:
+
+1. **When blocks disagree on `lang`, a TypeScript declaration wins.** Svelte 5's
+   bare `<script module>` carries no `lang`, so first-declaration-wins would have
+   demoted a component whose *instance* block is `lang="ts"` down to the
+   JavaScript grammar and lost its type-level symbols. The TS grammar also parses
+   plain JS, so preferring it cannot lose anything.
+   Covered by `test_typescript_declaration_wins_over_undeclared_block`.
+2. **The `lang` pattern is anchored with `(?:^|\s)`, not `\b`.** `\blang` also
+   matches `data-lang="ts"`, since `-` is a non-word character. Covered by
+   `test_lookalike_attribute_not_mistaken_for_lang`.
+
+Regexes follow the file's existing discipline (`javascript.py:31-34`): the lazy
+`<script([^>]*)>(.*?)</script\s*>` body is anchored by the required closing
+literal and `[^>]*` cannot cross the tag, so there is no nested quantifier.
+
+Tests: 34 added (4 required by the task, plus edge cases the task's "must handle"
+list named but did not spell out as tests — attribute order, `lang="TS"` casing,
+self-closing `<script />`, empty block, lookalike attribute, per-suffix
+passthrough, and the full `_grammar_for` truth table). Both the heuristic path
+(`force_heuristic`) and the real tree-sitter path are exercised; the latter runs
+rather than skips here, because TASK-2019 made the TypeScript grammar load.
+`test_jsts_outline_unchanged_by_the_seam` pins that `.ts` files are unaffected.
+
+Also refreshed this test module's docstring, which claimed the grammar wheels
+were "not the case in this dev environment" — stale, they are installed in
+`parrot-lite`, and after TASK-2019 they actually load.
+
+Verification (`~/.venvs/parrot-lite`):
+- `tests/knowledge/wiki/languages/` — **115 passed, 1 skipped** (81+1 after
+  TASK-2020; +34 from this task)
+- wider `tests/knowledge/wiki/` — 166 failed / 378 passed, **identical failure
+  count to clean `dev`** (166/333)
+- `ruff check` on both changed files — **All checks passed**
+
+**Deviations from spec**: none. Scope held to `javascript.py` + its test file; no
+alias work, no `mode` change, no `.vue`/`.astro`, no Svelte-semantic special-casing
+of `export let` vs `export const` (both render as written).
