@@ -71,7 +71,7 @@
       "feature_id": "FEAT-396",
       "feature": "wikitoolkit-svelte-typescript-support",
       "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,9 +80,9 @@
       "parallel": false,
       "parallelism_notes": "Module 4. Spec declares the dependency as Module 2 only, so it is technically independent of TASK-2021 — but both edit javascript.py (2021 outline(), 2022 build_reference_index/resolve_import/_extract_imports), so running them in parallel worktrees would collide. Sequenced after 2021 in the per-spec worktree.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2022-js-alias-resolution-jsindex.md"
+      "started_at": "2026-07-31T23:05:00+00:00",
+      "completed_at": "2026-07-31T23:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2022-js-alias-resolution-jsindex.md"
     },
     {
       "id": "TASK-2023",

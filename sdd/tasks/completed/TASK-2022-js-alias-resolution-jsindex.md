@@ -417,10 +417,77 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session (Opus 5), with Emmanuel Arroyo
+**Date**: 2026-07-31
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
 
-**Deviations from spec**: none | describe if any
+`JsIndex` (frozen dataclass, `files` + longest-prefix-first `aliases`) replaces the
+bare `frozenset`. `build_reference_index` discovers aliases once per scan via
+`_discover_aliases`, following the `php.py:349-377` precedent exactly — local
+import of `get_scan_root` to dodge the circular package init, `scan_root / rel`
+when a root is set, `try/except` + `logger.debug` + continue on any unreadable or
+unparseable file.
+
+Discovery order, first declaration of a prefix winning: `svelte.config.js`
+`kit.alias` (regex-scraped, never evaluated) → `tsconfig.json`/`jsconfig.json`
+`compilerOptions.paths` (resolved through `baseUrl`, itself relative to the config's
+own directory) → the SvelteKit convention fallback.
+
+`resolve_import` keeps the relative branch first and unchanged, then scans the
+alias map. The extension-guessing and `/index.*` tail moved into a shared
+`_guess_target` so both branches use identical matching rather than a copy.
+
+End-to-end on the motivating shape — a repo whose alias is declared **nowhere**,
+only implied by the presence of `svelte.config.js`:
+
+```
+files scanned : src/lib/Widget.svelte, src/lib/util.ts, svelte.config.js
+imports       : ['$lib/util']
+edge $lib/util -> src/lib/util.ts : YES   (0 such edges before this task)
+```
+
+**Behaviour change worth flagging to the owner.** Relaxing `_extract_imports` was
+unavoidable — `$lib/util` does not start with `.`, so it was being dropped before
+`resolve_import` ever saw it — but it changes `LanguageOutline.imports` for **every**
+JS/TS file, not only components: bare package names (`react`, `lodash`) now appear
+there. Edges are unaffected, since `resolve_import` rejects them, but the `imports`
+list rendered on every JS/TS wiki page grows. The pre-existing
+`test_jsts_imports_only_relative` asserted the opposite and had to be inverted; it
+is now `test_jsts_imports_include_bare_specifiers`, carrying the reasoning. This is
+the spec's own §7 prediction, not a surprise — but it is the one user-visible
+regression risk in this task, and it is worth a line in the PR description.
+
+Two things beyond the task's letter:
+
+1. **`restore_scan_root` fixture** (in `conftest.py`). `set_scan_root` mutates
+   process-global state, so a test pointing it at its own `tmp_path` leaks that
+   path into every test collected afterwards. The task's own test scaffold called
+   `set_scan_root(tmp_path)` bare; that would have been an order-dependent
+   time bomb, the same class of bug as the `_PARSER_CACHE` one in TASK-2019.
+2. **Non-wildcard alias entries are supported** (`"$lib": "src/lib"` as well as
+   `"$lib/*": ["src/lib/*"]`), normalized by `_as_prefix_pair` to a
+   `/`-terminated pair either way.
+
+*Known limitation, deliberate:* an alias is always a `/`-terminated **prefix**, so a
+bare `import x from '$components'` (exact match, no subpath) does not resolve. That
+is what makes the Svelte 5 rune guarantee structural rather than a special case —
+`$state` cannot prefix-match `$lib/` — and it matches the spec's declared data
+model. Worth revisiting only if a real repo hits it.
+
+Tests: 17 added. Covers the task's five plus the `kit.alias` scrape path, a
+malformed `tsconfig.json` (comments + trailing comma — legal tsconfig, invalid
+stdlib json) degrading to the convention fallback, `get_scan_root()` returning
+`None` outside a scan, relative resolution unchanged, `JsIndex` hashability/frozenness,
+and all four Svelte 5 runes parametrized.
+
+Verification (`~/.venvs/parrot-lite`):
+- `tests/knowledge/wiki/languages/` — **132 passed, 1 skipped** (115+1 after
+  TASK-2021; +17)
+- wider `tests/knowledge/wiki/` — 166 failed / 395 passed, **identical failure
+  count to clean `dev`** (166/333)
+- `ruff check` — clean, after fixing a real B017 it caught in my own test (blind
+  `pytest.raises(Exception)` → `FrozenInstanceError`)
+
+**Deviations from spec**: none. No `mode` change, no docs, no integration tests —
+those are TASK-2023.
