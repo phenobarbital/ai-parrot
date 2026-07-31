@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-30T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-31T14:10:42+00:00",
   "tasks": [
     {
       "id": "TASK-1972",
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -234,8 +234,8 @@
       "parallelism_notes": "Final task — validates all modules work together",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1982-tests-form-uid.md"
+      "completed_at": "2026-07-31T14:10:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1982-tests-form-uid.md"
     },
     {
       "id": "TASK-1990",
