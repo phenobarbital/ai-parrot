@@ -253,7 +253,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -263,8 +263,8 @@
       "parallelism_notes": "Touches ai-parrot package only, but must follow the model changes it re-exports.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2007-legacy-forms-fallback-removal.md"
+      "completed_at": "2026-07-31T19:16:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2007-legacy-forms-fallback-removal.md"
     },
     {
       "id": "TASK-2008",
