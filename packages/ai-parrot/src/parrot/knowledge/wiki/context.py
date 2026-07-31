@@ -24,6 +24,15 @@ from parrot.knowledge.wiki.store import estimate_tokens
 
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s")
 
+#: Leading ``<kind>:`` namespace of a page id.  Matched non-greedily and
+#: only at the start, so a path that itself contains a colon (e.g.
+#: ``file:docs/summaries/mod:parrot.skills.md``) keeps its inner one.
+_ID_PREFIX_RE = re.compile(r"^(?:file|dir|mod|pkg|doc|func|class|concept|page):")
+
+#: Leads carrying no information — typically a frontmatter delimiter
+#: captured as a page summary at ingest time.
+_NOISE_LEADS = frozenset({"---", "...", "-"})
+
 DEFAULT_BUDGET_TOKENS = 1200
 _MAX_LEAD_CHARS = 240
 
@@ -80,6 +89,13 @@ def stub_line(result: dict[str, Any]) -> str:
     The token figure is the cost of reading the FULL page via
     ``wiki_read`` — it lets the model budget its next move.
 
+    Both middle fields are elided when they carry nothing: a ``title``
+    that merely restates the id (every ``file:`` page stores its path as
+    its title) and a ``lead`` that is only a frontmatter delimiter are
+    dropped rather than rendered twice or rendered empty.  This is a
+    presentation concern only — :func:`pack_results` keeps the raw
+    ``title``/``lead`` in its structured ``stubs``.
+
     Args:
         result: Result dict with at least an id field; ``score``,
             ``snippet``/``summary``, and ``token_count`` are optional.
@@ -90,8 +106,10 @@ def stub_line(result: dict[str, Any]) -> str:
     rid = str(
         result.get("concept_id") or result.get("node_id") or result.get("page_id") or "?"
     )
-    title = str(result.get("title") or "").strip() or rid
+    title = str(result.get("title") or "").strip()
     lead = first_sentence(str(result.get("snippet") or result.get("summary") or ""))
+    if lead in _NOISE_LEADS:
+        lead = ""
     meta: list[str] = []
     score = result.get("score")
     if score is not None:
@@ -100,7 +118,11 @@ def stub_line(result: dict[str, Any]) -> str:
     if tokens:
         meta.append(f"~{int(tokens)}tok")
     suffix = f" ({', '.join(meta)})" if meta else ""
-    body = f"- [{rid}] {title}"
+    body = f"- [{rid}]"
+    # ``dir:`` titles carry a trailing slash the id does not — normalise it
+    # away so they count as duplicates rather than as added information.
+    if title and title.rstrip("/") not in (rid, _ID_PREFIX_RE.sub("", rid, count=1)):
+        body += f" {title}"
     if lead:
         body += f" — {lead}"
     return body + suffix
