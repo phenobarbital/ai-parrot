@@ -9,6 +9,7 @@ suffixes become part of :func:`scanned_suffixes`.
 from __future__ import annotations
 
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
+from parrot.knowledge.wiki.languages.python import PythonScanner
 
 __all__ = [
     "LanguageOutline",
@@ -19,9 +20,10 @@ __all__ = [
 ]
 
 #: Registered scanner instances, name -> scanner. Populated explicitly as
-#: each language plugin task lands; empty until the first plugin (Python,
-#: TASK-2011) is registered.
-_SCANNERS: dict[str, LanguageScanner] = {}
+#: each language plugin task lands.
+_SCANNERS: dict[str, LanguageScanner] = {
+    "python": PythonScanner(),
+}
 
 #: suffix -> scanner name, derived from ``_SCANNERS`` for O(1) lookup.
 _SUFFIX_INDEX: dict[str, str] = {
