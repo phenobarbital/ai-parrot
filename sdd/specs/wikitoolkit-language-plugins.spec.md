@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-394
 **Date**: 2026-07-31
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.x
 **Brainstorm**: `sdd/proposals/wikitoolkit-language-plugins.brainstorm.md`
 
