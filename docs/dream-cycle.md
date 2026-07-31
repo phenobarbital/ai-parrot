@@ -131,6 +131,22 @@ WARNING is logged and the agent boots without a brain.
 - No new external dependencies: `aiosqlite`, `pydantic>=2`, `faiss-cpu`, and
   `redis`/`asyncpg` (for the corresponding episodic backends) were already
   project dependencies.
+- Importing `parrot.memory` never touches the wiki plane / `aiosqlite`
+  unless a brain symbol is actually used — the dream package's exports
+  are resolved lazily (PEP 562), the same pattern `parrot.knowledge.wiki`
+  uses for its own exports.
+
+### Known limitations
+
+- **Collection is not paginated.** `_collect()` fetches the most recent
+  `_COLLECT_LIMIT` (currently 5000) episodes since the watermark in a
+  single call — `AbstractEpisodeBackend.get_recent()` has no
+  offset/cursor. If more than that many *ineligible* episodes accumulate
+  between dream cycles for one agent, older eligible episodes further
+  back in that backlog can be starved until the backlog shrinks. This is
+  a known, accepted boundary of the current read-path contract (not a bug
+  fixed in this feature) — worth tracking for very high-volume agents or
+  long brain-disabled periods before re-enabling.
 
 ## Read next
 

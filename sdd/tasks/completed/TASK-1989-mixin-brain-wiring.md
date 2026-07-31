@@ -279,3 +279,51 @@ closest existing field to the brainstorm's "org_id" concept. (2)
 `parrot/bots/` today (see Notes) — `_cleanup_long_term_memory()` is a
 genuinely new hook rather than an extension of an existing invoked path,
 since there was no existing invocation to mirror.
+
+**Post-review fix (2026-07-31, `code-reviewer` agent during the
+code-review stage)**: the `code-reviewer` subagent found that this task's
+own `parrot/memory/__init__.py` edit (`from .dream import (...)`, eager,
+following the file's pre-existing convention for `.unified`/`.episodic`)
+combined with `parrot/memory/dream/__init__.py`'s pre-existing eager
+imports meant `import parrot.memory` — by essentially every consumer of
+the framework — unconditionally pulled in `aiosqlite` and
+`parrot.knowledge.wiki.store`, regardless of `enable_brain`. Verified
+empirically in a fresh interpreter (`'aiosqlite' in sys.modules` was
+`True` immediately after `import parrot.memory`, before any brain
+symbol was ever touched). This contradicted the spec's explicit design
+goal for `BrainStore` ("lazy exports — no agent framework import",
+spec §3 Module 2) and the "`enable_brain=False` is byte-identical to
+today" hard requirement — at import time, not runtime. Fixed in commit
+`13d6f3b7b`: converted `parrot/memory/dream/__init__.py` to PEP 562 lazy
+exports (`_EXPORT_MODULES` dict + `__getattr__`/`__dir__`), mirroring
+`parrot.knowledge.wiki`'s own already-established lazy-export pattern
+byte-for-byte; `parrot/memory/__init__.py`'s dream re-exports now resolve
+through the same lazy mechanism instead of an eager import block, while
+its pre-existing eager imports (`.unified`, `.episodic`, etc.) are
+untouched. Re-verified: `import parrot.memory` no longer touches
+`aiosqlite`/the wiki plane until a dream symbol is actually accessed;
+full regression (224 tests) still passes; `ruff check` clean.
+
+**Reviewer suggestions noted but NOT acted on** (documented here for the
+PR reviewer, per the sdd-worker completion protocol):
+- `BrainStore.copy_page_to()`'s org-wiki page id has no agent-scoping, so
+  two agents producing a same-titled/same-category page could collide on
+  promotion. Not fixed: the page-id scheme (`mem-<sha1(title::category)>`)
+  is an explicit, required byte-for-byte interop contract with
+  `LLMWikiToolkit.remember()` (spec §7) — adding agent-scoping would
+  break that interop guarantee. Flagging as a known edge case for anyone
+  who later sees heavy org-wide promotion traffic.
+- `DreamScheduler._run_locked_cycle`'s try/except around
+  `runner.run_cycle()` is defensive-only (the runner already never
+  raises) — harmless, left as belt-and-suspenders per the project's
+  "memory never raises" convention rather than removed.
+- `DreamCycleRunner._extract_text` duplicates
+  `ReflectionEngine._extract_text` verbatim (the docstring says so
+  explicitly). A shared helper would be cleaner but `reflection.py` is
+  outside this task's file list — left as a follow-up suggestion rather
+  than expanding scope.
+- The residual `_collect()` starvation limit (`_COLLECT_LIMIT`, no
+  backend pagination) both reviewers flagged is a disclosed, accepted
+  scope boundary (see TASK-1986's completion note) — worth a mention in
+  `docs/dream-cycle.md`'s notes for capacity planning on very
+  high-volume agents, but not addressed here.
