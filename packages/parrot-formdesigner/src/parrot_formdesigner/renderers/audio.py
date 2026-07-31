@@ -356,6 +356,7 @@ class AudioFormRenderer(AbstractFormRenderer):
             AudioQuestion(
                 index=0,  # re-indexed by caller
                 field_id=field.field_id,
+                field_uid=field.field_uid,
                 field_type=field.field_type.value,
                 label=label,
                 description=description,
@@ -405,7 +406,10 @@ class AudioFormRenderer(AbstractFormRenderer):
         form_title = _resolve(form.title, locale) if form.title else form.form_id
 
         manifest = AudioFormManifest(
-            form_uid=form.form_uid,
+            # FEAT-393 (TASK-1995): form.form_uid is now uuid.UUID (was str
+            # under FEAT-389); AudioFormManifest.form_uid stays a wire-facing
+            # str field, so stringify explicitly.
+            form_uid=str(form.form_uid),
             title=form_title,
             total_questions=len(questions),
             questions=questions,
@@ -414,7 +418,11 @@ class AudioFormRenderer(AbstractFormRenderer):
         )
 
         # Serialize to dict; exclude audio_prompt bytes from JSON output.
-        manifest_dict = manifest.model_dump(exclude={"questions": {"__all__": {"audio_prompt"}}})
+        # mode="json" so field_uid (FEAT-393) and any other UUID values
+        # serialize as strings instead of raw uuid.UUID objects.
+        manifest_dict = manifest.model_dump(
+            mode="json", exclude={"questions": {"__all__": {"audio_prompt"}}}
+        )
 
         return RenderedForm(
             content=manifest_dict,

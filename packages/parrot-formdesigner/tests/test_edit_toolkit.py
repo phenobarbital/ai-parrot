@@ -13,6 +13,23 @@ from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.tools.edit_toolkit import EditToolkit
 
 
+def _field_uid(form: FormSchema, field_id: str) -> str:
+    """Look up a field's field_uid (str) by its field_id, across all sections."""
+    for section in form.sections:
+        for f in section.iter_fields():
+            if f.field_id == field_id:
+                return str(f.field_uid)
+    raise AssertionError(f"field_id {field_id!r} not found in fixture form")
+
+
+def _section_uid(form: FormSchema, section_id: str) -> str:
+    """Look up a section's section_uid (str) by its section_id."""
+    for section in form.sections:
+        if section.section_id == section_id:
+            return str(section.section_uid)
+    raise AssertionError(f"section_id {section_id!r} not found in fixture form")
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -178,22 +195,31 @@ class TestEditToolkitInspection:
         assert "nonexistent" in result["error"]
         assert "available_sections" in result
 
-    async def test_get_field_by_id(self, small_form: FormSchema) -> None:
+    async def test_get_field_by_uid(self, small_form: FormSchema) -> None:
         """get_field returns correct field data including its section."""
         toolkit = EditToolkit(small_form)
-        result = await toolkit.get_field("email")
+        email_uid = _field_uid(small_form, "email")
+        result = await toolkit.get_field(email_uid)
 
         assert "error" not in result
         assert result["section_id"] == "main"
         assert result["field"]["field_id"] == "email"
 
     async def test_get_field_not_found(self, small_form: FormSchema) -> None:
-        """get_field returns an error dict for an unknown field_id."""
+        """get_field returns an error dict for an unknown field_uid."""
         toolkit = EditToolkit(small_form)
-        result = await toolkit.get_field("unknown_field")
+        result = await toolkit.get_field("00000000-0000-0000-0000-000000000000")
 
         assert "error" in result
-        assert "unknown_field" in result["error"]
+
+    async def test_get_field_invalid_uuid_returns_error(
+        self, small_form: FormSchema
+    ) -> None:
+        """get_field returns a structured error dict for a malformed UUID."""
+        toolkit = EditToolkit(small_form)
+        result = await toolkit.get_field("not-a-uuid")
+
+        assert "error" in result
 
     async def test_search_fields_by_label(self, small_form: FormSchema) -> None:
         """search_fields finds fields by label substring (case-insensitive)."""
@@ -250,8 +276,8 @@ class TestEditToolkitMutation:
         """update_field applies a merge-patch to the target field."""
         toolkit = EditToolkit(small_form)
         result = await toolkit.update_field(
-            section_id="main",
-            field_id="name",
+            section_uid=_section_uid(small_form, "main"),
+            field_uid=_field_uid(small_form, "name"),
             patch={"label": "Full Name", "required": True},
         )
 
@@ -265,19 +291,24 @@ class TestEditToolkitMutation:
     ) -> None:
         """update_field only touches keys present in the patch."""
         toolkit = EditToolkit(small_form)
+        name_uid = _field_uid(small_form, "name")
         # Only update label; field_type should stay TEXT
         await toolkit.update_field(
-            section_id="main", field_id="name", patch={"label": "New Label"}
+            section_uid=_section_uid(small_form, "main"),
+            field_uid=name_uid,
+            patch={"label": "New Label"},
         )
 
-        field_result = await toolkit.get_field("name")
+        field_result = await toolkit.get_field(name_uid)
         assert field_result["field"]["field_type"] == "text"
 
     async def test_update_field_not_found(self, small_form: FormSchema) -> None:
-        """update_field returns an error for an unknown field_id."""
+        """update_field returns an error for an unknown field_uid."""
         toolkit = EditToolkit(small_form)
         result = await toolkit.update_field(
-            section_id="main", field_id="ghost", patch={"label": "X"}
+            section_uid=_section_uid(small_form, "main"),
+            field_uid="00000000-0000-0000-0000-000000000000",
+            patch={"label": "X"},
         )
 
         assert "error" in result
@@ -290,7 +321,9 @@ class TestEditToolkitMutation:
             "field_type": "text",
             "label": "Zip Code",
         }
-        result = await toolkit.add_field(section_id="main", field=new_field)
+        result = await toolkit.add_field(
+            section_uid=_section_uid(small_form, "main"), field=new_field
+        )
 
         assert result.get("success") is True
         section = await toolkit.get_section("main")
@@ -307,7 +340,7 @@ class TestEditToolkitMutation:
             "label": "Middle Name",
         }
         result = await toolkit.add_field(
-            section_id="main", field=new_field, position=1
+            section_uid=_section_uid(small_form, "main"), field=new_field, position=1
         )
 
         assert result.get("success") is True
@@ -318,16 +351,22 @@ class TestEditToolkitMutation:
     async def test_remove_field_by_id(self, small_form: FormSchema) -> None:
         """remove_field removes the correct field from the section."""
         toolkit = EditToolkit(small_form)
-        result = await toolkit.remove_field(section_id="main", field_id="phone")
+        phone_uid = _field_uid(small_form, "phone")
+        result = await toolkit.remove_field(
+            section_uid=_section_uid(small_form, "main"), field_uid=phone_uid
+        )
 
         assert result.get("success") is True
-        field_result = await toolkit.get_field("phone")
+        field_result = await toolkit.get_field(phone_uid)
         assert "error" in field_result
 
     async def test_remove_field_not_found(self, small_form: FormSchema) -> None:
-        """remove_field returns an error for an unknown field_id."""
+        """remove_field returns an error for an unknown field_uid."""
         toolkit = EditToolkit(small_form)
-        result = await toolkit.remove_field(section_id="main", field_id="ghost")
+        result = await toolkit.remove_field(
+            section_uid=_section_uid(small_form, "main"),
+            field_uid="00000000-0000-0000-0000-000000000000",
+        )
 
         assert "error" in result
 
@@ -383,24 +422,25 @@ class TestEditToolkitMutation:
     ) -> None:
         """move_field moves a field from one section to another."""
         toolkit = EditToolkit(two_section_form)
+        field_a1_uid = _field_uid(two_section_form, "field_a1")
         result = await toolkit.move_field(
-            from_section="section_a",
-            field_id="field_a1",
-            to_section="section_b",
+            from_section_uid=_section_uid(two_section_form, "section_a"),
+            field_uid=field_a1_uid,
+            to_section_uid=_section_uid(two_section_form, "section_b"),
         )
 
         assert result.get("success") is True
         # field_a1 should now be in section_b
-        field_result = await toolkit.get_field("field_a1")
+        field_result = await toolkit.get_field(field_a1_uid)
         assert field_result["section_id"] == "section_b"
 
     async def test_move_field_not_found(self, two_section_form: FormSchema) -> None:
-        """move_field returns an error for an unknown field_id."""
+        """move_field returns an error for an unknown field_uid."""
         toolkit = EditToolkit(two_section_form)
         result = await toolkit.move_field(
-            from_section="section_a",
-            field_id="ghost",
-            to_section="section_b",
+            from_section_uid=_section_uid(two_section_form, "section_a"),
+            field_uid="00000000-0000-0000-0000-000000000000",
+            to_section_uid=_section_uid(two_section_form, "section_b"),
         )
 
         assert "error" in result
@@ -520,8 +560,8 @@ class TestEditToolkitIsolation:
 
         toolkit = EditToolkit(small_form)
         await toolkit.update_field(
-            section_id="main",
-            field_id="name",
+            section_uid=_section_uid(small_form, "main"),
+            field_uid=_field_uid(small_form, "name"),
             patch={"label": "Modified Label"},
         )
 
@@ -540,13 +580,16 @@ class TestEditToolkitIsolation:
         """Two EditToolkit instances on the same form are independent."""
         toolkit1 = EditToolkit(small_form)
         toolkit2 = EditToolkit(small_form)
+        name_uid = _field_uid(small_form, "name")
 
         await toolkit1.update_field(
-            section_id="main", field_id="name", patch={"label": "Label From Toolkit 1"}
+            section_uid=_section_uid(small_form, "main"),
+            field_uid=name_uid,
+            patch={"label": "Label From Toolkit 1"},
         )
 
         # toolkit2's copy should not see toolkit1's mutations
-        field_result = await toolkit2.get_field("name")
+        field_result = await toolkit2.get_field(name_uid)
         assert field_result["field"]["label"] != "Label From Toolkit 1"
 
 

@@ -339,6 +339,7 @@ class HTML5Renderer(AbstractFormRenderer):
             if _field.field_type == FieldType.FORMULA:
                 warnings.append(RenderWarning(
                     field_id=_field.field_id,
+                    field_uid=_field.field_uid,
                     field_type=FieldType.FORMULA.value,
                     renderer="html5",
                     reason="formula evaluation not available (FEAT-301) — rendered as read-only placeholder",
@@ -533,7 +534,10 @@ class HTML5Renderer(AbstractFormRenderer):
             # real regression this migration introduced. FORM_ID is kept
             # for the DOM element-id lookup and event-payload labels above,
             # which are unaffected by the route rename.
-            .replace("__FORM_UID__", json.dumps(form.form_uid))
+            # FEAT-393 (TASK-1995): form.form_uid is now uuid.UUID (was str
+            # under FEAT-389) — stdlib json.dumps() cannot serialize UUID
+            # objects directly, so stringify explicitly.
+            .replace("__FORM_UID__", json.dumps(str(form.form_uid)))
             .replace("__EVENTS_CONFIG__", json.dumps(events_config))
         )
 
@@ -1096,6 +1100,7 @@ class HTML5Renderer(AbstractFormRenderer):
         return (
             f'<div class="parrot-rest-uploader" '
             f'data-field-id="{field.field_id}" '
+            f'data-field-uid="{html.escape(str(field.field_uid), quote=True)}" '
             f'data-upload-url="{upload_url}" '
             f'data-rest-uploader="true">'
             f'<input type="file" '

@@ -36,7 +36,7 @@ class TestAddFieldFromSchema:
     @pytest.mark.asyncio
     async def test_with_shortcuts(self, toolkit):
         result = await toolkit.add_field_from_schema(
-            "main",
+            str(toolkit.form.sections[0].section_uid),
             {"label": "Email Address", "field_type": "email", "required": True},
         )
         assert result["success"] is True
@@ -45,7 +45,7 @@ class TestAddFieldFromSchema:
     @pytest.mark.asyncio
     async def test_with_full_field(self, toolkit):
         result = await toolkit.add_field_from_schema(
-            "main",
+            str(toolkit.form.sections[0].section_uid),
             {"field_id": "custom_id", "field_type": "text", "label": "Custom"},
         )
         assert result["success"] is True
@@ -54,7 +54,7 @@ class TestAddFieldFromSchema:
     @pytest.mark.asyncio
     async def test_with_position(self, toolkit):
         result = await toolkit.add_field_from_schema(
-            "main",
+            str(toolkit.form.sections[0].section_uid),
             {"label": "First", "field_type": "text"},
             position=0,
         )
@@ -63,7 +63,9 @@ class TestAddFieldFromSchema:
 
     @pytest.mark.asyncio
     async def test_invalid_schema(self, toolkit):
-        result = await toolkit.add_field_from_schema("main", {})
+        result = await toolkit.add_field_from_schema(
+            str(toolkit.form.sections[0].section_uid), {}
+        )
         assert "error" in result
 
 

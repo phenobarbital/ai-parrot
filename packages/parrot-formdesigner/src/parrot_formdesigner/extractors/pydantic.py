@@ -15,6 +15,7 @@ from pydantic.fields import FieldInfo
 
 from ..core.constraints import FieldConstraints
 from ..core.options import FieldOption
+from ..core.resolution import resolve_rule_references
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType
 
@@ -99,7 +100,7 @@ class PydanticExtractor:
 
         fields = self._extract_fields_from_model(model)
 
-        return FormSchema(
+        form = FormSchema(
             form_id=resolved_form_id,
             title=resolved_title,
             sections=[
@@ -110,6 +111,10 @@ class PydanticExtractor:
                 )
             ],
         )
+        # FEAT-393: mint UIDs (free — model default_factory) and resolve any
+        # rule references before returning — uniform with every other
+        # extractor's output shape.
+        return resolve_rule_references(form)
 
     def _extract_fields_from_model(self, model: type[BaseModel]) -> list[FormField]:
         """Extract FormField list from a Pydantic model's fields.
@@ -161,6 +166,13 @@ class PydanticExtractor:
 
         # Determine field type and options
         field_type, options, children, item_template = self._determine_field_type(inner_type)
+        if item_template is not None:
+            # FEAT-393: suffix with the parent field's name — a bare "item"
+            # collides form-wide (walk_fields visits item_template) when a
+            # form has more than one ARRAY field.
+            item_template = item_template.model_copy(
+                update={"field_id": f"{field_name}_item"}
+            )
 
         # Extract label: use field title if set, otherwise snake_to_title
         label: str

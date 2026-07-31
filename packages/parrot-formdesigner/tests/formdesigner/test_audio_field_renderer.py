@@ -94,6 +94,17 @@ class TestAudioFieldRendering:
         assert 'data-field-type="audio"' in html
 
     @pytest.mark.asyncio
+    async def test_audio_template_data_field_uid(
+        self, renderer: HTML5Renderer, audio_field: FormField
+    ) -> None:
+        """FEAT-393: rendered HTML includes data-field-uid alongside
+        data-field-id; the control id/name stays field_id-based."""
+        html = await renderer._registry[FieldType.AUDIO].render(audio_field)
+        assert f'data-field-uid="{audio_field.field_uid}"' in html
+        assert 'data-field-id="voice_note"' in html
+        assert 'name="voice_note"' in html
+
+    @pytest.mark.asyncio
     async def test_render_with_error(
         self, renderer: HTML5Renderer, audio_field: FormField
     ) -> None:

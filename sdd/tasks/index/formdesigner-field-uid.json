@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-31T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-31T21:27:56+00:00",
   "notes": "HARD GATE: FEAT-389 (form-uid-stable-identity) must be merged to dev before creating the worktree or starting TASK-1995.",
   "tasks": [
     {
@@ -15,16 +15,17 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Root of the dependency chain; touches files FEAT-389 rewrites — gated on its merge.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1995-form-uid-uuid-retrofit.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1995-form-uid-uuid-retrofit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1996",
@@ -33,16 +34,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1995"],
+      "depends_on": [
+        "TASK-1995"
+      ],
       "parallel": false,
       "parallelism_notes": "core/schema.py is the shared root of every later task.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1996-core-model-uids-validator.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1996-core-model-uids-validator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1997",
@@ -51,16 +55,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1996"],
+      "depends_on": [
+        "TASK-1996"
+      ],
       "parallel": false,
       "parallelism_notes": "Creates helpers (resolve_rule_references, find_field_by_uid) consumed by 1998-2003.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1997-rule-models-resolution.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1997-rule-models-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1998",
@@ -69,16 +76,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1997"],
+      "depends_on": [
+        "TASK-1997"
+      ],
       "parallel": false,
       "parallelism_notes": "Sequential in the per-spec worktree; distinct files from 1999/2001-2007 but shares fixtures.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1998-validators-evaluator-rekey.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1998-validators-evaluator-rekey.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1999",
@@ -87,16 +97,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1997"],
+      "depends_on": [
+        "TASK-1997"
+      ],
       "parallel": false,
       "parallelism_notes": "Independent files from 1998, but per-spec isolation keeps it sequential.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1999-operations-uid-addressing.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1999-operations-uid-addressing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2000",
@@ -105,16 +118,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1999"],
+      "depends_on": [
+        "TASK-1999"
+      ],
       "parallel": false,
       "parallelism_notes": "Builds operations payloads defined in TASK-1999.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2000-edit-toolkit-uid-params.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2000-edit-toolkit-uid-params.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2001",
@@ -123,16 +139,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1997"],
+      "depends_on": [
+        "TASK-1997"
+      ],
       "parallel": false,
       "parallelism_notes": "File-independent of 1998-2000 but sequential per per-spec isolation.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2001-extractors-createform-resolution.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2001-extractors-createform-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2002",
@@ -141,16 +160,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1997"],
+      "depends_on": [
+        "TASK-1997"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs find_field_by_uid + extract_uid pattern; touches routes shared with FEAT-389 output.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2002-blob-uploads-field-uid.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2002-blob-uploads-field-uid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2003",
@@ -159,16 +181,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1997"],
+      "depends_on": [
+        "TASK-1997"
+      ],
       "parallel": false,
       "parallelism_notes": "Handler-boundary change; shares api/handlers.py with other API tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2003-partial-saves-rekey.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2003-partial-saves-rekey.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2004",
@@ -177,16 +202,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-1996"],
+      "depends_on": [
+        "TASK-1996"
+      ],
       "parallel": false,
       "parallelism_notes": "Additive-only; could parallelize but per-spec isolation keeps it in-worktree.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2004-audio-manifests-uid.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2004-audio-manifests-uid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2005",
@@ -195,16 +223,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-1996"],
+      "depends_on": [
+        "TASK-1996"
+      ],
       "parallel": false,
       "parallelism_notes": "Additive-only renderer attributes; sequential per per-spec isolation.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2005-renderers-data-field-uid.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2005-renderers-data-field-uid.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2006",
@@ -213,16 +244,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1996"],
+      "depends_on": [
+        "TASK-1996"
+      ],
       "parallel": false,
       "parallelism_notes": "Self-contained service rename; TASK-2008 depends on its final DDL shape.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2006-question-bank-question-id.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2006-question-bank-question-id.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2007",
@@ -231,16 +265,19 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1996"],
+      "depends_on": [
+        "TASK-1996"
+      ],
       "parallel": false,
       "parallelism_notes": "Touches ai-parrot package only, but must follow the model changes it re-exports.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2007-legacy-forms-fallback-removal.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2007-legacy-forms-fallback-removal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2008",
@@ -249,16 +286,21 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1995", "TASK-1997", "TASK-2006"],
+      "depends_on": [
+        "TASK-1995",
+        "TASK-1997",
+        "TASK-2006"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on final model, resolution pass, and bank DDL shapes.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2008-migrations.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2008-migrations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2009",
@@ -267,16 +309,32 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1995", "TASK-1996", "TASK-1997", "TASK-1998", "TASK-1999", "TASK-2000", "TASK-2001", "TASK-2002", "TASK-2003", "TASK-2004", "TASK-2005", "TASK-2006", "TASK-2007", "TASK-2008"],
+      "depends_on": [
+        "TASK-1995",
+        "TASK-1996",
+        "TASK-1997",
+        "TASK-1998",
+        "TASK-1999",
+        "TASK-2000",
+        "TASK-2001",
+        "TASK-2002",
+        "TASK-2003",
+        "TASK-2004",
+        "TASK-2005",
+        "TASK-2006",
+        "TASK-2007",
+        "TASK-2008"
+      ],
       "parallel": false,
       "parallelism_notes": "Final gate over all modules.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2009-tests-fixtures-integration.md"
+      "started_at": "2026-07-31T16:26:55+00:00",
+      "completed_at": "2026-07-31T21:27:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2009-tests-fixtures-integration.md",
+      "verification": "verified"
     }
   ]
 }
