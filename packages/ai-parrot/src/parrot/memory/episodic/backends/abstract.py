@@ -102,3 +102,24 @@ class AbstractEpisodeBackend(Protocol):
             Number of matching episodes.
         """
         ...
+
+    async def update_metadata(
+        self,
+        episode_ids: list[str],
+        patch: dict[str, Any],
+    ) -> int:
+        """Merge ``patch`` into the ``metadata`` dict of the given episodes.
+
+        Used by the dream cycle (FEAT-390) to mark episodes as consolidated
+        (``metadata["consolidated_into"] = <page_id>``) without deleting
+        them — existing TTL/compaction keeps pruning.
+
+        Args:
+            episode_ids: Episode ids to patch. Unknown ids are ignored (not
+                an error).
+            patch: Key-value pairs merged into each episode's ``metadata``.
+
+        Returns:
+            Number of episodes actually updated.
+        """
+        ...

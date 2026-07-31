@@ -217,10 +217,47 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Ran the pre-existing `packages/ai-parrot/tests/memory/unified/`
+suite FIRST as a baseline (86 passed) before touching any code, then
+again after implementing (still 86/86, unmodified files). `MemoryContext`
+gained `semantic_knowledge` + a `<brain_knowledge>` section in
+`to_prompt_string()` (rendered only when non-empty, matching the existing
+conditional style). `MemoryConfig` gained `enable_brain`/`brain_weight`;
+the validator branches on `enable_brain`: False keeps the original
+3-weight sum-to-one check byte-for-byte; True adds `brain_weight` to the
+sum and — using `model_fields_set` to detect whether the caller touched
+ANY of the four weight fields — rebalances untouched defaults to
+0.25/0.25/0.30/0.20 before validating. `ContextAssembler.assemble()` gained
+a 4th `semantic_knowledge` parameter (default `""`) budgeted from
+`brain_weight` at priority 3 (between skills and conversation, so
+conversation keeps its "gets whatever's left" role); empty-string calls
+are mathematically identical to the pre-existing 3-arg formula since
+`_fill_section("", budget)` always returns `("", 0)` regardless of the
+computed budget. `UnifiedMemoryManager` gained `brain`/`org_brain`
+constructor params (`Optional[BrainStore]`, `BrainStore` imported only
+under `TYPE_CHECKING` to avoid a hard dependency on the dream package) and
+a private `_get_brain_knowledge()` copying `_get_episodic_warnings`'s
+degrade-not-raise shape exactly; wired into the same `asyncio.gather` as
+the other three retrievals; both `brain`/`org_brain` added to
+`_subsystems()` for symmetry (currently a no-op since `BrainStore` exposes
+neither `configure()` nor `cleanup()`, but this future-proofs the wiring
+per the task's conditional wording). 11 new tests in
+`tests/memory/dream/test_unified_brain.py` cover legacy validation,
+rebalanced defaults, custom-weight sum enforcement, 4-section budgeting,
+3-arg-call byte-identical behavior, parallel brain query, brain failure
+degradation, org-brain merge, no-brain no-op, and subsystem
+presence/absence. `ruff check` clean on every line I touched (pre-existing
+`Optional[X]` style in the rest of `manager.py`'s constructor signature —
+which I matched for the two new params rather than diverging — is flagged
+by a newer UP045 rule but is unrelated pre-existing debt across all 5
+sibling parameters, left untouched per no-scope-creep).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — all listed acceptance criteria verified:
+default `MemoryConfig()` unchanged, `enable_brain=True` rebalances to
+0.25/0.25/0.30/0.20, `assemble()` budgets the 4th section at
+`brain_weight`, `get_context_for_query()` queries brain in the parallel
+gather with results landing in `semantic_knowledge`/`to_prompt_string()`,
+brain failures degrade to an empty section without raising, org-brain
+results merge, and all 86 pre-existing unified tests pass unmodified.

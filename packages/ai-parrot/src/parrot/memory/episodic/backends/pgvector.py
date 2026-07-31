@@ -489,6 +489,40 @@ class PgVectorBackend:
 
         return int(row[0]) if row else 0
 
+    async def update_metadata(
+        self,
+        episode_ids: list[str],
+        patch: dict[str, Any],
+    ) -> int:
+        """Merge ``patch`` into the ``metadata`` JSONB column of episodes.
+
+        Uses a JSONB merge (``||``) so concurrent writers never clobber each
+        other's metadata keys — never a full-column overwrite.
+
+        Args:
+            episode_ids: Episode ids to patch. Unknown ids are ignored.
+            patch: Key-value pairs merged into each episode's ``metadata``.
+
+        Returns:
+            Number of rows actually updated.
+        """
+        if not episode_ids:
+            return 0
+
+        pool = self._ensure_pool()
+        query = f"""
+            UPDATE {self._fqtn}
+            SET metadata = COALESCE(metadata, '{{}}'::jsonb) || $1::jsonb
+            WHERE episode_id = ANY($2::uuid[])
+        """
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                query, json.dumps(patch), episode_ids
+            )
+
+        # asyncpg returns "UPDATE N"
+        return int(result.split()[-1])
+
     async def search_hybrid(
         self,
         embedding: list[float],

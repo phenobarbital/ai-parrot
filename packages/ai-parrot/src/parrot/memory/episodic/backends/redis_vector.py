@@ -541,6 +541,60 @@ class RedisVectorBackend:
             logger.warning("RedisVectorBackend.delete_expired() failed: %s", e)
             return 0
 
+    async def update_metadata(
+        self,
+        episode_ids: list[str],
+        patch: dict[str, Any],
+    ) -> int:
+        """Merge ``patch`` into the stored ``metadata`` JSON field.
+
+        Reads each episode's current metadata, merges ``patch`` into it,
+        and rewrites only the ``metadata`` HASH field — all other fields
+        (including the vector) are left untouched.
+
+        Args:
+            episode_ids: Episode ids to patch. Unknown ids are ignored.
+            patch: Key-value pairs merged into each episode's ``metadata``.
+
+        Returns:
+            Number of episodes actually updated.
+        """
+        if not episode_ids:
+            return 0
+
+        if self._redis is None:
+            logger.warning(
+                "RedisVectorBackend not configured; update_metadata() returns 0"
+            )
+            return 0
+
+        updated = 0
+        for episode_id in episode_ids:
+            key = f"{_KEY_PREFIX}{episode_id}"
+            try:
+                raw_metadata = await self._redis.hget(key, "metadata")
+                if raw_metadata is None:
+                    # Unknown/missing episode — not an error, just skip.
+                    if not await self._redis.exists(key):
+                        continue
+                    raw_metadata = b"{}"
+                current = json.loads(
+                    raw_metadata.decode()
+                    if isinstance(raw_metadata, bytes)
+                    else raw_metadata
+                )
+                current.update(patch)
+                await self._redis.hset(key, "metadata", json.dumps(current))
+                updated += 1
+            except Exception as e:
+                logger.warning(
+                    "RedisVectorBackend.update_metadata() failed for %s: %s",
+                    episode_id,
+                    e,
+                )
+
+        return updated
+
     async def count(self, namespace_filter: dict[str, Any]) -> int:
         """Count episodes matching a namespace filter.
 

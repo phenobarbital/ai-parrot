@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-30T17:36:01+00:00",
-  "completed_at": null,
+  "completed_at": "2026-07-30T23:08:07+00:00",
   "tasks": [
     {
       "id": "TASK-1983",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module — everything depends on it; run first.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1983-dream-models.md"
+      "completed_at": "2026-07-30T17:54:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1983-dream-models.md"
     },
     {
       "id": "TASK-1984",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches only dream/brain.py + wiki plane; shares no files with TASK-1985 (episodic backends) — the two can run in parallel after TASK-1983.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1984-brainstore.md"
+      "completed_at": "2026-07-30T18:11:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1984-brainstore.md"
     },
     {
       "id": "TASK-1985",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Touches only parrot/memory/episodic/*; independent of the dream package — parallel with TASK-1983/1984.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1985-episodic-update-metadata.md"
+      "completed_at": "2026-07-30T21:22:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1985-episodic-update-metadata.md"
     },
     {
       "id": "TASK-1986",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Imports BrainStore, dream models, and mark_consolidated — sequential after its three dependencies.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1986-dream-runner.md"
+      "completed_at": "2026-07-30T21:55:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1986-dream-runner.md"
     },
     {
       "id": "TASK-1987",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Drives DreamCycleRunner — sequential after TASK-1986.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1987-dream-scheduler.md"
+      "completed_at": "2026-07-30T22:10:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1987-dream-scheduler.md"
     },
     {
       "id": "TASK-1988",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Touches only parrot/memory/unified/* — disjoint from runner/scheduler files (TASK-1986/1987); can run in parallel with them once TASK-1984 is done.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1988-unified-brain-retrieval.md"
+      "completed_at": "2026-07-30T22:29:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1988-unified-brain-retrieval.md"
     },
     {
       "id": "TASK-1989",
@@ -132,7 +132,7 @@
       "feature_id": "FEAT-390",
       "feature": "dream-cycle-brain-consolidation",
       "spec": "sdd/specs/dream-cycle-brain-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Final integration — needs scheduler and unified retrieval complete.",
       "assigned_to": null,
       "started_at": "2026-07-30T17:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1989-mixin-brain-wiring.md"
+      "completed_at": "2026-07-30T23:08:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1989-mixin-brain-wiring.md"
     }
   ]
 }
