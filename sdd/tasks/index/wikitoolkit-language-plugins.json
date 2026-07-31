@@ -52,7 +52,7 @@
       "feature_id": "FEAT-394",
       "feature": "wikitoolkit-language-plugins",
       "spec": "sdd/specs/wikitoolkit-language-plugins.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Modifies repo_scan.py internals — must complete before language plugins (TASK-2013–2015) can be tested end-to-end.",
       "assigned_to": null,
       "started_at": "2026-07-31T11:59:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2012-repo-scan-integration.md"
+      "completed_at": "2026-07-31T12:13:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2012-repo-scan-integration.md"
     },
     {
       "id": "TASK-2013",
