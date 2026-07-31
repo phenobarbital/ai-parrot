@@ -50,12 +50,12 @@ async def test_e2e_pdf_render(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_id}/render/{format}", handle_render
+        "/api/v1/forms/{form_uid}/render/{format}", handle_render
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/forms/{sample_form.form_id}/render/pdf"
+        f"/api/v1/forms/{sample_form.form_uid}/render/pdf"
     )
     assert resp.status == 200
     assert resp.content_type == "application/pdf"

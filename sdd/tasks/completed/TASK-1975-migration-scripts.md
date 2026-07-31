@@ -198,4 +198,54 @@ def test_orphan_detection():
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented as specified. Created `packages/parrot-formdesigner/migrations/`
+with `001_add_form_uid.sql` (ADD COLUMN → backfill from `id::text` →
+SET NOT NULL → both UNIQUE constraints, all idempotent via
+`IF NOT EXISTS`/`DO $$ ... IF NOT EXISTS pg_constraint` guards),
+`002_add_form_uid_submissions.sql` (ADD COLUMN → JOIN backfill on
+`fd.form_id = fs.form_id` → index), `003_migrate_form_data.py` (batched
+Python backfill with deterministic tie-breaking — `ORDER BY created_at
+DESC` — when a slug maps to multiple `form_uid`s, an orphan report for
+`form_data` rows with no matching `form_schemas` row, `--dry-run`
+support, and CLI via `argparse`), and `README.md` documenting execution
+order, prerequisites (notably: check for pre-existing duplicate
+`(tenant, form_id, version)` rows before running 001, since its final
+constraint would fail otherwise), and idempotency.
+
+Reused `parrot_formdesigner.services._identifiers.validate_identifier`/
+`qualified_table` in `003_migrate_form_data.py` for safe schema-name
+interpolation, matching the same injection-safety convention used by
+`PostgresFormStorage` (TASK-1974) rather than inventing a new pattern.
+
+**Design decision beyond the task's literal SQL snippet**: 002's SQL-only
+backfill uses a plain `UPDATE ... FROM ... WHERE fd.form_id = fs.form_id`
+join, which picks an arbitrary match if a slug maps to more than one
+`form_uid` (e.g. deleted-and-recreated form reusing a slug). Documented
+this ambiguity explicitly in both the SQL file's comments and the README,
+and pointed at `003_migrate_form_data.py` (which DOES tie-break
+deterministically) as the preferred path for production backfills where
+this matters — this wasn't explicitly called out in the task's Scope, but
+follows directly from the Known Risks note already in the spec itself
+("Submissions backfill may have orphans... JOIN may miss submissions
+whose form was deleted").
+
+**Tests**: no test file was listed in the task's own "Files to
+Create/Modify" table (only migration artifacts), but the task's own Test
+Specification section clearly implies test coverage is expected — added
+`tests/unit/test_migrations_form_uid.py` (12 tests): SQL-content
+assertions for both `.sql` files (idempotency guards, required
+statements) and README completeness, plus unit tests for
+`backfill_form_uid()` against an in-memory asyncpg-like stub pool
+(matched rows, orphan detection, dry-run no-op, mixed batches),
+`MigrationReport.summary()`, CLI arg parsing, and a graceful-failure test
+for an unparsable DSN. `003_migrate_form_data.py` is loaded via
+`importlib.util.spec_from_file_location` (not a normal import) since
+`migrations/` is a plain directory, not a Python package, and its
+filename starts with a digit.
+
+All 12 new tests pass:
+`pytest packages/parrot-formdesigner/tests/unit/test_migrations_form_uid.py -v`.
+Ruff clean on both new Python files (`003_migrate_form_data.py` made
+executable to match its shebang). Full `pytest tests/unit/` failure set
+unchanged from the post-TASK-1974 baseline — zero regressions.

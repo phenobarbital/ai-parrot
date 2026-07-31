@@ -38,8 +38,11 @@ def _clear_registry() -> None:  # type: ignore[return]
     _clear_event_registry_for_tests()
 
 
+_UNKNOWN_FORM_UID = "00000000-0000-0000-0000-000000000000"
+
+
 def _make_form(form_id: str = "survey_v1", events: FormEventsConfig | None = None) -> FormSchema:
-    """Build a minimal FormSchema."""
+    """Build a minimal FormSchema. form_uid is auto-generated."""
     return FormSchema(
         form_id=form_id,
         title={"en": "Survey"},
@@ -49,12 +52,22 @@ def _make_form(form_id: str = "survey_v1", events: FormEventsConfig | None = Non
 
 
 def _make_request(
-    form_id: str = "survey_v1",
+    form_uid: str = _UNKNOWN_FORM_UID,
     body: dict | None = None,
 ) -> MagicMock:
-    """Build a mocked aiohttp Request for submit."""
+    """Build a mocked aiohttp Request for submit.
+
+    Args:
+        form_uid: Value for the ``{form_uid}`` path parameter (FEAT-389) —
+            MUST be a well-formed UUID string (validated by
+            ``extract_form_uid()``). The mocked registry returns the same
+            form regardless of this value, and event-handler resolution
+            inside ``dispatch()`` is keyed by ``form.form_id`` (the loaded
+            form's slug attribute), NOT this URL identifier — so a fixed
+            placeholder UUID is fine across all tests in this file.
+    """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    req.match_info = {"form_uid": form_uid}
     req.method = "POST"
     req.headers = {}
     req.query = {}

@@ -14,6 +14,8 @@ from parrot_formdesigner.services.submissions import (
 
 from .test_storage_schema_tenant import _RecordingPool
 
+_TEST_FORM_UID = "550e8400-e29b-41d4-a716-446655440000"
+
 
 class TestInitializeDDL:
     @pytest.mark.asyncio
@@ -50,24 +52,25 @@ class TestInitializeDDL:
 
 class TestStoreInsertsMetadata:
     @pytest.mark.asyncio
-    async def test_insert_has_twenty_placeholders(self) -> None:
-        """17 metadata columns + 3 revision-chain columns = 20 placeholders."""
+    async def test_insert_has_twenty_one_placeholders(self) -> None:
+        """form_uid (FEAT-389) + 17 metadata/revision columns = 21 placeholders."""
         pool = _RecordingPool()
         storage = FormSubmissionStorage(pool=pool)
         await storage.store(
             FormSubmission(
-                form_id="f", form_version="1.0", data={}, is_valid=True
+                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
             )
         )
         sql, args = pool.conn.executed[0]
-        assert "$20" in sql
-        assert "$21" not in sql
-        assert len(args) == 20
+        assert "$21" in sql
+        assert "$22" not in sql
+        assert len(args) == 21
 
     @pytest.mark.asyncio
     async def test_insert_carries_metadata_values_in_order(self) -> None:
         ts = datetime(2026, 5, 18, 10, 0, tzinfo=timezone.utc)
         sub = FormSubmission(
+            form_uid=_TEST_FORM_UID,
             form_id="f",
             form_version="1.0",
             data={"q1": "yes"},
@@ -84,19 +87,19 @@ class TestStoreInsertsMetadata:
         pool = _RecordingPool()
         await FormSubmissionStorage(pool=pool).store(sub)
         _, args = pool.conn.executed[0]
-        # Args layout (1-indexed):
-        # 1 submission_id, 2 form_id, 3 form_version, 4 data,
-        # 5 is_valid, 6 forwarded, 7 forward_status, 8 forward_error,
-        # 9 tenant, 10 created_at,
-        # 11 user_id, 12 username, 13 org_id, 14 submitted_at,
-        # 15 ip, 16 user_agent, 17 locale
-        assert args[10] == "u-42"
-        assert args[11] == "alice"
-        assert args[12] == 7
-        assert args[13] == ts
-        assert args[14] == "203.0.113.5"
-        assert args[15] == "ParrotTest/1.0"
-        assert args[16] == "en-US"
+        # Args layout (1-indexed, FEAT-389 inserted form_uid as #2):
+        # 1 submission_id, 2 form_uid, 3 form_id, 4 form_version, 5 data,
+        # 6 is_valid, 7 forwarded, 8 forward_status, 9 forward_error,
+        # 10 tenant, 11 created_at,
+        # 12 user_id, 13 username, 14 org_id, 15 submitted_at,
+        # 16 ip, 17 user_agent, 18 locale
+        assert args[11] == "u-42"
+        assert args[12] == "alice"
+        assert args[13] == 7
+        assert args[14] == ts
+        assert args[15] == "203.0.113.5"
+        assert args[16] == "ParrotTest/1.0"
+        assert args[17] == "en-US"
 
     @pytest.mark.asyncio
     async def test_insert_nulls_metadata_when_unset(self) -> None:
@@ -104,19 +107,19 @@ class TestStoreInsertsMetadata:
         pool = _RecordingPool()
         await FormSubmissionStorage(pool=pool).store(
             FormSubmission(
-                form_id="f", form_version="1.0", data={}, is_valid=True
+                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
             )
         )
         _, args = pool.conn.executed[0]
-        for idx in range(10, 17):
+        for idx in range(11, 18):
             assert args[idx] is None, f"arg ${idx + 1} should be NULL"
 
 
 class TestFormSubmissionBackCompat:
     def test_minimal_construction_still_works(self) -> None:
-        """Pre-metadata callers (no extra kwargs) must keep constructing."""
+        """Pre-metadata callers (only form_uid added) must keep constructing."""
         sub = FormSubmission(
-            form_id="f", form_version="1.0", data={}, is_valid=True
+            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
         )
         assert sub.user_id is None
         assert sub.username is None
@@ -129,6 +132,7 @@ class TestFormSubmissionBackCompat:
     def test_serialization_roundtrip_with_metadata(self) -> None:
         ts = datetime(2026, 5, 18, tzinfo=timezone.utc)
         sub = FormSubmission(
+            form_uid=_TEST_FORM_UID,
             form_id="f",
             form_version="1.0",
             data={},

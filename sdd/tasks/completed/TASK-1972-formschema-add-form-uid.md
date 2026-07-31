@@ -35,7 +35,7 @@ This is the foundation task. All other tasks depend on `FormSchema` having a
 | File | Action | Description |
 |---|---|---|
 | `packages/parrot-formdesigner/src/parrot_formdesigner/core/schema.py` | MODIFY | Add `form_uid` field to `FormSchema` |
-| `packages/parrot-formdesigner/tests/test_schema.py` | MODIFY | Add tests for `form_uid` auto-generation |
+| `packages/parrot-formdesigner/tests/unit/test_core_models.py` | MODIFY | Add tests for `form_uid` auto-generation (CORRECTED 2026-07-30: `tests/test_schema.py` does not exist; `tests/unit/test_core_models.py` is the actual, existing `FormSchema` test file — verified via find) |
 
 ---
 
@@ -43,8 +43,12 @@ This is the foundation task. All other tasks depend on `FormSchema` having a
 
 ### Verified Imports
 ```python
-from pydantic import BaseModel, Field  # verified: used throughout core/schema.py
-import uuid  # stdlib — add to core/schema.py if not present
+# CORRECTED (2026-07-30): core/schema.py currently imports
+# `from pydantic import BaseModel, ConfigDict, model_validator` — `Field` is
+# NOT already imported anywhere in the file (verified via grep). Must add
+# `Field` to that import line. `import uuid` is also not present — must add.
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+import uuid  # stdlib — add to core/schema.py
 ```
 
 ### Existing Signatures to Use
@@ -147,4 +151,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Added `import uuid` and `Field` to the pydantic
+import in `core/schema.py`, and added `form_uid: str =
+Field(default_factory=lambda: str(uuid.uuid4()))` as the first field on
+`FormSchema` (before `form_id`), plus a docstring entry.
+
+**Codebase Contract correction**: the contract's "Verified Imports" and
+"Files to Create/Modify" were stale — `Field` was not actually imported in
+`core/schema.py` (only `BaseModel, ConfigDict, model_validator`), and
+`tests/test_schema.py` does not exist (the real `FormSchema` test file is
+`tests/unit/test_core_models.py`). Corrected both sections in this file
+before implementing, per the Codebase Contract verification step.
+
+Added `TestFormSchemaFormUid` test class to `tests/unit/test_core_models.py`
+covering: auto-generation, explicit-uid respect, uniqueness per instance,
+inclusion in `model_dump()`, and immutability on `form_id` rename — matching
+the task's Test Specification plus one extra (immutability) directly from
+the spec's acceptance criteria.
+
+**Test note**: worktrees share the main repo's `.venv`, whose editable
+install of `parrot_formdesigner` resolves to the main repo's `src/`, not
+the worktree's. Tests were run with
+`PYTHONPATH="<worktree>/packages/parrot-formdesigner/src:$PYTHONPATH"`
+prepended to pick up the worktree's copy of `schema.py`.
+
+All 5 new tests pass. One pre-existing, unrelated failure
+(`test_field_type_enum_total_count`, expects 32 `FieldType` values but
+finds 33) was confirmed via `git stash` to predate this change — out of
+scope, not touched.

@@ -52,7 +52,9 @@ class TelegramFormRouter(Router):
         registry: FormRegistry for looking up forms by ID.
         validator: Optional FormValidator. Created if not provided.
         on_submit: Optional callback invoked after successful validation.
-            Signature: ``async def on_submit(form_id, data, chat_id) -> None``
+            Signature: ``async def on_submit(form_uid, data, chat_id) -> None``
+            (FEAT-389 — the callback receives the immutable ``form_uid``,
+            not the mutable ``form_id`` slug).
     """
 
     def __init__(
@@ -91,7 +93,12 @@ class TelegramFormRouter(Router):
         """Initiate a form conversation in the given chat.
 
         Args:
-            form_id: ID of the form to present.
+            form_id: Human-typed slug of the form to present (public,
+                bot-facing API — kept as ``form_id`` since external callers
+                supply a slug, not a UUID). Resolved via
+                :meth:`FormRegistry.get_by_slug`; every downstream step in
+                this conversation (FSM state, hashing, re-fetching) then
+                uses the resolved ``form.form_uid`` (FEAT-389).
             chat_id: Telegram chat ID.
             bot: aiogram Bot instance.
             state: FSMContext for this chat.
@@ -99,7 +106,7 @@ class TelegramFormRouter(Router):
             tenant: Optional tenant slug. When ``None``, the registry falls
                 back to its configured ``default_tenant``.
         """
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get_by_slug(form_id, tenant=tenant)
         if form is None:
             await bot.send_message(chat_id, f"Form '{form_id}' not found.")
             return
@@ -108,14 +115,18 @@ class TelegramFormRouter(Router):
         payload: TelegramFormPayload = result.content
 
         if payload.mode == TelegramRenderMode.WEBAPP:
-            await self._start_webapp(payload, form_id, chat_id, bot, state, tenant=tenant)
+            await self._start_webapp(
+                payload, form.form_uid, chat_id, bot, state, tenant=tenant
+            )
         else:
-            await self._start_inline(payload, form_id, chat_id, bot, state, tenant=tenant)
+            await self._start_inline(
+                payload, form.form_uid, chat_id, bot, state, tenant=tenant
+            )
 
     async def _start_webapp(
         self,
         payload: TelegramFormPayload,
-        form_id: str,
+        form_uid: str,
         chat_id: int,
         bot: Bot,
         state: FSMContext,
@@ -126,7 +137,8 @@ class TelegramFormRouter(Router):
 
         Args:
             payload: Rendered form payload.
-            form_id: Form identifier (persisted in FSM state for submit).
+            form_uid: Immutable form UUID (persisted in FSM state for
+                submit — FEAT-389).
             chat_id: Telegram chat ID.
             bot: aiogram Bot instance.
             state: FSMContext for tracking form metadata.
@@ -135,7 +147,7 @@ class TelegramFormRouter(Router):
                 correct tenant.
         """
         await state.set_state(FormFilling.active)
-        await state.update_data(form_id=form_id, tenant=tenant)
+        await state.update_data(form_uid=form_uid, tenant=tenant)
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -157,7 +169,7 @@ class TelegramFormRouter(Router):
     async def _start_inline(
         self,
         payload: TelegramFormPayload,
-        form_id: str,
+        form_uid: str,
         chat_id: int,
         bot: Bot,
         state: FSMContext,
@@ -168,7 +180,7 @@ class TelegramFormRouter(Router):
 
         Args:
             payload: Rendered form payload with steps.
-            form_id: Form identifier.
+            form_uid: Immutable form UUID (FEAT-389).
             chat_id: Telegram chat ID.
             bot: aiogram Bot instance.
             state: FSMContext for tracking progress.
@@ -183,7 +195,7 @@ class TelegramFormRouter(Router):
         steps_data = [s.model_dump() for s in payload.steps]
         await state.set_state(FormFilling.active)
         await state.update_data(
-            form_id=form_id,
+            form_uid=form_uid,
             tenant=tenant,
             current_field_idx=0,
             answers={},
@@ -270,7 +282,7 @@ class TelegramFormRouter(Router):
             )
         else:
             # All fields done → show summary
-            await self._show_summary(query.message, data["form_id"], answers, state)
+            await self._show_summary(query.message, data["form_uid"], answers, state)
 
     async def _handle_action_callback(
         self,
@@ -315,13 +327,13 @@ class TelegramFormRouter(Router):
                 )
             else:
                 await self._show_summary(
-                    query.message, data["form_id"], answers, state
+                    query.message, data["form_uid"], answers, state
                 )
 
         elif callback_data.act == "submit":
             answers = data.get("answers", {})
-            form_id = data.get("form_id")
-            await self._submit_form(query.message, form_id, answers, state)
+            form_uid = data.get("form_uid")
+            await self._submit_form(query.message, form_uid, answers, state)
 
         elif callback_data.act == "cancel":
             await state.clear()
@@ -330,7 +342,7 @@ class TelegramFormRouter(Router):
     async def _show_summary(
         self,
         message: Message,
-        form_id: str,
+        form_uid: str,
         answers: dict[str, Any],
         state: FSMContext,
     ) -> None:
@@ -338,13 +350,13 @@ class TelegramFormRouter(Router):
 
         Args:
             message: Message to edit.
-            form_id: Form identifier.
+            form_uid: Immutable form UUID (FEAT-389).
             answers: Collected answers.
             state: FSMContext.
         """
         from .renderer import _form_hash
 
-        fh = _form_hash(form_id)
+        fh = _form_hash(form_uid)
         lines = ["*Summary*\n"]
         data = await state.get_data()
         steps_data = data.get("steps", [])
@@ -379,7 +391,7 @@ class TelegramFormRouter(Router):
     async def _submit_form(
         self,
         message: Message,
-        form_id: str,
+        form_uid: str,
         answers: dict[str, Any],
         state: FSMContext,
     ) -> None:
@@ -387,13 +399,13 @@ class TelegramFormRouter(Router):
 
         Args:
             message: Message to edit with result.
-            form_id: Form identifier.
+            form_uid: Immutable form UUID (FEAT-389).
             answers: Collected answers dict.
             state: FSMContext to clear on completion.
         """
         data = await state.get_data()
         tenant = data.get("tenant")
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             await message.edit_text("Form not found. Submission failed.")
             await state.clear()
@@ -406,10 +418,10 @@ class TelegramFormRouter(Router):
             if self.on_submit:
                 chat_id = message.chat.id
                 try:
-                    await self.on_submit(form_id, answers, chat_id)
+                    await self.on_submit(form_uid, answers, chat_id)
                 except Exception:
                     self.logger.exception(
-                        "on_submit callback failed for form '%s'", form_id
+                        "on_submit callback failed for form '%s'", form_uid
                     )
         else:
             error_lines = ["Validation errors:\n"]
@@ -436,16 +448,16 @@ class TelegramFormRouter(Router):
             await message.answer("Invalid form data received.")
             return
 
-        form_id = payload.pop("_form_id", None)
-        if not form_id:
+        form_uid = payload.pop("_form_uid", None)
+        if not form_uid:
             await message.answer("Missing form identifier in submission.")
             return
 
         fsm_data = await state.get_data()
         tenant = fsm_data.get("tenant")
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            await message.answer(f"Form '{form_id}' not found.")
+            await message.answer(f"Form '{form_uid}' not found.")
             return
 
         result = await self.validator.validate(form, payload)
@@ -454,10 +466,10 @@ class TelegramFormRouter(Router):
             await message.answer("Form submitted successfully!")
             if self.on_submit:
                 try:
-                    await self.on_submit(form_id, payload, message.chat.id)
+                    await self.on_submit(form_uid, payload, message.chat.id)
                 except Exception:
                     self.logger.exception(
-                        "on_submit callback failed for form '%s'", form_id
+                        "on_submit callback failed for form '%s'", form_uid
                     )
         else:
             error_lines = ["Validation errors:\n"]

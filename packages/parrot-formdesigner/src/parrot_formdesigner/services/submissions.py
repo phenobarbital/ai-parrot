@@ -52,7 +52,11 @@ class FormSubmission(BaseModel):
 
     Attributes:
         submission_id: Unique identifier for this submission.
-        form_id: ID of the form that was submitted.
+        form_uid: Immutable UUID of the parent form (FEAT-389). Required —
+            every submission must reference its form by stable identity,
+            since ``form_id`` (the slug) may be renamed after the fact.
+        form_id: ID (slug) of the form that was submitted. Kept for
+            human-readable queries; not stable across a form rename.
         form_version: Version of the form at the time of submission.
         data: The validated (sanitized) submission data.
         is_valid: Whether the submission passed form validation.
@@ -87,6 +91,7 @@ class FormSubmission(BaseModel):
         default_factory=lambda: str(uuid.uuid4()),
         description="Unique submission identifier",
     )
+    form_uid: str = Field(..., description="Immutable UUID of the parent form")
     form_id: str
     form_version: str
     data: dict[str, Any]
@@ -170,6 +175,8 @@ class FormSubmissionStorage:
         # Index name must be unique per schema; tie it to the table.
         idx_name = f"idx_{self._table}_form_id"
         validate_identifier(idx_name, kind="index")
+        form_uid_idx_name = f"idx_{self._table}_form_uid"
+        validate_identifier(form_uid_idx_name, kind="index")
         root_idx_name = f"idx_{self._table}_root_submission_id"
         validate_identifier(root_idx_name, kind="index")
         schema = self._resolve_schema(tenant)
@@ -177,6 +184,7 @@ class FormSubmissionStorage:
         CREATE TABLE IF NOT EXISTS {qt} (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             submission_id VARCHAR(255) NOT NULL UNIQUE,
+            form_uid VARCHAR(36),
             form_id VARCHAR(255) NOT NULL,
             form_version VARCHAR(50) NOT NULL,
             data JSONB NOT NULL,
@@ -199,6 +207,8 @@ class FormSubmissionStorage:
         );
         CREATE INDEX IF NOT EXISTS "{idx_name}"
             ON "{schema}"."{self._table}"(form_id);
+        CREATE INDEX IF NOT EXISTS "{form_uid_idx_name}"
+            ON "{schema}"."{self._table}"(form_uid);
         CREATE INDEX IF NOT EXISTS "{root_idx_name}"
             ON "{schema}"."{self._table}"(root_submission_id);
         """
@@ -209,13 +219,22 @@ class FormSubmissionStorage:
         Postgres >= 11 makes ``ADD COLUMN IF NOT EXISTS`` a metadata-only
         operation when the column is nullable with no default, so this
         is cheap on existing rows.
+
+        FEAT-389: adds ``form_uid`` here too (not just in
+        ``_create_table_sql``) so that legacy ``form_data`` tables upgraded
+        via the app's own ``initialize()`` startup path — not just the
+        standalone TASK-1975 migration scripts — get the column before
+        ``store()`` ever tries to INSERT into it.
         """
         qt = self._qualified(tenant)
+        form_uid_idx_name = f"idx_{self._table}_form_uid"
+        validate_identifier(form_uid_idx_name, kind="index")
         root_idx_name = f"idx_{self._table}_root_submission_id"
         validate_identifier(root_idx_name, kind="index")
         schema = self._resolve_schema(tenant)
         return f"""
         ALTER TABLE {qt}
+            ADD COLUMN IF NOT EXISTS form_uid VARCHAR(36),
             ADD COLUMN IF NOT EXISTS user_id VARCHAR(255),
             ADD COLUMN IF NOT EXISTS username VARCHAR(255),
             ADD COLUMN IF NOT EXISTS org_id INTEGER,
@@ -226,6 +245,8 @@ class FormSubmissionStorage:
             ADD COLUMN IF NOT EXISTS root_submission_id VARCHAR(255),
             ADD COLUMN IF NOT EXISTS revision INTEGER,
             ADD COLUMN IF NOT EXISTS context JSONB;
+        CREATE INDEX IF NOT EXISTS "{form_uid_idx_name}"
+            ON "{schema}"."{self._table}"(form_uid);
         CREATE INDEX IF NOT EXISTS "{root_idx_name}"
             ON "{schema}"."{self._table}"(root_submission_id);
         """
@@ -234,15 +255,15 @@ class FormSubmissionStorage:
         qt = self._qualified(tenant)
         return f"""
         INSERT INTO {qt} (
-            submission_id, form_id, form_version, data,
+            submission_id, form_uid, form_id, form_version, data,
             is_valid, forwarded, forward_status, forward_error,
             tenant, created_at,
             user_id, username, org_id, submitted_at, ip, user_agent, locale,
             root_submission_id, revision, context
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16, $17,
-            $18, $19, $20
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, $15, $16, $17, $18,
+            $19, $20, $21
         )
         """
 
@@ -297,6 +318,7 @@ class FormSubmissionStorage:
             await conn.execute(
                 self._insert_sql(effective_tenant),
                 submission.submission_id,
+                submission.form_uid,
                 submission.form_id,
                 submission.form_version,
                 json.dumps(submission.data),
@@ -332,7 +354,7 @@ class FormSubmissionStorage:
     # Column list for reads — order is not significant (rows are accessed by
     # name), but it enumerates every column mapped back onto ``FormSubmission``.
     _SELECT_COLUMNS: str = (
-        "submission_id, form_id, form_version, data, is_valid, "
+        "submission_id, form_uid, form_id, form_version, data, is_valid, "
         "forwarded, forward_status, forward_error, tenant, created_at, "
         "user_id, username, org_id, submitted_at, ip, user_agent, locale, "
         "root_submission_id, revision, context"
@@ -355,6 +377,7 @@ class FormSubmissionStorage:
         ip = row["ip"]
         return FormSubmission(
             submission_id=row["submission_id"],
+            form_uid=row["form_uid"],
             form_id=row["form_id"],
             form_version=row["form_version"],
             data=_load_json(row["data"]) or {},

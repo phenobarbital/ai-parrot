@@ -137,4 +137,35 @@ async def test_operations_with_invalid_uid(client):
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented as specified: `handle_operations()` now extracts and validates
+`form_uid` via `extract_form_uid()` (imported from `api/handlers.py`,
+confirmed no circular import), and every downstream reference (registry
+lookup, If-Match logging, op-failure logging, schema-error logging,
+success logging) was renamed from `form_id` to `form_uid`. Module and
+function docstrings updated to reference `{form_uid}`. Verified via grep
+that zero `form_id` references remain in this file.
+
+**Codebase Contract**: matched the original contract closely — no stale
+entries found this time (TASK-1976 had already correctly predicted
+`extract_form_uid()`'s location and signature).
+
+**Test file update** (not listed in the task's own Files table, but
+necessary — same "acceptance criteria: tests pass" discipline as prior
+tasks): `tests/integration/test_operations_e2e.py` mounts its OWN route
+directly (`app.router.add_patch("/api/v1/forms/{form_id}/operations", ...)`,
+independent of `api/routes.py`) and built every URL from
+`sample_form.form_id`/`form.form_id` — updated the route template to
+`{form_uid}`, all URL-building call sites to use `.form_uid`, the
+`registry.get(sample_form.form_id)` persistence-check calls to
+`.form_uid`, and the "unknown form" test's literal `"missing"` slug to a
+well-formed-but-absent UUID (required now that `extract_form_uid()`
+validates the path segment before the registry lookup even runs).
+
+All 9 tests in `test_operations_e2e.py` pass (8 of them were already
+broken since TASK-1973 re-keyed the registry — fixed as a side effect of
+this task, not a new regression). Full `pytest tests/unit/` and
+`tests/integration/` suites: zero new failures, confirmed via diff
+against the post-TASK-1976 baseline. Ruff: identical error count/type to
+baseline (2 pre-existing issues: import order in `operations.py`, one
+`UP007` `Optional`→`X | Y` — both pre-existing, untouched).

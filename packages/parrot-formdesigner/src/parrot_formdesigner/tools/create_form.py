@@ -3,17 +3,24 @@
 Accepts either a natural language prompt (LLM path) or fully structured
 input (`schema`, `sections`, `fields` — deterministic path via
 `FormAssembler`, zero LLM calls) and returns a validated FormSchema.
-Supports iterative refinement: when refine_form_id is provided, loads
-the existing form and asks the LLM to modify it.
+Supports iterative refinement: when refine_form_uid is provided, loads
+the existing form (by its immutable form_uid, FEAT-389) and asks the LLM
+to modify it.
 
 LLM flow (prompt-only):
 1. Build a structured system prompt with FormSchema JSON structure
-2. If refine_form_id, load existing form from registry and include in prompt
+2. If refine_form_uid, load existing form from registry (by form_uid) and
+   include in prompt
 3. Call LLM client to generate JSON
 4. Parse and validate against FormSchema (retry up to 2 times with error feedback)
 5. Validate generated form using FormValidator (circular dependency check)
 6. Optionally register in FormRegistry with persist=True
-7. Return FormSchema in ToolResult metadata
+7. Return FormSchema in ToolResult metadata (including form_uid)
+
+FEAT-389: the LLM never generates form_uid — it is always injected by this
+tool. New forms get a fresh `str(uuid.uuid4())` (or a caller-supplied
+`form_uid`); refinements preserve the existing form's form_uid unchanged
+(only form_id/slug and content may change via a refinement prompt).
 
 Deterministic flow (schema/sections/fields — FEAT-388):
 1. Detect which structured input was provided
@@ -29,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 import warnings
 from typing import Any
 
@@ -257,9 +265,13 @@ class CreateFormInput(BaseModel):
             call is made.
         fields: Flat list of field dicts. Auto-wrapped in a single default
             section. No LLM call is made.
-        form_id: Custom form ID. Auto-generated if not provided.
+        form_id: Custom form ID (slug). Auto-generated if not provided.
+        form_uid: Optional UUID for the form. Auto-generated if not provided
+            (FEAT-389).
         persist: Whether to save the form to the registry storage.
-        refine_form_id: ID of an existing form to load and modify.
+        refine_form_uid: UUID of an existing form to load and modify
+            (FEAT-389 — renamed from ``refine_form_id``; forms are now
+            looked up by their immutable identity, not their slug).
     """
 
     prompt: str | None = Field(
@@ -290,15 +302,20 @@ class CreateFormInput(BaseModel):
         default=None,
         description="Custom form ID (slug). Auto-generated from title if not provided.",
     )
+    form_uid: str | None = Field(
+        default=None,
+        description="Optional UUID for the form. Auto-generated if not provided.",
+    )
     persist: bool = Field(
         default=False,
         description="Save the generated form to the registry (and storage if configured)",
     )
-    refine_form_id: str | None = Field(
+    refine_form_uid: str | None = Field(
         default=None,
         description=(
-            "Form ID of an existing form to load and refine. "
-            "If set, the existing form is modified based on the prompt."
+            "form_uid of an existing form to load and refine. "
+            "If set, the existing form is modified based on the prompt; "
+            "its form_uid is preserved unchanged."
         ),
     )
 
@@ -376,8 +393,9 @@ class CreateFormTool(AbstractTool):
         self,
         prompt: str | None = None,
         form_id: str | None = None,
+        form_uid: str | None = None,
         persist: bool = False,
-        refine_form_id: str | None = None,
+        refine_form_uid: str | None = None,
         schema: dict[str, Any] | None = None,
         sections: list[dict[str, Any]] | None = None,
         fields: list[dict[str, Any]] | None = None,
@@ -393,10 +411,14 @@ class CreateFormTool(AbstractTool):
         Args:
             prompt: Natural language form description or modification request.
                 Required only when no structured input is provided.
-            form_id: Custom form_id. Auto-generated if not provided.
+            form_id: Custom form_id (slug). Auto-generated if not provided.
+            form_uid: Custom form_uid (FEAT-389). Auto-generated if not
+                provided and this is a NEW form. Ignored when
+                ``refine_form_uid`` is set — refinements always preserve
+                the existing form's form_uid.
             persist: If True, register the form in the registry.
-            refine_form_id: If set, load existing form and modify it (LLM
-                path only).
+            refine_form_uid: If set, load the existing form by form_uid and
+                modify it (FEAT-389 — renamed from ``refine_form_id``).
             schema: Complete form definition dict (JSON Schema or
                 FormSchema-native). Triggers the deterministic path.
             sections: List of section dicts to assemble. Triggers the
@@ -405,8 +427,9 @@ class CreateFormTool(AbstractTool):
                 default section. Triggers the deterministic path.
 
         Returns:
-            ToolResult with success=True and form dict in metadata["form"],
-            or success=False with error details on failure.
+            ToolResult with success=True and form dict in metadata["form"]
+            (plus a top-level metadata["form_uid"]), or success=False with
+            error details on failure.
         """
         has_structured = schema is not None or sections is not None or fields is not None
 
@@ -440,15 +463,25 @@ class CreateFormTool(AbstractTool):
 
         try:
             existing: FormSchema | None = None
-            if refine_form_id and self._registry is not None:
-                existing = await self._registry.get(refine_form_id, tenant=self._tenant)
+            effective_form_uid: str
+            if refine_form_uid and self._registry is not None:
+                existing = await self._registry.get(refine_form_uid, tenant=self._tenant)
                 if existing is None:
                     return ToolResult(
                         success=False,
                         status="error",
                         result=None,
-                        metadata={"error": f"Form '{refine_form_id}' not found in registry"},
+                        metadata={"error": f"Form '{refine_form_uid}' not found in registry"},
                     )
+
+                # form_uid is the immutable identity — a refinement NEVER
+                # changes it, regardless of any form_uid= kwarg passed in.
+                effective_form_uid = existing.form_uid
+                # The slug MAY change via an explicit form_id=; otherwise
+                # keep the existing slug (previously this incorrectly fell
+                # back to refine_form_id — now a form_uid, which must NOT
+                # leak into the form_id/slug field).
+                effective_form_id = form_id or existing.form_id
 
                 # Route form edits through the toolkit path (FEAT-169).
                 # _should_use_toolkit() determines whether to use the toolkit
@@ -460,7 +493,7 @@ class CreateFormTool(AbstractTool):
                     except Exception as exc:
                         self.logger.warning(
                             "Toolkit edit failed for '%s', falling back to full-form path: %s",
-                            refine_form_id,
+                            refine_form_uid,
                             exc,
                         )
                         form = None
@@ -468,15 +501,16 @@ class CreateFormTool(AbstractTool):
                 if form is None:
                     # Fallback: use existing full-form refinement path
                     self.logger.info(
-                        "Falling back to full-form refinement for '%s'.", refine_form_id
+                        "Falling back to full-form refinement for '%s'.", refine_form_uid
                     )
                     messages = self._build_refinement_messages(existing, prompt)
-                    effective_form_id = form_id or refine_form_id
-                    form = await self._generate_with_retry(messages, effective_form_id)
+                    form = await self._generate_with_retry(
+                        messages, effective_form_id, effective_form_uid
+                    )
             else:
+                effective_form_uid = form_uid or str(uuid.uuid4())
                 messages = self._build_creation_messages(prompt)
-                effective_form_id = form_id or refine_form_id
-                form = await self._generate_with_retry(messages, effective_form_id)
+                form = await self._generate_with_retry(messages, form_id, effective_form_uid)
 
             if form is None:
                 return ToolResult(
@@ -494,13 +528,13 @@ class CreateFormTool(AbstractTool):
                     circular_errors,
                 )
 
-            if refine_form_id and existing is not None:
+            if refine_form_uid and existing is not None:
                 from ..api._utils import _bump_version
                 form.version = _bump_version(existing.version)
 
             if persist and self._registry is not None:
                 try:
-                    overwrite = refine_form_id is not None
+                    overwrite = refine_form_uid is not None
                     await self._registry.register(
                         form, persist=True, overwrite=overwrite, tenant=self._tenant,
                     )
@@ -513,6 +547,7 @@ class CreateFormTool(AbstractTool):
                 result={"form_id": form.form_id, "title": str(form.title)},
                 metadata={
                     "form": form.model_dump(),
+                    "form_uid": form.form_uid,
                     "circular_dependency_errors": circular_errors or [],
                 },
             )
@@ -680,12 +715,17 @@ class CreateFormTool(AbstractTool):
         self,
         messages: list[dict[str, str]],
         form_id: str | None,
+        form_uid: str | None = None,
     ) -> FormSchema | None:
         """Generate and validate FormSchema with retry on validation failure.
 
         Args:
             messages: Initial LLM messages.
             form_id: Optional custom form_id.
+            form_uid: form_uid to inject into the generated form (FEAT-389).
+                The LLM never generates this — it is always tool-injected,
+                either freshly generated for new forms or preserved from
+                the existing form when refining.
 
         Returns:
             Validated FormSchema, or None after max retries.
@@ -706,6 +746,10 @@ class CreateFormTool(AbstractTool):
                 elif "form_id" not in data or not data["form_id"]:
                     title = data.get("title", "generated-form")
                     data["form_id"] = _slugify(title if isinstance(title, str) else "generated-form")
+
+                # form_uid is always tool-injected (FEAT-389) — never LLM-generated.
+                if form_uid:
+                    data["form_uid"] = form_uid
 
                 form = FormSchema.model_validate(data)
                 return form

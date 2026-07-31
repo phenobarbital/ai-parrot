@@ -1,5 +1,6 @@
-"""Unit tests for parrot-formdesigner core models (TASK-548, TASK-1033)."""
+"""Unit tests for parrot-formdesigner core models (TASK-548, TASK-1033, TASK-1972)."""
 
+import uuid
 from datetime import datetime, timezone
 
 import pytest
@@ -77,6 +78,50 @@ class TestFormSchema:
         assert FieldType.EMAIL == "email"
         assert FieldType.SELECT == "select"
         assert FieldType.BOOLEAN == "boolean"
+
+
+class TestFormSchemaFormUid:
+    """Tests for FormSchema.form_uid (FEAT-389 / TASK-1972)."""
+
+    def test_auto_generated(self) -> None:
+        """form_uid should be auto-generated as a valid UUID4 string."""
+        form = FormSchema(
+            form_id="test",
+            title="Test",
+            sections=[FormSection(section_id="s1", title="S1", fields=[])],
+        )
+        assert form.form_uid is not None
+        uuid.UUID(form.form_uid)  # validates UUID format
+
+    def test_explicit_uid_respected(self) -> None:
+        """An explicitly provided form_uid should be respected, not overridden."""
+        uid = str(uuid.uuid4())
+        form = FormSchema(
+            form_uid=uid,
+            form_id="test",
+            title="Test",
+            sections=[FormSection(section_id="s1", title="S1", fields=[])],
+        )
+        assert form.form_uid == uid
+
+    def test_unique_per_instance(self) -> None:
+        """Each FormSchema instance should get a distinct form_uid."""
+        f1 = FormSchema(form_id="a", title="A", sections=[])
+        f2 = FormSchema(form_id="b", title="B", sections=[])
+        assert f1.form_uid != f2.form_uid
+
+    def test_included_in_dump(self) -> None:
+        """form_uid should be present in model_dump() output."""
+        form = FormSchema(form_id="t", title="T", sections=[])
+        data = form.model_dump()
+        assert "form_uid" in data
+
+    def test_form_uid_immutable_on_rename(self) -> None:
+        """Changing form_id should not change form_uid."""
+        form = FormSchema(form_id="original-slug", title="T", sections=[])
+        original_uid = form.form_uid
+        form.form_id = "renamed-slug"
+        assert form.form_uid == original_uid
 
     def test_form_schema_created_at_optional(self) -> None:
         """FormSchema without created_at parses correctly with created_at=None."""

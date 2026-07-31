@@ -8,12 +8,13 @@ abstraction layer.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints, PostDependency
@@ -272,7 +273,12 @@ class FormSchema(BaseModel):
     JSON Schema, or any other format via the renderer system.
 
     Attributes:
-        form_id: Unique identifier for this form.
+        form_uid: Stable, immutable UUID4 identity for this form. Auto-generated
+            on creation and never changes for the lifetime of the form — the
+            primary key for URL routing, registry lookups, storage, and
+            cross-system references (FEAT-389).
+        form_id: Human-readable slug for this form. Mutable and used for
+            display/search — never as a primary key (FEAT-389).
         version: Schema version string.
         title: Human-readable form title.
         description: Optional description of the form's purpose.
@@ -302,6 +308,7 @@ class FormSchema(BaseModel):
             them. (FEAT-241)
     """
 
+    form_uid: str = Field(default_factory=lambda: str(uuid.uuid4()))
     form_id: str
     version: str = "1.0"
     title: LocalizedString

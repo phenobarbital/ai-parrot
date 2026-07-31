@@ -87,7 +87,10 @@ class FormPageHandler:
         else:
             items = []
             for form in forms:
-                fid = form.form_id
+                # FEAT-389: fid drives the "Open"/"Schema" links below, which
+                # must match the {form_uid}-keyed UI routes (TASK-1981) — so
+                # it is the immutable form_uid, not the mutable form_id slug.
+                fid = form.form_uid
                 title = form.title if isinstance(form.title, str) else form.title.get("en", fid)
                 items.append(
                     f'<li>'
@@ -109,7 +112,7 @@ class FormPageHandler:
         )
 
     async def render_form(self, request: web.Request) -> web.Response:
-        """GET /forms/{form_id} — Render the form as an HTML page.
+        """GET /forms/{form_uid} — Render the form as an HTML page.
 
         Args:
             request: Incoming HTTP request.
@@ -118,8 +121,8 @@ class FormPageHandler:
             HTML page with the rendered form, or 404 if not found.
         """
         p = _prefix(request)
-        form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id, tenant=None)
+        form_uid = request.match_info["form_uid"]
+        form = await self.registry.get(form_uid, tenant=None)
         if form is None:
             return web.Response(
                 text=page_shell(
@@ -139,14 +142,14 @@ class FormPageHandler:
         rendered = await self.renderer.render(form, style=style)
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="{p}/forms/{escape(form_id)}" method="post" ',
+            f'<form action="{p}/forms/{escape(form_uid)}" method="post" ',
             1,
         )
 
         title = form.title if isinstance(form.title, str) else form.title.get("en", "Form")
         schema_link = (
             f'<div style="margin-top:1rem;">'
-            f'<a href="{p}/forms/{escape(form_id)}/schema" class="btn btn-secondary"'
+            f'<a href="{p}/forms/{escape(form_uid)}/schema" class="btn btn-secondary"'
             f' style="font-size:.85rem;">View JSON Schema</a></div>'
         )
         return web.Response(
@@ -155,7 +158,7 @@ class FormPageHandler:
         )
 
     async def view_schema(self, request: web.Request) -> web.Response:
-        """GET /forms/{form_id}/schema — Display JSON Schema as an HTML page.
+        """GET /forms/{form_uid}/schema — Display JSON Schema as an HTML page.
 
         Args:
             request: Incoming HTTP request.
@@ -164,8 +167,8 @@ class FormPageHandler:
             HTML page with pretty-printed JSON Schema and Style Schema.
         """
         p = _prefix(request)
-        form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id, tenant=None)
+        form_uid = request.match_info["form_uid"]
+        form = await self.registry.get(form_uid, tenant=None)
         if form is None:
             return web.Response(
                 text=page_shell(
@@ -186,14 +189,14 @@ class FormPageHandler:
         return web.Response(
             text=page_shell(
                 f"{title} - JSON Schema",
-                schema_page(form_id, title, schema_json, style_json, prefix=p),
+                schema_page(form_uid, title, schema_json, style_json, prefix=p),
                 prefix=p,
             ),
             content_type="text/html",
         )
 
     async def submit_form(self, request: web.Request) -> web.Response:
-        """POST /forms/{form_id} — Validate submission, show result.
+        """POST /forms/{form_uid} — Validate submission, show result.
 
         Args:
             request: Incoming HTTP request with form POST data.
@@ -202,8 +205,8 @@ class FormPageHandler:
             HTML page showing success or re-rendered form with errors.
         """
         p = _prefix(request)
-        form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id, tenant=None)
+        form_uid = request.match_info["form_uid"]
+        form = await self.registry.get(form_uid, tenant=None)
         if form is None:
             return web.Response(
                 text=page_shell(
@@ -230,7 +233,7 @@ class FormPageHandler:
   <pre>{escape(sanitized_json)}</pre>
 </div>
 <div style="display:flex; gap:.75rem;">
-  <a href="{p}/forms/{escape(form_id)}" class="btn btn-secondary">Fill again</a>
+  <a href="{p}/forms/{escape(form_uid)}" class="btn btn-secondary">Fill again</a>
   <a href="{p}/" class="btn btn-primary">Create another form</a>
 </div>"""
             return web.Response(
@@ -241,7 +244,7 @@ class FormPageHandler:
         rendered = await self.renderer.render(form, prefilled=submission, errors=result.errors)
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="{p}/forms/{escape(form_id)}" method="post" ',
+            f'<form action="{p}/forms/{escape(form_uid)}" method="post" ',
             1,
         )
         error_count = len(result.errors)

@@ -144,7 +144,9 @@ async def test_dispatcher_registers_form_in_registry(
     tool = DatabaseFormTool(registry=registry)
     await tool._execute(service="__stub__", formid=1, orgid=1)
     # FEAT-183: get() requires tenant= kwarg.
-    assert await registry.get("stub-1", tenant="navigator") is not None
+    # FEAT-389: the registry's primary index is now keyed by form_uid, not
+    # form_id — use get_by_slug() to look the form up by its slug ("stub-1").
+    assert await registry.get_by_slug("stub-1", tenant="navigator") is not None
 
 
 @pytest.mark.asyncio

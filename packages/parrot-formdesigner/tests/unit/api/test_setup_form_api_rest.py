@@ -65,7 +65,7 @@ def test_setup_upload_route_mounted() -> None:
     registry = FormRegistry()
     setup_form_api(app, registry)
     paths = {r.resource.canonical for r in app.router.routes()}
-    assert "/api/v1/forms/{form_id}/fields/{field_id}/upload" in paths
+    assert "/api/v1/forms/{form_uid}/fields/{field_id}/upload" in paths
 
 
 def test_setup_upload_route_custom_base_path() -> None:
@@ -74,7 +74,7 @@ def test_setup_upload_route_custom_base_path() -> None:
     registry = FormRegistry()
     setup_form_api(app, registry, base_path="/custom/v2")
     paths = {r.resource.canonical for r in app.router.routes()}
-    assert "/custom/v2/forms/{form_id}/fields/{field_id}/upload" in paths
+    assert "/custom/v2/forms/{form_uid}/fields/{field_id}/upload" in paths
 
 
 def test_setup_existing_routes_still_mounted() -> None:
@@ -84,5 +84,5 @@ def test_setup_existing_routes_still_mounted() -> None:
     setup_form_api(app, registry, blob_storage=MagicMock())
     paths = {r.resource.canonical for r in app.router.routes()}
     assert "/api/v1/forms" in paths
-    assert "/api/v1/forms/{form_id}" in paths
-    assert "/api/v1/forms/{form_id}/data" in paths
+    assert "/api/v1/forms/{form_uid}" in paths
+    assert "/api/v1/forms/{form_uid}/data" in paths

@@ -36,23 +36,30 @@ from tests.unit.test_api_feat300 import _make_form, _make_handler, _make_request
 
 
 class InMemoryStorage(FormStorage):
-    """Dict-backed FormStorage honoring UNIQUE(form_id, version)."""
+    """Dict-backed FormStorage honoring UNIQUE(form_uid, version) (FEAT-389).
+
+    Rekeyed from form_id to form_uid to mirror the production
+    PostgresFormStorage rekey (TASK-1974) — FormVersionService now calls
+    load/save/delete with form_uid, and save() must key by the same
+    identity or get_published()/list_versions() would never find what
+    publish() just wrote.
+    """
 
     def __init__(self) -> None:
-        # (tenant, form_id) → {version: FormSchema}; insertion order = save order
+        # (tenant, form_uid) → {version: FormSchema}; insertion order = save order
         self._rows: dict[tuple[str, str], dict[str, FormSchema]] = {}
 
     async def save(self, form: FormSchema, style=None, *, tenant=None) -> str:
-        versions = self._rows.setdefault((tenant, form.form_id), {})
+        versions = self._rows.setdefault((tenant, form.form_uid), {})
         if form.version in versions:
             raise RuntimeError(
-                'duplicate key value violates unique constraint "form_schemas_form_id_version_key"'
+                'duplicate key value violates unique constraint "form_schemas_form_uid_version_key"'
             )
         versions[form.version] = form.model_copy(deep=True)
-        return form.form_id
+        return form.form_uid
 
-    async def load(self, form_id, version=None, *, tenant=None):
-        versions = self._rows.get((tenant, form_id), {})
+    async def load(self, form_uid, version=None, *, tenant=None):
+        versions = self._rows.get((tenant, form_uid), {})
         if not versions:
             return None
         if version is not None:
@@ -61,13 +68,13 @@ class InMemoryStorage(FormStorage):
         latest = list(versions.values())[-1]
         return latest.model_copy(deep=True)
 
-    async def delete(self, form_id, *, tenant=None) -> bool:
-        return self._rows.pop((tenant, form_id), None) is not None
+    async def delete(self, form_uid, *, tenant=None) -> bool:
+        return self._rows.pop((tenant, form_uid), None) is not None
 
     async def list_forms(self, *, tenant=None) -> list[dict[str, Any]]:
         return [
-            {"form_id": fid, "version": list(v.keys())[-1], "tenant": t}
-            for (t, fid), v in self._rows.items()
+            {"form_uid": fuid, "version": list(v.keys())[-1], "tenant": t}
+            for (t, fuid), v in self._rows.items()
             if t == tenant
         ]
 
@@ -82,10 +89,20 @@ class FailingStorage(InMemoryStorage):
         raise ConnectionError("database unreachable")
 
 
-async def _registry_with_form(form_id: str = "f1", tenant: str = "t1") -> FormRegistry:
+# FEAT-389: fixed default so two independent calls to _registry_with_form()
+# (e.g. simulating a process restart against the same underlying storage in
+# TestH1) can refer to "the same conceptual form" via a shared form_uid —
+# _make_form() alone would generate a fresh random UUID each call.
+_FIXED_FORM_UID = "22222222-2222-2222-2222-222222222222"
+
+
+async def _registry_with_form(
+    form_id: str = "f1", tenant: str = "t1", form_uid: str = _FIXED_FORM_UID
+) -> tuple[FormRegistry, FormSchema]:
     registry = FormRegistry()
-    await registry.register(_make_form(form_id, tenant), tenant=tenant)
-    return registry
+    form = _make_form(form_id, tenant).model_copy(update={"form_uid": form_uid})
+    await registry.register(form, tenant=tenant)
+    return registry, form
 
 
 # ---------------------------------------------------------------------------
@@ -114,9 +131,9 @@ class TestC1IdentifierValidation:
 
 class TestC2DeleteGuard:
     async def test_delete_blocked_with_responses(self):
-        registry = await _registry_with_form()
+        registry, form = await _registry_with_form()
 
-        async def has_responses(form_id: str, tenant: str) -> bool:
+        async def has_responses(form_uid: str, tenant: str) -> bool:
             return True
 
         handler = _make_handler(registry)
@@ -124,14 +141,16 @@ class TestC2DeleteGuard:
             registry, has_responses=has_responses
         )
 
-        resp = await handler.delete_form(_make_request(method="DELETE", form_id="f1"))
+        resp = await handler.delete_form(
+            _make_request(method="DELETE", form_uid=form.form_uid)
+        )
         assert resp.status == 409
-        assert await registry.get("f1", tenant="t1") is not None  # untouched
+        assert await registry.get(form.form_uid, tenant="t1") is not None  # untouched
 
     async def test_delete_allowed_without_responses(self):
-        registry = await _registry_with_form()
+        registry, form = await _registry_with_form()
 
-        async def has_responses(form_id: str, tenant: str) -> bool:
+        async def has_responses(form_uid: str, tenant: str) -> bool:
             return False
 
         handler = _make_handler(registry)
@@ -139,7 +158,9 @@ class TestC2DeleteGuard:
             registry, has_responses=has_responses
         )
 
-        resp = await handler.delete_form(_make_request(method="DELETE", form_id="f1"))
+        resp = await handler.delete_form(
+            _make_request(method="DELETE", form_uid=form.form_uid)
+        )
         assert resp.status == 204
 
 
@@ -151,27 +172,32 @@ class TestC2DeleteGuard:
 class TestH1HistorySurvivesRestart:
     async def test_list_versions_reconstructed_from_storage(self):
         storage = InMemoryStorage()
-        registry = await _registry_with_form()
+        registry, form = await _registry_with_form()
         svc = FormVersionService(registry, storage=storage)
 
-        v1 = await svc.publish("f1", tenant="t1")  # 1.1
-        v2 = await svc.publish("f1", tenant="t1")  # 1.2
+        v1 = await svc.publish(form.form_uid, tenant="t1")  # 1.1
+        v2 = await svc.publish(form.form_uid, tenant="t1")  # 1.2
 
-        # Simulate process restart: fresh service, same storage, empty _meta
-        registry2 = await _registry_with_form()
+        # Simulate process restart: fresh service, same storage, empty _meta.
+        # registry2's form shares the same fixed form_uid default as
+        # registry's form (FEAT-389) — the storage rekey is what history
+        # reconstruction actually depends on.
+        registry2, _form2 = await _registry_with_form()
         svc2 = FormVersionService(registry2, storage=storage)
 
-        versions = [m.version for m in await svc2.list_versions("f1", tenant="t1")]
+        versions = [
+            m.version for m in await svc2.list_versions(form.form_uid, tenant="t1")
+        ]
         assert versions == [v1, v2]
 
     async def test_published_at_recovered_from_stamp(self):
         storage = InMemoryStorage()
-        registry = await _registry_with_form()
+        registry, form = await _registry_with_form()
         svc = FormVersionService(registry, storage=storage)
-        await svc.publish("f1", tenant="t1")
+        await svc.publish(form.form_uid, tenant="t1")
 
         svc2 = FormVersionService(FormRegistry(), storage=storage)
-        metas = await svc2.list_versions("f1", tenant="t1")
+        metas = await svc2.list_versions(form.form_uid, tenant="t1")
         assert metas and metas[0].published_at is not None
 
 
@@ -183,35 +209,35 @@ class TestH1HistorySurvivesRestart:
 class TestH3H4PublishStorageFailures:
     async def test_storage_failure_propagates(self):
         """H3: a publish that cannot persist must NOT report success."""
-        registry = await _registry_with_form()
+        registry, form = await _registry_with_form()
         svc = FormVersionService(registry, storage=FailingStorage())
 
         with pytest.raises(ConnectionError):
-            await svc.publish("f1", tenant="t1")
+            await svc.publish(form.form_uid, tenant="t1")
 
     async def test_unique_violation_surfaces_as_frozen_error(self):
         """H4: the DB unique constraint is the atomic immutability guard."""
         storage = InMemoryStorage()
-        registry = await _registry_with_form()
+        registry, form = await _registry_with_form()
         svc = FormVersionService(registry, storage=storage)
-        await svc.publish("f1", tenant="t1")  # creates 1.1
+        await svc.publish(form.form_uid, tenant="t1")  # creates 1.1
 
         # Simulate the TOCTOU race: a second writer saved 1.2 between the
         # fast-path check and save() — seed 1.2 directly, then reset the
         # live form version so publish() recomputes 1.2 (stale read).
-        live = await registry.get("f1", tenant="t1")
+        live = await registry.get(form.form_uid, tenant="t1")
         stale = live.model_copy(deep=True, update={"version": "1.1"})
         racing = stale.model_copy(
             deep=True, update={"version": "1.2", "published_version": "1.2"}
         )
         # bypass published_version check in get_published (no stamp → still frozen row)
-        storage._rows[("t1", "f1")]["1.2"] = racing.model_copy(
+        storage._rows[("t1", form.form_uid)]["1.2"] = racing.model_copy(
             deep=True, update={"published_version": None}
         )
         await registry.register(stale, overwrite=True, tenant="t1")
 
         with pytest.raises(ValueError, match="already exists and is frozen"):
-            await svc.publish("f1", tenant="t1")
+            await svc.publish(form.form_uid, tenant="t1")
 
 
 # ---------------------------------------------------------------------------
@@ -221,11 +247,11 @@ class TestH3H4PublishStorageFailures:
 
 class TestH5PublicRegistryApi:
     async def test_safe_delete_unregisters_via_public_api(self):
-        registry = await _registry_with_form()
+        registry, form = await _registry_with_form()
         svc = FormVersionService(registry)
 
-        await svc.safe_delete("f1", tenant="t1")
-        assert await registry.get("f1", tenant="t1") is None
+        await svc.safe_delete(form.form_uid, tenant="t1")
+        assert await registry.get(form.form_uid, tenant="t1") is None
 
 
 # ---------------------------------------------------------------------------
@@ -240,29 +266,86 @@ class TestM1PublishedVersionImmutable:
             deep=True, update={"published_version": "1.0"}
         )
         await registry.register(form, tenant="t1")
-        return _make_handler(registry), registry
+        return _make_handler(registry), registry, form
 
     async def test_put_cannot_clear_published_version(self):
-        handler, registry = await self._published_handler()
-        body = _make_form().model_dump(mode="json")
+        handler, registry, form = await self._published_handler()
+        # FEAT-389: PUT requires body["form_uid"] == the URL's form_uid — use
+        # the SAME registered form's dump, not a freshly-generated one (which
+        # would have a different random form_uid and get rejected 400).
+        body = form.model_dump(mode="json")
         body["published_version"] = None  # attempted unfreeze
 
         resp = await handler.update_form(
-            _make_request(method="PUT", form_id="f1", body=body)
+            _make_request(method="PUT", form_uid=form.form_uid, body=body)
         )
         assert resp.status == 200
         assert json.loads(resp.body)["published_version"] == "1.0"
 
     async def test_patch_cannot_clear_published_version(self):
-        handler, registry = await self._published_handler()
+        handler, registry, form = await self._published_handler()
 
         resp = await handler.patch_form(
             _make_request(
-                method="PATCH", form_id="f1", body={"published_version": None}
+                method="PATCH",
+                form_uid=form.form_uid,
+                body={"published_version": None},
             )
         )
         assert resp.status == 200
         assert json.loads(resp.body)["published_version"] == "1.0"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-389 code-review fix — PUT rename cannot steal another form's slug
+# ---------------------------------------------------------------------------
+
+
+class TestPutRenameSlugCollision:
+    """register()'s slug-uniqueness check must fire for ANY register() call
+    with a DIFFERENT form_uid than the slug's current owner — not just when
+    overwrite=False. PUT (update_form) always calls register(overwrite=True),
+    which used to skip the check entirely, letting a rename silently steal
+    another form's slug and corrupt both forms' index state."""
+
+    async def test_put_rename_to_other_forms_slug_returns_409(self) -> None:
+        registry = FormRegistry()
+        victim = _make_form("victim-slug", "t1")
+        await registry.register(victim, tenant="t1")
+        renamer = _make_form("renamer-slug", "t1")
+        await registry.register(renamer, tenant="t1")
+
+        handler = _make_handler(registry)
+        body = renamer.model_dump(mode="json")
+        body["form_id"] = "victim-slug"  # attempt to steal victim's slug
+
+        resp = await handler.update_form(
+            _make_request(method="PUT", form_uid=renamer.form_uid, body=body)
+        )
+
+        assert resp.status == 409
+        # Neither form's state was corrupted by the rejected rename.
+        assert (await registry.get_by_slug("victim-slug", tenant="t1")).form_uid == victim.form_uid
+        assert (await registry.get_by_slug("renamer-slug", tenant="t1")).form_uid == renamer.form_uid
+
+    async def test_put_rename_to_free_slug_still_succeeds(self) -> None:
+        """The fix must not block legitimate renames to an unclaimed slug."""
+        registry = FormRegistry()
+        form = _make_form("old-slug", "t1")
+        await registry.register(form, tenant="t1")
+
+        handler = _make_handler(registry)
+        body = form.model_dump(mode="json")
+        body["form_id"] = "new-free-slug"
+
+        resp = await handler.update_form(
+            _make_request(method="PUT", form_uid=form.form_uid, body=body)
+        )
+
+        assert resp.status == 200
+        assert await registry.get_by_slug("old-slug", tenant="t1") is None
+        renamed = await registry.get_by_slug("new-free-slug", tenant="t1")
+        assert renamed is not None and renamed.form_uid == form.form_uid
 
 
 # ---------------------------------------------------------------------------

@@ -14,10 +14,10 @@ def test_routes_mounted():
     paths = {r.resource.canonical for r in app.router.routes()}
     assert "/" in paths
     assert "/gallery" in paths
-    assert "/forms/{form_id}" in paths
-    assert "/forms/{form_id}/schema" in paths
-    assert "/forms/{form_id}/telegram" in paths
-    assert "/api/v1/forms/{form_id}/telegram-submit" in paths
+    assert "/forms/{form_uid}" in paths
+    assert "/forms/{form_uid}/schema" in paths
+    assert "/forms/{form_uid}/telegram" in paths
+    assert "/api/v1/forms/{form_uid}/telegram-submit" in paths
 
 
 def test_app_form_registry_set():
@@ -47,7 +47,7 @@ def test_telegram_route_has_no_auth_wrapper():
 
     # Find the telegram route handler
     for route in app.router.routes():
-        if route.resource.canonical == "/forms/{form_id}/telegram":
+        if route.resource.canonical == "/forms/{form_uid}/telegram":
             handler = route.handler
             # The handler should be the raw bound method (no decorator wrapping
             # — `is_authenticated`/`user_session` would replace it with a

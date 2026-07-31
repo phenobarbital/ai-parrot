@@ -4,7 +4,7 @@ Converts a FormSchema into an AudioFormManifest — a sequential list of
 questions suitable for a voice-driven Q&A session over WebSocket.
 
 The renderer is registered under the "audio" format key and is discoverable
-at GET /api/v1/forms/{form_id}/render/audio.
+at GET /api/v1/forms/{form_uid}/render/audio.
 
 Added by FEAT-224 (FormDesigner Audio Renderer).
 """
@@ -250,7 +250,7 @@ class AudioFormRenderer(AbstractFormRenderer):
 
         renderer = AudioFormRenderer()
         result = await renderer.render(form_schema, locale="en")
-        manifest = result.content  # dict with form_id, questions, ws_endpoint, ...
+        manifest = result.content  # dict with form_uid, questions, ws_endpoint, ...
     """
 
     def __init__(
@@ -401,11 +401,11 @@ class AudioFormRenderer(AbstractFormRenderer):
         if self._synthesizer is not None:
             questions = await self._synthesize_questions(questions, locale=locale)
 
-        ws_endpoint = f"/api/v1/forms/{form.form_id}/audio/ws"
+        ws_endpoint = f"/api/v1/forms/{form.form_uid}/audio/ws"
         form_title = _resolve(form.title, locale) if form.title else form.form_id
 
         manifest = AudioFormManifest(
-            form_id=form.form_id,
+            form_uid=form.form_uid,
             title=form_title,
             total_questions=len(questions),
             questions=questions,

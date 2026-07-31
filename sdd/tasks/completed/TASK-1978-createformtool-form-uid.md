@@ -47,6 +47,9 @@ registry changes (TASK-1973 handles that).
 | File | Action | Description |
 |---|---|---|
 | `packages/parrot-formdesigner/src/parrot_formdesigner/tools/create_form.py` | MODIFY | Add `form_uid` to input, update generation pipeline, rename `refine_form_id` |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | Sole caller of `refine_form_id=` (in `edit_form`) updated to the new `refine_form_uid=` kwarg name. |
+| `packages/parrot-formdesigner/tests/unit/test_create_form_tool.py` | MODIFY | Renamed `refine_form_id=` call sites to `refine_form_uid=`; added `TestCreateFormToolFormUid` (6 new tests) per this task's own Test Specification. |
+| `packages/parrot-formdesigner/tests/test_create_form_toolkit.py` | MODIFY | Renamed the one `refine_form_id=` call site to `refine_form_uid=`. |
 
 ---
 
@@ -61,26 +64,51 @@ import uuid  # stdlib — add if not present
 
 ### Existing Signatures to Use
 ```python
+# CORRECTED (2026-07-31) via full read of tools/create_form.py — the
+# original contract's _execute/_generate_with_retry signatures and
+# _slugify's binding were WRONG. Actual, verified signatures:
+
 # tools/create_form.py:223
 class CreateFormInput(BaseModel):
     prompt: str                          # line 233
     form_id: str | None = None           # line 237
-    persist: bool = True                 # line 241
+    persist: bool = False                # line 241 (default False, not True)
     refine_form_id: str | None = None    # line 245
 
+# tools/create_form.py:183 — MODULE-LEVEL function, NOT a method.
+def _slugify(text: str) -> str: ...
+
 # tools/create_form.py:259
-class CreateFormTool:
+class CreateFormTool(AbstractTool):
     # __init__: line 286
-    def __init__(self, ...): ...
+    def __init__(self, client, registry=None, model=None, *, tenant=None, **kwargs): ...
 
-    # _execute: line 322
-    async def _execute(self, input_data: CreateFormInput) -> ToolResult: ...
+    # _execute: line 322 — takes UNPACKED kwargs, NOT a CreateFormInput
+    # instance. CreateFormInput is only `args_schema` (LLM tool-calling
+    # introspection/validation) — the actual runtime call path is
+    # AbstractTool.execute(**kwargs) -> _execute(**kwargs).
+    async def _execute(
+        self,
+        prompt: str,
+        form_id: str | None = None,
+        persist: bool = False,
+        refine_form_id: str | None = None,
+        **kwargs: Any,
+    ) -> ToolResult: ...
+        # existing = await self._registry.get(refine_form_id, tenant=self._tenant)  -- line 345
+        # effective_form_id = form_id or refine_form_id  -- lines 375, 379 (BUG once
+        #   refine_form_id becomes a UUID: this would inject the UUID into the
+        #   FormSchema's form_id/slug field. Must derive from existing.form_id instead.)
+        # overwrite = refine_form_id is not None  -- line 404
+        # ToolResult(result={"form_id": form.form_id, ...}, metadata={"form": form.model_dump(), ...})  -- lines 411-419
 
-    # _generate_with_retry: line 505
-    async def _generate_with_retry(self, prompt: str, ...) -> dict: ...
-
-    # _slugify: line 183
-    def _slugify(self, text: str) -> str: ...
+    # _generate_with_retry: line 505 — takes messages + form_id, returns
+    # FormSchema | None (NOT a dict).
+    async def _generate_with_retry(
+        self, messages: list[dict[str, str]], form_id: str | None,
+    ) -> FormSchema | None: ...
+        # data["form_id"] = form_id  -- line 531 (or _slugify(title) fallback, line 534)
+        # form = FormSchema.model_validate(data)  -- line 536
 ```
 
 ### Does NOT Exist
@@ -216,4 +244,60 @@ def test_create_form_input_has_form_uid_field():
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+Implemented largely as specified, on top of a substantially corrected
+Codebase Contract (documented inline in this file): the original contract
+assumed `_execute(self, input_data: CreateFormInput) -> ToolResult` and
+`_generate_with_retry(self, prompt, ...) -> dict`, and a bound
+`self._slugify()` — all wrong. The real calling convention is
+`_execute(self, prompt, form_id=None, persist=False, refine_form_id=None,
+**kwargs)` (unpacked kwargs; `CreateFormInput` is only `args_schema` for
+LLM tool-calling introspection), `_generate_with_retry` returns
+`FormSchema | None`, and `_slugify()` is a module-level function.
+
+Added `form_uid: str | None` to `CreateFormInput` and to `_execute()`'s
+signature; renamed `refine_form_id` → `refine_form_uid` throughout
+(`CreateFormInput`, `_execute()`'s parameter, all internal references,
+logging, error messages, the `overwrite = refine_form_uid is not None`
+check). `_generate_with_retry()` gained a `form_uid` parameter, injected
+into the LLM-generated dict before `FormSchema.model_validate()` — the LLM
+itself never sees or generates `form_uid`, per the spec's Key Constraints.
+`ToolResult.metadata` now includes a top-level `"form_uid"` key (in
+addition to the nested `metadata["form"]["form_uid"]`, which was already
+present via `form.model_dump()` since TASK-1972).
+
+**Real bug found and fixed**: the pre-existing line
+`effective_form_id = form_id or refine_form_id` reused the refinement
+identifier AS THE NEW FORM'S SLUG when no explicit `form_id` was given.
+Before FEAT-389 this was harmless (`refine_form_id` WAS a slug). Now that
+the refinement identifier is a UUID (`refine_form_uid`), naively reusing
+it would inject a UUID string into the `form_id`/slug field. Fixed by
+deriving the slug from `existing.form_id` instead
+(`effective_form_id = form_id or existing.form_id`) when refining — the
+slug is preserved (or explicitly overridden), never replaced by the
+form_uid. **Also**: `form_uid` is now correctly held constant across a
+refinement (`effective_form_uid = existing.form_uid`, ignoring any
+`form_uid=` kwarg during refinement) — a refinement changes content and
+optionally the slug, but never the immutable identity.
+
+**Consumer audit** (per the task's own instruction to grep for
+`refine_form_id` callers first): found exactly one production caller —
+`api/handlers.py::edit_form()` (already using `refine_form_id=form_uid` as
+a stopgap per TASK-1976's completion note) — updated to
+`refine_form_uid=form_uid`. Two test files
+(`tests/unit/test_create_form_tool.py`,
+`tests/test_create_form_toolkit.py`) had 3 more call sites, all using
+fully-mocked registries where the exact identifier string is opaque to
+the mock — renamed the keyword only, values unchanged.
+
+**New tests**: added `TestCreateFormToolFormUid` (6 tests) to
+`test_create_form_tool.py` — auto-generation, explicit UID, uniqueness
+across two forms, refinement identity preservation (including that the
+slug survives unchanged too), and the `CreateFormInput` schema-shape
+assertion from the task's own Test Specification.
+
+All 25 `-k create_form` tests pass (17 in `test_create_form_tool.py`
+alone). Full `pytest tests/unit/` and `tests/integration/` suites: zero
+new failures, zero previously-broken tests fixed this time (this task's
+blast radius was small — a single production caller). Ruff: identical
+error count (52) to baseline.
