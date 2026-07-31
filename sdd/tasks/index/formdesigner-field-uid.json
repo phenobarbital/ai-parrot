@@ -173,7 +173,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Handler-boundary change; shares api/handlers.py with other API tasks.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2003-partial-saves-rekey.md"
+      "completed_at": "2026-07-31T18:39:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2003-partial-saves-rekey.md"
     },
     {
       "id": "TASK-2004",
