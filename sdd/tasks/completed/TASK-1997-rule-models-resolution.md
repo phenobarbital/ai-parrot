@@ -156,10 +156,57 @@ def test_resolve_answer_reads_by_field_id(form_with_rules): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
 **Notes**:
 
-**Deviations from spec**: none
+- Verified no formdesigner-internal assembly module was introduced by
+  FEAT-389 (the only "assembler" in the tree is
+  `parrot_formdesigner/assembler.py`, FEAT-388's deterministic
+  `FormAssembler` — an unrelated concern for structured-input assembly, not
+  a rule-resolution boundary). Created `core/resolution.py` fresh, as the
+  task anticipated.
+- `core/constraints.py`: `FieldCondition.field_id` is now `str | None =
+  None` (authored input); added `FieldCondition.field_uid: uuid.UUID | None
+  = None` (authoritative after resolution). Kept the `extra="forbid"`
+  omission on `FieldCondition`/`DependencyRule` untouched (forward-compat
+  comment preserved verbatim). `DependencyOperation.operands`/`target` and
+  `PostDependency.target` keep their `list[str]`/`str` types — only their
+  docstrings were updated to describe the authored-`field_id` →
+  resolved-canonical-UUID-string lifecycle.
+- Created `core/resolution.py` with `resolve_rule_references(form)`,
+  `find_field_by_uid(form, field_uid)`, `resolve_answer(form, field_uid,
+  answers)` per the spec §9 Module 3 blueprint verbatim (`_uid_for`/
+  `_resolve_condition` inner helpers, idempotent-by-construction design:
+  UID-shaped refs validate against known UIDs and pass through unchanged).
+- Exported the three helpers from `parrot_formdesigner.core.__init__`
+  (grouped under a new "Resolution (FEAT-393, Module 3)" `__all__`
+  section, following the file's existing grouped/commented layout).
+- Created `packages/parrot-formdesigner/tests/unit/core/test_resolution.py`
+  (12 tests) covering every acceptance criterion: depends_on condition/
+  operand/target resolution, post_depends (incl. nested operation)
+  resolution, unknown/empty/duplicate-field_id error paths (exact error
+  text), idempotent re-run, `source != "field"` conditions skipped,
+  `find_field_by_uid` reaching subsection/GROUP-children/ARRAY-item_template
+  fields, and `resolve_answer`.
+- Ran `ruff check --fix` on the new `resolution.py` only (removed
+  redundant quoted forward-ref annotations — `from __future__ import
+  annotations` is active, so `TYPE_CHECKING`-only imports don't need
+  string-quoted hints); the file is now 100% clean. Did NOT touch
+  `constraints.py`'s or `schema.py`'s pre-existing unrelated lint findings.
+
+**Verification**:
+- `pytest packages/parrot-formdesigner/tests/unit/core/ -v` → 126 passed.
+- `pytest packages/parrot-formdesigner/tests/ -v` → 1789 passed, 3 skipped,
+  20 failed — same 20 pre-existing/unrelated failures as TASK-1995/1996's
+  baseline; nothing new broke (`FieldCondition.field_id` becoming Optional
+  is fully backward-compatible — nothing in the tree required it to be
+  non-None at the type level).
+- `ruff check packages/parrot-formdesigner/src/parrot_formdesigner/core/`
+  → 8 findings, unchanged from the TASK-1996 baseline (verified via `git
+  stash`): the new `resolution.py` is clean, `constraints.py` introduced
+  zero new findings, and `core/__init__.py`'s one pre-existing RUF022
+  (unsorted `__all__`) predates this task — my 3 new entries follow the
+  file's existing grouped-by-category convention, not alphabetical order.
+
+**Deviations from spec**: none.

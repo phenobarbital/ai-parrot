@@ -53,7 +53,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Creates helpers (resolve_rule_references, find_field_by_uid) consumed by 1998-2003.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1997-rule-models-resolution.md"
+      "completed_at": "2026-07-31T17:30:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1997-rule-models-resolution.md"
     },
     {
       "id": "TASK-1998",
