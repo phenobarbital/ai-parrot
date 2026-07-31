@@ -25,14 +25,18 @@ from a PageIndex tree via :meth:`WikiStore.rebuild_from_tree`.
 
 from __future__ import annotations
 
+import asyncio
+import errno
 import logging
 import re
+import sqlite3
 import struct
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
+from urllib.parse import quote
 
 import aiosqlite
 from pydantic import BaseModel, Field
@@ -109,6 +113,13 @@ _MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("asserted_by", "TEXT"),
     ],
 }
+
+#: Tables ``WIKI_SCHEMA_SQL`` creates. The per-connection presence probe
+#: replays the schema when ANY of them is missing (fresh plane, external
+#: replacement, or a partial legacy database), not just ``pages``.
+_SCHEMA_TABLES = frozenset(
+    {"meta", "sources", "pages", "edges", "pages_fts", "embeddings"}
+)
 
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -432,10 +443,52 @@ class SQLiteWikiStore(BaseWikiStore):
         hits = await store.search_fts("neural networks", limit=5)
     """
 
+    #: SQLite result codes that positively identify a read-only
+    #: environment (exact extended codes, not primary-code families):
+    #: SQLITE_READONLY (8), SQLITE_READONLY_RECOVERY (264),
+    #: SQLITE_READONLY_DIRECTORY (1544) — the code an unwritable
+    #: directory produces even for pure SELECTs on a WAL plane, because
+    #: the reader cannot create the ``-shm`` — and plain SQLITE_CANTOPEN
+    #: (14), which sandbox-denied opens produce. Extended variants like
+    #: READONLY_ROLLBACK/DBMOVED or CANTOPEN_ISDIR/FULLPATH signal
+    #: recovery/path problems, not a read-only filesystem, and must
+    #: propagate untouched — as must locks, disk-full and I/O errors.
+    #: Plain CANTOPEN is admittedly broader than "read-only" (it can
+    #: also mean fd exhaustion or VFS trouble); that is bounded by the
+    #: fallback design: degradation happens only if a read-only probe
+    #: connection SUCCEEDS afterwards, so a resource-exhausted process
+    #: fails the probe too and the original error propagates.
+    _READONLY_ENV_CODES = frozenset({8, 264, 1544, 14})
+
+    @classmethod
+    def _is_readonly_env_error(cls, exc: sqlite3.OperationalError) -> bool:
+        """True only for errors that mean "this database is not writable"."""
+        code = getattr(exc, "sqlite_errorcode", None)
+        if code is not None:
+            return code in cls._READONLY_ENV_CODES
+        msg = str(exc)
+        return (
+            "readonly database" in msg
+            or "unable to open database file" in msg
+        )
+
     def __init__(self, db_path: str | Path, wiki_name: str = "") -> None:
         self._db_path = Path(db_path)
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            # Tolerate a permission failure only when an existing plane
+            # can plausibly be served read-only; otherwise nothing can
+            # work and the caller should see the real error now.
+            if exc.errno not in (
+                errno.EROFS,
+                errno.EACCES,
+                errno.EPERM,
+            ) or not self._db_path.is_file():
+                raise
         self._wiki_name = wiki_name
+        self._warned_read_only = False
+        self._init_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -452,22 +505,153 @@ class SQLiteWikiStore(BaseWikiStore):
         """Open the database, ensure schema, and yield a connection.
 
         The caller is responsible for committing before exiting.
+
+        The schema is replayed only when a cheap presence probe shows it
+        missing (new or externally replaced database) — the probe also
+        forces SQLite's lazy file open, and on an unwritable WAL plane
+        it is what raises the read-only error (the reader cannot create
+        the ``-shm`` sidecar). In that case the store degrades to the
+        read-only ladder in :meth:`_connect_readonly` instead of dying.
+        The fallback is attempted only for exact result codes that
+        positively identify a read-only environment (see
+        ``_READONLY_ENV_CODES``) raised before the connection was
+        handed to the caller — transient locks, disk-full and caller
+        statement errors propagate untouched. The write path is retried
+        on every connection (degradation is never sticky), so a
+        misclassified error cannot permanently disable writes and an
+        environment that becomes writable again heals automatically.
         """
-        async with aiosqlite.connect(str(self._db_path)) as conn:
-            conn.row_factory = aiosqlite.Row
-            await conn.executescript(WIKI_SCHEMA_SQL)
-            await self._migrate(conn)
-            await conn.execute(
-                "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
-                ("schema_version", SCHEMA_VERSION),
-            )
-            if self._wiki_name:
-                await conn.execute(
-                    "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
-                    ("wiki_name", self._wiki_name),
+        placeholders = ", ".join("?" * len(_SCHEMA_TABLES))
+        yielded = False
+        try:
+            async with aiosqlite.connect(str(self._db_path)) as conn:
+                conn.row_factory = aiosqlite.Row
+                cur = await conn.execute(
+                    "SELECT count(*) FROM sqlite_master"
+                    f" WHERE type = 'table' AND name IN ({placeholders})",
+                    sorted(_SCHEMA_TABLES),
                 )
-            await conn.commit()
+                if (await cur.fetchone())[0] < len(_SCHEMA_TABLES):
+                    # Serialize first-time init across concurrent tasks
+                    # of this instance; the DDL is idempotent, so the
+                    # lock only avoids spurious cross-task lock errors.
+                    async with self._init_lock:
+                        await conn.executescript(WIKI_SCHEMA_SQL)
+                        await conn.execute(
+                            "INSERT OR IGNORE INTO meta (key, value)"
+                            " VALUES (?, ?)",
+                            ("schema_version", SCHEMA_VERSION),
+                        )
+                        if self._wiki_name:
+                            await conn.execute(
+                                "INSERT OR IGNORE INTO meta (key, value)"
+                                " VALUES (?, ?)",
+                                ("wiki_name", self._wiki_name),
+                            )
+                        await conn.commit()
+                # Column migrations run on every connection — the probe
+                # only proves the table exists, not that post-schema
+                # columns (origin/asserted_by) are present.
+                await self._migrate(conn)
+                yielded = True
+                yield conn
+            return
+        except sqlite3.OperationalError as exc:
+            if (
+                yielded
+                or not self._db_path.is_file()
+                or not self._is_readonly_env_error(exc)
+            ):
+                raise
+        async with self._connect_readonly() as conn:
             yield conn
+
+    @asynccontextmanager
+    async def _connect_readonly(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Read-only connection ladder for unwritable environments.
+
+        Plain ``mode=ro`` is tried first: when readable ``-wal``/``-shm``
+        sidecars exist (a live writer elsewhere keeps them up to date),
+        SQLite serves consistent reads WITH locking and change
+        detection, so concurrent writers are handled correctly. A
+        quiescent plane (cleanly checkpointed, no sidecars) cannot be
+        opened that way — the WAL reader would have to create the
+        ``-shm`` file — so it falls back to ``immutable=1``, verified by
+        a probe query. A live non-empty ``-wal`` without a working
+        ``mode=ro`` path refuses the immutable fallback rather than
+        silently serving reads that miss committed data.
+
+        The ladder re-runs on every connection and degradation is never
+        sticky, so a writer appearing later upgrades subsequent reads to
+        the locking ``mode=ro`` path and a misclassified error can never
+        permanently disable writes; only a connection already open in
+        immutable mode has a staleness window. A hot rollback journal is
+        refused the same way a live WAL is, and if either sidecar cannot
+        be inspected (any error other than "it does not exist"), the
+        immutable fallback is refused — fail closed rather than risk
+        serving incomplete or un-rolled-back data.
+        """
+        base = f"file:{quote(str(self._db_path))}"
+        yielded = False
+        try:
+            async with aiosqlite.connect(f"{base}?mode=ro", uri=True) as conn:
+                conn.row_factory = aiosqlite.Row
+                # The file open is lazy — force it before yielding.
+                await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+                self._log_read_only_once()
+                yielded = True
+                yield conn
+            return
+        except sqlite3.OperationalError as ro_exc:
+            if yielded:
+                raise
+            plain_ro_error = ro_exc
+        for suffix in ("-wal", "-journal"):
+            sidecar = self._db_path.with_name(self._db_path.name + suffix)
+            try:
+                sidecar_live = sidecar.stat().st_size > 0
+            except FileNotFoundError:
+                sidecar_live = False  # no sidecar — nothing pending
+            except OSError as os_exc:
+                # Can't even inspect the sidecar: fail closed, inside
+                # this path's sqlite3.OperationalError contract.
+                raise sqlite3.OperationalError(
+                    f"wiki database {self._db_path} is not writable and"
+                    f" its {suffix} sidecar cannot be inspected —"
+                    " refusing an immutable connection"
+                ) from os_exc
+            if sidecar_live:
+                raise sqlite3.OperationalError(
+                    f"wiki database {self._db_path} is not writable and"
+                    f" its live {suffix} sidecar cannot be applied —"
+                    " refusing an immutable connection that would serve"
+                    " incomplete or un-rolled-back data"
+                ) from plain_ro_error
+        yielded = False
+        try:
+            async with aiosqlite.connect(
+                f"{base}?mode=ro&immutable=1", uri=True
+            ) as conn:
+                conn.row_factory = aiosqlite.Row
+                await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+                self._log_read_only_once()
+                yielded = True
+                yield conn
+        except sqlite3.OperationalError as imm_exc:
+            if yielded:
+                raise
+            # Chain the mode=ro failure so neither rung's error is lost.
+            raise imm_exc from plain_ro_error
+
+    def _log_read_only_once(self) -> None:
+        """Warn (once per store) that reads are being served degraded."""
+        if not self._warned_read_only:
+            self._warned_read_only = True
+            self.logger.warning(
+                "Wiki database %s is not writable; serving read-only"
+                " connections.",
+                self._db_path,
+            )
 
     async def _migrate(self, conn: aiosqlite.Connection) -> None:
         """Add columns that post-date the original schema when missing.
