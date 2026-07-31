@@ -68,7 +68,7 @@ class TelegramWebAppHandler:
         )
 
     async def serve_webapp(self, request: web.Request) -> web.Response:
-        """GET /forms/{form_id}/telegram — Serve the form as a Telegram WebApp.
+        """GET /forms/{form_uid}/telegram — Serve the form as a Telegram WebApp.
 
         Args:
             request: Incoming HTTP request.
@@ -76,9 +76,9 @@ class TelegramWebAppHandler:
         Returns:
             HTML response with the Telegram WebApp page, or 404.
         """
-        form_id = request.match_info["form_id"]
+        form_uid = request.match_info["form_uid"]
         tenant = _get_request_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.Response(text="Form not found", status=404)
 
@@ -94,11 +94,11 @@ class TelegramWebAppHandler:
 
         # Build fallback URL
         prefix = request.app.get("_form_prefix", "")
-        fallback_url = f"{prefix}/api/v1/forms/{form_id}/telegram-submit"
+        fallback_url = f"{prefix}/api/v1/forms/{form_uid}/telegram-submit"
 
         template = self._env.get_template("telegram_webapp.html.j2")
         html = template.render(
-            form_id=form_id,
+            form_uid=form_uid,
             form_title=title,
             form_html=form_html,
             fallback_url=fallback_url,
@@ -108,7 +108,7 @@ class TelegramWebAppHandler:
         return web.Response(text=html, content_type="text/html")
 
     async def rest_fallback(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_id}/telegram-submit — REST fallback.
+        """POST /api/v1/forms/{form_uid}/telegram-submit — REST fallback.
 
         Validates a form submission for payloads too large for sendData().
 
@@ -118,12 +118,12 @@ class TelegramWebAppHandler:
         Returns:
             JSON response with is_valid and errors.
         """
-        form_id = request.match_info["form_id"]
+        form_uid = request.match_info["form_uid"]
         tenant = _get_request_tenant(request)
-        form = await self.registry.get(form_id, tenant=tenant)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.json_response(
-                {"error": f"Form '{form_id}' not found"}, status=404
+                {"error": f"Form '{form_uid}' not found"}, status=404
             )
 
         try:
@@ -131,8 +131,8 @@ class TelegramWebAppHandler:
         except Exception:
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
-        # Remove internal _form_id field before validation
-        data.pop("_form_id", None)
+        # Remove internal _form_uid field before validation
+        data.pop("_form_uid", None)
 
         result = await self.validator.validate(form, data)
         status = 200 if result.is_valid else 422

@@ -196,7 +196,8 @@ class TestRender:
     ) -> None:
         """render() returns correct manifest structure."""
         result = await renderer.render(simple_form)
-        assert result.content["form_id"] == "test-001"
+        # FEAT-389: manifest identity is form_uid, not the mutable form_id slug.
+        assert result.content["form_uid"] == simple_form.form_uid
         assert result.content["total_questions"] == 2
         assert "questions" in result.content
 
@@ -207,7 +208,7 @@ class TestRender:
         """render() manifest includes WebSocket endpoint path."""
         result = await renderer.render(simple_form)
         assert "/audio/ws" in result.content["ws_endpoint"]
-        assert "test-001" in result.content["ws_endpoint"]
+        assert simple_form.form_uid in result.content["ws_endpoint"]
 
     @pytest.mark.asyncio
     async def test_manifest_locale(
@@ -445,7 +446,7 @@ class TestBuildAudioSynthesizer:
 
     def test_build_honors_config_backend(self) -> None:
         """An explicit google config is reflected in the built synth."""
-        cfg = AudioSessionConfig(form_id="f", tts_backend="google")
+        cfg = AudioSessionConfig(form_uid="f", tts_backend="google")
         synth = build_audio_synthesizer(cfg)
         assert synth is not None
         assert synth.config.backend == "google"

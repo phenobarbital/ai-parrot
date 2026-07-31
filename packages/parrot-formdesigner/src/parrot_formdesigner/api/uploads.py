@@ -2,7 +2,7 @@
 
 Exposes ``handle_rest_upload`` — an aiohttp request handler mounted at:
 
-    POST /api/v1/forms/{form_id}/fields/{field_id}/upload
+    POST /api/v1/forms/{form_uid}/fields/{field_id}/upload
 
 The handler follows this pipeline:
 
@@ -60,6 +60,7 @@ from ..services.rest_field_resolver import (
     RestFieldSpec,
 )
 from ._utils import _get_request_tenant
+from .handlers import extract_form_uid
 
 _rest_spec_adapter: TypeAdapter[RestFieldSpec] | None = None
 
@@ -208,7 +209,7 @@ def _build_auth_context(request: web.Request) -> AuthContext:
 
 
 async def handle_rest_upload(request: web.Request) -> web.Response:
-    """Handle POST /api/v1/forms/{form_id}/fields/{field_id}/upload.
+    """Handle POST /api/v1/forms/{form_uid}/fields/{field_id}/upload.
 
     Streams a multipart upload through the REST field pipeline:
     multipart → MIME/size check → blob storage → resolver → JSON envelope.
@@ -229,7 +230,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         web.HTTPRequestEntityTooLarge: If upload exceeds size constraint.
         web.HTTPUnsupportedMediaType: If MIME is not in allowed list.
     """
-    form_id: str = request.match_info["form_id"]
+    form_uid: str = extract_form_uid(request)
     field_id: str = request.match_info["field_id"]
     warnings: list[str] = []
 
@@ -239,9 +240,9 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         raise web.HTTPInternalServerError(reason="form_registry not configured")
 
     tenant = _get_request_tenant(request)
-    form = await registry.get(form_id, tenant=tenant)
+    form = await registry.get(form_uid, tenant=tenant)
     if form is None:
-        raise web.HTTPNotFound(reason=f"Form not found: {form_id!r}")
+        raise web.HTTPNotFound(reason=f"Form not found: {form_uid!r}")
 
     field: FormField | None = None
     for section in form.sections:
@@ -334,7 +335,8 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         session_id = str(_sid) if _sid else None
 
     blob_meta = BlobMetadata(
-        form_id=form_id,
+        form_uid=form_uid,
+        form_id=form.form_id,
         field_id=field_id,
         submission_id=session_id,       # str | None — None is correct when absent
         tenant=blob_tenant,             # str | None — None is correct when absent
@@ -349,7 +351,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             metadata=blob_meta,
         )
     except Exception as exc:
-        logger.exception("blob_storage.put failed for %s/%s", form_id, field_id)
+        logger.exception("blob_storage.put failed for %s/%s", form_uid, field_id)
         detail = " ".join(str(exc).split())
         raise web.HTTPInternalServerError(
             reason="Blob storage error",
@@ -365,7 +367,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             warnings.append(f"blob_cleanup_failed: {exc}")
             logger.warning(
                 "Failed to delete prior blob %r for %s/%s: %s",
-                prior_blob_ref, form_id, field_id, exc,
+                prior_blob_ref, form_uid, field_id, exc,
             )
 
     # --- 7b. Merge additional args (public from submission, private from spec)
@@ -387,7 +389,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     )
 
     payload = RestCallbackInput(
-        form_id=form_id,
+        form_id=form.form_id,
         field_id=field_id,
         session_id=session_id,          # str | None
         user_id=_user_id,               # str | None — from JWT claims

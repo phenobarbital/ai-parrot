@@ -155,7 +155,10 @@ class TestRender:
         result = await renderer.render(form)
         payload = result.content
         assert payload.mode == TelegramRenderMode.WEBAPP
-        assert payload.webapp_url == "https://example.com/forms/test/telegram"
+        # FEAT-389: the webapp URL is keyed by form_uid (matches the
+        # ui/routes.py {form_uid} route renamed in TASK-1981), not the
+        # mutable form_id slug.
+        assert payload.webapp_url == f"https://example.com/forms/{form.form_uid}/telegram"
 
     @pytest.mark.asyncio
     async def test_explicit_webapp_override(self):

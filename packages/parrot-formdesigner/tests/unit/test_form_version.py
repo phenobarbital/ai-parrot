@@ -18,9 +18,18 @@ from parrot_formdesigner.services.registry import FormRegistry
 # ---------------------------------------------------------------------------
 
 
-def _minimal_form(form_id: str = "form1", version: str = "1.0") -> FormSchema:
+def _minimal_form(
+    form_id: str = "form1",
+    version: str = "1.0",
+    # FEAT-389: fixed default so independently-instantiated fixtures (e.g.
+    # the `svc`/`form` pair below) referring to "the same conceptual form"
+    # share one form_uid — the registry/storage identity key — the same
+    # way they already share the default form_id slug.
+    form_uid: str = "11111111-1111-1111-1111-111111111111",
+) -> FormSchema:
     return FormSchema(
         form_id=form_id,
+        form_uid=form_uid,
         version=version,
         title="Test Form",
         sections=[
@@ -92,31 +101,31 @@ def test_bump_twice():
 
 async def test_form_version_publish_sets_flag(svc, form):
     """publish() returns the new version tag and sets published_version."""
-    tag = await svc.publish(form.form_id, tenant="t1")
+    tag = await svc.publish(form.form_uid, tenant="t1")
     assert tag == "1.1"
 
-    published = await svc.get_published(form.form_id, version=tag, tenant="t1")
+    published = await svc.get_published(form.form_uid, version=tag, tenant="t1")
     assert published is not None
     assert published.published_version == tag
 
 
 async def test_form_version_publish_version_tag_correct(svc, form):
     """First publish of a 1.0 form yields 1.1."""
-    tag = await svc.publish(form.form_id, tenant="t1")
+    tag = await svc.publish(form.form_uid, tenant="t1")
     assert tag == "1.1"
 
 
 async def test_form_version_publish_twice_increments(svc, form):
     """Second publish increments minor again: 1.1 → 1.2."""
-    tag1 = await svc.publish(form.form_id, tenant="t1")
-    tag2 = await svc.publish(form.form_id, tenant="t1")
+    tag1 = await svc.publish(form.form_uid, tenant="t1")
+    tag2 = await svc.publish(form.form_uid, tenant="t1")
     assert tag1 == "1.1"
     assert tag2 == "1.2"
 
 
 async def test_form_version_publish_major_bump(svc, form):
     """Major bump resets minor to 0."""
-    tag = await svc.publish(form.form_id, tenant="t1", bump="major")
+    tag = await svc.publish(form.form_uid, tenant="t1", bump="major")
     assert tag == "2.0"
 
 
@@ -140,17 +149,17 @@ async def test_form_version_immutable_on_edit(svc, form):
        would try to create 1.1 again.
     3. publish() must detect the existing 1.1 snapshot and raise ValueError.
     """
-    tag = await svc.publish(form.form_id, tenant="t1")
+    tag = await svc.publish(form.form_uid, tenant="t1")
     assert tag == "1.1"
 
     # Force live form back to 1.0 to trigger the guard on re-publish
-    live = await svc._registry.get(form.form_id, tenant="t1")
+    live = await svc._registry.get(form.form_uid, tenant="t1")
     rolled_back = live.model_copy(update={"version": "1.0"})
     await svc._registry.register(rolled_back, overwrite=True, tenant="t1")
 
     # Now publishing again will try to create 1.1 which already exists
     with pytest.raises(ValueError, match="frozen"):
-        await svc.publish(form.form_id, tenant="t1")
+        await svc.publish(form.form_uid, tenant="t1")
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +169,8 @@ async def test_form_version_immutable_on_edit(svc, form):
 
 async def test_form_version_list_versions(svc, form):
     """list_versions() returns the published snapshot(s)."""
-    await svc.publish(form.form_id, tenant="t1")
-    versions = await svc.list_versions(form.form_id, tenant="t1")
+    await svc.publish(form.form_uid, tenant="t1")
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
     assert len(versions) == 1
     assert isinstance(versions[0], VersionMeta)
     assert versions[0].version == "1.1"
@@ -169,15 +178,15 @@ async def test_form_version_list_versions(svc, form):
 
 async def test_form_version_list_versions_empty(svc, form):
     """list_versions() returns [] when no publishes have been done."""
-    versions = await svc.list_versions(form.form_id, tenant="t1")
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
     assert versions == []
 
 
 async def test_form_version_list_versions_multiple(svc, form):
     """list_versions() accumulates entries across multiple publishes."""
-    await svc.publish(form.form_id, tenant="t1")
-    await svc.publish(form.form_id, tenant="t1")
-    versions = await svc.list_versions(form.form_id, tenant="t1")
+    await svc.publish(form.form_uid, tenant="t1")
+    await svc.publish(form.form_uid, tenant="t1")
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
     assert len(versions) == 2
     assert [v.version for v in versions] == ["1.1", "1.2"]
 
@@ -193,20 +202,20 @@ async def test_publish_then_edit_isolation(registry):
     await registry.register(form, tenant="t1")
     svc = FormVersionService(registry, storage=None)
 
-    v1_tag = await svc.publish("form-rf06", tenant="t1")
+    v1_tag = await svc.publish(form.form_uid, tenant="t1")
     original_title = form.title
 
     # Simulate editing the live form (changing its title)
-    live = await registry.get("form-rf06", tenant="t1")
+    live = await registry.get(form.form_uid, tenant="t1")
     edited = live.model_copy(update={"title": "Edited Title"})
     await registry.register(edited, overwrite=True, tenant="t1")
 
     # Publish a second version
-    v2_tag = await svc.publish("form-rf06", tenant="t1")
+    v2_tag = await svc.publish(form.form_uid, tenant="t1")
     assert v2_tag != v1_tag
 
     # v1 snapshot must be unchanged
-    snap_v1 = await svc.get_published("form-rf06", version=v1_tag, tenant="t1")
+    snap_v1 = await svc.get_published(form.form_uid, version=v1_tag, tenant="t1")
     assert snap_v1 is not None
     assert snap_v1.title == original_title  # untouched
 
@@ -228,7 +237,7 @@ async def test_form_version_delete_with_responses_blocked():
     svc = FormVersionService(registry, has_responses=_has_responses)
 
     with pytest.raises(ValueError, match="responses"):
-        await svc.safe_delete("form-del", tenant="t1")
+        await svc.safe_delete(form.form_uid, tenant="t1")
 
 
 async def test_form_version_delete_without_responses_allowed():
@@ -242,7 +251,7 @@ async def test_form_version_delete_without_responses_allowed():
 
     svc = FormVersionService(registry, has_responses=_no_responses)
     # Should not raise
-    await svc.safe_delete("form-del2", tenant="t1")
+    await svc.safe_delete(form.form_uid, tenant="t1")
 
 
 async def test_form_version_delete_no_hook_allowed():
@@ -253,4 +262,4 @@ async def test_form_version_delete_no_hook_allowed():
 
     svc = FormVersionService(registry)
     # No hook → deletion is always allowed
-    await svc.safe_delete("form-del3", tenant="t1")
+    await svc.safe_delete(form.form_uid, tenant="t1")

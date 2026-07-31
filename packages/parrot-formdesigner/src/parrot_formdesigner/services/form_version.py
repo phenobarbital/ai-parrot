@@ -39,7 +39,11 @@ class VersionMeta(BaseModel):
     """Metadata record for a published form version.
 
     Attributes:
-        form_id: The form's canonical identifier.
+        form_id: The form's human-readable slug (FEAT-389 — display /
+            search only; NOT the canonical identifier). The canonical,
+            immutable identifier is ``FormSchema.form_uid``, used as the
+            lookup key everywhere in this service; ``VersionMeta`` keeps
+            ``form_id`` purely as a friendlier label for callers.
         version: The semver-style ``major.minor`` tag (e.g. ``"1.0"``).
         published_at: UTC timestamp when this version was published.
         tenant: Tenant slug.
@@ -115,15 +119,15 @@ class FormVersionService:
     Example::
 
         svc = FormVersionService(registry, storage)
-        tag = await svc.publish("my-form", tenant="navigator")  # → "1.1"
-        snap = await svc.get_published("my-form", version="1.1", tenant="navigator")
+        tag = await svc.publish(form.form_uid, tenant="navigator")  # → "1.1"
+        snap = await svc.get_published(form.form_uid, version="1.1", tenant="navigator")
 
     Args:
         registry: ``FormRegistry`` used to look up the live form state and
             register snapshots when a ``storage`` backend is not available.
         storage: ``FormStorage`` used to persist snapshots. When ``None``,
             the service stores snapshots in an in-memory dict.
-        has_responses: Optional async callback ``(form_id, tenant) -> bool``
+        has_responses: Optional async callback ``(form_uid, tenant) -> bool``
             that returns ``True`` when the form/version has associated
             responses. When ``True`` is returned, deletion is blocked.
     """
@@ -140,10 +144,11 @@ class FormVersionService:
         self._has_responses = has_responses
         self.logger = logging.getLogger(__name__)
 
-        # In-memory fallback stores:
-        # _snapshots[tenant][form_id][version] = FormSchema
+        # In-memory fallback stores (keyed by form_uid, the immutable
+        # identity — FEAT-389):
+        # _snapshots[tenant][form_uid][version] = FormSchema
         self._snapshots: dict[str, dict[str, dict[str, FormSchema]]] = {}
-        # _meta[tenant][form_id] = list[VersionMeta]
+        # _meta[tenant][form_uid] = list[VersionMeta]
         self._meta: dict[str, dict[str, list[VersionMeta]]] = {}
 
     # ------------------------------------------------------------------
@@ -152,7 +157,7 @@ class FormVersionService:
 
     async def publish(
         self,
-        form_id: str,
+        form_uid: str,
         *,
         tenant: str,
         bump: str = "minor",
@@ -167,7 +172,7 @@ class FormVersionService:
         5. Persist the snapshot (storage or in-memory).
 
         Args:
-            form_id: The form's canonical ID.
+            form_uid: The form's immutable UUID (FEAT-389).
             tenant: Tenant slug.
             bump: ``"minor"`` (default) or ``"major"``.
 
@@ -178,17 +183,17 @@ class FormVersionService:
             KeyError: If the form is not found in the registry.
             ValueError: If the computed version tag already exists (immutable).
         """
-        form = await self._registry.get(form_id, tenant=tenant)
+        form = await self._registry.get(form_uid, tenant=tenant)
         if form is None:
-            raise KeyError(f"Form '{form_id}' not found under tenant '{tenant}'")
+            raise KeyError(f"Form '{form_uid}' not found under tenant '{tenant}'")
 
         new_version = _bump(form.version, bump=bump)
 
         # Immutability guard
-        existing = await self.get_published(form_id, version=new_version, tenant=tenant)
+        existing = await self.get_published(form_uid, version=new_version, tenant=tenant)
         if existing is not None:
             raise ValueError(
-                f"Version '{new_version}' of form '{form_id}' already exists and is frozen."
+                f"Version '{new_version}' of form '{form.form_id}' already exists and is frozen."
             )
 
         published_at = datetime.now(timezone.utc)
@@ -201,7 +206,7 @@ class FormVersionService:
             "meta": {**(form.meta or {}), "published_at": published_at.isoformat()},
         })
 
-        # Persist. The database UNIQUE(form_id, version) constraint is the
+        # Persist. The database UNIQUE(form_uid, version) constraint is the
         # authoritative immutability guard — two concurrent publishes cannot
         # both succeed (the pre-check above is a fast path, not the guard).
         try:
@@ -209,7 +214,7 @@ class FormVersionService:
         except Exception as exc:
             if is_unique_violation(exc):
                 raise ValueError(
-                    f"Version '{new_version}' of form '{form_id}' already exists and is frozen."
+                    f"Version '{new_version}' of form '{form.form_id}' already exists and is frozen."
                 ) from exc
             raise
 
@@ -220,24 +225,24 @@ class FormVersionService:
         })
         await self._registry.register(updated_live, persist=False, overwrite=True, tenant=tenant)
 
-        # Record VersionMeta
+        # Record VersionMeta (form_id kept as the human-readable slug label)
         meta = VersionMeta(
-            form_id=form_id,
+            form_id=form.form_id,
             version=new_version,
             published_at=published_at,
             tenant=tenant,
         )
-        self._meta.setdefault(tenant, {}).setdefault(form_id, []).append(meta)
+        self._meta.setdefault(tenant, {}).setdefault(form_uid, []).append(meta)
 
         self.logger.info(
             "Published form '%s' as version '%s' for tenant '%s'",
-            form_id, new_version, tenant,
+            form.form_id, new_version, tenant,
         )
         return new_version
 
     async def get_published(
         self,
-        form_id: str,
+        form_uid: str,
         *,
         version: str,
         tenant: str,
@@ -248,7 +253,7 @@ class FormVersionService:
         publishes do not affect it (RF-06).
 
         Args:
-            form_id: The form's canonical ID.
+            form_uid: The form's immutable UUID (FEAT-389).
             version: The semver tag to retrieve (e.g. ``"1.1"``).
             tenant: Tenant slug.
 
@@ -256,20 +261,20 @@ class FormVersionService:
             Frozen ``FormSchema`` snapshot, or ``None`` if not found.
         """
         if self._storage is not None:
-            snap = await self._storage.load(form_id, version=version, tenant=tenant)
+            snap = await self._storage.load(form_uid, version=version, tenant=tenant)
             if snap is not None and snap.published_version == version:
                 return snap
         # In-memory fallback
         return (
             self._snapshots
             .get(tenant, {})
-            .get(form_id, {})
+            .get(form_uid, {})
             .get(version)
         )
 
     async def list_versions(
         self,
-        form_id: str,
+        form_uid: str,
         *,
         tenant: str,
     ) -> list[VersionMeta]:
@@ -277,30 +282,30 @@ class FormVersionService:
 
         Merges the in-process ``VersionMeta`` cache with a reconstruction
         from storage, so history survives a process restart (the snapshots
-        live in Postgres under ``UNIQUE(form_id, version)``; ``published_at``
+        live in Postgres under ``UNIQUE(form_uid, version)``; ``published_at``
         is recovered from the stamp written into ``snapshot.meta`` by
         :meth:`publish`).
 
         Args:
-            form_id: The form's canonical ID.
+            form_uid: The form's immutable UUID (FEAT-389).
             tenant: Tenant slug.
 
         Returns:
             List of ``VersionMeta`` objects ordered by (major, minor).
         """
         by_version: dict[str, VersionMeta] = {
-            m.version: m for m in self._meta.get(tenant, {}).get(form_id, [])
+            m.version: m for m in self._meta.get(tenant, {}).get(form_uid, [])
         }
 
         if self._storage is not None:
-            for version in await self._probe_storage_versions(form_id, tenant=tenant):
+            for version in await self._probe_storage_versions(form_uid, tenant=tenant):
                 if version in by_version:
                     continue
-                snap = await self._storage.load(form_id, version=version, tenant=tenant)
+                snap = await self._storage.load(form_uid, version=version, tenant=tenant)
                 if snap is None or snap.published_version != version:
                     continue
                 by_version[version] = VersionMeta(
-                    form_id=form_id,
+                    form_id=snap.form_id,
                     version=version,
                     published_at=self._published_at_from_snapshot(snap),
                     tenant=tenant,
@@ -308,7 +313,7 @@ class FormVersionService:
 
         return sorted(by_version.values(), key=lambda m: _parse_major_minor(m.version))
 
-    async def _probe_storage_versions(self, form_id: str, *, tenant: str) -> list[str]:
+    async def _probe_storage_versions(self, form_uid: str, *, tenant: str) -> list[str]:
         """Enumerate published version tags persisted in storage.
 
         ``FormStorage`` has no version-listing API, but publish tags form a
@@ -317,7 +322,7 @@ class FormVersionService:
         latest stored version. A single leading miss per major is tolerated
         (the first publish of a form is usually ``X.1``, not ``X.0``).
         """
-        latest = await self._storage.load(form_id, tenant=tenant)
+        latest = await self._storage.load(form_uid, tenant=tenant)
         if latest is None:
             return []
         latest_major, _ = _parse_major_minor(latest.version)
@@ -329,7 +334,7 @@ class FormVersionService:
             misses = 0
             while misses < 2 and probes < _MAX_VERSION_PROBES:
                 version = f"{major}.{minor}"
-                snap = await self._storage.load(form_id, version=version, tenant=tenant)
+                snap = await self._storage.load(form_uid, version=version, tenant=tenant)
                 probes += 1
                 if snap is not None and snap.published_version == version:
                     found.append(version)
@@ -350,14 +355,14 @@ class FormVersionService:
                 pass
         return snap.created_at or datetime.now(timezone.utc)
 
-    async def can_delete(self, form_id: str, *, tenant: str) -> bool:
+    async def can_delete(self, form_uid: str, *, tenant: str) -> bool:
         """Return ``True`` if deletion is safe (no responses associated).
 
         If no ``has_responses`` hook was provided, deletion is always
         considered safe (returns ``True``).
 
         Args:
-            form_id: The form's canonical ID.
+            form_uid: The form's immutable UUID (FEAT-389).
             tenant: Tenant slug.
 
         Returns:
@@ -365,24 +370,24 @@ class FormVersionService:
         """
         if self._has_responses is None:
             return True
-        has = await self._has_responses(form_id, tenant)
+        has = await self._has_responses(form_uid, tenant)
         return not has
 
-    async def safe_delete(self, form_id: str, *, tenant: str) -> None:
+    async def safe_delete(self, form_uid: str, *, tenant: str) -> None:
         """Delete a form only if it has no responses.
 
         Raises:
             ValueError: If ``has_responses`` returns ``True`` for this form.
         """
-        if not await self.can_delete(form_id, tenant=tenant):
+        if not await self.can_delete(form_uid, tenant=tenant):
             raise ValueError(
-                f"Form '{form_id}' has responses and cannot be deleted. "
+                f"Form '{form_uid}' has responses and cannot be deleted. "
                 "Deactivate it instead."
             )
         if self._storage is not None:
-            await self._storage.delete(form_id, tenant=tenant)
+            await self._storage.delete(form_uid, tenant=tenant)
         # Also remove from the registry (public API — never touch _forms)
-        await self._registry.unregister(form_id, tenant=tenant)
+        await self._registry.unregister(form_uid, tenant=tenant)
 
     # ------------------------------------------------------------------
     # Backfill (TASK-005)
@@ -430,9 +435,9 @@ class FormVersionService:
         if self._storage is not None:
             try:
                 rows = await self._storage.list_forms(tenant=tenant)
-                seen_ids = {f.form_id for f in forms_to_backfill}
+                seen_ids = {f.form_uid for f in forms_to_backfill}
                 for row in rows:
-                    fid = row.get("form_id")
+                    fid = row.get("form_uid")
                     if not fid or fid in seen_ids:
                         continue
                     loaded = await self._storage.load(fid, tenant=tenant)
@@ -474,7 +479,7 @@ class FormVersionService:
                     published_at=published_at,
                     tenant=tenant,
                 )
-                self._meta.setdefault(tenant, {}).setdefault(form.form_id, []).append(meta)
+                self._meta.setdefault(tenant, {}).setdefault(form.form_uid, []).append(meta)
 
             changed += 1
 
@@ -511,14 +516,16 @@ class FormVersionService:
                 await self._storage.save(snapshot, tenant=tenant)
             except Exception as exc:
                 self.logger.error(
-                    "storage.save() failed for snapshot %s v%s: %s",
-                    snapshot.form_id, snapshot.version, exc,
+                    "storage.save() failed for snapshot %s (form_id=%s) v%s: %s",
+                    snapshot.form_uid, snapshot.form_id, snapshot.version, exc,
                 )
                 raise
             return
-        # In-memory store (no backend configured — tests/development)
+        # In-memory store (no backend configured — tests/development).
+        # Keyed by form_uid (FEAT-389) — must match get_published()'s lookup
+        # key, NOT the mutable form_id slug.
         (
             self._snapshots
             .setdefault(tenant, {})
-            .setdefault(snapshot.form_id, {})
+            .setdefault(snapshot.form_uid, {})
         )[snapshot.version] = snapshot
