@@ -22,11 +22,18 @@ class PartialFormData(BaseModel):
     Attributes:
         form_id: The form whose answers are being cached.
         session_id: The user session that owns this cache entry.
-        data: Sparse mapping of field_id to the cached value.  New values
-            always override existing cached values (last-write-wins).
+        data: Sparse mapping of field_uid (stringified UUID) to the cached
+            value (FEAT-393 / TASK-2003 — re-keyed at the ``FormAPIHandler``
+            boundary so a mid-session field_id rename never orphans a saved
+            answer; this model and ``PartialSaveStore`` stay schema-agnostic
+            and do not resolve the keys themselves). New values always
+            override existing cached values (last-write-wins). Handlers
+            translate back to CURRENT field_id keys before serializing to
+            the wire.
         field_errors: Per-field validation errors collected during the last
-            ``save_partial`` call.  Mapping of field_id to a list of error
-            message strings.
+            ``save_partial`` call.  Mapping of field_id (NOT field_uid — this
+            is response-only, never persisted key-transformed) to a list of
+            error message strings.
         saved_at: UTC timezone-aware timestamp of the most recent write.
         expires_at: UTC timezone-aware timestamp when this entry will expire
             in Redis.

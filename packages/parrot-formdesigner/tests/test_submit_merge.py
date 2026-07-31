@@ -134,7 +134,12 @@ class TestSubmitMergePartials:
     async def test_merge_combines_cached_and_submitted(self):
         """Cached partial merged with submitted data before validation."""
         form = _make_form()
-        cached = _make_partial(data={"name": "Alice", "age": 30})
+        name_field, age_field, _email_field = form.sections[0].fields
+        # Stored data is field_uid-keyed (TASK-2003) — submit_data's
+        # merge_partials path maps it back to field_id before merging.
+        cached = _make_partial(
+            data={str(name_field.field_uid): "Alice", str(age_field.field_uid): 30}
+        )
         store = MagicMock(spec=PartialSaveStore)
         store.get = AsyncMock(return_value=cached)
         store.delete = AsyncMock(return_value=True)
