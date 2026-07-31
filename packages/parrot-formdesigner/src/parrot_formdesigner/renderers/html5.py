@@ -339,6 +339,7 @@ class HTML5Renderer(AbstractFormRenderer):
             if _field.field_type == FieldType.FORMULA:
                 warnings.append(RenderWarning(
                     field_id=_field.field_id,
+                    field_uid=_field.field_uid,
                     field_type=FieldType.FORMULA.value,
                     renderer="html5",
                     reason="formula evaluation not available (FEAT-301) — rendered as read-only placeholder",
@@ -1099,6 +1100,7 @@ class HTML5Renderer(AbstractFormRenderer):
         return (
             f'<div class="parrot-rest-uploader" '
             f'data-field-id="{field.field_id}" '
+            f'data-field-uid="{html.escape(str(field.field_uid), quote=True)}" '
             f'data-upload-url="{upload_url}" '
             f'data-rest-uploader="true">'
             f'<input type="file" '

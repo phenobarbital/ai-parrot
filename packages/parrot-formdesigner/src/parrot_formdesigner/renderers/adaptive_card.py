@@ -213,6 +213,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 if field.field_type in _AC_FALLBACK_TYPES:
                     warnings.append(RenderWarning(
                         field_id=field.field_id,
+                        field_uid=field.field_uid,
                         field_type=field.field_type.value,
                         renderer="adaptive_card",
                         reason=(
