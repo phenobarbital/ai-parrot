@@ -89,6 +89,7 @@ def _form(
 def _submission(tenant: str | None = None) -> FormSubmission:
     return FormSubmission(
         submission_id="sub-1",
+        form_uid="550e8400-e29b-41d4-a716-446655440000",
         form_id="form-1",
         form_version="1.0",
         data={},

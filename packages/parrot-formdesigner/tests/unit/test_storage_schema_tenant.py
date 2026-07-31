@@ -156,8 +156,10 @@ class TestPostgresFormStorageConfig:
         await storage.save(_form(), tenant="epson")
         sql, args = pool.conn.executed[0]
         assert '"epson"."form_schemas"' in sql
-        # tenant value persisted into the row (5th positional, 1-indexed)
-        assert args[4] == "epson"
+        # tenant value persisted into the row (6th positional, 1-indexed —
+        # FEAT-389 inserted form_uid as the new first positional param,
+        # shifting tenant from index 4 to index 5).
+        assert args[5] == "epson"
 
     @pytest.mark.asyncio
     async def test_save_uses_form_tenant_when_no_override(self) -> None:
@@ -166,7 +168,7 @@ class TestPostgresFormStorageConfig:
         await storage.save(_form(tenant="pokemon"))
         sql, args = pool.conn.executed[0]
         assert '"pokemon"."form_schemas"' in sql
-        assert args[4] == "pokemon"
+        assert args[5] == "pokemon"
 
     @pytest.mark.asyncio
     async def test_save_uses_default_tenant_when_form_has_none(self) -> None:
@@ -226,6 +228,7 @@ class TestPostgresFormStorageConfig:
 
 def _submission(tenant: str | None = None) -> FormSubmission:
     return FormSubmission(
+        form_uid="550e8400-e29b-41d4-a716-446655440000",
         form_id="f-1",
         form_version="1.0",
         data={"x": 1},
@@ -263,8 +266,10 @@ class TestFormSubmissionStorageConfig:
         await storage.store(_submission(), tenant="epson")
         sql, args = pool.conn.executed[0]
         assert '"epson"."form_data"' in sql
-        # tenant column is 9th positional in INSERT
-        assert args[8] == "epson"
+        # tenant column is 10th positional in INSERT (FEAT-389 inserted
+        # form_uid as the new 2nd positional param, shifting tenant from
+        # index 8 to index 9).
+        assert args[9] == "epson"
 
     @pytest.mark.asyncio
     async def test_store_uses_submission_tenant_when_no_override(self) -> None:
@@ -273,7 +278,7 @@ class TestFormSubmissionStorageConfig:
         await storage.store(_submission(tenant="pokemon"))
         sql, args = pool.conn.executed[0]
         assert '"pokemon"."form_data"' in sql
-        assert args[8] == "pokemon"
+        assert args[9] == "pokemon"
 
     @pytest.mark.asyncio
     async def test_invalid_per_call_tenant_rejected(self) -> None:
@@ -308,12 +313,14 @@ class TestModelsTenant:
 
     def test_form_submission_tenant_defaults_none(self) -> None:
         s = FormSubmission(
+            form_uid="550e8400-e29b-41d4-a716-446655440000",
             form_id="f", form_version="1.0", data={}, is_valid=True
         )
         assert s.tenant is None
 
     def test_form_submission_tenant_roundtrip(self) -> None:
         s = FormSubmission(
+            form_uid="550e8400-e29b-41d4-a716-446655440000",
             form_id="f",
             form_version="1.0",
             data={},

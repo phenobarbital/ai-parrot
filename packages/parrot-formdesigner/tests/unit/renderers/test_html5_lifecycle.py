@@ -98,6 +98,31 @@ class TestWithEvents:
         # form_id as JSON string in the script
         assert '"my_survey"' in out.content
 
+    async def test_remote_event_dispatch_uses_form_uid(
+        self, renderer: HTML5Renderer
+    ) -> None:
+        """Regression (FEAT-389 code-review fix): the remote-event bridge's
+        fetch() URL must use form_uid, not form_id — api/routes.py renamed
+        POST /forms/{form_id}/events/{event_name} to {form_uid}, and
+        extract_form_uid() 400s on a non-UUID slug. Only this one dispatch
+        URL changes; FORM_ID stays for the DOM element-id lookup and
+        event-payload labels, which are unaffected by the route rename.
+        """
+        form = _make_form(
+            form_id="human-slug",
+            events=FormEventsConfig(
+                onBeforeSubmit=FormEventBinding(
+                    handler_ref="f1.onBeforeSubmit", remote=True,
+                ),
+            ),
+        )
+        out = await renderer.render(form)
+
+        assert f"'/api/v1/forms/' + FORM_UID + '/events/'" in out.content
+        assert f'"{form.form_uid}"' in out.content
+        # The dispatch URL template itself must not still say FORM_ID.
+        assert "'/api/v1/forms/' + FORM_ID + '/events/'" not in out.content
+
     async def test_events_config_embedded_as_json(self, renderer: HTML5Renderer) -> None:
         """The EVENTS_CONFIG JSON is present and includes the handler_ref."""
         form = _make_form(

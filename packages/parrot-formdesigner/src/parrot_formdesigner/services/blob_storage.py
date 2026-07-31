@@ -7,7 +7,7 @@ as a thin adapter over the matching ``navigator.utils.file`` ``FileManager``.
 Credential resolution and provider-specific I/O live in the ``FileManager``
 implementations; this module only handles:
 
-* ``BlobMetadata`` → object key construction (``{prefix}{form_id}/{field_id}/{uuid}``).
+* ``BlobMetadata`` → object key construction (``{prefix}{form_uid}/{field_id}/{uuid}``).
 * ``blob_ref`` round-tripping (scheme + key).
 * The ``pre_persist_hook`` extension point.
 
@@ -28,7 +28,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,12 @@ class BlobMetadata(BaseModel):
     """Metadata associated with a persisted blob.
 
     Attributes:
-        form_id: Identifier of the parent form.
+        form_uid: Immutable UUID of the parent form (FEAT-389). Used to
+            construct the blob's storage key so renaming a form never
+            orphans its existing uploads.
+        form_id: Identifier (slug) of the parent form. Kept for
+            human-readable reference/logging — no longer used in key
+            construction.
         field_id: Identifier of the form field that owns this blob.
         submission_id: Optional submission ID for audit correlation.
         tenant: Optional tenant slug for multi-tenant deployments.
@@ -66,7 +71,8 @@ class BlobMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    form_id: str
+    form_uid: str = Field(..., description="Immutable UUID of the parent form")
+    form_id: str = Field(..., description="Human-readable form slug (for logging)")
     field_id: str
     submission_id: str | None = None
     tenant: str | None = None
@@ -212,12 +218,14 @@ class _ManagerBackedBlobStorage(AbstractBlobStorage):
         """Construct the storage key for a new blob.
 
         Returns:
-            ``{prefix}{form_id}/{field_id}/{uuid}`` — the relative key passed
-            verbatim to the FileManager (managers are instantiated with an
-            empty prefix so they do not re-prefix the key).
+            ``{prefix}{form_uid}/{field_id}/{uuid}`` — the relative key
+            passed verbatim to the FileManager (managers are instantiated
+            with an empty prefix so they do not re-prefix the key).
+            Keyed by ``form_uid`` (FEAT-389), NOT ``form_id``, so renaming
+            a form's slug never orphans its existing blobs.
         """
         blob_id = str(uuid.uuid4())
-        return f"{self._prefix}{metadata.form_id}/{metadata.field_id}/{blob_id}"
+        return f"{self._prefix}{metadata.form_uid}/{metadata.field_id}/{blob_id}"
 
     def _to_ref(self, key: str) -> str:
         """Format a blob reference for a freshly-written key.
@@ -333,7 +341,7 @@ class S3BlobStorage(_ManagerBackedBlobStorage):
 
     blob_ref format::
 
-        s3://<bucket>/<prefix><form_id>/<field_id>/<uuid>
+        s3://<bucket>/<prefix><form_uid>/<field_id>/<uuid>
 
     Args:
         bucket: S3 bucket name. Falls back to ``PARROT_BLOB_BUCKET`` env var
@@ -408,7 +416,7 @@ class GCSBlobStorage(_ManagerBackedBlobStorage):
 
     blob_ref format::
 
-        gs://<bucket>/<prefix><form_id>/<field_id>/<uuid>
+        gs://<bucket>/<prefix><form_uid>/<field_id>/<uuid>
 
     Args:
         bucket: GCS bucket name.
@@ -466,7 +474,7 @@ class LocalBlobStorage(_ManagerBackedBlobStorage):
 
     blob_ref format::
 
-        file://<prefix><form_id>/<field_id>/<uuid>
+        file://<prefix><form_uid>/<field_id>/<uuid>
 
     The path is relative to the manager's ``base_path`` — refs are only
     valid against the same ``LocalBlobStorage`` configuration that produced
@@ -517,7 +525,7 @@ class TempBlobStorage(_ManagerBackedBlobStorage):
 
     blob_ref format::
 
-        temp://<prefix><form_id>/<field_id>/<uuid>
+        temp://<prefix><form_uid>/<field_id>/<uuid>
 
     Args:
         prefix: Key prefix prepended to every blob (also passed as the

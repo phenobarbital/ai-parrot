@@ -391,7 +391,7 @@ def form_page(form_fragment: str) -> str:
 
 
 def schema_page(
-    form_id: str,
+    form_uid: str,
     title: str,
     schema_json: str,
     style_json: str,
@@ -400,7 +400,9 @@ def schema_page(
     """Return the HTML body for the JSON Schema view page.
 
     Args:
-        form_id: The form identifier.
+        form_uid: The form's immutable UUID (FEAT-389) — used to build the
+            "View Form" / API Endpoint links below, which must match the
+            {form_uid}-keyed UI and REST routes.
         title: Human-readable form title.
         schema_json: Pretty-printed JSON Schema string.
         style_json: Pretty-printed Style Schema string.
@@ -412,10 +414,10 @@ def schema_page(
     p = _normalize_prefix(prefix)
     return f"""\
 <h1>JSON Schema: {escape(title)}</h1>
-<p>Structural JSON Schema for form <code>{escape(form_id)}</code>.</p>
+<p>Structural JSON Schema for form <code>{escape(form_uid)}</code>.</p>
 
 <div style="display:flex; gap:.75rem; margin-bottom:1rem;">
-  <a href="{p}/forms/{escape(form_id)}" class="btn btn-secondary">View Form</a>
+  <a href="{p}/forms/{escape(form_uid)}" class="btn btn-secondary">View Form</a>
   <a href="{p}/gallery" class="btn btn-secondary">Gallery</a>
 </div>
 
@@ -432,10 +434,10 @@ def schema_page(
 <div class="card">
   <h2 style="margin-bottom:.5rem;">API Endpoints</h2>
   <ul style="margin:0; padding-left:1.2rem;">
-    <li><code>GET {p}/api/v1/forms/{escape(form_id)}</code> — Full FormSchema (JSON)</li>
-    <li><code>GET {p}/api/v1/forms/{escape(form_id)}/schema</code> — JSON Schema</li>
-    <li><code>GET {p}/api/v1/forms/{escape(form_id)}/style</code> — Style Schema</li>
-    <li><code>GET {p}/api/v1/forms/{escape(form_id)}/html</code> — Rendered HTML fragment</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}</code> — Full FormSchema (JSON)</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}/schema</code> — JSON Schema</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}/style</code> — Style Schema</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}/html</code> — Rendered HTML fragment</li>
   </ul>
 </div>"""
 

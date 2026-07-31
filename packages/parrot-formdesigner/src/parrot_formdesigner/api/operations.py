@@ -1,4 +1,4 @@
-"""``PATCH /api/v1/forms/{form_id}/operations`` — atomic batched-edit endpoint.
+"""``PATCH /api/v1/forms/{form_uid}/operations`` — atomic batched-edit endpoint.
 
 Per FEAT-152 §2 Internal Behavior:
 
@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ..core.schema import FormField, FormSchema, FormSection, FormSubsection
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _get_request_tenant
+from .handlers import extract_form_uid
 
 
 logger = logging.getLogger(__name__)
@@ -356,11 +357,11 @@ _DISPATCH: dict[str, Any] = {
 
 
 async def handle_operations(request: web.Request) -> web.Response:
-    """PATCH /api/v1/forms/{form_id}/operations — atomic batched edits.
+    """PATCH /api/v1/forms/{form_uid}/operations — atomic batched edits.
 
     Steps (per spec §2 Internal Behavior):
 
-    1. Parse ``form_id`` from match_info.
+    1. Parse and validate ``form_uid`` from match_info (FEAT-389).
     2. Load form from ``request.app['form_registry']``; 404 if missing.
     3. Parse + validate the ``OperationsEnvelope`` body; 422 on shape errors.
     4. Honour ``If-Match`` header (Q1); 412 on mismatch.
@@ -371,7 +372,7 @@ async def handle_operations(request: web.Request) -> web.Response:
     8. Persist via ``registry.register(working_copy, persist=True, overwrite=True)``.
     9. Return 200 with ``{"form": working_copy.model_dump()}``.
     """
-    form_id = request.match_info["form_id"]
+    form_uid = extract_form_uid(request)
 
     registry = request.app.get("form_registry")
     if registry is None:
@@ -381,11 +382,11 @@ async def handle_operations(request: web.Request) -> web.Response:
         )
 
     tenant = _get_request_tenant(request)
-    form = await registry.get(form_id, tenant=tenant)
+    form = await registry.get(form_uid, tenant=tenant)
     if form is None:
-        logger.warning("operations: form '%s' not found", form_id)
+        logger.warning("operations: form '%s' not found", form_uid)
         return web.json_response(
-            {"error": f"Form '{form_id}' not found"}, status=404
+            {"error": f"Form '{form_uid}' not found"}, status=404
         )
 
     # If-Match optimistic concurrency (Q1)
@@ -395,7 +396,7 @@ async def handle_operations(request: web.Request) -> web.Response:
         if candidate != form.version:
             logger.warning(
                 "operations: If-Match mismatch for %s (have=%s, sent=%s)",
-                form_id,
+                form_uid,
                 form.version,
                 candidate,
             )
@@ -426,7 +427,7 @@ async def handle_operations(request: web.Request) -> web.Response:
                 "operations: op[%d] (%s) failed for %s — %s",
                 i,
                 op.op,
-                form_id,
+                form_uid,
                 e.message,
             )
             return web.json_response(
@@ -443,7 +444,7 @@ async def handle_operations(request: web.Request) -> web.Response:
     if schema_errors:
         logger.warning(
             "operations: post-apply schema errors for %s: %s",
-            form_id,
+            form_uid,
             schema_errors,
         )
         return web.json_response(
@@ -461,7 +462,7 @@ async def handle_operations(request: web.Request) -> web.Response:
     logger.info(
         "operations: applied %d ops to form '%s' → version %s",
         len(envelope.operations),
-        form_id,
+        form_uid,
         working.version,
     )
     return web.json_response({"form": working.model_dump(mode="json")})

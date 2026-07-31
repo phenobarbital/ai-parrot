@@ -43,7 +43,11 @@ provides slug-based lookups. Implements Module 2 from the spec.
 | File | Action | Description |
 |---|---|---|
 | `packages/parrot-formdesigner/src/parrot_formdesigner/services/registry.py` | MODIFY | Reindex, add slug index, new methods |
-| `packages/parrot-formdesigner/tests/test_registry.py` | MODIFY | Update and add registry tests |
+| `packages/parrot-formdesigner/tests/unit/test_registry_multi_tenancy.py` | MODIFY | CORRECTED (2026-07-30): `tests/test_registry.py` does not exist. This is the real `FormRegistry` test file (FEAT-183); updated existing tests for form_uid keying + added `TestRegistryFormUid` |
+| `packages/parrot-formdesigner/tests/unit/services/test_registry_public_toggle.py` | MODIFY | CORRECTED: fixtures/call sites depended on form_id-keyed `unregister()`/register() is_public diffing |
+| `packages/parrot-formdesigner/tests/unit/test_clone_form.py` | MODIFY | CORRECTED: all call sites passed `source_form_id` (slug) to `clone_form()`, now `source_form_uid` |
+| `packages/parrot-formdesigner/tests/unit/test_database_form_tool_dispatch.py` | MODIFY | CORRECTED: one assertion used `.get(slug, ...)`, now `.get_by_slug(...)` |
+| `packages/parrot-formdesigner/tests/unit/test_services.py` | MODIFY | CORRECTED: `TestFormRegistry.test_register_and_retrieve` used `.get(slug, ...)` |
 
 ---
 
@@ -215,4 +219,68 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified: `FormRegistry._forms` re-keyed on `form_uid`; added
+`_slug_index` (`tenant_form_slug` → `form_uid`), `_make_slug_key()`,
+`get_by_slug()`, `list_form_uids()`. Renamed the primary-key parameter on
+`get()`/`unregister()`/`contains()`/`clone_form()` from `form_id` to
+`form_uid`. `clone_form()` now generates a fresh `form_uid` via
+`uuid.uuid4()` for every clone. `register()` enforces slug uniqueness per
+tenant (raises `ValueError` when `overwrite=False` and the slug is claimed
+by a different `form_uid`) and migrates the slug index when a form's
+`form_id` changes on re-registration.
+
+**Codebase Contract corrections** (documented inline in this file, same
+protocol as TASK-1972): the "Verified Imports"/"Files to Create/Modify"
+table listed `tests/test_registry.py`, which does not exist. Corrected to
+the real test surface: `tests/unit/test_registry_multi_tenancy.py` (the
+actual FormRegistry test file, FEAT-183) plus four more files whose tests
+called `FormRegistry.get()/unregister()/clone_form()` with a slug string
+and broke once the registry re-keyed:
+`tests/unit/services/test_registry_public_toggle.py`,
+`tests/unit/test_clone_form.py`, `tests/unit/test_database_form_tool_dispatch.py`,
+`tests/unit/test_services.py`.
+
+**A real bug was found and fixed during implementation**: the initial
+"detect slug rename, clean stale `_slug_index` entry" logic compared
+`_old_form.form_id != form.form_id`, but `FormRegistry` stores `FormSchema`
+objects **by reference** — if a caller fetches a form, mutates
+`form.form_id` in place, then re-registers the *same* object,
+`_old_form` and `form` are literally the same object, silently defeating
+the comparison (both sides always equal). Fixed by adding a private
+`_uid_to_slug: dict[form_uid, slug_key]` reverse index that is *not*
+derived from the live `FormSchema` object's mutable state, used by both
+`register()`'s rename-cleanup and `unregister()`'s index cleanup. Caught by
+a new test (`TestRegistryFormUid.test_register_slug_change_updates_index`)
+that mutates `form.form_id` in place before re-registering, mirroring a
+plausible real caller pattern.
+
+**Explicitly out of scope, left untouched** (per this task's own "NOT in
+scope: Storage layer" boundary, even though `FormStorage` ABC/
+`load_from_storage()` physically live in `registry.py`): the `FormStorage`
+abstract `save`/`load`/`delete`/`list_forms` signatures, and
+`load_from_storage()`'s use of `item.get("form_id")` — TASK-1974 owns the
+storage-layer rename; `load_from_storage()` needs no change for THIS task
+because `register()` re-keys any hydrated `FormSchema` by its own
+`.form_uid` regardless of how it was loaded. Flagged for TASK-1974 to
+verify/adapt `load_from_storage()` once `PostgresFormStorage.load()`
+becomes `form_uid`-based.
+
+**Known, tracked regressions** (NOT fixed here — downstream consumers out
+of this task's file scope, already covered by existing/new tasks):
+confirmed via `git stash` diff of the full `pytest tests/unit/` run that
+this task introduces exactly these new failures, all in files that call
+`registry.get(form_id_slug, ...)` and are owned by other tasks:
+- `api/handlers.py`-backed tests (`test_api_feat300.py`,
+  `test_feat300_review_fixes.py`) → TASK-1976
+- `api/render.py`-backed tests (`test_render_dispatcher.py`) → TASK-1990
+- `services/form_version.py`-backed tests (`test_form_version.py`,
+  `test_version_backfill.py`, parts of `test_api_feat300.py`/
+  `test_feat300_review_fixes.py`) → TASK-1990
+
+TASK-1990 was created during this task's implementation to close this gap
+(see its Context section for the full consumer audit) — confirmed with the
+user before creating it.
+
+All registry-owned tests pass: `pytest packages/parrot-formdesigner/tests/unit/test_registry_multi_tenancy.py tests/unit/services/test_registry_public_toggle.py tests/unit/test_registry_lifecycle.py tests/unit/test_clone_form.py tests/unit/test_services.py tests/unit/test_database_form_tool_dispatch.py -v` → 95 passed.
+Ruff: net zero new lint issues vs. baseline (one genuine new issue, SIM102,
+fixed; pre-existing debt in registry.py and test files left untouched).

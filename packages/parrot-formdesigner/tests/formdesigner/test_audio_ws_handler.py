@@ -122,14 +122,14 @@ class TestAudioSessionState:
 
     def test_initial_state(self) -> None:
         """Fresh session has correct defaults."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         assert state.current_index == 0
         assert state.answers == {}
         assert state.completed is False
 
     def test_add_answer(self) -> None:
         """Answers can be added to the state dict."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.answers["name"] = AudioAnswer(
             field_id="name", value="Alice", source="text"
         )
@@ -172,7 +172,7 @@ class TestSessionLifecycle:
         self, handler: AudioFormWSHandler
     ) -> None:
         """_accept_answer() stores the answer in session state."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         mock_ws = AsyncMock()
         mock_ws.send_json = AsyncMock()
 
@@ -259,10 +259,10 @@ class TestNavigation:
             label="Name?", required=True
         )
         manifest = AudioFormManifest(
-            form_id="f1", title="T", total_questions=1,
+            form_uid="f1", title="T", total_questions=1,
             questions=[q], ws_endpoint="/ws"
         )
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.manifest = manifest
         state.current_index = 0
 
@@ -293,10 +293,10 @@ class TestNavigation:
             label="Age?", required=False
         )
         manifest = AudioFormManifest(
-            form_id="f1", title="T", total_questions=2,
+            form_uid="f1", title="T", total_questions=2,
             questions=[q1, q2], ws_endpoint="/ws"
         )
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.manifest = manifest
         state.current_index = 0
 
@@ -324,10 +324,10 @@ class TestNavigation:
             for i in range(3)
         ]
         manifest = AudioFormManifest(
-            form_id="f1", title="T", total_questions=3,
+            form_uid="f1", title="T", total_questions=3,
             questions=questions, ws_endpoint="/ws"
         )
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.manifest = manifest
         state.current_index = 2
 
@@ -354,14 +354,14 @@ class TestNavigation:
 
         q = AudioQuestion(index=1, field_id="age", field_type="number", label="Age?")
         manifest = AudioFormManifest(
-            form_id="f1", title="T", total_questions=2,
+            form_uid="f1", title="T", total_questions=2,
             questions=[
                 AudioQuestion(index=0, field_id="name", field_type="text", label="Name?"),
                 q,
             ],
             ws_endpoint="/ws"
         )
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.manifest = manifest
         state.current_index = 1
 
@@ -381,7 +381,7 @@ class TestNavigation:
     @pytest.mark.asyncio
     async def test_ping_returns_pong(self, handler: AudioFormWSHandler) -> None:
         """ping message receives pong response."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         mock_ws = AsyncMock()
         mock_ws.send_json = AsyncMock()
 
@@ -411,13 +411,13 @@ def _sent_types(ws: AsyncMock) -> list[str]:
 
 def _session_with(questions: list[AudioQuestion]) -> AudioSessionState:
     manifest = AudioFormManifest(
-        form_id="f1", title="T", total_questions=len(questions),
+        form_uid="f1", title="T", total_questions=len(questions),
         questions=questions, ws_endpoint="/ws",
     )
-    state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+    state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
     state.manifest = manifest
     state.current_index = 0
-    state.config = AudioSessionConfig(form_id="f1")
+    state.config = AudioSessionConfig(form_uid="f1")
     return state
 
 
@@ -434,7 +434,7 @@ class TestVoiceModeQuestionDelivery:
             options=[{"value": "red", "label": "Red"}],
         )
         ws = _fresh_ws()
-        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_uid="f1"))
         msg = ws.send_json.call_args[0][0]
         assert msg["voice_mode"] == "prompt_select"
         assert msg["render_mode"] == "select"
@@ -451,7 +451,7 @@ class TestVoiceModeQuestionDelivery:
             render_mode="visual",
         )
         ws = _fresh_ws()
-        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_uid="f1"))
         msg = ws.send_json.call_args[0][0]
         assert msg["voice_mode"] == "visual_fallback"
         assert msg.get("fallback_html")
@@ -465,7 +465,7 @@ class TestVoiceModeQuestionDelivery:
             sensitive=True,
         )
         ws = _fresh_ws()
-        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_uid="f1"))
         msg = ws.send_json.call_args[0][0]
         assert msg["sensitive"] is True
         assert "audio" not in msg
@@ -481,7 +481,7 @@ class TestVoiceModeQuestionDelivery:
             options=[{"value": "red", "label": "Red"}, {"value": "blue", "label": "Blue"}],
         )
         ws = _fresh_ws()
-        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_uid="f1"))
         # The injected synthesizer is called with the enumerated narration text.
         spoken = handler.synthesizer.synthesize.call_args[0][0]
         assert "Red" in spoken and "Blue" in spoken
@@ -666,7 +666,7 @@ class TestGracefulSynthesis:
         handler.synthesizer.synthesize.side_effect = RuntimeError("no weights")
         q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
         ws = _fresh_ws()
-        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_uid="f1"))
         msg = ws.send_json.call_args[0][0]
         assert msg["type"] == "question"
         assert "audio" not in msg
@@ -679,7 +679,7 @@ class TestGracefulSynthesis:
         assert handler._auto_synthesize is False
         q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
         ws = _fresh_ws()
-        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_uid="f1"))
         msg = ws.send_json.call_args[0][0]
         assert "audio" not in msg
 
@@ -697,7 +697,7 @@ class TestReviewHardening:
             label="L", voice_mode=VoiceMode.VISUAL_FALLBACK, render_mode="visual",
         )
         ws = _fresh_ws()
-        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_id="f1"))
+        await handler._send_question(ws, q, {}, config=AudioSessionConfig(form_uid="f1"))
         fhtml = ws.send_json.call_args[0][0]["fallback_html"]
         assert 'onfocus="' not in fhtml  # raw attribute breakout neutralized
         assert "&quot;" in fhtml
@@ -826,7 +826,7 @@ class TestReviewHardening:
         session = _session_with(
             [AudioQuestion(index=0, field_id="a", field_type="text", label="A")]
         )
-        cfg = AudioSessionConfig(form_id="f1")
+        cfg = AudioSessionConfig(form_uid="f1")
         a1 = await handler._synthesize("hi", config=cfg, session=session)
         a2 = await handler._synthesize("there", config=cfg, session=session)
         assert a1 == b"WAV" and a2 == b"WAV"

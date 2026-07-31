@@ -238,7 +238,7 @@ class TestToolkitIntegration:
         tool = CreateFormTool(client=mock_client, registry=mock_registry)
         result = await tool._execute(
             prompt="Change something",
-            refine_form_id="small-form",
+            refine_form_uid="small-form",
             persist=False,
         )
 

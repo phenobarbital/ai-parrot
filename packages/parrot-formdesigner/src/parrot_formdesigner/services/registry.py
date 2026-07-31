@@ -16,12 +16,24 @@ Multi-tenancy support (FEAT-183):
 - Every public method accepts kwarg-only ``tenant: str | None = None``.
 - ``tenant=None`` resolves strictly to ``default_tenant`` — never aggregates.
 - ``on_unregister`` callbacks receive ``(form_id, tenant)`` — BREAKING change.
+
+Stable UUID identity (FEAT-389):
+- The primary index is now keyed by ``form_uid`` (immutable UUID4) instead
+  of ``form_id`` (mutable, human-readable slug). Internal state is
+  ``dict[tenant, dict[form_uid, FormSchema]]``.
+- A secondary ``_slug_index: dict[tenant_form_slug, form_uid]`` maps the
+  composite key ``"{tenant}_{form_id}"`` to the owning ``form_uid``,
+  enforcing slug uniqueness per tenant and enabling :meth:`get_by_slug`.
+- ``get()``, ``unregister()``, ``contains()``, and ``clone_form()`` now take
+  ``form_uid`` — NOT ``form_id`` — as their primary lookup parameter.
+  ``on_unregister`` callbacks now receive ``(form_uid, tenant)``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
@@ -37,7 +49,8 @@ logger = logging.getLogger(__name__)
 
 
 class FormAlreadyExistsError(ValueError):
-    """Raised when registering a form whose ``form_id`` is already taken.
+    """Raised when registering a form whose slug (``form_id``) is already
+    taken by a different ``form_uid`` within the same tenant.
 
     Subclasses ``ValueError`` so existing ``except ValueError`` blocks keep
     working, but lets API handlers distinguish 409 Conflict (duplicate id)
@@ -150,7 +163,12 @@ class FormRegistry:
     via FormStorage, async event callbacks, and YAML directory loading via
     YamlExtractor.
 
-    Internal state is ``dict[tenant, dict[form_id, FormSchema]]``.
+    Internal state is ``dict[tenant, dict[form_uid, FormSchema]]`` — the
+    primary index is keyed by the immutable ``form_uid`` (FEAT-389), NOT the
+    mutable ``form_id`` slug. A secondary ``_slug_index`` maps
+    ``"{tenant}_{form_id}"`` → ``form_uid`` for slug-based lookups via
+    :meth:`get_by_slug`.
+
     Every public read/write method accepts a kwarg-only ``tenant=`` parameter
     that resolves via: explicit kwarg > form.tenant (register paths) >
     ``default_tenant``.
@@ -159,7 +177,8 @@ class FormRegistry:
 
         registry = FormRegistry()
         await registry.register(form_schema)                     # requires form.tenant
-        form = await registry.get("my-form", tenant="navigator")
+        form = await registry.get(form_schema.form_uid, tenant="navigator")
+        form = await registry.get_by_slug("my-form", tenant="navigator")
 
         # With persistence
         registry = FormRegistry(storage=PostgreSQLFormStorage(...))
@@ -199,6 +218,20 @@ class FormRegistry:
                 ``default_tenant``.
         """
         self._forms: dict[str, dict[str, FormSchema]] = {}
+        # FEAT-389: secondary index mapping tenant_form_slug
+        # ("{tenant}_{form_id}") -> form_uid, for slug-based lookups
+        # (get_by_slug) and slug-uniqueness enforcement on register().
+        self._slug_index: dict[str, str] = {}
+        # FEAT-389: reverse of _slug_index (form_uid -> its current slug_key).
+        # Deliberately NOT derived from `form.form_id` at cleanup time —
+        # FormSchema instances are stored by reference, so a caller that
+        # mutates `form.form_id` in place on an already-registered object
+        # (fetch -> mutate -> register()) would otherwise corrupt the "old
+        # slug" the cleanup logic needs to look up (the stored object IS the
+        # caller's object; by the time register() runs, its `.form_id` may
+        # already reflect the NEW slug). Tracking the slug_key independently
+        # per form_uid keeps rename cleanup correct regardless of aliasing.
+        self._uid_to_slug: dict[str, str] = {}
         self._lock = asyncio.Lock()
         self._storage = storage
         self._default_tenant = default_tenant
@@ -207,7 +240,9 @@ class FormRegistry:
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
         self._on_unregister: list[Callable[[str, str], Awaitable[None]]] = []
         # FEAT-241: optional callback invoked when a form's is_public flag changes.
-        # Signature: async (form_id: str, is_public: bool) -> None
+        # Signature: async (form_uid: str, is_public: bool) -> None
+        # (FEAT-389: keyed by form_uid, not form_id — see register()/unregister()
+        # firing sites for why.)
         self._public_toggle_callback: Callable[[str, bool], Awaitable[None]] | None = None
         self.logger = logging.getLogger(__name__)
 
@@ -258,6 +293,21 @@ class FormRegistry:
             return form.tenant
         return self._default_tenant
 
+    @staticmethod
+    def _make_slug_key(tenant: str, form_id: str) -> str:
+        """Build the ``tenant_form_slug`` composite key (FEAT-389).
+
+        Args:
+            tenant: Resolved tenant slug.
+            form_id: The form's human-readable slug.
+
+        Returns:
+            ``"{tenant}_{form_id}"`` — used as the ``_slug_index`` key so the
+            same slug can be reused, unambiguously, across different
+            tenants.
+        """
+        return f"{tenant}_{form_id}"
+
     # ------------------------------------------------------------------
     # Public API — write paths
     # ------------------------------------------------------------------
@@ -285,17 +335,34 @@ class FormRegistry:
         If the explicit kwarg differs from ``form.tenant``, a ``WARNING`` is
         logged and the kwarg wins.  ``form.tenant`` is never mutated.
 
+        The primary index key is ``form.form_uid`` (immutable) — NOT
+        ``form.form_id`` (FEAT-389). A secondary ``_slug_index`` entry
+        (``"{tenant}_{form_id}"`` → ``form_uid``) is created/updated so the
+        form is also reachable via :meth:`get_by_slug`. If ``form.form_id``
+        changed since this ``form_uid`` was last registered, the stale slug
+        index entry is removed.
+
         Args:
             form: FormSchema to register.
             persist: If True, also save to storage backend.
                 Logs a warning (does not raise) if no storage is configured.
-            overwrite: If True, overwrite existing registration (default True).
+            overwrite: If True (default), permit updating THIS form_uid's
+                own existing registration. Never grants permission to take
+                a DIFFERENT form_uid's slug — see ``FormAlreadyExistsError``
+                below, which is raised unconditionally in that case.
             tenant: Explicit tenant override.  ``None`` means "use
                 form.tenant or default_tenant".
 
         Raises:
             ValueError: When ``require_tenant=True`` and both ``tenant=``
                 kwarg and ``form.tenant`` are ``None``.
+            FormAlreadyExistsError: When ``form.form_id`` (slug) is already
+                in use by a DIFFERENT ``form_uid`` within the resolved
+                tenant (slug uniqueness enforcement, FEAT-389) — raised
+                regardless of ``overwrite``, which only governs updating
+                this form_uid's own prior registration. Subclasses
+                ``ValueError`` so existing ``except ValueError`` call sites
+                keep working.
         """
         # Determine whether resolution would fall all the way to default_tenant
         # because no explicit information was provided.
@@ -324,30 +391,79 @@ class FormRegistry:
                 resolved,
             )
 
+        slug_key = self._make_slug_key(resolved, form.form_id)
+
         async with self._lock:
             tenant_bucket = self._forms.setdefault(resolved, {})
-            if form.form_id in tenant_bucket and not overwrite:
+
+            # Slug uniqueness enforcement (FEAT-389, code-review fix):
+            # reject if the slug is already claimed by a DIFFERENT
+            # form_uid — ALWAYS, independent of `overwrite`. `overwrite`
+            # governs whether THIS form_uid's own existing registration may
+            # be updated (see the `form.form_uid in tenant_bucket` check
+            # below) — it must never be read as "permission to take
+            # someone else's slug." Gating this check on `not overwrite`
+            # was a real bug: `overwrite` defaults to True and is exactly
+            # what the rename path (api/handlers.py::update_form, PUT) uses,
+            # so a PUT rename to a slug already owned by an unrelated form
+            # used to succeed silently and corrupt both forms' index state.
+            existing_slug_uid = self._slug_index.get(slug_key)
+            if existing_slug_uid is not None and existing_slug_uid != form.form_uid:
+                raise FormAlreadyExistsError(
+                    f"Slug '{form.form_id}' already in use by "
+                    f"form_uid={existing_slug_uid!r} in tenant {resolved!r}"
+                )
+
+            if form.form_uid in tenant_bucket and not overwrite:
                 self.logger.debug(
                     "Form %s already registered under tenant=%s, skipping",
-                    form.form_id,
+                    form.form_uid,
                     resolved,
                 )
                 return
 
             # Capture old form BEFORE overwriting (needed for is_public diff, FEAT-241).
-            _old_form = tenant_bucket.get(form.form_id)
-            tenant_bucket[form.form_id] = form
+            # NOTE: is_public diffing reads `_old_form.is_public` — captured
+            # from `_old_form` itself, not from `_uid_to_slug`, since only
+            # the slug-rename cleanup below is vulnerable to the
+            # by-reference aliasing hazard described in __init__.
+            _old_form = tenant_bucket.get(form.form_uid)
+            tenant_bucket[form.form_uid] = form
+
+            # If the slug changed since this form_uid was last registered,
+            # drop the stale slug index entry (FEAT-389). Looked up via the
+            # independent _uid_to_slug reverse index — NOT via
+            # `_old_form.form_id` — because `_old_form` may be the exact
+            # same object as `form` (registries store by reference), so a
+            # caller that mutates `form.form_id` in place before
+            # re-registering would otherwise silently defeat this check.
+            old_slug_key = self._uid_to_slug.get(form.form_uid)
+            if (
+                old_slug_key is not None
+                and old_slug_key != slug_key
+                and self._slug_index.get(old_slug_key) == form.form_uid
+            ):
+                del self._slug_index[old_slug_key]
+
+            self._slug_index[slug_key] = form.form_uid
+            self._uid_to_slug[form.form_uid] = slug_key
 
         # Fire is_public toggle callback if is_public changed (FEAT-241).
+        # Keyed by form.form_uid (FEAT-389 correction): the callback is used
+        # by setup_form_api()'s auth-exclusion wiring to build URL patterns
+        # via public_form_paths() — since routes are now {form_uid}-based
+        # (TASK-1976), the exclusion patterns must be built from form_uid too,
+        # or they'd silently exempt URLs that no longer exist while leaving
+        # the real (form_uid-keyed) public form URLs auth-protected.
         if self._public_toggle_callback is not None:
             old_is_public = _old_form.is_public if _old_form is not None else False
             if old_is_public != form.is_public:
                 try:
-                    await self._public_toggle_callback(form.form_id, form.is_public)
+                    await self._public_toggle_callback(form.form_uid, form.is_public)
                 except Exception as exc:
                     self.logger.warning(
                         "public_toggle_callback failed on register(%s, is_public=%s): %s",
-                        form.form_id,
+                        form.form_uid,
                         form.is_public,
                         exc,
                     )
@@ -393,13 +509,15 @@ class FormRegistry:
     ) -> None:
         """Register a callback invoked when a form's ``is_public`` flag changes.
 
-        The callback is called with ``(form_id, True)`` when the form becomes
-        public, and ``(form_id, False)`` when it becomes private or is deleted.
+        The callback is called with ``(form_uid, True)`` when the form becomes
+        public, and ``(form_uid, False)`` when it becomes private or is deleted.
         Only called when the ``is_public`` value actually changes (no-op on
-        same-value re-registration).
+        same-value re-registration). Keyed by ``form_uid`` (FEAT-389) since
+        the callback drives URL-pattern auth exclusions and routes are
+        ``form_uid``-based (TASK-1976).
 
         Args:
-            callback: Async callable ``(form_id: str, is_public: bool) -> None``.
+            callback: Async callable ``(form_uid: str, is_public: bool) -> None``.
         """
         self._public_toggle_callback = callback
 
@@ -462,14 +580,17 @@ class FormRegistry:
         except Exception as exc:
             self.logger.error("FormRegistry: storage close() failed: %s", exc)
 
-    async def unregister(self, form_id: str, *, tenant: str | None = None) -> bool:
+    async def unregister(self, form_uid: str, *, tenant: str | None = None) -> bool:
         """Unregister a form schema from a specific tenant.
 
         If removing the form leaves the tenant bucket empty, the outer key
-        is deleted so :meth:`list_tenants` never reports empty tenants.
+        is deleted so :meth:`list_tenants` never reports empty tenants. The
+        corresponding ``_slug_index`` entry is also removed (FEAT-389).
 
         Args:
-            form_id: ID of the form to remove.
+            form_uid: ``form_uid`` (immutable UUID) of the form to remove.
+                NOT ``form_id`` — use :meth:`get_by_slug` first to resolve a
+                slug to its ``form_uid`` if needed.
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
@@ -479,31 +600,44 @@ class FormRegistry:
 
         async with self._lock:
             bucket = self._forms.get(resolved)
-            if bucket is None or form_id not in bucket:
+            if bucket is None or form_uid not in bucket:
                 return False
 
             # Capture the form BEFORE removing it (needed for is_public check, FEAT-241).
-            _existing = bucket.get(form_id)
-            bucket.pop(form_id)
+            _existing = bucket.get(form_uid)
+            bucket.pop(form_uid)
+
+            # Clean up the slug index entry for this form (FEAT-389). Looked
+            # up via _uid_to_slug (not `_existing.form_id`) for the same
+            # by-reference-aliasing reason documented in register().
+            slug_key = self._uid_to_slug.pop(form_uid, None)
+            if slug_key is not None and self._slug_index.get(slug_key) == form_uid:
+                del self._slug_index[slug_key]
+
             # Clean up empty outer key so list_tenants() stays accurate.
             if not bucket:
                 del self._forms[resolved]
 
-        # Fire is_public toggle callback if the deleted form was public (FEAT-241).
+        # Fire is_public toggle callback if the deleted form was public
+        # (FEAT-241). Keyed by form_uid — consistent with the register()
+        # firing site (see comment there for why: URL-exclusion patterns
+        # are built from form_uid since routes are form_uid-based).
         if self._public_toggle_callback is not None and _existing is not None and _existing.is_public:
             try:
-                await self._public_toggle_callback(form_id, False)
+                await self._public_toggle_callback(form_uid, False)
             except Exception as exc:
                 self.logger.warning(
                     "public_toggle_callback failed on unregister(%s): %s",
-                    form_id,
+                    form_uid,
                     exc,
                 )
 
-        # Fire on_unregister callbacks with new (form_id, tenant) signature.
+        # Fire on_unregister callbacks with (form_uid, tenant) — the
+        # signature is unchanged (still a 2-tuple), but the first element is
+        # now form_uid rather than form_id (FEAT-389).
         for callback in self._on_unregister:
             try:
-                await callback(form_id, resolved)
+                await callback(form_uid, resolved)
             except Exception as exc:
                 self.logger.warning("Unregister callback failed: %s", exc)
 
@@ -511,16 +645,18 @@ class FormRegistry:
 
     async def clone_form(
         self,
-        source_form_id: str,
+        source_form_uid: str,
         new_form_id: str,
         patch: dict[str, Any] | None = None,
         *,
         persist: bool = True,
         tenant: str | None = None,
     ) -> FormSchema:
-        """Clone an existing form under a new ``form_id``.
+        """Clone an existing form under a new ``form_id`` (slug) AND a fresh
+        ``form_uid`` (FEAT-389).
 
-        Creates a deep copy of the source form, assigns ``new_form_id``,
+        Creates a deep copy of the source form, assigns ``new_form_id`` as
+        its slug, generates a brand-new ``form_uid`` via ``uuid.uuid4()``,
         resets ``version`` to ``"1.0"`` and ``created_at`` to ``None``,
         records ``meta["cloned_from"]`` for provenance, optionally applies an
         RFC 7396 merge-patch, validates the result, and registers it.
@@ -529,39 +665,48 @@ class FormRegistry:
         so cloning happens within a single tenant scope.
 
         Args:
-            source_form_id: ``form_id`` of the form to clone.
-            new_form_id: ``form_id`` to assign to the cloned form.
+            source_form_uid: ``form_uid`` (immutable UUID) of the form to
+                clone. NOT ``form_id`` — use :meth:`get_by_slug` first to
+                resolve a slug to its ``form_uid`` if needed.
+            new_form_id: ``form_id`` (slug) to assign to the cloned form. The
+                clone always gets a brand-new ``form_uid``, independent of
+                this slug.
             patch: Optional RFC 7396 merge-patch dict to apply on top of the
-                cloned form before validation. ``form_id`` and ``created_at``
-                in the patch are ignored.
+                cloned form before validation. ``form_id``, ``form_uid``, and
+                ``created_at`` in the patch are ignored.
             persist: If ``True`` (default), persist the cloned form via the
                 configured storage backend.
             tenant: Tenant scope for both source lookup and clone
                 registration. ``None`` resolves to ``default_tenant``.
 
         Returns:
-            The newly cloned and registered ``FormSchema``.
+            The newly cloned and registered ``FormSchema`` (with a fresh
+            ``form_uid``).
 
         Raises:
-            KeyError: When ``source_form_id`` is not found under ``tenant``.
-            FormAlreadyExistsError: When ``new_form_id`` already exists under
-                ``tenant``.
+            KeyError: When ``source_form_uid`` is not found under ``tenant``.
+            FormAlreadyExistsError: When ``new_form_id`` (slug) already
+                exists under ``tenant``.
             ValueError: When ``FormValidator.check_schema`` reports structural
                 errors, or when the patch produces an invalid schema.
         """
         resolved = self._resolve_tenant(tenant)
 
-        source = await self.get(source_form_id, tenant=resolved)
+        source = await self.get(source_form_uid, tenant=resolved)
         if source is None:
-            raise KeyError(f"Form '{source_form_id}' not found")
+            raise KeyError(f"Form '{source_form_uid}' not found")
 
-        if await self.contains(new_form_id, tenant=resolved):
+        new_slug_key = self._make_slug_key(resolved, new_form_id)
+        async with self._lock:
+            slug_taken = new_slug_key in self._slug_index
+        if slug_taken:
             raise FormAlreadyExistsError(
                 f"Form '{new_form_id}' already exists"
             )
 
         clone = source.model_copy(deep=True)
 
+        clone.form_uid = str(uuid.uuid4())
         clone.form_id = new_form_id
         clone.version = "1.0"
         clone.created_at = None
@@ -569,7 +714,7 @@ class FormRegistry:
 
         if clone.meta is None:
             clone.meta = {}
-        clone.meta["cloned_from"] = source_form_id
+        clone.meta["cloned_from"] = source_form_uid
 
         if patch:
             # Deferred import: api/_utils sits inside the api package whose
@@ -580,10 +725,11 @@ class FormRegistry:
             clone_dict = clone.model_dump()
             merged = _deep_merge(clone_dict, patch)
             merged["form_id"] = new_form_id
+            merged["form_uid"] = clone.form_uid
             merged.pop("created_at", None)
             # RFC 7396 null removal can wipe meta — re-seed provenance.
             meta = merged.get("meta") or {}
-            meta["cloned_from"] = source_form_id
+            meta["cloned_from"] = source_form_uid
             merged["meta"] = meta
             merged["tenant"] = resolved
             clone = FormSchema.model_validate(merged)
@@ -595,8 +741,9 @@ class FormRegistry:
             raise ValueError(f"Cloned form failed validation: {errors}")
 
         self.logger.info(
-            "Cloning form '%s' -> '%s' (tenant=%s, persist=%s)",
-            source_form_id,
+            "Cloning form '%s' -> form_uid=%s (slug=%s, tenant=%s, persist=%s)",
+            source_form_uid,
+            clone.form_uid,
             new_form_id,
             resolved,
             persist,
@@ -608,7 +755,7 @@ class FormRegistry:
         # TOCTOU guard: ensure the clone is actually in the bucket after
         # register() returns. Concurrent writers with overwrite=False could
         # have lost the race.
-        if not await self.contains(new_form_id, tenant=resolved):
+        if await self.get(clone.form_uid, tenant=resolved) is None:
             raise ValueError(
                 f"Form '{new_form_id}' could not be registered — "
                 "concurrent conflict"
@@ -620,21 +767,46 @@ class FormRegistry:
     # Public API — read paths
     # ------------------------------------------------------------------
 
-    async def get(self, form_id: str, *, tenant: str | None = None) -> FormSchema | None:
-        """Get a form schema by ID within a specific tenant.
+    async def get(self, form_uid: str, *, tenant: str | None = None) -> FormSchema | None:
+        """Get a form schema by ``form_uid`` (primary key) within a tenant.
 
         Args:
-            form_id: Form identifier.
+            form_uid: The form's immutable ``form_uid`` (UUID). NOT
+                ``form_id`` — use :meth:`get_by_slug` for slug-based lookups.
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
             FormSchema if found under the resolved tenant, ``None`` otherwise.
             A form registered under ``"epson"`` is invisible to
-            ``get(form_id, tenant="pokemon")``.
+            ``get(form_uid, tenant="pokemon")``.
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            return self._forms.get(resolved, {}).get(form_id)
+            return self._forms.get(resolved, {}).get(form_uid)
+
+    async def get_by_slug(
+        self, form_id: str, *, tenant: str | None = None
+    ) -> FormSchema | None:
+        """Get a form schema by its slug (``form_id``) within a tenant.
+
+        Resolves ``form_id`` → ``tenant_form_slug`` → ``form_uid`` via
+        ``_slug_index``, then looks up the primary index (FEAT-389).
+
+        Args:
+            form_id: The form's human-readable slug.
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
+
+        Returns:
+            FormSchema if a form with this slug is registered under the
+            resolved tenant, ``None`` otherwise.
+        """
+        resolved = self._resolve_tenant(tenant)
+        slug_key = self._make_slug_key(resolved, form_id)
+        async with self._lock:
+            form_uid = self._slug_index.get(slug_key)
+            if form_uid is None:
+                return None
+            return self._forms.get(resolved, {}).get(form_uid)
 
     async def list_forms(self, *, tenant: str | None = None) -> list[FormSchema]:
         """List all registered form schemas for a specific tenant.
@@ -653,23 +825,38 @@ class FormRegistry:
             return list(self._forms.get(resolved, {}).values())
 
     async def list_form_ids(self, *, tenant: str | None = None) -> list[str]:
-        """List all registered form IDs for a specific tenant.
+        """List all registered form slugs (``form_id``) for a specific tenant.
 
         Args:
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            List of form_id strings under the resolved tenant.
+            List of ``form_id`` (slug) strings under the resolved tenant,
+            derived from the primary ``form_uid``-keyed index (FEAT-389).
+        """
+        resolved = self._resolve_tenant(tenant)
+        async with self._lock:
+            return [form.form_id for form in self._forms.get(resolved, {}).values()]
+
+    async def list_form_uids(self, *, tenant: str | None = None) -> list[str]:
+        """List all registered ``form_uid`` values for a specific tenant.
+
+        Args:
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
+
+        Returns:
+            List of ``form_uid`` strings under the resolved tenant.
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
             return list(self._forms.get(resolved, {}).keys())
 
-    async def contains(self, form_id: str, *, tenant: str | None = None) -> bool:
+    async def contains(self, form_uid: str, *, tenant: str | None = None) -> bool:
         """Check if a form is registered under a specific tenant.
 
         Args:
-            form_id: Form identifier to check.
+            form_uid: ``form_uid`` (immutable UUID) to check. NOT
+                ``form_id`` — use :meth:`get_by_slug` for slug-based checks.
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
@@ -677,29 +864,44 @@ class FormRegistry:
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            return form_id in self._forms.get(resolved, {})
+            return form_uid in self._forms.get(resolved, {})
 
     async def clear(self, *, tenant: str | None = None) -> None:
         """Clear all registered forms for a specific tenant only.
 
         Never aggregates.  Drops only ``resolved_tenant``'s forms and removes
-        the outer key so :meth:`list_tenants` stays accurate.
+        the outer key so :meth:`list_tenants` stays accurate. Also drops the
+        cleared forms' ``_slug_index``/``_uid_to_slug`` entries (code-review
+        fix, FEAT-389) — leaving them behind let a subsequent
+        ``register(overwrite=False)`` for the SAME slug in this now-empty
+        tenant incorrectly raise "already in use" against a form_uid that no
+        longer exists anywhere in ``_forms``.
 
         Args:
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            self._forms.pop(resolved, None)
+            removed = self._forms.pop(resolved, None)
+            if removed:
+                for form_uid in removed:
+                    slug_key = self._uid_to_slug.pop(form_uid, None)
+                    if slug_key is not None:
+                        self._slug_index.pop(slug_key, None)
 
     async def clear_all(self) -> None:
         """Drop every tenant's forms.
 
         Use for test teardown and maintenance only — not for single-tenant
-        operations (use :meth:`clear` for those).
+        operations (use :meth:`clear` for those). Also drops
+        ``_slug_index``/``_uid_to_slug`` entirely (code-review fix,
+        FEAT-389) — see :meth:`clear`'s docstring for why leaving them
+        behind is a correctness bug, not just clutter.
         """
         async with self._lock:
             self._forms.clear()
+            self._slug_index.clear()
+            self._uid_to_slug.clear()
 
     async def list_tenants(self) -> list[str]:
         """Return a sorted list of tenants that have at least one registered form.
@@ -852,18 +1054,22 @@ class FormRegistry:
 
         count = 0
         for item in form_list:
-            form_id = item.get("form_id")
-            if not form_id:
+            # FEAT-389: storage.list_forms() dicts now include form_uid;
+            # storage.load() is form_uid-keyed (TASK-1974). register() itself
+            # re-keys by form.form_uid regardless, but load() must be called
+            # with the right identifier to find the row at all.
+            form_uid = item.get("form_uid")
+            if not form_uid:
                 continue
             try:
-                form = await self._storage.load(form_id, tenant=resolved)
+                form = await self._storage.load(form_uid, tenant=resolved)
                 if form is not None:
                     await self.register(form, overwrite=True, tenant=resolved)
                     count += 1
             except Exception as exc:
                 self.logger.warning(
-                    "Failed to load form %s from storage (tenant=%s): %s",
-                    form_id,
+                    "Failed to load form form_uid=%s from storage (tenant=%s): %s",
+                    form_uid,
                     resolved,
                     exc,
                 )
@@ -940,16 +1146,17 @@ class FormRegistry:
         """Async iterate over all registered forms in deterministic order.
 
         Yields forms sorted by ``(tenant, form_id)`` — stable across runs,
-        required for reproducible tests and admin UIs.
+        required for reproducible tests and admin UIs. Sorting is done on
+        each form's ``.form_id`` (human-readable slug) rather than the
+        primary index key, since the primary key is now the random
+        ``form_uid`` (FEAT-389) and would not produce a stable order.
         """
         async with self._lock:
             # Snapshot under lock to avoid modification during iteration.
             snapshot = [
                 form
                 for t in sorted(self._forms.keys())
-                for fid in sorted(self._forms[t].keys())
-                for form in (self._forms[t].get(fid),)
-                if form is not None
+                for form in sorted(self._forms[t].values(), key=lambda f: f.form_id)
             ]
         for form in snapshot:
             yield form
@@ -965,11 +1172,17 @@ class FormRegistry:
         signature.  Passing a plain ``str`` raises ``TypeError`` to catch
         callers that have not been updated.
 
+        The membership check is slug-based (via ``_slug_index``), not a
+        direct primary-index lookup, since the primary index is now keyed by
+        ``form_uid`` (FEAT-389) — this keeps the tuple's ``form_id`` contract
+        intact for callers.
+
         Args:
             item: A ``(tenant, form_id)`` tuple.
 
         Returns:
-            True if the form is registered under the given tenant.
+            True if a form with this slug is registered under the given
+            tenant.
 
         Raises:
             TypeError: If ``item`` is not a tuple.
@@ -981,4 +1194,5 @@ class FormRegistry:
                 "Use: (tenant, form_id) in registry"
             )
         tenant, form_id = item
-        return form_id in self._forms.get(tenant, {})
+        slug_key = self._make_slug_key(tenant, form_id)
+        return slug_key in self._slug_index

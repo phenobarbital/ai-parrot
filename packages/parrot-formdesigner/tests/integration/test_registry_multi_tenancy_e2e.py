@@ -87,35 +87,37 @@ async def test_handlers_pass_tenant_to_registry(aiohttp_client) -> None:
 
     The ``TenantCapturingRegistry`` spy records the ``tenant=`` kwarg so we
     can assert it equals ``"epson"`` rather than ``None`` or ``"navigator"``.
+
+    FEAT-389: the render route and ``registry.get()`` are form_uid-keyed —
+    the request URL uses the registered form's ``form_uid``, not its slug.
     """
     registry = TenantCapturingRegistry()
-    await registry.register(
-        FormSchema(
-            form_id="intake-epson",
-            title={"en": "Intake"},
-            tenant="epson",
-            sections=[
-                FormSection(
-                    section_id="s1",
-                    fields=[
-                        FormField(
-                            field_id="name",
-                            field_type=FieldType.TEXT,
-                            label={"en": "Name"},
-                        )
-                    ],
-                )
-            ],
-        )
+    form = FormSchema(
+        form_id="intake-epson",
+        title={"en": "Intake"},
+        tenant="epson",
+        sections=[
+            FormSection(
+                section_id="s1",
+                fields=[
+                    FormField(
+                        field_id="name",
+                        field_type=FieldType.TEXT,
+                        label={"en": "Name"},
+                    )
+                ],
+            )
+        ],
     )
+    await registry.register(form)
 
     middleware = _make_session_middleware(["epson"])
     app = web.Application(middlewares=[middleware])
     app["form_registry"] = registry
-    app.router.add_get("/api/v1/forms/{form_id}/render/{format}", handle_render)
+    app.router.add_get("/api/v1/forms/{form_uid}/render/{format}", handle_render)
 
     client = await aiohttp_client(app)
-    resp = await client.get("/api/v1/forms/intake-epson/render/html")
+    resp = await client.get(f"/api/v1/forms/{form.form_uid}/render/html")
 
     # The form exists under tenant="epson"; with the session carrying "epson",
     # the handler should find it and return 200.
@@ -132,11 +134,15 @@ async def test_handlers_pass_tenant_to_registry(aiohttp_client) -> None:
 
 @pytest.mark.asyncio
 async def test_telegram_router_tenant_propagation() -> None:
-    """Telegram session's tenant flows into registry.get(tenant=...).
+    """Telegram session's tenant flows into registry.get_by_slug(tenant=...).
 
     Mirrors the unit test in ``test_telegram_router.py`` but exercises the
     ``tenant=`` propagation path introduced by FEAT-183.  We use an
     AsyncMock registry so the spy logic is trivial.
+
+    FEAT-389: ``start_form()`` resolves the incoming bot-facing slug via
+    ``get_by_slug()`` (not ``get()``, which is form_uid-only post-TASK-1973) —
+    the tenant-propagation spy target moved accordingly.
     """
     form = FormSchema(
         form_id="tg-form",
@@ -156,7 +162,7 @@ async def test_telegram_router_tenant_propagation() -> None:
     )
 
     mock_registry = AsyncMock(spec=FormRegistry)
-    mock_registry.get = AsyncMock(return_value=form)
+    mock_registry.get_by_slug = AsyncMock(return_value=form)
 
     renderer = TelegramRenderer(base_url="https://example.com")
     router = TelegramFormRouter(renderer=renderer, registry=mock_registry)
@@ -167,9 +173,9 @@ async def test_telegram_router_tenant_propagation() -> None:
 
     await router.start_form("tg-form", 123, bot, state, tenant="acme")
 
-    # registry.get() must have been called with tenant="acme"
-    mock_registry.get.assert_called_once()
-    _, call_kwargs = mock_registry.get.call_args
+    # registry.get_by_slug() must have been called with tenant="acme"
+    mock_registry.get_by_slug.assert_called_once()
+    _, call_kwargs = mock_registry.get_by_slug.call_args
     assert call_kwargs.get("tenant") == "acme", (
         f"expected tenant='acme' but got tenant={call_kwargs.get('tenant')!r}"
     )

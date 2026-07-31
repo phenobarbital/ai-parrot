@@ -49,18 +49,54 @@ all new functionality. Implements Module 10 from the spec.
 
 ## Files to Create / Modify
 
+**CORRECTED (found while verifying the Codebase Contract before implementing,
+per the anti-hallucination protocol)**: none of the 9 originally-listed
+`MODIFY` paths below exist in the real test tree — the actual layout is
+`tests/unit/`, `tests/integration/`, `tests/formdesigner/`, plus a handful
+of files directly under `tests/`. The table below reflects what was
+ACTUALLY touched, with the corresponding stale assumption noted:
+
 | File | Action | Description |
 |---|---|---|
-| `packages/parrot-formdesigner/tests/conftest.py` | MODIFY | Update shared fixtures to include `form_uid` |
-| `packages/parrot-formdesigner/tests/test_schema.py` | MODIFY | Update FormSchema tests for `form_uid` |
-| `packages/parrot-formdesigner/tests/test_registry.py` | MODIFY | Update registry tests, add dual-index and slug tests |
-| `packages/parrot-formdesigner/tests/test_storage.py` | MODIFY | Update storage tests for `form_uid`, add `load_by_slug` tests |
-| `packages/parrot-formdesigner/tests/test_handlers.py` | MODIFY | Update API URL paths, add blank form and UUID validation tests |
-| `packages/parrot-formdesigner/tests/test_submissions.py` | MODIFY | Update submission tests for `form_uid` |
-| `packages/parrot-formdesigner/tests/test_blob_storage.py` | MODIFY | Update blob tests for `form_uid` key pattern |
-| `packages/parrot-formdesigner/tests/test_create_form.py` | MODIFY | Update CreateFormTool tests for `form_uid` |
-| `packages/parrot-formdesigner/tests/test_operations.py` | MODIFY | Update operations tests for `form_uid` |
-| `packages/parrot-formdesigner/tests/test_form_uid_integration.py` | CREATE | New integration test file for cross-module `form_uid` flows |
+| `packages/parrot-formdesigner/tests/test_partial_handlers.py` | MODIFY | Fix `_make_request()`: `match_info["form_id"]` → `match_info["form_uid"]` with a well-formed UUID default (was raising `KeyError: 'form_uid'` — a genuine FEAT-389 regression from TASK-1976's route rename, not present in the original file list) |
+| `packages/parrot-formdesigner/tests/test_partial_saves_integration.py` | MODIFY | Same fix as above |
+| `packages/parrot-formdesigner/tests/test_submit_merge.py` | MODIFY | Same fix, plus 2 hardcoded `assert_called_once_with("test-form", ...)` assertions updated to expect the `form_uid` now passed to `PartialSaveStore.delete()` |
+| `packages/parrot-formdesigner/tests/test_form_uid_integration.py` | CREATE | New integration test file — covers the 3 genuinely-missing acceptance-criteria items (blank form creation, slug search, UUID validation) not already covered by TASK-1973's `TestRegistryFormUid` (dual-index/slug-uniqueness/rename-stability) or TASK-1974/1975's `test_storage_form_uid.py`/`test_migrations_form_uid.py` (storage SQL correctness/migration idempotency) |
+
+**Stale assumptions from the original file list, and where that coverage
+already actually lives** (verified via targeted `grep`, not touched by
+this task — already complete before this task started):
+- `tests/conftest.py`, `tests/test_schema.py` — do not exist; no shared
+  root `conftest.py`/`test_schema.py` in this package. `FormSchema.form_uid`
+  is exercised inline across many test files via its `default_factory`.
+- `tests/test_registry.py` — real file is
+  `tests/unit/test_registry_multi_tenancy.py`; its `TestRegistryFormUid`
+  class (added by TASK-1973) already covers dual-index, slug uniqueness
+  per tenant, slug-allowed-across-tenants, and rename stability
+  (`test_register_slug_change_updates_index`).
+- `tests/test_storage.py` — real files are
+  `tests/unit/test_storage_form_uid.py` and `tests/unit/test_storage_list.py`
+  /`test_storage_pool.py`/`test_storage_schema_tenant.py` (added by
+  TASK-1974); already cover DDL/upsert-conflict-target SQL correctness.
+- `tests/test_handlers.py` — no single file by that name; handler tests
+  are split across `tests/unit/test_api_feat300.py` (already `form_uid`-based
+  per TASK-1976) and this task's new `test_form_uid_integration.py`
+  (blank-form/slug-search/UUID-validation gaps).
+- `tests/test_submissions.py` — real file is
+  `tests/unit/test_submissions.py`; already `form_uid`-based (TASK-1979).
+- `tests/test_blob_storage.py` — real file is
+  `tests/unit/services/test_blob_storage.py`; already `form_uid`-based
+  (TASK-1980).
+- `tests/test_create_form.py` — real files are
+  `tests/unit/test_create_form_tool.py` and `tests/test_create_form_toolkit.py`;
+  already `form_uid`-based (TASK-1978).
+- `tests/test_operations.py` — real file is
+  `tests/unit/api/test_operations.py`; verified passing as-is, no
+  `form_uid` path-param dependency (TASK-1977's endpoint doesn't route
+  through a `{form_uid}`/`{form_id}` path segment in a way this file
+  exercises) — left untouched, confirmed not broken.
+- Migration integrity + idempotency — already covered by
+  `tests/unit/test_migrations_form_uid.py` (TASK-1975).
 
 ---
 
@@ -267,4 +303,58 @@ async def test_migration_001_idempotent(db_connection):
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Codebase Contract was substantially stale** (see corrected Files table
+above) — the task's assumed test-tree layout did not match reality at
+all. Corrected it first, then verified what TASK-1972 through TASK-1981
+had already covered before writing anything new, to avoid duplicating
+existing test coverage.
+
+**Already satisfied by earlier tasks (verified, not touched)**:
+- Registry dual-index, slug uniqueness per tenant, rename stability →
+  `tests/unit/test_registry_multi_tenancy.py::TestRegistryFormUid` (TASK-1973).
+- Storage DDL/upsert SQL correctness → `tests/unit/test_storage_form_uid.py` (TASK-1974).
+- Migration integrity + idempotency → `tests/unit/test_migrations_form_uid.py` (TASK-1975).
+- `tests/unit/api/test_operations.py` — verified passing as-is, confirmed no `form_uid` dependency broke it.
+
+**New work this task actually did**:
+1. Fixed a genuine FEAT-389 regression discovered while running the full
+   acceptance-criteria suite: `tests/test_partial_handlers.py`,
+   `tests/test_partial_saves_integration.py`, and `tests/test_submit_merge.py`
+   (40 test failures total, all `KeyError: 'form_uid'`) still built mocked
+   requests with `match_info["form_id"]`, but TASK-1976's route rename made
+   `api/handlers.py`'s `save_partial`/`get_partial`/`delete_partial`/
+   `submit_data` require `match_info["form_uid"]` via `extract_form_uid()`.
+   Confirmed via a `dev`-baseline diff that these 40 failures were NEW
+   (absent on unmodified `dev`), not pre-existing — squarely in FEAT-389's
+   scope even though these 3 files weren't in any task's original file
+   list. Fixed by updating each file's `_make_request()` helper to build
+   `match_info["form_uid"]` with a well-formed UUID default, plus 2
+   hardcoded `"test-form"` mock-call assertions in `test_submit_merge.py`.
+2. Created `tests/test_form_uid_integration.py` (10 tests) covering the 3
+   acceptance-criteria items genuinely not covered anywhere else: blank
+   form creation (`POST /forms/blank` → 201 with a well-formed
+   `form_uid`), slug search (`GET /forms?slug=...` via
+   `FormRegistry.get_by_slug()`), and UUID validation (`extract_form_uid()`
+   raising `HTTPBadRequest` for malformed path segments, both as a direct
+   unit test and through `FormAPIHandler.get_form()`) — plus one
+   cross-module create→access→rename→re-access round trip through the
+   handler (not just the registry) proving `form_uid` is what stays
+   stable across the API surface.
+
+**Full suite verification**: `pytest packages/parrot-formdesigner/tests/ -v`
+now completes in ~26s with **no hangs** — 1706 passed, 19 failed, 3
+skipped. The 19 failures are byte-for-byte identical (same test IDs) to a
+control run against unmodified `dev` — confirmed pre-existing and
+unrelated to FEAT-389 (control_registry_capabilities, formula-field
+schema contract, edit_toolkit tool counts, venue_service, etc. — verified
+NOT touching `form_id`/`form_uid` anywhere). The 3 skips are the
+pre-existing `AudioFormWSHandler` deadlock discovered during TASK-1990's
+validation, tracked separately as FEAT-395 — this task did not remove or
+alter those skip markers (they live in `test_audio_integration.py`, owned
+by TASK-1990, not this task's file list).
+
+Acceptance criteria met: all genuinely-missing new tests added, the one
+real regression fixed, full suite green modulo the two explicitly
+out-of-scope, documented exceptions above. No implementation code was
+modified (test-only changes, per this task's own constraint).

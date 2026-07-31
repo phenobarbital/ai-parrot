@@ -1,8 +1,10 @@
-"""Unit tests for FormSubmission model (TASK-599 / FEAT-086)."""
+"""Unit tests for FormSubmission model (TASK-599 / FEAT-086, updated FEAT-389)."""
 
 from datetime import datetime, timezone
 
 from parrot_formdesigner.services.submissions import FormSubmission
+
+_TEST_FORM_UID = "550e8400-e29b-41d4-a716-446655440000"
 
 
 class TestFormSubmission:
@@ -11,11 +13,13 @@ class TestFormSubmission:
     def test_model_creation_minimal(self) -> None:
         """FormSubmission creates correctly with minimal required fields."""
         sub = FormSubmission(
+            form_uid=_TEST_FORM_UID,
             form_id="test-form",
             form_version="1.0",
             data={"name": "John"},
             is_valid=True,
         )
+        assert sub.form_uid == _TEST_FORM_UID
         assert sub.form_id == "test-form"
         assert sub.form_version == "1.0"
         assert sub.is_valid is True
@@ -23,10 +27,18 @@ class TestFormSubmission:
         assert sub.forward_status is None
         assert sub.forward_error is None
 
+    def test_form_uid_is_required(self) -> None:
+        """FormSubmission raises a validation error without form_uid (FEAT-389)."""
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            FormSubmission(form_id="test-form", form_version="1.0", data={}, is_valid=True)
+
     def test_submission_id_auto_generated(self) -> None:
         """submission_id is auto-generated when not provided."""
         sub = FormSubmission(
-            form_id="f", form_version="1.0", data={}, is_valid=True
+            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
         )
         assert sub.submission_id is not None
         assert len(sub.submission_id) > 0
@@ -35,6 +47,7 @@ class TestFormSubmission:
         """Explicit submission_id is preserved."""
         sub = FormSubmission(
             submission_id="sub-001",
+            form_uid=_TEST_FORM_UID,
             form_id="test-form",
             form_version="1.0",
             data={"name": "John", "email": "john@example.com"},
@@ -47,7 +60,7 @@ class TestFormSubmission:
         """created_at defaults to current UTC time when not provided."""
         before = datetime.now(timezone.utc)
         sub = FormSubmission(
-            form_id="f", form_version="1.0", data={}, is_valid=True
+            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
         )
         after = datetime.now(timezone.utc)
         assert before <= sub.created_at <= after
@@ -55,13 +68,14 @@ class TestFormSubmission:
     def test_forwarded_defaults_false(self) -> None:
         """forwarded defaults to False."""
         sub = FormSubmission(
-            form_id="f", form_version="1.0", data={}, is_valid=True
+            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
         )
         assert sub.forwarded is False
 
     def test_forward_error_optional(self) -> None:
         """forward_error can be set on a failed submission."""
         sub = FormSubmission(
+            form_uid=_TEST_FORM_UID,
             form_id="f",
             form_version="1.0",
             data={},
@@ -75,6 +89,7 @@ class TestFormSubmission:
         """model_dump() → model_validate() preserves all fields."""
         sub = FormSubmission(
             submission_id="sub-001",
+            form_uid=_TEST_FORM_UID,
             form_id="test-form",
             form_version="1.0",
             data={"key": "value"},
@@ -84,11 +99,16 @@ class TestFormSubmission:
         d = sub.model_dump()
         restored = FormSubmission.model_validate(d)
         assert restored.submission_id == "sub-001"
+        assert restored.form_uid == _TEST_FORM_UID
         assert restored.form_id == "test-form"
         assert restored.data == {"key": "value"}
 
     def test_two_submissions_different_ids(self) -> None:
         """Auto-generated submission_ids are unique."""
-        sub1 = FormSubmission(form_id="f", form_version="1.0", data={}, is_valid=True)
-        sub2 = FormSubmission(form_id="f", form_version="1.0", data={}, is_valid=True)
+        sub1 = FormSubmission(
+            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
+        )
+        sub2 = FormSubmission(
+            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
+        )
         assert sub1.submission_id != sub2.submission_id

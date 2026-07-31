@@ -132,7 +132,7 @@ def setup_form_api(
             upload handler will create a default instance on first use.
         partial_store: Optional Redis-backed ``PartialSaveStore`` for ephemeral
             partial form answer caching.  When ``None``, the partial save
-            endpoints (POST/GET/DELETE ``/forms/{form_id}/partial``) will
+            endpoints (POST/GET/DELETE ``/forms/{form_uid}/partial``) will
             return 503.
         synthesizer: Optional ``VoiceSynthesizer`` for audio-form TTS. When
             provided it is used as-is (tests/overrides). When ``None`` but audio
@@ -207,41 +207,45 @@ def setup_form_api(
     app.router.add_get(f"{bp}/forms", _wrap_auth(handler.list_forms))
     app.router.add_post(f"{bp}/forms", _wrap_auth(handler.create_form))
     app.router.add_post(f"{bp}/forms/from-db", _wrap_auth(handler.load_from_db))
-    app.router.add_get(f"{bp}/forms/{{form_id}}", _wrap_auth(handler.get_form))
-    app.router.add_put(f"{bp}/forms/{{form_id}}", _wrap_auth(handler.update_form))
-    app.router.add_patch(f"{bp}/forms/{{form_id}}", _wrap_auth(handler.patch_form))
-    app.router.add_delete(f"{bp}/forms/{{form_id}}", _wrap_auth(handler.delete_form))
+    # Blank form creation (FEAT-389) — MUST be registered BEFORE the
+    # {form_uid} catch-all routes below, so the literal "blank" segment is
+    # never captured as a form_uid path param.
+    app.router.add_post(f"{bp}/forms/blank", _wrap_auth(handler.create_blank_form))
+    app.router.add_get(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.get_form))
+    app.router.add_put(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.update_form))
+    app.router.add_patch(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.patch_form))
+    app.router.add_delete(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.delete_form))
 
     # Natural language editing
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/edit", _wrap_auth(handler.edit_form)
+        f"{bp}/forms/{{form_uid}}/edit", _wrap_auth(handler.edit_form)
     )
 
     # Clone endpoint
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/clone", _wrap_auth(handler.clone_form)
+        f"{bp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form)
     )
 
     # Contract endpoints (schema, style)
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/schema", _wrap_auth(handler.get_schema)
+        f"{bp}/forms/{{form_uid}}/schema", _wrap_auth(handler.get_schema)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/style", _wrap_auth(handler.get_style)
+        f"{bp}/forms/{{form_uid}}/style", _wrap_auth(handler.get_style)
     )
 
     # Render dispatcher (path-param format)
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/render/{{format}}",
+        f"{bp}/forms/{{form_uid}}/render/{{format}}",
         _wrap_auth(render_module.handle_render),
     )
 
     # Validation + submissions
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/validate", _wrap_auth(handler.validate)
+        f"{bp}/forms/{{form_uid}}/validate", _wrap_auth(handler.validate)
     )
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/data", _wrap_auth(handler.submit_data)
+        f"{bp}/forms/{{form_uid}}/data", _wrap_auth(handler.submit_data)
     )
 
     # Form-controls toolbar metadata
@@ -252,30 +256,30 @@ def setup_form_api(
 
     # Atomic batched-edit endpoint (Wave 2d replaces the stub body)
     app.router.add_patch(
-        f"{bp}/forms/{{form_id}}/operations",
+        f"{bp}/forms/{{form_uid}}/operations",
         _wrap_auth(operations_module.handle_operations),
     )
 
     # REST field upload endpoint (Phase 3 — FEAT-170)
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/fields/{{field_id}}/upload",
+        f"{bp}/forms/{{form_uid}}/fields/{{field_id}}/upload",
         _wrap_auth(uploads_module.handle_rest_upload),
     )
 
     # Partial saves (FEAT-186)
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/partial", _wrap_auth(handler.save_partial)
+        f"{bp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/partial", _wrap_auth(handler.get_partial)
+        f"{bp}/forms/{{form_uid}}/partial", _wrap_auth(handler.get_partial)
     )
     app.router.add_delete(
-        f"{bp}/forms/{{form_id}}/partial", _wrap_auth(handler.delete_partial)
+        f"{bp}/forms/{{form_uid}}/partial", _wrap_auth(handler.delete_partial)
     )
 
     # Remote lifecycle event bridge (FEAT-188)
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/events/{{event_name}}",
+        f"{bp}/forms/{{form_uid}}/events/{{event_name}}",
         _wrap_auth(handler.remote_event),
     )
 
@@ -304,16 +308,16 @@ def setup_form_api(
             auto_synthesize=synthesizer is None,
         )
         app.router.add_get(
-            f"{bp}/forms/{{form_id}}/audio/ws",
+            f"{bp}/forms/{{form_uid}}/audio/ws",
             audio_handler.handle_websocket,
         )
-        logger.info("setup_form_api: audio WS endpoint mounted at %s/forms/{form_id}/audio/ws", bp)
+        logger.info("setup_form_api: audio WS endpoint mounted at %s/forms/{form_uid}/audio/ws", bp)
     # FEAT-300 — publish, question-bank, version history, import-report
     # Note: /versions and /import-report routes are registered BEFORE the
-    # generic /{form_id} catch-all to avoid shadowing issues if the router
+    # generic /{form_uid} catch-all to avoid shadowing issues if the router
     # were order-sensitive (aiohttp matches on specificity, but belt-and-braces).
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}/publish", _wrap_auth(handler.publish_form)
+        f"{bp}/forms/{{form_uid}}/publish", _wrap_auth(handler.publish_form)
     )
     app.router.add_get(
         f"{bp}/fields", _wrap_auth(handler.list_fields)
@@ -322,14 +326,14 @@ def setup_form_api(
         f"{bp}/fields", _wrap_auth(handler.create_field)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/versions", _wrap_auth(handler.list_versions)
+        f"{bp}/forms/{{form_uid}}/versions", _wrap_auth(handler.list_versions)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/versions/{{version}}",
+        f"{bp}/forms/{{form_uid}}/versions/{{version}}",
         _wrap_auth(handler.get_version),
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/import-report",
+        f"{bp}/forms/{{form_uid}}/import-report",
         _wrap_auth(handler.get_import_report),
     )
 
@@ -385,8 +389,12 @@ def setup_form_api(
         else:
             _bp = bp  # capture stripped base_path in closure
 
-            async def _public_toggle(form_id: str, is_public: bool) -> None:
-                paths = public_form_paths(form_id, base_path=_bp)
+            async def _public_toggle(form_uid: str, is_public: bool) -> None:
+                # FEAT-389: FormRegistry now fires the public-toggle callback
+                # with form_uid (not form_id) — see registry.py's register()/
+                # unregister() firing sites. Routes are form_uid-based
+                # (TASK-1976), so exclusion patterns must match.
+                paths = public_form_paths(form_uid, base_path=_bp)
                 if is_public:
                     _auth.register_exclusions(paths)
                 else:
@@ -432,7 +440,7 @@ def setup_form_api(
                     for form in await registry.list_forms(tenant=tenant):
                         if form.is_public:
                             paths.extend(
-                                public_form_paths(form.form_id, base_path=_bp_m7)
+                                public_form_paths(form.form_uid, base_path=_bp_m7)
                             )
             except Exception as exc:
                 logger.warning(

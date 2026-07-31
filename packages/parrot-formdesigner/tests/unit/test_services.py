@@ -30,9 +30,15 @@ class TestFormRegistry:
         registry = FormRegistry()
         await registry.register(sample_schema)
         # FEAT-183: get() now requires tenant= kwarg (None resolves to "navigator").
-        retrieved = await registry.get("test-form", tenant="navigator")
+        # FEAT-389: the primary index is keyed by form_uid — retrieve by the
+        # registered form's form_uid directly (or get_by_slug() by slug).
+        retrieved = await registry.get(sample_schema.form_uid, tenant="navigator")
         assert retrieved is not None
         assert retrieved.form_id == "test-form"
+
+        retrieved_by_slug = await registry.get_by_slug("test-form", tenant="navigator")
+        assert retrieved_by_slug is not None
+        assert retrieved_by_slug.form_uid == sample_schema.form_uid
 
     async def test_list_forms(self, sample_schema):
         registry = FormRegistry()
