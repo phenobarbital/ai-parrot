@@ -128,7 +128,9 @@ class TestCreateBlankForm:
         resp = await handler.create_blank_form(req)
         body = json_body(resp)
 
-        found = await registry.get(body["form_uid"], tenant="t1")
+        # body["form_uid"] is the JSON wire form (a canonical UUID string) —
+        # registry.get() takes the parsed uuid.UUID identity key.
+        found = await registry.get(uuid.UUID(body["form_uid"]), tenant="t1")
         assert found is not None
         assert found.form_id == body["form_id"]
 
@@ -193,7 +195,7 @@ class TestFormUidValidation:
         req = MagicMock(spec=web.Request)
         req.match_info = {"form_uid": _UNKNOWN_FORM_UID}
 
-        assert extract_form_uid(req) == _UNKNOWN_FORM_UID
+        assert extract_form_uid(req) == uuid.UUID(_UNKNOWN_FORM_UID)
 
     async def test_get_form_invalid_uuid_returns_400(self) -> None:
         """GET /forms/{form_uid} with a malformed form_uid never reaches the
@@ -250,7 +252,7 @@ class TestFormUidStableAcrossApi:
         # the registry-level rename-stability test in
         # test_registry_multi_tenancy.py::TestRegistryFormUid, but exercised
         # here through the handler's own registry instance).
-        form = await registry.get(form_uid, tenant="t1")
+        form = await registry.get(uuid.UUID(form_uid), tenant="t1")
         assert form is not None
         form.form_id = "renamed-slug"
         await registry.register(form, tenant="t1")
@@ -266,7 +268,7 @@ class TestFormUidStableAcrossApi:
         assert await registry.get_by_slug(old_slug, tenant="t1") is None
         via_new_slug = await registry.get_by_slug("renamed-slug", tenant="t1")
         assert via_new_slug is not None
-        assert via_new_slug.form_uid == form_uid
+        assert str(via_new_slug.form_uid) == form_uid
 
 
 # ---------------------------------------------------------------------------

@@ -91,7 +91,7 @@ class FormSubmission(BaseModel):
         default_factory=lambda: str(uuid.uuid4()),
         description="Unique submission identifier",
     )
-    form_uid: str = Field(..., description="Immutable UUID of the parent form")
+    form_uid: uuid.UUID = Field(..., description="Immutable UUID of the parent form")
     form_id: str
     form_version: str
     data: dict[str, Any]
@@ -318,7 +318,8 @@ class FormSubmissionStorage:
             await conn.execute(
                 self._insert_sql(effective_tenant),
                 submission.submission_id,
-                submission.form_uid,
+                # TASK-2008: form_uid column is VARCHAR(36) until migrated.
+                str(submission.form_uid),
                 submission.form_id,
                 submission.form_version,
                 json.dumps(submission.data),

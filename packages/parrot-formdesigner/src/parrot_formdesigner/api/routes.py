@@ -260,9 +260,9 @@ def setup_form_api(
         _wrap_auth(operations_module.handle_operations),
     )
 
-    # REST field upload endpoint (Phase 3 — FEAT-170)
+    # REST field upload endpoint (Phase 3 — FEAT-170; field_uid FEAT-393)
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/fields/{{field_id}}/upload",
+        f"{bp}/forms/{{form_uid}}/fields/{{field_uid}}/upload",
         _wrap_auth(uploads_module.handle_rest_upload),
     )
 

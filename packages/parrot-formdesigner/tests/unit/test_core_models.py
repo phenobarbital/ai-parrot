@@ -91,7 +91,7 @@ class TestFormSchemaFormUid:
             sections=[FormSection(section_id="s1", title="S1", fields=[])],
         )
         assert form.form_uid is not None
-        uuid.UUID(form.form_uid)  # validates UUID format
+        assert isinstance(form.form_uid, uuid.UUID)  # already a validated UUID
 
     def test_explicit_uid_respected(self) -> None:
         """An explicitly provided form_uid should be respected, not overridden."""
@@ -102,7 +102,7 @@ class TestFormSchemaFormUid:
             title="Test",
             sections=[FormSection(section_id="s1", title="S1", fields=[])],
         )
-        assert form.form_uid == uid
+        assert form.form_uid == uuid.UUID(uid)
 
     def test_unique_per_instance(self) -> None:
         """Each FormSchema instance should get a distinct form_uid."""

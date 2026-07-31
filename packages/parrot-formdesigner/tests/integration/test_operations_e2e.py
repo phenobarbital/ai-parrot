@@ -6,9 +6,14 @@ End-to-end via aiohttp test client. Asserts:
 - Duplicate field_id is rejected with an op-level error.
 - Circular ``depends_on`` introduced by ops triggers schema-level 422.
 - ``If-Match`` honours optimistic concurrency.
+
+FEAT-393: operations address fields/sections by ``field_uid``/``section_uid``
+(``uuid.UUID``), not ``field_id``/``section_id``.
 """
 
 from __future__ import annotations
+
+import uuid
 
 import pytest
 from aiohttp import web
@@ -63,9 +68,22 @@ async def test_successful_round_trip_bumps_version(aiohttp_client, sample_form):
                     "op": "add_section",
                     "section": {"section_id": "s2", "fields": []},
                 },
+            ]
+        },
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    new_section_uid = next(
+        s["section_uid"] for s in body["form"]["sections"] if s["section_id"] == "s2"
+    )
+
+    resp2 = await client.patch(
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
+        json={
+            "operations": [
                 {
                     "op": "add_field",
-                    "section_id": "s2",
+                    "section_uid": new_section_uid,
                     "field": {
                         "field_id": "email",
                         "field_type": "email",
@@ -75,14 +93,14 @@ async def test_successful_round_trip_bumps_version(aiohttp_client, sample_form):
             ]
         },
     )
-    assert resp.status == 200
-    body = await resp.json()
-    assert body["form"]["version"] == "1.1"
-    assert {s["section_id"] for s in body["form"]["sections"]} == {"s1", "s2"}
+    assert resp2.status == 200
+    body2 = await resp2.json()
+    assert body2["form"]["version"] == "1.2"
+    assert {s["section_id"] for s in body2["form"]["sections"]} == {"s1", "s2"}
 
     # Persisted
     again = await registry.get(sample_form.form_uid)
-    assert again is not None and again.version == "1.1"
+    assert again is not None and again.version == "1.2"
     assert any(s.section_id == "s2" for s in again.sections)
 
 
@@ -101,8 +119,8 @@ async def test_atomic_failure_no_change(aiohttp_client, sample_form):
                 },
                 {
                     "op": "remove_field",
-                    "section_id": "MISSING",
-                    "field_id": "no",
+                    "section_uid": str(uuid.uuid4()),
+                    "field_uid": str(uuid.uuid4()),
                 },
             ]
         },
@@ -127,7 +145,7 @@ async def test_duplicate_field_rejected(aiohttp_client, sample_form):
             "operations": [
                 {
                     "op": "add_field",
-                    "section_id": "s1",
+                    "section_uid": str(sample_form.sections[0].section_uid),
                     "field": {
                         "field_id": "name",  # duplicate
                         "field_type": "text",
@@ -149,6 +167,8 @@ async def test_circular_depends_on_rejected(aiohttp_client, sample_form):
     await registry.register(sample_form)
     client = await _make_client(aiohttp_client, registry)
 
+    name_field_uid = str(sample_form.sections[0].fields[0].field_uid)
+
     # Update name to depend on itself.
     resp = await client.patch(
         f"/api/v1/forms/{sample_form.form_uid}/operations",
@@ -156,8 +176,8 @@ async def test_circular_depends_on_rejected(aiohttp_client, sample_form):
             "operations": [
                 {
                     "op": "update_field",
-                    "section_id": "s1",
-                    "field_id": "name",
+                    "section_uid": str(sample_form.sections[0].section_uid),
+                    "field_uid": name_field_uid,
                     "patch": {
                         "depends_on": {
                             "conditions": [
@@ -273,8 +293,11 @@ async def test_move_field_round_trip(aiohttp_client):
             "operations": [
                 {
                     "op": "move_field",
-                    "from": {"section_id": "s1", "field_id": "x"},
-                    "to": {"section_id": "s2", "position": 0},
+                    "from": {
+                        "section_uid": str(form.sections[0].section_uid),
+                        "field_uid": str(form.sections[0].fields[0].field_uid),
+                    },
+                    "to": {"section_uid": str(form.sections[1].section_uid), "position": 0},
                 }
             ]
         },
@@ -284,3 +307,92 @@ async def test_move_field_round_trip(aiohttp_client):
     sections = body["form"]["sections"]
     assert sections[0]["fields"] == []
     assert sections[1]["fields"][0]["field_id"] == "x"
+
+
+async def test_move_field_malformed_uuid_returns_422_not_500(aiohttp_client, sample_form):
+    """FEAT-393 code review regression: a malformed UUID string in
+    move_field's from/to dict must return 422 (OperationError), not an
+    uncaught ValueError -> 500 — the uuid.UUID(...) parses in
+    _apply_move_field were previously unguarded."""
+    registry = FormRegistry()
+    await registry.register(sample_form)
+    client = await _make_client(aiohttp_client, registry)
+
+    resp = await client.patch(
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
+        json={
+            "operations": [
+                {
+                    "op": "move_field",
+                    "from": {
+                        "section_uid": "not-a-uuid",
+                        "field_uid": str(sample_form.sections[0].fields[0].field_uid),
+                    },
+                    "to": {"section_uid": str(sample_form.sections[0].section_uid), "position": 0},
+                }
+            ]
+        },
+    )
+    assert resp.status == 422
+    body = await resp.json()
+    assert body["errors"][0]["op"] == "move_field"
+
+
+async def test_duplicate_field_malformed_uuid_returns_422_not_500(aiohttp_client, sample_form):
+    """FEAT-393 code review regression: same malformed-UUID guard for
+    duplicate_field's from dict."""
+    registry = FormRegistry()
+    await registry.register(sample_form)
+    client = await _make_client(aiohttp_client, registry)
+
+    resp = await client.patch(
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
+        json={
+            "operations": [
+                {
+                    "op": "duplicate_field",
+                    "from": {"section_uid": "not-a-uuid", "field_uid": "also-not-a-uuid"},
+                    "as_field_id": "name_2",
+                }
+            ]
+        },
+    )
+    assert resp.status == 422
+    body = await resp.json()
+    assert body["errors"][0]["op"] == "duplicate_field"
+
+
+async def test_handle_operations_reresolves_rules(aiohttp_client):
+    """Renaming a field's field_id via update_field keeps a depends_on
+    rule (authored against the OLD field_id) working, because
+    handle_operations re-runs resolve_rule_references() post-apply
+    (FEAT-393) — the rule was already resolved to field_uid when the form
+    was first built, so it is unaffected by the rename either way."""
+    trigger = FormField(field_id="trigger", field_type=FieldType.TEXT, label="Trigger")
+    form = FormSchema(
+        form_id="resolve-test",
+        title={"en": "R"},
+        tenant="navigator",
+        sections=[FormSection(section_id="s1", fields=[trigger])],
+    )
+    registry = FormRegistry()
+    await registry.register(form)
+    client = await _make_client(aiohttp_client, registry)
+
+    resp = await client.patch(
+        f"/api/v1/forms/{form.form_uid}/operations",
+        json={
+            "operations": [
+                {
+                    "op": "update_field",
+                    "section_uid": str(form.sections[0].section_uid),
+                    "field_uid": str(trigger.field_uid),
+                    "patch": {"field_id": "trigger_renamed"},
+                }
+            ]
+        },
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["form"]["sections"][0]["fields"][0]["field_id"] == "trigger_renamed"
+    assert body["form"]["sections"][0]["fields"][0]["field_uid"] == str(trigger.field_uid)

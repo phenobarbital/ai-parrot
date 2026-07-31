@@ -1,6 +1,8 @@
 """Unit tests for CreateFormTool."""
 
 import json
+import uuid
+
 import pytest
 from unittest.mock import AsyncMock
 from parrot_formdesigner.core.schema import FormSchema, FormField, FormSection
@@ -154,7 +156,7 @@ class TestCreateFormToolRefinement:
         tool = CreateFormTool(client=mock_client, registry=registry)
         result = await tool.execute(
             prompt="Add a phone field",
-            refine_form_uid="existing",
+            refine_form_uid=existing.form_uid,
         )
         assert result.success is True
         # Verify the prompt to the LLM included the existing form
@@ -171,7 +173,7 @@ class TestCreateFormToolRefinement:
         tool = CreateFormTool(client=mock_client, registry=registry)
         result = await tool.execute(
             prompt="Add a field",
-            refine_form_uid="nonexistent",
+            refine_form_uid=uuid.uuid4(),
         )
         assert result.success is False
         assert result.status == "error"
@@ -210,20 +212,18 @@ class TestCreateFormToolFormUid:
 
     async def test_create_form_auto_generates_uid(self, tool):
         """CreateFormTool generates form_uid when not provided."""
-        import uuid as _uuid
-
         result = await tool.execute(prompt="Create a contact form")
         assert result.success is True
         assert "form_uid" in result.metadata
         assert result.metadata["form_uid"] == result.metadata["form"]["form_uid"]
-        _uuid.UUID(result.metadata["form_uid"])  # valid UUID — does not raise
+        assert isinstance(result.metadata["form_uid"], uuid.UUID)
 
     async def test_create_form_with_explicit_uid(self, tool):
         """CreateFormTool uses the provided form_uid instead of generating one."""
         uid = "550e8400-e29b-41d4-a716-446655440000"
         result = await tool.execute(prompt="Create a form", form_uid=uid)
-        assert result.metadata["form_uid"] == uid
-        assert result.metadata["form"]["form_uid"] == uid
+        assert result.metadata["form_uid"] == uuid.UUID(uid)
+        assert result.metadata["form"]["form_uid"] == uuid.UUID(uid)
 
     async def test_two_forms_get_different_uids(self, mock_client):
         """Two separately-created forms get distinct auto-generated form_uids."""
@@ -234,8 +234,9 @@ class TestCreateFormToolFormUid:
 
     async def test_refine_form_uid_preserves_identity(self, mock_client):
         """Refining an existing form preserves its form_uid unchanged."""
+        fixed_uid = uuid.uuid4()
         existing = FormSchema(
-            form_uid="fixed-existing-uid",
+            form_uid=fixed_uid,
             form_id="existing",
             title="Existing Form",
             sections=[
@@ -254,12 +255,12 @@ class TestCreateFormToolFormUid:
         tool = CreateFormTool(client=mock_client, registry=registry)
         result = await tool.execute(
             prompt="Add a phone field",
-            refine_form_uid="fixed-existing-uid",
+            refine_form_uid=fixed_uid,
         )
 
         assert result.success is True
-        assert result.metadata["form_uid"] == "fixed-existing-uid"
-        assert result.metadata["form"]["form_uid"] == "fixed-existing-uid"
+        assert result.metadata["form_uid"] == fixed_uid
+        assert result.metadata["form"]["form_uid"] == fixed_uid
         # form_id (slug) is preserved too, since no explicit form_id= override.
         assert result.metadata["form"]["form_id"] == "existing"
 

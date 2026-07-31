@@ -1,5 +1,7 @@
 """Tests for FEAT-234 TASK-1526: rule-integrity pass + extended cycle detection."""
 
+import uuid
+
 import pytest
 
 from parrot_formdesigner.core import (
@@ -13,6 +15,7 @@ from parrot_formdesigner.core import (
     FormSection,
     FormSubsection,
     PostDependency,
+    resolve_rule_references,
 )
 from parrot_formdesigner.services import FormValidator
 
@@ -39,11 +42,18 @@ def _field(
 
 
 def _form(*fields: FormField) -> FormSchema:
-    return FormSchema(
+    """Build a FormSchema and resolve its rule references (FEAT-393).
+
+    FormValidator reads conditions/operations via field_uid — every test
+    form must go through resolve_rule_references() before validation, same
+    as any real build boundary.
+    """
+    form = FormSchema(
         form_id="test",
         title="Test",
         sections=[FormSection(section_id="s1", fields=list(fields))],
     )
+    return resolve_rule_references(form)
 
 
 def _cond(field_id: str, op: ConditionOperator = ConditionOperator.EQ, value: str = "x") -> FieldCondition:
@@ -62,49 +72,78 @@ def validator() -> FormValidator:
 
 class TestUnknownReferences:
     def test_depends_on_references_unknown_field(self, validator: FormValidator) -> None:
-        f = _field(
-            "f1",
-            depends_on=DependencyRule(conditions=[_cond("nonexistent")]),
+        """A resolved condition whose field_uid matches no field in the
+        form (e.g. orphaned by a later edit) is caught by validate_rules
+        itself. Genuinely dangling AUTHORED field_id references are instead
+        caught earlier, at resolve_rule_references() time (FEAT-393) — see
+        test_resolution.py::test_unknown_reference_errors — so this test
+        constructs an already-"resolved" (field_uid-only) condition
+        directly rather than going through the auto-resolving _form()."""
+        orphan_uid = uuid.uuid4()
+        cond = FieldCondition(field_uid=orphan_uid, operator=ConditionOperator.EQ, value="x")
+        f = _field("f1", depends_on=DependencyRule(conditions=[cond]))
+        form = FormSchema(
+            form_id="test", title="Test", sections=[FormSection(section_id="s1", fields=[f])]
         )
-        form = _form(f)
         errors = validator.validate_rules(form)
-        assert any("nonexistent" in e for e in errors)
+        assert any("unknown field" in e for e in errors), errors
 
     def test_post_depends_targets_unknown_field(self, validator: FormValidator) -> None:
+        """A dangling ``target`` (never resolved to a real field_uid) is
+        caught by validate_rules itself. Built without the auto-resolving
+        _form() — resolve_rule_references() would already raise for a
+        genuinely-authored dangling target (FEAT-393)."""
         f = _field("f1", post_depends=[PostDependency(target="ghost", effect="show")])
-        form = _form(f)
+        form = FormSchema(
+            form_id="test", title="Test", sections=[FormSection(section_id="s1", fields=[f])]
+        )
         errors = validator.validate_rules(form)
         assert any("ghost" in e for e in errors)
 
     def test_operation_references_unknown_operand(self, validator: FormValidator) -> None:
+        """Same as above, for an operation operand — built without the
+        auto-resolving _form() (FEAT-393)."""
         f1 = _field("f1", field_type=FieldType.NUMBER)
         f2 = _field(
             "f2",
             depends_on=DependencyRule(
-                conditions=[_cond("f1")],
+                conditions=[FieldCondition(field_uid=f1.field_uid, operator=ConditionOperator.EQ, value="x")],
                 operations=[DependencyOperation(op="copy", operands=["phantom"], target="f2")],
             ),
         )
-        form = _form(f1, f2)
+        form = FormSchema(
+            form_id="test", title="Test", sections=[FormSection(section_id="s1", fields=[f1, f2])]
+        )
         errors = validator.validate_rules(form)
         assert any("phantom" in e for e in errors)
 
     def test_post_depends_condition_references_unknown(self, validator: FormValidator) -> None:
+        """Same orphaned-field_uid scenario as
+        test_depends_on_references_unknown_field, for a post_depends
+        condition (FEAT-393 — see that test's docstring for why this
+        constructs a "resolved" condition directly, WITHOUT going through
+        resolve_rule_references() — that function now validates an
+        already-set field_uid against the form's known UIDs too (code
+        review fix), so it would correctly raise on this orphan UID
+        earlier than this test intends to exercise; validate_rules() is
+        the layer under test here, not resolve_rule_references())."""
+        orphan_uid = uuid.uuid4()
+        cond = FieldCondition(field_uid=orphan_uid, operator=ConditionOperator.EQ, value="x")
         f1 = _field("f1")
         f2 = _field(
             "f2",
             post_depends=[
-                PostDependency(
-                    target="f3",
-                    effect="show",
-                    conditions=[_cond("void_field")],
-                )
+                PostDependency(target="f3", effect="show", conditions=[cond])
             ],
         )
         f3 = _field("f3")
-        form = _form(f1, f2, f3)
+        form = FormSchema(
+            form_id="test",
+            title="Test",
+            sections=[FormSection(section_id="s1", fields=[f1, f2, f3])],
+        )
         errors = validator.validate_rules(form)
-        assert any("void_field" in e for e in errors)
+        assert any("unknown field" in e for e in errors), errors
 
 
 # ---------------------------------------------------------------------------

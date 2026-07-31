@@ -30,7 +30,11 @@ class ReusableField(BaseModel):
     """A single entry in the tenant's QuestionBank.
 
     Attributes:
-        field_id: Unique identifier for this bank entry (UUID string).
+        question_id: Unique identifier for this bank entry (UUID string).
+            Renamed from ``field_id`` (FEAT-393) — the bank id has NO
+            relation to ``FormField.field_id``; it is a minted bank-entry
+            identifier only, and the old name collided confusingly with
+            the unrelated field-level identity.
         definition: The canonical ``FormField`` definition.
         tenant: Tenant slug that owns this entry.
         usage_forms: Number of forms that reference this entry.
@@ -40,7 +44,7 @@ class ReusableField(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    field_id: str
+    question_id: str
     definition: FormField
     tenant: str
     usage_forms: int = 0
@@ -53,17 +57,21 @@ class ReusableFieldRef(BaseModel):
 
     When resolved via :meth:`QuestionBankService.resolve_ref`, the returned
     ``FormField`` is a deep copy of the bank definition with ``overrides``
-    applied on top.
+    applied on top and a FRESH ``field_uid`` minted (FEAT-393 — bank entries
+    are templates; every insertion into a form is a distinct field
+    identity).
 
     Attributes:
-        bank_field_id: The ``ReusableField.field_id`` to look up.
+        question_id: The ``ReusableField.question_id`` to look up
+            (FEAT-393 — renamed to match the model's own rename).
         overrides: Optional dict of ``FormField`` field-level attribute
             overrides (e.g. ``{"label": "New Label", "required": True}``).
+            MUST NOT contain ``field_uid`` — see :meth:`resolve_ref`.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    bank_field_id: str
+    question_id: str
     overrides: dict[str, Any] | None = None
 
 
@@ -74,31 +82,31 @@ class ReusableFieldRef(BaseModel):
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS {table} (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    field_id VARCHAR(255) NOT NULL,
+    question_id VARCHAR(255) NOT NULL,
     definition_json JSONB NOT NULL,
     tenant VARCHAR(63) NOT NULL,
     usage_forms INTEGER NOT NULL DEFAULT 0,
     usage_responses INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(field_id, tenant)
+    UNIQUE(question_id, tenant)
 );
 """
 
 _INSERT_SQL = """
-INSERT INTO {table} (field_id, definition_json, tenant)
+INSERT INTO {table} (question_id, definition_json, tenant)
 VALUES ($1, $2::jsonb, $3)
-ON CONFLICT (field_id, tenant) DO NOTHING
+ON CONFLICT (question_id, tenant) DO NOTHING
 """
 
-_SELECT_SQL = "SELECT * FROM {table} WHERE field_id = $1 AND tenant = $2"
+_SELECT_SQL = "SELECT * FROM {table} WHERE question_id = $1 AND tenant = $2"
 
-_SELECT_ALL_SQL = "SELECT * FROM {table} WHERE tenant = $1 ORDER BY field_id"
+_SELECT_ALL_SQL = "SELECT * FROM {table} WHERE tenant = $1 ORDER BY question_id"
 
 _INCREMENT_SQL = """
 UPDATE {table}
 SET usage_forms = usage_forms + $1,
     usage_responses = usage_responses + $2
-WHERE field_id = $3 AND tenant = $4
+WHERE question_id = $3 AND tenant = $4
 """
 
 
@@ -114,8 +122,8 @@ class QuestionBankService:
 
         svc = QuestionBankService(storage, tenant="navigator")
         created = await svc.create_field(my_field)
-        await svc.increment_usage(created.field_id, forms=1)
-        ref = ReusableFieldRef(bank_field_id=created.field_id,
+        await svc.increment_usage(created.question_id, forms=1)
+        ref = ReusableFieldRef(question_id=created.question_id,
                                overrides={"label": "Custom"})
         field = await svc.resolve_ref(ref)
 
@@ -148,7 +156,7 @@ class QuestionBankService:
         self._qualified = qualified_table(self._tenant, self._table)
         self.logger = logging.getLogger(__name__)
 
-        # In-memory fallback store: field_id → ReusableField
+        # In-memory fallback store: question_id → ReusableField
         self._mem: dict[str, ReusableField] = {}
 
     # ------------------------------------------------------------------
@@ -173,18 +181,18 @@ class QuestionBankService:
     async def create_field(self, field: FormField) -> ReusableField:
         """Add a field definition to the bank.
 
-        A new ``field_id`` (UUID4) is minted for the bank entry regardless
-        of the source field's ``field_id``.
+        A new ``question_id`` (UUID4) is minted for the bank entry
+        regardless of the source field's ``field_id``.
 
         Args:
             field: ``FormField`` definition to store.
 
         Returns:
-            ``ReusableField`` with the minted ``field_id``.
+            ``ReusableField`` with the minted ``question_id``.
         """
         bank_id = str(uuid.uuid4())
         entry = ReusableField(
-            field_id=bank_id,
+            question_id=bank_id,
             definition=field,
             tenant=self._tenant,
             created_at=datetime.now(timezone.utc),
@@ -206,11 +214,11 @@ class QuestionBankService:
         self.logger.debug("QuestionBank: created field %s for tenant %s", bank_id, self._tenant)
         return entry
 
-    async def get_field(self, field_id: str) -> ReusableField | None:
+    async def get_field(self, question_id: str) -> ReusableField | None:
         """Retrieve a ``ReusableField`` by its bank ID.
 
         Args:
-            field_id: Bank entry ID (the UUID minted by :meth:`create_field`).
+            question_id: Bank entry ID (the UUID minted by :meth:`create_field`).
 
         Returns:
             ``ReusableField`` if found, ``None`` otherwise.
@@ -219,17 +227,17 @@ class QuestionBankService:
             await self._ensure_table()
             qualified = self._qualified
             sql = _SELECT_SQL.format(table=qualified)
-            row = await self._db.fetchrow(sql, field_id, self._tenant)
+            row = await self._db.fetchrow(sql, question_id, self._tenant)
             if row is None:
                 return None
             return self._row_to_entry(row)
-        return self._mem.get(field_id)
+        return self._mem.get(question_id)
 
     async def list_fields(self) -> list[ReusableField]:
         """List all bank entries for the current tenant.
 
         Returns:
-            List of ``ReusableField`` sorted by ``field_id``.
+            List of ``ReusableField`` sorted by ``question_id``.
         """
         if self._db is not None:
             await self._ensure_table()
@@ -237,11 +245,11 @@ class QuestionBankService:
             sql = _SELECT_ALL_SQL.format(table=qualified)
             rows = await self._db.fetch(sql, self._tenant)
             return [self._row_to_entry(r) for r in rows]
-        return sorted(self._mem.values(), key=lambda e: e.field_id)
+        return sorted(self._mem.values(), key=lambda e: e.question_id)
 
     async def increment_usage(
         self,
-        field_id: str,
+        question_id: str,
         *,
         forms: int = 0,
         responses: int = 0,
@@ -251,7 +259,7 @@ class QuestionBankService:
         Uses a single UPDATE (no read-modify-write) to avoid race conditions.
 
         Args:
-            field_id: Bank entry ID.
+            question_id: Bank entry ID.
             forms: Number of form references to add.
             responses: Number of response references to add.
         """
@@ -259,11 +267,11 @@ class QuestionBankService:
             await self._ensure_table()
             qualified = self._qualified
             sql = _INCREMENT_SQL.format(table=qualified)
-            await self._db.execute(sql, forms, responses, field_id, self._tenant)
+            await self._db.execute(sql, forms, responses, question_id, self._tenant)
         else:
-            entry = self._mem.get(field_id)
+            entry = self._mem.get(question_id)
             if entry is not None:
-                self._mem[field_id] = entry.model_copy(update={
+                self._mem[question_id] = entry.model_copy(update={
                     "usage_forms": entry.usage_forms + forms,
                     "usage_responses": entry.usage_responses + responses,
                 })
@@ -272,24 +280,34 @@ class QuestionBankService:
         """Resolve a ``ReusableFieldRef`` to a ``FormField``.
 
         Returns a deep copy of the bank entry's definition, with any
-        ``overrides`` merged on top.  The bank entry is never mutated.
+        ``overrides`` merged on top. A FRESH ``field_uid`` is minted for
+        every resolution (FEAT-393) — bank entries are templates, so each
+        insertion into a form is a distinct field identity by construction
+        (``default_factory=uuid.uuid4`` on ``FormField.field_uid``).  The
+        bank entry is never mutated.
 
         Args:
-            ref: ``ReusableFieldRef`` with ``bank_field_id`` and optional
+            ref: ``ReusableFieldRef`` with ``question_id`` and optional
                  ``overrides``.
 
         Returns:
-            ``FormField`` instance.
+            ``FormField`` instance with a freshly-minted ``field_uid``.
 
         Raises:
-            KeyError: If ``ref.bank_field_id`` is not found in the bank.
+            KeyError: If ``ref.question_id`` is not found in the bank.
+            ValueError: If ``ref.overrides`` attempts to set ``field_uid``.
         """
-        entry = await self.get_field(ref.bank_field_id)
+        entry = await self.get_field(ref.question_id)
         if entry is None:
-            raise KeyError(f"QuestionBank: field '{ref.bank_field_id}' not found in tenant '{self._tenant}'")
+            raise KeyError(f"QuestionBank: field '{ref.question_id}' not found in tenant '{self._tenant}'")
+
+        if ref.overrides and "field_uid" in ref.overrides:
+            raise ValueError("ReusableFieldRef.overrides may not set field_uid")
 
         # Deep copy to avoid mutating the bank entry
         definition_dict = copy.deepcopy(entry.definition.model_dump())
+        # Fresh identity per insertion — default_factory mints a new one.
+        definition_dict.pop("field_uid", None)
 
         if ref.overrides:
             definition_dict.update(ref.overrides)
@@ -313,7 +331,7 @@ class QuestionBankService:
         if isinstance(definition_data, str):
             definition_data = json.loads(definition_data)
         return ReusableField(
-            field_id=row["field_id"],
+            question_id=row["question_id"],
             definition=FormField.model_validate(definition_data),
             tenant=row["tenant"],
             usage_forms=row.get("usage_forms", 0),

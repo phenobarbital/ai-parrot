@@ -35,6 +35,37 @@ class TestDeterministicInput:
         mock_client.completion.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_schema_input_resolves_depends_on_to_field_uid(self, tool, mock_client):
+        """FEAT-393 code review regression: the deterministic schema= path
+        must resolve authored field_id rule references to field_uid,
+        same as the LLM path — previously only the LLM-generation path
+        called resolve_rule_references()."""
+        result = await tool.execute(
+            schema={
+                "form_id": "test-rules",
+                "title": "Test",
+                "sections": [{"section_id": "s1", "fields": [
+                    {"field_id": "country", "field_type": "text", "label": "Country"},
+                    {
+                        "field_id": "state",
+                        "field_type": "text",
+                        "label": "State",
+                        "depends_on": {
+                            "conditions": [
+                                {"field_id": "country", "operator": "eq", "value": "US"}
+                            ]
+                        },
+                    },
+                ]}],
+            },
+        )
+        assert result.success is True
+        fields = result.metadata["form"]["sections"][0]["fields"]
+        country_uid = next(f["field_uid"] for f in fields if f["field_id"] == "country")
+        state = next(f for f in fields if f["field_id"] == "state")
+        assert state["depends_on"]["conditions"][0]["field_uid"] == country_uid
+
+    @pytest.mark.asyncio
     async def test_sections_input(self, tool, mock_client):
         result = await tool.execute(
             sections=[{"title": "Info", "fields": [
