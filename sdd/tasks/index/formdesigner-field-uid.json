@@ -113,7 +113,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Builds operations payloads defined in TASK-1999.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2000-edit-toolkit-uid-params.md"
+      "completed_at": "2026-07-31T18:05:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2000-edit-toolkit-uid-params.md"
     },
     {
       "id": "TASK-2001",
