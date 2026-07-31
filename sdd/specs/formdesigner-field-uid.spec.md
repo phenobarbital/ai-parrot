@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-393
 **Date**: 2026-07-31
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Brainstorm**: `sdd/proposals/formdesigner-field-uid.brainstorm.md`
 
