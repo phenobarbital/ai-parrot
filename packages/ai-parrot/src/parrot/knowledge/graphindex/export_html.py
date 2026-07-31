@@ -664,12 +664,33 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   #results li:hover {{ background: #f0f3f6; }}
   #results .dot {{ width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; }}
   #results .gd {{ font-size: 10px; color: #e15759; font-weight: 700; }}
+  .btn-reset {{
+    cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 6px;
+    border-radius: 4px; border: 1px solid #d0d7de; background: #f6f8fa;
+    color: #656d76; user-select: none;
+  }}
+  .btn-reset:hover {{ background: #eaeef2; color: #1f2328; }}
+  .conn-list {{ list-style: none; padding: 0; margin: 0; max-height: 35vh; overflow-y: auto; }}
+  .conn-list li {{
+    padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }}
+  .conn-list li:hover {{ background: #f0f3f6; }}
+  .conn-list .dot {{ width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }}
+  .conn-list .dir {{ font-size: 11px; color: #8b949e; flex: 0 0 14px; text-align: center; }}
+  .conn-list .conn-name {{ flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }}
+  .conn-list .conn-kind {{ font-size: 10px; color: #8b949e; flex: 0 0 auto; }}
+  .conn-list .gd {{ font-size: 10px; color: #e15759; font-weight: 700; }}
   @media (prefers-color-scheme: dark) {{
     body {{ background: #0d1117; color: #e6edf3; }}
     #side {{ background: #161b22; border-color: #30363d; }}
     #search {{ background: #0d1117; color: #e6edf3; border-color: #30363d; }}
     #detail pre {{ background: #0d1117; }}
     #results li:hover {{ background: #21262d; }}
+    .btn-reset {{ background: #21262d; border-color: #30363d; color: #8b949e; }}
+    .btn-reset:hover {{ background: #30363d; color: #e6edf3; }}
+    .conn-list li:hover {{ background: #21262d; }}
   }}
 </style>
 {echarts_script_tag}
@@ -741,31 +762,111 @@ chart.setOption(option);
 window.addEventListener("resize", () => chart.resize());
 
 const detail = document.getElementById("detail");
+const results = document.getElementById("results");
+const search = document.getElementById("search");
+const idOrder = GRAPH.nodes.map(n => n.id);
+function idxOf(id) {{ return idOrder.indexOf(id); }}
+let activeHighlight = null;
+
+function esc(s) {{
+  return String(s == null ? "" : s).replace(/[&<>"]/g, c =>
+    ({{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }}[c]));
+}}
+
+function clearFocus() {{
+  if (activeHighlight !== null) {{
+    chart.dispatchAction({{ type: "downplay", seriesIndex: 0 }});
+    activeHighlight = null;
+  }}
+}}
+
+function focusNode(id) {{
+  clearFocus();
+  const idx = idxOf(id);
+  if (idx >= 0) {{
+    chart.dispatchAction({{ type: "highlight", seriesIndex: 0, dataIndex: idx }});
+    activeHighlight = idx;
+  }}
+}}
+
+function resetView() {{
+  clearFocus();
+  search.value = "";
+  results.innerHTML = "";
+  detail.innerHTML = '<span class="empty">Click a node to inspect it.</span>';
+}}
+
+function getNeighbors(nodeId) {{
+  const out = [];
+  GRAPH.edges.forEach(e => {{
+    if (e.source === nodeId && nodeById[e.target])
+      out.push({{ node: nodeById[e.target], dir: "→", kind: e.kind }});
+    else if (e.target === nodeId && nodeById[e.source])
+      out.push({{ node: nodeById[e.source], dir: "←", kind: e.kind }});
+  }});
+  out.sort((a, b) => b.node.value - a.node.value);
+  return out;
+}}
+
 function showDetail(n) {{
   const cat = GRAPH.categories[n.category];
   const color = cat ? cat.color : "#888";
-  detail.innerHTML =
-    `<div style="font-weight:600;font-size:14px">${{esc(n.name)}}` +
-      (n.is_god ? `<span class="badge" style="background:#e15759">GOD</span>` : "") + `</div>` +
+  const neighbors = getNeighbors(n.id);
+  let h =
+    `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">` +
+      `<span class="btn-reset" title="Back to overview">&#8962;</span>` +
+      `<span style="font-weight:600;font-size:14px">${{esc(n.name)}}</span>` +
+      (n.is_god ? `<span class="badge" style="background:#e15759">GOD</span>` : "") +
+    `</div>` +
     `<div><span class="badge" style="background:${{color}}">${{esc(cat ? cat.label : "—")}}</span> ` +
       `<span class="badge" style="background:#57606a">${{esc(n.kind)}}</span></div>` +
     `<div style="margin-top:6px"><span class="k">provenance:</span> ${{esc(n.provenance)}} ` +
       `&middot; <span class="k">degree:</span> ${{n.degree}}</div>` +
     (n.source_uri ? `<div><span class="k">source:</span> ${{esc(n.source_uri)}}</div>` : "") +
     (n.summary ? `<pre>${{esc(n.summary)}}</pre>` : "");
+  if (neighbors.length) {{
+    h += `<div class="panel-title" style="margin-top:12px">Connections (${{neighbors.length}})</div><ul class="conn-list">`;
+    neighbors.forEach(nb => {{
+      const nc = GRAPH.categories[nb.node.category];
+      const ncol = nc ? nc.color : "#888";
+      h += `<li data-nid="${{esc(nb.node.id)}}">` +
+        `<span class="dir">${{nb.dir}}</span>` +
+        `<span class="dot" style="background:${{ncol}}"></span>` +
+        `<span class="conn-name">${{esc(nb.node.name)}}</span>` +
+        `<span class="conn-kind">${{esc(nb.kind)}}</span>` +
+        (nb.node.is_god ? ` <span class="gd">god</span>` : "") +
+      `</li>`;
+    }});
+    h += `</ul>`;
+  }}
+  detail.innerHTML = h;
 }}
-function esc(s) {{
-  return String(s == null ? "" : s).replace(/[&<>"]/g, c =>
-    ({{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }}[c]));
-}}
-chart.on("click", p => {{ if (p.dataType === "node" && nodeById[p.data.id]) showDetail(nodeById[p.data.id]); }});
 
-const results = document.getElementById("results");
-const search = document.getElementById("search");
+detail.addEventListener("click", e => {{
+  const rst = e.target.closest(".btn-reset");
+  if (rst) {{ resetView(); return; }}
+  const li = e.target.closest("[data-nid]");
+  if (li) {{
+    const n = nodeById[li.dataset.nid];
+    if (n) {{ showDetail(n); focusNode(n.id); }}
+  }}
+}});
+
+chart.on("click", p => {{
+  if (p.dataType === "node" && nodeById[p.data.id]) {{
+    showDetail(nodeById[p.data.id]);
+    focusNode(p.data.id);
+  }}
+}});
+
 function renderResults(q) {{
   q = q.trim().toLowerCase();
   results.innerHTML = "";
-  if (!q) return;
+  if (!q) {{
+    clearFocus();
+    detail.innerHTML = '<span class="empty">Click a node to inspect it.</span>';
+    return;
+  }}
   const hits = GRAPH.nodes
     .filter(n => n.name.toLowerCase().includes(q))
     .sort((a, b) => b.value - a.value).slice(0, 40);
@@ -773,17 +874,13 @@ function renderResults(q) {{
     const li = document.createElement("li");
     const dot = `<span class="dot" style="background:${{catColor(n.category)}}"></span>`;
     li.innerHTML = dot + `<span>${{esc(n.name)}}</span>` + (n.is_god ? ` <span class="gd">god</span>` : "");
-    li.onclick = () => {{
-      showDetail(n);
-      chart.dispatchAction({{ type: "focusNodeAdjacency", seriesIndex: 0, dataIndex: idxOf(n.id) }});
-      chart.dispatchAction({{ type: "highlight", seriesIndex: 0, dataIndex: idxOf(n.id) }});
-    }};
+    li.onclick = () => {{ showDetail(n); focusNode(n.id); }};
     results.appendChild(li);
   }});
 }}
-const idOrder = GRAPH.nodes.map(n => n.id);
-function idxOf(id) {{ return idOrder.indexOf(id); }}
+
 search.addEventListener("input", e => renderResults(e.target.value));
+search.addEventListener("search", e => renderResults(e.target.value));
 </script>
 </body>
 </html>
