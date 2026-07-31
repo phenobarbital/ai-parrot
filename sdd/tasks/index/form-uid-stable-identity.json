@@ -174,7 +174,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Independent — only needs FormSchema.form_uid to exist",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1980-blob-storage-form-uid.md"
+      "completed_at": "2026-07-31T01:05:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1980-blob-storage-form-uid.md"
     },
     {
       "id": "TASK-1981",
