@@ -68,6 +68,28 @@ def test_section_subsection_uids_unique():
     assert section.section_uid != other_section.section_uid
 
 
+def test_field_uid_malformed_string_rejected():
+    """A non-UUID string for field_uid fails type coercion (code review
+    follow-up — only form_uid had this class of coverage before)."""
+    with pytest.raises(ValidationError):
+        _field("a", field_uid="not-a-uuid")
+
+
+def test_section_uid_malformed_string_rejected():
+    with pytest.raises(ValidationError):
+        FormSection(section_id="s1", fields=[], section_uid="not-a-uuid")
+
+
+def test_subsection_uid_malformed_string_rejected():
+    with pytest.raises(ValidationError):
+        FormSubsection(subsection_id="sub1", fields=[], subsection_uid="not-a-uuid")
+
+
+def test_form_uid_malformed_string_rejected():
+    with pytest.raises(ValidationError):
+        FormSchema(form_id="f", title="Test", sections=[], form_uid="not-a-uuid")
+
+
 # ---------------------------------------------------------------------------
 # Duplicate rejection
 # ---------------------------------------------------------------------------

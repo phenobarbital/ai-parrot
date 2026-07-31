@@ -37,6 +37,7 @@ from .schema import (
     RenderedForm,
     SectionItem,
     SubmitAction,
+    walk_fields,
 )
 from .style import (
     FieldSizeHint,
@@ -82,6 +83,7 @@ __all__ = [
     "MetadataSource",
     "BUILTIN_METADATA_SOURCE_NAMES",
     "RenderedForm",
+    "walk_fields",
     # Style
     "LayoutType",
     "FieldSizeHint",

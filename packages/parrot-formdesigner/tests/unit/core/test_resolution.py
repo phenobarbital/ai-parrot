@@ -9,8 +9,10 @@ import uuid
 import pytest
 from parrot_formdesigner.core.constraints import (
     ConditionOperator,
+    DependencyOperation,
     DependencyRule,
     FieldCondition,
+    PostDependency,
 )
 from parrot_formdesigner.core.resolution import (
     find_field_by_uid,
@@ -21,6 +23,7 @@ from parrot_formdesigner.core.schema import (
     FormField,
     FormSchema,
     FormSection,
+    FormSubsection,
 )
 from parrot_formdesigner.core.types import FieldType
 
@@ -152,6 +155,65 @@ def test_non_field_sources_skipped():
     cond = form.sections[0].fields[0].depends_on.conditions[0]
     assert cond.field_uid is None
     assert cond.key == "geofence_status"
+
+
+def test_resolves_rules_owned_by_deeply_nested_fields():
+    """Code review follow-up: resolve_rule_references must resolve rules
+    owned by (or referencing) fields nested at every tree level the spec
+    calls out — a GROUP's children, an ARRAY's item_template, and a
+    subsection — not just top-level section fields. iter_fields_recursive()
+    (which resolve_rule_references walks) is documented to reach the full
+    tree, but no test previously exercised a depends_on/post_depends
+    condition actually OWNED BY or REFERENCING a field at each of these
+    nesting levels simultaneously."""
+    trigger = _field("trigger")
+
+    # A GROUP-child field's depends_on references the top-level trigger.
+    group_child = _field(
+        "group_child",
+        depends_on=DependencyRule(
+            conditions=[FieldCondition(field_id="trigger", operator=ConditionOperator.EQ, value="x")],
+        ),
+    )
+    group = _field("group", field_type=FieldType.GROUP, children=[group_child])
+
+    # An ARRAY's item_template field's depends_on references the GROUP child.
+    item_template = _field(
+        "item_field",
+        depends_on=DependencyRule(
+            conditions=[FieldCondition(field_id="group_child", operator=ConditionOperator.EQ, value="y")],
+        ),
+    )
+    array_field = _field("arr", field_type=FieldType.ARRAY, item_template=item_template)
+
+    # A subsection field's post_depends targets the ARRAY's item_template.
+    sub_field = _field(
+        "sub_field",
+        post_depends=[
+            PostDependency(
+                target="item_field",
+                effect="calc",
+                operation=DependencyOperation(op="copy", operands=["trigger"], target="item_field"),
+            )
+        ],
+    )
+    subsection = FormSubsection(subsection_id="sub", fields=[sub_field])
+
+    form = _form([
+        FormSection(section_id="s", fields=[trigger, group, array_field, subsection])
+    ])
+    resolve_rule_references(form)
+
+    fields_by_id = {f.field_id: f for f in form.iter_fields_recursive()}
+    resolved_group_child = fields_by_id["group_child"]
+    resolved_item_field = fields_by_id["item_field"]
+    resolved_sub_field = fields_by_id["sub_field"]
+
+    assert resolved_group_child.depends_on.conditions[0].field_uid == fields_by_id["trigger"].field_uid
+    assert resolved_item_field.depends_on.conditions[0].field_uid == resolved_group_child.field_uid
+    assert resolved_sub_field.post_depends[0].target == str(resolved_item_field.field_uid)
+    assert resolved_sub_field.post_depends[0].operation.operands == [str(fields_by_id["trigger"].field_uid)]
+    assert resolved_sub_field.post_depends[0].operation.target == str(resolved_item_field.field_uid)
 
 
 def test_find_field_by_uid_nested(form_with_nested_fields: FormSchema):

@@ -1,14 +1,23 @@
 """EditToolkit — LLM-callable toolkit for surgical FormSchema editing.
 
 Implements FEAT-169: instead of sending the full FormSchema JSON to the LLM,
-this toolkit exposes 12 focused tools that allow the LLM to inspect and mutate
-the form in surgical, targeted operations.
+this toolkit exposes focused tools that allow the LLM to inspect and mutate
+the form in surgical, targeted operations. FEAT-393 (Module 6) re-addresses
+every mutation tool by ``field_uid``/``section_uid`` instead of ``field_id``/
+``section_id``.
 
-Tool categories:
-- Inspection (4): get_form_summary, get_section, get_field, search_fields
-- Mutation (7):   update_field, add_field, remove_field, add_section,
-                  update_section, move_field, update_form_meta
-- Control (1):    done
+Tool categories (see ``get_tools()``/``get_tool_definitions()`` for the
+authoritative, current list — do not hardcode a count here, it drifts):
+- Inspection: get_form_summary, get_section, get_field, search_fields
+- Field mutation: update_field, add_field, add_field_from_schema,
+  remove_field, move_field
+- Dependency mutation: add_dependency, update_dependency, remove_dependency,
+  add_post_dependency, remove_post_dependency
+- Section mutation: add_section, add_section_from_schema, update_section,
+  update_section_title
+- Form-level mutation: update_form_meta, update_form_title,
+  update_form_description
+- Control: done
 """
 
 from __future__ import annotations
