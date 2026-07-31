@@ -2,18 +2,23 @@
 
 Turns a source-code repository into :class:`WikiPageRecord` rows and
 typed edges for the machine-first WikiStore plane (FEAT-260) — fully
-offline: no LLM, no embeddings, no external parsers.
+offline: no LLM, no embeddings, no *required* external parsers.
 
 Page model produced per repository:
 
 - one ``file:<relpath>`` page per scanned source file — title, an
   extracted summary (module docstring / first heading / first line),
-  an API outline for Python files (classes, functions, docstrings via
-  :mod:`ast`), and the file content head for lexical (FTS5) search;
+  an API outline for files claimed by a registered
+  :class:`~parrot.knowledge.wiki.languages.base.LanguageScanner`
+  (classes, functions, docstrings — Python via :mod:`ast`; other
+  languages via tree-sitter or a stdlib heuristic, FEAT-394), and the
+  file content head for lexical (FTS5) search;
 - one ``dir:<relpath>`` overview page per directory, whose body lists
   the children with their summaries;
 - ``contains`` edges directory → child, and ``references`` edges
-  between Python file pages derived from their import statements.
+  between file pages derived from their import statements, resolved
+  per-language via the scanner registry
+  (:mod:`parrot.knowledge.wiki.languages`).
 
 Used by the ``wikitoolkit build`` / ``parrot wiki build`` CLI
 (:mod:`parrot.knowledge.wiki.cli`) and by the git ``post-commit``
@@ -22,7 +27,6 @@ auto-upsert installed by ``parrot claude install``.
 
 from __future__ import annotations
 
-import ast
 import logging
 import re
 import subprocess
@@ -31,9 +35,15 @@ from typing import Iterable, Optional
 
 from pydantic import BaseModel, Field
 
+from parrot.knowledge.wiki.languages import all_scanners, scanned_suffixes, scanner_for
+from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
 
 logger = logging.getLogger(__name__)
+
+#: Singleton used by the :func:`_python_outline`/:func:`_module_index`
+#: thin wrappers kept for parity with pre-FEAT-394 callers/tests.
+_PYTHON_SCANNER = PythonScanner()
 
 # --------------------------------------------------------------------------
 # Defaults
@@ -44,11 +54,16 @@ CODE_SUFFIXES: frozenset[str] = frozenset({
     ".py", ".pyx", ".pxd", ".pyi",
     ".rs", ".go", ".java", ".kt", ".c", ".h", ".cpp", ".hpp",
     ".js", ".jsx", ".ts", ".tsx", ".mjs",
+    ".php",
     ".sql", ".sh", ".bash",
 })
 
 #: File suffixes treated as documentation (category ``document``).
-DOC_SUFFIXES: frozenset[str] = frozenset({".md", ".rst", ".txt"})
+DOC_SUFFIXES: frozenset[str] = frozenset({".md", ".rst", ".txt", ".html", ".htm"})
+
+#: HTML suffixes get a ``<title>``-aware shallow summary instead of the
+#: markdown/rst summary helper (FEAT-394) — never a deep outline/edges.
+_HTML_SUFFIXES: frozenset[str] = frozenset({".html", ".htm"})
 
 #: File suffixes treated as configuration (category ``config``).
 CONFIG_SUFFIXES: frozenset[str] = frozenset({
@@ -136,13 +151,20 @@ class FileSlice(BaseModel):
         rel_path: POSIX-style path relative to the repository root.
         record: The wiki page record for the file (``source_id`` is
             filled in later by the build pipeline).
-        imports: Dotted module names imported by the file (Python only),
-            used to derive cross-file ``references`` edges.
+        imports: Raw, language-native import specifiers extracted by the
+            file's :class:`~parrot.knowledge.wiki.languages.base.LanguageScanner`
+            (dotted Python modules today; other languages' native import
+            syntax once their plugin lands), used to derive cross-file
+            ``references`` edges.
+        language: Name of the :class:`LanguageScanner` that produced this
+            slice's outline/imports (e.g. ``"python"``), or ``None`` when
+            no scanner claims the file's suffix (shallow page only).
     """
 
     rel_path: str
     record: WikiPageRecord
     imports: list[str] = Field(default_factory=list)
+    language: Optional[str] = None
 
 
 class RepoScan(BaseModel):
@@ -425,6 +447,12 @@ def _category_for(rel_path: str) -> str:
 def _python_outline(source: str) -> tuple[str, list[str], list[str]]:
     """Extract summary, API outline, and imports from Python source.
 
+    .. note::
+        Thin wrapper kept for parity with pre-FEAT-394 callers/tests —
+        the extraction logic itself now lives in
+        :class:`~parrot.knowledge.wiki.languages.python.PythonScanner`,
+        consulted via the registry in :func:`build_file_slice`.
+
     Args:
         source: Raw Python source text.
 
@@ -432,38 +460,37 @@ def _python_outline(source: str) -> tuple[str, list[str], list[str]]:
         Tuple of ``(summary, outline_lines, imported_modules)``.  On a
         syntax error every element degrades to empty.
     """
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return "", [], []
+    result = _PYTHON_SCANNER.outline(source, "")
+    return result.summary, result.outline, result.imports
 
-    summary = _first_line(ast.get_docstring(tree) or "")
-    outline: list[str] = []
-    imports: list[str] = []
 
-    def _sig(node: ast.AST) -> str:
-        args = getattr(node, "args", None)
-        names = [a.arg for a in args.args] if args else []
-        return f"({', '.join(names)})"
+_HTML_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_HTML_HEADING_RE = re.compile(r"<h[1-6][^>]*>(.*?)</h[1-6]>", re.IGNORECASE | re.DOTALL)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
-    for node in tree.body:
-        if isinstance(node, ast.Import):
-            imports.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            imports.append(node.module)
-        elif isinstance(node, ast.ClassDef):
-            doc = _first_line(ast.get_docstring(node) or "")
-            outline.append(f"class {node.name}: {doc}".rstrip(": "))
-            for item in node.body:
-                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    idoc = _first_line(ast.get_docstring(item) or "")
-                    outline.append(
-                        f"    def {item.name}{_sig(item)}: {idoc}".rstrip(": ")
-                    )
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            doc = _first_line(ast.get_docstring(node) or "")
-            outline.append(f"def {node.name}{_sig(node)}: {doc}".rstrip(": "))
-    return summary, outline, imports
+
+def _html_title_summary(content: str) -> str:
+    """Summary for an HTML document: ``<title>``, else first heading.
+
+    HTML is shallow-scan only (no outline, no import edges) — this is a
+    dedicated helper rather than an extension of :func:`_markdown_summary`,
+    which is frontmatter-aware and has different (YAML) semantics.
+
+    Args:
+        content: Raw HTML document text.
+
+    Returns:
+        The extracted title/heading text, truncated to
+        :data:`_SUMMARY_MAX_CHARS`, or ``""`` when neither is present.
+    """
+    match = _HTML_TITLE_RE.search(content)
+    if match:
+        return match.group(1).strip()[:_SUMMARY_MAX_CHARS]
+    match = _HTML_HEADING_RE.search(content)
+    if match:
+        text = _HTML_TAG_RE.sub("", match.group(1)).strip()
+        return text[:_SUMMARY_MAX_CHARS]
+    return ""
 
 
 def _markdown_summary(content: str) -> str:
@@ -547,12 +574,31 @@ def build_file_slice(
     suffix = PurePosixPath(rel_path).suffix.lower()
     imports: list[str] = []
     sections: list[str] = []
+    language: Optional[str] = None
 
-    if suffix in {".py", ".pyi"}:
-        summary, outline, imports = _python_outline(content)
-        summary = summary or f"Python module {rel_path}"
-        if outline:
-            sections.append("## API outline\n" + "\n".join(outline))
+    scanner = scanner_for(suffix)
+    if scanner is not None:
+        try:
+            lang_outline = scanner.outline(content, rel_path)
+        except Exception as exc:  # noqa: BLE001 - degrade, never raise
+            logger.warning(
+                "Scanner %s failed on %s, degrading to shallow page: %s",
+                scanner.name, rel_path, exc,
+            )
+            summary = _first_line(content) or rel_path
+        else:
+            language = scanner.name
+            imports = lang_outline.imports
+            summary = (
+                lang_outline.summary
+                or f"{scanner.name.title()} module {rel_path}"
+            )
+            if lang_outline.outline:
+                sections.append(
+                    "## API outline\n" + "\n".join(lang_outline.outline)
+                )
+    elif suffix in _HTML_SUFFIXES:
+        summary = _html_title_summary(content) or rel_path
     elif suffix in DOC_SUFFIXES:
         summary = _markdown_summary(content) or rel_path
     else:
@@ -574,7 +620,9 @@ def build_file_slice(
         body=body,
         token_count=estimate_tokens(body),
     )
-    return FileSlice(rel_path=rel_path, record=record, imports=imports)
+    return FileSlice(
+        rel_path=rel_path, record=record, imports=imports, language=language
+    )
 
 
 # --------------------------------------------------------------------------
@@ -644,36 +692,34 @@ def build_dir_pages(
 def _module_index(rel_paths: Iterable[str]) -> dict[str, str]:
     """Map importable dotted module names to relative file paths.
 
-    Handles both flat layouts (``pkg/mod.py`` → ``pkg.mod``) and src
-    layouts (``packages/x/src/pkg/mod.py`` → ``pkg.mod`` — everything
-    up to and including a ``src`` component is stripped).
+    .. note::
+        Thin wrapper kept for parity with pre-FEAT-394 callers/tests —
+        delegates to
+        :meth:`~parrot.knowledge.wiki.languages.python.PythonScanner.build_reference_index`.
+        Handles both flat layouts (``pkg/mod.py`` → ``pkg.mod``) and src
+        layouts (``packages/x/src/pkg/mod.py`` → ``pkg.mod`` — everything
+        up to and including a ``src`` component is stripped).
     """
-    index: dict[str, str] = {}
-    for rel in rel_paths:
-        p = PurePosixPath(rel)
-        if p.suffix not in {".py", ".pyi"}:
-            continue
-        parts = list(p.parts)
-        if "src" in parts:
-            parts = parts[parts.index("src") + 1:]
-        if not parts:
-            continue
-        parts[-1] = PurePosixPath(parts[-1]).stem
-        if parts[-1] == "__init__":
-            parts = parts[:-1]
-        if parts:
-            index.setdefault(".".join(parts), rel)
-    return index
+    return _PYTHON_SCANNER.build_reference_index(rel_paths)
 
 
 def build_import_edges(
     files: list[FileSlice],
     index_paths: Optional[Iterable[str]] = None,
 ) -> list[tuple[str, str, str]]:
-    """Derive ``references`` edges between file pages from Python imports.
+    """Derive ``references`` edges between file pages from their imports.
 
-    An import edge is emitted when an imported dotted module (or any
-    dotted prefix of it) resolves to another repository file.
+    Files are grouped by :attr:`FileSlice.language`; each language's
+    reference index is built once (via its scanner's
+    :meth:`~parrot.knowledge.wiki.languages.base.LanguageScanner.build_reference_index`)
+    over the full repository file list, then each file's raw imports are
+    resolved through that same scanner's
+    :meth:`~parrot.knowledge.wiki.languages.base.LanguageScanner.resolve_import`.
+    Files with no language (unscanned suffixes) carry no imports and
+    contribute no edges. Unresolvable specifiers are silently dropped —
+    no dangling edges — and a PHP ``require`` (say) can never resolve
+    into a JS/TS file's reference index since each language's index is
+    built and searched independently.
 
     Args:
         files: Scanned file slices (edge sources).
@@ -687,19 +733,26 @@ def build_import_edges(
     """
     if index_paths is None:
         index_paths = [fs.rel_path for fs in files]
-    index = _module_index(index_paths)
-    edges: set[tuple[str, str, str]] = set()
+    index_paths = list(index_paths)
+
+    by_language: dict[str, list[FileSlice]] = {}
     for fs in files:
-        src = file_concept_id(fs.rel_path)
-        for module in fs.imports:
-            parts = module.split(".")
-            target: Optional[str] = None
-            for depth in range(len(parts), 0, -1):
-                target = index.get(".".join(parts[:depth]))
-                if target:
-                    break
-            if target and target != fs.rel_path:
-                edges.add((src, file_concept_id(target), "references"))
+        if fs.language:
+            by_language.setdefault(fs.language, []).append(fs)
+
+    edges: set[tuple[str, str, str]] = set()
+    scanners = all_scanners()
+    for language, lang_files in by_language.items():
+        scanner = scanners.get(language)
+        if scanner is None:
+            continue
+        ref_index = scanner.build_reference_index(index_paths)
+        for fs in lang_files:
+            src = file_concept_id(fs.rel_path)
+            for spec in fs.imports:
+                target = scanner.resolve_import(spec, fs.rel_path, ref_index)
+                if target and target != fs.rel_path:
+                    edges.add((src, file_concept_id(target), "references"))
     return sorted(edges)
 
 
@@ -741,12 +794,13 @@ def scan_repository(
         targets = discovered
     else:
         targets = sorted({PurePosixPath(p).as_posix() for p in rel_paths})
-        # The repo-wide index is only needed to resolve Python imports to
-        # files OUTSIDE the changed set. Skip the (whole-repo) discovery
-        # scan when no changed file can produce import edges — e.g. a
-        # docs- or config-only commit — so the git post-commit hook does
-        # not pay an O(repo) cost on every such commit.
-        if any(PurePosixPath(t).suffix in {".py", ".pyi"} for t in targets):
+        # The repo-wide index is only needed to resolve imports to files
+        # OUTSIDE the changed set. Skip the (whole-repo) discovery scan
+        # when no changed file belongs to a registered language scanner
+        # and can therefore produce import edges — e.g. a docs- or
+        # config-only commit — so the git post-commit hook does not pay
+        # an O(repo) cost on every such commit.
+        if any(PurePosixPath(t).suffix in scanned_suffixes() for t in targets):
             discovered = discover_repo_files(
                 root, suffixes=suffixes, exclude_dirs=exclude_dirs,
                 use_git=use_git,
