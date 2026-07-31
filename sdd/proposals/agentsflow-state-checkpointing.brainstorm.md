@@ -65,8 +65,11 @@ ops (server restarts/deploys no longer kill in-flight work); the dev-loop runner
   re-attaches the live memory.
 - **Serialization**: hybrid — known Pydantic models (AIMessage, FlowResult, …) via
   `model_dump()` + a type registry for faithful round-trips; everything else
-  (arbitrary node results, FlowContext internals) via **msgpack + custom hooks**.
-  More surface, but more information correctly serialized. No pickle (unsafe).
+  (arbitrary node results, FlowContext internals) via **ormsgpack + custom hooks**
+  (resolved: `ormsgpack` over `msgpack` — native Pydantic/datetime/UUID support,
+  faster, langgraph-checkpoint precedent). More surface, but more information
+  correctly serialized. No pickle (unsafe). Checkpoints carry extracted `results`
+  only by default; raw `responses` are opt-in via `checkpoint_include_responses`.
 - **Durable dump triggers (all three)**: (a) automatic graceful-shutdown hook,
   (b) explicit `suspend()`/`dump()` API, (c) per-flow `durable=True` write-through.
 - **Resume paths**: programmatic API (`AgentsFlow.resume(...)`) + aiohttp HTTP
@@ -126,15 +129,16 @@ existing `core/storage/` results plane, deliberately kept separate from it:
   completion — mid-node progress is not captured (acceptable: at-least-once per
   node is the agreed semantic).
 - Programmatic flows built with `add_node()`/`add_edge()` have no `FlowDefinition`
-  to rebuild from — v1 must either restrict resume to definition-based flows or
-  require the caller to rebuild the graph before resuming.
+  to rebuild from — resolved: v1 ships a graph→definition export
+  (`AgentsFlow.to_definition()`) so they are resumable too; nodes must be in
+  `NODE_REGISTRY` to survive the round-trip.
 
 📊 **Effort:** High
 
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
-| `msgpack` >= 1.0.8 | Binary checkpoint encoding with default/ext-type hooks | **New dependency**; pure-Python+C wheel, mature. `ormsgpack` (Rust, what langgraph-checkpoint uses) is a faster drop-in alternative — decide at spec time |
+| `ormsgpack` >= 1.5 | Binary checkpoint encoding (msgpack format) with native Pydantic/datetime/UUID support | **New dependency** (resolved over `msgpack`); Rust wheels for linux/mac/win; what langgraph-checkpoint uses |
 | `asyncdb` >= 2.11.6 | Durable store drivers: `sqlite`, `pg`, `mongodb` | Already a core dependency; same pattern as FEAT-147 backends |
 | `redis.asyncio` (via asyncdb `redis` driver) | Ephemeral tier: TTL keys + history zset | Already shipped |
 | `pydantic` v2 | `FlowCheckpoint` model + type-registry serialization | Already core |
@@ -281,7 +285,7 @@ without the dependency.
 
 ### User-Facing Behavior
 
-- **Opt-in per flow**: `AgentsFlow(name=..., checkpoint=True, checkpoint_retention=86400, checkpoint_history=20, durable=False)` — or via `FlowMetadata` in a `FlowDefinition`. Default off (zero behavior change for existing users).
+- **Opt-in per flow**: `AgentsFlow(name=..., checkpoint=True, checkpoint_retention=86400, checkpoint_history=10, checkpoint_include_responses=False, durable=False)` — or via `FlowMetadata` in a `FlowDefinition`. Default off (zero behavior change for existing users). Defaults: retention 24h, history 10, results-only checkpoints.
 - Every node completion produces a checkpoint in Redis. For a flow that finishes
   normally, its checkpoints silently expire after the retention window — the user
   never manages them.
@@ -330,17 +334,21 @@ without the dependency.
   that the affected dependency results are degraded strings.
 - **Resume with unregistered agents**: `FlowContext.resolve_agent` already raises
   `AgentNotFoundError` — `resume()` surfaces it before scheduling anything.
-- **Resume of a programmatic (add_node/add_edge) flow**: no embedded
-  `FlowDefinition` → v1 raises a clear error; documented restriction.
-- **Concurrent resume of the same flow**: Redis lease key (`flow_id` lock) so a
-  second resume attempt fails fast instead of double-executing (final locking
-  design is an open question).
+- **Resume of a programmatic (add_node/add_edge) flow**: the checkpointer calls
+  `AgentsFlow.to_definition()` (new in v1) to embed an exported definition; if any
+  node is a custom subclass not present in `NODE_REGISTRY`, enabling checkpointing
+  fails with a clear error naming the offending node.
+- **Concurrent resume of the same flow**: Redis lease per flow_id with short TTL
+  (~60s) renewed by heartbeat while the flow runs; a second resume fails fast with
+  `FlowLockedError`; a dead holder's lease expires and takeover becomes possible.
 - **In-flight node at crash time**: re-executed from scratch on resume
   (at-least-once); nodes with side effects must be idempotent — documented.
 - **Expired checkpoints** (TTL elapsed before resume): `resume()` raises
   checkpoint-not-found; the HTTP list endpoint only shows live/durable flows.
-- **Shutdown deadline exceeded**: flows that cannot checkpoint in time are logged
-  as lost; the deadline is configurable.
+- **Shutdown deadline exceeded**: default deadline 15s (fits inside a typical 30s
+  k8s/aiohttp grace period), configurable. Flows that cannot dump in time are
+  logged as ERROR with their flow_ids; their last per-node checkpoint in Redis
+  remains recoverable until its TTL expires.
 
 ---
 
@@ -352,7 +360,11 @@ without the dependency.
 - `flow-checkpoint-stores`: `RedisCheckpointStore` (ephemeral, TTL + history) and
   AsyncDB durable stores (SQLite, Postgres, Mongo/DocumentDB).
 - `flow-suspend-resume`: AgentsFlow wiring — checkpointer lifecycle, `suspend()`,
-  `resume()`, write-through mode, graceful-shutdown recovery service.
+  `resume()` (with Redis lease + heartbeat locking), write-through mode,
+  graceful-shutdown recovery service.
+- `flow-definition-export`: `AgentsFlow.to_definition()` — graph→`FlowDefinition`
+  export so programmatic (`add_node`/`add_edge`) flows are checkpointable and
+  resumable in v1 (requires all nodes registered in `NODE_REGISTRY`).
 - `flow-checkpoint-http-api`: aiohttp handlers to list/inspect/resume/delete.
 
 ### Modified Capabilities
@@ -366,13 +378,13 @@ without the dependency.
 | Affected Component | Impact Type | Notes |
 |---|---|---|
 | `parrot/bots/flows/core/checkpoint/` (new) | new package | model, serializer, stores, checkpointer |
-| `parrot/bots/flows/flow/flow.py` | extends | constructor kwargs, listener wiring, `suspend()`, `resume()` classmethod |
+| `parrot/bots/flows/flow/flow.py` | extends | constructor kwargs, listener wiring, `suspend()`, `resume()` classmethod, `to_definition()` export |
 | `parrot/bots/flows/flow/definition.py` | extends | optional checkpoint block in `FlowMetadata` |
 | `parrot/bots/flows/core/context.py` | extends | `to_snapshot()` / seed-from-snapshot helpers (no field changes) |
 | `parrot/bots/flows/core/result.py` | depends on | fold `_serialise_result_value` into the type registry |
 | `parrot/handlers/` | new handlers | checkpoint ops API + `on_shutdown` recovery hook |
 | `parrot/conf.py` | extends | `FLOW_CHECKPOINT_*` env vars (store DSNs, TTL, history N, shutdown deadline) |
-| `pyproject.toml` | new dependency | `msgpack` (or `ormsgpack`) |
+| `pyproject.toml` | new dependency | `ormsgpack >= 1.5` |
 | `parrot/flows/dev_loop/runner.py` | future consumer | F006: gated runs can suspend instead of holding a concurrency slot (follow-up feature) |
 | AgentCrew (`bots/flows/crew/`) | unaffected in v1 | phase 2 consumes the same `CheckpointStore` contract |
 
@@ -458,8 +470,8 @@ from parrot.bots.flows.core.result import _serialise_result_value    # imported 
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot/bots/flows/core/checkpoint/`~~ — no checkpoint package exists yet.
-- ~~`AgentsFlow.resume()` / `AgentsFlow.suspend()`~~ — no resume/suspend API on any executor.
-- ~~`msgpack` / `ormsgpack` in pyproject.toml~~ — NOT currently a dependency; must be added.
+- ~~`AgentsFlow.resume()` / `AgentsFlow.suspend()` / `AgentsFlow.to_definition()`~~ — no resume/suspend/export API on any executor.
+- ~~`msgpack` / `ormsgpack` in pyproject.toml~~ — NOT currently a dependency; `ormsgpack` must be added.
 - ~~SQLite `ResultStorage` backend~~ — FEAT-147 factory only knows `redis | postgres | documentdb`.
 - ~~`FlowContext.to_snapshot()` / `from_snapshot()`~~ — no serialization helpers on FlowContext today.
 - ~~`CheckpointStore`, `FlowCheckpoint`, `FlowCheckpointer`, `FlowStateSerializer`~~ — all new names proposed by this brainstorm.
@@ -488,11 +500,13 @@ from parrot.bots.flows.core.result import _serialise_result_value    # imported 
 
 ## Open Questions
 
-- [ ] `msgpack` vs `ormsgpack` (Rust, faster, what langgraph uses) — pick at spec time. — *Owner: Jesus*
-- [ ] Checkpoint `responses` (raw AIMessage objects) or only extracted `results`? Raw responses can be large; results may suffice for `get_input_for_node()` on resume. — *Owner: Jesus*
-- [ ] Concurrent-resume locking: Redis lease per flow_id — TTL, takeover semantics, and behavior when the lease holder dies. — *Owner: Jesus*
-- [ ] Defaults: retention TTL (mirror 7d of `CREW_RESULT_STORAGE_REDIS_TTL`?) and history N (20?). — *Owner: Jesus*
-- [ ] HTTP handlers auth model (reuse existing handler auth conventions in `parrot/handlers/`). — *Owner: Jesus*
-- [ ] Graceful-shutdown deadline default and what to log/do for flows that miss it. — *Owner: Jesus*
-- [ ] v1 restriction confirmed?: resume only for definition-based flows (programmatic `add_node()` flows excluded until a graph→definition export exists). — *Owner: Jesus*
-- [ ] Phase 2 scope: AgentCrew (4 run modes) on the same `CheckpointStore` — separate spec; also dev-loop F006 integration (suspend gated runs) as its own follow-up. — *Owner: Jesus*
+All resolved interactively with the author on 2026-08-01:
+
+- [x] `msgpack` vs `ormsgpack` (Rust, faster, what langgraph uses) — pick at spec time. — *Owner: Jesus*: **`ormsgpack`** — native Pydantic/datetime/UUID serialization (fewer manual hooks), faster, langgraph-checkpoint precedent.
+- [x] Checkpoint `responses` (raw AIMessage objects) or only extracted `results`? Raw responses can be large; results may suffice for `get_input_for_node()` on resume. — *Owner: Jesus*: **Only `results` by default** — sufficient for `get_input_for_node()` on resume — plus an opt-in `checkpoint_include_responses=True` flag for full-fidelity (heavier) checkpoints.
+- [x] Concurrent-resume locking: Redis lease per flow_id — TTL, takeover semantics, and behavior when the lease holder dies. — *Owner: Jesus*: **Redis lease + heartbeat** — short-TTL lock (~60s) per flow_id, renewed while the flow runs; a second resume fails fast with `FlowLockedError`; if the holder dies the lease expires and another process may take over.
+- [x] Defaults: retention TTL and history N. — *Owner: Jesus*: **TTL 24h / history 10** — aggressive Redis hygiene: happy-path flows vanish within a day; both configurable per-flow and via env vars (`FLOW_CHECKPOINT_REDIS_TTL=86400`, `FLOW_CHECKPOINT_HISTORY=10`).
+- [x] HTTP handlers auth model. — *Owner: Jesus*: **Reuse the existing auth conventions of `parrot/handlers/`** (service auth middleware) — no new security surface; the spec references the existing pattern.
+- [x] Graceful-shutdown deadline default and what to log/do for flows that miss it. — *Owner: Jesus*: **15s default** (fits aiohttp/k8s 30s grace), configurable. Flows that miss the deadline are logged as ERROR with their flow_ids; their last per-node checkpoint in Redis remains recoverable until TTL.
+- [x] v1 restriction: resume only for definition-based flows? — *Owner: Jesus*: **No — v1 includes a graph→definition export** (`AgentsFlow.to_definition()`) so programmatic `add_node()`/`add_edge()` flows are also resumable. Caveat to handle at spec time: custom Node subclasses must be in `NODE_REGISTRY` to survive the round-trip; unregistered nodes make the flow non-exportable (clear error).
+- [x] Phase 2 scope. — *Owner: Jesus*: **Two separate follow-up specs**: (a) AgentCrew (4 run modes) consuming the same `CheckpointStore` plane; (b) dev-loop F006 integration — gated runs suspend (releasing their concurrency slot) and resume when the gate opens. (Graph→definition export moved into v1 per the previous answer.)
