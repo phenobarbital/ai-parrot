@@ -70,6 +70,10 @@ DEFAULT_EXCLUDE_NAMES: frozenset[str] = frozenset({
     "uv.lock", "poetry.lock", "Cargo.lock",
 })
 
+#: Build-report basename written at the root of every exported wiki
+#: bundle — the marker that identifies a directory as *being* a wiki.
+WIKI_BUNDLE_MARKER = "wiki_stats.json"
+
 #: Skip files larger than this many bytes (default 512 KiB).
 DEFAULT_MAX_FILE_BYTES = 512 * 1024
 
@@ -182,6 +186,97 @@ def dir_concept_id(rel_path: str) -> str:
 # --------------------------------------------------------------------------
 
 
+def find_wiki_bundle_dirs(
+    root: Path,
+    exclude_dirs: Optional[Iterable[str]] = None,
+) -> list[str]:
+    """Locate exported wiki bundles nested inside ``root``.
+
+    A wiki must never ingest another wiki's export: those pages mirror
+    the repository's own files, so indexing them fills every result set
+    with near-duplicates of their own sources and buries the originals.
+    Bundles are recognised by the :data:`WIKI_BUNDLE_MARKER` build
+    report that ``build`` writes at the root of each export.
+
+    The build already excludes the export directory it is *currently*
+    configured to write; this finds the ones it is not — a bundle left
+    behind by an earlier configuration, or one vendored in from another
+    project.
+
+    A marker at ``root`` itself is ignored: the repository being scanned
+    may legitimately be a bundle, and pruning it would discover nothing.
+
+    Args:
+        root: Repository root directory.
+        exclude_dirs: Directory names pruned during the walk (merged
+            with :data:`DEFAULT_EXCLUDE_DIRS`); path-prefix entries
+            containing ``/`` are ignored here.
+
+    Returns:
+        Sorted root-relative POSIX paths of the bundle directories.
+    """
+    root = root.resolve()
+    pruned_names = set(DEFAULT_EXCLUDE_DIRS)
+    pruned_paths: set[str] = set()
+    for entry in (e.strip("/") for e in exclude_dirs or ()):
+        if not entry:
+            continue
+        if "/" in entry:
+            pruned_paths.add(entry)
+        else:
+            pruned_names.add(entry)
+
+    bundles: list[str] = []
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        if current != root and (current / WIKI_BUNDLE_MARKER).is_file():
+            bundles.append(current.relative_to(root).as_posix())
+            continue  # a bundle is opaque — never descend into it
+        try:
+            entries = sorted(current.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if not entry.is_dir() or entry.is_symlink():
+                continue
+            if entry.name in pruned_names:
+                continue
+            rel = entry.relative_to(root).as_posix()
+            if any(rel == pp or rel.startswith(pp + "/") for pp in pruned_paths):
+                continue
+            stack.append(entry)
+    return sorted(bundles)
+
+
+def is_inside_wiki_bundle(root: Path, rel_path: str) -> bool:
+    """Whether ``rel_path`` sits inside a nested exported wiki bundle.
+
+    The ancestor-walk counterpart to :func:`find_wiki_bundle_dirs`, for
+    the incremental path. It answers the question for one file in
+    O(path depth) rather than O(repository), so the git post-commit
+    hook keeps its docs-only fast path instead of scanning the whole
+    tree on every commit.
+
+    A marker at ``root`` itself is ignored, matching
+    :func:`find_wiki_bundle_dirs`.
+
+    Args:
+        root: Repository root directory.
+        rel_path: POSIX-style path relative to ``root``.
+
+    Returns:
+        ``True`` when any ancestor directory below ``root`` carries the
+        :data:`WIKI_BUNDLE_MARKER`.
+    """
+    root = root.resolve()
+    parts = PurePosixPath(rel_path).parts
+    for depth in range(1, len(parts)):
+        if (root.joinpath(*parts[:depth]) / WIKI_BUNDLE_MARKER).is_file():
+            return True
+    return False
+
+
 def discover_repo_files(
     root: Path,
     suffixes: Optional[Iterable[str]] = None,
@@ -206,7 +301,11 @@ def discover_repo_files(
         Sorted list of POSIX-style relative paths.
     """
     root = root.resolve()
-    pruned = DEFAULT_EXCLUDE_DIRS | frozenset(exclude_dirs or ())
+    # Nested wiki bundles are pruned as path prefixes, whichever way the
+    # file list was obtained — git ls-files sees them too.
+    excluded = list(exclude_dirs or ())
+    excluded.extend(find_wiki_bundle_dirs(root, exclude_dirs=excluded))
+    pruned = DEFAULT_EXCLUDE_DIRS | frozenset(excluded)
 
     rel_paths: Optional[list[str]] = None
     if use_git:
@@ -217,7 +316,7 @@ def discover_repo_files(
     return sorted({
         rel
         for rel in rel_paths
-        if is_wiki_relevant(rel, suffixes=suffixes, exclude_dirs=exclude_dirs)
+        if is_wiki_relevant(rel, suffixes=suffixes, exclude_dirs=excluded)
     })
 
 

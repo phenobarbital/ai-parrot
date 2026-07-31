@@ -44,6 +44,7 @@ from parrot.knowledge.wiki.project import (
     save_project_config,
 )
 from parrot.knowledge.wiki.repo_scan import (
+    is_inside_wiki_bundle,
     is_wiki_relevant,
     scan_repository,
 )
@@ -822,12 +823,15 @@ def upsert(
                 continue
         rel = PurePosixPath(rel).as_posix()
         # Same selection filter as full discovery — the two paths must
-        # never disagree about what belongs in the wiki.
+        # never disagree about what belongs in the wiki. The bundle
+        # guardrail is checked per path (ancestor walk) rather than by
+        # discovering every bundle in the repo, so a docs-only commit
+        # keeps its O(1) fast path.
         if is_wiki_relevant(
             rel,
             suffixes=config.include_suffixes or None,
             exclude_dirs=config.exclude_dirs,
-        ):
+        ) and not is_inside_wiki_bundle(root, rel):
             normalized.append(rel)
 
     existing = [rel for rel in normalized if (root / rel).is_file()]

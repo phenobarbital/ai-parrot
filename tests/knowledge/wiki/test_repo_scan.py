@@ -10,11 +10,14 @@ from pathlib import Path
 
 from parrot.knowledge.wiki.repo_scan import (
     DEFAULT_MAX_FILE_BYTES,
+    WIKI_BUNDLE_MARKER,
     build_dir_pages,
     build_file_slice,
     dir_concept_id,
     discover_repo_files,
     file_concept_id,
+    find_wiki_bundle_dirs,
+    is_inside_wiki_bundle,
     scan_repository,
 )
 
@@ -28,6 +31,74 @@ def _write(root: Path, rel: str, content: str) -> Path:
 
 PY_A = '"""Mod A does things."""\nfrom pkg.b import x\n\n\nclass Alpha:\n    """Alpha class."""\n\n    def run(self, arg):\n        """Run it."""\n        return arg\n\n\ndef helper():\n    """Top-level helper."""\n'
 PY_B = '"""Mod B."""\nx = 1\n'
+
+
+class TestWikiBundleGuardrail:
+    """A wiki must never ingest another wiki's exported bundle."""
+
+    def test_finds_a_nested_bundle_by_its_marker(self, tmp_path: Path):
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, "docs/parrot/index.md", "# Wiki")
+        assert find_wiki_bundle_dirs(tmp_path) == ["docs/parrot"]
+
+    def test_reports_no_bundle_for_an_ordinary_tree(self, tmp_path: Path):
+        _write(tmp_path, "docs/guide.md", "# Guide")
+        assert find_wiki_bundle_dirs(tmp_path) == []
+
+    def test_discovery_skips_everything_inside_a_bundle(self, tmp_path: Path):
+        _write(tmp_path, "app.py", "x = 1")
+        _write(tmp_path, "docs/guide.md", "# A real doc")
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, "docs/parrot/index.md", "# Wiki")
+        _write(
+            tmp_path,
+            "docs/parrot/overviews/doc:app-py.md",
+            "---\ntitle: app.py\n---\n\n# app.py\n",
+        )
+
+        found = discover_repo_files(tmp_path, use_git=False)
+
+        assert "app.py" in found
+        assert "docs/guide.md" in found
+        assert all(not f.startswith("docs/parrot/") for f in found)
+
+    def test_detects_a_path_inside_a_bundle_without_walking_the_repo(
+        self, tmp_path: Path
+    ):
+        # The incremental path must answer "is this one file inside a
+        # bundle?" by looking at its ancestors, not by scanning the tree:
+        # the git post-commit hook pays this cost on every commit.
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, "docs/parrot/overviews/doc:app-py.md", "# app")
+        _write(tmp_path, "docs/guide.md", "# Guide")
+
+        assert is_inside_wiki_bundle(tmp_path, "docs/parrot/overviews/doc:app-py.md")
+        assert is_inside_wiki_bundle(tmp_path, "docs/parrot/index.md")
+        assert not is_inside_wiki_bundle(tmp_path, "docs/guide.md")
+        assert not is_inside_wiki_bundle(tmp_path, "app.py")
+
+    def test_inside_check_ignores_a_marker_at_the_repo_root(self, tmp_path: Path):
+        _write(tmp_path, WIKI_BUNDLE_MARKER, "{}")
+        _write(tmp_path, "app.py", "x = 1")
+        assert not is_inside_wiki_bundle(tmp_path, "app.py")
+
+    def test_walk_does_not_descend_into_path_prefix_excludes(self, tmp_path: Path):
+        _write(tmp_path, f"vendor/stuff/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+
+        found = find_wiki_bundle_dirs(tmp_path, exclude_dirs=["vendor/stuff"])
+
+        assert found == ["docs/parrot"]
+
+    def test_a_bundle_at_the_repo_root_does_not_prune_the_repo(self, tmp_path: Path):
+        # The scanned repo may itself be a wiki bundle root; excluding "."
+        # would silently discover nothing at all.
+        _write(tmp_path, WIKI_BUNDLE_MARKER, "{}")
+        _write(tmp_path, "app.py", "x = 1")
+
+        found = discover_repo_files(tmp_path, use_git=False)
+
+        assert "app.py" in found
 
 
 class TestDiscovery:
