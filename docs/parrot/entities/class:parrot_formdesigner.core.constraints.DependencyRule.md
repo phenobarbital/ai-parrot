@@ -4,7 +4,7 @@ title: DependencyRule
 id: class:parrot_formdesigner.core.constraints.DependencyRule
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Rule controlling conditional visibility/behavior of a field or section.
 ---
 

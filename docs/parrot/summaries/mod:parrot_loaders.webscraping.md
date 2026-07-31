@@ -4,7 +4,7 @@ title: parrot_loaders.webscraping
 id: mod:parrot_loaders.webscraping
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: WebScrapingLoader — Loader interface for WebScrapingToolkit + CrawlEngine.
 relates_to:
 - concept: class:parrot_loaders.webscraping.WebScrapingLoader

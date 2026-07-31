@@ -4,7 +4,7 @@ title: parrot_tools.msword
 id: mod:parrot_tools.msword
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: MS Word Tool migrated to use AbstractDocumentTool framework.
 relates_to:
 - concept: class:parrot_tools.msword.MSWordArgs

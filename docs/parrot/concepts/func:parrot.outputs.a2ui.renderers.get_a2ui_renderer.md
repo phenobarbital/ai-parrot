@@ -4,7 +4,7 @@ title: get_a2ui_renderer()
 id: func:parrot.outputs.a2ui.renderers.get_a2ui_renderer
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolve a renderer class by name, importing its satellite module if needed.
 ---
 

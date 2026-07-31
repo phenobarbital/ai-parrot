@@ -4,7 +4,7 @@ title: 'Migration — FEAT-203: ai-parrot-server'
 id: doc:docs-migration-feat-203-ai-parrot-server-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: BotManager, MCP/A2A server transports, scheduler, or autonomous orchestrator.
 relates_to:
 - concept: mod:parrot.a2a

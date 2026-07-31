@@ -4,7 +4,7 @@ title: parrot.autonomous.transport.filesystem.hook
 id: mod:parrot.autonomous.transport.filesystem.hook
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FilesystemHook — integration with AI-Parrot's autonomous hooks system.
 relates_to:
 - concept: class:parrot.autonomous.transport.filesystem.hook.FilesystemHook

@@ -69,6 +69,7 @@ class AgentTool(AbstractTool):
         use_conversation_method: bool = True,
         context_filter: Optional[Callable[[AgentContext], AgentContext]] = None,
         execution_memory: Optional[Any] = None,
+        **kwargs,
     ):
 
         self.agent = agent
@@ -100,10 +101,14 @@ class AgentTool(AbstractTool):
         self.call_count = 0
         self.last_response = None
 
+        # Forward extra kwargs (executor=, remote_timeout_seconds=, ...)
+        # so Agents-as-Tools can be routed to a remote executor like any
+        # other tool.
         super().__init__(
             name=self.name,
             description=self.description,
-            args_schema=QuestionInput  # Uses the modified schema
+            args_schema=QuestionInput,  # Uses the modified schema
+            **kwargs,
         )
 
         # Build schema in the correct format for Google GenAI
@@ -411,15 +416,18 @@ class AgentTool(AbstractTool):
         if hasattr(self.agent, 'tool_manager'):
             python_repl = self.agent.tool_manager.get_tool('python_repl')
 
-        if python_repl and hasattr(python_repl, 'globals'):
+        # FEAT-380 (TASK-1944): namespace API — the REPL namespace lives in
+        # the tool's worker process now, `.globals` on the host instance is
+        # never updated by executed code and no longer accepts writes.
+        if python_repl and hasattr(python_repl, 'set_var'):
             # Inject the structured data as a global variable
-            python_repl.globals['previous_result'] = context
+            await python_repl.set_var('previous_result', context)
 
             # Also inject all results from execution memory with agent names
             if self.execution_memory:
                 for agent_id, agent_result in self.execution_memory.results.items():
                     safe_name = agent_id.replace('-', '_').replace(' ', '_')
-                    python_repl.globals[f'{safe_name}_result'] = agent_result.result
+                    await python_repl.set_var(f'{safe_name}_result', agent_result.result)
 
     def _append_results(self, existing: Any, new: Any) -> Any:
         """Intelligently append results based on their types"""

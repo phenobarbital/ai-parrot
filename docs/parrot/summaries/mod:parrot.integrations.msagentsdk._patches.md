@@ -4,7 +4,7 @@ title: parrot.integrations.msagentsdk._patches
 id: mod:parrot.integrations.msagentsdk._patches
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Runtime patches for the Microsoft 365 Agents SDK.
 relates_to:
 - concept: func:parrot.integrations.msagentsdk._patches.patch_mcs_connector_empty_response

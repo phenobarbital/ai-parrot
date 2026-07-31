@@ -4,7 +4,7 @@ title: parrot.models.bedrock_models
 id: mod:parrot.models.bedrock_models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bedrock model-ID translator for AI-Parrot.
 relates_to:
 - concept: func:parrot.models.bedrock_models.translate

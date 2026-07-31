@@ -14,7 +14,7 @@ import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Literal, Optional, Any, Set, Tuple, Union, TYPE_CHECKING
+from typing import Awaitable, Callable, Dict, List, Literal, Optional, Any, Set, Tuple, Union, TYPE_CHECKING
 from parrot._imports import lazy_import
 import redis.asyncio as aioredis
 from os import PathLike
@@ -563,7 +563,9 @@ class DatasetManager(AbstractToolkit):
         self._datasets: Dict[str, DatasetEntry] = {}
         self._query_loader: Optional[Any] = None
         self._on_change_callback: Optional[Callable[[], None]] = None
-        self._repl_locals_getter: Optional[Callable[[], Dict[str, Any]]] = None
+        # FEAT-380 (TASK-1944): async — the REPL namespace lives in a worker
+        # process now; every registered getter awaits a `snapshot()` round-trip.
+        self._repl_locals_getter: Optional[Callable[[], Awaitable[Dict[str, Any]]]] = None
         self.df_prefix = df_prefix
         self.generate_guide = generate_guide
         self.include_summary_stats = include_summary_stats
@@ -629,11 +631,13 @@ class DatasetManager(AbstractToolkit):
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
         self._on_change_callback = callback
 
-    def set_repl_locals_getter(self, getter: Callable[[], Dict[str, Any]]) -> None:
-        """Register a callable that returns the REPL local variables.
+    def set_repl_locals_getter(self, getter: Callable[[], Awaitable[Dict[str, Any]]]) -> None:
+        """Register an async callable that returns the REPL local variables.
 
         Used by ``store_dataframe`` to look up a computed DataFrame by name
-        from the python_repl_pandas execution environment.
+        from the python_repl_pandas execution environment. FEAT-380
+        (TASK-1944): async because the namespace lives in a worker process
+        now — the getter awaits a ``PythonREPLTool.snapshot()`` round-trip.
         """
         self._repl_locals_getter = getter
 
@@ -3204,12 +3208,13 @@ class DatasetManager(AbstractToolkit):
         """
         Store a computed DataFrame from python_repl_pandas into the catalog.
 
-        Use this ONLY when you have created a genuinely new DataFrame from
-        computation (e.g., a filtered subset, aggregation, or join) and want
-        to make it available for future queries.
+        Use this ONLY when the user explicitly asks to save/persist a result
+        for reuse in future questions. Storing is NEVER required to answer
+        the current question — to return a result, assign it to a variable
+        and declare it in `data_variable` instead.
 
-        Do NOT call this for intermediate variables or for datasets that
-        already exist in the catalog.
+        Do NOT call this for intermediate variables, for one-off answers, or
+        for datasets that already exist in the catalog.
 
         Args:
             name: Variable name as it exists in python_repl_pandas.
@@ -3237,7 +3242,7 @@ class DatasetManager(AbstractToolkit):
                 f"Create the DataFrame in python_repl_pandas first."
             )
 
-        repl_locals = self._repl_locals_getter()
+        repl_locals = await self._repl_locals_getter()
         df = repl_locals.get(name)
         if df is None or not isinstance(df, pd.DataFrame):
             available_dfs = [

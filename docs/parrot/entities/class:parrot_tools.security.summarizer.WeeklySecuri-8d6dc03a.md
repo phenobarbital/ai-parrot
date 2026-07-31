@@ -4,7 +4,7 @@ title: WeeklySecuritySummarizer
 id: class:parrot_tools.security.summarizer.WeeklySecuritySummarizer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Produces a ``WeeklySummary`` from a list of scan ``ReportRef``s.
 ---
 

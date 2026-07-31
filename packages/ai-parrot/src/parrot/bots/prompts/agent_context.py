@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 import logging
 from pathlib import Path
+from typing import Union
 
 from .layers import PromptLayer, RenderPhase
 
@@ -54,6 +55,28 @@ def _read_cached(path: str, mtime: float) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
+def read_text_cached(path: Union[str, Path]) -> str:
+    """Public mtime-keyed cached text read (FEAT-321).
+
+    Thin wrapper that stats ``path`` and delegates to the shared
+    :func:`_read_cached` LRU cache, so callers outside this module (e.g. the
+    identity loader) reuse the same cache instead of maintaining their own.
+
+    Args:
+        path: Path to the file to read.
+
+    Returns:
+        UTF-8 decoded file contents, or ``""`` when the file does not exist
+        or cannot be statted.
+    """
+    p = Path(path)
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        return ""
+    return _read_cached(str(p), mtime)
+
+
 def load_agent_context(agent_id: str) -> str:
     """Load the per-agent context file for the given agent ID.
 
@@ -87,8 +110,7 @@ def load_agent_context(agent_id: str) -> str:
     file_path = context_dir / f"{agent_id}.md"
     if not file_path.exists():
         return ""
-    mtime = file_path.stat().st_mtime
-    return _read_cached(str(file_path), mtime)
+    return read_text_cached(file_path)
 
 
 # ── Built-in AGENT_CONTEXT_LAYER ──────────────────────────────────────────

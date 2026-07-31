@@ -4,7 +4,7 @@ title: AI-Parrot MCP Server - AWS Deployment Guide
 id: doc:docs-aws-deployment-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Este directorio contiene todo lo necesario para desplegar un **SimpleMCPServer**
   de AI-Parrot en AWS, ya sea usando **App Runner** o **Fargate**.
 relates_to:

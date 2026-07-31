@@ -4,7 +4,7 @@ title: Contextual Embedding Headers
 id: doc:docs-contextual-embedding-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: When you ingest documents into a vector store today, each chunk is embedded
   as
 relates_to:

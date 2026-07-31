@@ -4,7 +4,7 @@ title: FactoryStatus
 id: class:parrot.bots.factory.contracts.FactoryStatus
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Terminal states for a factory run.
 ---
 

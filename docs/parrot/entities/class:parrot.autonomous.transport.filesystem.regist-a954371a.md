@@ -4,7 +4,7 @@ title: AgentRegistry
 id: class:parrot.autonomous.transport.filesystem.registry.AgentRegistry
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Agent presence registry using JSON files on the filesystem.
 ---
 

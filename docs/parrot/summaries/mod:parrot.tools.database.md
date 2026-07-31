@@ -4,7 +4,7 @@ title: parrot.tools.database
 id: mod:parrot.tools.database
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deprecated alias — use ``parrot.tools.databasequery`` instead.
 relates_to:
 - concept: mod:parrot.tools.databasequery

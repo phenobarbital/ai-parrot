@@ -46,7 +46,9 @@ def _get_infographic_result_class() -> Optional[type]:
     except ImportError:
         return None
 # FEAT-176: Lifecycle Events
-from parrot.core.events.lifecycle.trace import TraceContext
+# FEAT-317: TraceContext moved to navigator_eventbus.lifecycle; imported here
+# via the parrot.core.events.lifecycle re-export facade.
+from parrot.core.events.lifecycle import TraceContext
 from parrot.core.events.lifecycle.events import (
     BeforeInvokeEvent,
     AfterInvokeEvent,
@@ -253,6 +255,10 @@ class BaseBot(AbstractBot):
                 output_mode = _resolved_mode
                 if ctx is not None:
                     ctx.output_mode = _resolved_mode
+            else:
+                # Agent-level default (constructor output_mode=...) applies when
+                # neither the caller nor the router picked a mode.
+                output_mode = self._apply_default_output_mode(output_mode)
         warnings.warn(
             "BaseBot.conversation() is deprecated and will be removed in a "
             "future release. Use BaseBot.ask() instead.",
@@ -409,7 +415,7 @@ class BaseBot(AbstractBot):
             )
 
             # Configure LLM if needed
-            llm = self._llm
+            llm = self.get_client()
             if (new_llm := kwargs.pop('llm', None)):
                 llm = self.configure_llm(
                     llm=new_llm,
@@ -445,7 +451,7 @@ class BaseBot(AbstractBot):
                     if max_tokens is not None:
                         llm_kwargs["max_tokens"] = max_tokens
 
-                    response = await client.ask(**llm_kwargs)
+                    response = await self.execute_llm_call(client, "ask", **llm_kwargs)
 
                     # Extract the vector-specific metadata
                     vector_info = vector_metadata.get('vector', {})
@@ -670,7 +676,7 @@ class BaseBot(AbstractBot):
             )
 
             # Configure LLM if needed
-            llm = self._llm
+            llm = self.get_client()
             if (new_llm := kwargs.pop('llm', None)):
                 llm = self.configure_llm(
                     llm=new_llm,
@@ -700,7 +706,7 @@ class BaseBot(AbstractBot):
                         output_type=response_model
                     )
 
-                response = await client.ask(**llm_kwargs)
+                response = await self.execute_llm_call(client, "ask", **llm_kwargs)
 
                 # Set conversation context info
                 response.set_conversation_context_info(
@@ -974,6 +980,10 @@ class BaseBot(AbstractBot):
                     output_mode = _resolved_mode
                     if ctx is not None:
                         ctx.output_mode = _resolved_mode
+                else:
+                    # Agent-level default (constructor output_mode=...) applies
+                    # when neither the caller nor the router picked a mode.
+                    output_mode = self._apply_default_output_mode(output_mode)
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
@@ -1229,7 +1239,7 @@ class BaseBot(AbstractBot):
             )
 
             # Configure LLM if needed
-            llm = self._llm
+            llm = self.get_client()
             if (new_llm := kwargs.pop('llm', None)):
                 llm = self.configure_llm(
                     llm=new_llm,
@@ -1290,7 +1300,7 @@ class BaseBot(AbstractBot):
                         llm_kwargs["structured_output"] = structured_output
 
                 phase_started = time.perf_counter()
-                response = await client.ask(**llm_kwargs)
+                response = await self.execute_llm_call(client, "ask", **llm_kwargs)
                 self.logger.info(
                     "[%s] ask timing: client.ask_ms=%.1f model=%s use_tools=%s",
                     self.name,
@@ -1366,12 +1376,17 @@ class BaseBot(AbstractBot):
                     getattr(response, "tool_calls", None)
                 )
                 if interactive_envelope is not None:
-                    self._finalize_interactive_response(response, interactive_envelope)
+                    if getattr(interactive_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = interactive_envelope.a2ui_envelope
+                        finalize_a2ui_response(response)
+                    else:
+                        self._finalize_interactive_response(response, interactive_envelope)
                     self.logger.info(
                         "InteractiveRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s enhanced=%s",
+                        "artifact_id=%s enhanced=%s a2ui=%s",
                         interactive_envelope.artifact_id,
                         interactive_envelope.enhanced,
+                        interactive_envelope.a2ui_envelope is not None,
                     )
                 elif output_mode == OutputMode.INTERACTIVE:
                     # Interactive mode was requested but no artifact was produced
@@ -1395,11 +1410,16 @@ class BaseBot(AbstractBot):
                     getattr(response, "tool_calls", None)
                 )
                 if infographic_envelope is not None:
-                    self._finalize_infographic_response(response, infographic_envelope)
+                    if getattr(infographic_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = infographic_envelope.a2ui_envelope
+                        finalize_a2ui_response(response)
+                    else:
+                        self._finalize_infographic_response(response, infographic_envelope)
                     self.logger.info(
                         "InfographicRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s",
+                        "artifact_id=%s a2ui=%s",
                         infographic_envelope.artifact_id,
+                        infographic_envelope.a2ui_envelope is not None,
                     )
                 elif output_mode == OutputMode.INFOGRAPHIC:
                     self.logger.warning(
@@ -1419,8 +1439,9 @@ class BaseBot(AbstractBot):
                     OutputMode.SLACK,
                     OutputMode.WHATSAPP,
                 ]:
-                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery
-                    if isinstance(response.output, str):
+                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery.
+                    # Opt-in per agent — only flagged agents redact.
+                    if getattr(self, 'enable_redaction', False) and isinstance(response.output, str):
                         response.output = _BOT_EGRESS_SCRUBBER.scrub(
                             response.output, tool_name=self.name
                         )
@@ -1590,6 +1611,10 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            # Agent-level default output mode (constructor output_mode=...)
+            # applies when the caller did not specify one. ask_stream has no
+            # router pass, so the agent default is the only fallback here.
+            output_mode = self._apply_default_output_mode(output_mode)
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
             # Maintain turn identifier generation for parity with ask()

@@ -4,7 +4,7 @@ title: ChromeManager
 id: class:parrot.mcp.chrome.ChromeManager
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Manages a headless Chrome instance for MCP tools.
 ---
 

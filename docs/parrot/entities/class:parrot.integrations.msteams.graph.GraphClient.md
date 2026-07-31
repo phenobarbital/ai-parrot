@@ -4,7 +4,7 @@ title: GraphClient
 id: class:parrot.integrations.msteams.graph.GraphClient
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Async Microsoft Graph client for the Teams HITL channel.
 ---
 

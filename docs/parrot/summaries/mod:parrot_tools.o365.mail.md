@@ -4,7 +4,7 @@ title: parrot_tools.o365.mail
 id: mod:parrot_tools.o365.mail
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Office365 Mails Tools.
 relates_to:
 - concept: class:parrot_tools.o365.mail.CreateDraftMessageArgs

@@ -4,7 +4,7 @@ title: parrot.human.actions.backends.base
 id: mod:parrot.human.actions.backends.base
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract base class and exception hierarchy for escalation action backends.
 relates_to:
 - concept: class:parrot.human.actions.backends.base.ActionBackend

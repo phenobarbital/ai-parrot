@@ -4,8 +4,9 @@ title: Data Storytelling
 id: doc:agent-skills-data-storytelling-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: data-storytelling'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Transform raw data into compelling narratives that drive decisions and inspire
+  action.
 ---
 
 ---

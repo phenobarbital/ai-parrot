@@ -4,7 +4,7 @@ title: parrot.forms.tools.request_form
 id: mod:parrot.forms.tools.request_form
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: RequestFormTool — platform-agnostic form request tool.
 relates_to:
 - concept: class:parrot.forms.tools.request_form.RequestFormInput

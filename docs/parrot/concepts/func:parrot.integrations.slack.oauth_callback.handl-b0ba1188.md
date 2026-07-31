@@ -4,7 +4,7 @@ title: handle_slack_jira_callback()
 id: func:parrot.integrations.slack.oauth_callback.handle_slack_jira_callback
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Process a Jira OAuth callback originating from the Slack integration.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.integrations.liveavatar.tenant_config
 id: mod:parrot.integrations.liveavatar.tenant_config
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-tenant FULL mode configuration resolver (FEAT-248 — Module 3).
 relates_to:
 - concept: func:parrot.integrations.liveavatar.tenant_config.resolve_fullmode_config

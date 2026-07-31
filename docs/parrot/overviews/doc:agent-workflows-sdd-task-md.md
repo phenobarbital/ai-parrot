@@ -4,8 +4,9 @@ title: /sdd-task — Generate Task Artifacts from a Spec
 id: doc:agent-workflows-sdd-task-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Decompose an approved spec into SDD Task Artifacts'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Read an approved Feature Specification and decompose it into discrete, self-contained
+  Task Artifacts
 ---
 
 ---

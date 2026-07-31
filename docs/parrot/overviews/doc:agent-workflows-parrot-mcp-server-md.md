@@ -4,8 +4,8 @@ title: Parrot Mcp Server
 id: doc:agent-workflows-parrot-mcp-server-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Scaffold a SimpleMCPServer for a designated Parrot Tool'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Follow these steps to generate a new MCP Server script for a Parrot Tool.
 relates_to:
 - concept: mod:parrot.services
   rel: mentions

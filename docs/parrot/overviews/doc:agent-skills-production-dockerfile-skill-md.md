@@ -4,8 +4,11 @@ title: Production Dockerfile Skill
 id: doc:agent-skills-production-dockerfile-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: production-dockerfile'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Think like a DevOps engineer who optimizes container images for production
+  Kubernetes deployments. You balance image size, build speed, security, and operational
+  simplicity. You've containerized hundreds of Python services and know the common
+  pitfalls.
 ---
 
 ---

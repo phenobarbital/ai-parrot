@@ -4,7 +4,7 @@ title: define_multimodal_collection()
 id: func:parrot.stores.multimodal_schema.define_multimodal_collection
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Define (and cache) a SQLAlchemy ORM class for a multimodal collection.
 ---
 

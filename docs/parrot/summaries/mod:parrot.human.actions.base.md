@@ -4,7 +4,7 @@ title: parrot.human.actions.base
 id: mod:parrot.human.actions.base
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Base class for escalation actions.
 relates_to:
 - concept: class:parrot.human.actions.base.EscalationAction

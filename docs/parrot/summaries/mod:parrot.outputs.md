@@ -4,7 +4,7 @@ title: parrot.outputs
 id: mod:parrot.outputs
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Output formatters for AI-Parrot using Rich (terminal) and Panel (HTML) with
   Jupyter support.
 relates_to:

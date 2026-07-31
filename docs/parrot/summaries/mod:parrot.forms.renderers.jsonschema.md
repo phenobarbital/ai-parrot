@@ -4,7 +4,7 @@ title: parrot.forms.renderers.jsonschema
 id: mod:parrot.forms.renderers.jsonschema
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: JSON Schema renderer for FormSchema.
 relates_to:
 - concept: class:parrot.forms.renderers.jsonschema.JsonSchemaRenderer

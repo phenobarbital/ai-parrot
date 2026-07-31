@@ -4,7 +4,7 @@ title: parrot_tools.scraping.flow_models
 id: mod:parrot_tools.scraping.flow_models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ScrapingFlow DAG models — FlowNode, ScrapingFlow, FlowResult.
 relates_to:
 - concept: class:parrot_tools.scraping.flow_models.FlowNode

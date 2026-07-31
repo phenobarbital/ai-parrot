@@ -4,7 +4,7 @@ title: parrot.tools.filemanager
 id: mod:parrot.tools.filemanager
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FileManagerTool and FileManagerToolkit — tools for AI agents to interact
   with file systems.
 relates_to:

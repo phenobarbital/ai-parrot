@@ -4,7 +4,7 @@ title: ClockEvent
 id: class:parrot_tools.interfaces.workday.models.clock_event.ClockEvent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: One Time Clock Event for Put_Time_Clock_Events / Import_Time_Clock_Events.
 ---
 

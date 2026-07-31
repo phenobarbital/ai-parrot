@@ -4,7 +4,7 @@ title: parrot.outputs.a2ui
 id: mod:parrot.outputs.a2ui
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: '``parrot.outputs.a2ui`` — A2UI v1.0 rendering core (FEAT-273).'
 relates_to:
 - concept: mod:parrot.outputs.a2ui.models

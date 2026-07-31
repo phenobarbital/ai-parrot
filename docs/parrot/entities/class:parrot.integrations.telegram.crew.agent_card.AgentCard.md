@@ -4,7 +4,7 @@ title: AgentCard
 id: class:parrot.integrations.telegram.crew.agent_card.AgentCard
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Identity and capability descriptor for an agent in the crew.
 ---
 

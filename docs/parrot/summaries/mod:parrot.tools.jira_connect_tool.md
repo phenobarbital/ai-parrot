@@ -4,7 +4,7 @@ title: parrot.tools.jira_connect_tool
 id: mod:parrot.tools.jira_connect_tool
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Placeholder tool and session helpers for Jira OAuth 2.0 (3LO) in AgenTalk.
 relates_to:
 - concept: class:parrot.tools.jira_connect_tool.JiraConnectTool

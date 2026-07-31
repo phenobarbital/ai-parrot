@@ -33,7 +33,7 @@ from parrot.core.events.lifecycle.events import (
     BeforeToolCallEvent,
     AfterToolCallEvent,
 )
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.tools.abstract import AbstractTool, ToolResult
 

@@ -4,7 +4,7 @@ title: ParrotEventType
 id: class:parrot.integrations.matrix.events.ParrotEventType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matrix event type constants for AI-Parrot.
 ---
 

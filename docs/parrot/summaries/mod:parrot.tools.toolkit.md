@@ -4,7 +4,7 @@ title: parrot.tools.toolkit
 id: mod:parrot.tools.toolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AbstractToolkit for creating collections of tools from class methods.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

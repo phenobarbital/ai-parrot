@@ -4,7 +4,7 @@ title: CSVLoader
 id: class:parrot.advisors.catalog.loaders.CSVLoader
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Loader for CSV product data.
 relates_to:
 - concept: class:parrot.advisors.catalog.loaders.ProductLoader

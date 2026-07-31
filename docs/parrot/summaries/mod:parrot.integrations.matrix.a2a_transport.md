@@ -4,7 +4,7 @@ title: parrot.integrations.matrix.a2a_transport
 id: mod:parrot.integrations.matrix.a2a_transport
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matrix A2A Transport — agent-to-agent communication over Matrix.
 relates_to:
 - concept: class:parrot.integrations.matrix.a2a_transport.MatrixA2ATransport

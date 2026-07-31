@@ -240,6 +240,16 @@ __all__ = (
     "SpawnSubAgentTool",
     "SpawnSubAgentInput",
     "InteractiveToolkit",
+    # Infographic section descriptor contract (FEAT-326)
+    "SectionSpec",
+    "SectionDescriptor",
+    "ProvenanceDescriptor",
+    "TransformerGap",
+    "GapReport",
+    "validate_descriptor_datasets",
+    "validate_payload_shape",
+    # Ad-hoc dataset adapter for the validation gate (FEAT-327)
+    "AdhocDatasetAdapter",
 )
 
 
@@ -253,6 +263,16 @@ _LAZY_CORE_TOOLS = {
     "FileManagerToolkit": ".filemanager",
     "DatasetManager": ".dataset_manager",
     "InteractiveToolkit": ".interactive_toolkit",
+    # Infographic section descriptor contract (FEAT-326)
+    "SectionSpec": ".infographic_sections",
+    "SectionDescriptor": ".infographic_sections",
+    "ProvenanceDescriptor": ".infographic_sections",
+    "TransformerGap": ".infographic_sections",
+    "GapReport": ".infographic_sections",
+    "validate_descriptor_datasets": ".infographic_sections",
+    "validate_payload_shape": ".infographic_sections",
+    # Ad-hoc dataset adapter for the validation gate (FEAT-327)
+    "AdhocDatasetAdapter": ".infographic_sections",
 }
 
 

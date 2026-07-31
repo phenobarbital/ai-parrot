@@ -4,7 +4,7 @@ title: A2AAgentConfig
 id: class:parrot.integrations.a2a.models.A2AAgentConfig
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configuration for a single agent exposed via the A2A protocol.
 ---
 

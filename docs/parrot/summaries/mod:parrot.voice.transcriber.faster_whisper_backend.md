@@ -4,7 +4,7 @@ title: parrot.voice.transcriber.faster_whisper_backend
 id: mod:parrot.voice.transcriber.faster_whisper_backend
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Faster Whisper Backend for Voice Transcription.
 relates_to:
 - concept: class:parrot.voice.transcriber.faster_whisper_backend.FasterWhisperBackend

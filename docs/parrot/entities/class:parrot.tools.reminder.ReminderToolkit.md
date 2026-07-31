@@ -4,7 +4,7 @@ title: ReminderToolkit
 id: class:parrot.tools.reminder.ReminderToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LLM-facing tools to schedule, list, and cancel one-time reminders.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

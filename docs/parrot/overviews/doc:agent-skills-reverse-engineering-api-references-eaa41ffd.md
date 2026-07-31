@@ -4,7 +4,7 @@ title: Authentication Patterns Reference
 id: doc:agent-skills-reverse-engineering-api-references-auth-patterns-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This document covers common authentication patterns found in web APIs and
   how to handle them when generating API clients. These patterns align with the reverse-api-engineer
   codebase conventions.

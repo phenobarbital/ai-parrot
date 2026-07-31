@@ -4,7 +4,7 @@ title: parrot_tools.statistical_tests
 id: mod:parrot_tools.statistical_tests
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: StatisticalTestsTool — t-test, ANOVA, chi-square, normality.
 relates_to:
 - concept: class:parrot_tools.statistical_tests.StatisticalTestInput

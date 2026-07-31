@@ -4,7 +4,7 @@ title: VisitData
 id: class:parrot_tools.sassie.VisitData
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Individual visit data entry containing question and answer information.
 ---
 

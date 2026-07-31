@@ -4,7 +4,7 @@ title: matryoshka_slice()
 id: func:parrot.embeddings.multimodal.quantization.matryoshka_slice
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Slice the leading ``dim`` dimensions from each embedding vector.
 ---
 

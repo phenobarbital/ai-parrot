@@ -4,7 +4,7 @@ title: SpatialFilterEnvelope
 id: class:parrot.handlers.spatial_filter_handler.SpatialFilterEnvelope
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Typed AgenTalk pass-through envelope for spatial filter requests.
 ---
 

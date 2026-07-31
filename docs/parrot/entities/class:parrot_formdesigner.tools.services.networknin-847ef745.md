@@ -4,7 +4,7 @@ title: ImportDiffReport
 id: class:parrot_formdesigner.tools.services.networkninja.ImportDiffReport
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Aggregate report for a single networkninja form import.
 ---
 

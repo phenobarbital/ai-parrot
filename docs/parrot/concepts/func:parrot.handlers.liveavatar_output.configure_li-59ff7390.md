@@ -4,7 +4,7 @@ title: configure_liveavatar_output_subscriber()
 id: func:parrot.handlers.liveavatar_output.configure_liveavatar_output_subscriber
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register the LiveAvatar output subscriber on the aiohttp application.
 ---
 

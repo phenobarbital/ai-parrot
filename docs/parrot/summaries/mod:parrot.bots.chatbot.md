@@ -4,7 +4,7 @@ title: parrot.bots.chatbot
 id: mod:parrot.bots.chatbot
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Foundational base of every Chatbot and Agent in ai-parrot.
 relates_to:
 - concept: class:parrot.bots.chatbot.Chatbot

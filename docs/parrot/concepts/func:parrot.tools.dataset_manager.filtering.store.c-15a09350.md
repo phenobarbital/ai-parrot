@@ -4,7 +4,7 @@ title: columns_present_in_any()
 id: func:parrot.tools.dataset_manager.filtering.store.columns_present_in_any
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return names of datasets that contain ALL of the given columns.
 ---
 

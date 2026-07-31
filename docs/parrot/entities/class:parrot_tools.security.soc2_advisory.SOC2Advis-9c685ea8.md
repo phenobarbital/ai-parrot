@@ -4,7 +4,7 @@ title: SOC2AdvisoryToolkit
 id: class:parrot_tools.security.soc2_advisory.SOC2AdvisoryToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LLM-facing tools for SOC2-oriented security advisory.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

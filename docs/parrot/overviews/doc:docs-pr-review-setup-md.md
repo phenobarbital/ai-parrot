@@ -4,7 +4,7 @@ title: PR Review Command — Setup Guide
 id: doc:docs-pr-review-setup-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This guide covers installing and configuring the prerequisites for the `/pr-review`
   Claude Code command.
 ---

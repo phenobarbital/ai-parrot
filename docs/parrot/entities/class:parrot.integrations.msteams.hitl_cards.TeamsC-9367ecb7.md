@@ -4,7 +4,7 @@ title: TeamsCardRenderer
 id: class:parrot.integrations.msteams.hitl_cards.TeamsCardRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Pure renderer: :class:`~parrot.human.models.HumanInteraction` → Adaptive
   Card dict.'
 ---

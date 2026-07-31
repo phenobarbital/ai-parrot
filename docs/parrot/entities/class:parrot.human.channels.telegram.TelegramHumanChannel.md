@@ -4,7 +4,7 @@ title: TelegramHumanChannel
 id: class:parrot.human.channels.telegram.TelegramHumanChannel
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Telegram channel for Human-in-the-Loop interactions.
 relates_to:
 - concept: class:parrot.human.channels.base.HumanChannel

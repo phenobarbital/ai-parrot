@@ -4,7 +4,7 @@ title: A2AServer
 id: class:parrot.a2a.server.A2AServer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Wraps an AI-Parrot Agent (BasicAgent/AbstractBot) as an A2A HTTP service.
 ---
 

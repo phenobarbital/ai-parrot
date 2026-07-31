@@ -4,7 +4,7 @@ title: relevance_neighborhood()
 id: func:parrot.knowledge.graphindex.signals.relevance_neighborhood
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Top-K nodes most relevant to ``node_id`` by combined score.
 ---
 

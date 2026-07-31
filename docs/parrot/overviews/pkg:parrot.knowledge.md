@@ -4,7 +4,7 @@ title: parrot.knowledge
 id: pkg:parrot.knowledge
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.knowledge (5 modules, 5 sub-packages).
 relates_to:
 - concept: mod:parrot.knowledge.graphindex

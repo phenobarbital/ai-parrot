@@ -4,7 +4,7 @@ title: parrot.handlers.scraping.info
 id: mod:parrot.handlers.scraping.info
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ScrapingInfoHandler — GET-only reference metadata endpoints for the Scraping
   UI.
 relates_to:

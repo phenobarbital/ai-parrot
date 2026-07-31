@@ -4,7 +4,7 @@ title: DocumentAgent
 id: class:parrot.bots.document.DocumentAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A specialized agent for document processing - converting Word docs to Markdown,
 relates_to:
 - concept: class:parrot.bots.agent.BasicAgent

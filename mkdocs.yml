@@ -140,11 +140,7 @@ nav:
       - Agent Service: agent_service.md
       - Agent Factory Handler: agent_factory_handler.md
       - Agent Config Creation: agent_config_creation.md
-      - Crews: crew.md
       - Crew Handler: crew_handler.md
-      - Crew Summary: crew_summary.md
-      - Orchestration: orchestration.md
-      - Advanced Orchestration: ORCHESTRATION.md
       - Test Agent: testagent.md
       - UI Agent: uiagent.md
   - Memory & Knowledge:
@@ -166,6 +162,7 @@ nav:
       - Tools Reference: tools.md
       - What-If Tool: whatif_tool.md
       - Sandbox Tool: sandbox_tool.md
+      - REPL Worker Sandbox: repl-worker-sandbox.md
       - Hierarchy Tool: hierarchy_tool.md
       - Tool Clone: tool_clone.md
       - ArXiv Tool: ARXIV_TOOL_README.md
@@ -203,12 +200,15 @@ nav:
       - Variables Reference: promptbuilder-variables.md
       - Jira Specialist Layers: jira-specialist-prompt-layers.md
   - Orchestration & Flows:
-      - Decision Nodes: DECISION_NODE_USAGE.md
+      - AgentCrew Guide: orchestration/agentcrew.md
+      - AgentsFlow Guide: orchestration/agentsflow.md
+      - Node Types Reference: orchestration/node-types.md
+      - Decision Node Usage: DECISION_NODE_USAGE.md
       - Bot Cleanup Lifecycle: bot-cleanup-lifecycle.md
-      - Infographic Handler API: infographic_handler_api.md
-      - VectorStore Handler API: vectorstore_handler_api.md
   - Advanced:
       - API Endpoints (REST): API_ENDPOINTS.md
+      - Infographic Handler API: infographic_handler_api.md
+      - VectorStore Handler API: vectorstore_handler_api.md
       - Ephemeral Agents API: api/feat-149-ephemeral-agents-api.md
       - Jupyter Mode: jupyter_mode.md
       - Job Manager: jobmanager.md

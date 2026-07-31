@@ -4,7 +4,7 @@ title: SiteSearch
 id: class:parrot_tools.sitesearch.tool.SiteSearch
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Perform Google-powered site searches and return rendered content as markdown.
 relates_to:
 - concept: class:parrot_tools.google.tools.GoogleSiteSearchTool

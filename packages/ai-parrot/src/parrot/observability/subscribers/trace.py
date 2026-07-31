@@ -20,7 +20,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from parrot.core.events.lifecycle import LifecycleEvent
 from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     AfterInvokeEvent,
@@ -50,7 +50,7 @@ from parrot.observability.attributes import (
 )
 
 if TYPE_CHECKING:
-    from parrot.core.events.lifecycle.registry import EventRegistry
+    from parrot.core.events.lifecycle import EventRegistry
     from parrot.observability.cost.calculator import CostCalculator
 
 logger = logging.getLogger(__name__)

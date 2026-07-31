@@ -4,7 +4,7 @@ title: ZaiCodeDispatchProfile
 id: class:parrot.flows.dev_loop.models.ZaiCodeDispatchProfile
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Declarative profile consumed by ``ZaiCodeDispatcher.dispatch()``.
 relates_to:
 - concept: class:parrot.flows.dev_loop.models.LLMCodeDispatchProfile

@@ -5,7 +5,7 @@ title: ⚠️ DEPRECATED — Guía Técnica del Avatar Voz-Nativo (LiveAvatar Ph
 id: doc:docs-frontend-liveavatar-phase-c-frontend-guide-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: micrófono, el agente responde con voz y cara (lip-sync), y los **artefactos
 ---
 

@@ -4,7 +4,7 @@ title: SearchResult
 id: class:parrot.models.stores.SearchResult
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Data model for a single document returned from a vector search.
 ---
 

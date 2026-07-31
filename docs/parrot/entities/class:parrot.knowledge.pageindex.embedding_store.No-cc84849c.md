@@ -4,7 +4,7 @@ title: NodeEmbeddingStore
 id: class:parrot.knowledge.pageindex.embedding_store.NodeEmbeddingStore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Two-tier content-addressed embedding cache for PageIndex trees.
 ---
 

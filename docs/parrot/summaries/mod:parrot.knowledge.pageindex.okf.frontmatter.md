@@ -4,7 +4,7 @@ title: parrot.knowledge.pageindex.okf.frontmatter
 id: mod:parrot.knowledge.pageindex.okf.frontmatter
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Backwards-compatible re-export shim for OKF frontmatter engine.
 relates_to:
 - concept: mod:parrot.knowledge.okf.frontmatter

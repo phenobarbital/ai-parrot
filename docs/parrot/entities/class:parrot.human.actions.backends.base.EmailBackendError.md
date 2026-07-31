@@ -4,7 +4,7 @@ title: EmailBackendError
 id: class:parrot.human.actions.backends.base.EmailBackendError
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raised when the email backend fails to send a message.
 relates_to:
 - concept: class:parrot.human.actions.backends.base.ActionBackendError

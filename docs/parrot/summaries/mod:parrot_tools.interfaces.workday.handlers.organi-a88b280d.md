@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.handlers.organization_single
 id: mod:parrot_tools.interfaces.workday.handlers.organization_single
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Get_Organization operation handler.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.organization_single.GetOrganization

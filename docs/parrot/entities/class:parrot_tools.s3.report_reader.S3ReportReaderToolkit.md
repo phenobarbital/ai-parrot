@@ -4,7 +4,7 @@ title: S3ReportReaderToolkit
 id: class:parrot_tools.s3.report_reader.S3ReportReaderToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Agnostic read-only toolkit for LLM agents to explore S3-stored reports.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

@@ -4,7 +4,7 @@ title: parrot.handlers.deeplink
 id: mod:parrot.handlers.deeplink
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A2UI deep-link web resume route (FEAT-273 Module 8, web channel).
 relates_to:
 - concept: class:parrot.handlers.deeplink.DeepLinkResumeHandler

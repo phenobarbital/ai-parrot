@@ -4,7 +4,7 @@ title: parse_benefits_and_roles()
 id: func:parrot_tools.interfaces.workday.parsers.worker_parsers.parse_benefits_and_roles
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse benefit enrollments, roles, and worker documents.
 ---
 

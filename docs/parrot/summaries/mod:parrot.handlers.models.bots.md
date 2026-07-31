@@ -4,7 +4,7 @@ title: parrot.handlers.models.bots
 id: mod:parrot.handlers.models.bots
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Database model for Managing Chatbots and Agents.
 relates_to:
 - concept: class:parrot.handlers.models.bots.BotModel

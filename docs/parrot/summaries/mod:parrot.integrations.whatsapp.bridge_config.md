@@ -4,7 +4,7 @@ title: parrot.integrations.whatsapp.bridge_config
 id: mod:parrot.integrations.whatsapp.bridge_config
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configuration for WhatsApp Bridge integration.
 relates_to:
 - concept: class:parrot.integrations.whatsapp.bridge_config.WhatsAppBridgeConfig

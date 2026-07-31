@@ -4,7 +4,7 @@ title: SimpleFormDialog
 id: class:parrot.integrations.msteams.dialogs.presets.simple_form.SimpleFormDialog
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Single Adaptive Card containing all form fields.
 relates_to:
 - concept: class:parrot.integrations.msteams.dialogs.presets.base.BaseFormDialog

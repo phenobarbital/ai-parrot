@@ -39,7 +39,7 @@ def test_disabled_returns_none() -> None:
 
 def test_disabled_no_global_registry_interaction() -> None:
     """setup_telemetry(enabled=False) does not register any subscribers."""
-    from parrot.core.events.lifecycle.global_registry import get_global_registry  # noqa: PLC0415
+    from navigator_eventbus.lifecycle.global_registry import get_global_registry  # noqa: PLC0415
 
     registry = get_global_registry()
     before_count = len(registry._subscriptions)

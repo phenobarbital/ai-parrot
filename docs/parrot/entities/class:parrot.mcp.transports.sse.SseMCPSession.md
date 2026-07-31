@@ -4,7 +4,7 @@ title: SseMCPSession
 id: class:parrot.mcp.transports.sse.SseMCPSession
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: MCP session using SSE (Server-Sent Events) for transport.
 relates_to:
 - concept: class:parrot.mcp.transports.http.HttpMCPSession

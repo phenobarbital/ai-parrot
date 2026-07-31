@@ -4,7 +4,7 @@ title: A2UIMessageBase
 id: class:parrot.outputs.a2ui.models.A2UIMessageBase
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Base for every A2UI v1.0 wire message.
 ---
 

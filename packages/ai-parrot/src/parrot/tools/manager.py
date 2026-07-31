@@ -8,6 +8,10 @@ from enum import Enum
 import aiohttp
 import pandas as pd
 from .abstract import AbstractTool, ToolResult
+from .compression import CompressionStage, CompressorRegistry
+from .compression import codecs as _compression_codecs  # noqa: F401 — import side effect: registers built-in codecs (json_compact, ...) before CompressorRegistry.load() validates the core manifest below
+from .compression.budget import BudgetRouter
+from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
 from ..auth.exceptions import AuthorizationRequired
@@ -242,6 +246,7 @@ class ToolManager(MCPToolManagerMixin):
         debug: bool = False,
         include_search_tool: bool = False,
         resolver: Optional["AbstractPermissionResolver"] = None,
+        execution_policy: Optional[Any] = None,
     ):
         """
         Initialize tool manager.
@@ -254,6 +259,11 @@ class ToolManager(MCPToolManagerMixin):
                 dynamic tool discovery. Default is True.
             resolver: Optional permission resolver for Layer 2 enforcement.
                 If None, no permission enforcement is applied (backward compatible).
+            execution_policy: Optional
+                :class:`~parrot.tools.executors.ExecutionPolicy` (or a dict
+                coercible to one) that routes matching tools/toolkits to
+                remote executors at registration time. Tools constructed
+                with an explicit ``executor=`` are never overridden.
         """
         self._shared: Dict[str, Any] = {"dataframes": {}}  # name -> (df, meta)
         self._registered_agents: Dict[str, RegisteredAgent] = {}
@@ -265,8 +275,30 @@ class ToolManager(MCPToolManagerMixin):
         # policy (tweak as required)
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
+        # Secret/PII redaction is opt-in per agent: the owning agent sets this
+        # flag and execute_tool() stamps it onto tools before dispatch.
+        self.enable_redaction: bool = False
         self.pandas_tool_name: str = "python_pandas"
         self._wired_toolkits: set = set()  # Track auto-wired toolkit instances
+
+        # FEAT-380: tool-result compression pipeline. Loaded once per
+        # manager, at construction — a malformed TOML manifest or an
+        # unknown codec name must fail loudly here, never silently at the
+        # first tool call. `clone()` shares the registry by reference but
+        # gives each session its own router (fresh circuit-breaker state).
+        # `_compression_tee` starts unbound (no WorkingMemoryToolkit yet —
+        # tools/toolkits are typically registered AFTER the manager); it is
+        # (re)bound lazily in `execute_tool()` via `_bind_compression_tee()`
+        # since a WorkingMemoryToolkit may be registered at any point after
+        # construction.
+        self._compression_registry: CompressorRegistry = CompressorRegistry.load()
+        self._compression_router: BudgetRouter = BudgetRouter()
+        self._compression_tee: CompressionTee = CompressionTee()
+        self._compression_stage: CompressionStage = CompressionStage(
+            registry=self._compression_registry,
+            router=self._compression_router,
+            tee=self._compression_tee,
+        )
 
         # Permission resolver for Layer 2 enforcement (optional)
         self._resolver: Optional["AbstractPermissionResolver"] = resolver
@@ -280,6 +312,11 @@ class ToolManager(MCPToolManagerMixin):
 
         # Confirmation guard for per-call HITL review (optional — FEAT-235)
         self._confirmation_guard: Optional["ConfirmationGuard"] = None
+
+        # Execution policy: declarative tool → remote-executor routing.
+        self._execution_policy = None
+        if execution_policy is not None:
+            self.set_execution_policy(execution_policy)
 
         # Initialize MCP capabilities (from Mixin)
         self._init_mcp()
@@ -333,6 +370,62 @@ class ToolManager(MCPToolManagerMixin):
         self.logger.debug(
             "Permission resolver set: %s", resolver.__class__.__name__
         )
+
+    # ── Execution Policy Methods ───────────────────────────────────────────────
+
+    @property
+    def execution_policy(self):
+        """Return the active ExecutionPolicy, or None."""
+        return self._execution_policy
+
+    def set_execution_policy(self, policy: Any) -> None:
+        """Set the execution policy and apply it to already-registered tools.
+
+        Args:
+            policy: An :class:`~parrot.tools.executors.ExecutionPolicy`
+                instance or a dict coercible to one (e.g.
+                ``{"rules": {"python_repl": "docker"}}``).
+        """
+        from .executors.policy import ExecutionPolicy
+        if isinstance(policy, dict):
+            policy = ExecutionPolicy.model_validate(policy)
+        if not isinstance(policy, ExecutionPolicy):
+            raise TypeError(
+                f"execution_policy must be an ExecutionPolicy or dict, "
+                f"got {type(policy).__name__}"
+            )
+        self._execution_policy = policy
+        for tool in self._tools.values():
+            self._apply_execution_policy(tool)
+        self.logger.debug(
+            "Execution policy set with %d rule(s)", len(policy.rules)
+        )
+
+    def _apply_execution_policy(self, tool: Any) -> None:
+        """Route *tool* through the policy, if one is set and it matches.
+
+        Only :class:`AbstractTool` instances participate — plain
+        ``ToolDefinition`` functions have no remote-execution seam.
+        Failures are logged, never raised: a broken rule must not stop
+        tool registration.
+        """
+        if self._execution_policy is None or not isinstance(tool, AbstractTool):
+            return
+        try:
+            self._execution_policy.apply_to_tool(tool)
+        except Exception as e:  # noqa: BLE001
+            self.logger.error(
+                "Error applying execution policy to tool %r: %s",
+                getattr(tool, 'name', tool), e,
+            )
+
+    async def close_executors(self) -> None:
+        """Close every executor the execution policy instantiated.
+
+        Called from the owning bot's shutdown path. Idempotent.
+        """
+        if self._execution_policy is not None:
+            await self._execution_policy.close()
 
     # ── Credential Broker Methods (FEAT-264) ─────────────────────────────────────
 
@@ -497,7 +590,10 @@ class ToolManager(MCPToolManagerMixin):
         """
         tool_name = name or getattr(tool, 'name', None) or tool.__class__.__name__
         if isinstance(tool, AbstractTool) or isinstance(tool, ToolDefinition):
+            if isinstance(tool, AbstractTool) and self.enable_redaction:
+                tool.enable_redaction = True
             self._tools[tool_name] = tool
+            self._apply_execution_policy(tool)
             self.logger.debug(
                 "Registered tool: %s", tool_name
             )
@@ -556,9 +652,12 @@ class ToolManager(MCPToolManagerMixin):
             return
         try:
             if isinstance(tool, (ToolDefinition, AbstractTool)):
+                if isinstance(tool, AbstractTool) and self.enable_redaction:
+                    tool.enable_redaction = True
                 self._tools[tool_name] = tool
                 # Auto-wire ToolManager for ToolkitTool instances
                 self._auto_wire_toolkit(tool)
+                self._apply_execution_policy(tool)
             elif callable(tool) and getattr(tool, '_is_tool', False) and hasattr(tool, '_tool_metadata'):
                 # @tool()-decorated function — convert to ToolDefinition.
                 # Use meta['function'] (the original async fn) so that
@@ -1344,6 +1443,10 @@ class ToolManager(MCPToolManagerMixin):
                 return result
 
             elif isinstance(tool, AbstractTool):
+                # Redaction opt-in: stamp the owning agent's flag onto the tool
+                # so AbstractTool.execute() scrubs only for flagged agents.
+                if self.enable_redaction and not tool.enable_redaction:
+                    tool.enable_redaction = True
                 # === Grant guard check (FEAT-211) ===
                 # If a GrantGuard is configured and the tool requires a grant,
                 # authorize before dispatching to tool.execute().
@@ -1415,14 +1518,59 @@ class ToolManager(MCPToolManagerMixin):
                     if result.status == 'forbidden':
                         return result
                     if result.status == "error":
+                        # FEAT-380 (TASK-1953): tee the discarded payload
+                        # BEFORE raising — `result.result` would otherwise
+                        # be lost entirely with no way to recover it. The
+                        # raise below is unchanged (same type/message);
+                        # this is purely additive and never observable to
+                        # existing callers. Guarded defensively: a broken
+                        # tee (e.g. `_bind_compression_tee()` raising while
+                        # scanning tools) must never replace/mask the
+                        # original `result.error` (code-review fix).
+                        try:
+                            self._bind_compression_tee()
+                            await self._compression_tee.store(
+                                tool_name, result.result, "error"
+                            )
+                        except Exception as tee_exc:  # noqa: BLE001
+                            self.logger.warning(
+                                "Compression tee failed while capturing "
+                                "error payload for %s: %s", tool_name, tee_exc,
+                            )
                         raise ValueError(result.error)
                     out = result.result
-                    meta = getattr(result, "metadata", {}) or {}
+                    # `result.metadata` defaults to `{}` via Pydantic's
+                    # `default_factory=dict` — never `None` — but `X or {}`
+                    # would still swap it for a NEW dict whenever it's
+                    # falsy (i.e. every time it's empty, the common case),
+                    # silently breaking the aliasing the comment below
+                    # relies on. Only substitute a fresh dict when the
+                    # attribute is genuinely absent/`None` (code-review fix).
+                    meta = getattr(result, "metadata", None)
+                    if meta is None:
+                        meta = {}
                 else:
                     out = result
                     meta = {}
                 self._postprocess_result(tool_name, out, meta)
                 self._run_result_hooks(tool_name, out, meta)
+
+                # FEAT-380: compression stage runs AFTER extraction/hooks,
+                # which both observed the ORIGINAL payload above (Q1) — this
+                # is the only place tool results are compressed (G1). The
+                # stage never raises; on any gate/error/passthrough it
+                # returns `out` unchanged plus a `compression_skipped`
+                # reason. `meta` is the same object as `result.metadata`
+                # when `result` is a ToolResult, so merging here makes the
+                # `_compressed` marker travel with it.
+                self._bind_compression_tee()
+                out, comp_meta = await self._compression_stage.run(
+                    tool_name, out,
+                    status=result.status if isinstance(result, ToolResult) else "success",
+                    metadata=meta,
+                    return_direct=getattr(tool, "return_direct", False),
+                )
+                meta.update(comp_meta)
                 return out
             else:
                 raise ValueError(
@@ -1609,6 +1757,38 @@ class ToolManager(MCPToolManagerMixin):
             name = f"{base}_{i}"
         return name
 
+    def _find_working_memory_toolkit(self) -> Optional[Any]:
+        """Locate an already-registered ``WorkingMemoryToolkit`` instance.
+
+        FEAT-380 (TASK-1953): the compression tee is a CONSUMER of
+        ``WorkingMemoryToolkit`` — it never constructs one. A toolkit's
+        methods each register as an individual ``ToolkitTool`` whose
+        ``bound_method.__self__`` is the owning toolkit instance, so we
+        scan the registered tools for one owned by a ``WorkingMemoryToolkit``.
+
+        Returns:
+            The registered ``WorkingMemoryToolkit`` instance, or ``None``
+            if none is registered.
+        """
+        from .working_memory import WorkingMemoryToolkit
+        for tool in self._tools.values():
+            owner = getattr(getattr(tool, "bound_method", None), "__self__", None)
+            if isinstance(owner, WorkingMemoryToolkit):
+                return owner
+        return None
+
+    def _bind_compression_tee(self) -> None:
+        """(Re)bind the compression tee to the currently-registered
+        ``WorkingMemoryToolkit`` (if any).
+
+        Cheap (a scan over ``self._tools``) and called once per
+        ``execute_tool()`` invocation that reaches the tee, since a
+        ``WorkingMemoryToolkit`` may be registered at any point after the
+        manager (and its ``CompressionTee``) is constructed.
+        """
+        self._compression_tee.bind_working_memory(
+            self._find_working_memory_toolkit()
+        )
 
     def tool_count(self) -> int:
         """Get the number of registered tools."""
@@ -1630,6 +1810,17 @@ class ToolManager(MCPToolManagerMixin):
             - ``_result_hooks``
             - ``_wired_toolkits`` (auto-wire tracking)
             - MCP state initialised by ``_init_mcp``
+            - FEAT-380 compression metrics/circuit-breaker state
+              (``_compression_router`` and ``_compression_stage``'s router):
+              one user's degraded codec must never leak into another's
+              session. The ``_compression_registry`` (parsed TOML config)
+              IS shared by reference — schemas must stay identical across
+              users, and re-parsing per clone would be wasted I/O.
+            - FEAT-380 ``_compression_tee`` (TASK-1953): each clone gets its
+              own tee (fresh retention/counters) from its own ``__init__``,
+              (re)bound to whatever ``WorkingMemoryToolkit`` THAT clone has
+              registered — a shared tee would let one session's teed
+              payloads evict another's.
 
         Args:
             include_search_tool: Whether the clone should auto-register the
@@ -1664,10 +1855,26 @@ class ToolManager(MCPToolManagerMixin):
         new_tm.auto_share_dataframes = self.auto_share_dataframes
         new_tm.auto_push_to_pandas = self.auto_push_to_pandas
         new_tm.pandas_tool_name = self.pandas_tool_name
+        # FEAT-380: share the parsed compressor registry by reference (the
+        # clone's own __init__ already gave it a fresh, independent
+        # BudgetRouter/CircuitBreaker — do not touch that).
+        new_tm._compression_registry = self._compression_registry
+        new_tm._compression_stage._registry = self._compression_registry
         return new_tm
 
     def share_dataframe(self, name: str, df: "pd.DataFrame", meta: Dict[str, Any] = None) -> str:
-        """Store df in shared context and push into python_pandas if present."""
+        """Store df in shared context and push into python_pandas if present.
+
+        FEAT-380 (TASK-1945): pushing into ``python_pandas`` here only
+        updates the tool's host-side ``df_locals`` bookkeeping (via
+        ``add_dataframe()`` -> ``_process_dataframes()``) — the actual
+        cross-process delivery into the worker's namespace (Arrow IPC/shm,
+        pickle fallback) happens lazily, transparently, the next time that
+        tool's worker is acquired (``PythonPandasTool._get_worker_handle()``,
+        TASK-1944's diff-based seeding, upgraded to Arrow by TASK-1945).
+        This method stays synchronous (its own call sites are), so it cannot
+        await that round-trip directly.
+        """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("share_dataframe expects a pandas.DataFrame")
         safe = name or f"df_{len(self._shared['dataframes'])+1}"
@@ -1677,7 +1884,14 @@ class ToolManager(MCPToolManagerMixin):
             pandas_tool = self.get_tool(self.pandas_tool_name)
             if pandas_tool:
                 try:
-                    msg = pandas_tool.add_dataframe(safe, df, regenerate_guide=True)
+                    # FEAT-380 (TASK-1945): `add_dataframe()` takes only
+                    # (name, df) — `regenerate_guide` was never a real
+                    # parameter (pre-existing bug: this call always raised
+                    # TypeError, silently swallowed below, so the auto-push
+                    # never actually ran). Fixed as part of this task's own
+                    # "share_dataframe()/auto_push_to_pandas deliver frames
+                    # into the worker namespace" acceptance criterion.
+                    msg = pandas_tool.add_dataframe(safe, df)
                     self.logger.debug("PandasTool: %s", msg)
                 except Exception as e:
                     self.logger.warning("Could not push DF into %s: %s", self.pandas_tool_name, e)
@@ -1704,3 +1918,38 @@ class ToolManager(MCPToolManagerMixin):
                 fn(tool_name, result, metadata)
             except Exception as e:
                 self.logger.warning("Result hook error in %s: %s", fn, e)
+
+    async def cleanup_toolkits(self) -> None:
+        """Close all registered toolkits that hold resources (DB pools, etc.).
+
+        Iterates the registered tools, finds unique parent toolkit instances
+        (via ``ToolkitTool.bound_method.__self__``), and calls ``cleanup()``
+        or ``stop()`` on each. Failures are logged and isolated so one
+        misbehaving toolkit cannot block the rest.
+        """
+        from .toolkit import ToolkitTool
+        seen: set[int] = set()
+        for tool in self._tools.values():
+            if not isinstance(tool, ToolkitTool):
+                continue
+            bound = getattr(tool, 'bound_method', None)
+            if bound is None:
+                continue
+            toolkit = getattr(bound, '__self__', None)
+            if toolkit is None:
+                continue
+            tk_id = id(toolkit)
+            if tk_id in seen:
+                continue
+            seen.add(tk_id)
+            cleanup_fn = getattr(toolkit, 'cleanup', None) or getattr(toolkit, 'stop', None)
+            if cleanup_fn and callable(cleanup_fn):
+                try:
+                    result = cleanup_fn()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as exc:
+                    self.logger.debug(
+                        "Error cleaning up toolkit %s: %s",
+                        type(toolkit).__name__, exc,
+                    )

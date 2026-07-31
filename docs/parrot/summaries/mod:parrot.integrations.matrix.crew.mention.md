@@ -4,7 +4,7 @@ title: parrot.integrations.matrix.crew.mention
 id: mod:parrot.integrations.matrix.crew.mention
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matrix mention parsing and formatting utilities.
 relates_to:
 - concept: func:parrot.integrations.matrix.crew.mention.build_pill

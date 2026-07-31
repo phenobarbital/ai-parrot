@@ -3,7 +3,7 @@ import json
 import pytest
 from dataclasses import FrozenInstanceError
 
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 class TestTraceContext:

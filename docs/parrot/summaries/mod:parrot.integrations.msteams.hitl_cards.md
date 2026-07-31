@@ -4,7 +4,7 @@ title: parrot.integrations.msteams.hitl_cards
 id: mod:parrot.integrations.msteams.hitl_cards
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Adaptive Card renderer for the Teams HITL channel.
 relates_to:
 - concept: class:parrot.integrations.msteams.hitl_cards.TeamsCardRenderer

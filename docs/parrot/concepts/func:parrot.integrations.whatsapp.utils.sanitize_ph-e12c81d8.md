@@ -4,7 +4,7 @@ title: sanitize_phone_number()
 id: func:parrot.integrations.whatsapp.utils.sanitize_phone_number
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Normalize a phone number by stripping non-digit characters.
 ---
 

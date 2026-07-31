@@ -4,7 +4,7 @@ title: cached_query()
 id: func:parrot.memory.cache.cached_query
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Decorator to cache the result of async methods in classes
 ---
 

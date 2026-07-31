@@ -4,7 +4,7 @@ title: get_domain_layer()
 id: func:parrot.bots.prompts.domain_layers.get_domain_layer
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Look up a registered domain layer by name.
 ---
 

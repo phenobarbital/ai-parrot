@@ -4,7 +4,7 @@ title: parrot.mcp.oauth2_state
 id: mod:parrot.mcp.oauth2_state
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Shared in-process state for MCP OAuth2 callback coordination.
 relates_to:
 - concept: func:parrot.mcp.oauth2_state.deregister_pending_callback

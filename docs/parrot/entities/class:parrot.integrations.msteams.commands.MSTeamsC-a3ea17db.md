@@ -4,7 +4,7 @@ title: MSTeamsCommandRouter
 id: class:parrot.integrations.msteams.commands.MSTeamsCommandRouter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Detects and routes text commands in ``on_message_activity``.
 ---
 

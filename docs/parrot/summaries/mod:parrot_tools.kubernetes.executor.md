@@ -4,7 +4,7 @@ title: parrot_tools.kubernetes.executor
 id: mod:parrot_tools.kubernetes.executor
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: KubernetesExecutor — async Kubernetes client wrapper.
 relates_to:
 - concept: class:parrot_tools.kubernetes.executor.KubernetesExecutor

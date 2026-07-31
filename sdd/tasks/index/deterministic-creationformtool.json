@@ -1,0 +1,95 @@
+{
+  "feature": "deterministic-creationformtool",
+  "feature_id": "FEAT-388",
+  "spec": "sdd/specs/deterministic-creationformtool.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-30T00:00:00Z",
+  "completed_at": "2026-07-30T18:31:12+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1968",
+      "slug": "form-assembler-core",
+      "title": "FormAssembler Core Class",
+      "feature_id": "FEAT-388",
+      "feature": "deterministic-creationformtool",
+      "spec": "sdd/specs/deterministic-creationformtool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation module — must complete before TASK-1969 and TASK-1970",
+      "assigned_to": null,
+      "started_at": "2026-07-30T00:53:02+00:00",
+      "completed_at": "2026-07-30T18:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1968-form-assembler-core.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1969",
+      "slug": "createformtool-deterministic-input",
+      "title": "CreateFormTool Deterministic Input",
+      "feature_id": "FEAT-388",
+      "feature": "deterministic-creationformtool",
+      "spec": "sdd/specs/deterministic-creationformtool.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1968"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Parallel with TASK-1970 — modifies create_form.py (no overlap with edit_toolkit.py)",
+      "assigned_to": null,
+      "started_at": "2026-07-30T00:53:02+00:00",
+      "completed_at": "2026-07-30T18:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1969-createformtool-deterministic-input.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1970",
+      "slug": "edit-toolkit-schema-methods",
+      "title": "EditToolkit Schema-Aware Methods",
+      "feature_id": "FEAT-388",
+      "feature": "deterministic-creationformtool",
+      "spec": "sdd/specs/deterministic-creationformtool.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1968"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Parallel with TASK-1969 — modifies edit_toolkit.py (no overlap with create_form.py)",
+      "assigned_to": null,
+      "started_at": "2026-07-30T00:53:02+00:00",
+      "completed_at": "2026-07-30T18:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1970-edit-toolkit-schema-methods.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1971",
+      "slug": "integration-tests",
+      "title": "Integration Tests",
+      "feature_id": "FEAT-388",
+      "feature": "deterministic-creationformtool",
+      "spec": "sdd/specs/deterministic-creationformtool.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1968",
+        "TASK-1969",
+        "TASK-1970"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all prior tasks — validates end-to-end integration",
+      "assigned_to": null,
+      "started_at": "2026-07-30T00:53:02+00:00",
+      "completed_at": "2026-07-30T18:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1971-integration-tests.md",
+      "verification": "verified"
+    }
+  ]
+}

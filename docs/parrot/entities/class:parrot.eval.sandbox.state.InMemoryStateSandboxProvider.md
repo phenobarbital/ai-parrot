@@ -4,7 +4,7 @@ title: InMemoryStateSandboxProvider
 id: class:parrot.eval.sandbox.state.InMemoryStateSandboxProvider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Provider that provisions a fresh ``InMemoryStateSandbox`` per attempt.
 ---
 

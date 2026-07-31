@@ -4,7 +4,7 @@ title: SandboxPandasTool
 id: class:parrot_tools.sandboxtool.SandboxPandasTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Specialized version for Pandas operations with enhanced data handling.
 relates_to:
 - concept: class:parrot_tools.sandboxtool.SandboxTool

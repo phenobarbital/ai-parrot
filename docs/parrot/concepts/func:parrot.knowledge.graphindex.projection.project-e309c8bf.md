@@ -4,7 +4,7 @@ title: project_report_frontmatter()
 id: func:parrot.knowledge.graphindex.projection.project_report_frontmatter
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Generate OKF YAML frontmatter string for GRAPH_REPORT.md.
 ---
 

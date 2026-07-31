@@ -4,7 +4,7 @@ title: create_unix_mcp_server()
 id: func:parrot.mcp.integration.create_unix_mcp_server
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create a Unix socket MCP server configuration.
 ---
 

@@ -4,7 +4,7 @@ title: PageIndexLoader
 id: class:parrot.knowledge.pageindex.loader.PageIndexLoader
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build a PageIndex tree from a list of files.
 relates_to:
 - concept: class:parrot.loaders.abstract.AbstractLoader

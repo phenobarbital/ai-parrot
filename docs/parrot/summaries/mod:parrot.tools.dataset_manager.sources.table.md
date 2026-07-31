@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.sources.table
 id: mod:parrot.tools.dataset_manager.sources.table
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: TableSource — schema-prefetch DataSource for database tables.
 relates_to:
 - concept: class:parrot.tools.dataset_manager.sources.table.TableSource

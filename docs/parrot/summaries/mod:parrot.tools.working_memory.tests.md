@@ -4,7 +4,7 @@ title: parrot.tools.working_memory.tests
 id: mod:parrot.tools.working_memory.tests
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tests for WorkingMemoryToolkit v2 (AbstractToolkit-compatible).
 relates_to:
 - concept: class:parrot.tools.working_memory.tests.TestAsyncMethods

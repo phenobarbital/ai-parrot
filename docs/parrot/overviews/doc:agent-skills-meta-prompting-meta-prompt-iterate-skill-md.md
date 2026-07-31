@@ -4,7 +4,7 @@ title: 'SKILL: Meta-Prompt Iterate'
 id: doc:agent-skills-meta-prompting-meta-prompt-iterate-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Recursively improve LLM outputs through quality-driven iteration with automatic
   complexity routing, context extraction, and quality assessment.
 ---

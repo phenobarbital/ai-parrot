@@ -4,7 +4,7 @@ title: parse_retry_after()
 id: func:parrot.mcp.client.parse_retry_after
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Normalize a server-provided retry hint into seconds-from-now.
 ---
 

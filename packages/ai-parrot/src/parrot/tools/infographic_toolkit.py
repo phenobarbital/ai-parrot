@@ -13,15 +13,18 @@ result of ``infographic_render`` is the final agent output, consumed by
 """
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, TYPE_CHECKING
 
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
 
+from parrot.auth.permission import build_principal_context
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.template.engine import TemplateEngine
 from parrot.models.infographic import (
@@ -40,6 +43,39 @@ from parrot.models.outputs import OutputMode
 from parrot.storage.artifacts import ArtifactStore
 from parrot.storage.artifact_signing import build_public_html_url
 from parrot.storage.models import Artifact, ArtifactType, ArtifactCreator
+from parrot.outputs.a2ui.recipes.store import AbstractRecipeStore, RecipeNotFoundError
+from parrot.outputs.a2ui.recipes.transformers import transformer_registry
+from parrot.tools.infographic_recipes.freeze import (
+    FreezeProvenanceError,
+    FreezeValidationError,
+    freeze_session_envelope,
+)
+from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
+
+if TYPE_CHECKING:
+    from parrot.tools.infographic_sections import SectionDescriptor
+
+#: Recipe tool method names (Module 6, FEAT-324) — excluded from tool
+#: generation when no recipe store is configured on this toolkit instance.
+_RECIPE_TOOL_NAMES: Tuple[str, ...] = (
+    "infographic_save_recipe",
+    "infographic_list_recipes",
+    "infographic_run_recipe",
+    "infographic_get_recipe_contract",
+)
+
+#: Per-task holder for the invoker's ``PermissionContext``, set by
+#: ``InfographicToolkit._pre_execute`` (mirrors ``DatasetManager``'s own
+#: ``_pctx_var`` in ``parrot.auth.context``, which is per-toolkit rather than
+#: shared globally — using a dedicated ContextVar here, rather than an
+#: instance attribute, ensures concurrent requests on a shared toolkit
+#: instance cannot bleed each other's context across an await boundary,
+#: exactly like DatasetManager's own doc rationale for the same pattern).
+#: Consumed by ``infographic_run_recipe`` so recipe replay honors the SAME
+#: PBAC/data-plane guards a live chat call would (spec G8).
+_infographic_pctx_var: "contextvars.ContextVar[Any | None]" = contextvars.ContextVar(
+    "infographic_toolkit_pctx", default=None
+)
 
 
 # ---------------------------------------------------------------------------
@@ -51,6 +87,39 @@ _INLINE_THRESHOLD: int = 50_000
 # Maximum number of DataFrame rows serialised into the LLM enhance context.
 # Larger DataFrames are truncated with a warning to avoid excessive token usage.
 MAX_ENHANCE_ROWS: int = 50
+
+
+def _json_safe_default(obj: Any) -> Any:
+    """``json.dumps`` ``default`` hook coercing numpy/pandas values (FEAT-326).
+
+    Used by the data-splice render mode. numpy integer/boolean scalars and
+    arrays, and objects exposing ``isoformat`` (pandas ``Timestamp``,
+    ``datetime``), are coerced to native JSON types. Anything else raises
+    ``TypeError`` so ``json.dumps`` fails loudly rather than emitting invalid
+    JSON. (numpy floats subclass ``float``, so NaN/Infinity are caught by
+    ``allow_nan=False`` before this hook is reached.)
+
+    Args:
+        obj: The value ``json`` could not serialise natively.
+
+    Returns:
+        A JSON-native representation of ``obj``.
+
+    Raises:
+        TypeError: When ``obj`` cannot be safely coerced.
+    """
+    import numpy as np
+
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    isoformat = getattr(obj, "isoformat", None)
+    if callable(isoformat):
+        return isoformat()
+    raise TypeError(
+        f"Object of type {type(obj).__name__} is not JSON serializable"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +170,7 @@ class InfographicRenderResult(BaseModel):
     theme: Optional[str] = None
     data_variables: List[str] = Field(default_factory=list)
     enhanced: bool = False
+    a2ui_envelope: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +194,15 @@ class InfographicToolkit(AbstractToolkit):
         infographic_list_templates
         infographic_get_template_contract
         infographic_validate_blocks
+
+    Recipe tools (Module 6, FEAT-324 — spec G2/G6) are exposed ONLY when
+    ``recipe_store`` is configured at construction time; otherwise they are
+    absent from ``get_tools()`` entirely (see ``exclude_tools``)::
+
+        infographic_save_recipe        — freeze the current session envelope
+        infographic_list_recipes       — lightweight recipe summaries
+        infographic_run_recipe         — deterministic replay (no LLM)
+        infographic_get_recipe_contract — datasets/columns/params a recipe needs
     """
 
     return_direct: bool = True          # bypass LLM re-summarisation
@@ -137,6 +216,10 @@ class InfographicToolkit(AbstractToolkit):
         artifact_store: ArtifactStore,
         template_dirs: Optional[Any] = None,
         templates: Optional[Dict[str, str]] = None,
+        emit_a2ui: bool = False,
+        recipe_store: Optional[AbstractRecipeStore] = None,
+        recipe_runner: Optional[RecipeRunner] = None,
+        dataset_manager: Optional[Any] = None,
         **kwargs,
     ) -> None:
         """Initialise the toolkit.
@@ -149,10 +232,24 @@ class InfographicToolkit(AbstractToolkit):
             templates: Optional mapping of ``{name: source}`` in-memory HTML+Jinja
                 templates for ``render_template`` (registered via the engine's
                 ``DictLoader``). Combine with ``template_dirs`` or use alone.
+            emit_a2ui: When True, the render tools additionally produce a validated
+                A2UI ``CreateSurface`` envelope (FEAT-273 Module 11, D1a lane).
+            recipe_store: Optional ``AbstractRecipeStore`` (FEAT-324, Module 4/6).
+                When provided, the four recipe tools (``infographic_save_recipe``,
+                ``infographic_list_recipes``, ``infographic_run_recipe``,
+                ``infographic_get_recipe_contract``) are exposed; otherwise they
+                are excluded from ``get_tools()`` entirely.
+            recipe_runner: Optional pre-built ``RecipeRunner``. Takes precedence
+                over ``dataset_manager`` (below) if both are given.
+            dataset_manager: Optional ``DatasetManager`` used to build a
+                ``RecipeRunner`` when ``recipe_runner`` is not supplied directly
+                (a ``RecipeRunner`` needs both a store and a dataset manager —
+                see ``parrot.tools.infographic_recipes.runner.RecipeRunner``).
             **kwargs: Forwarded to ``AbstractToolkit.__init__``.
         """
         super().__init__(**kwargs)
         self._artifact_store = artifact_store
+        self._emit_a2ui = emit_a2ui
         self._renderer = get_infographic_html_renderer()()
         self.logger = logging.getLogger(__name__)
         # Ensure the class-level return_direct=True is set as an instance
@@ -165,6 +262,72 @@ class InfographicToolkit(AbstractToolkit):
             self._template_engine = TemplateEngine(template_dirs=template_dirs)
             if templates:
                 self._template_engine.add_templates(templates)
+
+        # Recipe subsystem (FEAT-324, Module 6) — optional; the four recipe
+        # tools are excluded from get_tools() entirely when no store is given.
+        self._recipe_store = recipe_store
+        if recipe_runner is not None:
+            self._recipe_runner = recipe_runner
+        elif recipe_store is not None and dataset_manager is not None:
+            self._recipe_runner = RecipeRunner(
+                recipe_store, dataset_manager, artifact_store=artifact_store
+            )
+        else:
+            self._recipe_runner = None
+        if self._recipe_store is None:
+            self.exclude_tools = (*self.exclude_tools, *_RECIPE_TOOL_NAMES)
+        # Per-task token bookkeeping for _infographic_pctx_var (see module
+        # docstring comment above the ContextVar definition).
+        self._recipe_pctx_tokens: Dict[int, Any] = {}
+
+    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
+        """Capture the invoker's ``PermissionContext`` for recipe-replay tools.
+
+        ``ToolkitTool._execute`` always injects ``_permission_context`` into
+        ``kwargs`` (even when ``None``) before calling this hook — see
+        ``AbstractToolkit._pre_execute``'s docstring and
+        ``parrot.tools.dataset_manager.tool.DatasetManager._pre_execute`` for
+        the precedent this mirrors. Stashing it in a ContextVar (rather than
+        an instance attribute) keeps concurrent calls on a shared toolkit
+        instance from bleeding each other's context (same rationale
+        DatasetManager documents for its own ``_pctx_var``).
+
+        Args:
+            tool_name: Name of the tool about to execute.
+            **kwargs: Tool arguments, including the injected
+                ``_permission_context``.
+        """
+        pctx = kwargs.get("_permission_context")
+        token = _infographic_pctx_var.set(pctx)
+        task = asyncio.current_task()
+        if task is not None:
+            self._recipe_pctx_tokens[id(task)] = token
+
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:
+        """Reset the ``_infographic_pctx_var`` token set by :meth:`_pre_execute`."""
+        task = asyncio.current_task()
+        if task is not None:
+            token = self._recipe_pctx_tokens.pop(id(task), None)
+            if token is not None:
+                _infographic_pctx_var.reset(token)
+        return result
+
+    @staticmethod
+    def _current_recipe_pctx(user_id: str) -> Any:
+        """Return the invoker's ``PermissionContext`` for recipe replay (spec G8).
+
+        Prefers the REAL ``PermissionContext`` captured by :meth:`_pre_execute`
+        (from the toolkit-dispatch-injected ``_permission_context``); falls
+        back to a minimal principal-only context built from the resolved
+        ``user_id`` when no dispatch-time context is available (e.g. a
+        direct method call outside the toolkit dispatch path). NEVER returns
+        ``None`` — a falsy ``pctx`` makes ``DatasetManager``'s PBAC guards
+        fail OPEN rather than closed.
+        """
+        pctx = _infographic_pctx_var.get()
+        if pctx is not None:
+            return pctx
+        return build_principal_context(user_id, channel="chat")
 
     def add_template(self, name: str, source: str) -> None:
         """Register a trusted in-memory HTML+Jinja template for ``render_template``.
@@ -286,9 +449,9 @@ class InfographicToolkit(AbstractToolkit):
         """
         # --- Validation pipeline ---
         template = self._validate_template(template_name)
-        resolved_blocks = self._resolve_blocks(blocks, blocks_variable)
+        resolved_blocks = await self._resolve_blocks(blocks, blocks_variable)
         coerced_blocks = self._validate_blocks(template, resolved_blocks)
-        repl_locals = self._get_repl_locals()
+        repl_locals = await self._get_repl_locals()
         self._validate_data_variables(data_variables, repl_locals)
         validated_theme = self._validate_theme(theme or template.default_theme)
 
@@ -337,6 +500,12 @@ class InfographicToolkit(AbstractToolkit):
             template.name, validated_theme, enhanced, len(html),
         )
 
+        a2ui_envelope = None
+        if self._emit_a2ui:
+            a2ui_envelope = self._build_a2ui_envelope(
+                coerced_blocks, template.name, validated_theme, artifact_id,
+            )
+
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
@@ -345,6 +514,7 @@ class InfographicToolkit(AbstractToolkit):
             theme=validated_theme,
             data_variables=data_variables,
             enhanced=enhanced,
+            a2ui_envelope=a2ui_envelope,
         )
 
     async def render_template(
@@ -431,6 +601,16 @@ class InfographicToolkit(AbstractToolkit):
             template_name, theme, len(html),
         )
 
+        a2ui_envelope = None
+        if self._emit_a2ui:
+            sections = [{"heading": title or template_name}]
+            if data:
+                sections[0]["text"] = str(list(data.keys()))
+            a2ui_envelope = self._build_a2ui_envelope(
+                [], template_name, theme, artifact_id, title=title,
+                extra_sections=sections,
+            )
+
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
@@ -439,7 +619,184 @@ class InfographicToolkit(AbstractToolkit):
             theme=theme,
             data_variables=[],
             enhanced=False,
+            a2ui_envelope=a2ui_envelope,
         )
+
+    async def render_data_template(
+        self,
+        template_name: str,
+        payload: Dict[str, Any],
+        descriptor: Optional["SectionDescriptor"] = None,
+        marker_id: str = "report-data",
+        title: Optional[str] = None,
+    ) -> InfographicRenderResult:
+        """Render a self-contained HTML template by *splicing* a JSON payload.
+
+        Unlike ``infographic_render_template`` (Jinja), this **data-splice** mode
+        targets a self-contained HTML dashboard whose client-side JS reads its
+        data from a ``<script type="application/json" id="...">`` marker tag
+        (FEAT-326, generalizing the standalone budget-variance report script).
+        The registered template source is loaded **raw** (never Jinja-rendered),
+        the ``payload`` is JSON-serialised and injected between the marker's
+        open/close tags, and the result is otherwise byte-identical to the
+        template. The artifact is persisted exactly like ``render_template``.
+
+        Call it as the LAST tool in the turn. The result is returned *verbatim* —
+        do NOT summarise it or paste the HTML/envelope into your answer.
+
+        Args:
+            template_name: Name of a template registered via ``template_dirs``,
+                ``templates=`` or ``add_template()``.
+            payload: JSON-serialisable data injected into the marker script tag.
+                numpy/pandas scalars are coerced; ``NaN``/``Infinity`` are
+                rejected loudly (they would otherwise produce invalid JSON).
+            descriptor: Optional :class:`SectionDescriptor`. When supplied, its
+                payload-shape validation gate runs BEFORE any splice/persist, and
+                its ``splice_marker_id`` overrides ``marker_id``.
+            marker_id: HTML ``id`` of the ``<script type="application/json">``
+                marker. Ignored when ``descriptor`` is supplied.
+            title: Optional artifact title (defaults to ``Infographic — <name>``).
+
+        Returns:
+            ``InfographicRenderResult`` with ``artifact_id``, ``html_url`` and
+            optional ``html_inline`` (populated only when the HTML is small).
+
+        Raises:
+            InfographicValidationError: ``TEMPLATE_ENGINE_UNSET`` when no template
+                source is configured; ``TEMPLATE_UNKNOWN`` when ``template_name``
+                is not found; ``SPLICE_MARKER_MISSING`` when the marker (or its
+                closing tag) is absent; ``PAYLOAD_NOT_SERIALIZABLE`` when the
+                payload contains ``NaN``/``Infinity`` or a non-coercible value;
+                ``payload_shape_mismatch`` when a supplied descriptor's gate fails.
+        """
+        if self._template_engine is None:
+            raise InfographicValidationError(
+                "TEMPLATE_ENGINE_UNSET",
+                {
+                    "detail": (
+                        "No HTML templates are configured. Pass template_dirs= "
+                        "or templates= to InfographicToolkit, or call "
+                        "add_template() before rendering."
+                    ),
+                },
+            )
+
+        # Descriptor gate runs FIRST — never splice/persist an invalid payload.
+        effective_marker = marker_id
+        if descriptor is not None:
+            from parrot.tools.infographic_sections import validate_payload_shape
+
+            validate_payload_shape(descriptor, payload)
+            effective_marker = descriptor.splice_marker_id
+
+        # Load the RAW template source (data-splice must NOT Jinja-render it).
+        try:
+            source, _, _ = self._template_engine.env.loader.get_source(
+                self._template_engine.env, template_name
+            )
+        except Exception as exc:  # noqa: BLE001 — TemplateNotFound and friends
+            raise InfographicValidationError(
+                "TEMPLATE_UNKNOWN",
+                {"template_name": template_name},
+            ) from exc
+
+        # Serialise safely: coerce numpy/pandas, reject NaN/Infinity loudly.
+        try:
+            payload_json = json.dumps(
+                payload, allow_nan=False, default=_json_safe_default
+            )
+        except (ValueError, TypeError) as exc:
+            raise InfographicValidationError(
+                "PAYLOAD_NOT_SERIALIZABLE",
+                {"error": str(exc)},
+            ) from exc
+
+        # Neutralise HTML-significant characters before embedding the JSON in a
+        # <script> tag. ``json.dumps`` does NOT escape ``<``/``>``/``&``, so a
+        # payload string containing ``</script>`` would otherwise break out of
+        # the marker element and execute following markup in the browser. The
+        # ``\uXXXX`` forms are valid JSON and decode back to the original
+        # characters client-side (same mitigation as knowledge/graphindex).
+        payload_json = (
+            payload_json.replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+        )
+
+        html = self._splice_payload(source, payload_json, effective_marker)
+
+        artifact_id, html_url = await self._persist_template(
+            html=html,
+            template_name=template_name,
+            theme=None,
+            title=title,
+        )
+
+        self.logger.info(
+            "Rendered data-splice infographic: template=%s marker=%s size=%d bytes",
+            template_name, effective_marker, len(html),
+        )
+
+        return InfographicRenderResult(
+            artifact_id=artifact_id,
+            html_url=html_url,
+            html_inline=html if len(html) < _INLINE_THRESHOLD else None,
+            template_name=template_name,
+            theme=None,
+            data_variables=[],
+            enhanced=False,
+            a2ui_envelope=None,
+        )
+
+    @staticmethod
+    def _splice_payload(source: str, payload_json: str, marker_id: str) -> str:
+        """Inject ``payload_json`` into the ``id="{marker_id}"`` script marker.
+
+        Generalises ``splice_into_template`` from the standalone report script.
+        Matches the exact marker string with ``marker_id`` interpolated; output
+        is byte-identical to ``source`` except for the swapped payload.
+
+        Args:
+            source: Raw template HTML.
+            payload_json: Pre-serialised JSON string to inject.
+            marker_id: The marker's ``id`` attribute value.
+
+        Returns:
+            The spliced HTML.
+
+        Raises:
+            InfographicValidationError: ``SPLICE_MARKER_MISSING`` when the marker
+                open tag or its closing ``</script>`` is absent.
+        """
+        start_marker = f'<script type="application/json" id="{marker_id}">'
+        end_marker = "</script>"
+        start_idx = source.find(start_marker)
+        if start_idx == -1:
+            raise InfographicValidationError(
+                "SPLICE_MARKER_MISSING",
+                {
+                    "marker_id": marker_id,
+                    "expected": start_marker,
+                    "detail": (
+                        f"No <script type=\"application/json\" id=\"{marker_id}\"> "
+                        "marker found in the template."
+                    ),
+                },
+            )
+        content_start = start_idx + len(start_marker)
+        content_end = source.find(end_marker, content_start)
+        if content_end == -1:
+            raise InfographicValidationError(
+                "SPLICE_MARKER_MISSING",
+                {
+                    "marker_id": marker_id,
+                    "detail": (
+                        "No closing </script> tag found after the "
+                        f'id="{marker_id}" marker.'
+                    ),
+                },
+            )
+        return source[:content_start] + "\n" + payload_json + "\n" + source[content_end:]
 
     def _build_template_context(
         self,
@@ -467,6 +824,45 @@ class InfographicToolkit(AbstractToolkit):
             "title": title,
             "now": datetime.now(timezone.utc),
         }
+
+    def _build_a2ui_envelope(
+        self,
+        blocks: List[Dict[str, Any]],
+        template_name: str,
+        theme: Optional[str],
+        artifact_id: str,
+        *,
+        title: Optional[str] = None,
+        extra_sections: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Build a validated A2UI Infographic envelope from the render data."""
+        from parrot.outputs.a2ui.builders import build_infographic
+
+        sections = extra_sections or []
+        if not sections:
+            for i, block in enumerate(blocks):
+                heading = block.get("title") or block.get("type") or f"Block {i + 1}"
+                sections.append({"heading": heading})
+        if not sections:
+            sections = [{"heading": template_name}]
+
+        try:
+            envelope = build_infographic(
+                title=title or template_name,
+                sections=sections,
+                theme=theme,
+                surface_id=f"infographic-{artifact_id}",
+                data_model={"blocks": blocks} if blocks else None,
+            )
+            return envelope.model_dump(mode="json")
+        except Exception:
+            self.logger.warning(
+                "A2UI envelope build failed for infographic %s; "
+                "falling back to HTML-only result.",
+                artifact_id,
+                exc_info=True,
+            )
+            return None
 
     def _snapshot_bot_message(self) -> Dict[str, Any]:
         """Best-effort dict view of the bound bot's last ``AIMessage``.
@@ -628,7 +1024,7 @@ class InfographicToolkit(AbstractToolkit):
         """
         try:
             template = self._validate_template(template_name)
-            resolved_blocks = self._resolve_blocks(blocks, blocks_variable)
+            resolved_blocks = await self._resolve_blocks(blocks, blocks_variable)
             self._validate_blocks(template, resolved_blocks)
             return {"ok": True}
         except InfographicValidationError as exc:
@@ -695,7 +1091,7 @@ class InfographicToolkit(AbstractToolkit):
             "detail": ...}`` on a structured failure.
         """
         try:
-            repl_locals = self._get_repl_locals()
+            repl_locals = await self._get_repl_locals()
             if block_type == "chart":
                 block_dict = self._build_chart_block(
                     repl_locals, data_variable, chart_type,
@@ -726,6 +1122,222 @@ class InfographicToolkit(AbstractToolkit):
             }
         except InfographicValidationError as exc:
             return {"ok": False, "code": exc.code, "detail": exc.detail}
+
+    # ------------------------------------------------------------------
+    # Recipe tools (FEAT-324, Module 6) — exposed only when recipe_store set
+    # ------------------------------------------------------------------
+
+    async def infographic_save_recipe(
+        self,
+        name: str,
+        title: str,
+        layout_component: str,
+        layout_properties: Dict[str, Any],
+        dataset_names: Dict[str, str],
+        transform_steps: List[Dict[str, Any]],
+        description: Optional[str] = None,
+        render_profile: str = "interactive-html",
+        theme: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Freeze the current session's infographic construction into a replayable recipe.
+
+        Call this AFTER building an infographic in this session, once you know
+        EXACTLY which registered datasets and registered transformer calls
+        produced its data. Freezing captures those as recipe steps so the same
+        infographic can be regenerated later with fresh data, deterministically,
+        with no LLM in the loop (spec G2/G3).
+
+        Every dataset referenced in ``dataset_names`` must be a name registered
+        with the DatasetManager, and every step in ``transform_steps`` must name
+        a REGISTERED ``@infographic_transformer`` — ad-hoc pandas computation
+        done directly in this session cannot be frozen (this is a deliberate
+        boundary, not a limitation to work around).
+
+        Args:
+            name: Unique recipe name (its storage key).
+            title: Human-readable recipe title.
+            layout_component: Catalog component name for the layout (e.g.
+                ``"Infographic"``, ``"Chart"``).
+            layout_properties: Catalog properties for the layout; data-carrying
+                properties use ``{"$bind": "/pointer"}`` bindings into the
+                dataModel produced by ``transform_steps``.
+            dataset_names: Mapping of data-source alias -> registered
+                DatasetManager dataset name, e.g. ``{"snapshots": "budget_ledger"}``.
+            transform_steps: Ordered list of transform-step dicts, each shaped
+                like ``{"transformer": "division_breakdown", "inputs":
+                ["snapshots"], "params": {}, "output_key": "division_breakdown"}``.
+            description: Optional longer description.
+            render_profile: Renderer profile name for replay (default
+                ``"interactive-html"``).
+            theme: Optional theme name.
+
+        Returns:
+            ``{"status": "ok", "recipe": {...summary...}}`` on success, or
+            ``{"status": "error", "detail": ...}`` /
+            ``{"status": "error", "errors": [...]}`` when the provenance is
+            inexpressible or the normalized recipe fails dry-run validation.
+        """
+        if self._recipe_store is None or self._recipe_runner is None:
+            return {
+                "status": "error",
+                "detail": "Recipe store/runner not configured on this toolkit.",
+            }
+
+        from parrot.outputs.a2ui.builders import build_surface  # noqa: PLC0415
+
+        try:
+            envelope = build_surface(
+                layout_component, layout_properties, surface_id=f"freeze-{name}"
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced as a structured tool error
+            return {"status": "error", "detail": f"Invalid layout: {exc}"}
+
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+
+        try:
+            recipe = await freeze_session_envelope(
+                envelope,
+                dataset_names=dataset_names,
+                transform_steps=transform_steps,
+                name=name,
+                title=title,
+                runner=self._recipe_runner,
+                description=description,
+                owner=user_id,
+                render_profile=render_profile,
+                theme=theme,
+            )
+        except FreezeProvenanceError as exc:
+            return {"status": "error", "detail": str(exc)}
+        except FreezeValidationError as exc:
+            return {"status": "error", "errors": [e.model_dump() for e in exc.errors]}
+
+        await self._recipe_store.save(recipe)
+        saved = await self._recipe_store.get(recipe.name, owner=user_id)
+        return {
+            "status": "ok",
+            "recipe": {
+                "name": saved.name,
+                "title": saved.title,
+                "description": saved.description,
+                "owner": saved.owner,
+                "updated_at": saved.updated_at.isoformat(),
+            },
+        }
+
+    async def infographic_list_recipes(self) -> List[Dict[str, Any]]:
+        """List saved recipes available to the current user (lightweight summaries).
+
+        Use this to discover recipe names before calling
+        ``infographic_run_recipe`` or ``infographic_get_recipe_contract``.
+
+        Returns:
+            List of dicts with ``name``, ``title``, ``description``, ``owner``,
+            ``updated_at`` — never full recipe definitions.
+        """
+        if self._recipe_store is None:
+            return []
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+        return await self._recipe_store.list(owner=user_id)
+
+    async def infographic_run_recipe(
+        self, name: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Replay a saved recipe deterministically (no LLM) and render a fresh artifact.
+
+        Re-fetches the recipe's datasets, re-runs its registered transform
+        chain, and renders a new artifact — same construction instructions,
+        fresh data (spec G3).
+
+        Args:
+            name: Recipe name to run.
+            params: Optional override values for the recipe's declared params
+                (e.g. ``{"month": "2026-06"}``); undeclared names are rejected.
+
+        Returns:
+            ``{"status": "ok", "artifact_id": ..., "mime_type": ..., "title":
+            ..., "filename": ...}`` on success. On failure:
+            ``{"status": "error", "error": {...RecipeRunError fields...}}`` —
+            a structured diagnostic (recipe/stage/transformer/dataset/
+            missing_columns/detail) for you to explain to the user; never a
+            raw traceback.
+        """
+        if self._recipe_runner is None:
+            return {
+                "status": "error",
+                "detail": "Recipe runner not configured on this toolkit.",
+            }
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+        pctx = self._current_recipe_pctx(user_id)
+        try:
+            artifact = await self._recipe_runner.run(
+                name, params=params, pctx=pctx, recipe_owner=user_id
+            )
+        except RecipeRunException as exc:
+            return {"status": "error", "error": exc.error.model_dump()}
+        return {
+            "status": "ok",
+            "artifact_id": artifact.artifact_id,
+            "mime_type": artifact.mime_type,
+            "title": artifact.title,
+            "filename": artifact.filename,
+        }
+
+    async def infographic_get_recipe_contract(self, name: str) -> Dict[str, Any]:
+        """Return the datasets, required columns, and params a recipe needs to replay.
+
+        Use this before running or scheduling a recipe to verify it is still
+        replayable (its datasets are registered, its transformers exist).
+
+        Args:
+            name: Recipe name.
+
+        Returns:
+            ``{"status": "ok", "name": ..., "datasets": [{"alias":...,
+            "dataset":...}], "params": [{"name":...,"default":...,
+            "description":...}], "transforms": [{"transformer":...,
+            "output_key":...,"requires_columns":{...}}]}``, or
+            ``{"status": "error", "detail": ...}`` if the recipe or store is
+            unavailable.
+        """
+        if self._recipe_store is None:
+            return {"status": "error", "detail": "Recipe store not configured on this toolkit."}
+        bot = getattr(self, "_bot", None)
+        user_id, _agent_id, _session_id = self._resolve_scope(bot)
+        try:
+            recipe = await self._recipe_store.get(name, owner=user_id)
+        except RecipeNotFoundError as exc:
+            return {"status": "error", "detail": str(exc)}
+
+        transforms = []
+        for step in recipe.transforms:
+            try:
+                requires_columns = transformer_registry.manifest(step.transformer).requires_columns
+            except KeyError:
+                requires_columns = {}
+            transforms.append(
+                {
+                    "transformer": step.transformer,
+                    "output_key": step.output_key,
+                    "requires_columns": requires_columns,
+                }
+            )
+
+        return {
+            "status": "ok",
+            "name": recipe.name,
+            "datasets": [
+                {"alias": ds.alias, "dataset": ds.dataset} for ds in recipe.data_sources
+            ],
+            "params": [
+                {"name": p.name, "default": p.default, "description": p.description}
+                for p in recipe.params
+            ],
+            "transforms": transforms,
+        }
 
     # ------------------------------------------------------------------
     # Block builders (REPL data → validated block dict)
@@ -1023,7 +1635,7 @@ class InfographicToolkit(AbstractToolkit):
                     )
                 return  # only check the first list-like key found
 
-    def _resolve_blocks(
+    async def _resolve_blocks(
         self,
         blocks: Optional[List[Dict[str, Any]]],
         blocks_variable: Optional[str],
@@ -1042,6 +1654,10 @@ class InfographicToolkit(AbstractToolkit):
         so ``numpy`` scalars (e.g. ``round()`` over a pandas Series) coerce to
         native Python types before Pydantic validation.
 
+        FEAT-380 (TASK-1944): async — ``_get_repl_locals()`` now awaits a
+        worker round-trip; both callers (``render``, ``validate_blocks``)
+        are already async.
+
         Raises:
             InfographicValidationError: ``BLOCKS_MISSING`` when neither source
                 is provided, ``BLOCKS_VAR_MISSING`` when the named variable is
@@ -1049,7 +1665,7 @@ class InfographicToolkit(AbstractToolkit):
                 list of dicts.
         """
         if blocks_variable:
-            repl_locals = self._get_repl_locals()
+            repl_locals = await self._get_repl_locals()
             if blocks_variable not in repl_locals:
                 raise InfographicValidationError(
                     "BLOCKS_VAR_MISSING",
@@ -1118,18 +1734,21 @@ class InfographicToolkit(AbstractToolkit):
     # Bot binding helpers
     # ------------------------------------------------------------------
 
-    def _get_repl_locals(self) -> Dict[str, Any]:
+    async def _get_repl_locals(self) -> Dict[str, Any]:
         """Resolve the pandas REPL locals from the bound bot (PandasAgent).
 
         The toolkit is attached to a bot via ``toolkit._bot = agent``.
         ``PandasAgent`` exposes ``_get_repl_locals()`` which returns the
         current interpreter namespace including all computed DataFrames.
+
+        FEAT-380 (TASK-1944): async — the bound bot's getter now awaits a
+        `PythonREPLTool.snapshot()` round-trip to its worker process.
         """
         bot = getattr(self, "_bot", None)
         if bot is None:
             return {}
         getter = getattr(bot, "_get_repl_locals", None)
-        return getter() if callable(getter) else {}
+        return await getter() if callable(getter) else {}
 
     def _resolve_scope(self, bot: Any) -> Tuple[str, str, str]:
         """Extract (user_id, agent_id, session_id) from the bot context.

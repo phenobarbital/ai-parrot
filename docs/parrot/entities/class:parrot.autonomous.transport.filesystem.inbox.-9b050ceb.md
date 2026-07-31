@@ -4,7 +4,7 @@ title: InboxManager
 id: class:parrot.autonomous.transport.filesystem.inbox.InboxManager
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Point-to-point message delivery between agents using the filesystem.
 ---
 

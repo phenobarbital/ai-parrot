@@ -4,7 +4,7 @@ title: parrot.advisors.tools.utils
 id: mod:parrot.advisors.tools.utils
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Shared utilities for Product Advisor tools.
 relates_to:
 - concept: func:parrot.advisors.tools.utils.infer_criteria_from_response

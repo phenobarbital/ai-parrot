@@ -4,7 +4,7 @@ title: provision_vector_store()
 id: func:parrot.bots.factory.tools.vector_store.provision_vector_store
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create a PgVector table and return a ``StoreConfig``-shaped dict.
 ---
 

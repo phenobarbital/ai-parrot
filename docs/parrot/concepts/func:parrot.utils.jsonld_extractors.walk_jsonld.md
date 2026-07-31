@@ -4,7 +4,7 @@ title: walk_jsonld()
 id: func:parrot.utils.jsonld_extractors.walk_jsonld
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Recursively walk a JSON-LD structure dispatching typed nodes to extractors.
 ---
 

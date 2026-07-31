@@ -4,7 +4,7 @@ title: OptionsContract
 id: class:parrot_tools.massive.models.OptionsContract
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Single options contract with Greeks and pricing.
 ---
 

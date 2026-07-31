@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.sources.sql
 id: mod:parrot.tools.dataset_manager.sources.sql
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SQLQuerySource — user-provided SQL with {param} interpolation.
 relates_to:
 - concept: class:parrot.tools.dataset_manager.sources.sql.SQLQuerySource

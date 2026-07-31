@@ -4,7 +4,7 @@ title: A2AEnabledMixin
 id: class:parrot.a2a.server.A2AEnabledMixin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Mixin to add A2A server capabilities to an agent class.
 ---
 

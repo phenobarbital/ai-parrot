@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from parrot.core.events.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.base import LifecycleEvent
 from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     AfterInvokeEvent,
@@ -33,7 +33,7 @@ from parrot.core.events.lifecycle.events import (
 )
 
 if TYPE_CHECKING:
-    from parrot.core.events.lifecycle.registry import EventRegistry
+    from navigator_eventbus.lifecycle.registry import EventRegistry
 
 
 class OpenTelemetrySubscriber:

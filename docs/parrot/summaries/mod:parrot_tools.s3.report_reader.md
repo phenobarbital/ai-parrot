@@ -4,7 +4,7 @@ title: parrot_tools.s3.report_reader
 id: mod:parrot_tools.s3.report_reader
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: S3ReportReaderToolkit — LLM-facing agnostic S3 report reader.
 relates_to:
 - concept: class:parrot_tools.s3.report_reader.S3ReportReaderToolkit

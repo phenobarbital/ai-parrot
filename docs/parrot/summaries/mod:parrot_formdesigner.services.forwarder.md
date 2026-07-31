@@ -4,7 +4,7 @@ title: parrot_formdesigner.services.forwarder
 id: mod:parrot_formdesigner.services.forwarder
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Submission forwarding service.
 relates_to:
 - concept: class:parrot_formdesigner.services.forwarder.ForwardResult

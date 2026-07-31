@@ -4,7 +4,7 @@ title: SingleTurnRollout
 id: class:parrot.eval.rollout.SingleTurnRollout
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'One-shot rollout: a single ``bot.ask()`` call.'
 relates_to:
 - concept: class:parrot.eval.rollout.RolloutStrategy

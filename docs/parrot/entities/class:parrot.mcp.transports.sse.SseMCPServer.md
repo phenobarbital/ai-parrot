@@ -4,7 +4,7 @@ title: SseMCPServer
 id: class:parrot.mcp.transports.sse.SseMCPServer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: MCP server using SSE transport compatible with ChatGPT and OpenAI MCP clients.
 relates_to:
 - concept: class:parrot.mcp.oauth_server.OAuthRoutesMixin

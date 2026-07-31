@@ -4,7 +4,7 @@ title: parrot.storage.artifact_signing
 id: mod:parrot.storage.artifact_signing
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Shared signing helpers for public infographic artifact URLs (FEAT-197).
 relates_to:
 - concept: func:parrot.storage.artifact_signing.build_public_html_url

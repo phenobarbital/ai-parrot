@@ -4,7 +4,7 @@ title: list_form_callbacks()
 id: func:parrot_formdesigner.services.callback_registry.list_form_callbacks
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return all callback keys visible to a tenant.
 ---
 

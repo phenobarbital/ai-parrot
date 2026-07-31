@@ -4,7 +4,7 @@ title: FullModeConfig
 id: class:parrot.integrations.liveavatar.models.FullModeConfig
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FULL mode configuration (extends LITE config with voice/language fields).
 relates_to:
 - concept: class:parrot.integrations.liveavatar.models.LiveAvatarConfig

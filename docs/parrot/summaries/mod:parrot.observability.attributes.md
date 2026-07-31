@@ -4,7 +4,7 @@ title: parrot.observability.attributes
 id: mod:parrot.observability.attributes
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GenAI SemConv attribute builders and provider mapping.
 relates_to:
 - concept: func:parrot.observability.attributes.build_after_client_attrs

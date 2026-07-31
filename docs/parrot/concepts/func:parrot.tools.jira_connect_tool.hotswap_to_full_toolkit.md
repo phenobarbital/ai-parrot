@@ -4,7 +4,7 @@ title: hotswap_to_full_toolkit()
 id: func:parrot.tools.jira_connect_tool.hotswap_to_full_toolkit
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Replace :class:`JiraConnectTool` in-place with the full toolkit.
 ---
 

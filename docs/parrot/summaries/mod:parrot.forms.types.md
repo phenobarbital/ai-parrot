@@ -4,7 +4,7 @@ title: parrot.forms.types
 id: mod:parrot.forms.types
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Core type definitions for the forms package.
 relates_to:
 - concept: class:parrot.forms.types.FieldType

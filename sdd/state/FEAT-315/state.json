@@ -1,0 +1,62 @@
+{
+  "feat_id": "FEAT-315",
+  "phase": "committed",
+  "started_at": "2026-07-17T00:00:00Z",
+  "updated_at": "2026-07-17T01:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 9,
+    "grep_calls": 8,
+    "git_calls": 3,
+    "wiki_calls": 5,
+    "depth_reached": 2
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Refactor NovaSonicClient into a unified NovaClient covering all Amazon Nova models (text, voice, image, video)"
+  },
+  "wiki_available": true,
+  "truncated": false,
+  "truncation_reason": null,
+  "phases": {
+    "plan": {
+      "approved_by_user": true,
+      "queries_planned": 18
+    },
+    "research": {
+      "status": "complete",
+      "findings": 9,
+      "queries_executed": 18,
+      "queries_skipped": 0
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "high",
+      "claims_high": 5,
+      "claims_low": 2,
+      "unknowns": 4,
+      "lint": "pass"
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "followups": 1
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/novaclient-amazon-aws.proposal.md",
+      "status": "review",
+      "commit_sha": "5d64b15ee15ee70b84b8d801add4cf8fba1ad8f9"
+    }
+  },
+  "errors": []
+}

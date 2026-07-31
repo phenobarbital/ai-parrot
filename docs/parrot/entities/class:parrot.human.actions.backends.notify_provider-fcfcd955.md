@@ -4,7 +4,7 @@ title: NotifyBackend
 id: class:parrot.human.actions.backends.notify_provider.NotifyBackend
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Sends an escalation notification through any async-notify provider.
 relates_to:
 - concept: class:parrot.human.actions.backends.base.ActionBackend

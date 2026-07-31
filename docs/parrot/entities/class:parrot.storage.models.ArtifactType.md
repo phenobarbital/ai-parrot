@@ -4,7 +4,7 @@ title: ArtifactType
 id: class:parrot.storage.models.ArtifactType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Type of artifact produced by an agent or user.
 ---
 

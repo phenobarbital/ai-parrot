@@ -1,7 +1,8 @@
 # /sdd-codereview — Code Review a Completed SDD Task
 
-Reads the task file from `sdd/tasks/completed/`, loads every referenced file, and applies the
-`code-reviewer` rule to produce a structured review report.
+Reads the task file from `sdd/tasks/completed/`, loads every referenced file, applies the
+`code-reviewer` rule, and runs an adversarial Codex cross-check before producing a
+structured review report.
 
 ## Usage
 ```
@@ -61,7 +62,46 @@ Evaluate the implementation across these dimensions:
 - Are edge cases and failure modes tested?
 - Test quality: meaningful assertions vs. trivial checks?
 
-### 4. Produce the Review Report
+### 4. Run Adversarial Codex Cross-Check
+
+Use the OpenAI `codex` CLI as an independent second-opinion reviewer.
+
+Rules:
+- Never feed Codex your reasoning, draft review, justification, or preferred
+  conclusion. Give it only the requirement/task context, the diff or commit, and
+  the neutral review question.
+- Run Codex in the background. Each call is a full agent session and may take
+  30 seconds to 2 minutes; do not call it per edit or from hooks.
+- Treat Codex output as advisory. For each substantive Codex finding, decide:
+  `CONFIRM` (adopt), `REJECT` (with reason), or `ESCALATE`.
+- Never silently concede to Codex and never silently drop a finding.
+
+Recommended commands:
+```bash
+# If reviewing current uncommitted work
+codex exec review --uncommitted
+
+# If reviewing a task branch against the integration branch
+codex exec review --base dev
+
+# If reviewing a specific task commit
+codex exec review --commit <sha>
+
+# If a design opinion or cross-check is needed
+codex exec --sandbox read-only -o artifacts/reviews/<task>-codex.txt \
+  "<neutral brief with task, acceptance criteria, changed files, and question>"
+```
+
+For follow-ups, continue the same Codex session:
+```bash
+codex exec resume --last "<neutral follow-up question>"
+```
+
+For a parallel perspective, invoke one Claude review agent and one background
+`codex exec` with the same neutral brief, then synthesize agreements and
+disagreements in the final report.
+
+### 5. Produce the Review Report
 Output a structured markdown report:
 
 ```markdown
@@ -92,11 +132,16 @@ Output a structured markdown report:
 |-----------|--------|-------|
 | <criterion> | ✅ / ❌ | <notes> |
 
+## Adversarial Cross-Check
+| Finding | Disposition | Reason |
+|---------|-------------|--------|
+| <Codex or Claude subagent finding> | CONFIRM / REJECT / ESCALATE | <why> |
+
 ## Positive Highlights
 - <what was done well>
 ```
 
-### 5. Save the Report (Optional)
+### 6. Save the Report (Optional)
 If the user confirms, save the report to:
 `sdd/reviews/TASK-<NNN>-review.md`
 

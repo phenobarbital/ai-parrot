@@ -4,7 +4,7 @@ title: get_spatial_profile()
 id: func:parrot.tools.dataset_manager.spatial.registry.get_spatial_profile
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Look up a spatial profile by dataset name.
 ---
 

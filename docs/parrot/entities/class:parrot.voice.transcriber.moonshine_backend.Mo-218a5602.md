@@ -4,7 +4,7 @@ title: MoonshineSTTBackend
 id: class:parrot.voice.transcriber.moonshine_backend.MoonshineSTTBackend
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Sub-second speech-to-text backend using the Moonshine ONNX models.
 relates_to:
 - concept: class:parrot.voice.transcriber.backend.AbstractTranscriberBackend

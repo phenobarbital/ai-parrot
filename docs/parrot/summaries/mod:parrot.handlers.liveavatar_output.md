@@ -4,7 +4,7 @@ title: parrot.handlers.liveavatar_output
 id: mod:parrot.handlers.liveavatar_output
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Server-side wiring for the Redis structured-output transport (FEAT-249).
 relates_to:
 - concept: func:parrot.handlers.liveavatar_output.configure_liveavatar_output_subscriber

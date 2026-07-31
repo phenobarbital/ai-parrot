@@ -4,7 +4,7 @@ title: 'SKILL: Analyze Task Complexity'
 id: doc:agent-skills-meta-prompting-analyze-complexity-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Determine the optimal meta-prompting strategy for any task by analyzing complexity
   factors and routing to the appropriate approach.
 ---

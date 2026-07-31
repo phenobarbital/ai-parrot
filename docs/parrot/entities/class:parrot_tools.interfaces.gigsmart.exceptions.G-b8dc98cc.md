@@ -4,7 +4,7 @@ title: GigSmartRateLimitError
 id: class:parrot_tools.interfaces.gigsmart.exceptions.GigSmartRateLimitError
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Rate limit exceeded (HTTP 429 / ``RATE_LIMITED`` extension code).
 relates_to:
 - concept: class:parrot_tools.interfaces.gigsmart.exceptions.GigSmartError

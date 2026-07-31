@@ -4,7 +4,7 @@ title: parse_job_posting_site_reference()
 id: func:parrot_tools.interfaces.workday.parsers.job_posting_site_parsers.parse_job_posting_site_reference
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse Job Posting Site Reference to extract WID and ID.
 ---
 

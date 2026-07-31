@@ -38,7 +38,7 @@ class TestImports:
 
     def test_hook_config_from_models(self):
         """FilesystemHookConfig is importable from core hooks models."""
-        from parrot.core.hooks.models import FilesystemHookConfig
+        from navigator_eventbus.hooks.models import FilesystemHookConfig
 
         assert FilesystemHookConfig is not None
 

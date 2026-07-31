@@ -805,9 +805,25 @@ def _direct_child(parent: str, candidate: str) -> bool:
 _DOTTED_RE = re.compile(r"\b(?:parrot|parrot_tools|parrot_loaders|parrot_pipelines|sdd)(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+\b")
 
 
+def _strip_frontmatter(text: str) -> str:
+    """Drop a leading YAML frontmatter block (``--- ... ---``).
+
+    Frontmatter keys (``type: feature``) and YAML comments (``# ...``)
+    otherwise masquerade as the doc's summary/title — common in SDD
+    specs, proposals, and task files.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return text
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return "\n".join(lines[i + 1 :])
+    return text
+
+
 def _doc_title(text: str, md_file: Path) -> str:
     """First ``# H1`` heading, else the humanised filename."""
-    for line in text.splitlines():
+    for line in _strip_frontmatter(text).splitlines():
         if line.startswith("# "):
             return _WS_RE.sub(" ", line[2:].strip())
     return md_file.stem.replace("_", " ").replace("-", " ").title()
@@ -815,7 +831,7 @@ def _doc_title(text: str, md_file: Path) -> str:
 
 def _doc_summary(text: str) -> str:
     """First non-heading, non-empty prose line of a doc (trimmed)."""
-    for line in text.splitlines():
+    for line in _strip_frontmatter(text).splitlines():
         s = line.strip()
         if s and not s.startswith(("#", ">", "-", "*", "|", "`")):
             return _WS_RE.sub(" ", s)[:280]
@@ -975,14 +991,20 @@ async def build_wiki(config: WikiBuildConfig) -> dict[str, Any]:
     t0 = time.monotonic()
     config.output.mkdir(parents=True, exist_ok=True)
 
-    # 1. Discover.
+    # 1. Discover.  The output dir is self-excluded: it may live under a
+    # doc path (e.g. ``docs/parrot`` under ``docs/``) and is full of
+    # generated ``*.md`` that must never be re-ingested as sources.
+    excludes = config.excludes + (
+        str(config.output),
+        str(config.output.resolve()),
+    )
     py_files: list[tuple[Path, str]] = []
     for root in config.src_roots:
-        for py in discover_python_files(root, config.excludes):
+        for py in discover_python_files(root, excludes):
             dotted = module_dotted_name(py, root)
             if dotted:
                 py_files.append((py, dotted))
-    md_files = discover_markdown_files(config.doc_paths, config.excludes)
+    md_files = discover_markdown_files(config.doc_paths, excludes)
     logger.info("discovered %d modules, %d docs", len(py_files), len(md_files))
 
     # 2. Register sources (best-effort — enables lint + provenance).
@@ -1282,6 +1304,14 @@ def _ai_parrot_preset(repo: Path) -> WikiBuildConfig:
         repo / "CLAUDE.md",
         repo / ".agent",
     ]
+    # SDD artifacts — proposals, specs, and task files document what was
+    # proposed, designed, and developed (FEAT history).  Dotted module
+    # paths cited in their prose become ``mentions`` edges, linking each
+    # spec to the code it describes.
+    sdd_roots = [repo, *sorted(packages.glob("*"))] if packages.is_dir() else [repo]
+    for sdd_root in sdd_roots:
+        for sub in ("proposals", "specs", "tasks"):
+            doc_paths.append(sdd_root / "sdd" / sub)
     return WikiBuildConfig(
         repo=repo,
         src_roots=src_roots,

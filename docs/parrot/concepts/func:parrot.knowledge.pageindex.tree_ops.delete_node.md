@@ -4,7 +4,7 @@ title: delete_node()
 id: func:parrot.knowledge.pageindex.tree_ops.delete_node
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Remove the node with ``node_id`` and all its descendants.
 ---
 

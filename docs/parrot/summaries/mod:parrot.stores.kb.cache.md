@@ -4,7 +4,7 @@ title: parrot.stores.kb.cache
 id: mod:parrot.stores.kb.cache
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot.stores.kb.cache
 relates_to:
 - concept: class:parrot.stores.kb.cache.CacheEntry

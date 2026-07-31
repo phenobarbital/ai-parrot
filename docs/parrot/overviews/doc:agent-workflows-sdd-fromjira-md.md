@@ -4,8 +4,9 @@ title: /sdd-fromjira — Bootstrap Brainstorm from Jira
 id: doc:agent-workflows-sdd-fromjira-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Bootstrap an SDD Brainstorm from a Jira ticket using mcp-atlassian'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Fetch requirements from a Jira ticket (`issue_key`) and scaffold a structured
+  brainstorm document in `sdd/proposals/`.
 ---
 
 ---

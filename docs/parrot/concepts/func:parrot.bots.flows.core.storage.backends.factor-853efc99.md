@@ -4,7 +4,7 @@ title: get_result_storage()
 id: func:parrot.bots.flows.core.storage.backends.factory.get_result_storage
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolve a ``ResultStorage`` instance.
 ---
 

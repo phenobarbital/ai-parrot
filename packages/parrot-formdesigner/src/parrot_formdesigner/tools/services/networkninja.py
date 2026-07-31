@@ -32,7 +32,8 @@ SELECT
     jsonb_agg(
         jsonb_build_object(
             'column_id', m.column_id, 'column_name', m.column_name,
-            'description', m.description, 'data_type', m.data_type
+            'description', m.description, 'data_type', m.data_type,
+            'options', m.options
         )
     ) AS metadata
 FROM networkninja.forms f
@@ -63,6 +64,9 @@ class ImportDiffEntry(BaseModel):
             (approximate mapping with meta hint), or
             ``"requiere_intervencion"`` (manual review needed).
         note: Human-readable note about the mapping decision.
+        options_source: Provenance of the field's options — one of
+            ``"metadata"``, ``"inline"``, ``"logic_groups"``, ``"none"`` for
+            option-typed fields; ``None`` for non-option fields (FEAT-325).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -72,6 +76,7 @@ class ImportDiffEntry(BaseModel):
     mapped_field_type: str | None = None
     status: str  # "mapeado" | "aproximado" | "requiere_intervencion"
     note: str = ""
+    options_source: str | None = None  # "metadata" | "inline" | "logic_groups" | "none"
 
 
 class ImportDiffReport(BaseModel):
@@ -364,9 +369,13 @@ class NetworkninjaFormService(AbstractFormService):
         question_id_index = self._build_question_id_index(question_blocks, meta_index)
 
         # Pre-scan questions to collect options for select-type fields
-        select_options = self._collect_select_options(
+        select_options, options_provenance = self._collect_select_options(
             question_blocks, question_id_index, meta_index
         )
+
+        # column_name → {option_value: option_id} catalog, used to re-index
+        # EQUALS conditions to the option_id value-space (FEAT-325 Module 3).
+        option_id_catalog = self._build_option_id_catalog(meta_index)
 
         # Derive form_type from block_type (FEAT-300):
         # any block with block_type == "survey" → FormType.SURVEY; else SIMPLE.
@@ -382,6 +391,7 @@ class NetworkninjaFormService(AbstractFormService):
         for block in question_blocks:
             section = self._map_block_to_section(
                 block, meta_index, question_id_index, select_options,
+                options_provenance, option_id_catalog,
                 report_entries=report_entries,
             )
             if section is not None:
@@ -465,8 +475,70 @@ class NetworkninjaFormService(AbstractFormService):
                     "column_id": entry.get("column_id"),
                     "data_type": entry.get("data_type"),
                     "description": entry.get("description"),
+                    "options": self._normalize_options(entry.get("options")),
                 }
         return index
+
+    @staticmethod
+    def _normalize_options(raw: Any) -> list[dict[str, Any]]:
+        """Coerce a raw ``form_metadata.options`` value into a list of dicts.
+
+        ``form_metadata.options`` is not uniformly shaped in the source: some
+        columns store a proper JSONB array of option objects, but others store
+        a JSON *string* (e.g. the double-encoded ``"[]"`` on non-select
+        columns, or occasionally ``"[{...}]"``), a scalar, or ``NULL``. Every
+        downstream consumer (``_collect_select_options``,
+        ``_build_option_id_catalog``) assumes a list of dicts, so all coercion
+        happens here once (FEAT-325).
+
+        Args:
+            raw: The raw ``options`` value from the metadata aggregate.
+
+        Returns:
+            A list containing only dict-shaped option entries; ``[]`` when the
+            value is null, a non-list scalar, or unparseable.
+        """
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        if not isinstance(raw, list):
+            return []
+        return [opt for opt in raw if isinstance(opt, dict)]
+
+    def _build_option_id_catalog(
+        self, meta_index: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, str]]:
+        """Build column_name → {option_value: option_id} from metadata options.
+
+        Used to re-index ``EQUALS`` conditions (whose
+        ``condition_comparison_value`` is human text) to the ``option_id``
+        value-space that ``FieldOption.value`` now uses for metadata-backed
+        selects (FEAT-325).
+
+        Args:
+            meta_index: Active metadata index from ``_build_metadata_index``.
+
+        Returns:
+            Dict mapping column_name → {option_value (str): option_id (str)}.
+            Columns with no metadata options are absent from the result.
+        """
+        catalog: dict[str, dict[str, str]] = {}
+        for col, meta in meta_index.items():
+            meta_options: list[dict[str, Any]] = meta.get("options") or []
+            if not meta_options:
+                continue
+            col_catalog: dict[str, str] = {}
+            for opt in meta_options:
+                option_id = opt.get("option_id")
+                option_value = opt.get("option_value")
+                if option_id is None or option_value is None:
+                    continue
+                col_catalog[str(option_value)] = str(option_id)
+            if col_catalog:
+                catalog[col] = col_catalog
+        return catalog
 
     def _build_question_id_index(
         self,
@@ -506,13 +578,16 @@ class NetworkninjaFormService(AbstractFormService):
         question_blocks: list[dict[str, Any]],
         question_id_index: dict[str, str],
         meta_index: dict[str, dict[str, Any]],
-    ) -> dict[str, list[FieldOption]]:
+    ) -> tuple[dict[str, list[FieldOption]], dict[str, str]]:
         """Pre-scan questions to collect option values for select-type fields.
 
-        Options are gathered from two sources:
-        1. Inline ``options`` arrays in the question JSON (preferred).
-        2. ``logic_groups`` conditions that reference a select-type column
-           via ``condition_question_reference_id``.
+        ``form_metadata.options`` (the canonical metadata catalog) is the
+        primary source: ``FieldOption(value=str(option_id), label=option_value,
+        disabled=not is_active)``, deduplicated by ``option_id``. Inline
+        ``options`` arrays in the question JSON, then ``logic_groups``
+        conditions referencing the column, are used ONLY as a fallback when a
+        column's metadata catalog is empty — preserving pre-FEAT-325 behaviour
+        for logic-group-only / inline-only selects.
 
         Args:
             question_blocks: All parsed question blocks.
@@ -520,9 +595,50 @@ class NetworkninjaFormService(AbstractFormService):
             meta_index: Active metadata index for type lookups.
 
         Returns:
-            Dict mapping column_name → deduplicated list of FieldOption.
+            Tuple of:
+            - Dict mapping column_name → deduplicated list of FieldOption.
+            - Dict mapping column_name → provenance
+              (``"metadata" | "inline" | "logic_groups" | "none"``) for every
+              option-typed column present in ``meta_index``.
         """
-        collector: dict[str, dict[str, str]] = {}  # col_name → {value: label}
+        option_columns = {
+            col
+            for col, meta in meta_index.items()
+            if meta.get("data_type") in _OPTION_FIELD_TYPES
+        }
+
+        collector: dict[str, dict[str, FieldOption]] = {}  # col_name → {value: FieldOption}
+        provenance: dict[str, str] = {}
+        metadata_populated: set[str] = set()
+
+        # Source 0 (primary): form_metadata.options catalog
+        for col in option_columns:
+            meta_options: list[dict[str, Any]] = meta_index[col].get("options") or []
+            if not meta_options:
+                continue
+            col_collector: dict[str, FieldOption] = {}
+            for opt in meta_options:
+                option_id = opt.get("option_id")
+                if option_id is None:
+                    continue
+                value = str(option_id)
+                option_value = opt.get("option_value")
+                is_active = opt.get("is_active", True)
+                col_collector[value] = FieldOption(
+                    value=value,
+                    label=str(option_value) if option_value is not None else value,
+                    disabled=not is_active,
+                )
+            if col_collector:
+                collector[col] = col_collector
+                provenance[col] = "metadata"
+                metadata_populated.add(col)
+
+        # Fallback collector (legacy behaviour) — populated only for columns
+        # whose metadata catalog is empty.
+        legacy_collector: dict[str, dict[str, str]] = {}  # col_name → {value: label}
+        inline_populated: set[str] = set()
+        logic_populated: set[str] = set()
 
         def _scan_conditions(conditions: list[dict[str, Any]]) -> None:
             """Extract option values from a list of conditions."""
@@ -531,7 +647,7 @@ class NetworkninjaFormService(AbstractFormService):
                     cond.get("condition_question_reference_id", "")
                 )
                 ref_col = question_id_index.get(ref_qid)
-                if not ref_col:
+                if not ref_col or ref_col in metadata_populated:
                     continue
 
                 ref_meta = meta_index.get(ref_col, {})
@@ -540,10 +656,11 @@ class NetworkninjaFormService(AbstractFormService):
 
                 comp_value = cond.get("condition_comparison_value")
                 if comp_value is not None:
-                    if ref_col not in collector:
-                        collector[ref_col] = {}
+                    if ref_col not in legacy_collector:
+                        legacy_collector[ref_col] = {}
                     # comparison_value is the human-readable label
-                    collector[ref_col][str(comp_value)] = str(comp_value)
+                    legacy_collector[ref_col][str(comp_value)] = str(comp_value)
+                    logic_populated.add(ref_col)
 
         for block in question_blocks:
             # Scan block-level logic groups (question_block_logic_groups)
@@ -558,7 +675,7 @@ class NetworkninjaFormService(AbstractFormService):
             for question in block.get("questions") or []:
                 # Source 1: inline options on the question itself
                 col_name = str(question.get("question_column_name", ""))
-                if col_name in meta_index:
+                if col_name in meta_index and col_name not in metadata_populated:
                     ref_meta = meta_index.get(col_name, {})
                     if ref_meta.get("data_type") in _OPTION_FIELD_TYPES:
                         inline_opts = question.get("options") or []
@@ -570,11 +687,12 @@ class NetworkninjaFormService(AbstractFormService):
                                 or opt.get("text")
                             )
                             if value is not None:
-                                if col_name not in collector:
-                                    collector[col_name] = {}
-                                collector[col_name][str(value)] = (
+                                if col_name not in legacy_collector:
+                                    legacy_collector[col_name] = {}
+                                legacy_collector[col_name][str(value)] = (
                                     str(label) if label else str(value)
                                 )
+                                inline_populated.add(col_name)
 
                 # Source 2: options inferred from conditional references
                 logic_groups = (
@@ -585,13 +703,25 @@ class NetworkninjaFormService(AbstractFormService):
                 for group in logic_groups:
                     _scan_conditions(group.get("conditions") or [])
 
-        return {
-            col: [
-                FieldOption(value=value, label=label)
+        for col, options in legacy_collector.items():
+            collector[col] = {
+                value: FieldOption(value=value, label=label)
                 for value, label in options.items()
-            ]
-            for col, options in collector.items()
-        }
+            }
+            if col in inline_populated:
+                provenance[col] = "inline"
+            elif col in logic_populated:
+                provenance[col] = "logic_groups"
+
+        # Every option-typed column present in meta_index gets a provenance
+        # entry, even when no options were found anywhere.
+        for col in option_columns:
+            provenance.setdefault(col, "none")
+
+        return (
+            {col: list(opts.values()) for col, opts in collector.items()},
+            provenance,
+        )
 
     # ------------------------------------------------------------------
     # Section and field mapping
@@ -603,6 +733,8 @@ class NetworkninjaFormService(AbstractFormService):
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
+        options_provenance: dict[str, str],
+        option_id_catalog: dict[str, dict[str, str]],
         report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormSection | None:
         """Map a question_block dict to a FormSection.
@@ -612,6 +744,12 @@ class NetworkninjaFormService(AbstractFormService):
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
             select_options: Pre-collected options keyed by column_name.
+            options_provenance: Per-column option provenance
+                (``"metadata" | "inline" | "logic_groups" | "none"``) from
+                ``_collect_select_options``.
+            option_id_catalog: column_name → {option_value: option_id} from
+                ``_build_option_id_catalog``, used to re-index EQUALS
+                conditions.
             report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
@@ -627,6 +765,7 @@ class NetworkninjaFormService(AbstractFormService):
         for question in block.get("questions") or []:
             field = self._map_question_to_field(
                 question, meta_index, question_id_index, select_options,
+                options_provenance, option_id_catalog,
                 report_entries=report_entries,
             )
             if field is not None:
@@ -647,6 +786,8 @@ class NetworkninjaFormService(AbstractFormService):
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
         select_options: dict[str, list[FieldOption]],
+        options_provenance: dict[str, str],
+        option_id_catalog: dict[str, dict[str, str]],
         report_entries: list[ImportDiffEntry] | None = None,
     ) -> FormField | None:
         """Map a question dict to a FormField.
@@ -664,6 +805,12 @@ class NetworkninjaFormService(AbstractFormService):
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
             select_options: Pre-collected options keyed by column_name.
+            options_provenance: Per-column option provenance
+                (``"metadata" | "inline" | "logic_groups" | "none"``) from
+                ``_collect_select_options``.
+            option_id_catalog: column_name → {option_value: option_id} from
+                ``_build_option_id_catalog``, used to re-index EQUALS
+                conditions.
             report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
 
         Returns:
@@ -729,7 +876,7 @@ class NetworkninjaFormService(AbstractFormService):
 
         # Conditional logic → DependencyRule
         depends_on: DependencyRule | None = self._map_logic_groups(
-            question, question_id_index
+            question, question_id_index, option_id_catalog
         )
 
         # Options for select-type fields (collected during pre-scan)
@@ -737,6 +884,12 @@ class NetworkninjaFormService(AbstractFormService):
         if data_type in _OPTION_FIELD_TYPES:
             collected = select_options.get(col_name)
             options = collected if collected else None
+
+        # Option provenance for the report (FEAT-325) — only meaningful for
+        # option-typed fields; None otherwise.
+        field_options_source: str | None = None
+        if data_type in _OPTION_FIELD_TYPES:
+            field_options_source = options_provenance.get(col_name)
 
         # --- ImportDiffReport entry ---
         if report_entries is not None:
@@ -754,6 +907,7 @@ class NetworkninjaFormService(AbstractFormService):
                         "formula expression unavailable at networkninja source "
                         "(options=[]); meta.expression=None; evaluator is FEAT-301"
                     ),
+                    options_source=field_options_source,
                 ))
             elif is_approximate:
                 report_entries.append(ImportDiffEntry(
@@ -765,6 +919,7 @@ class NetworkninjaFormService(AbstractFormService):
                         f"mapped to {field_type.value} with render_as hint "
                         f"{extra_kwargs['meta'].get('render_as')!r}"
                     ),
+                    options_source=field_options_source,
                 ))
             else:
                 report_entries.append(ImportDiffEntry(
@@ -773,6 +928,7 @@ class NetworkninjaFormService(AbstractFormService):
                     mapped_field_type=field_type.value,
                     status="mapeado",
                     note="",
+                    options_source=field_options_source,
                 ))
 
         return FormField(
@@ -793,6 +949,7 @@ class NetworkninjaFormService(AbstractFormService):
         self,
         question: dict[str, Any],
         question_id_index: dict[str, str],
+        option_id_catalog: dict[str, dict[str, str]] | None = None,
     ) -> DependencyRule | None:
         """Translate logic_groups on a question into a DependencyRule.
 
@@ -801,10 +958,20 @@ class NetworkninjaFormService(AbstractFormService):
         - Multiple logic_groups on one question → ``logic="and"``
         - All rules use ``effect="show"``
         - Only ``condition_logic="EQUALS"`` is supported; others are skipped.
+        - FEAT-325: when the referenced column has a metadata option_id
+          catalog, ``condition_comparison_value`` (human text) is re-indexed
+          to the matching ``option_id`` so ``FieldCondition.value`` shares the
+          value-space of the metadata-backed ``FieldOption.value``. Columns
+          with no catalog keep the original text comparison; an unmatched
+          comparison value is preserved as-is (logged at debug, never
+          dropped).
 
         Args:
             question: Question dict potentially containing logic_groups.
             question_id_index: question_id → column_name reverse index.
+            option_id_catalog: column_name → {option_value: option_id} from
+                ``_build_option_id_catalog``. ``None``/empty behaves like no
+                catalog (text comparison preserved).
 
         Returns:
             DependencyRule if any valid conditions are present, else None.
@@ -841,6 +1008,20 @@ class NetworkninjaFormService(AbstractFormService):
 
                 ref_field_id = f"field_{ref_col}"
                 comparison_value = cond.get("condition_comparison_value")
+
+                # FEAT-325: re-index text comparison_value → option_id when
+                # the referenced column has a metadata option_id catalog.
+                col_catalog = (option_id_catalog or {}).get(ref_col)
+                if col_catalog is not None and comparison_value is not None:
+                    reindexed = col_catalog.get(str(comparison_value))
+                    if reindexed is not None:
+                        comparison_value = reindexed
+                    else:
+                        self.logger.debug(
+                            "comparison_value '%s' not found in option_id "
+                            "catalog for column '%s' — keeping original value",
+                            comparison_value, ref_col,
+                        )
 
                 group_conditions.append(
                     FieldCondition(

@@ -4,7 +4,7 @@ title: ProducerOrigin
 id: class:parrot.outputs.a2ui.catalog.base.ProducerOrigin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Origin of an envelope, controlling ``requires_actions`` enforcement.
 ---
 

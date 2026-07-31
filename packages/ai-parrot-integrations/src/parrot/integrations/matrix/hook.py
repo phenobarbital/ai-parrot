@@ -1,11 +1,11 @@
 """Matrix protocol hook for AutonomousOrchestrator.
 
-Concrete implementation of :class:`~parrot.core.hooks.base.BaseHook`
+Concrete implementation of :class:`~navigator_eventbus.hooks.base.BaseHook`
 for the Matrix messaging protocol. Listens to Matrix room messages via
 mautrix-python and routes them to agents/crews.
 
 This module auto-registers ``MatrixHook`` with
-:class:`~parrot.core.hooks.base.HookRegistry` on import::
+:class:`~navigator_eventbus.hooks.base.HookRegistry` on import::
 
     import parrot.integrations.matrix.hook   # triggers auto-registration
 
@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from parrot.core.hooks.base import BaseHook, HookRegistry
-from parrot.core.hooks.models import HookType, MatrixHookConfig
+from navigator_eventbus.hooks.base import BaseHook, HookRegistry
+from navigator_eventbus.hooks.models import HookType, MatrixHookConfig
 
 
 class MatrixHook(BaseHook):

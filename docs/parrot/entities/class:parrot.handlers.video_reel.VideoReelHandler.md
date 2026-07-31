@@ -4,7 +4,7 @@ title: VideoReelHandler
 id: class:parrot.handlers.video_reel.VideoReelHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: REST handler for video reel generation using background jobs.
 ---
 

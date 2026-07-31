@@ -4,7 +4,7 @@ title: ApiKeyAuth
 id: class:parrot_formdesigner.core.auth.ApiKeyAuth
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: API key authentication resolved from an environment variable.
 ---
 

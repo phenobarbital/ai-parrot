@@ -4,7 +4,7 @@ title: A2AAgentConnection
 id: class:parrot.a2a.client.A2AAgentConnection
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Represents a connection to a remote A2A agent.
 ---
 

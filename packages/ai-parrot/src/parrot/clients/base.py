@@ -61,8 +61,9 @@ from ..tools.manager import (
 )
 # FEAT-176: Lifecycle Events System
 import hashlib
-from parrot.core.events.lifecycle.mixin import EventEmitterMixin
-from parrot.core.events.lifecycle.trace import TraceContext
+# FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
+# imported here via the parrot.core.events.lifecycle re-export facade.
+from parrot.core.events.lifecycle import EventEmitterMixin, TraceContext
 from parrot.core.events.lifecycle.events import (
     BeforeClientCallEvent,
     AfterClientCallEvent,

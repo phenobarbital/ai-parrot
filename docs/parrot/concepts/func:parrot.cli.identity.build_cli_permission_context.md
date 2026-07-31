@@ -4,7 +4,7 @@ title: build_cli_permission_context()
 id: func:parrot.cli.identity.build_cli_permission_context
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build the CLI ``PermissionContext`` for the O365 device-code broker seam.
 ---
 

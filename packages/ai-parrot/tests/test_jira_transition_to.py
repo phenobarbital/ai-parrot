@@ -41,6 +41,10 @@ def make_toolkit():
                 auth_type="basic_auth",
                 username="u@example.com",
                 password="tok",
+                # The patch above targets the re-export shim, not the
+                # implementation module, so a REAL client is constructed —
+                # skip the auth probe to keep this test off the network.
+                verify_credentials=False,
                 **kwargs,
             )
 

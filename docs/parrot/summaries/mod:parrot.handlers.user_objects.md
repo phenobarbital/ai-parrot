@@ -4,7 +4,7 @@ title: parrot.handlers.user_objects
 id: mod:parrot.handlers.user_objects
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: UserObjectsHandler - Session-Scoped User Object Management
 relates_to:
 - concept: class:parrot.handlers.user_objects.UserObjectsHandler

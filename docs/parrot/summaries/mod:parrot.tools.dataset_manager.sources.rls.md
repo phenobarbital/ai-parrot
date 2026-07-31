@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.sources.rls
 id: mod:parrot.tools.dataset_manager.sources.rls
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: RLS Predicate Injection for FEAT-228 Data-Plane Authorization.
 relates_to:
 - concept: func:parrot.tools.dataset_manager.sources.rls.inject_rls_mongo

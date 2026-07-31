@@ -4,7 +4,7 @@ title: parrot_formdesigner.services.public_forms
 id: mod:parrot_formdesigner.services.public_forms
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Helper for computing auth-exempt URL patterns for public forms (FEAT-241).
 relates_to:
 - concept: func:parrot_formdesigner.services.public_forms.public_form_paths

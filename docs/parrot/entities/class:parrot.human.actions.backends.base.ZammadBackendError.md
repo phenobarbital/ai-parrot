@@ -4,7 +4,7 @@ title: ZammadBackendError
 id: class:parrot.human.actions.backends.base.ZammadBackendError
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raised when the Zammad backend fails to create a ticket.
 relates_to:
 - concept: class:parrot.human.actions.backends.base.ActionBackendError

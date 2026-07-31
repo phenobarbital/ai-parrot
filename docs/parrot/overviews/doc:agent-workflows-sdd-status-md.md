@@ -4,8 +4,9 @@ title: /sdd-status — Show Task Status
 id: doc:agent-workflows-sdd-status-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Show SDD task index status summary'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Read `sdd/tasks/.index.json` and print a human-friendly status report of
+  all SDD tasks.
 ---
 
 ---

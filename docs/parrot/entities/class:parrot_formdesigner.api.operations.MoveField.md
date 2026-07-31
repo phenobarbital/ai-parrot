@@ -4,7 +4,7 @@ title: MoveField
 id: class:parrot_formdesigner.api.operations.MoveField
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Move a field across (or within) sections.
 ---
 

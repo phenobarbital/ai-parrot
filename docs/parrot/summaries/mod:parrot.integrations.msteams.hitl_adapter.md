@@ -4,7 +4,7 @@ title: parrot.integrations.msteams.hitl_adapter
 id: mod:parrot.integrations.msteams.hitl_adapter
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HITL-dedicated Bot Framework adapter for TeamsHumanChannel.
 relates_to:
 - concept: class:parrot.integrations.msteams.hitl_adapter.HitlBotConfig

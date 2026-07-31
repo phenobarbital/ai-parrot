@@ -4,7 +4,7 @@ title: FormPageHandler
 id: class:parrot_formdesigner.ui.handlers.FormPageHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Serves HTML pages for the form builder UI.
 ---
 

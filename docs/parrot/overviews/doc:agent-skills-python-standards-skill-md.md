@@ -4,8 +4,8 @@ title: Python Standards
 id: doc:agent-skills-python-standards-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: Python Standards'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: uv pip install package-name
 ---
 
 ---

@@ -4,7 +4,7 @@ title: extract_matching_page_pairs()
 id: func:parrot.knowledge.pageindex.utils.extract_matching_page_pairs
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Find matching title pairs between TOC pages and physical indices.
 ---
 

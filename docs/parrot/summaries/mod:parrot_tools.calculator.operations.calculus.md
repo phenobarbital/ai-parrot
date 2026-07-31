@@ -4,7 +4,7 @@ title: parrot_tools.calculator.operations.calculus
 id: mod:parrot_tools.calculator.operations.calculus
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Calculus operations.
 relates_to:
 - concept: func:parrot_tools.calculator.operations.calculus.numerical_derivative

@@ -32,13 +32,14 @@ You will receive a single user message containing:
 </research_plan>
 
 <findings>
-  <finding id="F001" query_id="Q001" type="grep|read|git_log|glob|tree">
+  <finding id="F001" query_id="Q001" type="wiki_query|wiki_page|wiki_related|grep|read|git_log|glob|tree">
     <intent>{why this query was run}</intent>
     <result>{compact digest, never the full file content}</result>
     <citations>
       - path: app/modules/nextstop/pdf.py
         lines: 47-89
         symbol: generate_pdf
+        wiki_page_id: <optional — present for wiki-sourced findings>
       - path: app/modules/nextstop/pdf.py
         lines: 142-160
         symbol: render_chunk
@@ -92,6 +93,13 @@ For every code location relevant to the request, list:
 - a one-line role description
 - the finding IDs that justify including it
 
+Wiki-sourced findings (type `wiki_query`, `wiki_page`, `wiki_related`)
+are valid evidence for localization. A wiki page that lists a file path
+and its API outline counts as a citation — you don't need a separate
+grep confirmation for paths the wiki returned. However, wiki findings
+provide module-level summaries, not line-level detail — pair them with
+`read` or `grep` findings when citing specific line ranges.
+
 Locations not backed by a finding are FORBIDDEN. If the localization feels thin,
 that is a signal to lower the overall confidence — not to invent.
 
@@ -129,8 +137,10 @@ Produce a table of atomic claims, each with:
 - confidence (high/medium/low)
 - reasoning (why that level)
 
-A "high" claim is directly supported by a citation. A "medium" claim is
-inferred from one finding via reasonable interpretation. A "low" claim is
+A "high" claim is directly supported by a citation (grep, read, or
+wiki_page with matching path/symbol). A "medium" claim is inferred from
+one finding via reasonable interpretation, or is supported only by a
+wiki_query stub (module-level, not line-level). A "low" claim is
 inferred from multiple findings or from the absence of contrary evidence
 ("we found no place that handles X, therefore it likely doesn't").
 
@@ -299,11 +309,14 @@ After `</thinking>`, emit a single JSON object. No prose, no markdown fences.
 # Hard rules (anti-hallucination)
 
 1. **No path may appear in `localization` or `constraints` unless that path
-   appears in at least one finding's `<citations>` block.** If you need a
-   path the research didn't surface, add it to `unknowns` instead.
+   appears in at least one finding's `<citations>` block.** Wiki-sourced
+   findings (wiki_query, wiki_page, wiki_related) count as valid citations
+   for paths they return. If you need a path the research didn't surface,
+   add it to `unknowns` instead.
 
 2. **No symbol name may be invented.** If a finding cites `generate_pdf` and
    you want to mention `render_chunk`, you must have it in another citation.
+   Wiki page API outlines are valid sources of symbol names.
 
 3. **No commit SHA, line number, or version may be fabricated.** If the
    findings don't include them, leave them out.

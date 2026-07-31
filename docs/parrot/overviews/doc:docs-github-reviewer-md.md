@@ -4,7 +4,7 @@ title: GitHub Reviewer Agent
 id: doc:docs-github-reviewer-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: An autonomous AI-Parrot agent that reviews GitHub pull requests against the
 relates_to:
 - concept: mod:parrot.bots.github_reviewer

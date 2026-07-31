@@ -4,7 +4,7 @@ title: EmployeeHierarchyKB
 id: class:parrot.stores.kb.hierarchy.EmployeeHierarchyKB
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Knowledge Base what provides employee hierarchy context.
 relates_to:
 - concept: class:parrot.stores.kb.abstract.AbstractKnowledgeBase

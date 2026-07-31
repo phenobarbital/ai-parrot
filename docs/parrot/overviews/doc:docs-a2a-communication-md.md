@@ -4,7 +4,7 @@ title: A2A Secure Communication Demo
 id: doc:docs-a2a-communication-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This demo showcases secure Agent-to-Agent (A2A) communication with JWT authentication,
 relates_to:
 - concept: mod:parrot.a2a

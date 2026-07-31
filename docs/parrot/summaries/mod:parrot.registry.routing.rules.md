@@ -4,7 +4,7 @@ title: parrot.registry.routing.rules
 id: mod:parrot.registry.routing.rules
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Fast-path rules engine for the store-level router (FEAT-111 Module 4).
 relates_to:
 - concept: func:parrot.registry.routing.rules.apply_rules

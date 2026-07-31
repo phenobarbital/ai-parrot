@@ -4,7 +4,7 @@ title: generate_report()
 id: func:parrot.knowledge.graphindex.analytics.generate_report
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Generate ``GRAPH_REPORT.md`` from analytics results.
 ---
 

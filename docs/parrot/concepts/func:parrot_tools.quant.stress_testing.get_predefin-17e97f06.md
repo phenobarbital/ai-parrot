@@ -4,7 +4,7 @@ title: get_predefined_scenario()
 id: func:parrot_tools.quant.stress_testing.get_predefined_scenario
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Get a predefined stress scenario by name.
 ---
 

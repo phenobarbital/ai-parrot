@@ -4,7 +4,7 @@ title: parrot_tools.security
 id: mod:parrot_tools.security
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AI-Parrot Security Toolkits Suite.
 relates_to:
 - concept: mod:parrot_tools

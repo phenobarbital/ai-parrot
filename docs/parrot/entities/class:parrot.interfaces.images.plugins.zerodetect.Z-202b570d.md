@@ -4,7 +4,7 @@ title: ZeroShotDetectionPlugin
 id: class:parrot.interfaces.images.plugins.zerodetect.ZeroShotDetectionPlugin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ZeroShotDetectionPlugin is a plugin for performing zero-shot object detection
   using the Grounding DINO model.
 relates_to:

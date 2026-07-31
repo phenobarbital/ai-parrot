@@ -4,7 +4,7 @@ title: Database Agent
 id: doc:docs-database-agent-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'AI-Parrot''s **Database Agent** is a conversational AI system that connects
   to databases, understands natural language questions, generates queries, executes
   them, and returns formatted results tailored to the user''s role. It supports SQL,

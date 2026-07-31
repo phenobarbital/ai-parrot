@@ -58,6 +58,22 @@ def skip_unless_private_repo_configured():
         )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_dev_loop_run_artifacts(tmp_path, monkeypatch) -> None:
+    """Redirect ``DevLoopRunner``'s terminal-snapshot writes to a tmp dir.
+
+    FEAT-322 TASK-1851: ``DevLoopRunner._close_host`` persists the terminal
+    ``Snapshot`` under ``conf.OUTPUT_DIR/dev_loop_runs/`` on every completed
+    run. Without this autouse guard, every test in this suite that drives a
+    real run (not just the new host-lifecycle tests) would write JSON files
+    into the actual repo's ``outputs/`` directory. Applied unconditionally
+    to every test in the module so pre-existing tests stay side-effect-free.
+    """
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.runner.conf.OUTPUT_DIR", str(tmp_path)
+    )
+
+
 @pytest.fixture
 def temp_worktree_base(tmp_path, monkeypatch) -> Iterator[str]:
     """Point ``WORKTREE_BASE_PATH`` / ``DEV_LOOP_REPO_BASE_PATH`` at a tmp dir."""

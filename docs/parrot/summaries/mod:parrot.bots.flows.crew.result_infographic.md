@@ -4,7 +4,7 @@ title: parrot.bots.flows.crew.result_infographic
 id: mod:parrot.bots.flows.crew.result_infographic
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deterministic Tab-Assembly Helper for AgentCrew Infographic (FEAT-308).
 relates_to:
 - concept: func:parrot.bots.flows.crew.result_infographic.build_deterministic_tabs

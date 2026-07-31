@@ -4,7 +4,7 @@ title: ComplianceReportToolkit
 id: class:parrot_tools.security.compliance_report_toolkit.ComplianceReportToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Multi-scanner compliance reporting toolkit.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

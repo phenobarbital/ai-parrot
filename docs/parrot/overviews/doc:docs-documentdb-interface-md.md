@@ -4,7 +4,7 @@ title: DocumentDB Interface Guide
 id: doc:docs-documentdb-interface-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This guide describes how to use the `DocumentDb` interface to interact with
   AWS DocumentDB (or MongoDB-compatible databases).
 relates_to:

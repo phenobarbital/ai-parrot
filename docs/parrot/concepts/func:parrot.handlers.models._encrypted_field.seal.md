@@ -4,7 +4,7 @@ title: seal()
 id: func:parrot.handlers.models._encrypted_field.seal
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Encrypt a JSON-serialisable value bound to ``(user_id, chatbot_id, field)``.
 ---
 

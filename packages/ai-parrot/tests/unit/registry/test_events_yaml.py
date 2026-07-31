@@ -11,16 +11,18 @@ import pytest
 
 from parrot.core.events.lifecycle.yaml_loader import (
     EVENT_CLASSES,
+    wire_events,
+)
+from navigator_eventbus.lifecycle.yaml_loader import (
     _make_where,
     _resolve,
-    wire_events,
 )
 from parrot.core.events.lifecycle.events import (
     BeforeToolCallEvent,
 )
-from parrot.core.events.lifecycle.base import LifecycleEvent
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +227,7 @@ class TestWireEvents:
 
     def test_provider_form_calls_add_provider(self) -> None:
         """provider: form calls registry.add_provider() with constructed instance."""
-        from parrot.core.events.lifecycle.provider import EventProvider
+        from navigator_eventbus.lifecycle.provider import EventProvider
 
         class _MockProvider(EventProvider):
             def __init__(self, *, tag: str = ""):

@@ -4,7 +4,7 @@ title: parrot_pipelines.planogram.types.endcap_backlit_multitier
 id: mod:parrot_pipelines.planogram.types.endcap_backlit_multitier
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EndcapBacklitMultitier planogram type composable.
 relates_to:
 - concept: class:parrot_pipelines.planogram.types.endcap_backlit_multitier.EndcapBacklitMultitier

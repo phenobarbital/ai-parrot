@@ -4,7 +4,7 @@ title: run_llm_ranking()
 id: func:parrot.registry.routing.llm_helper.run_llm_ranking
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Call *invoke_fn* with *prompt*, apply a timeout, and parse JSON output.
 ---
 

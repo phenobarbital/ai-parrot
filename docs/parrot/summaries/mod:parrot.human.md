@@ -4,7 +4,7 @@ title: parrot.human
 id: mod:parrot.human
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Human-in-the-Loop (HITL) Architecture for AI-Parrot.
 relates_to:
 - concept: func:parrot.human.get_default_human_manager

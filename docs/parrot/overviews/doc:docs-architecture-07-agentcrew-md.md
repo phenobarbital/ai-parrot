@@ -4,7 +4,7 @@ title: 7. AgentCrew — Sequential, Parallel, Flow and Loop execution
 id: doc:docs-architecture-07-agentcrew-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: prompt, a crew owns a *roster of agents* and chooses **how** they are
 relates_to:
 - concept: mod:parrot.bots.flows

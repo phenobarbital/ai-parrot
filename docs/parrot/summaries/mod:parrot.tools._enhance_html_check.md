@@ -4,7 +4,7 @@ title: parrot.tools._enhance_html_check
 id: mod:parrot.tools._enhance_html_check
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTML validator for LLM-enhanced output (FEAT-197, TASK-1325).
 relates_to:
 - concept: func:parrot.tools._enhance_html_check.validate_enhanced_html

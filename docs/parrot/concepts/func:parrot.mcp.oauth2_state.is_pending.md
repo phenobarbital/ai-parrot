@@ -4,7 +4,7 @@ title: is_pending()
 id: func:parrot.mcp.oauth2_state.is_pending
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return ``True`` if there is a pending callback for the given state.
 ---
 

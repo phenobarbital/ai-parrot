@@ -4,7 +4,7 @@ title: parrot.autonomous.transport.base
 id: mod:parrot.autonomous.transport.base
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract base class for all multi-agent transports.
 relates_to:
 - concept: class:parrot.autonomous.transport.base.AbstractTransport

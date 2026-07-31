@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop._subagent_defs
 id: mod:parrot.flows.dev_loop._subagent_defs
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Loader for SDD subagent definitions used by the dev-loop dispatcher.
 relates_to:
 - concept: func:parrot.flows.dev_loop._subagent_defs.load_subagent_definition

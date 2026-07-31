@@ -4,7 +4,7 @@ title: TestMixedWorkflow
 id: class:parrot.tools.working_memory.tests.test_integration_workflow.TestMixedWorkflow
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Store DataFrame + generic entries together, list, retrieve, drop.
 ---
 

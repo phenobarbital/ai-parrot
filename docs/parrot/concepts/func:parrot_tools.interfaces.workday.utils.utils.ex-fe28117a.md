@@ -4,7 +4,7 @@ title: extract_by_type()
 id: func:parrot_tools.interfaces.workday.utils.utils.extract_by_type
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Given a list of {'_value_1':…, 'type':…} dicts (or a single dict),
 ---
 

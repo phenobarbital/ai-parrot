@@ -4,7 +4,7 @@ title: parrot.auth.oauth2.o365_devicecode_provider
 id: mod:parrot.auth.oauth2.o365_devicecode_provider
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: O365 device-code (headless) credential resolver — FEAT-266.
 relates_to:
 - concept: class:parrot.auth.oauth2.o365_devicecode_provider.O365DeviceCodeCredentialResolver

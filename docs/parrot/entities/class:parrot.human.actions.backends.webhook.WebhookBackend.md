@@ -4,7 +4,7 @@ title: WebhookBackend
 id: class:parrot.human.actions.backends.webhook.WebhookBackend
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Posts an escalation payload to a configurable webhook endpoint.
 relates_to:
 - concept: class:parrot.human.actions.backends.base.ActionBackend

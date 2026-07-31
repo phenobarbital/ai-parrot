@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.sources.opaque
 id: mod:parrot.tools.dataset_manager.sources.opaque
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Opaque-Source Resolvers for FEAT-228 Data-Plane Authorization.
 relates_to:
 - concept: func:parrot.tools.dataset_manager.sources.opaque.resolve_opaque_source

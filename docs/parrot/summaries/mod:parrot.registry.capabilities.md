@@ -4,7 +4,7 @@ title: parrot.registry.capabilities
 id: mod:parrot.registry.capabilities
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Capability Registry package for Intent Router (FEAT-070).
 relates_to:
 - concept: mod:parrot.registry

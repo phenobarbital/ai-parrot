@@ -4,7 +4,7 @@ title: RemoteResponseResolver
 id: class:parrot_formdesigner.services.remote_response_resolver.RemoteResponseResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolve REMOTE_RESPONSE fields by calling an external API.
 ---
 

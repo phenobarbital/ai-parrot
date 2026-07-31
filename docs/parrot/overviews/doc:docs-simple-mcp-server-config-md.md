@@ -4,7 +4,7 @@ title: SimpleMCPServer Configuration
 id: doc:docs-simple-mcp-server-config-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The `SimpleMCPServer` can be configured via a YAML file. This document details
   the supported configuration options, including all authentication methods.
 ---

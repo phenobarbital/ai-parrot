@@ -4,7 +4,7 @@ title: build_deterministic_tabs()
 id: func:parrot.bots.flows.crew.result_infographic.build_deterministic_tabs
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build the deterministic ``crew_report`` block list.
 ---
 

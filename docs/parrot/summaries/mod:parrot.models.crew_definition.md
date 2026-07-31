@@ -4,7 +4,7 @@ title: parrot.models.crew_definition
 id: mod:parrot.models.crew_definition
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Core crew definition models.
 relates_to:
 - concept: class:parrot.models.crew_definition.AgentDefinition

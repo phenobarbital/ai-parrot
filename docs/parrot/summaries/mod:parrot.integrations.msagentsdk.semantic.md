@@ -4,7 +4,7 @@ title: parrot.integrations.msagentsdk.semantic
 id: mod:parrot.integrations.msagentsdk.semantic
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Semantic UI Model for custom engine Copilot agents (FEAT-303).
 relates_to:
 - concept: class:parrot.integrations.msagentsdk.semantic.DetailPayload

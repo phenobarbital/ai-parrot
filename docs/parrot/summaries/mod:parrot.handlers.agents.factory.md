@@ -4,7 +4,7 @@ title: parrot.handlers.agents.factory
 id: mod:parrot.handlers.agents.factory
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP handler for the AgentFactoryOrchestrator.
 relates_to:
 - concept: class:parrot.handlers.agents.factory.AgentFactoryHandler

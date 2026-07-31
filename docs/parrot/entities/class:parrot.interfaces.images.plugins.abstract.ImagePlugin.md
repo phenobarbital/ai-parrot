@@ -4,7 +4,7 @@ title: ImagePlugin
 id: class:parrot.interfaces.images.plugins.abstract.ImagePlugin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ImagePlugin is a base class for image processing plugins.
 ---
 

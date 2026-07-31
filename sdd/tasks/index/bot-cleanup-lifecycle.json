@@ -19,7 +19,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Spec \u00a79 picks per-spec isolation (one worktree, sequential). Tiny conf edit; TASK-814 imports this constant so it must land first.",
+      "parallelism_notes": "Spec §9 picks per-spec isolation (one worktree, sequential). Tiny conf edit; TASK-814 imports this constant so it must land first.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
       "completed_at": "2026-04-21T19:28:06.752594+00:00",
@@ -37,7 +37,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Independent file from TASK-812/814 but kept sequential per spec \u00a79 (per-spec isolation). Could theoretically run in parallel with TASK-812.",
+      "parallelism_notes": "Independent file from TASK-812/814 but kept sequential per spec §9 (per-spec isolation). Could theoretically run in parallel with TASK-812.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
       "completed_at": "2026-04-21T19:28:06.752594+00:00",
@@ -81,7 +81,7 @@
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
       "completed_at": "2026-04-21T23:34:39.668365+00:00",
-      "file": "sdd/tasks/active/TASK-815-hookable-cleanup-tests.md"
+      "file": "sdd/tasks/completed/TASK-815-hookable-cleanup-tests.md"
     },
     {
       "id": "TASK-816",

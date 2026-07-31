@@ -4,7 +4,7 @@ title: Tools, Loaders & RAG
 id: doc:docs-chapters-tools-rag-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Agents are useful only as far as their tools let them act on the world.
 relates_to:
 - concept: mod:parrot.knowledge

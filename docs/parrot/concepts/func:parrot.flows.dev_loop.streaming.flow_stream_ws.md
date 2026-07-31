@@ -4,7 +4,7 @@ title: flow_stream_ws()
 id: func:parrot.flows.dev_loop.streaming.flow_stream_ws
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: aiohttp WebSocket handler bound to ``GET /api/flow/{run_id}/ws``.
 ---
 

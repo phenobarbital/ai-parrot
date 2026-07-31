@@ -4,7 +4,7 @@ title: AuthScheme
 id: class:parrot.a2a.security.AuthScheme
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Supported authentication schemes for A2A communication.
 ---
 

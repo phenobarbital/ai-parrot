@@ -4,7 +4,7 @@ title: parrot.clients.claude_agent
 id: mod:parrot.clients.claude_agent
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ClaudeAgentClient — dispatch tasks to Claude Code agents via the agent SDK.
 relates_to:
 - concept: class:parrot.clients.claude_agent.ClaudeAgentClient

@@ -4,7 +4,7 @@ title: Component
 id: class:parrot.outputs.a2ui.models.Component
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A single node in an A2UI component adjacency list.
 ---
 

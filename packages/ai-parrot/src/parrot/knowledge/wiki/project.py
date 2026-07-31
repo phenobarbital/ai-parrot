@@ -34,9 +34,9 @@ class ClaudeIntegrationConfig(BaseModel):
         nudge_tools: Tool names the PreToolUse nudge applies to.
     """
 
-    nudge_cooldown_seconds: int = Field(default=300, ge=0)
+    nudge_cooldown_seconds: int = Field(default=60, ge=0)
     nudge_tools: list[str] = Field(
-        default_factory=lambda: ["Grep", "Glob", "Read"]
+        default_factory=lambda: ["Grep", "Glob", "Read", "Bash"]
     )
 
 
@@ -53,6 +53,9 @@ class WikiProjectConfig(BaseModel):
         body_max_chars: Cap on stored page body length.
         max_file_kb: Files larger than this many KiB are skipped.
         claude: Claude Code integration settings.
+        sync_graph: When ``True``, authoring commands (``remember`` /
+            ``link``) also mirror their writes into the project's
+            GraphIndex plane (``.parrot/graph/``) as audited commits.
     """
 
     wiki_name: str = Field(default="codebase")
@@ -65,6 +68,11 @@ class WikiProjectConfig(BaseModel):
     claude: ClaudeIntegrationConfig = Field(
         default_factory=ClaudeIntegrationConfig
     )
+    sync_graph: bool = Field(default=False)
+
+    def graph_path(self, root: Path) -> Path:
+        """Directory of the project's GraphIndex plane (``.parrot/graph``)."""
+        return root / PARROT_DIR / "graph"
 
     def storage_path(self, root: Path) -> Path:
         """Resolve the wiki storage directory against the repo root."""

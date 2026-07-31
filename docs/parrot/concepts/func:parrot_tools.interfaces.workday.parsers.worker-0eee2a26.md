@@ -4,7 +4,7 @@ title: parse_compensation_data()
 id: func:parrot_tools.interfaces.workday.parsers.worker_parsers.parse_compensation_data
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse the compensation details of the worker.
 ---
 

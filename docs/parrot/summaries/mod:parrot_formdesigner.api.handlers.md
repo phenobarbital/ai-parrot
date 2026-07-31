@@ -4,7 +4,7 @@ title: parrot_formdesigner.api.handlers
 id: mod:parrot_formdesigner.api.handlers
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: JSON REST API handlers for parrot-formdesigner.
 relates_to:
 - concept: class:parrot_formdesigner.api.handlers.FormAPIHandler

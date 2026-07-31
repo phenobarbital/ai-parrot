@@ -4,7 +4,7 @@ title: JobPostingSite
 id: class:parrot_tools.interfaces.workday.models.job_posting_site.JobPostingSite
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Job Posting Site model based on Workday Get_Job_Posting_Sites API.
 ---
 

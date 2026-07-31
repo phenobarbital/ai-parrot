@@ -4,7 +4,7 @@ title: parrot.outputs.a2ui_renderers.ssr_html
 id: mod:parrot.outputs.a2ui_renderers.ssr_html
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SSR-HTML renderer (Module 5, satellite).
 relates_to:
 - concept: class:parrot.outputs.a2ui_renderers.ssr_html.SSRHTMLRenderer

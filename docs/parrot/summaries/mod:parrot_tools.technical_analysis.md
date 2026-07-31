@@ -4,7 +4,7 @@ title: parrot_tools.technical_analysis
 id: mod:parrot_tools.technical_analysis
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Technical Analysis Tool
 relates_to:
 - concept: class:parrot_tools.technical_analysis.ADXOutput

@@ -4,7 +4,7 @@ title: 🦜 AI-Parrot Voice Chat
 id: doc:docs-voice-chat-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Real-time voice chat interface using **Gemini Live API** for native speech-to-speech
   interactions.
 relates_to:

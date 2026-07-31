@@ -22,7 +22,7 @@
       "parallelism_notes": "Foundation models needed by handler task",
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
-      "file": "sdd/tasks/active/TASK-465-understanding-request-models.md",
+      "file": "sdd/tasks/completed/TASK-465-understanding-request-models.md",
       "completed_at": "2026-03-27T22:22:30.723636"
     },
     {
@@ -42,7 +42,7 @@
       "parallelism_notes": "Depends on request models from TASK-465",
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
-      "file": "sdd/tasks/active/TASK-466-understanding-handler.md",
+      "file": "sdd/tasks/completed/TASK-466-understanding-handler.md",
       "completed_at": "2026-03-27T23:02:44.443260"
     },
     {
@@ -62,7 +62,7 @@
       "parallelism_notes": "Needs handler to exist before registration",
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
-      "file": "sdd/tasks/active/TASK-467-understanding-route-registration.md",
+      "file": "sdd/tasks/completed/TASK-467-understanding-route-registration.md",
       "completed_at": "2026-03-27T23:05:41.290447"
     },
     {
@@ -83,7 +83,7 @@
       "parallelism_notes": "Needs all handler code complete",
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
-      "file": "sdd/tasks/active/TASK-468-understanding-integration-tests.md",
+      "file": "sdd/tasks/completed/TASK-468-understanding-integration-tests.md",
       "completed_at": "2026-03-27T23:16:58.489734"
     }
   ]

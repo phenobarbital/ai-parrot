@@ -4,7 +4,7 @@ title: ArxivTool for AI-Parrot
 id: doc:docs-arxiv-tool-readme-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A comprehensive tool for searching and retrieving academic papers from arXiv.org,
   designed to integrate seamlessly with the AI-Parrot framework.
 relates_to:

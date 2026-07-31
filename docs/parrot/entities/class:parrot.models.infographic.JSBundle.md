@@ -4,7 +4,7 @@ title: JSBundle
 id: class:parrot.models.infographic.JSBundle
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Declarative JavaScript bundle attached to an InfographicTemplate.
 ---
 

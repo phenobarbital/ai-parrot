@@ -4,8 +4,9 @@ title: Goal
 id: doc:agent-skills-worktree-start-feature-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: worktree-start-feature'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Implement a feature in a separate working directory (git worktree) on a new
+  branch.
 ---
 
 ---

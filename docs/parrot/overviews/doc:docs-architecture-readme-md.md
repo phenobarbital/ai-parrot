@@ -4,7 +4,7 @@ title: AI-Parrot — Exposure, Interoperability & Hardening Architecture
 id: doc:docs-architecture-readme-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: All file references in the chapters use the `package/path/file.py:line`
 ---
 

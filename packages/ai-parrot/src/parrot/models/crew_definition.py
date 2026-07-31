@@ -163,6 +163,11 @@ class CrewDefinition(BaseModel):
         result_agent_name: Registered name of the ResultAgent used to author
             the infographic's executive-summary tab. Only relevant when
             ``generate_infographic`` is ``True``.
+        enable_execution_wiki: Opt-out for the searchable per-crew execution
+            wiki (runs + intermediate results + tool-call results). Wired
+            through to ``AgentCrew`` by ``from_definition``.
+        execution_wiki_path: Optional storage directory for the execution
+            wiki's ``wiki.db``.
         metadata: Arbitrary extra data attached to the definition.
         created_at: Timestamp when this definition was created.
         updated_at: Timestamp of the most recent update.
@@ -219,6 +224,22 @@ class CrewDefinition(BaseModel):
         description=(
             "Registered ResultAgent name used to author the infographic's "
             "executive-summary tab (only used when generate_infographic=True)"
+        )
+    )
+    enable_execution_wiki: bool = Field(
+        default=True,
+        description=(
+            "When True (default), the crew records runs, intermediate agent "
+            "results, and tool-call results into a searchable per-crew "
+            "execution wiki (WikiStore SQLite plane). Active only while "
+            "result persistence is enabled on the crew."
+        )
+    )
+    execution_wiki_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Storage directory for the execution wiki (holds wiki.db). "
+            "Defaults to {cwd}/.parrot/crew_wiki/<crew-slug>."
         )
     )
     metadata: Dict[str, Any] = Field(

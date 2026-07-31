@@ -4,7 +4,7 @@ title: parrot.auth.grants
 id: mod:parrot.auth.grants
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Grant subsystem for bounded approval windows (FEAT-211).
 relates_to:
 - concept: class:parrot.auth.grants.Grant

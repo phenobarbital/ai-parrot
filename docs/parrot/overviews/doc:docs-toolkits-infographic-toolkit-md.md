@@ -4,7 +4,7 @@ title: InfographicToolkit — Reference
 id: doc:docs-toolkits-infographic-toolkit-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: artifacts in a single agent turn. With `return_direct=True` set on the toolkit,
 ---
 

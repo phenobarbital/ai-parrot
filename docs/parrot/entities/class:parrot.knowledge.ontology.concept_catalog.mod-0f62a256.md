@@ -4,7 +4,7 @@ title: CascadeAlert
 id: class:parrot.knowledge.ontology.concept_catalog.models.CascadeAlert
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Notification emitted to the operational service when a Concept is deprecated.
 ---
 

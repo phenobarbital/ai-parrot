@@ -4,7 +4,7 @@ title: parrot_loaders
 id: mod:parrot_loaders
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AI-Parrot Document Loaders package.
 ---
 

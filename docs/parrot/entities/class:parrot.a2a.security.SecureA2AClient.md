@@ -4,7 +4,7 @@ title: SecureA2AClient
 id: class:parrot.a2a.security.SecureA2AClient
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Wrapper for A2AClient with automatic authentication.
 ---
 

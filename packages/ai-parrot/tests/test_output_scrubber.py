@@ -162,6 +162,7 @@ class TestScrubSeamInAbstractTool:
                 return "PASSWORD=super_secret_value_123"
 
         tool = SecretTool()
+        tool.enable_redaction = True  # redaction is opt-in per agent
         result = await tool.execute()
         assert isinstance(result, ToolResult)
         assert "super_secret_value_123" not in str(result.result)
@@ -180,6 +181,7 @@ class TestScrubSeamInAbstractTool:
                 return {"token": "my_secret_token", "ok": "plain"}
 
         tool = DictTool()
+        tool.enable_redaction = True  # redaction is opt-in per agent
         result = await tool.execute()
         assert "my_secret_token" not in str(result.result)
         assert "plain" in str(result.result)

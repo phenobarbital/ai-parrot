@@ -4,7 +4,7 @@ title: create_crew_whatsapp_hook()
 id: func:parrot.core.hooks.models.create_crew_whatsapp_hook
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create a WhatsApp hook that routes messages to an AgentCrew.
 ---
 

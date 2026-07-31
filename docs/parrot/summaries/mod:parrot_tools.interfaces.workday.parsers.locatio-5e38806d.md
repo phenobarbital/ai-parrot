@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.parsers.location_hierarchy_assignments_pa
 id: mod:parrot_tools.interfaces.workday.parsers.location_hierarchy_assignments_parsers
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parsers for Location Hierarchy Organization Assignments data.
 relates_to:
 - concept: func:parrot_tools.interfaces.workday.parsers.location_hierarchy_assignments_parsers.parse_location_hierarchy_assignment

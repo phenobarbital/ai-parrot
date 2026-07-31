@@ -4,7 +4,7 @@ title: flatten_concept_id_for_filename()
 id: func:parrot.knowledge.okf.utils.flatten_concept_id_for_filename
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Convert a slash-containing concept_id to a flat filename stem.
 ---
 

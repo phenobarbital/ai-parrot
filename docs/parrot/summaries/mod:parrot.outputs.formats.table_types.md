@@ -4,7 +4,7 @@ title: parrot.outputs.formats.table_types
 id: mod:parrot.outputs.formats.table_types
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'FEAT-218: Deterministic dtype→vocabulary map + canonical value serialization.'
 relates_to:
 - concept: func:parrot.outputs.formats.table_types.base_column_types

@@ -4,7 +4,7 @@ title: SpawnSubAgentTool
 id: doc:docs-spawn-subagent-tool-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Spawn ephemeral sub-agents on-the-fly to delegate bounded work, then tear
   them
 relates_to:

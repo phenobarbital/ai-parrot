@@ -4,7 +4,7 @@ title: build_graph()
 id: func:parrot.knowledge.pageindex.okf.graph.build_graph
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build a full knowledge graph including prose link edges.
 ---
 

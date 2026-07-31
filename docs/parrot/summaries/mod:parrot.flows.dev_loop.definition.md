@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop.definition
 id: mod:parrot.flows.dev_loop.definition
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Declarative dev-loop topology — ``FlowDefinition`` authoring (FEAT-250 G1).
 relates_to:
 - concept: func:parrot.flows.dev_loop.definition.build_dev_loop_definition

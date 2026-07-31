@@ -1,6 +1,6 @@
 """Loader for SDD subagent definitions used by the dev-loop dispatcher.
 
-The dev-loop flow binds one of three subagents per dispatch:
+The dev-loop flow binds one of several subagents per dispatch:
 
 * ``sdd-research`` — bug triage, Jira ticket, ``/sdd-spec``, ``/sdd-task``,
   worktree creation.
@@ -9,15 +9,31 @@ The dev-loop flow binds one of three subagents per dispatch:
   ``permission_mode="plan"``.
 * ``sdd-codereview`` — read-only qualitative code-review gate (FEAT-250)
   under ``permission_mode="plan"``.
+* ``sdd-secondopinion`` — read-only adversarial second-opinion review
+  (FEAT-375): advisory findings only, never modifies files.
+* ``sdd-planner`` — feature-mode document-driven planning (FEAT-378):
+  generates missing SDD artifacts (spec/task index) and the feature
+  worktree from a brainstorm/proposal/spec document.
+* ``sdd-feedback`` — feature-mode QA-failure feedback routing (FEAT-378):
+  read-only, proposes ``retry``/``escalate``/``accept_with_notes`` over a
+  QAReport + judge-panel verdicts; the deterministic envelope and stop
+  rule are enforced in Python, never trusted from the proposal alone.
 
-The Markdown files for each subagent are dual-sourced (per spec §7
-"Patterns"):
+``load_subagent_definition`` reads **only** the package-shipped copy at
+``_subagent_data/<name>.md`` — this is the canonical, always-available
+source for dispatch (it keeps working when ``ai-parrot`` is installed as
+a wheel outside the repo). It does NOT read ``.claude/agents/`` at
+runtime.
 
-1. **Repo-level**: ``.claude/agents/<name>.md`` — loaded by Claude Code
-   from the project source tree when ``setting_sources=["project"]``.
-2. **Package-shipped**: ``_subagent_data/<name>.md`` — bundled with the
-   ``ai-parrot`` wheel so dispatches keep working when the package is
-   installed outside the repo.
+Four of the five prompts (``sdd-research``, ``sdd-worker``, ``sdd-qa``,
+``sdd-secondopinion``) additionally have a repo-level twin at
+``.claude/agents/<name>.md``, used by Claude Code interactively when
+``setting_sources=["project"]``. ``sdd-codereview`` is dev-loop-internal
+only and has no repo-level counterpart. Byte-parity between the two
+copies of each dual-sourced prompt (repo is the newer, edited-by-humans
+copy; package is what dispatch actually uses) is enforced by
+``tests/flows/dev_loop/test_subagent_parity.py`` — keeping them in sync
+is a review/test discipline, not a runtime behavior.
 
 This module exposes a single helper, :func:`load_subagent_definition`,
 that returns the **body** of a definition (with the YAML frontmatter
@@ -30,7 +46,15 @@ from __future__ import annotations
 from importlib.resources import files
 
 _VALID_NAMES: frozenset[str] = frozenset(
-    {"sdd-research", "sdd-worker", "sdd-qa", "sdd-codereview"}
+    {
+        "sdd-research",
+        "sdd-worker",
+        "sdd-qa",
+        "sdd-codereview",
+        "sdd-secondopinion",
+        "sdd-planner",
+        "sdd-feedback",
+    }
 )
 
 
@@ -64,14 +88,15 @@ def load_subagent_definition(name: str) -> str:
 
     Args:
         name: One of ``"sdd-research"``, ``"sdd-worker"``, ``"sdd-qa"``,
-            ``"sdd-codereview"``.
+            ``"sdd-codereview"``, ``"sdd-secondopinion"``, ``"sdd-planner"``,
+            ``"sdd-feedback"``.
 
     Returns:
         The Markdown body of the subagent definition with the YAML
         frontmatter stripped.
 
     Raises:
-        ValueError: If ``name`` is not one of the three known subagents.
+        ValueError: If ``name`` is not one of the known subagents.
         FileNotFoundError: If the package-bundled data file is missing
             (indicates a packaging error).
     """

@@ -4,7 +4,7 @@ title: parrot_tools.security.reports.compliance_mapper
 id: mod:parrot_tools.security.reports.compliance_mapper
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Compliance Mapper for security findings.
 relates_to:
 - concept: class:parrot_tools.security.reports.compliance_mapper.ComplianceMapper

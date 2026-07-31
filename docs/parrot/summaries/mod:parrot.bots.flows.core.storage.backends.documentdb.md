@@ -4,7 +4,7 @@ title: parrot.bots.flows.core.storage.backends.documentdb
 id: mod:parrot.bots.flows.core.storage.backends.documentdb
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DocumentDbResultStorage — default backend wrapping DocumentDb (FEAT-147).
 relates_to:
 - concept: class:parrot.bots.flows.core.storage.backends.documentdb.DocumentDbResultStorage

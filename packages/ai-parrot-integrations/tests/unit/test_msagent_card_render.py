@@ -18,7 +18,10 @@ from parrot.integrations.msagentsdk.semantic import (
     UIMetric,
 )
 
-ALLOWED_ELEMENTS = {"TextBlock", "ColumnSet", "Column", "FactSet", "Container"}
+ALLOWED_ELEMENTS = {
+    "TextBlock", "ColumnSet", "Column", "FactSet", "Container", "Table",
+    "TableRow", "TableCell",
+}
 ALLOWED_ACTIONS = {"Action.Submit", "Action.OpenUrl"}
 
 
@@ -52,6 +55,43 @@ class TestRenderCard:
         card = render_card(table_result)
         assert card["type"] == "AdaptiveCard"
         assert card["version"] == "1.4"
+
+    def test_table_uses_columnset_for_ac14(self, table_result):
+        """Default AC 1.4 renders tables as ColumnSet rows."""
+        card = render_card(table_result)
+        column_sets = [b for b in card["body"] if b.get("type") == "ColumnSet"]
+        assert column_sets
+        header_cs = column_sets[0]
+        assert len(header_cs["columns"]) == 2
+        assert all(
+            col["items"][0]["weight"] == "Bolder" for col in header_cs["columns"]
+        )
+
+    def test_table_ragged_rows_normalized(self):
+        result = SemanticUIResult(
+            title="Ragged",
+            payload=TablePayload(
+                result_type="table",
+                columns=["a", "b", "c"],
+                rows=[["1"], ["1", "2", "3", "4"]],
+            ),
+        )
+        card = render_card(result)
+        # AC 1.4: header ColumnSet + 2 data ColumnSets = 3 total
+        column_sets = [b for b in card["body"] if b.get("type") == "ColumnSet"]
+        assert len(column_sets) == 3
+        # All ColumnSets have exactly 3 columns
+        assert all(len(cs["columns"]) == 3 for cs in column_sets)
+        # Short row padded with empty strings
+        short_row_cols = [
+            c["items"][0]["text"] for c in column_sets[1]["columns"]
+        ]
+        assert short_row_cols == ["1", "", ""]
+        # Long row truncated to column count
+        long_row_cols = [
+            c["items"][0]["text"] for c in column_sets[2]["columns"]
+        ]
+        assert long_row_cols == ["1", "2", "3"]
 
     def test_render_metrics_card(self):
         result = SemanticUIResult(
@@ -119,6 +159,27 @@ class TestRenderCard:
             if b.get("type") == "TextBlock" and "Showing" in b.get("text", "")
         ]
         assert not note_blocks
+
+    def test_truncation_note_when_upstream_capped(self):
+        # The producer already capped the rows (10 of 1000): the card must
+        # still carry the "Showing N of M" note, matching render_text().
+        result = SemanticUIResult(
+            title="Capped",
+            payload=TablePayload(
+                result_type="table",
+                columns=["id"],
+                rows=[[str(i)] for i in range(10)],
+                total_rows=1000,
+            ),
+        )
+        card = render_card(result, max_table_rows=15)
+        note_blocks = [
+            b
+            for b in card["body"]
+            if b.get("type") == "TextBlock" and "Showing" in b.get("text", "")
+        ]
+        assert note_blocks
+        assert "Showing 10 of 1000" in note_blocks[0]["text"]
 
     def test_card_size_guard(self, table_result):
         with pytest.raises(CardRenderError):

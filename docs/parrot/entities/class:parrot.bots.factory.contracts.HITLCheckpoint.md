@@ -4,7 +4,7 @@ title: HITLCheckpoint
 id: class:parrot.bots.factory.contracts.HITLCheckpoint
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Named human-in-the-loop checkpoints in the factory flow.
 ---
 

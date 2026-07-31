@@ -4,8 +4,9 @@ title: ai-parrot Tool Scaffold Skill
 id: doc:agent-skills-parrot-scaffold-tool-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: parrot-tool-scaffold'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: This skill automates the creation of standard `AbstractTool` implementations
+  for the ai-parrot framework.
 relates_to:
 - concept: mod:parrot.tools.abstract
   rel: mentions

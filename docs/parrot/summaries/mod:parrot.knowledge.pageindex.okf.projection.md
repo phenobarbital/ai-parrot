@@ -4,7 +4,7 @@ title: parrot.knowledge.pageindex.okf.projection
 id: mod:parrot.knowledge.pageindex.okf.projection
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deterministic sidecar and index.md generation for OKF.
 relates_to:
 - concept: class:parrot.knowledge.pageindex.okf.projection.ProjectionReport

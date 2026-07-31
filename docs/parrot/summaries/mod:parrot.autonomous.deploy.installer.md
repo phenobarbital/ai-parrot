@@ -4,7 +4,7 @@ title: parrot.autonomous.deploy.installer
 id: mod:parrot.autonomous.deploy.installer
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Generates deployment configs for AutonomousOrchestrator agents.
 relates_to:
 - concept: class:parrot.autonomous.deploy.installer.AgentInstaller

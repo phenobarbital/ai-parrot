@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Union
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import QAReport, ResearchOutput
 from parrot.flows.dev_loop.nodes.base import (
     DevLoopNode,
@@ -35,9 +36,14 @@ class DevLoopCloseNode(DevLoopNode):
         self,
         jira_toolkit: Any,
         name: str = "close",
+        *,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_jira", jira_toolkit)
+        # FEAT-377 TASK-1915 (G2 seam 3): opt-in run write-back. None
+        # (default) is a strict no-op.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     async def execute(
         self,
@@ -86,6 +92,14 @@ class DevLoopCloseNode(DevLoopNode):
                 "mode": mode,
                 "error": str(exc),
             }
+
+        # FEAT-377 TASK-1915 (G2 seam 3): run write-back. The facade's own
+        # publish_run_outcome already degrades to a logged warning on any
+        # failure — never raises into this terminal node.
+        if self._graph_memory is not None:
+            await self._graph_memory.publish_run_outcome(
+                shared.get("run_id", ""), shared.get("qa_report"), "succeeded", body,
+            )
 
         return {"status": "closed", "issue_key": issue_key, "mode": mode}
 

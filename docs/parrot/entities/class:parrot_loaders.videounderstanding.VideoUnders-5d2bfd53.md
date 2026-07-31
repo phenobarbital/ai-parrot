@@ -4,7 +4,7 @@ title: VideoUnderstandingLoader
 id: class:parrot_loaders.videounderstanding.VideoUnderstandingLoader
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Video analysis loader using Google GenAI for understanding video content.
 relates_to:
 - concept: class:parrot_loaders.basevideo.BaseVideoLoader

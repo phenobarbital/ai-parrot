@@ -4,7 +4,7 @@ title: ScrapingMissionBuilder
 id: class:parrot_tools.scraping.orchestrator.ScrapingMissionBuilder
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Builder pattern for creating complex scraping missions
 ---
 

@@ -4,7 +4,7 @@ title: build_head()
 id: func:parrot.tools.interactive.catalog_registry.build_head
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Assemble the ``<head>`` injection for a skeleton's ``<!--HEAD-->`` marker.
 ---
 

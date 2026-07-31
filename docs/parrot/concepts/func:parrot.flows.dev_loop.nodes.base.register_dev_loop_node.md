@@ -4,7 +4,7 @@ title: register_dev_loop_node()
 id: func:parrot.flows.dev_loop.nodes.base.register_dev_loop_node
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Idempotent ``@register_node`` for the dev-loop node types (FEAT-250).
 ---
 

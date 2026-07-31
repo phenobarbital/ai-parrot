@@ -4,7 +4,7 @@ title: assign_concept_ids()
 id: func:parrot.knowledge.pageindex.okf.concept_id.assign_concept_ids
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Walk the tree depth-first and write deterministic ``concept_id`` values.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.integrations.parser
 id: mod:parrot.integrations.parser
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Shared Response Parser for Integration Wrappers.
 relates_to:
 - concept: class:parrot.integrations.parser.ChartData

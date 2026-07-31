@@ -4,7 +4,7 @@ title: parrot.integrations.liveavatar.optin
 id: mod:parrot.integrations.liveavatar.optin
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-tenant opt-in gating for LiveAvatar LITE mode (FEAT-242 Phase A — Module
   7).
 relates_to:

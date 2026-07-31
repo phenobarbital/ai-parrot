@@ -4,7 +4,7 @@ title: MatrixCrewAgentWrapper
 id: class:parrot.integrations.matrix.crew.crew_wrapper.MatrixCrewAgentWrapper
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-agent handler for incoming Matrix crew messages.
 ---
 

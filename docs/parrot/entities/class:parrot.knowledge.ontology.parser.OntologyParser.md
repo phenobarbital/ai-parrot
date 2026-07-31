@@ -4,7 +4,7 @@ title: OntologyParser
 id: class:parrot.knowledge.ontology.parser.OntologyParser
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Load and validate ontology YAML files against Pydantic schema models.
 ---
 

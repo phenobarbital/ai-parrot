@@ -4,7 +4,7 @@ title: parrot.knowledge.wiki
 id: mod:parrot.knowledge.wiki
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'parrot.knowledge.wiki — LLM Wiki: Persistent Knowledge Base (FEAT-260).'
 relates_to:
 - concept: mod:parrot.knowledge.wiki.bookkeeper
@@ -64,3 +64,9 @@ Public API::
         PackedContext,
         pack_results,
     )
+
+Exports are resolved lazily (PEP 562) so lightweight consumers — the
+``wikitoolkit`` CLI and the Claude Code integration hook — can import
+the retrieval plane (``store``/``search``/``context``/``export``)
+without pulling in the agent framework behind
+:class:`LLMWikiToolkit`.

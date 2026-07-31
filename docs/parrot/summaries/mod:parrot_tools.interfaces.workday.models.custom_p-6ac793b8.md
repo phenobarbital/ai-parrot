@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.models.custom_punch_field_report
 id: mod:parrot_tools.interfaces.workday.models.custom_punch_field_report
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic models for Workday Custom Punch - Field Report.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.models.custom_punch_field_report.CustomPunchFieldReportEntry

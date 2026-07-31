@@ -4,7 +4,7 @@ title: RedisBrokerHook
 id: class:parrot.core.hooks.brokers.redis.RedisBrokerHook
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Consumes messages from a Redis Stream.
 relates_to:
 - concept: class:parrot.core.hooks.brokers.base.BaseBrokerHook

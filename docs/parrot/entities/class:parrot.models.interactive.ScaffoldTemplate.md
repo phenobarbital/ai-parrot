@@ -4,7 +4,7 @@ title: ScaffoldTemplate
 id: class:parrot.models.interactive.ScaffoldTemplate
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A deterministic HTML skeleton with named slots for the enhance pass.
 ---
 

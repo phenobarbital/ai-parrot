@@ -4,7 +4,7 @@ title: GraphicPanelDisplay
 id: class:parrot_pipelines.planogram.types.graphic_panel_display.GraphicPanelDisplay
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Composable type for graphic-panel / signage endcap compliance.
 relates_to:
 - concept: class:parrot_pipelines.planogram.types.abstract.AbstractPlanogramType

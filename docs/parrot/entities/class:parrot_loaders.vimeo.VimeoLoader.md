@@ -4,7 +4,7 @@ title: VimeoLoader
 id: class:parrot_loaders.vimeo.VimeoLoader
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Loader for Vimeo videos.
 relates_to:
 - concept: class:parrot_loaders.youtube.YoutubeLoader

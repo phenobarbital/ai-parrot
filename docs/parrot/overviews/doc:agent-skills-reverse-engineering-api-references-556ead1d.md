@@ -4,7 +4,7 @@ title: HAR File Analysis Reference
 id: doc:agent-skills-reverse-engineering-api-references-har-analysis-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This document covers how to analyze HAR (HTTP Archive) files to extract API
   endpoints and patterns.
 ---

@@ -4,7 +4,7 @@ title: parrot.stores.parents.factory
 id: mod:parrot.stores.parents.factory
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Factory for creating AbstractParentSearcher instances from a config dict.
 relates_to:
 - concept: func:parrot.stores.parents.factory.create_parent_searcher

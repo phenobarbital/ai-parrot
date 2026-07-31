@@ -4,7 +4,7 @@ title: generate_chart()
 id: func:parrot_tools.chart.generate_chart
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Convenience function to generate a chart without instantiating the tool.
 ---
 

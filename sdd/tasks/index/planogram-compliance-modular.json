@@ -22,13 +22,13 @@
       "parallelism_notes": "No shared files with TASK-340. Both can run in parallel.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:06:34.642547+00:00",
-      "file": "sdd/tasks/active/TASK-339-abstract-planogram-type.md",
+      "file": "sdd/tasks/completed/TASK-339-abstract-planogram-type.md",
       "completed_at": "2026-03-14T01:09:04.690757+00:00"
     },
     {
       "id": "TASK-340",
       "slug": "planogram-config-type-field",
-      "title": "PlanogramConfig \u2014 Add planogram_type Field",
+      "title": "PlanogramConfig — Add planogram_type Field",
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
@@ -40,13 +40,13 @@
       "parallelism_notes": "No shared files with TASK-339. Both can run in parallel.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:09:29.113654+00:00",
-      "file": "sdd/tasks/active/TASK-340-planogram-config-type-field.md",
+      "file": "sdd/tasks/completed/TASK-340-planogram-config-type-field.md",
       "completed_at": "2026-03-14T01:13:08.213310+00:00"
     },
     {
       "id": "TASK-341",
       "slug": "product-on-shelves-composable",
-      "title": "ProductOnShelves Composable \u2014 Extract Current Logic",
+      "title": "ProductOnShelves Composable — Extract Current Logic",
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
@@ -61,13 +61,13 @@
       "parallelism_notes": "Depends on ABC (TASK-339) and config field (TASK-340). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:14:18.984614+00:00",
-      "file": "sdd/tasks/active/TASK-341-product-on-shelves-composable.md",
+      "file": "sdd/tasks/completed/TASK-341-product-on-shelves-composable.md",
       "completed_at": "2026-03-14T01:23:05.449333+00:00"
     },
     {
       "id": "TASK-342",
       "slug": "planogram-compliance-refactor",
-      "title": "PlanogramCompliance Refactor \u2014 Composable Delegation",
+      "title": "PlanogramCompliance Refactor — Composable Delegation",
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
@@ -80,10 +80,10 @@
         "TASK-341"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on all prior tasks \u2014 imports composable and wires delegation.",
+      "parallelism_notes": "Depends on all prior tasks — imports composable and wires delegation.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:23:33.020220+00:00",
-      "file": "sdd/tasks/active/TASK-342-planogram-compliance-refactor.md",
+      "file": "sdd/tasks/completed/TASK-342-planogram-compliance-refactor.md",
       "completed_at": "2026-03-14T01:26:21.353690+00:00"
     },
     {
@@ -104,7 +104,7 @@
       "parallelism_notes": "Depends on config field and refactored pipeline.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:26:48.356657+00:00",
-      "file": "sdd/tasks/active/TASK-343-handler-hydration-and-integration.md",
+      "file": "sdd/tasks/completed/TASK-343-handler-hydration-and-integration.md",
       "completed_at": "2026-03-14T01:27:49.239561+00:00"
     },
     {
@@ -125,10 +125,10 @@
         "TASK-343"
       ],
       "parallel": false,
-      "parallelism_notes": "Tests all modules \u2014 must run after everything is implemented.",
+      "parallelism_notes": "Tests all modules — must run after everything is implemented.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:28:13.295501+00:00",
-      "file": "sdd/tasks/active/TASK-344-planogram-modular-tests.md",
+      "file": "sdd/tasks/completed/TASK-344-planogram-modular-tests.md",
       "completed_at": "2026-03-14T01:31:19.963065+00:00"
     }
   ]

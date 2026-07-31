@@ -4,7 +4,7 @@ title: parrot_formdesigner.services.event_dispatcher
 id: mod:parrot_formdesigner.services.event_dispatcher
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Form lifecycle event dispatcher — FEAT-188.
 relates_to:
 - concept: func:parrot_formdesigner.services.event_dispatcher.apply_schema_overrides

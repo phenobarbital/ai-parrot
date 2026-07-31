@@ -32,3 +32,25 @@ class TestBedrockModelTranslateNova:
 
     def test_nova_micro(self):
         assert translate("nova-micro") == "amazon.nova-micro-v1:0"
+
+
+class TestBedrockModelTranslateNovaFeat315:
+    """New Nova Premier/Canvas/Reel entries (FEAT-315, TASK-1810)."""
+
+    def test_nova_premier(self):
+        assert translate("nova-premier") == "amazon.nova-premier-v1:0"
+
+    def test_nova_premier_with_region(self):
+        assert translate("nova-premier", region_prefix="us") == "us.amazon.nova-premier-v1:0"
+
+    def test_nova_canvas(self):
+        assert translate("nova-canvas") == "amazon.nova-canvas-v1:0"
+
+    def test_nova_reel(self):
+        assert translate("nova-reel") == "amazon.nova-reel-v1:0"
+
+    def test_nova_canvas_with_region_still_prefixes(self):
+        # Canvas/Reel are in-region only, but translate() itself has no
+        # knowledge of that constraint — it is the caller's (NovaClient's)
+        # responsibility not to pass a region_prefix for these models.
+        assert translate("nova-canvas", region_prefix="us") == "us.amazon.nova-canvas-v1:0"

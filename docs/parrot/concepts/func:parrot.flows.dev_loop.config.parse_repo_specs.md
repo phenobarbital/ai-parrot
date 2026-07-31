@@ -4,7 +4,7 @@ title: parse_repo_specs()
 id: func:parrot.flows.dev_loop.config.parse_repo_specs
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse ``DEV_LOOP_REPOS`` entries into :class:`RepoSpec` objects.
 ---
 

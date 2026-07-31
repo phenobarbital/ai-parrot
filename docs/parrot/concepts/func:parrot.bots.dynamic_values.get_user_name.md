@@ -4,7 +4,7 @@ title: get_user_name()
 id: func:parrot.bots.dynamic_values.get_user_name
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This one needs context to determine the user
 ---
 

@@ -4,7 +4,7 @@ title: ConceptCatalogService
 id: class:parrot.knowledge.ontology.concept_catalog.service.ConceptCatalogService
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Operational truth for per-tenant Concept entities and is_a edges.
 ---
 

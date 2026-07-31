@@ -4,7 +4,7 @@ title: EChartsRenderer
 id: class:parrot.outputs.a2ui_renderers.echarts.EChartsRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Chart-component → ECharts option JSON renderer (+ optional vendored HTML
   wrap).
 relates_to:

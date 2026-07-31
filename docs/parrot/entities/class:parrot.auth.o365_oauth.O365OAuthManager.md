@@ -4,7 +4,7 @@ title: O365OAuthManager
 id: class:parrot.auth.o365_oauth.O365OAuthManager
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Microsoft Identity Platform OAuth 2.0 (PKCE + client_secret).
 relates_to:
 - concept: class:parrot.auth.oauth2_base.AbstractOAuth2Manager

@@ -4,7 +4,7 @@ title: OdooCodeExtractor
 id: class:parrot.knowledge.graphindex.extractors.odoo_code.OdooCodeExtractor
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extract Odoo model structure on top of the generic code extractor.
 relates_to:
 - concept: class:parrot.knowledge.graphindex.extractors.code.CodeExtractor

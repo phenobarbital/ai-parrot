@@ -4,7 +4,7 @@ title: parrot.registry.routing.store_router
 id: mod:parrot.registry.routing.store_router
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: StoreRouter core orchestrator (FEAT-111 Module 7).
 relates_to:
 - concept: class:parrot.registry.routing.store_router.NoSuitableStoreError

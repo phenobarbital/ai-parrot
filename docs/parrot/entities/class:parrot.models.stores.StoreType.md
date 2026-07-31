@@ -4,7 +4,7 @@ title: StoreType
 id: class:parrot.models.stores.StoreType
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DB Store type — source of truth for store identifiers.
 ---
 

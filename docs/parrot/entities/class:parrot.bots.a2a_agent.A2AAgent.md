@@ -4,7 +4,7 @@ title: A2AAgent
 id: class:parrot.bots.a2a_agent.A2AAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: An AI-Parrot Agent with A2A capabilities.
 relates_to:
 - concept: class:parrot.a2a.server.A2AEnabledMixin

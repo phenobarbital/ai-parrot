@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop.runner
 id: mod:parrot.flows.dev_loop.runner
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DevLoopRunner — orchestrator-side hosting for the dev-loop flow.
 relates_to:
 - concept: class:parrot.flows.dev_loop.runner.DevLoopRunner

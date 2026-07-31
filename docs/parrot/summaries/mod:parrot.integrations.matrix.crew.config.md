@@ -4,7 +4,7 @@ title: parrot.integrations.matrix.crew.config
 id: mod:parrot.integrations.matrix.crew.config
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configuration models for MatrixCrewTransport.
 relates_to:
 - concept: class:parrot.integrations.matrix.crew.config.CollaborativeConfig

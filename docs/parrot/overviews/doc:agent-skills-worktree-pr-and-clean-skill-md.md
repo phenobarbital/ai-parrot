@@ -4,8 +4,8 @@ title: Goal
 id: doc:agent-skills-worktree-pr-and-clean-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: worktree-pr-and-clean'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: 'After user approval: push branch + open PR to main + clean up the worktree.'
 ---
 
 ---

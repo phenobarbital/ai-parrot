@@ -4,7 +4,7 @@ title: deliver_reminder()
 id: func:parrot.tools.reminder.deliver_reminder
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Fire a reminder by delivering it through the requested notification channel.
 ---
 

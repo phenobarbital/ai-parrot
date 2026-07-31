@@ -4,7 +4,7 @@ title: load_subagent_definition()
 id: func:parrot.flows.dev_loop._subagent_defs.load_subagent_definition
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return the system-prompt body of an SDD subagent.
 ---
 

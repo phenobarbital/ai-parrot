@@ -4,7 +4,7 @@ title: parrot.outputs.formats.structured_map
 id: mod:parrot.outputs.formats.structured_map
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'FEAT-221: Structured Map Output Mode renderer.'
 relates_to:
 - concept: class:parrot.outputs.formats.structured_map.StructuredMapRenderer

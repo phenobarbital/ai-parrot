@@ -35,7 +35,7 @@ from navconfig.logging import logging
 if TYPE_CHECKING:
     # Type-check-only import — VoiceProvider itself has no optional runtime
     # dependencies, but this keeps the module-scope import list minimal and
-    # matches the lazy-import style used for NovaSonicClient/GeminiLiveClient
+    # matches the lazy-import style used for NovaClient/GeminiLiveClient
     # in resolve_voice_client_class() below.
     from parrot.voice.models import VoiceProvider
 
@@ -73,9 +73,10 @@ from parrot.core.ws_auth import AuthenticatedUser, TokenValidator  # noqa: E402,
 def resolve_voice_client_class(provider: "VoiceProvider"):
     """Resolve the ``AbstractClient`` subclass for a given ``VoiceProvider``.
 
-    Recognizes ``VoiceProvider.NOVA_SONIC`` and returns
-    :class:`~parrot.clients.nova_sonic.NovaSonicClient` (lazily imported —
-    the Pre-Alpha ``aws_sdk_bedrock_runtime`` extra is optional). Every
+    Recognizes ``VoiceProvider.NOVA`` and returns
+    :class:`~parrot.clients.nova.NovaClient` (lazily imported — the
+    Pre-Alpha ``aws_sdk_bedrock_runtime`` extra is optional and is only
+    required at first ``stream_voice()`` call, not at import time). Every
     other currently-declared provider resolves to
     :class:`~parrot.clients.live.GeminiLiveClient`, the only fully-wired
     voice client at this time (``OPENAI_REALTIME`` / ``WHISPER_TTS`` are
@@ -88,15 +89,16 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
         The ``AbstractClient`` subclass to instantiate for *provider*.
 
     Raises:
-        ImportError: When ``NOVA_SONIC`` is requested but
+        ImportError: When ``NOVA`` is requested and
             ``aws_sdk_bedrock_runtime`` (Pre-Alpha, Python >= 3.12 only) is
-            not installed.
+            not installed and ``stream_voice()`` is called — importing
+            :class:`NovaClient` itself never requires it.
     """
     from parrot.voice.models import VoiceProvider as _VoiceProvider
 
-    if provider == _VoiceProvider.NOVA_SONIC:
-        from parrot.clients.nova_sonic import NovaSonicClient
-        return NovaSonicClient
+    if provider == _VoiceProvider.NOVA:
+        from parrot.clients.nova import NovaClient
+        return NovaClient
 
     from parrot.clients.live import GeminiLiveClient
     return GeminiLiveClient
@@ -328,8 +330,8 @@ class VoiceChatHandler:
 
         Thin wrapper around the module-level
         :func:`resolve_voice_client_class` — recognizes
-        ``VoiceProvider.NOVA_SONIC`` and returns
-        :class:`~parrot.clients.nova_sonic.NovaSonicClient`.
+        ``VoiceProvider.NOVA`` and returns
+        :class:`~parrot.clients.nova.NovaClient`.
         """
         return resolve_voice_client_class(provider)
 

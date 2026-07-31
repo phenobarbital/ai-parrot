@@ -4,7 +4,7 @@ title: ContainerSecurityToolkit
 id: class:parrot_tools.security.container_security_toolkit.ContainerSecurityToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Container and infrastructure security toolkit powered by Trivy.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

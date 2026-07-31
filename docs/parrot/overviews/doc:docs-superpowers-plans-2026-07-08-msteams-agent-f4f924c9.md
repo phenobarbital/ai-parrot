@@ -4,7 +4,7 @@ title: MS Teams Agent Commands — Implementation Plan
 id: doc:docs-superpowers-plans-2026-07-08-msteams-agent-commands-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Create `packages/ai-parrot-integrations/tests/integrations/test_parse_kwargs.py`:'
 relates_to:
 - concept: mod:parrot.integrations.msteams.commands

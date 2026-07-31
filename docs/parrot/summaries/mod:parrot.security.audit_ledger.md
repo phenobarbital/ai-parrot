@@ -4,7 +4,7 @@ title: parrot.security.audit_ledger
 id: mod:parrot.security.audit_ledger
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Append-only, KMS-signed credential-invocation ledger (FEAT-260 / TASK-1642).
 relates_to:
 - concept: class:parrot.security.audit_ledger.AbstractKMSSigner

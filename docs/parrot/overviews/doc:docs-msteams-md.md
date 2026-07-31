@@ -4,7 +4,7 @@ title: MS Teams Toolkit for AI-Parrot
 id: doc:docs-msteams-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A comprehensive toolkit for Microsoft Teams integration, extending `AbstractToolkit`
   from the ai-parrot library.
 relates_to:

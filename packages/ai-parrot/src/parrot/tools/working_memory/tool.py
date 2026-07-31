@@ -116,12 +116,15 @@ class WorkingMemoryToolkit(AbstractToolkit):
             session_id: Optional session identifier for the working memory catalog.
             max_rows: Max rows in summary previews returned to the LLM.
             max_cols: Max columns in summary previews returned to the LLM.
-            tool_locals_registry: Dict mapping tool names to their REPL namespace
-                dicts, e.g. {"PythonPandasTool": pandas_tool.locals,
-                             "PythonREPLTool": repl_tool.locals}.
-                The attribute is ``.locals`` (the live REPL namespace), not
-                ``._locals``. ``BasicAgent.configure()`` auto-wires this from
-                any registered REPL-family tool; explicit wiring takes
+            tool_locals_registry: Dict mapping tool names to a REPL namespace
+                snapshot dict, e.g. {"PythonPandasTool": {...},
+                "PythonREPLTool": {...}}. FEAT-380 (TASK-1944): the REPL
+                namespace lives in each tool's worker process now, so these
+                are snapshots frozen at wiring time (``await tool.snapshot()``
+                — namespace API), not a live reference; DataFrames the agent
+                loads AFTER wiring runs are not automatically visible here.
+                ``BasicAgent.configure()`` auto-wires this from any
+                registered REPL-family tool; explicit wiring takes
                 precedence and is never overwritten.
             answer_memory: Optional AnswerMemory instance for the Q&A bridge.
                 Typically auto-injected by BasicAgent.configure() — explicit

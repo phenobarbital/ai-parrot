@@ -29,6 +29,7 @@ Responsibilities (per spec §3 Module 2):
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -56,20 +57,78 @@ from parrot.clients.claude_agent import ClaudeAgentRunOptions
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.models import (
+    GoogleCodingDispatchProfile,
     ClaudeCodeDispatchProfile,
+    CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,
     GeminiCodeDispatchProfile,
     DispatchEvent,
     LLMCodeDispatchProfile,
     GrokCodeDispatchProfile,
+    MoonshotCodeDispatchProfile,
     ZaiCodeDispatchProfile,
 )
+from parrot.flows.dev_loop.session_state import SessionHost, action_from_dispatch_event
+from parrot.clients.moonshot import _thinking_ctx as _moonshot_thinking_ctx
+from parrot.models.moonshot import ALWAYS_THINKING_MODELS, K_SERIES_MODELS
 from parrot.models.zai import THINKING_CAPABLE_ZAI_MODELS
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from claude_agent_sdk.types import AgentDefinition  # noqa: F401
 
 T = TypeVar("T", bound=BaseModel)
+
+_logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Dual-publish shim (FEAT-322 TASK-1852) — fold DispatchEvents into the run's
+# SessionHost alongside the legacy XADD, with zero call-site fan-out.
+#
+# ``dispatch()`` gains an explicit ``session_host: Optional[SessionHost] =
+# None`` kwarg (the per-dispatch value the spec requires — never dispatcher-
+# instance state, since one dispatcher instance is shared across concurrent
+# runs). Internally, threading that value positionally through every one of
+# the ~40 ``self._publish_event(...)``/``_publish_*_event(...)`` call sites
+# spread across 4 dispatcher classes' streaming helpers would be a large,
+# error-prone rewrite of this hot, actively-churning file (FEAT-270/Moonshot
+# work landed here in the last weeks — see spec §7 "Known Risks"). Instead,
+# ``dispatch()`` binds the value into a ``ContextVar`` for the duration of
+# its own call; ``_publish_event`` (the ONE choke point every dispatch kind
+# already funnels through) reads it back. ``ContextVar`` values are copied
+# per ``asyncio.Task`` at task-creation time, so concurrent dispatches on the
+# SAME shared dispatcher instance (separate Tasks) never observe each
+# other's host — the identical safety property explicit per-call-site
+# threading would have given, with a 3-line touch per dispatch() method
+# instead of a rewrite of every internal helper.
+# ---------------------------------------------------------------------------
+
+_SESSION_HOST_CTX: "contextvars.ContextVar[Optional[SessionHost]]" = contextvars.ContextVar(
+    "dev_loop_session_host", default=None
+)
+
+
+def _apply_to_session_host(event: DispatchEvent) -> None:
+    """Fold one dispatch event into the current dispatch's SessionHost, if any.
+
+    Reads the per-dispatch host from :data:`_SESSION_HOST_CTX` (bound by the
+    active ``dispatch()`` call). No-op when no host is bound (legacy
+    callers). Every failure is swallowed and logged at DEBUG — the shim must
+    never affect the legacy publish path or the dispatch itself.
+    """
+    host = _SESSION_HOST_CTX.get()
+    if host is None:
+        return
+    try:
+        action = action_from_dispatch_event(
+            event.kind, event.node_id, event.ts, event.payload
+        )
+        if action is not None:
+            host.apply(action)
+    except Exception:  # noqa: BLE001 - shim must never break a dispatch
+        _logger.debug(
+            "dev-loop session-state shim failed for dispatch event %s (node=%s)",
+            event.kind, event.node_id, exc_info=True,
+        )
 
 # Edit/Write tools that let a dispatched session mutate the filesystem through
 # the SDK's own tool surface. A dispatch whose profile excludes ALL of these
@@ -135,6 +194,7 @@ class DevLoopCodeDispatcher(Protocol):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a code-agent run and return validated structured output."""
 
@@ -178,6 +238,8 @@ class ClaudeCodeDispatcher:
         self._redis_url = redis_url
         self.stream_ttl_seconds = stream_ttl_seconds
         self._redis: Any = None  # lazy aioredis.Redis
+        self._cached_dispatch_env: Optional[Dict[str, str]] = None
+        self._client_cache: Dict[str, Any] = {}  # model -> ClaudeAgentClient
 
     # ------------------------------------------------------------------
     # Public API
@@ -192,6 +254,7 @@ class ClaudeCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a single Claude Code session and return its parsed output.
 
@@ -217,34 +280,47 @@ class ClaudeCodeDispatcher:
             DispatchOutputValidationError: Final payload did not validate.
         """
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
-        json_schema_path: Optional[str] = None
+        # FEAT-322 TASK-1852: bind the per-dispatch host for _publish_event
+        # to read (see module-level _SESSION_HOST_CTX docstring). The main
+        # finally: below resets it on every path THAT reaches the semaphore
+        # block; this try/except covers the narrow pre-semaphore window
+        # (cwd validation, the "queued" publish) so an early raise there
+        # still resets the var instead of leaking it forward.
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
+            # no-edit) dispatches such as the sdd-codereview gate, which may
+            # run against a checkout outside the worktree base.
+            self._enforce_cwd_under_worktree_base(cwd, profile)
 
-        # Spec §7 R4 — defense in depth. Waived for read-only (plan-mode,
-        # no-edit) dispatches such as the sdd-codereview gate, which may run
-        # against a checkout outside the worktree base.
-        self._enforce_cwd_under_worktree_base(cwd, profile)
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
-                # ``json_schema_path`` is intentionally not generated:
-                # the SDK's subprocess transport pins
+                # A JSON-schema path is intentionally never generated for
+                # this dispatcher: the SDK's subprocess transport pins
                 # ``--output-format stream-json`` / ``--input-format
                 # stream-json`` itself, so passing
                 # ``extra_args={"output-format": "json", ...}`` causes a
                 # CLI-level conflict. Output validation falls back to
                 # best-effort JSON parsing of the final assistant text
                 # (spec §7 R2).
-                run_options = self._resolve_run_options(profile, cwd, json_schema_path=None)
+                run_options = self._resolve_run_options(profile, cwd)
 
-                client = LLMFactory.create(f"claude-agent:{profile.model}")
+                cache_key = profile.model or ""
+                client = self._client_cache.get(cache_key)
+                if client is None:
+                    client = LLMFactory.create(f"claude-agent:{profile.model}")
+                    self._client_cache[cache_key] = client
 
                 await self._publish_event(
                     stream_key,
@@ -358,20 +434,22 @@ class ClaudeCodeDispatcher:
                     )
                     raise
 
+                completed_payload: Dict[str, Any] = {
+                    "output_model": output_model.__name__,
+                }
+                usage_detail = self._extract_result_usage(messages)
+                if usage_detail:
+                    completed_payload["usage"] = usage_detail
                 await self._publish_event(
                     stream_key,
                     kind="dispatch.completed",
                     run_id=run_id,
                     node_id=node_id,
-                    payload={"output_model": output_model.__name__},
+                    payload=completed_payload,
                 )
                 return result
             finally:
-                if json_schema_path is not None:
-                    try:
-                        os.unlink(json_schema_path)
-                    except OSError:  # pragma: no cover - best effort
-                        pass
+                _SESSION_HOST_CTX.reset(_host_token)
 
     # ------------------------------------------------------------------
     # Internal helpers (underscored — but accessible to unit tests)
@@ -408,8 +486,6 @@ class ClaudeCodeDispatcher:
         self,
         profile: ClaudeCodeDispatchProfile,
         cwd: str,
-        *,
-        json_schema_path: Optional[str] = None,
     ) -> ClaudeAgentRunOptions:
         """Translate a dispatch profile into a run-options instance.
 
@@ -500,9 +576,17 @@ class ClaudeCodeDispatcher:
         * ``"subscription"`` — always blank the key (force subscription).
         * ``"api-key"`` — inherit the key unchanged (API billing).
 
+        The result is cached on the instance: the auth policy and the
+        credentials file are both stable for the lifetime of the server
+        process, so re-reading the file on every dispatch is pure waste
+        (and noisy — the DEBUG log fires once per dispatch).
+
         Returns a dict suitable for ``ClaudeAgentRunOptions.env``; empty
         means "inherit the parent environment unchanged".
         """
+        if self._cached_dispatch_env is not None:
+            return self._cached_dispatch_env
+
         mode = (getattr(conf, "CLAUDE_CODE_DISPATCH_AUTH", "") or "").strip()
         if mode == "api-key":
             chosen = "api-key (inherited ANTHROPIC_API_KEY)"
@@ -513,13 +597,12 @@ class ClaudeCodeDispatcher:
         else:  # prefer-subscription (default / unknown values)
             if self._subscription_available():
                 chosen = "subscription (detected claude.ai login)"
-                # Blank the key only for the subprocess; the parent process
-                # keeps it for the AnthropicClient summarizer / plan LLM.
                 env = {"ANTHROPIC_API_KEY": ""}
             else:
                 chosen = "api-key (no subscription login detected)"
                 env = {}
         self.logger.debug("Dispatch auth resolved: %s", chosen)
+        self._cached_dispatch_env = env
         return env
 
     @staticmethod
@@ -543,27 +626,6 @@ class ClaudeCodeDispatcher:
             return False
         oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
         return bool(isinstance(oauth, dict) and oauth.get("accessToken"))
-
-    def _materialize_json_schema(self, output_model: Type[BaseModel]) -> str:
-        """Write ``output_model.model_json_schema()`` to a tempfile.
-
-        The path is passed to the CLI via ``extra_args={"json-schema": ...}``
-        when the SDK supports it. The dispatcher unlinks the file in a
-        ``finally:`` block.
-        """
-        schema = output_model.model_json_schema()
-        fd, path = tempfile.mkstemp(prefix="dev_loop_schema_", suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(schema, fh)
-        except Exception:
-            os.close(fd)
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-            raise
-        return path
 
     def _build_prompt(self, brief: BaseModel, output_model: Type[BaseModel]) -> str:
         """Compose the prompt body for a dispatch.
@@ -678,6 +740,63 @@ class ClaudeCodeDispatcher:
             if denials:
                 detail["permission_denials"] = [str(d) for d in denials]
             return detail
+        return None
+
+    @staticmethod
+    def _extract_result_usage(messages: List[Any]) -> Optional[Dict[str, Any]]:
+        """Return telemetry (tokens/cost/turns/duration) from the terminal
+        ``ResultMessage``, if any.
+
+        Spec §3 Module 8 (v0.2 amendment): the dispatcher already mines the
+        terminal ``ResultMessage`` for error diagnosis
+        (:meth:`_extract_result_error`) but discards its telemetry on the
+        success path. This helper duck-types the same reverse-scan pattern
+        to also surface ``usage`` (tokens), ``total_cost_usd``, ``num_turns``
+        and ``duration_ms`` for the run bundle (TASK-1928/1929).
+
+        ``usage`` may arrive as a dict (the Claude Agent SDK's
+        ``ResultMessage.usage`` shape) or as an object with attributes —
+        both are supported. Never raises: a malformed/absent usage payload
+        must not fail a dispatch that otherwise succeeded.
+
+        Returns:
+            A dict with any of ``input_tokens``, ``output_tokens``,
+            ``cache_creation_input_tokens``, ``cache_read_input_tokens``,
+            ``total_cost_usd``, ``num_turns``, ``duration_ms`` present
+            (only non-``None`` keys are included), or ``None`` when no
+            terminal ``ResultMessage`` is found or nothing could be
+            extracted.
+        """
+        for msg in reversed(messages):
+            if not hasattr(msg, "is_error"):
+                continue
+            try:
+                usage = getattr(msg, "usage", None)
+
+                def _usage_get(key: str) -> Any:
+                    if usage is None:
+                        return None
+                    if isinstance(usage, dict):
+                        return usage.get(key)
+                    return getattr(usage, key, None)
+
+                detail: Dict[str, Any] = {
+                    "input_tokens": _usage_get("input_tokens"),
+                    "output_tokens": _usage_get("output_tokens"),
+                    "cache_creation_input_tokens": _usage_get(
+                        "cache_creation_input_tokens"
+                    ),
+                    "cache_read_input_tokens": _usage_get(
+                        "cache_read_input_tokens"
+                    ),
+                    "total_cost_usd": getattr(msg, "total_cost_usd", None),
+                    "num_turns": getattr(msg, "num_turns", None),
+                    "duration_ms": getattr(msg, "duration_ms", None),
+                }
+            except Exception:  # noqa: BLE001 — telemetry must never break dispatch
+                return None
+            detail = {k: v for k, v in detail.items() if v is not None}
+            return detail or None
         return None
 
     @staticmethod
@@ -797,6 +916,11 @@ class ClaudeCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish — fold into the run's SessionHost
+        # (if any) independent of legacy Redis availability, mirroring
+        # flow.py's FlowEventPublisher pattern (two independent failure
+        # domains; neither publish path affects the other).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -828,21 +952,39 @@ class ClaudeCodeDispatcher:
         Messages with ToolResultBlocks → ``dispatch.tool_result``.
         ResultMessage / SystemMessage / UserMessage → ``dispatch.message``
         (catch-all).
+
+        Each event carries structured metadata so the live stream shows
+        *what* happened (tool name, text snippet), not just the message
+        class.
         """
         kind = "dispatch.message"
+        payload: Dict[str, Any] = {
+            "message_class": type(message).__name__,
+        }
         content = getattr(message, "content", None)
         if isinstance(content, list):
+            tool_names: List[str] = []
+            text_snippet = ""
             for block in content:
                 cls_name = type(block).__name__
                 if cls_name == "ToolUseBlock":
                     kind = "dispatch.tool_use"
-                    break
-                if cls_name == "ToolResultBlock":
+                    name = getattr(block, "name", None)
+                    if name:
+                        tool_names.append(name)
+                elif cls_name == "ToolResultBlock":
                     kind = "dispatch.tool_result"
-                    break
-        payload: Dict[str, Any] = {
-            "message_class": type(message).__name__,
-        }
+                    name = getattr(block, "tool_use_id", None) or getattr(block, "name", None)
+                    if name:
+                        tool_names.append(name)
+                elif cls_name == "TextBlock" and not text_snippet:
+                    raw = getattr(block, "text", "") or ""
+                    if raw:
+                        text_snippet = raw[:200]
+            if tool_names:
+                payload["tools"] = tool_names
+            if text_snippet:
+                payload["text"] = text_snippet
         # Surface terminal-result error metadata inline so the live stream
         # shows *why* a dispatch died, not just that a ResultMessage arrived.
         if getattr(message, "is_error", False):
@@ -899,22 +1041,31 @@ class CodexCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a single Codex CLI session and return parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         schema_path: Optional[str] = None
         output_path: Optional[str] = None
         process: Any = None
+        # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
+        # try/except covers the narrow pre-semaphore window so an early
+        # raise here still resets the var (the main finally: below only
+        # covers the semaphore block).
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        self._enforce_cwd_under_worktree_base(cwd)
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -1023,6 +1174,7 @@ class CodexCodeDispatcher:
                 )
                 return result
             finally:
+                _SESSION_HOST_CTX.reset(_host_token)
                 for path in (schema_path, output_path):
                     if path is None:
                         continue
@@ -1030,6 +1182,15 @@ class CodexCodeDispatcher:
                         os.unlink(path)
                     except OSError:
                         pass
+
+    # FEAT-375 (Module 3): table mapping `CodexAdversarialReviewProfile.review_scope`
+    # to the `codex exec review` scope flag and the profile field that carries its
+    # value. Kept module-accessible (class attribute) so tests can enumerate shapes
+    # without needing to invoke the CLI.
+    _REVIEW_SCOPE_FLAGS: Dict[str, str] = {
+        "base": "--base",
+        "commit": "--commit",
+    }
 
     def _build_command(
         self,
@@ -1041,6 +1202,14 @@ class CodexCodeDispatcher:
         prompt: str,
     ) -> List[str]:
         """Build the ``codex exec`` command line."""
+        if isinstance(profile, CodexAdversarialReviewProfile):
+            return self._build_adversarial_review_command(
+                profile=profile,
+                cwd=cwd,
+                schema_path=schema_path,
+                output_path=output_path,
+                prompt=prompt,
+            )
         cmd = [
             self.codex_bin,
             "exec",
@@ -1058,6 +1227,69 @@ class CodexCodeDispatcher:
             "-o",
             output_path,
         ]
+        if profile.ignore_user_config:
+            cmd.append("--ignore-user-config")
+        if profile.ignore_rules:
+            cmd.append("--ignore-rules")
+        cmd.append(prompt)
+        return cmd
+
+    def _build_review_scope_args(self, profile: CodexAdversarialReviewProfile) -> List[str]:
+        """Return the `codex exec review` scope-specific arguments (FEAT-375 G5).
+
+        Table-driven via ``_REVIEW_SCOPE_FLAGS`` so CLI-surface drift is
+        contained to this one mapping. Raises ``ValueError`` when a
+        non-``"uncommitted"`` scope is missing its required target.
+        """
+        if profile.review_scope == "uncommitted":
+            return []
+        flag = self._REVIEW_SCOPE_FLAGS[profile.review_scope]
+        value = profile.review_base if profile.review_scope == "base" else profile.review_commit
+        field_name = "review_base" if profile.review_scope == "base" else "review_commit"
+        if not value:
+            raise ValueError(
+                f"CodexAdversarialReviewProfile.review_scope={profile.review_scope!r} "
+                f"requires a non-empty {field_name}"
+            )
+        return [flag, value]
+
+    def _build_adversarial_review_command(
+        self,
+        *,
+        profile: CodexAdversarialReviewProfile,
+        cwd: str,
+        schema_path: str,
+        output_path: str,
+        prompt: str,
+    ) -> List[str]:
+        """Build `codex exec review` / `codex exec resume --last` shapes (FEAT-375 G5/G6).
+
+        The installed CLI treats ``--cd``, ``--sandbox``, and ``--model`` as
+        options of the top-level ``exec`` command that MUST precede the
+        ``review``/``resume`` subcommand name (verified via ``codex exec
+        review --help`` / ``codex exec resume --help`` — neither subcommand
+        lists them as its own options). ``--json``, ``--output-schema``,
+        ``-o``, ``--ignore-user-config``, and ``--ignore-rules`` are
+        subcommand-level options and follow the subcommand name.
+
+        ``codex exec resume`` does not honor ``--sandbox`` (the gotcha
+        documented in the repo's ``CLAUDE.md``): omit it and pass
+        ``-c sandbox_mode="<mode>"`` instead so the read-only restriction
+        still applies to the resumed turn.
+        """
+        cmd = [self.codex_bin, "exec", "--cd", cwd]
+        if not profile.resume_last:
+            cmd += ["--sandbox", profile.sandbox]
+        cmd += ["--model", profile.model]
+
+        if profile.resume_last:
+            cmd += ["-c", f'sandbox_mode="{profile.sandbox}"']
+            cmd += ["resume", "--last"]
+        else:
+            cmd.append("review")
+            cmd += self._build_review_scope_args(profile)
+
+        cmd += ["--json", "--output-schema", schema_path, "-o", output_path]
         if profile.ignore_user_config:
             cmd.append("--ignore-user-config")
         if profile.ignore_rules:
@@ -1085,6 +1317,7 @@ class CodexCodeDispatcher:
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=8 * 1024 * 1024,
         )
 
     async def _stream_stdout_events(
@@ -1262,6 +1495,8 @@ class CodexCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -1326,38 +1561,47 @@ class GeminiCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         """Dispatch a single Gemini CLI session and return its parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         process: Any = None
+        # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
+        # try/except covers the narrow pre-semaphore window so an early
+        # raise here still resets the var (the main finally: below only
+        # covers the semaphore block).
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        self._enforce_cwd_under_worktree_base(cwd)
-
-        # Handle transparent profile conversion
-        if isinstance(profile, ClaudeCodeDispatchProfile):
-            approval_mode = "auto_edit"
-            if profile.permission_mode == "acceptEdits":
+            # Handle transparent profile conversion
+            if isinstance(profile, ClaudeCodeDispatchProfile):
                 approval_mode = "auto_edit"
-            elif profile.permission_mode == "bypassPermissions" or profile.permission_mode == "default":
-                approval_mode = "yolo"
-            elif profile.permission_mode == "plan":
-                approval_mode = "plan"
+                if profile.permission_mode == "acceptEdits":
+                    approval_mode = "auto_edit"
+                elif profile.permission_mode == "bypassPermissions" or profile.permission_mode == "default":
+                    approval_mode = "yolo"
+                elif profile.permission_mode == "plan":
+                    approval_mode = "plan"
 
-            profile = GeminiCodeDispatchProfile(
-                subagent=profile.subagent or "sdd-worker",
-                model="auto",
-                sandbox=True,
-                approval_mode=approval_mode,
-                timeout_seconds=profile.timeout_seconds,
+                profile = GeminiCodeDispatchProfile(
+                    subagent=profile.subagent or "sdd-worker",
+                    model="auto",
+                    sandbox=True,
+                    approval_mode=approval_mode,
+                    timeout_seconds=profile.timeout_seconds,
+                )
+
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
             )
-
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             try:
@@ -1460,7 +1704,7 @@ class GeminiCodeDispatcher:
                 )
                 return result
             finally:
-                pass
+                _SESSION_HOST_CTX.reset(_host_token)
 
     def _build_command(
         self,
@@ -1506,6 +1750,7 @@ class GeminiCodeDispatcher:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            limit=8 * 1024 * 1024,
         )
 
     async def _stream_stdout_events(
@@ -1702,6 +1947,8 @@ class GeminiCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -1755,17 +2002,28 @@ class LLMCodeDispatcher:
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
-        self._enforce_cwd_under_worktree_base(cwd)
+        # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring —
+        # the try/except below covers the narrow pre-semaphore window (an
+        # early raise here still resets the var); the try/except/finally
+        # inside the semaphore block below resets it on every OTHER exit
+        # path (the success return or one of the re-raising excepts).
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
 
-        await self._publish_event(
-            stream_key,
-            kind="dispatch.queued",
-            run_id=run_id,
-            node_id=node_id,
-            payload={"profile": profile.model_dump(mode="json")},
-        )
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
 
         async with self._semaphore:
             await self._publish_event(
@@ -1839,6 +2097,8 @@ class LLMCodeDispatcher:
                     },
                 )
                 raise DispatchExecutionError(f"LLM code dispatch failed: {exc}") from exc
+            finally:
+                _SESSION_HOST_CTX.reset(_host_token)
 
     async def _dispatch_loop(
         self,
@@ -2321,6 +2581,7 @@ class LLMCodeDispatcher:
                 stdin=asyncio.subprocess.PIPE if stdin is not None else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=8 * 1024 * 1024,
             )
         except FileNotFoundError as exc:
             return {
@@ -2546,6 +2807,8 @@ class LLMCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
+        # FEAT-322 TASK-1852: dual-publish shim (see module-level docstring).
+        _apply_to_session_host(event)
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - dev-mode fallback
@@ -2609,6 +2872,7 @@ class GrokCodeDispatcher(LLMCodeDispatcher):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         llm_profile = LLMCodeDispatchProfile(
             subagent=profile.subagent,
@@ -2629,6 +2893,7 @@ class GrokCodeDispatcher(LLMCodeDispatcher):
             run_id=run_id,
             node_id=node_id,
             cwd=cwd,
+            session_host=session_host,
         )
 
 
@@ -2717,6 +2982,7 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
         run_id: str,
         node_id: str,
         cwd: str,
+        session_host: Optional[SessionHost] = None,
     ) -> T:
         return await super().dispatch(
             brief=brief,
@@ -2725,15 +2991,556 @@ class ZaiCodeDispatcher(LLMCodeDispatcher):
             run_id=run_id,
             node_id=node_id,
             cwd=cwd,
+            session_host=session_host,
         )
 
 
+class MoonshotCodeDispatcher(LLMCodeDispatcher):
+    """Local coding-agent loop bound to ``MoonshotClient`` / kimi-k3.
+
+    Extends ``LLMCodeDispatcher`` to reuse the inherited local tool loop,
+    Redis event streaming, cwd-safety guard, and output validation, while
+    overriding the completion-args and chat-completion hooks so requests
+    route through ``MoonshotClient._chat_completion`` — which strips the
+    fixed sampling parameters K-series models reject, translates
+    ``max_tokens`` to ``max_completion_tokens``, and injects the
+    thinking-mode ``extra_body`` (``reasoning_effort`` for kimi-k3,
+    ``thinking`` dict for kimi-k2.6) — instead of emitting the
+    Nvidia-style ``extra_body.chat_template_kwargs`` block used by the
+    base class.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int,
+        redis_url: str,
+        stream_ttl_seconds: int,
+    ) -> None:
+        super().__init__(
+            max_concurrent=max_concurrent,
+            redis_url=redis_url,
+            stream_ttl_seconds=stream_ttl_seconds,
+            client_factory=lambda model, **kw: LLMFactory.create(model, **kw),
+        )
+
+    def _completion_args(
+        self,
+        profile: MoonshotCodeDispatchProfile,
+        tools: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Build Moonshot-native completion args.
+
+        Omits ``temperature`` for K-series models (fixed sampling
+        parameters — the API rejects a non-null value) and never emits
+        ``extra_body`` / ``chat_template_kwargs`` (Nvidia-only concept).
+        The ``thinking`` / ``reasoning_effort`` markers are consumed by
+        :meth:`_chat_completion`, which forwards them to
+        ``MoonshotClient._chat_completion`` via the client's thinking
+        context variable so the model-family-specific ``extra_body``
+        injection happens in one place.
+        """
+        args: Dict[str, Any] = {
+            "tools": tools,
+            "tool_choice": "auto",
+            "parallel_tool_calls": False,
+            "max_tokens": profile.max_tokens,
+        }
+        _provider, model = LLMFactory.parse_llm_string(profile.llm)
+        if profile.temperature is not None and model not in K_SERIES_MODELS:
+            args["temperature"] = profile.temperature
+        if not profile.enable_thinking and model in ALWAYS_THINKING_MODELS:
+            self.logger.warning(
+                "Moonshot model %s reasons unconditionally; "
+                "enable_thinking=False has no effect.",
+                model,
+            )
+        args["thinking"] = profile.enable_thinking
+        args["reasoning_effort"] = profile.reasoning_effort
+        return args
+
+    async def _chat_completion(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        args: Dict[str, Any],
+    ) -> Any:
+        args = dict(args)
+        thinking_flags = {
+            "thinking": args.pop("thinking", None),
+            "reasoning_effort": args.pop("reasoning_effort", None),
+        }
+        method = getattr(client, "_chat_completion", None)
+        if not callable(method):
+            raise DispatchExecutionError(f"Client {type(client).__name__} does not expose chat completion")
+        token = _moonshot_thinking_ctx.set(thinking_flags)
+        try:
+            return await method(
+                model=model,
+                messages=messages,
+                use_tools=True,
+                **args,
+            )
+        finally:
+            _moonshot_thinking_ctx.reset(token)
+
+    async def dispatch(
+        self,
+        *,
+        brief: BaseModel,
+        profile: MoonshotCodeDispatchProfile,
+        output_model: Type[T],
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Optional[SessionHost] = None,
+    ) -> T:
+        return await super().dispatch(
+            brief=brief,
+            profile=profile,
+            output_model=output_model,
+            run_id=run_id,
+            node_id=node_id,
+            cwd=cwd,
+            session_host=session_host,
+        )
+
+
+class GoogleCodingDispatcher:
+    """Thin orchestration class over ``agy --print ... --output-format stream-json``.
+
+    The class mirrors the public ``dispatch`` contract of
+    :class:`ClaudeCodeDispatcher`, :class:`CodexCodeDispatcher`, and
+    :class:`GeminiCodeDispatcher` so Development can choose a Google
+    Antigravity CLI console in headless mode as a coding-agent backend
+    without changing the dev-loop graph.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int,
+        redis_url: str,
+        stream_ttl_seconds: int,
+        agy_bin: str = "agy",
+    ) -> None:
+        if max_concurrent < 1:
+            raise ValueError("max_concurrent must be >= 1")
+        self.logger = logging.getLogger(__name__)
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._redis_url = redis_url
+        self.stream_ttl_seconds = stream_ttl_seconds
+        self.agy_bin = agy_bin
+        self._redis: Any = None
+
+        resolved = shutil.which(self.agy_bin) or shutil.which("agy")
+        self.resolved_bin = resolved or self.agy_bin
+
+    async def _get_redis(self) -> Any:
+        if self._redis is None:
+            import redis.asyncio as aioredis
+            self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
+        return self._redis
+
+    async def _publish_event(
+        self,
+        stream_key: str,
+        *,
+        kind: str,
+        run_id: str,
+        node_id: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        try:
+            r = await self._get_redis()
+            data = {
+                "kind": kind,
+                "run_id": run_id,
+                "node_id": node_id,
+                "timestamp": str(time.time()),
+                "payload": json.dumps(payload),
+            }
+            await r.xadd(stream_key, data)
+            await r.expire(stream_key, self.stream_ttl_seconds)
+        except Exception as exc:
+            self.logger.warning("Failed to publish dispatch event to Redis: %s", exc)
+
+    async def dispatch(
+        self,
+        *,
+        brief: BaseModel,
+        profile: Any,
+        output_model: Type[T],
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Optional[SessionHost] = None,
+    ) -> T:
+        """Dispatch a single agy CLI session and return its parsed output."""
+        stream_key = f"flow:{run_id}:dispatch:{node_id}"
+        schema_path: Optional[str] = None
+        process: Any = None
+        _host_token = _SESSION_HOST_CTX.set(session_host)
+        try:
+            self._enforce_cwd_under_worktree_base(cwd)
+
+            if isinstance(
+                profile,
+                (ClaudeCodeDispatchProfile, CodexCodeDispatchProfile, GeminiCodeDispatchProfile),
+            ):
+                profile = GoogleCodingDispatchProfile(
+                    subagent=getattr(profile, "subagent", "sdd-worker"),
+                    model=getattr(profile, "model", "auto"),
+                    timeout_seconds=getattr(profile, "timeout_seconds", 1800),
+                )
+            if not isinstance(profile, GoogleCodingDispatchProfile):
+                raise ValueError(f"Expected GoogleCodingDispatchProfile, got {type(profile).__name__}")
+
+            await self._publish_event(
+                stream_key,
+                kind="dispatch.queued",
+                run_id=run_id,
+                node_id=node_id,
+                payload={"profile": profile.model_dump(mode="json")},
+            )
+        except Exception:
+            _SESSION_HOST_CTX.reset(_host_token)
+            raise
+
+        async with self._semaphore:
+            try:
+                schema_path = self._materialize_json_schema(output_model)
+                prompt = self._build_agy_prompt(profile, brief, output_model)
+                command = self._build_command(
+                    profile=profile,
+                    schema_path=schema_path,
+                    prompt=prompt,
+                )
+
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.started",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={
+                        "cwd": cwd,
+                        "subagent": profile.subagent,
+                        "model": profile.model,
+                    },
+                )
+
+                try:
+                    async with asyncio.timeout(profile.timeout_seconds):
+                        process = await self._create_process(command, cwd=cwd)
+                        stderr_task = asyncio.create_task(self._read_stream(process.stderr))
+                        result_data, assistant_text = await self._stream_stdout_events(
+                            process.stdout,
+                            stream_key=stream_key,
+                            run_id=run_id,
+                            node_id=node_id,
+                        )
+                        return_code = await process.wait()
+                        stderr = await stderr_task
+                except FileNotFoundError as exc:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "FileNotFoundError",
+                            "error_message": f"agy CLI executable {self.resolved_bin!r} was not found on PATH",
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        f"agy CLI executable {self.resolved_bin!r} was not found"
+                    ) from exc
+                except TimeoutError as exc:
+                    if process is not None:
+                        process.kill()
+                        await process.wait()
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "TimeoutError",
+                            "error_message": f"dispatch exceeded {profile.timeout_seconds}s wall-clock cap",
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        f"Dispatch exceeded {profile.timeout_seconds}s wall-clock cap"
+                    ) from exc
+
+                if return_code != 0:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "exit_code": return_code,
+                            "stderr_tail": stderr[-4000:],
+                        },
+                    )
+                    raise DispatchExecutionError(
+                        f"agy CLI dispatch failed with exit code {return_code}: {stderr[-1000:]}"
+                    )
+
+                result = self._parse_and_validate_result(result_data, assistant_text, output_model)
+
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.completed",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={"output_model": output_model.__name__},
+                )
+                return result
+            finally:
+                _SESSION_HOST_CTX.reset(_host_token)
+                if schema_path:
+                    try:
+                        os.unlink(schema_path)
+                    except OSError:
+                        pass
+
+    def _build_command(
+        self,
+        *,
+        profile: GoogleCodingDispatchProfile,
+        schema_path: str,
+        prompt: str,
+    ) -> List[str]:
+        """Build the ``agy --print ...`` command line."""
+        cmd = [
+            self.resolved_bin,
+            "--print",
+            prompt,
+            "--output-format",
+            "stream-json",
+            "--json-schema",
+            schema_path,
+        ]
+        if profile.dangerously_skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+        if profile.sandbox:
+            cmd.append("--sandbox")
+        if profile.mode:
+            cmd.extend(["--mode", profile.mode])
+        if profile.model and profile.model != "auto":
+            cmd.extend(["--model", profile.model])
+        if profile.agent:
+            cmd.extend(["--agent", profile.agent])
+        if profile.effort:
+            cmd.extend(["--effort", profile.effort])
+        return cmd
+
+    def _build_agy_prompt(
+        self,
+        profile: GoogleCodingDispatchProfile,
+        brief: BaseModel,
+        output_model: Type[BaseModel],
+    ) -> str:
+        body = load_subagent_definition(profile.subagent)
+        output_prompt = self._build_prompt(brief, output_model)
+        return (
+            f"You are the `{profile.subagent}` dev-loop subagent.\n\n"
+            f"Subagent instructions:\n{body}\n\n"
+            f"{output_prompt}"
+        )
+
+    def _build_prompt(self, brief: BaseModel, output_model: Type[BaseModel]) -> str:
+        schema_json = json.dumps(output_model.model_json_schema(), indent=2)
+        brief_dump = brief.model_dump_json(indent=2)
+        return (
+            "TASK BRIEF:\n"
+            f"{brief_dump}\n\n"
+            "OUTPUT INSTRUCTIONS:\n"
+            f"Your output MUST conform to the JSON schema for `{output_model.__name__}`:\n"
+            f"```json\n{schema_json}\n```\n\n"
+            "Return valid JSON matching this schema."
+        )
+
+    def _enforce_cwd_under_worktree_base(self, cwd: str) -> None:
+        base = os.path.abspath(conf.WORKTREE_BASE_PATH)
+        target = os.path.abspath(cwd)
+        try:
+            common = os.path.commonpath([base, target])
+        except ValueError:
+            common = ""
+        if common != base:
+            raise DispatchExecutionError(f"cwd {cwd!r} is not under WORKTREE_BASE_PATH={base!r}")
+
+    def _materialize_json_schema(self, output_model: Type[BaseModel]) -> str:
+        schema = output_model.model_json_schema()
+        fd, path = tempfile.mkstemp(prefix="dev_loop_agy_schema_", suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(schema, fh)
+        except Exception:
+            os.close(fd)
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
+        return path
+
+    async def _create_process(self, command: Sequence[str], cwd: str) -> Any:
+        return await asyncio.create_subprocess_exec(
+            *command,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            limit=8 * 1024 * 1024,
+        )
+
+    async def _read_stream(self, stream: Any) -> str:
+        if stream is None:
+            return ""
+        data = await stream.read()
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return str(data or "")
+
+    async def _stream_stdout_events(
+        self,
+        stdout: Any,
+        *,
+        stream_key: str,
+        run_id: str,
+        node_id: str,
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        if stdout is None:
+            return None, ""
+        assistant_chunks: List[str] = []
+        result_payload: Optional[Dict[str, Any]] = None
+
+        while True:
+            raw = await stdout.readline()
+            if not raw:
+                break
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                await self._publish_event(
+                    stream_key,
+                    kind="dispatch.message",
+                    run_id=run_id,
+                    node_id=node_id,
+                    payload={"raw_line": line},
+                )
+                continue
+
+            event_type = event.get("type") or event.get("event")
+            if event_type == "result":
+                res = event.get("result", {})
+                if isinstance(res, str):
+                    try:
+                        res = json.loads(res)
+                    except Exception:
+                        pass
+                if isinstance(res, dict):
+                    result_payload = res
+            elif event_type == "step_update":
+                su = event.get("step_update", {})
+                if isinstance(su, dict):
+                    text = su.get("text_delta")
+                    if text:
+                        assistant_chunks.append(text)
+
+            await self._publish_agy_event(stream_key, event, run_id, node_id)
+
+        return result_payload, "".join(assistant_chunks)
+
+    async def _publish_agy_event(
+        self,
+        stream_key: str,
+        event: Dict[str, Any],
+        run_id: str,
+        node_id: str,
+    ) -> None:
+        event_type = event.get("type") or event.get("event")
+        kind = "dispatch.message"
+        if event_type == "init":
+            kind = "dispatch.started"
+        elif event_type == "result":
+            kind = "dispatch.completed"
+        elif event_type == "step_update":
+            su = event.get("step_update", {})
+            st = su.get("step_type") if isinstance(su, dict) else None
+            if st == "tool_call":
+                kind = "dispatch.tool_use"
+            elif st == "tool_response":
+                kind = "dispatch.tool_result"
+
+        await self._publish_event(
+            stream_key,
+            kind=kind,
+            run_id=run_id,
+            node_id=node_id,
+            payload={"agy_event": event},
+        )
+
+    def _parse_and_validate_result(
+        self,
+        result_data: Optional[Dict[str, Any]],
+        assistant_text: str,
+        output_model: Type[T],
+    ) -> T:
+        if result_data:
+            if "structured_output" in result_data and result_data["structured_output"]:
+                try:
+                    return output_model.model_validate(result_data["structured_output"])
+                except ValidationError as exc:
+                    self.logger.warning("structured_output validation failed, trying direct dict: %s", exc)
+            try:
+                return output_model.model_validate(result_data)
+            except ValidationError as exc:
+                self.logger.warning("direct dict validation failed, falling back to text parse: %s", exc)
+
+        text_to_parse = ""
+        if result_data and isinstance(result_data.get("response"), str):
+            text_to_parse = result_data["response"]
+        if not text_to_parse.strip():
+            text_to_parse = assistant_text
+
+        if not text_to_parse.strip():
+            raise DispatchOutputValidationError(
+                "agy did not produce structured output or text response.",
+                raw_payload="",
+            )
+
+        json_text = GeminiCodeDispatcher._extract_last_json_object(text_to_parse)
+        if json_text is None:
+            raise DispatchOutputValidationError(
+                "Could not locate a JSON object in agy output.",
+                raw_payload=text_to_parse,
+            )
+        try:
+            return output_model.model_validate_json(json_text)
+        except ValidationError as exc:
+            raise DispatchOutputValidationError(
+                f"Output failed {output_model.__name__} validation: {exc}",
+                raw_payload=json_text,
+            ) from exc
+
+
 __all__ = [
+    "GoogleCodingDispatcher",
     "ClaudeCodeDispatcher",
     "CodexCodeDispatcher",
     "GeminiCodeDispatcher",
     "LLMCodeDispatcher",
     "GrokCodeDispatcher",
+    "MoonshotCodeDispatcher",
     "ZaiCodeDispatcher",
     "DevLoopCodeDispatcher",
     "DispatchExecutionError",

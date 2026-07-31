@@ -4,7 +4,7 @@ title: parrot.stores.parents
 id: mod:parrot.stores.parents
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parent document searcher package for FEAT-128 — Parent-Child Retrieval.
 relates_to:
 - concept: mod:parrot.stores.parents.abstract

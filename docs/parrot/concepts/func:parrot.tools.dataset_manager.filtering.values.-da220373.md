@@ -4,7 +4,7 @@ title: infer_values_from_datasets()
 id: func:parrot.tools.dataset_manager.filtering.values.infer_values_from_datasets
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Collect distinct values for *column* from in-memory datasets.
 ---
 

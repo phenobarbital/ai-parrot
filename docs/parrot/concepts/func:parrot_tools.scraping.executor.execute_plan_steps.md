@@ -4,7 +4,7 @@ title: execute_plan_steps()
 id: func:parrot_tools.scraping.executor.execute_plan_steps
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Execute a scraping plan's steps against a browser driver.
 ---
 

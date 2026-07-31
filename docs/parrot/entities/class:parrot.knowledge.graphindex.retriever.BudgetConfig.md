@@ -4,7 +4,7 @@ title: BudgetConfig
 id: class:parrot.knowledge.graphindex.retriever.BudgetConfig
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Token budget for Phase 4 result assembly.
 ---
 

@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob|Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "wikitoolkit claude-hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(wikitoolkit:*)",
+      "Bash(parrot wiki:*)",
+      "Bash(source .venv/bin/activate && wikitoolkit:*)",
+      "Bash(source .venv/bin/activate && parrot wiki:*)"
+    ]
+  }
+}

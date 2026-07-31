@@ -400,7 +400,7 @@ what the Claude Code hook reads to find the wiki.
   "max_file_kb": 512,
   "claude": {
     "nudge_cooldown_seconds": 300,
-    "nudge_tools": ["Grep", "Glob", "Read"]
+    "nudge_tools": ["Grep", "Glob", "Read", "Bash"]
   }
 }
 ```
@@ -415,7 +415,7 @@ what the Claude Code hook reads to find the wiki.
 | `body_max_chars` | `16000` | Cap on stored page body length (≈ 4k tokens). |
 | `max_file_kb` | `512` | Skip files larger than this many KiB. |
 | `claude.nudge_cooldown_seconds` | `300` | Minimum seconds between two PreToolUse nudges. `0` disables throttling. |
-| `claude.nudge_tools` | `["Grep","Glob","Read"]` | Tool names the nudge applies to. |
+| `claude.nudge_tools` | `["Grep","Glob","Read","Bash"]` | Tool names the nudge applies to (`Bash` covers shell searches — see below). |
 
 **Default exclusions** (always pruned): `.git`, `.venv`, `venv`, `node_modules`,
 `build`, `dist`, `__pycache__`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`,
@@ -475,15 +475,15 @@ leaving `.parrot/wiki.json` and the wiki plane itself in place.
 | --- | --- |
 | `.parrot/wiki.json` | Wiki config (created if absent). |
 | **`CLAUDE.md`** (managed section) | Tells the assistant to prefer `wikitoolkit query "<question>"` over grepping. Delimited by `<!-- parrot:wiki:begin -->` … `<!-- parrot:wiki:end -->`. |
-| **`.claude/settings.json`** (PreToolUse hook) | Merges a nudge hook (matcher `Grep\|Glob\|Read` → `wikitoolkit claude-hook`) into the existing settings without disturbing other hooks. |
+| **`.claude/settings.json`** (PreToolUse hook) | Merges a nudge hook (matcher `Grep\|Glob\|Read\|Bash` → `wikitoolkit claude-hook`) into the existing settings without disturbing other hooks. |
 | **`.claude/commands/parrotwiki.md`** | The `/parrotwiki` slash command. |
 | **`.git/hooks/post-commit`** (optional) | Chained hook running `wikitoolkit upsert --changed --quiet` after each commit. Worktree-aware; skipped if an existing hook is not a POSIX-sh script. |
 | **`.gitignore`** (optional) | Adds `.parrot/` (the local retrieval plane). |
 
 ### The PreToolUse nudge hook
 
-Before search-style tool calls (`Grep`, `Glob`, `Read`), Claude Code invokes
-`wikitoolkit claude-hook`. The hook:
+Before search-style tool calls (`Grep`, `Glob`, `Read`, `Bash`), Claude Code
+invokes `wikitoolkit claude-hook`. The hook:
 
 - **Never blocks** — it emits *context only* (`additionalContext`), no permission
   decision, so the normal flow is untouched.
@@ -496,6 +496,35 @@ Before search-style tool calls (`Grep`, `Glob`, `Read`), Claude Code invokes
 
 The nudge steers the assistant toward `wikitoolkit query "<question>"` before it
 scans raw files.
+
+#### Shell searches (`Bash`) are covered too
+
+An assistant often searches the repo with the **`Bash`** tool
+(`Bash(grep …)`, `rg`, `find`) rather than the native `Grep`/`Read` tools —
+which the `Grep|Glob|Read` matcher alone would miss. The installed matcher is
+therefore `Grep|Glob|Read|Bash`, and the hook inspects each `Bash` command to
+decide, per-call, whether it's actually a repository search:
+
+| Bash command | Nudged? | Why |
+| --- | --- | --- |
+| `grep -rn "EventBus" .`, `rg Foo`, `find . -name '*.py'`, `… \| xargs grep …` | ✅ | Code-search tool (`grep`/`egrep`/`fgrep`/`rg`/`ag`/`ack`/`find`) anywhere in the pipeline. |
+| `cat parrot/x.py`, `head -50 README.md`, `sed -n … x.py` | ✅ | A file reader (`cat`/`head`/`tail`/`sed`/`awk`) whose argument is a **source/doc** file. |
+| `git status`, `ls -la`, `pytest -q`, `uv pip install …`, `cat /etc/hosts` | ❌ | Not a repo search — left silent so the nudge never spams unrelated shell calls. |
+
+Leading `VAR=value` assignments and wrappers (`sudo`, `xargs`, `env`, …) are
+skipped when finding the real command, so `FOO=1 grep …` and `… | xargs rg …`
+are still recognised.
+
+> **Upgrading an existing install.** Installs created before Bash coverage carry
+> the old `Grep|Glob|Read` matcher. Re-run `parrot claude install` — it refreshes
+> the `.claude/settings.json` matcher to `Grep|Glob|Read|Bash` and adds `Bash` to
+> `claude.nudge_tools` (a customised `nudge_tools` list is left untouched). Then
+> restart the Claude Code session so it reloads settings.
+
+**It's a suggestion, not a block.** Even with `Bash` coverage the hook only
+injects context — it makes the KB the obvious first move but can't hard-stop a
+determined shell search, by design (so you're never stuck when the wiki has no
+answer).
 
 ### The `/parrotwiki` slash command
 

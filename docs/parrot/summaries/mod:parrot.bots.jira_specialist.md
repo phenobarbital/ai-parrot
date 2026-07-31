@@ -4,7 +4,7 @@ title: parrot.bots.jira_specialist
 id: mod:parrot.bots.jira_specialist
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Jira Specialist Agent with Daily Standup Workflow.
 relates_to:
 - concept: class:parrot.bots.jira_specialist.DailyStandupConfig

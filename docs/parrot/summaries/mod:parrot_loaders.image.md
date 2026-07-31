@@ -4,7 +4,7 @@ title: parrot_loaders.image
 id: mod:parrot_loaders.image
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'ImageLoader: OCR-based image loader with layout-aware text extraction.'
 relates_to:
 - concept: class:parrot_loaders.image.ImageLoader

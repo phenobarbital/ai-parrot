@@ -71,6 +71,8 @@ _EXPORT_MODULES: dict[str, str] = {
     # Context packing
     "PackedContext": "parrot.knowledge.wiki.context",
     "pack_results": "parrot.knowledge.wiki.context",
+    # Crew/flow execution recording (FEAT: execution wiki)
+    "ExecutionWikiRecorder": "parrot.knowledge.wiki.execution",
 }
 
 __all__ = list(_EXPORT_MODULES)

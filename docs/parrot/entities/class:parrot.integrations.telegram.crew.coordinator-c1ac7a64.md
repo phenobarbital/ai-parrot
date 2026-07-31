@@ -4,7 +4,7 @@ title: CoordinatorBot
 id: class:parrot.integrations.telegram.crew.coordinator.CoordinatorBot
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Non-agent bot that manages the pinned registry message.
 ---
 

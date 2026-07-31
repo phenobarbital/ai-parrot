@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager
 id: pkg:parrot.tools.dataset_manager
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.tools.dataset_manager (7 modules, 3 sub-packages).
 relates_to:
 - concept: mod:parrot.tools.dataset_manager.computed

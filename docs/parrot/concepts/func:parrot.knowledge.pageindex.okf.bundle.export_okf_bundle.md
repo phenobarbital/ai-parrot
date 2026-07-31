@@ -4,7 +4,7 @@ title: export_okf_bundle()
 id: func:parrot.knowledge.pageindex.okf.bundle.export_okf_bundle
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Export a PageIndex tree as an OKF v0.1 compliant directory bundle.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.integrations.slack.assistant
 id: mod:parrot.integrations.slack.assistant
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Slack Agents & AI Apps integration for AI-Parrot.
 relates_to:
 - concept: class:parrot.integrations.slack.assistant.SlackAssistantHandler

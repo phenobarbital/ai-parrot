@@ -4,7 +4,7 @@ title: VoiceTranscriber
 id: class:parrot.voice.transcriber.transcriber.VoiceTranscriber
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Voice transcription service.
 ---
 

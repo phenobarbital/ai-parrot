@@ -4,7 +4,7 @@ title: media_type_from_filename()
 id: func:parrot.handlers.models.understanding.media_type_from_filename
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return 'image' or 'video' based on the file extension of *filename*.
 ---
 

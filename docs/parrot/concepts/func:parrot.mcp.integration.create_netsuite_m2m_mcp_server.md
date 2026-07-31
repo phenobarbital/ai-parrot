@@ -4,7 +4,7 @@ title: create_netsuite_m2m_mcp_server()
 id: func:parrot.mcp.integration.create_netsuite_m2m_mcp_server
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create a NetSuite MCP server using OAuth2 Client Credentials (M2M) with certificate.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.setup.providers.google
 id: mod:parrot.setup.providers.google
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Google (Gemini) provider wizard for parrot setup.
 relates_to:
 - concept: class:parrot.setup.providers.google.GoogleWizard

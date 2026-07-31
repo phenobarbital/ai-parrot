@@ -4,7 +4,7 @@ title: FilterResult
 id: class:parrot.tools.dataset_manager.filtering.contracts.FilterResult
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Records the per-run outcome of ``DatasetManager.apply_filters``.
 ---
 

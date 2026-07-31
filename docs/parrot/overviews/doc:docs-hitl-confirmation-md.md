@@ -4,7 +4,7 @@ title: HITL Tool-Call Confirmation (FEAT-235)
 id: doc:docs-hitl-confirmation-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AI-Parrot agents can now pause before executing side-effecting or irreversible
 relates_to:
 - concept: mod:parrot.auth

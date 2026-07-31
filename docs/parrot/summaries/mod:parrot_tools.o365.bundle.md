@@ -4,7 +4,7 @@ title: parrot_tools.o365.bundle
 id: mod:parrot_tools.o365.bundle
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SharePoint and OneDrive Toolkits for AI-Parrot
 relates_to:
 - concept: class:parrot_tools.o365.bundle.Office365FileManagementToolkit

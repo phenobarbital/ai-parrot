@@ -4,7 +4,7 @@ title: combined_auth_callback_handler()
 id: func:parrot.integrations.telegram.combined_callback.combined_auth_callback_handler
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Handle the combined BasicAuth + secondary OAuth redirect.
 ---
 

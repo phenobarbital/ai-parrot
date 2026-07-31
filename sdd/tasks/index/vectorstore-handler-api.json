@@ -22,7 +22,7 @@
       "parallelism_notes": "No shared files with TASK-607; both create new files only",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-606-config-and-package-init.md",
+      "file": "sdd/tasks/completed/TASK-606-config-and-package-init.md",
       "completed_at": "2026-04-07T01:36:32.990649Z"
     },
     {
@@ -42,7 +42,7 @@
       "parallelism_notes": "Creates helpers.py; no overlap with handler.py tasks",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-607-vectorstore-helper.md",
+      "file": "sdd/tasks/completed/TASK-607-vectorstore-helper.md",
       "completed_at": "2026-04-07T01:38:27.377423Z"
     },
     {
@@ -63,13 +63,13 @@
       "parallelism_notes": "Creates handler.py which all subsequent tasks modify",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-608-handler-skeleton-store-cache.md",
+      "file": "sdd/tasks/completed/TASK-608-handler-skeleton-store-cache.md",
       "completed_at": "2026-04-07T02:02:00.078078Z"
     },
     {
       "id": "TASK-609",
       "slug": "post-create-collection",
-      "title": "POST Endpoint \u2014 Create Collection",
+      "title": "POST Endpoint — Create Collection",
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
@@ -80,16 +80,16 @@
         "TASK-608"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies handler.py post() \u2014 sequential with other handler method tasks",
+      "parallelism_notes": "Modifies handler.py post() — sequential with other handler method tasks",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-609-post-create-collection.md",
+      "file": "sdd/tasks/completed/TASK-609-post-create-collection.md",
       "completed_at": "2026-04-07T02:06:35.613238Z"
     },
     {
       "id": "TASK-610",
       "slug": "patch-search-test",
-      "title": "PATCH Endpoint \u2014 Search Test",
+      "title": "PATCH Endpoint — Search Test",
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
@@ -100,16 +100,16 @@
         "TASK-608"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies handler.py patch() \u2014 sequential with other handler method tasks",
+      "parallelism_notes": "Modifies handler.py patch() — sequential with other handler method tasks",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-610-patch-search-test.md",
+      "file": "sdd/tasks/completed/TASK-610-patch-search-test.md",
       "completed_at": "2026-04-07T02:09:30.014195Z"
     },
     {
       "id": "TASK-611",
       "slug": "put-data-loading",
-      "title": "PUT Endpoint \u2014 Data Loading",
+      "title": "PUT Endpoint — Data Loading",
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
@@ -120,10 +120,10 @@
         "TASK-608"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies handler.py put() \u2014 most complex task, sequential",
+      "parallelism_notes": "Modifies handler.py put() — most complex task, sequential",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-611-put-data-loading.md",
+      "file": "sdd/tasks/completed/TASK-611-put-data-loading.md",
       "completed_at": "2026-04-07T02:21:06.180824Z"
     },
     {
@@ -144,10 +144,10 @@
         "TASK-611"
       ],
       "parallel": false,
-      "parallelism_notes": "Final integration \u2014 must run after all implementation tasks",
+      "parallelism_notes": "Final integration — must run after all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-612-route-registration.md",
+      "file": "sdd/tasks/completed/TASK-612-route-registration.md",
       "completed_at": "2026-04-07T02:22:54.497416Z"
     }
   ]

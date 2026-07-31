@@ -4,7 +4,7 @@ title: parrot.core.hooks.manager
 id: mod:parrot.core.hooks.manager
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HookManager — registry and lifecycle coordinator for all hooks.
 relates_to:
 - concept: class:parrot.core.hooks.manager.HookManager

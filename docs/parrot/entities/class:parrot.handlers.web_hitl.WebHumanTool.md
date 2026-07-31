@@ -4,7 +4,7 @@ title: WebHumanTool
 id: class:parrot.handlers.web_hitl.WebHumanTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A :class:`~parrot.human.tool.HumanTool` that auto-resolves manager
 relates_to:
 - concept: class:parrot.human.tool.HumanTool

@@ -4,7 +4,7 @@ title: parrot.flows.dev_loop.streaming
 id: mod:parrot.flows.dev_loop.streaming
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FlowStreamMultiplexer — aiohttp WebSocket fan-in for two Redis streams.
 relates_to:
 - concept: class:parrot.flows.dev_loop.streaming.FlowStreamMultiplexer

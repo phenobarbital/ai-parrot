@@ -4,7 +4,7 @@ title: parrot.tools.stub_credentialed_tool
 id: mod:parrot.tools.stub_credentialed_tool
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Stub credentialed tool for FEAT-260 v1 acceptance testing.
 relates_to:
 - concept: class:parrot.tools.stub_credentialed_tool.StubCredentialedTool

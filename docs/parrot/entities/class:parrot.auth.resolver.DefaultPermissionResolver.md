@@ -4,7 +4,7 @@ title: DefaultPermissionResolver
 id: class:parrot.auth.resolver.DefaultPermissionResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Reference RBAC implementation with LRU-cached role expansion.
 relates_to:
 - concept: class:parrot.auth.resolver.AbstractPermissionResolver

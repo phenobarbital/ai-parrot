@@ -4,7 +4,7 @@ title: parrot.tools.abstract
 id: mod:parrot.tools.abstract
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract Tool base class for all function-calling tools.in ai-parrot framework.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

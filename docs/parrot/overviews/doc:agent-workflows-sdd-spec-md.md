@@ -4,8 +4,9 @@ title: /sdd-spec — Scaffold a Feature Specification
 id: doc:agent-workflows-sdd-spec-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Scaffold a Feature Specification using SDD methodology'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Create a new Feature Specification for AI-Parrot using the Spec-Driven Development
+  methodology.
 relates_to:
 - concept: mod:parrot
   rel: mentions

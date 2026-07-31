@@ -4,7 +4,7 @@ title: parrot.auth.agent_guard
 id: mod:parrot.auth.agent_guard
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Agent-level PBAC guard for bot resolution.
 relates_to:
 - concept: class:parrot.auth.agent_guard.AgentAccessDenied

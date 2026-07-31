@@ -4,7 +4,7 @@ title: create_google_client()
 id: func:parrot.interfaces.google.create_google_client
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Factory function to create a GoogleClient.
 ---
 

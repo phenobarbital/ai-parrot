@@ -4,7 +4,7 @@ title: Location
 id: class:parrot_formdesigner.services.venue_service.Location
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A concrete work point inside a Site — a kiosk or any spot in the store.
 ---
 

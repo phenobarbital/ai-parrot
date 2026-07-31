@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.handlers.import_reported_time_blocks
 id: mod:parrot_tools.interfaces.workday.handlers.import_reported_time_blocks
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ImportReportedTimeBlocksType — handler for Import_Reported_Time_Blocks.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.import_reported_time_blocks.ImportReportedTimeBlocksType

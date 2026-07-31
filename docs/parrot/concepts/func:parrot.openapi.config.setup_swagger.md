@@ -4,7 +4,7 @@ title: setup_swagger()
 id: func:parrot.openapi.config.setup_swagger
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configure Swagger/OpenAPI documentation for AI-Parrot.
 ---
 

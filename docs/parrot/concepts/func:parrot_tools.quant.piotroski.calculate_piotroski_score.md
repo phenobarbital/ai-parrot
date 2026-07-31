@@ -4,7 +4,7 @@ title: calculate_piotroski_score()
 id: func:parrot_tools.quant.piotroski.calculate_piotroski_score
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Calculate Piotroski F-Score (0-9) for fundamental quality.
 ---
 

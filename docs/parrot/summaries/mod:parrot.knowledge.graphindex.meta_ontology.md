@@ -4,7 +4,7 @@ title: parrot.knowledge.graphindex.meta_ontology
 id: mod:parrot.knowledge.graphindex.meta_ontology
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Universal meta-ontology for GraphIndex.
 relates_to:
 - concept: func:parrot.knowledge.graphindex.meta_ontology.build_graphindex_ontology

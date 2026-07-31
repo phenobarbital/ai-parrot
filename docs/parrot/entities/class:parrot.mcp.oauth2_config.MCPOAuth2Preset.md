@@ -4,7 +4,7 @@ title: MCPOAuth2Preset
 id: class:parrot.mcp.oauth2_config.MCPOAuth2Preset
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pre-built OAuth2 configuration template for a known MCP provider.
 ---
 

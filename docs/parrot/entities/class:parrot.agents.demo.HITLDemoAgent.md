@@ -4,7 +4,7 @@ title: HITLDemoAgent
 id: class:parrot.agents.demo.HITLDemoAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Travel Concierge — demonstrates the web HITL (Human-in-the-Loop) flow.
 relates_to:
 - concept: class:parrot.bots.agent.BasicAgent

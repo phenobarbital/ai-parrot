@@ -4,8 +4,9 @@ title: Using Git Worktrees
 id: doc:agent-skills-using-git-worktrees-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: using-git-worktrees'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Git worktrees create isolated workspaces sharing the same repository, allowing
+  work on multiple branches simultaneously without switching.
 ---
 
 ---

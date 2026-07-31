@@ -4,7 +4,7 @@ title: ListAvailableA2AAgentsTool
 id: class:parrot.bots.flows.agents.a2a_orchestrator.ListAvailableA2AAgentsTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tool that discovers available A2A agents from specified endpoints.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

@@ -1,8 +1,12 @@
 """Deterministic Adaptive Card renderer for the Semantic UI Model (FEAT-303).
 
 Pure functions turning a :class:`~parrot.integrations.msagentsdk.semantic.
-SemanticUIResult` into Adaptive Card 1.4 JSON (plain ``dict``), plus a total
+SemanticUIResult` into Adaptive Card 1.5 JSON (plain ``dict``), plus a total
 plain-text fallback (:func:`render_text`) that never raises.
+
+Delegates to the shared :mod:`parrot.outputs.cards` builder for card
+construction (AC 1.5, native ``Table`` element).  This module remains the
+public API surface for the ``msagentsdk`` bridge.
 
 This module must be importable without ``microsoft_agents.*`` installed —
 cards are plain dicts here; wrapping them in SDK ``Activity`` objects is the
@@ -10,7 +14,6 @@ bridge's job (``agent.py``, TASK-1753).
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from parrot.integrations.msagentsdk.semantic import (
@@ -21,21 +24,21 @@ from parrot.integrations.msagentsdk.semantic import (
     TablePayload,
     UIAction,
 )
-
-# Allowed common-denominator Adaptive Card 1.4 element/action types
-# (spec §2/§7): TextBlock, ColumnSet, Column, FactSet, Container,
-# Action.Submit, Action.OpenUrl.
-
-_LEVEL_TO_COLOR = {
-    "success": "Good",
-    "warning": "Warning",
-    "error": "Attention",
-    "info": "Default",
-}
-
-
-class CardRenderError(Exception):
-    """Raised when a `SemanticUIResult` cannot be rendered within limits."""
+from parrot.outputs.cards import (
+    ActionOpenUrl,
+    ActionSubmit,
+    CardSpec,
+    DetailField,
+    DetailSection,
+    MetricEntry,
+    MetricsSection,
+    StatusSection,
+    TableSection,
+    TextSection,
+    build_attachment,
+)
+from parrot.outputs.cards import CardRenderError  # noqa: F401 — re-export
+from parrot.outputs.cards import render as _card_render
 
 
 class _DefaultFormatDict(dict):
@@ -58,170 +61,20 @@ def _safe_format(template: str, params: dict[str, Any]) -> str:
         return template
 
 
-def _no_results_card(message: str = "No results.") -> dict:
-    """Build a minimal "no results" status-style card body."""
-    return {
-        "type": "Container",
-        "items": [
-            {
-                "type": "TextBlock",
-                "text": message,
-                "wrap": True,
-                "color": _LEVEL_TO_COLOR["info"],
-            }
-        ],
-    }
-
-
-def _render_table(result: SemanticUIResult, *, max_table_rows: int) -> dict:
-    payload = result.payload
-    assert isinstance(payload, TablePayload)
-
-    body: list[dict] = [
-        {"type": "TextBlock", "text": result.title, "wrap": True, "weight": "Bolder"}
-    ]
-    if result.summary:
-        body.append({"type": "TextBlock", "text": result.summary, "wrap": True})
-
-    if not payload.columns or not payload.rows:
-        body.append(_no_results_card())
-        return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
-
-    rows = payload.rows[:max_table_rows]
-    truncated = len(payload.rows) > max_table_rows
-
-    header_columns = [
-        {
-            "type": "Column",
-            "width": "auto",
-            "items": [
-                {"type": "TextBlock", "text": col, "wrap": True, "weight": "Bolder"}
-            ],
-        }
-        for col in payload.columns
-    ]
-    body.append({"type": "ColumnSet", "columns": header_columns})
-
-    for row in rows:
-        row_columns = [
-            {
-                "type": "Column",
-                "width": "auto",
-                "items": [{"type": "TextBlock", "text": cell, "wrap": True}],
-            }
-            for cell in row
-        ]
-        body.append({"type": "ColumnSet", "columns": row_columns})
-
-    if truncated:
-        total = payload.total_rows if payload.total_rows is not None else len(
-            payload.rows
-        )
-        body.append(
-            {
-                "type": "TextBlock",
-                "text": f"Showing {len(rows)} of {total}",
-                "wrap": True,
-                "isSubtle": True,
-            }
-        )
-
-    return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
-
-
-def _render_metrics(result: SemanticUIResult, *, max_table_rows: int) -> dict:
-    payload = result.payload
-    assert isinstance(payload, MetricsPayload)
-
-    body: list[dict] = [
-        {"type": "TextBlock", "text": result.title, "wrap": True, "weight": "Bolder"}
-    ]
-    if result.summary:
-        body.append({"type": "TextBlock", "text": result.summary, "wrap": True})
-
-    if not payload.metrics:
-        body.append(_no_results_card())
-        return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
-
-    facts = []
-    for metric in payload.metrics:
-        value = metric.value
-        if metric.delta:
-            value = f"{value} ({metric.delta})"
-        facts.append({"title": metric.label, "value": value})
-
-    body.append({"type": "FactSet", "facts": facts})
-    return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
-
-
-def _render_detail(result: SemanticUIResult, *, max_table_rows: int) -> dict:
-    payload = result.payload
-    assert isinstance(payload, DetailPayload)
-
-    body: list[dict] = [
-        {"type": "TextBlock", "text": result.title, "wrap": True, "weight": "Bolder"}
-    ]
-    if result.summary:
-        body.append({"type": "TextBlock", "text": result.summary, "wrap": True})
-
-    if not payload.fields:
-        body.append(_no_results_card())
-        return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
-
-    facts = [{"title": field.label, "value": field.value} for field in payload.fields]
-    body.append({"type": "FactSet", "facts": facts})
-    return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
-
-
-def _render_status(result: SemanticUIResult, *, max_table_rows: int) -> dict:
-    payload = result.payload
-    assert isinstance(payload, StatusPayload)
-
-    items: list[dict] = [
-        {
-            "type": "TextBlock",
-            "text": payload.message,
-            "wrap": True,
-            "weight": "Bolder",
-            "color": _LEVEL_TO_COLOR[payload.level],
-        }
-    ]
-    if payload.details:
-        items.append({"type": "TextBlock", "text": payload.details, "wrap": True})
-
-    body: list[dict] = [
-        {"type": "TextBlock", "text": result.title, "wrap": True, "weight": "Bolder"}
-    ]
-    if result.summary:
-        body.append({"type": "TextBlock", "text": result.summary, "wrap": True})
-    body.append({"type": "Container", "items": items})
-
-    return {"type": "AdaptiveCard", "version": "1.4", "body": body, "actions": []}
-
-
-_RENDERERS = {
-    "table": _render_table,
-    "metrics": _render_metrics,
-    "detail": _render_detail,
-    "status": _render_status,
-}
-
-
-def _build_action(action: UIAction) -> dict:
-    """Build an Adaptive Card action dict from a `UIAction`.
+def _ui_action_to_ac_action(action: UIAction) -> ActionOpenUrl | ActionSubmit:
+    """Map a :class:`UIAction` to the shared builder's action model.
 
     ``prompt_template`` actions render as ``Action.Submit`` with a
     ``msteams.messageBack`` payload; ``url`` actions render as
     ``Action.OpenUrl``.
     """
     if action.url is not None:
-        return {"type": "Action.OpenUrl", "title": action.title, "url": action.url}
+        return ActionOpenUrl(title=action.title, url=action.url)
 
     filled_prompt = _safe_format(action.prompt_template or "", action.params)
-    return {
-        "type": "Action.Submit",
-        "title": action.title,
-        "data": {
+    return ActionSubmit(
+        title=action.title,
+        data={
             "msteams": {
                 "type": "messageBack",
                 "text": filled_prompt,
@@ -229,16 +82,91 @@ def _build_action(action: UIAction) -> dict:
             },
             "feat303_prompt": filled_prompt,
         },
-    }
+    )
+
+
+def _semantic_to_card_spec(
+    result: SemanticUIResult,
+    *,
+    max_table_rows: int = 50,
+) -> CardSpec:
+    """Map a :class:`SemanticUIResult` to a :class:`CardSpec`.
+
+    Translates each semantic payload type into the corresponding
+    :mod:`parrot.outputs.cards` section model, preserving full fidelity
+    with the original per-type renderers.
+
+    Args:
+        result: The semantic UI result to convert.
+        max_table_rows: Maximum table rows before truncation.
+
+    Returns:
+        A :class:`CardSpec` ready for :func:`parrot.outputs.cards.render`.
+
+    Raises:
+        CardRenderError: If the ``result_type`` is unknown.
+    """
+    payload = result.payload
+    sections: list = []
+
+    if isinstance(payload, TablePayload):
+        if not payload.columns or not payload.rows:
+            sections.append(StatusSection(level="info", message="No results."))
+        else:
+            sections.append(TableSection(
+                columns=payload.columns,
+                rows=payload.rows,
+                total_rows=payload.total_rows,
+                max_display_rows=max_table_rows,
+            ))
+    elif isinstance(payload, MetricsPayload):
+        if not payload.metrics:
+            sections.append(StatusSection(level="info", message="No results."))
+        else:
+            sections.append(MetricsSection(
+                metrics=[
+                    MetricEntry(label=m.label, value=m.value, delta=m.delta)
+                    for m in payload.metrics
+                ],
+            ))
+    elif isinstance(payload, DetailPayload):
+        if not payload.fields:
+            sections.append(StatusSection(level="info", message="No results."))
+        else:
+            sections.append(DetailSection(
+                fields=[
+                    DetailField(label=f.label, value=f.value)
+                    for f in payload.fields
+                ],
+            ))
+    elif isinstance(payload, StatusPayload):
+        sections.append(StatusSection(
+            level=payload.level,
+            message=payload.message,
+            details=payload.details,
+        ))
+    else:
+        raise CardRenderError(
+            f"unknown result_type {getattr(payload, 'result_type', '?')!r}"
+        )
+
+    actions = [_ui_action_to_ac_action(a) for a in result.actions]
+
+    return CardSpec(
+        title=result.title,
+        summary=result.summary,
+        sections=sections,
+        actions=actions,
+    )
 
 
 def render_card(
     result: SemanticUIResult,
     *,
-    max_table_rows: int = 15,
+    max_table_rows: int = 50,
     max_card_bytes: int = 25_000,
 ) -> dict:
-    """Render a `SemanticUIResult` as Adaptive Card 1.4 JSON.
+    """Render a `SemanticUIResult` as Adaptive Card 1.5 JSON.
 
     Args:
         result: The semantic UI result to render.
@@ -257,21 +185,8 @@ def render_card(
             (unknown `result_type` at runtime, or the serialized card
             exceeds `max_card_bytes`).
     """
-    renderer = _RENDERERS.get(result.payload.result_type)
-    if renderer is None:
-        raise CardRenderError(
-            f"unknown result_type {result.payload.result_type!r}"
-        )
-
-    card = renderer(result, max_table_rows=max_table_rows)
-    card["actions"] = [_build_action(action) for action in result.actions]
-
-    serialized_size = len(json.dumps(card).encode("utf-8"))
-    if serialized_size > max_card_bytes:
-        raise CardRenderError(
-            f"card size {serialized_size} exceeds max_card_bytes={max_card_bytes}"
-        )
-    return card
+    spec = _semantic_to_card_spec(result, max_table_rows=max_table_rows)
+    return _card_render(spec, max_card_bytes=max_card_bytes)
 
 
 def render_text(result: SemanticUIResult) -> str:
@@ -340,6 +255,63 @@ def render_text(result: SemanticUIResult) -> str:
         return "Unable to render result."
 
 
+def render_text_card(text: str) -> dict:
+    """Wrap a plain/markdown text string in a minimal Adaptive Card 1.5.
+
+    Teams renders markdown inside a ``TextBlock`` when ``markdown`` style
+    is used, giving proper formatting (bold, lists, tables, code blocks)
+    that ``TextFormatTypes.plain`` strips away.
+
+    Args:
+        text: The markdown/plain text to wrap.
+
+    Returns:
+        The Adaptive Card as a plain dict (``type``, ``version``, ``body``).
+    """
+    spec = CardSpec(sections=[TextSection(text=text)])
+    return _card_render(spec)
+
+
+def render_data_card(
+    text: str,
+    columns: list[str],
+    rows: list[list],
+    *,
+    max_table_rows: int = 50,
+) -> dict:
+    """Build an Adaptive Card with an explanation block and a data table.
+
+    Used when the agent response carries structured tabular data (e.g.
+    ``PandasAgentResponse`` with a ``data`` field) that should be rendered
+    as a native Table element in Teams rather than discarded.
+
+    Args:
+        text: Explanation / summary text shown above the table.
+        columns: Column header names.
+        rows: Row data as lists of scalars aligned with *columns*.
+        max_table_rows: Maximum rows rendered before a truncation note.
+
+    Returns:
+        The Adaptive Card as a plain dict.
+    """
+    sections: list = []
+    if text:
+        sections.append(TextSection(text=text))
+
+    if not columns or not rows:
+        sections.append(TextSection(text="No data."))
+    else:
+        sections.append(TableSection(
+            columns=columns,
+            rows=[[str(c) for c in row] for row in rows],
+            total_rows=len(rows),
+            max_display_rows=max_table_rows,
+        ))
+
+    spec = CardSpec(sections=sections)
+    return _card_render(spec)
+
+
 def build_card_attachment(card: dict) -> dict:
     """Wrap card JSON in the Bot Framework attachment envelope.
 
@@ -351,7 +323,4 @@ def build_card_attachment(card: dict) -> dict:
         `"application/vnd.microsoft.card.adaptive"` and `content` set to
         `card`.
     """
-    return {
-        "contentType": "application/vnd.microsoft.card.adaptive",
-        "content": card,
-    }
+    return build_attachment(card)

@@ -4,7 +4,7 @@ title: HTTPAuthSecurityScheme
 id: class:parrot.a2a.models.HTTPAuthSecurityScheme
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP authentication security scheme (Bearer/Basic).
 relates_to:
 - concept: class:parrot.a2a.models.SecurityScheme

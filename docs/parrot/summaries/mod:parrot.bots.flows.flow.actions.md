@@ -4,7 +4,7 @@ title: parrot.bots.flows.flow.actions
 id: mod:parrot.bots.flows.flow.actions
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Action Registry — Lifecycle hooks for AgentsFlow nodes.
 relates_to:
 - concept: class:parrot.bots.flows.flow.actions.BaseAction

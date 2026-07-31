@@ -4,7 +4,7 @@ title: parrot.registry.capabilities.models
 id: mod:parrot.registry.capabilities.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic v2 models for Intent Router and Capability Registry.
 relates_to:
 - concept: class:parrot.registry.capabilities.models.CapabilityEntry

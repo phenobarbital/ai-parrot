@@ -4,7 +4,7 @@ title: InvokeError
 id: class:parrot.exceptions.InvokeError
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raised when an ``invoke()`` call fails.
 relates_to:
 - concept: class:parrot.exceptions.ParrotError

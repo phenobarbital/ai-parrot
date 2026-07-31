@@ -4,7 +4,7 @@ title: 3. Toolkits for third-party services and Cloud-Security composition
 id: doc:docs-architecture-03-toolkits-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This chapter is a curated catalogue of toolkits in
 relates_to:
 - concept: mod:parrot.mcp.server

@@ -4,7 +4,7 @@ title: JiraPostAuthProvider
 id: class:parrot.integrations.telegram.post_auth_jira.JiraPostAuthProvider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Secondary auth provider for Atlassian Jira (OAuth2 3LO).
 ---
 

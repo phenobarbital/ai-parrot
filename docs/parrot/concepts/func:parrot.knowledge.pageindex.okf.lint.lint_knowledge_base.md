@@ -4,7 +4,7 @@ title: lint_knowledge_base()
 id: func:parrot.knowledge.pageindex.okf.lint.lint_knowledge_base
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Run lint checks on a knowledge base and return a structured report.
 ---
 

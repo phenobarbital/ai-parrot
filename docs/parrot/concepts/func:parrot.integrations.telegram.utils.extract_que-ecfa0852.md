@@ -4,7 +4,7 @@ title: extract_query_from_mention()
 id: func:parrot.integrations.telegram.utils.extract_query_from_mention
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extract the actual query from a mention or command message.
 ---
 

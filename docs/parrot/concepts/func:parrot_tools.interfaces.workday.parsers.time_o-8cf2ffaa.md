@@ -4,7 +4,7 @@ title: parse_time_off_balance_data()
 id: func:parrot_tools.interfaces.workday.parsers.time_off_balance_parsers.parse_time_off_balance_data
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse time off plan balance data from the SOAP response.
 ---
 

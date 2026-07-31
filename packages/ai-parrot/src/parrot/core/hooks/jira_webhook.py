@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from aiohttp import web
 
-from .base import BaseHook
-from .models import HookType, JiraWebhookConfig
+from navigator_eventbus.hooks.base import BaseHook
+from navigator_eventbus.hooks.models import HookType, JiraWebhookConfig
 
 
 class JiraWebhookHook(BaseHook):

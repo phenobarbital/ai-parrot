@@ -4,7 +4,7 @@ title: get_fscore_summary()
 id: func:parrot_tools.quant.piotroski.get_fscore_summary
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Generate a human-readable summary of the F-Score result.
 ---
 

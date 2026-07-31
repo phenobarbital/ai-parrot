@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.filtering.values
 id: mod:parrot.tools.dataset_manager.filtering.values
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Value catalog helpers for FEAT-225 Module 5.
 relates_to:
 - concept: func:parrot.tools.dataset_manager.filtering.values.apply_cardinality_cap

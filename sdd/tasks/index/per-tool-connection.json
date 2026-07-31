@@ -1,0 +1,92 @@
+{
+  "feature": "per-tool-connection",
+  "feature_id": "FEAT-391",
+  "spec": "sdd/specs/per-tool-connection.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-30T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1991",
+      "slug": "abstracttool-connection-lifecycle",
+      "title": "AbstractTool Connection Lifecycle Hooks",
+      "feature_id": "FEAT-391",
+      "feature": "per-tool-connection",
+      "spec": "sdd/specs/per-tool-connection.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — all others depend on it",
+      "assigned_to": null,
+      "started_at": "2026-07-30T18:47:33+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1991-abstracttool-connection-lifecycle.md"
+    },
+    {
+      "id": "TASK-1992",
+      "slug": "abstracttoolkit-connection-lifecycle",
+      "title": "AbstractToolkit Connection Lifecycle Hooks",
+      "feature_id": "FEAT-391",
+      "feature": "per-tool-connection",
+      "spec": "sdd/specs/per-tool-connection.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1991"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Mirrors TASK-1991 pattern on AbstractToolkit; depends on shared design",
+      "assigned_to": null,
+      "started_at": "2026-07-30T18:47:33+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1992-abstracttoolkit-connection-lifecycle.md"
+    },
+    {
+      "id": "TASK-1993",
+      "slug": "toolmanager-cleanup-integration",
+      "title": "ToolManager Cleanup Integration",
+      "feature_id": "FEAT-391",
+      "feature": "per-tool-connection",
+      "spec": "sdd/specs/per-tool-connection.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1991",
+        "TASK-1992"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on _close() existing on both AbstractTool and AbstractToolkit",
+      "assigned_to": null,
+      "started_at": "2026-07-30T18:47:33+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1993-toolmanager-cleanup-integration.md"
+    },
+    {
+      "id": "TASK-1994",
+      "slug": "connection-lifecycle-tests",
+      "title": "Connection Lifecycle Tests",
+      "feature_id": "FEAT-391",
+      "feature": "per-tool-connection",
+      "spec": "sdd/specs/per-tool-connection.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1991",
+        "TASK-1992",
+        "TASK-1993"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all three prior tasks; must run last",
+      "assigned_to": null,
+      "started_at": "2026-07-30T18:47:33+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1994-connection-lifecycle-tests.md"
+    }
+  ]
+}

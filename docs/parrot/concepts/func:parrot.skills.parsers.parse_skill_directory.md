@@ -4,7 +4,7 @@ title: parse_skill_directory()
 id: func:parrot.skills.parsers.parse_skill_directory
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Parse a composite skill: ``{dir}/SKILL.md`` plus adjacent asset files.'
 ---
 

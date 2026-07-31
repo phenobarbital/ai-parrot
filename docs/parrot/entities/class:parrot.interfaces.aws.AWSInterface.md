@@ -4,7 +4,7 @@ title: AWSInterface
 id: class:parrot.interfaces.aws.AWSInterface
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Base interface for AWS services using aioboto3.
 ---
 

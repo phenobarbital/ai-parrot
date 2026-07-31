@@ -4,7 +4,7 @@ title: parse_payroll_and_tax_data()
 id: func:parrot_tools.interfaces.workday.parsers.worker_parsers.parse_payroll_and_tax_data
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse payroll and tax related data from Position_Data.
 ---
 

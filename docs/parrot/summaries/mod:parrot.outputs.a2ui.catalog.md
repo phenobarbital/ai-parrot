@@ -4,7 +4,7 @@ title: parrot.outputs.a2ui.catalog
 id: mod:parrot.outputs.a2ui.catalog
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A2UI component catalog — public decorator, lookup, and envelope validation.
 relates_to:
 - concept: func:parrot.outputs.a2ui.catalog.catalog_instructions

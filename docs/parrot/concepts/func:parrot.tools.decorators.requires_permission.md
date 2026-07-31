@@ -4,7 +4,7 @@ title: requires_permission()
 id: func:parrot.tools.decorators.requires_permission
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Annotate a toolkit method or AbstractTool class with required permissions.
 ---
 

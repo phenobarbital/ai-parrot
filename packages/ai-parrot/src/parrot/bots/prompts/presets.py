@@ -10,6 +10,19 @@ from __future__ import annotations
 from typing import Dict, Callable
 
 from .builder import PromptBuilder
+from .domain_layers import CAPABILITIES_LAYER
+
+
+def _identity_preset() -> PromptBuilder:
+    """Default stack + ``CAPABILITIES_LAYER`` (FEAT-321).
+
+    Lets builder-savvy agents render ``$capabilities`` via
+    ``prompt_preset="identity"`` without adopting ``IdentityMixin``.
+
+    Returns:
+        A fresh PromptBuilder instance (default stack + capabilities layer).
+    """
+    return PromptBuilder.default().add(CAPABILITIES_LAYER)
 
 
 _PRESETS: Dict[str, Callable[[], PromptBuilder]] = {
@@ -18,6 +31,7 @@ _PRESETS: Dict[str, Callable[[], PromptBuilder]] = {
     "voice": PromptBuilder.voice,
     "agent": PromptBuilder.agent,
     "rag": PromptBuilder.rag,
+    "identity": _identity_preset,
 }
 
 

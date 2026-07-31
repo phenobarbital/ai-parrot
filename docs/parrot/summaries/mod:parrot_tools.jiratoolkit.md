@@ -4,7 +4,7 @@ title: parrot_tools.jiratoolkit
 id: mod:parrot_tools.jiratoolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Jira Toolkit - A unified toolkit for Jira operations using pycontribs/jira.
 relates_to:
 - concept: class:parrot_tools.jiratoolkit.AddAttachmentInput

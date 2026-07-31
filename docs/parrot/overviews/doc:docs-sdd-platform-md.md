@@ -4,7 +4,7 @@ title: AI-Parrot Spec-Driven Development (SDD) Platform
 id: doc:docs-sdd-platform-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A reference for the `/sdd-*` command suite under `.claude/commands/`, the
 ---
 

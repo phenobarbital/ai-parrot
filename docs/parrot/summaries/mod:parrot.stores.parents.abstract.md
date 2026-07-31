@@ -4,7 +4,7 @@ title: parrot.stores.parents.abstract
 id: mod:parrot.stores.parents.abstract
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract base class for parent document searchers.
 relates_to:
 - concept: class:parrot.stores.parents.abstract.AbstractParentSearcher

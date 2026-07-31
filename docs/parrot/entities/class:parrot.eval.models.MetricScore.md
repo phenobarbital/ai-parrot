@@ -4,7 +4,7 @@ title: MetricScore
 id: class:parrot.eval.models.MetricScore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Score for a single metric on one attempt.
 ---
 

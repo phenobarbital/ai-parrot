@@ -4,7 +4,7 @@ title: parrot.bots.prompts.agent_context
 id: mod:parrot.bots.prompts.agent_context
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AgentContextLoader and AGENT_CONTEXT_LAYER for provider-agnostic prompt caching.
 relates_to:
 - concept: func:parrot.bots.prompts.agent_context.load_agent_context

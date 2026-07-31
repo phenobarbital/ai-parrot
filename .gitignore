@@ -17,6 +17,7 @@ plugins/*
 /outputs/**/*.html
 /outputs/**/*.jpg
 /outputs/**/*.png
+/outputs/dev_loop_runs/
 examples/**/*.py
 !examples/autonomous_analyst/**/*.py
 examples/**/*.csv
@@ -31,6 +32,14 @@ examples/zoom/*
 examples/podcasts/*
 examples/scraper/*
 examples/tool/workday*
+# dev-loop console (FEAT-129/377/378): this example is a shipped artifact,
+# not scratch data — its sources must always reach the repo. Re-included
+# after the blanket examples/** rules above, mirroring the
+# autonomous_analyst exception on line 21. Deliberately scoped to source
+# extensions rather than `!examples/dev_loop/**`: a bare `**` would also
+# match the `__pycache__` directory and undo the global rule at the top.
+!examples/dev_loop/**/*.py
+!examples/dev_loop/**/*.html
 /backup/
 
 # Distribution / packaging
@@ -348,3 +357,5 @@ packages/ai-parrot/src/parrot/_version.py
 # Scripts/manifest are committed; raw files and trees are not.
 corpus/compliance_soc2_hipaa/raw/
 corpus/compliance_soc2_hipaa/trees/
+# parrot LLM-wiki state (local retrieval plane)
+.parrot/

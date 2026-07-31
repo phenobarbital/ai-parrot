@@ -4,7 +4,7 @@ title: A2AOrchestratorAgent
 id: class:parrot.bots.flows.agents.a2a_orchestrator.A2AOrchestratorAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: An orchestrator agent that supports both local and remote A2A agents.
 relates_to:
 - concept: class:parrot.a2a.mixin.A2AClientMixin

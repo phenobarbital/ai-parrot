@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.crew
 id: pkg:parrot.integrations.telegram.crew
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.integrations.telegram.crew (8 modules, 0 sub-packages).
 relates_to:
 - concept: mod:parrot.integrations.telegram.crew.agent_card

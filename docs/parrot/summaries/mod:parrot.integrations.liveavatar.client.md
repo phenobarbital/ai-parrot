@@ -4,7 +4,7 @@ title: parrot.integrations.liveavatar.client
 id: mod:parrot.integrations.liveavatar.client
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LiveAvatar HTTP client and session lifecycle (FEAT-242 Phase A — Module 1).
 relates_to:
 - concept: class:parrot.integrations.liveavatar.client.LiveAvatarClient

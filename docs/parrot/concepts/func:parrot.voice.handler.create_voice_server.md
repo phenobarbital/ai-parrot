@@ -4,7 +4,7 @@ title: create_voice_server()
 id: func:parrot.voice.handler.create_voice_server
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create complete voice server application.
 ---
 

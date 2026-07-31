@@ -4,7 +4,7 @@ title: Agent Orchestration System - Complete Guide
 id: doc:docs-crew-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'The Agent Orchestration System allows you to coordinate multiple AI agents
   to work together on complex tasks. It supports:'
 relates_to:

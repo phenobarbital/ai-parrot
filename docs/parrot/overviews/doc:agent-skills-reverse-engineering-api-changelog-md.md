@@ -4,7 +4,7 @@ title: Changelog
 id: doc:agent-skills-reverse-engineering-api-changelog-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: All notable changes to the Reverse Engineering API skill will be documented
   in this file.
 ---

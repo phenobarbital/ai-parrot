@@ -4,7 +4,7 @@ title: get_text_of_pdf_pages()
 id: func:parrot.knowledge.pageindex.utils.get_text_of_pdf_pages
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Get concatenated text from a page list (1-indexed).
 ---
 

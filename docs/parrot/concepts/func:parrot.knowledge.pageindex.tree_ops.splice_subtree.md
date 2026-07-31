@@ -4,7 +4,7 @@ title: splice_subtree()
 id: func:parrot.knowledge.pageindex.tree_ops.splice_subtree
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Insert ``subtree`` under ``parent_node_id`` (or at root if None).
 ---
 

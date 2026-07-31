@@ -4,7 +4,7 @@ title: register_node()
 id: func:parrot.bots.flows.flow.flow.register_node
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Register a Node subclass under ``name`` in ``NODE_REGISTRY``.
 ---
 

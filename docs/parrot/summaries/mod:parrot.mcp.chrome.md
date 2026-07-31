@@ -4,7 +4,7 @@ title: parrot.mcp.chrome
 id: mod:parrot.mcp.chrome
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Module parrot.mcp.chrome
 relates_to:
 - concept: class:parrot.mcp.chrome.ChromeManager

@@ -4,7 +4,7 @@ title: parrot_formdesigner.tools.edit_toolkit
 id: mod:parrot_formdesigner.tools.edit_toolkit
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EditToolkit — LLM-callable toolkit for surgical FormSchema editing.
 relates_to:
 - concept: class:parrot_formdesigner.tools.edit_toolkit.EditToolkit

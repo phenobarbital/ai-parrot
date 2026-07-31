@@ -4,7 +4,7 @@ title: AgentTalk Integration Guide
 id: doc:docs-agent-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This guide covers the new **AgentTalk** HTTP handler and the migration of
   MCP support directly into `BasicAgent`. These changes provide a more flexible and
   powerful way to interact with agents via HTTP APIs.

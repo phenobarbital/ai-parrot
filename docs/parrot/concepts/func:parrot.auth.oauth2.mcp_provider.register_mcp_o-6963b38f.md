@@ -4,7 +4,7 @@ title: register_mcp_oauth2_provider()
 id: func:parrot.auth.oauth2.mcp_provider.register_mcp_oauth2_provider
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create an :class:`MCPOAuth2Provider` and register it in the global registry.
 ---
 

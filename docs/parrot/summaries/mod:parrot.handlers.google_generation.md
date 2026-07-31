@@ -4,7 +4,7 @@ title: parrot.handlers.google_generation
 id: mod:parrot.handlers.google_generation
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP handler for Google multimodal generation workflows.
 relates_to:
 - concept: class:parrot.handlers.google_generation.GoogleGeneration

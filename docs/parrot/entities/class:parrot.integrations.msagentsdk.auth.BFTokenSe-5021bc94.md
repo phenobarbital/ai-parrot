@@ -4,7 +4,7 @@ title: BFTokenServiceResolver
 id: class:parrot.integrations.msagentsdk.auth.BFTokenServiceResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolves per-user tokens from the Bot Framework Token Service.
 relates_to:
 - concept: class:parrot.auth.credentials.CredentialResolver

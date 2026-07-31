@@ -4,7 +4,7 @@ title: parse_organizations_response()
 id: func:parrot_tools.interfaces.workday.parsers.organization_parsers.parse_organizations_response
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parse the complete organizations response from Workday.
 ---
 

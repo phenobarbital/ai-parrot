@@ -4,7 +4,7 @@ title: OAuthCredentialResolver
 id: class:parrot.auth.credentials.OAuthCredentialResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Resolves credentials from an OAuth 2.0 token store.
 relates_to:
 - concept: class:parrot.auth.credentials.CredentialResolver

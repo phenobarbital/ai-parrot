@@ -4,7 +4,7 @@ title: parrot.registry.routing.ontology_signal
 id: mod:parrot.registry.routing.ontology_signal
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Ontology Pre-Annotator adapter (FEAT-111 Module 5).
 relates_to:
 - concept: class:parrot.registry.routing.ontology_signal.OntologyPreAnnotator

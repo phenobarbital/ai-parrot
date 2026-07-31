@@ -4,7 +4,7 @@ title: parrot.bots.flows.core.storage.backends.base
 id: mod:parrot.bots.flows.core.storage.backends.base
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ResultStorage abstract base class for pluggable crew/flow result persistence.
 relates_to:
 - concept: class:parrot.bots.flows.core.storage.backends.base.ResultStorage

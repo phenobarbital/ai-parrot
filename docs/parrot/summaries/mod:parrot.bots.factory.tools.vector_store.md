@@ -4,7 +4,7 @@ title: parrot.bots.factory.tools.vector_store
 id: mod:parrot.bots.factory.tools.vector_store
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Provision a PgVector table for a RAG agent.
 relates_to:
 - concept: func:parrot.bots.factory.tools.vector_store.provision_vector_store

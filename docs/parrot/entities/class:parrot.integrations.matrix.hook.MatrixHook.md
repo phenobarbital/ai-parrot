@@ -4,7 +4,7 @@ title: MatrixHook
 id: class:parrot.integrations.matrix.hook.MatrixHook
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Matrix message listener via mautrix-python.
 relates_to:
 - concept: class:parrot.core.hooks.base.BaseHook

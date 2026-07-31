@@ -4,7 +4,7 @@ title: build_form_schema()
 id: func:parrot.auth.confirmation.build_form_schema
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Build a FORM interaction schema from the tool's args_schema.
 ---
 

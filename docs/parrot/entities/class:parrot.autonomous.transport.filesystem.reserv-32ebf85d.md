@@ -4,7 +4,7 @@ title: ReservationManager
 id: class:parrot.autonomous.transport.filesystem.reservation.ReservationManager
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Cooperative resource reservation using JSON files on the filesystem.
 ---
 

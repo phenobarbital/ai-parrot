@@ -4,8 +4,8 @@ title: Skill
 id: doc:agent-skills-git-commit-formatter-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: git-commit-formatter'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Git Commit Formatter Skill
 ---
 
 ---

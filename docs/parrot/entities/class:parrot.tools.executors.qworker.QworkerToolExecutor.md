@@ -4,7 +4,7 @@ title: QworkerToolExecutor
 id: class:parrot.tools.executors.qworker.QworkerToolExecutor
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Dispatch tool execution to the Qworker service.
 relates_to:
 - concept: class:parrot.tools.executors.abstract.AbstractToolExecutor

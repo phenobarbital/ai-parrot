@@ -4,7 +4,7 @@ title: parrot.clients.bedrock
 id: mod:parrot.clients.bedrock
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Native AWS Bedrock Converse API client for AI-Parrot (FEAT-302).
 relates_to:
 - concept: class:parrot.clients.bedrock.BedrockConverseClient

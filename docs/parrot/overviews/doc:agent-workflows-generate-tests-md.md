@@ -4,8 +4,9 @@ title: Generate Tests Workflow
 id: doc:agent-workflows-generate-tests-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Generate comprehensive pytest suites'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: This workflow guides you through creating comprehensive pytest suites using
+  `pytest-asyncio`, fixtures, and correct project structure.
 ---
 
 ---

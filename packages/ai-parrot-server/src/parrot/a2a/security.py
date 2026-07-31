@@ -1459,6 +1459,7 @@ class A2ASecurityMiddleware:
         self._provider = credential_provider
         self._default_policy = default_policy or SecurityPolicy()
         self._skip_paths = set(skip_paths or [
+            "/.well-known/agent-card.json",
             "/.well-known/agent.json",
             "/health",
             "/ready",

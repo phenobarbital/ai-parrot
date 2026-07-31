@@ -4,7 +4,7 @@ title: parrot.registry.storage
 id: mod:parrot.registry.storage
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Redis-backed storage for BotConfig objects.
 relates_to:
 - concept: class:parrot.registry.storage.BotConfigStorage

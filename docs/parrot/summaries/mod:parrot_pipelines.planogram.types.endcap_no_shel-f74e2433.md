@@ -4,7 +4,7 @@ title: parrot_pipelines.planogram.types.endcap_no_shelves_promotional
 id: mod:parrot_pipelines.planogram.types.endcap_no_shelves_promotional
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EndcapNoShelvesPromotional planogram type composable.
 relates_to:
 - concept: class:parrot_pipelines.planogram.types.endcap_no_shelves_promotional.EndcapNoShelvesPromotional

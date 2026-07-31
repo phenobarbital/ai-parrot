@@ -4,7 +4,7 @@ title: parrot.autonomous.transport.filesystem.registry
 id: mod:parrot.autonomous.transport.filesystem.registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AgentRegistry — presence management via filesystem JSON files.
 relates_to:
 - concept: class:parrot.autonomous.transport.filesystem.registry.AgentRegistry

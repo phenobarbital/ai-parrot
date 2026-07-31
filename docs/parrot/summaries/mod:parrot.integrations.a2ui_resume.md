@@ -4,7 +4,7 @@ title: parrot.integrations.a2ui_resume
 id: mod:parrot.integrations.a2ui_resume
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-channel A2UI deep-link resume helper (Module 8, channel half).
 relates_to:
 - concept: class:parrot.integrations.a2ui_resume.ChannelDeepLinkResume

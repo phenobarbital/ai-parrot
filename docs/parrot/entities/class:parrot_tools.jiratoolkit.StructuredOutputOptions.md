@@ -4,7 +4,7 @@ title: StructuredOutputOptions
 id: class:parrot_tools.jiratoolkit.StructuredOutputOptions
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Options to shape the output of Jira items into either a whitelist or a Pydantic
   model.
 ---

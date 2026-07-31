@@ -4,7 +4,7 @@ title: compute_args_hash()
 id: func:parrot.auth.confirmation.compute_args_hash
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Produce a stable SHA-256 hash over normalized parameters.
 ---
 

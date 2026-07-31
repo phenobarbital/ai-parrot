@@ -4,7 +4,7 @@ title: GoogleVoiceTool
 id: class:parrot_tools.gvoice.GoogleVoiceTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tool for generating speech audio from text using Google Cloud Text-to-Speech.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

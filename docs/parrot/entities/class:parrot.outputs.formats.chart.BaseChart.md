@@ -4,7 +4,7 @@ title: BaseChart
 id: class:parrot.outputs.formats.chart.BaseChart
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Base class for chart renderers - extends BaseRenderer with chart-specific
   methods
 relates_to:

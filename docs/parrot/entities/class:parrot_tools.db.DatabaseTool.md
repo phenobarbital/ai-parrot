@@ -4,7 +4,7 @@ title: DatabaseTool
 id: class:parrot_tools.db.DatabaseTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Unified Database Tool that handles the complete database interaction pipeline:'
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

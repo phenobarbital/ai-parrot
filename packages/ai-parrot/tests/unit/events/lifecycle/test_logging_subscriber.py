@@ -7,11 +7,11 @@ from __future__ import annotations
 import logging
 import pytest
 
-from parrot.core.events.lifecycle.provider import EventProvider
-from parrot.core.events.lifecycle.registry import EventRegistry
-from parrot.core.events.lifecycle.subscribers.logging import LoggingSubscriber
+from navigator_eventbus.lifecycle.provider import EventProvider
+from navigator_eventbus.lifecycle.registry import EventRegistry
+from navigator_eventbus.lifecycle.subscribers.logging import LoggingSubscriber
 from parrot.core.events.lifecycle.events import AfterToolCallEvent, BeforeInvokeEvent
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.trace import TraceContext
 
 
 class TestLoggingSubscriber:

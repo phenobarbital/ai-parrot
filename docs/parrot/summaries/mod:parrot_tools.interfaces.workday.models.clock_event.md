@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.models.clock_event
 id: mod:parrot_tools.interfaces.workday.models.clock_event
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Clock-event Pydantic models for Workday Time Tracking write operations.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.models.clock_event.ClockEvent

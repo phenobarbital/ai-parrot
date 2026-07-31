@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from parrot.core.hooks import HookableAgent, HookManager, BaseHook, HookEvent
-from parrot.core.hooks.models import HookType
+from navigator_eventbus.hooks.models import HookType
 
 
 # -- Fixtures / helpers -------------------------------------------------------

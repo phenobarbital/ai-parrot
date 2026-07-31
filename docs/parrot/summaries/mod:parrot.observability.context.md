@@ -4,7 +4,7 @@ title: parrot.observability.context
 id: mod:parrot.observability.context
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Agent-identity ContextVar for per-agent cost and usage metrics.
 relates_to:
 - concept: func:parrot.observability.context.agent_identity

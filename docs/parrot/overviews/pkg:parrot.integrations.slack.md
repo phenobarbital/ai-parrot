@@ -4,7 +4,7 @@ title: parrot.integrations.slack
 id: pkg:parrot.integrations.slack
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Package parrot.integrations.slack (10 modules, 1 sub-packages).
 relates_to:
 - concept: mod:parrot.integrations.slack.assistant

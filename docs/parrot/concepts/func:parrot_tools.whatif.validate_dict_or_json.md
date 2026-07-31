@@ -4,7 +4,7 @@ title: validate_dict_or_json()
 id: func:parrot_tools.whatif.validate_dict_or_json
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Validate that value is a dict, or parse it from JSON string
 ---
 

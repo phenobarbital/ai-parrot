@@ -4,8 +4,9 @@ title: /sdd-proposal — Feature Proposal & Discussion
 id: doc:agent-workflows-sdd-proposal-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Propose and discuss a feature idea before building a spec'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: Propose a feature idea in plain, non-technical language. The agent discusses
+  the idea
 ---
 
 ---

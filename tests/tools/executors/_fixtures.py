@@ -12,6 +12,7 @@ from typing import Any, Dict
 from pydantic import BaseModel, Field
 
 from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
+from parrot.tools.executors.abstract import AbstractToolExecutor
 from parrot.tools.toolkit import AbstractToolkit
 
 
@@ -66,3 +67,23 @@ class GreetingToolkit(AbstractToolkit):
     async def add(self, a: int, b: int) -> int:
         """Return ``a + b``."""
         return a + b
+
+
+class ClosableExecutor(AbstractToolExecutor):
+    """Executor fixture for ExecutionPolicy tests.
+
+    Lives in an importable module so ``EXECUTOR_REGISTRY`` entries can
+    reference it by path. Records construction kwargs and close calls.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+        self.envelopes: list = []
+        self.closed = False
+
+    async def execute(self, envelope: Any) -> ToolResult:
+        self.envelopes.append(envelope)
+        return ToolResult(status="success", result="from-closable")
+
+    async def close(self) -> None:
+        self.closed = True

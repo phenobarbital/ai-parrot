@@ -4,7 +4,7 @@ title: gVisor Installation Guide for AI-Parrot Secure Sandbox
 id: doc:docs-sandbox-tool-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This guide provides step-by-step instructions for setting up gVisor on Ubuntu
   to enable secure Python code execution in AI-Parrot. gVisor provides kernel-level
   isolation, protecting your system from potentially malicious LLM-generated code.

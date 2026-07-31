@@ -171,6 +171,17 @@ class TestQuery:
         assert result.exit_code == 0, result.output
         assert json.loads(result.output)
 
+    def test_explicit_path_beats_wiki_store_env(self, runner, repo, monkeypatch):
+        # An ambient WIKI_STORE must NOT redirect a --path-scoped query.
+        _build(runner, repo)
+        monkeypatch.setenv("WIKI_STORE", str(repo / "somewhere-else"))
+        result = runner.invoke(
+            wiki, ["query", "utility helpers", "--path", str(repo), "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.output)
+        assert any(r["concept_id"] == "file:pkg/util.py" for r in rows)
+
     def test_query_store_missing_dir_errors(self, runner, repo):
         result = runner.invoke(
             wiki, ["query", "x", "--store", str(repo / "does-not-exist")]

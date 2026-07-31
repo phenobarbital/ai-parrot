@@ -6,7 +6,7 @@
 		generate-registry check-registry \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
-		install-supertonic
+		install-supertonic docker-tool-worker
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -301,6 +301,7 @@ release: lint test clean check-registry
 	uv build --package parrot-formdesigner
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
+	uv build --package navrules
 	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
 	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
 	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
@@ -311,6 +312,7 @@ release: lint test clean check-registry
 	uv publish dist/parrot_formdesigner-*.tar.gz dist/parrot_formdesigner-*.whl
 	uv publish dist/ai_parrot_server-*.tar.gz dist/ai_parrot_server-*.whl
 	uv publish dist/ai_parrot_advisors-*.tar.gz dist/ai_parrot_advisors-*.whl
+	uv publish dist/navrules-*.tar.gz dist/navrules-*.whl
 
 # Alternative release using flit
 release-flit: lint test clean
@@ -352,7 +354,7 @@ remove:
 # Compile Cython extensions using setup.py
 build-cython:
 	@echo "Compiling Cython extensions..."
-	python setup.py build_ext
+	cd packages/ai-parrot && python setup.py build_ext
 
 # Build Cython extensions in place (for development)
 build-inplace:
@@ -372,6 +374,7 @@ build: clean
 	uv build --package parrot-formdesigner
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
+	uv build --package navrules
 
 # ============================================================
 # Tool Registry Management
@@ -637,6 +640,15 @@ run-whatsapp-bridge: build-whatsapp-bridge
 	@echo "Starting WhatsApp Bridge..."
 	@mkdir -p data/whatsapp
 	@./bin/whatsapp-bridge
+
+# Build the parrot-tools worker image used by the remote tool executors
+# (DockerToolExecutor / K8sToolExecutor — see docs/executors/docker-executor.md).
+# Customize with e.g.:
+#   make docker-tool-worker TOOL_WORKER_BUILD_ARGS='--build-arg PARROT_EXTRAS=llms --build-arg TOOLS_EXTRAS=pdf,jira'
+docker-tool-worker:
+	@echo "Building parrot-tools tool-worker image..."
+	@docker build -f docker/tool-worker/Dockerfile $(TOOL_WORKER_BUILD_ARGS) -t parrot-tools:latest .
+	@echo "✅ parrot-tools:latest built (worker for DockerToolExecutor / K8sToolExecutor)"
 
 # Docker targets for WhatsApp Bridge
 docker-whatsapp-bridge:

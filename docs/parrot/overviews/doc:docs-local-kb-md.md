@@ -4,7 +4,7 @@ title: Local Kb
 id: doc:docs-local-kb-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 1. Durante `configure()`, se busca `AGENTS_DIR/<agent_name>/kb/*.md`
 ---
 

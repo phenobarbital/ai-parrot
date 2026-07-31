@@ -4,7 +4,7 @@ title: CrawlStrategy
 id: class:parrot_tools.scraping.crawl_strategy.CrawlStrategy
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Protocol that determines traversal order for the CrawlEngine.
 ---
 

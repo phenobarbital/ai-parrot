@@ -4,7 +4,7 @@ title: MCPServerItemHandler
 id: class:parrot.handlers.mcp_helper.MCPServerItemHandler
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP handler for deactivating a specific MCP server.
 ---
 

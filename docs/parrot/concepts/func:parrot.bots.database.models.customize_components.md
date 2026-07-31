@@ -4,7 +4,7 @@ title: customize_components()
 id: func:parrot.bots.database.models.customize_components
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Customize output components based on base role.
 ---
 

@@ -4,7 +4,7 @@ title: DecisionFlowNode Usage Guide
 id: doc:docs-decision-node-usage-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'The `DecisionFlowNode` component enables multi-agent decision-making within
   AgentsFlow workflows. It supports three decision modes: CIO (single coordinator),
   Ballot (voting), and Consensus (deliberative).'

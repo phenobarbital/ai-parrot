@@ -4,7 +4,7 @@ title: parrot.human.cli_companion
 id: mod:parrot.human.cli_companion
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CLI Companion for Human-in-the-Loop.
 relates_to:
 - concept: class:parrot.human.cli_companion.HITLCompanion

@@ -4,7 +4,7 @@ title: LLM Wiki — an agent-maintained knowledge repository
 id: doc:docs-llm-wiki-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Classic RAG re-synthesises an answer from raw text on every query and throws
   the
 relates_to:
@@ -125,6 +125,9 @@ pytest examples/knowledge_wiki/ -v
 
 ## Read next
 
+- [WikiToolkit as Claude Code infrastructure](./wiki-claude-code.md) —
+  `wikitoolkit build` + `parrot claude install`: the wiki as a
+  codebase knowledge graph for coding assistants.
 - [PageIndex](./pageindex.md)
 - [Memory & Knowledge](./chapters/memory-knowledge.md)
 - [Parent-Child Retrieval](./parent-child-retrieval.md)

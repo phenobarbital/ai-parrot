@@ -4,7 +4,7 @@ title: parrot_tools.security.prowler.executor
 id: mod:parrot_tools.security.prowler.executor
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Prowler executor for running cloud security scans.
 relates_to:
 - concept: class:parrot_tools.security.prowler.executor.ProwlerExecutor

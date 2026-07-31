@@ -4,7 +4,7 @@ title: parrot.human.actions.ticket
 id: mod:parrot.human.actions.ticket
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Escalation action that opens a ticket in an external system.
 relates_to:
 - concept: class:parrot.human.actions.ticket.TicketAction

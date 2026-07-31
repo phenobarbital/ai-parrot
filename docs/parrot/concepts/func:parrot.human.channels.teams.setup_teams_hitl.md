@@ -4,7 +4,7 @@ title: setup_teams_hitl()
 id: func:parrot.human.channels.teams.setup_teams_hitl
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Wire the shared HITL bot in one call.
 ---
 

@@ -77,9 +77,18 @@ def mock_jira():
 
 
 def _dispatcher_returning(research_out, qa_passed: bool = True, fail_node: str = ""):
-    """Dispatcher mock that answers per output_model; optionally raises."""
+    """Dispatcher mock that answers per output_model; optionally raises.
 
-    async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd):
+    FEAT-377 TASK-1910: a failing QAReport is stamped at the repair-loop's
+    exhaustion threshold (``conf.DEV_LOOP_QA_MAX_RETRIES``) so a single-shot
+    "QA fails" stub still routes straight to `failure_handler` instead of
+    looping through the (now real) `qa -> development` retry edge forever —
+    exercising the retry-then-pass/retry-then-exhaust sequence itself is
+    TASK-1911's job (attempt stamping, feedback redispatch, e2e tests).
+    """
+    from parrot import conf
+
+    async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
         if fail_node and node_id == fail_node:
             raise RuntimeError(f"dispatch blew up in {node_id}")
         if output_model is ResearchOutput:
@@ -92,7 +101,8 @@ def _dispatcher_returning(research_out, qa_passed: bool = True, fail_node: str =
             )
         if output_model is QAReport:
             return QAReport(
-                passed=qa_passed, criterion_results=[], lint_passed=qa_passed
+                passed=qa_passed, criterion_results=[], lint_passed=qa_passed,
+                attempt=1 if qa_passed else int(conf.DEV_LOOP_QA_MAX_RETRIES),
             )
         raise AssertionError(f"unexpected output_model {output_model}")
 
@@ -306,3 +316,91 @@ class TestRunnerSemaphore:
         assert ctx.shared_data["work_brief"] is brief
         assert ctx.shared_data["run_id"].startswith("run-")
         assert ctx.initial_task == brief.summary
+
+
+# ---------------------------------------------------------------------------
+# FEAT-378: DevLoopRunner.run() accepts FeatureBrief (union dispatch)
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureModeDispatch:
+    """DevLoopRunner.run() routes a FeatureBrief to the feature-mode flow."""
+
+    @pytest.mark.asyncio
+    async def test_run_dispatches_feature_brief_to_feature_flow(self, tmp_path, monkeypatch):
+        from parrot.flows.dev_loop.models import FeatureBrief
+
+        captured: dict[str, Any] = {}
+
+        # Patch DevLoopRunner._run_feature directly (a class attribute —
+        # unambiguous regardless of any module-level sys.modules churn
+        # elsewhere in the suite) to unit-test run()'s isinstance-based
+        # routing decision in isolation from build_dev_loop_feature_flow's
+        # own internals (already covered by test_feature_flow.py).
+        async def _fake_run_feature(self, brief, **kwargs):
+            captured["brief"] = brief
+            captured["kwargs"] = kwargs
+            return FlowResult(output="ok", status=FlowStatus.COMPLETED)
+
+        monkeypatch.setattr(DevLoopRunner, "_run_feature", _fake_run_feature)
+
+        runner = DevLoopRunner(MagicMock())  # the bug-topology flow — never used here
+
+        doc = tmp_path / "x.proposal.md"
+        doc.write_text("# proposal")
+        fb = FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+        result = await runner.run(fb, run_id="run-abc123")
+
+        assert result.status == FlowStatus.COMPLETED
+        assert captured["brief"] is fb
+        assert captured["kwargs"]["run_id"] == "run-abc123"
+
+    @pytest.mark.asyncio
+    async def test_run_workbrief_path_unchanged(self, brief):
+        """A plain WorkBrief still drives self.flow, not the feature path."""
+        captured: dict[str, Any] = {}
+
+        class _Probe:
+            async def run_flow(self, ctx, **kwargs) -> FlowResult:
+                captured["ctx"] = ctx
+                return FlowResult(output="ok", status=FlowStatus.COMPLETED)
+
+        runner = DevLoopRunner(_Probe())  # type: ignore[arg-type]
+        result = await runner.run(brief)
+
+        assert result.status == FlowStatus.COMPLETED
+        assert captured["ctx"].shared_data["bug_brief"] is brief
+
+    @pytest.mark.asyncio
+    async def test_run_feature_without_deps_raises(self, tmp_path):
+        from parrot.flows.dev_loop.models import FeatureBrief
+
+        doc = tmp_path / "x.proposal.md"
+        doc.write_text("# proposal")
+        fb = FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+        runner = DevLoopRunner(MagicMock())  # no dispatcher/redis_url configured
+
+        with pytest.raises(RuntimeError, match="feature-mode run requires"):
+            await runner.run(fb)
+
+    def test_feature_codereview_dispatcher_defaults_to_judge_panel(self):
+        """Code-review finding: an unconfigured codereview_dispatcher must
+        default feature-mode QA to a real JudgePanelReviewDispatcher, not
+        silently fall through to QANode's own bare ClaudeCodeReviewDispatcher
+        fallback (which bug/revision-mode already uses by default)."""
+        from parrot.flows.dev_loop.code_review import JudgePanelReviewDispatcher
+
+        runner = DevLoopRunner(MagicMock(), redis_url="redis://fake")
+        dispatcher = runner._feature_codereview_dispatcher()
+        assert isinstance(dispatcher, JudgePanelReviewDispatcher)
+
+    def test_feature_codereview_dispatcher_respects_explicit_override(self):
+        """An explicitly-configured codereview_dispatcher still wins for
+        feature-mode too — unchanged from before this fix."""
+        explicit = MagicMock()
+        runner = DevLoopRunner(
+            MagicMock(), redis_url="redis://fake", codereview_dispatcher=explicit,
+        )
+        assert runner._feature_codereview_dispatcher() is explicit

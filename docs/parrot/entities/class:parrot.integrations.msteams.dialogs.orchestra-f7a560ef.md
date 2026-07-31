@@ -4,7 +4,7 @@ title: FormOrchestrator
 id: class:parrot.integrations.msteams.dialogs.orchestrator.FormOrchestrator
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Orchestrates the form-based interaction flow.
 ---
 

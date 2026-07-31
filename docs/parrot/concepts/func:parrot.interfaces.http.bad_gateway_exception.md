@@ -4,7 +4,7 @@ title: bad_gateway_exception()
 id: func:parrot.interfaces.http.bad_gateway_exception
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Check if the exception is a 502 Bad Gateway error.
 ---
 

@@ -4,7 +4,7 @@ title: TokenTextSplitter
 id: class:parrot.loaders.splitters.token.TokenTextSplitter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Text splitter that splits based on token count using various tokenizers.
 relates_to:
 - concept: class:parrot.loaders.splitters.base.BaseTextSplitter

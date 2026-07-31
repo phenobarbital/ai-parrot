@@ -4,7 +4,7 @@ title: parrot.core.events.lifecycle.mixin
 id: mod:parrot.core.events.lifecycle.mixin
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: EventEmitterMixin — uniform self.events interface for AbstractBot, AbstractClient,
   AbstractTool.
 relates_to:

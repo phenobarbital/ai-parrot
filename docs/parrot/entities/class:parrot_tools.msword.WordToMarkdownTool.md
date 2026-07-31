@@ -4,7 +4,7 @@ title: WordToMarkdownTool
 id: class:parrot_tools.msword.WordToMarkdownTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tool for converting Word documents to Markdown format.
 relates_to:
 - concept: class:parrot_tools.document.AbstractDocumentTool

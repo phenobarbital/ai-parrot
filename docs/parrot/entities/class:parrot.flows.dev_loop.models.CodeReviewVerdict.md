@@ -4,7 +4,7 @@ title: CodeReviewVerdict
 id: class:parrot.flows.dev_loop.models.CodeReviewVerdict
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Extended verdict emitted by all code review dispatchers (FEAT-270).
 ---
 

@@ -4,7 +4,7 @@ title: to_eval_context()
 id: func:parrot.auth.permission.to_eval_context
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Bridge a PermissionContext to a navigator-auth EvalContext.
 ---
 

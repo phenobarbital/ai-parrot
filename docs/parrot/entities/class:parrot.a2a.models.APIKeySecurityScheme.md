@@ -4,7 +4,7 @@ title: APIKeySecurityScheme
 id: class:parrot.a2a.models.APIKeySecurityScheme
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: API key security scheme.
 relates_to:
 - concept: class:parrot.a2a.models.SecurityScheme

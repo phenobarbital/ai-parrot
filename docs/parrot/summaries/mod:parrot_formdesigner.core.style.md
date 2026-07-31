@@ -4,7 +4,7 @@ title: parrot_formdesigner.core.style
 id: mod:parrot_formdesigner.core.style
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Form presentation and layout style models.
 relates_to:
 - concept: class:parrot_formdesigner.core.style.FieldSizeHint

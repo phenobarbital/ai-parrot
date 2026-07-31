@@ -4,7 +4,7 @@ title: parrot.integrations.liveavatar.speaker
 id: mod:parrot.integrations.liveavatar.speaker
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Per-turn avatar speaker (FEAT-242 Phase A — chat→avatar wiring).
 relates_to:
 - concept: class:parrot.integrations.liveavatar.speaker.AvatarTurnSpeaker

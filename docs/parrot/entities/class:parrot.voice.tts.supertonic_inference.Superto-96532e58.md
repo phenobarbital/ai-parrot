@@ -4,7 +4,7 @@ title: SupertonicPipeline
 id: class:parrot.voice.tts.supertonic_inference.SupertonicPipeline
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Runs the Supertonic-3 four-graph pipeline and returns raw PCM.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.knowledge.ontology.schema_overlay.http
 id: mod:parrot.knowledge.ontology.schema_overlay.http
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Schema Overlay HTTP Routes (FEAT-159 TASK-1097).
 relates_to:
 - concept: func:parrot.knowledge.ontology.schema_overlay.http.dry_run_overlay_endpoint

@@ -4,7 +4,7 @@ title: get_mcp_oauth2_preset()
 id: func:parrot.mcp.oauth2_config.get_mcp_oauth2_preset
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Look up an MCP OAuth2 preset by its registry slug.
 ---
 

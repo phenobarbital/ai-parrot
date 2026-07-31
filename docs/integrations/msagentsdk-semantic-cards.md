@@ -151,7 +151,7 @@ Three knobs on `MSAgentSDKConfig` (all optional, with the defaults shown):
 | Field | Default | Purpose |
 |---|---|---|
 | `enable_semantic_cards` | `True` | Set `False` to always send plain text, even if your agent returns a `SemanticUIResult`. |
-| `max_table_rows` | `15` | Table rows beyond this are truncated with a "Showing N of M" note. |
+| `max_table_rows` | `15` | Table rows beyond this are truncated with a "Showing N of M" note. The note also appears when the producer pre-caps the rows and sets `total_rows` higher than the rows sent. |
 | `max_card_bytes` | `25_000` | Serialized card size guard (Teams' attachment limit is ~28 KB). Exceeding it falls back to plain text. |
 
 ```yaml

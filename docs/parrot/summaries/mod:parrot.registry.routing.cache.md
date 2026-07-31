@@ -4,7 +4,7 @@ title: parrot.registry.routing.cache
 id: mod:parrot.registry.routing.cache
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Asyncio-safe LRU cache for store routing decisions (FEAT-111 Module 6).
 relates_to:
 - concept: class:parrot.registry.routing.cache.DecisionCache

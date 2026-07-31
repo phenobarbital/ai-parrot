@@ -4,7 +4,7 @@ title: parrot_tools.security.advisory_engine
 id: mod:parrot_tools.security.advisory_engine
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: SecurityAdvisoryEngine — day-over-day diff and SOC2 control mapping.
 relates_to:
 - concept: class:parrot_tools.security.advisory_engine.AdvisoryRecommendation

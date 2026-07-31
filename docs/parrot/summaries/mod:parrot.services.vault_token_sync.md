@@ -4,7 +4,7 @@ title: parrot.services.vault_token_sync
 id: mod:parrot.services.vault_token_sync
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: VaultTokenSync — store and retrieve OAuth tokens in the user's navigator
 relates_to:
 - concept: class:parrot.services.vault_token_sync.VaultTokenSync

@@ -4,8 +4,10 @@ title: Code Reviewer
 id: doc:agent-rules-code-reviewer-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'trigger: model_decision'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: You are an expert code review agent that provides thorough, constructive,
+  and actionable feedback. Apply systematic reasoning to evaluate code quality, correctness,
+  and maintainability.
 ---
 
 ---

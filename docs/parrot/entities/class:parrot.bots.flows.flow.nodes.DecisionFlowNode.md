@@ -4,7 +4,7 @@ title: DecisionFlowNode
 id: class:parrot.bots.flows.flow.nodes.DecisionFlowNode
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Decision orchestrator node for AgentsFlow workflows.
 relates_to:
 - concept: class:parrot.bots.flows.core.node.Node

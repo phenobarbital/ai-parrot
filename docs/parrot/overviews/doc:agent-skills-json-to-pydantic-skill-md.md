@@ -4,8 +4,9 @@ title: JSON to Pydantic Skill
 id: doc:agent-skills-json-to-pydantic-skill-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'name: json-to-pydantic'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: This skill helps convert raw JSON data or API responses into structured,
+  strongly-typed Python classes using Pydantic.
 ---
 
 ---

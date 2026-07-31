@@ -4,7 +4,7 @@ title: parrot_tools.scraping.page_snapshot
 id: mod:parrot_tools.scraping.page_snapshot
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Page snapshot builder for LLM-based plan generation.
 relates_to:
 - concept: class:parrot_tools.scraping.page_snapshot.PageSnapshot

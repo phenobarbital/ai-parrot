@@ -4,7 +4,7 @@ title: PDFRenderer
 id: class:parrot.outputs.a2ui_renderers.pdf.PDFRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: weasyprint-backed PDF renderer (SSR-HTML → static SVG charts → PDF).
 relates_to:
 - concept: class:parrot.outputs.a2ui.renderers.AbstractA2UIRenderer

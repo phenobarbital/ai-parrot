@@ -4,7 +4,7 @@ title: list_available_tools()
 id: func:parrot.bots.factory.tools.introspection.list_available_tools
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return the catalog of standalone ``@tool`` functions discovered.
 ---
 

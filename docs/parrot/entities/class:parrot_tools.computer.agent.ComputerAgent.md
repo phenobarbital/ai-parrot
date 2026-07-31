@@ -4,7 +4,7 @@ title: ComputerAgent
 id: class:parrot_tools.computer.agent.ComputerAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Agent configured for vision-based browser automation via computer-use.
 relates_to:
 - concept: class:parrot.bots.agent.Agent

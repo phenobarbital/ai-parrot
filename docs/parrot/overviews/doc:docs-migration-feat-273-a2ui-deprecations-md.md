@@ -4,7 +4,7 @@ title: FEAT-273 — Legacy output-mode deprecations → A2UI
 id: doc:docs-migration-feat-273-a2ui-deprecations-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The A2UI rendering pipeline (`OutputMode.A2UI`, `parrot.outputs.a2ui`) supersedes
   the
 relates_to:

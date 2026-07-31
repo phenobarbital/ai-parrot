@@ -4,7 +4,7 @@ title: parrot.knowledge.graphindex.persist
 id: mod:parrot.knowledge.graphindex.persist
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Persistence stage for GraphIndex.
 relates_to:
 - concept: class:parrot.knowledge.graphindex.persist.GraphIndexPersistence

@@ -4,7 +4,7 @@ title: parrot.bots.flows.core.storage.backends.factory
 id: mod:parrot.bots.flows.core.storage.backends.factory
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Factory for resolving ResultStorage backends by name, instance, or env var.
 relates_to:
 - concept: func:parrot.bots.flows.core.storage.backends.factory.get_result_storage

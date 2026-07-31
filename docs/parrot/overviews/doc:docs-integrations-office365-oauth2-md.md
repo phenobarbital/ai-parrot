@@ -4,7 +4,7 @@ title: Office 365 OAuth 2.0 (Delegated) — AI-Parrot Integration
 id: doc:docs-integrations-office365-oauth2-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: This guide documents the Microsoft Graph delegated permissions required by
 relates_to:
 - concept: mod:parrot.auth.o365_oauth

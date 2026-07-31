@@ -11,10 +11,6 @@ from ...models.outputs import OutputMode
 # Each entry names the A2UI replacement path (single source of truth for the message).
 # Kept modes (JSON/YAML/MARKDOWN/SLACK/WHATSAPP/TERMINAL, infographic-JSON) are ABSENT.
 _A2UI_REPLACEMENTS: Dict[OutputMode, str] = {
-    OutputMode.ALTAIR: "OutputMode.A2UI with the Chart catalog component",
-    OutputMode.PLOTLY: "OutputMode.A2UI with the Chart catalog component",
-    OutputMode.MATPLOTLIB: "OutputMode.A2UI with the Chart catalog component",
-    OutputMode.SEABORN: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.ECHARTS: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.STRUCTURED_CHART: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.MAP: "OutputMode.A2UI with the Map catalog component",
@@ -51,6 +47,7 @@ _PROMPTS: Dict[OutputMode, str] = {}
 
 # Module-level dispatch table — maps OutputMode → module name(s) to import
 _MODULE_MAP: dict = {
+    OutputMode.TEXT:            ('.text',),
     OutputMode.TERMINAL:        ('.terminal',),          # no renderer; TerminalGenerator is in generators/
     OutputMode.HTML:            ('.html',),
     OutputMode.JSON:            ('.json',),
@@ -58,16 +55,12 @@ _MODULE_MAP: dict = {
     OutputMode.YAML:            ('.yaml',),
     OutputMode.CHART:           ('.chart',),             # base class only; no renderer registered
     OutputMode.MAP:             ('.map',),
-    OutputMode.ALTAIR:          ('.altair',),
     OutputMode.STRUCTURED_CHART: ('.structured_chart',),
     OutputMode.STRUCTURED_TABLE: ('.structured_table',),
     OutputMode.STRUCTURED_MAP:   ('.structured_map',),
     OutputMode.JINJA2:          ('.jinja2',),
     OutputMode.TEMPLATE_REPORT: ('.template_report',),
-    OutputMode.PLOTLY:          ('.plotly',),
-    OutputMode.MATPLOTLIB:      ('.matplotlib',),
     OutputMode.ECHARTS:         ('.echarts',),
-    OutputMode.SEABORN:         ('.seaborn',),
     OutputMode.TABLE:           ('.table',),
     OutputMode.APPLICATION:     ('.application',),
     OutputMode.CARD:            ('.card',),
@@ -132,6 +125,11 @@ def get_infographic_html_renderer():
 
     Returns:
         Type[InfographicHTMLRenderer]: The concrete renderer class.
+
+    Raises:
+        ImportError: If the ``ai-parrot-visualizations`` package is not
+            installed — the renderer moved there in FEAT-200; the message
+            names the exact pip extra to install.
     """
     # FEAT-273 (G7): the infographic-HTML path is superseded; the JSON path is kept.
     warnings.warn(
@@ -141,9 +139,21 @@ def get_infographic_html_renderer():
         DeprecationWarning,
         stacklevel=2,
     )
-    from .infographic_html import InfographicHTMLRenderer  # noqa: F401 — ensure registered
+    try:
+        from .infographic_html import InfographicHTMLRenderer as _Cls
+    except ModuleNotFoundError as exc:
+        # FEAT-200 moved this module to the ai-parrot-visualizations satellite;
+        # only translate the error when the renderer module itself is missing,
+        # not when one of its own dependencies fails to import.
+        if exc.name and exc.name.endswith('infographic_html'):
+            raise ImportError(
+                "Infographic HTML rendering requires the 'ai-parrot-visualizations' "
+                "package (renderers moved out of core in FEAT-200). Install it with: "
+                "pip install 'ai-parrot-visualizations[infographic]' "
+                "(or reinstall the host with the extra: pip install 'ai-parrot[charts]')."
+            ) from exc
+        raise
     get_renderer(OutputMode.INFOGRAPHIC)  # trigger lazy-load + registration
-    from .infographic_html import InfographicHTMLRenderer as _Cls
     return _Cls
 
 

@@ -4,7 +4,7 @@ title: PostAuthAction
 id: class:parrot.integrations.telegram.models.PostAuthAction
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Configuration for a secondary authentication action to chain after
 ---
 

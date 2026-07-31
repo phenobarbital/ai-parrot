@@ -4,7 +4,7 @@ title: revalidate_edit()
 id: func:parrot.auth.confirmation.revalidate_edit
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Validate edited values against the tool's args_schema.
 ---
 

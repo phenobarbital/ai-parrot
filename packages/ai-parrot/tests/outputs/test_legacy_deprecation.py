@@ -12,10 +12,6 @@ from parrot.outputs.formats import (
 )
 
 _REPLACED = [
-    OutputMode.ALTAIR,
-    OutputMode.PLOTLY,
-    OutputMode.MATPLOTLIB,
-    OutputMode.SEABORN,
     OutputMode.ECHARTS,
     OutputMode.MAP,
     OutputMode.HTML,
@@ -67,6 +63,19 @@ class TestLegacyDeprecationWarnings:
                 get_infographic_html_renderer()
         # ...JSON path does not (INFOGRAPHIC not in the replacement table).
         assert OutputMode.INFOGRAPHIC not in _A2UI_REPLACEMENTS
+
+    def test_infographic_html_missing_satellite_actionable_error(self, monkeypatch):
+        """Without ai-parrot-visualizations installed, the accessor names the fix."""
+        import sys
+        # None in sys.modules makes the import raise ModuleNotFoundError with
+        # exc.name set — the same failure mode as the satellite not installed.
+        monkeypatch.setitem(
+            sys.modules, "parrot.outputs.formats.infographic_html", None
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(ImportError, match="ai-parrot-visualizations"):
+                get_infographic_html_renderer()
 
     def test_unregistered_mode_error_unchanged(self):
         with warnings.catch_warnings():

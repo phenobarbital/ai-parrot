@@ -1,5 +1,14 @@
 # gVisor Installation Guide for AI-Parrot Secure Sandbox
 
+> **Note:** `PythonREPLTool`'s actually-implemented sandboxing (as of
+> FEAT-380) is a resource-limited **worker process** per tool instance
+> (rlimits + deadline enforcement, no gVisor/kernel-level isolation) — see
+> [`docs/repl-worker-sandbox.md`](repl-worker-sandbox.md). It explicitly
+> shares the kernel/network/filesystem with the host; it does not provide
+> the adversarial containment gVisor would. Container-per-session isolation
+> (which this guide's gVisor approach would be one path toward) is
+> documented future work, not implemented today.
+
 ## Overview
 
 This guide provides step-by-step instructions for setting up gVisor on Ubuntu to enable secure Python code execution in AI-Parrot. gVisor provides kernel-level isolation, protecting your system from potentially malicious LLM-generated code.

@@ -4,7 +4,7 @@ title: parrot.integrations.liveavatar.room_audio_publisher
 id: mod:parrot.integrations.liveavatar.room_audio_publisher
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Headless LiveKit room audio publisher (FEAT-256 Module 1).
 relates_to:
 - concept: class:parrot.integrations.liveavatar.room_audio_publisher.RoomAudioPublisher

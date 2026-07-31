@@ -4,7 +4,7 @@ title: is_processable_file()
 id: func:parrot.integrations.slack.files.is_processable_file
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Check if a file can be processed by AI-Parrot loaders.
 ---
 

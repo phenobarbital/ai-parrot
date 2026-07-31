@@ -4,7 +4,7 @@ title: parrot.utils.faiss_logging
 id: mod:parrot.utils.faiss_logging
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Quiet FAISS's own import-time boot chatter.
 relates_to:
 - concept: func:parrot.utils.faiss_logging.quiet_faiss_loader

@@ -4,7 +4,7 @@ title: base_column_types()
 id: func:parrot.outputs.formats.table_types.base_column_types
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Map DataFrame column dtypes to the FEAT-218 storage vocabulary.
 ---
 

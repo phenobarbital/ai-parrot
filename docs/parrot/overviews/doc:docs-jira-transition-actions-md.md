@@ -4,7 +4,7 @@ title: Jira Transition Actions — Activating `TRIGGER_AGENT` Dispatch
 id: doc:docs-jira-transition-actions-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: them, and routes `jira.transitioned` events through
 relates_to:
 - concept: mod:parrot.autonomous.orchestrator

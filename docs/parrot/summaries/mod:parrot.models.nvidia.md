@@ -4,7 +4,7 @@ title: parrot.models.nvidia
 id: mod:parrot.models.nvidia
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Nvidia NIM data models for AI-Parrot.
 relates_to:
 - concept: class:parrot.models.nvidia.NvidiaModel

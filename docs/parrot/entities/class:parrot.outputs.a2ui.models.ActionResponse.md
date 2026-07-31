@@ -4,7 +4,7 @@ title: ActionResponse
 id: class:parrot.outputs.a2ui.models.ActionResponse
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: '``actionResponse`` — an agent''s response to a prior ``action`` (schema
   only).'
 relates_to:

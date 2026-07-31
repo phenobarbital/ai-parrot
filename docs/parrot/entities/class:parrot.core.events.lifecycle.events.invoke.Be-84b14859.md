@@ -4,7 +4,7 @@ title: BeforeInvokeEvent
 id: class:parrot.core.events.lifecycle.events.invoke.BeforeInvokeEvent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Emitted just before an agent invocation begins.
 relates_to:
 - concept: class:parrot.core.events.lifecycle.base.LifecycleEvent

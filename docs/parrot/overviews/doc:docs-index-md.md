@@ -4,8 +4,8 @@ title: AI-Parrot
 id: doc:docs-index-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'hide:'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: AI-Parrot is a vendor-agnostic framework that lets you build conversational
 ---
 
 ---

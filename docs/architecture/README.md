@@ -5,7 +5,8 @@
 > security layers that keep that surface defensible.
 >
 > Companion docs: `.agent/CONTEXT.md` (core abstractions),
-> `docs/sdd/WORKFLOW.md` (SDD process), `docs/orchestration.md`,
+> `docs/sdd/WORKFLOW.md` (SDD process),
+> `docs/orchestration/agentcrew.md` and `docs/orchestration/agentsflow.md`,
 > `docs/a2a_communication.md`.
 
 ## Chapters

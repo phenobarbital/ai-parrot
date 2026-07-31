@@ -4,7 +4,7 @@ title: parrot.handlers.models.understanding
 id: mod:parrot.handlers.models.understanding
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic request/response models for the image & video understanding handler.
 relates_to:
 - concept: class:parrot.handlers.models.understanding.UnderstandingRequest

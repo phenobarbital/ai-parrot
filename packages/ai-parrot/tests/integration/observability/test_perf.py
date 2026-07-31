@@ -37,8 +37,8 @@ from parrot.core.events.lifecycle.events import (
     AfterClientCallEvent,
     BeforeClientCallEvent,
 )
-from parrot.core.events.lifecycle.global_registry import scope
-from parrot.core.events.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.global_registry import scope
+from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 

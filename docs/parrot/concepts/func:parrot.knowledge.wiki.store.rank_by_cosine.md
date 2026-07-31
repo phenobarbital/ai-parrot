@@ -4,7 +4,7 @@ title: rank_by_cosine()
 id: func:parrot.knowledge.wiki.store.rank_by_cosine
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Rank candidate stubs by cosine similarity to a query vector.
 ---
 

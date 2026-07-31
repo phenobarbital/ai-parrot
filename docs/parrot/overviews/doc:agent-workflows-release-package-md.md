@@ -4,8 +4,8 @@ title: Release Package
 id: doc:agent-workflows-release-package-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'description: Release Package'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: 'description: Automated Release Workflow'
 ---
 
 ---

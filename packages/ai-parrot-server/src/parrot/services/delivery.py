@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 import aiohttp
 from navconfig.logging import logging
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 
 from .models import AgentTask, DeliveryChannel, DeliveryConfig, TaskResult
 
@@ -140,7 +141,7 @@ class DeliveryRouter:
                     "content": {
                         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                         "type": "AdaptiveCard",
-                        "version": "1.4",
+                        "version": DEFAULT_ADAPTIVE_CARD_VERSION,
                         "body": [
                             {
                                 "type": "TextBlock",

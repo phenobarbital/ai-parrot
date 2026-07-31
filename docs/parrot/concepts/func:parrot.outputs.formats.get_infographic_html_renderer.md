@@ -4,7 +4,7 @@ title: get_infographic_html_renderer()
 id: func:parrot.outputs.formats.get_infographic_html_renderer
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return ``InfographicHTMLRenderer`` with its concrete type preserved.
 ---
 

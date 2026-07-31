@@ -19,6 +19,7 @@ from ..core.schema import (
 )
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
     """
 
     SCHEMA_URL = "http://adaptivecards.io/schemas/adaptive-card.json"
-    DEFAULT_VERSION = "1.5"
+    DEFAULT_VERSION = DEFAULT_ADAPTIVE_CARD_VERSION
     CONTENT_TYPE = "application/vnd.microsoft.card.adaptive"
 
     def __init__(

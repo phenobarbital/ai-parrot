@@ -107,9 +107,7 @@ class TestCardSeam:
         assert activity.attachments[0].content_type == (
             "application/vnd.microsoft.card.adaptive"
         )
-        from parrot.integrations.msagentsdk.cards import render_text
-
-        assert activity.text == render_text(result)
+        assert not getattr(activity, "text", None)
 
     @pytest.mark.asyncio
     async def test_handle_message_data_fallback_carrier(self, monkeypatch):
@@ -132,9 +130,70 @@ class TestCardSeam:
         )
 
     @pytest.mark.asyncio
-    async def test_handle_message_plain_text_unchanged(self, monkeypatch):
+    async def test_handle_message_plain_text_wrapped_in_card(self, monkeypatch):
         _stub_parrot_utils(monkeypatch)
         agent = _make_agent()
+        response = MagicMock()
+        response.structured_output = None
+        response.data = None
+        response.output = None
+        response.content = "hello world"
+        agent.parrot_agent.ask.return_value = response
+
+        ctx = FakeTurnContext(text="hi")
+        await agent._handle_message(ctx)
+
+        assert len(ctx.sent) == 1
+        activity = ctx.sent[0]
+        assert not getattr(activity, "text", None)
+        assert activity.attachments
+        att = activity.attachments[0]
+        ct = att.content_type if hasattr(att, "content_type") else att["contentType"]
+        assert ct == "application/vnd.microsoft.card.adaptive"
+        content = att.content if hasattr(att, "content") else att["content"]
+        assert content["body"][0]["type"] == "TextBlock"
+        assert content["body"][0]["text"] == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_handle_message_table_data_in_card(self, monkeypatch):
+        """When response carries tabular data, the card includes a table."""
+        _stub_parrot_utils(monkeypatch)
+        agent = _make_agent()
+        response = MagicMock()
+        response.structured_output = None
+        response.data = [
+            {"warehouse": "WH-A", "city": "Boston"},
+            {"warehouse": "WH-B", "city": "Miami"},
+        ]
+        response.output = "explanation text"
+        response.content = "explanation text"
+        response.response = None
+        agent.parrot_agent.ask.return_value = response
+
+        ctx = FakeTurnContext(text="list warehouses")
+        await agent._handle_message(ctx)
+
+        assert len(ctx.sent) == 1
+        activity = ctx.sent[0]
+        att = activity.attachments[0]
+        content = att.content if hasattr(att, "content") else att["content"]
+        body = content["body"]
+        # First element: explanation TextBlock
+        assert body[0]["type"] == "TextBlock"
+        assert body[0]["text"] == "explanation text"
+        # Second element: AC 1.4 ColumnSet header row
+        assert body[1]["type"] == "ColumnSet"
+        header_cols = body[1]["columns"]
+        header_texts = [col["items"][0]["text"] for col in header_cols]
+        assert header_texts == ["warehouse", "city"]
+        # Header + 2 data ColumnSets
+        column_sets = [b for b in body if b.get("type") == "ColumnSet"]
+        assert len(column_sets) >= 3
+
+    @pytest.mark.asyncio
+    async def test_handle_message_plain_text_no_card_when_disabled(self, monkeypatch):
+        _stub_parrot_utils(monkeypatch)
+        agent = _make_agent(enable_semantic_cards=False)
         response = MagicMock()
         response.structured_output = None
         response.data = None
@@ -199,14 +258,26 @@ class TestConfig:
     def test_new_config_fields_defaults(self):
         cfg = MSAgentSDKConfig(name="x", chatbot_id="y")
         assert cfg.enable_semantic_cards is True
-        assert cfg.max_table_rows == 15
+        assert cfg.max_table_rows == 50
         assert cfg.max_card_bytes == 25_000
 
 
 def test_lazy_exports():
     import parrot.integrations.msagentsdk as m
 
-    assert "SemanticUIResult" in m.__all__
-    assert "UIAction" in m.__all__
-    assert "render_card" in m.__all__
-    assert "render_text" in m.__all__
+    for name in (
+        "SemanticUIResult",
+        "UIAction",
+        "UIField",
+        "UIMetric",
+        "TablePayload",
+        "MetricsPayload",
+        "DetailPayload",
+        "StatusPayload",
+        "render_card",
+        "render_text",
+        "build_card_attachment",
+        "CardRenderError",
+    ):
+        assert name in m.__all__
+        assert getattr(m, name) is not None

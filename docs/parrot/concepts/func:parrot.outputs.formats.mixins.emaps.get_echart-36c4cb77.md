@@ -4,7 +4,7 @@ title: get_echarts_system_prompt_with_geo()
 id: func:parrot.outputs.formats.mixins.emaps.get_echarts_system_prompt_with_geo
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Combine base ECharts prompt with geo extension
 ---
 

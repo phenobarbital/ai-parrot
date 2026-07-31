@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1467-lift-shared-auth-primitives.md",
+      "file": "sdd/tasks/completed/TASK-1467-lift-shared-auth-primitives.md",
       "verification": "verified"
     },
     {
@@ -44,7 +44,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1468-slack-command-router-jira.md",
+      "file": "sdd/tasks/completed/TASK-1468-slack-command-router-jira.md",
       "verification": "verified"
     },
     {
@@ -65,7 +65,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1469-slack-oauth-callback-notification.md",
+      "file": "sdd/tasks/completed/TASK-1469-slack-oauth-callback-notification.md",
       "verification": "verified"
     },
     {
@@ -87,7 +87,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1470-slack-wrapper-wiring.md",
+      "file": "sdd/tasks/completed/TASK-1470-slack-wrapper-wiring.md",
       "verification": "verified"
     },
     {
@@ -108,7 +108,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1471-msteams-command-router-jira.md",
+      "file": "sdd/tasks/completed/TASK-1471-msteams-command-router-jira.md",
       "verification": "verified"
     },
     {
@@ -129,7 +129,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1472-msteams-oauth-callback-notification.md",
+      "file": "sdd/tasks/completed/TASK-1472-msteams-oauth-callback-notification.md",
       "verification": "verified"
     },
     {
@@ -151,7 +151,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1473-msteams-wrapper-wiring.md",
+      "file": "sdd/tasks/completed/TASK-1473-msteams-wrapper-wiring.md",
       "verification": "verified"
     },
     {
@@ -173,7 +173,7 @@
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
       "completed_at": "2026-06-04T22:27:35+00:00",
-      "file": "sdd/tasks/active/TASK-1474-callback-route-extension.md",
+      "file": "sdd/tasks/completed/TASK-1474-callback-route-extension.md",
       "verification": "verified"
     }
   ]

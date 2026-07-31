@@ -4,7 +4,7 @@ title: list_unreviewed_insights()
 id: func:parrot.knowledge.graphindex.analytics.list_unreviewed_insights
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return all insights not yet dismissed.
 ---
 

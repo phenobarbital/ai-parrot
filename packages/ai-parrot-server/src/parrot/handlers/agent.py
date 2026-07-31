@@ -2582,6 +2582,15 @@ class AgentTalk(BaseView):
     ) -> None:
         """Publish structured output via the Redis transport for Mode B bifurcation.
 
+        Thin delegating wrapper around ``avatar_fullmode.publish_bifurcated_
+        output`` — the shared implementation (code-review follow-up on
+        FEAT-247) also used directly by the OpenAI-compat endpoint
+        (``handlers/openai_compat.py``), so the bifurcation logic lives in
+        exactly one place. Kept as an instance method here (rather than
+        inlining the import at each call site) purely for call-site
+        compatibility with existing callers/tests
+        (``tests/handlers/test_fullmode_bifurcation.py``).
+
         Best-effort — any import or publish error is logged and swallowed so it
         never breaks the text reply path.
 
@@ -2590,86 +2599,11 @@ class AgentTalk(BaseView):
             session_id: The conversation ID (Redis channel key).
             turn_id: Optional turn identifier for deduplication.
         """
-        try:
-            # Only publish if a FULL mode session is live for this session_id
-            from parrot.handlers.avatar_fullmode import FULLMODE_SESSIONS_KEY
-            fullmode_store = self.request.app.get(FULLMODE_SESSIONS_KEY) or {}
-            if session_id not in fullmode_store:
-                return
+        from parrot.handlers.avatar_fullmode import publish_bifurcated_output
 
-            # Only publish when structured content is present
-            has_structured = getattr(ai_message, 'is_structured', False)
-            has_data = getattr(ai_message, 'data', None) is not None
-            has_code = getattr(ai_message, 'code', None) is not None
-            has_tool_calls = bool(getattr(ai_message, 'tool_calls', []))
-
-            if not (has_structured or has_data or has_code or has_tool_calls):
-                return
-
-            from parrot.integrations.liveavatar.models import StructuredOutputMessage
-            from parrot.integrations.liveavatar.output_bridge import OutputBridge
-            from parrot.integrations.liveavatar.output_transport import (
-                DEFAULT_OUTPUT_CHANNEL,
-                RedisBroadcastForwarder,
-            )
-            from parrot.conf import REDIS_URL
-
-            # Build payload from available structured fields
-            payload: Dict[str, Any] = {}
-            if has_data:
-                payload['data'] = getattr(ai_message, 'data')
-            if has_code:
-                payload['code'] = getattr(ai_message, 'code')
-            if has_tool_calls:
-                payload['tool_calls'] = [
-                    {
-                        'name': getattr(t, 'name', 'unknown'),
-                        'status': getattr(t, 'status', 'completed'),
-                        'output': getattr(t, 'output', None),
-                        'arguments': getattr(t, 'arguments', None),
-                    }
-                    for t in getattr(ai_message, 'tool_calls', [])
-                ]
-            if has_structured:
-                so = getattr(ai_message, 'structured_output', None)
-                if so is not None:
-                    try:
-                        payload['structured_output'] = (
-                            so.model_dump() if hasattr(so, 'model_dump') else dict(so)
-                        )
-                    except Exception:  # noqa: BLE001
-                        payload['structured_output'] = str(so)
-
-            output_type = getattr(ai_message, 'output_mode', 'data')
-            if hasattr(output_type, 'value'):
-                output_type = output_type.value
-
-            msg = StructuredOutputMessage(
-                type=str(output_type),
-                session_id=session_id,
-                payload=payload,
-                turn_id=turn_id,
-            )
-
-            forwarder = RedisBroadcastForwarder.from_url(
-                REDIS_URL, channel=DEFAULT_OUTPUT_CHANNEL
-            )
-            bridge = OutputBridge(forwarder)
-            await bridge.publish(msg)
-            try:
-                await forwarder.aclose()
-            except Exception:  # noqa: BLE001
-                pass
-
-            self.logger.debug(
-                "AgentTalk: published bifurcated structured output for session %s",
-                session_id,
-            )
-        except Exception:  # noqa: BLE001 - best-effort, never breaks the reply
-            self.logger.warning(
-                "AgentTalk: bifurcated output publish failed for session %s",
-                session_id, exc_info=True,
-            )
+        await publish_bifurcated_output(
+            self.request, self.logger, ai_message, session_id, turn_id,
+        )
 
     async def _handle_stream_response(
         self,

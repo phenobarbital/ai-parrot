@@ -4,7 +4,7 @@ title: SmartsheetSource
 id: class:parrot.tools.dataset_manager.sources.smartsheet.SmartsheetSource
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Datasource backed by a Smartsheet sheet.
 relates_to:
 - concept: class:parrot.tools.dataset_manager.sources.base.DataSource

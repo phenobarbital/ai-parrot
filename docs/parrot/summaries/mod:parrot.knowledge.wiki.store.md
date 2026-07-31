@@ -4,7 +4,7 @@ title: parrot.knowledge.wiki.store
 id: mod:parrot.knowledge.wiki.store
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: WikiStore — single-file SQLite retrieval plane for the LLM Wiki.
 relates_to:
 - concept: class:parrot.knowledge.wiki.store.BaseWikiStore

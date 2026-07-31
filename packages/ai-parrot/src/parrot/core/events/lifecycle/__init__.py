@@ -2,7 +2,11 @@
 
 FEAT-176. Public API curation (TASK-1197).
 
-Usage::
+FEAT-317: the lifecycle machinery (``TraceContext``, ``LifecycleEvent``,
+``EventRegistry``, ``EventEmitterMixin``, etc.) was extracted to
+``navigator_eventbus.lifecycle`` (FEAT-313). This module re-exports that
+machinery alongside ai-parrot's own typed events (which stay local) and
+built-in subscribers, preserving the public surface consumers rely on::
 
     from parrot.core.events.lifecycle import (
         EventRegistry, EventEmitterMixin, TraceContext,
@@ -11,15 +15,15 @@ Usage::
     )
 """
 
-from parrot.core.events.lifecycle.trace import TraceContext
-from parrot.core.events.lifecycle.base import LifecycleEvent
-from parrot.core.events.lifecycle.meta import SubscriberErrorEvent
-from parrot.core.events.lifecycle.registry import EventRegistry, AsyncSubscriber
-from parrot.core.events.lifecycle.global_registry import get_global_registry, scope
-from parrot.core.events.lifecycle.provider import EventProvider
-from parrot.core.events.lifecycle.mixin import EventEmitterMixin
+from navigator_eventbus.lifecycle.trace import TraceContext
+from navigator_eventbus.lifecycle.base import LifecycleEvent
+from navigator_eventbus.lifecycle.meta import SubscriberErrorEvent
+from navigator_eventbus.lifecycle.registry import EventRegistry, AsyncSubscriber
+from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
+from navigator_eventbus.lifecycle.provider import EventProvider
+from navigator_eventbus.lifecycle.mixin import EventEmitterMixin
 
-# Concrete events
+# Concrete events — STAY local (ai-parrot's own taxonomy)
 from parrot.core.events.lifecycle.events import (
     AgentInitializedEvent,
     AgentConfiguredEvent,
@@ -44,10 +48,11 @@ from parrot.core.events.lifecycle.events import (
     NodeSkippedEvent,
 )
 
-# Built-in subscribers
-from parrot.core.events.lifecycle.subscribers.logging import LoggingSubscriber
+# Built-in subscribers — Logging/Webhook from the package; OpenTelemetry
+# depends on ai-parrot's typed events, so it stays local.
+from navigator_eventbus.lifecycle.subscribers.logging import LoggingSubscriber
 from parrot.core.events.lifecycle.subscribers.opentelemetry import OpenTelemetrySubscriber
-from parrot.core.events.lifecycle.subscribers.webhook import WebhookSubscriber
+from navigator_eventbus.lifecycle.subscribers.webhook import WebhookSubscriber
 
 
 __all__ = [

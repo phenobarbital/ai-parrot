@@ -4,7 +4,7 @@ title: InfographicToolkit
 id: class:parrot.tools.infographic_toolkit.InfographicToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Toolkit that produces frozen, multi-dataset HTML infographic artifacts.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

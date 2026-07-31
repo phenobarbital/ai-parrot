@@ -4,7 +4,7 @@ title: JiraToolkit — Remove Silent Default Auth
 id: doc:docs-superpowers-specs-2026-07-06-jiratoolkit-remove-default-auth-design-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Now that the toolkit supports per-user OAuth 2.0 (3LO) authentication, the
 relates_to:
 - concept: mod:parrot.bots.jira_specialist

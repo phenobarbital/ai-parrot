@@ -1,5 +1,5 @@
 ---
-model: haiku
+model: haiku-4-5
 ---
 
 # /sdd-status — SDD Task Board

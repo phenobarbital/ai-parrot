@@ -4,7 +4,7 @@ title: parrot.handlers.video_reel
 id: mod:parrot.handlers.video_reel
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTTP handler for video reel generation with background job support.
 relates_to:
 - concept: class:parrot.handlers.video_reel.VideoReelHandler

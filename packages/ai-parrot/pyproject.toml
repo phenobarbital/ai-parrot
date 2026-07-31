@@ -43,6 +43,10 @@ dependencies = [
     "nh3>=0.2.14",
     "python-datamodel>=0.10.17",
     "backoff==2.2.1",
+    # parrot.clients.base → clients/gpt.py imports tenacity unconditionally,
+    # so it must be a core dependency (a bare install could not import
+    # parrot.clients without it).
+    "tenacity>=8.2",
     "typing-extensions>=4.14.1,<5",
     "pydantic==2.12.5",
     "PyYAML>=6.0.2",
@@ -94,12 +98,23 @@ dependencies = [
     "questionary>=2.1.1",
     # Pandas stays in core (owner decision)
     "pandas>=2.0.0",
+    # Code-review fix (FEAT-380 sandbox-hardening, post-TASK-1945):
+    # `repl_worker/transport.py` (Arrow IPC/shm DataFrame transport, the
+    # PRIMARY path `PythonPandasTool._get_worker_handle()` uses to seed
+    # every DataFrame into the worker) imports `pyarrow` unconditionally.
+    # It's a lazy, function-local import (only paid for when
+    # `inject_dataframe()` actually runs), but that's still the default
+    # DataFrame-injection path — an undeclared dependency there means a
+    # bare `pip install ai-parrot` breaks the tool at first use instead of
+    # at install time. Same floor pin as ai-parrot-server (FEAT-327).
+    "pyarrow>=25.0",
     # SQL validation for DatabaseToolkit (FEAT-062)
     "sqlglot>=20.0",
     "numexpr==2.10.2",
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
+    "navigator-eventbus>=0.2.1",
 ]
 
 [project.scripts]
@@ -221,7 +236,7 @@ agents = [
     "spacy==3.8.11",
     "html2text==2025.4.15",
     "httpx-sse==0.4.1",
-    "mcp==1.23.0",
+    "mcp>=1.28.1,<2",
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "undetected-chromedriver==3.5.5",
@@ -275,7 +290,7 @@ agents-lite = [
     "decorator>=5",
     "html2text==2025.4.15",
     "httpx-sse==0.4.1",
-    "mcp==1.23.0",
+    "mcp>=1.28.1,<2",
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "jira==3.10.5",
@@ -308,7 +323,7 @@ mcp = [
     "decorator>=5",
     "html2text==2025.4.15",
     "httpx-sse==0.4.1",
-    "mcp==1.23.0",
+    "mcp>=1.28.1,<2",
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "jira==3.10.5",
@@ -337,7 +352,7 @@ images = [
     "pyheif==0.8.0",
     "exif==1.6.1",
     "pillow-avif-plugin==1.5.2",
-    "pillow-heif==0.22.0",
+    "pillow-heif>=1.3.0",
     "python-xmp-toolkit==2.1.0",
     "exifread==3.5.1",
     "transformers>=4.48.0,<5.0",
@@ -409,6 +424,14 @@ integrations = [
     # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 
+# FEAT-310/FEAT-317: gRPC ingress adapter now lives in navigator-eventbus
+# (parrot.core.events.bus.ingress moved there in phase 1). Pull the
+# package's own grpc extra so grpcio/grpcio-tools versions stay in lockstep
+# with the committed pb2 gencode it ships.
+grpc = [
+    "navigator-eventbus[grpc]",
+]
+
 # milvus extra MOVED to ai-parrot-embeddings[milvus] in FEAT-201.
 # chroma extra MOVED to ai-parrot-embeddings[chroma] in FEAT-201.
 
@@ -436,7 +459,7 @@ xai = [
 # and torch~=2.8.0. Install this extra in a dedicated environment.
 gemma4 = [
     "transformers>=5.0.0",
-    "torch==2.11.0",
+    "torch>=2.13.0",
     "accelerate>=1.9.0",
 ]
 
@@ -510,6 +533,10 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-benchmark>=4.0",
     "ruff>=0.4",
+    # FEAT-322 TASK-1850: reducer/host property tests (fold invariant,
+    # totality, arbitration, expiry). The spec's contract claimed this was
+    # "already used in repo tests" — verified absent in-tree; added here.
+    "hypothesis>=6.100",
 ]
 
 # Remote tool executors (parrot.tools.executors). Pulls the optional
@@ -520,6 +547,7 @@ dev = [
 # via the agents extra.
 remote-tools = [
     "kubernetes_asyncio>=29.0.0",
+    "aiodocker>=0.24.0",
 ]
 
 # Visualizations satellite — heavy chart/infographic renderers (FEAT-200)
@@ -569,7 +597,7 @@ include = ["parrot*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-parrot = ["py.typed", "templates/*.tpl"]
+parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.auth" = ["templates/*.html"]
 # parrot.integrations.telegram moved to ai-parrot-integrations
 # parrot.voice moved to ai-parrot-integrations
@@ -592,13 +620,40 @@ parrot = ["py.typed", "templates/*.tpl"]
 # Schema DDL shipped for manual application.
 "parrot.security" = ["*.sql"]
 "parrot.pipelines" = ["*.sql"]
+# Core default compressor manifest (FEAT-380), loaded by CompressorRegistry.
+"parrot.tools.compression" = ["*.toml"]
 
 # ---------------------------------------------------------------------------
-# Maturin (Rust extension)
+# Maturin (Rust extensions) — TASK-1955 (FEAT-380) investigation note:
+#
+# This package's [build-system] above is setuptools (Cython-based), NOT
+# maturin — so this [tool.maturin] block is NOT invoked by the actual
+# `pip install`/`build` of ai-parrot; setuptools has no knowledge of it.
+# The two optional Rust extensions in this tree (`yaml-rs/`, `codec-rs/`)
+# are each their OWN self-contained maturin sub-projects (own pyproject.toml
+# with build-backend="maturin", own Cargo.toml) built independently via
+# `maturin develop`/`build` run FROM WITHIN their own directory, producing
+# wheels installed into the SAME venv as ai-parrot (see
+# `src/parrot/yaml-rs/pyproject.toml` and `src/parrot/codec-rs/pyproject.toml`).
+# Both degrade gracefully to a pure-Python fallback when not built
+# (`registry.py`'s `try: from parrot import yaml_rs / except ImportError`;
+# `compression/budget.py`'s `is_rust_available()`).
+#
+# `python-source` below was pointing at a directory that never existed on
+# disk (`src/parrot/yaml_rs`, underscore — the real one is
+# `src/parrot/yaml-rs/python/yaml_rs`, hyphen) and `module-name` didn't
+# match `yaml-rs`'s own working config (`module-name = "yaml_rs"`, no
+# `parrot.` prefix, no `_yaml_rs` submodule) either. Corrected below to
+# describe what the on-disk yaml-rs sub-project ACTUALLY does, for
+# accuracy — but since this block is inert (see above), the correction
+# has no runtime effect either way. Left in place (rather than removed)
+# as living documentation of the real Rust-extension layout, and because
+# a future migration of the root build-system TO maturin (out of this
+# feature's scope) would need this reconciled first.
 # ---------------------------------------------------------------------------
 [tool.maturin]
-python-source = "src/parrot/yaml_rs"
-module-name = "parrot.yaml_rs._yaml_rs"
+python-source = "src/parrot/yaml-rs/python"
+module-name = "yaml_rs"
 bindings = "pyo3"
 features = ["pyo3/extension-module"]
 

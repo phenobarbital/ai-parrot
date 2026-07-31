@@ -4,7 +4,7 @@ title: GrokClient
 id: class:parrot.clients.grok.GrokClient
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Client for interacting with xAI's Grok models.
 relates_to:
 - concept: class:parrot.clients.base.AbstractClient

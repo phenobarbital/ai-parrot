@@ -4,7 +4,7 @@ title: TrivyParser
 id: class:parrot_tools.security.parsers.trivy.TrivyParser
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Catalog-level parser for Trivy filesystem/image JSON reports.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.handlers.print_pdf
 id: mod:parrot.handlers.print_pdf
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: PrintPDFHandler — Convert HTML to PDF via HTTP.
 relates_to:
 - concept: class:parrot.handlers.print_pdf.PrintPDFHandler

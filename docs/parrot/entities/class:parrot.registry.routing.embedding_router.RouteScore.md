@@ -4,7 +4,7 @@ title: RouteScore
 id: class:parrot.registry.routing.embedding_router.RouteScore
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Result of :meth:`EmbeddingIntentRouter.route`.
 ---
 

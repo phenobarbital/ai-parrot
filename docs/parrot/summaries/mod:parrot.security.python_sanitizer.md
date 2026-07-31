@@ -4,7 +4,7 @@ title: parrot.security.python_sanitizer
 id: mod:parrot.security.python_sanitizer
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Allowlist-first AST gate for Python code executed in the REPL sandbox.
 relates_to:
 - concept: class:parrot.security.python_sanitizer.PythonCodeSanitizer

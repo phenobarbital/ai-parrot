@@ -33,6 +33,13 @@ _EXTRA_PATHS = [
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot", "src"),
     # ai-parrot-loaders: include worktree version.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-loaders", "src"),
+    # ai-parrot-visualizations: FEAT-324 adds interactive_html.py to the
+    # parrot.outputs.a2ui_renderers PEP 420 namespace (merged via
+    # pkgutil.extend_path in parrot/outputs/__init__.py, which walks
+    # sys.path) — without this entry the namespace merge only ever finds
+    # the main-repo editable-install copy, hiding worktree-local renderer
+    # changes entirely.
+    os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-visualizations", "src"),
     # ai-parrot-tools: also include worktree version.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-tools", "src"),
     # ai-parrot-server: FEAT-204 adds new modules (SuspendingWebHumanTool,

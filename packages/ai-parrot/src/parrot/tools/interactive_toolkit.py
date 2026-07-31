@@ -91,6 +91,7 @@ class InteractiveToolkit(AbstractToolkit):
         *,
         artifact_store: ArtifactStore,
         catalog: Optional[InteractiveCatalogRegistry] = None,
+        emit_a2ui: bool = False,
         **kwargs,
     ) -> None:
         """Initialise the toolkit.
@@ -98,11 +99,14 @@ class InteractiveToolkit(AbstractToolkit):
         Args:
             artifact_store: Initialised ``ArtifactStore`` instance.
             catalog: Optional catalog override; defaults to the bundled singleton.
+            emit_a2ui: When True, the render tool additionally produces a validated
+                A2UI ``CreateSurface`` envelope (FEAT-273 Module 11, D1a lane).
             **kwargs: Forwarded to ``AbstractToolkit.__init__``.
         """
         super().__init__(**kwargs)
         self._artifact_store = artifact_store
         self._catalog = catalog or get_interactive_catalog()
+        self._emit_a2ui = emit_a2ui
         self.logger = logging.getLogger(__name__)
         self.return_direct = True
 
@@ -298,6 +302,15 @@ class InteractiveToolkit(AbstractToolkit):
             template.name, resolved_theme, enhanced, len(html),
         )
 
+        a2ui_envelope = None
+        if self._emit_a2ui:
+            a2ui_envelope = self._build_a2ui_envelope(
+                template_name=template.name,
+                artifact_id=artifact_id,
+                title=title,
+                brief=brief,
+            )
+
         return InteractiveRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
@@ -306,7 +319,35 @@ class InteractiveToolkit(AbstractToolkit):
             theme=resolved_theme,
             libraries_used=[e.name for e in entries],
             enhanced=enhanced,
+            a2ui_envelope=a2ui_envelope,
         )
+
+    def _build_a2ui_envelope(
+        self,
+        template_name: str,
+        artifact_id: str,
+        *,
+        title: Optional[str] = None,
+        brief: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Build a validated A2UI Card envelope from the interactive render."""
+        from parrot.outputs.a2ui.builders import build_card
+
+        try:
+            envelope = build_card(
+                title=title or template_name,
+                body=brief,
+                surface_id=f"interactive-{artifact_id}",
+            )
+            return envelope.model_dump(mode="json")
+        except Exception:
+            self.logger.warning(
+                "A2UI envelope build failed for interactive artifact %s; "
+                "falling back to HTML-only result.",
+                artifact_id,
+                exc_info=True,
+            )
+            return None
 
     # ------------------------------------------------------------------
     # Internal helpers

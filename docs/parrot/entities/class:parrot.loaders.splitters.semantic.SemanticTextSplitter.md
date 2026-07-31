@@ -4,7 +4,7 @@ title: SemanticTextSplitter
 id: class:parrot.loaders.splitters.semantic.SemanticTextSplitter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Sentence/paragraph-aware splitter backed by the Rust crate. Never
 relates_to:
 - concept: class:parrot.loaders.splitters.base.BaseTextSplitter

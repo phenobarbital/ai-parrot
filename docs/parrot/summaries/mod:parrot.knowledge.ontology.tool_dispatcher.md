@@ -4,7 +4,7 @@ title: parrot.knowledge.ontology.tool_dispatcher
 id: mod:parrot.knowledge.ontology.tool_dispatcher
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Jinja2-based tool call dispatcher for the ontology pipeline (FEAT-158).
 relates_to:
 - concept: class:parrot.knowledge.ontology.tool_dispatcher.RenderError

@@ -4,7 +4,7 @@ title: LocalToolExecutor
 id: class:parrot.tools.executors.local.LocalToolExecutor
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Executor that runs the tool in the current Python process.
 relates_to:
 - concept: class:parrot.tools.executors.abstract.AbstractToolExecutor

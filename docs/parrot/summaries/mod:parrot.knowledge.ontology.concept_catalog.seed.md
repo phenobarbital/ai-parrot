@@ -4,7 +4,7 @@ title: parrot.knowledge.ontology.concept_catalog.seed
 id: mod:parrot.knowledge.ontology.concept_catalog.seed
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Concept Catalog YAML seed utility (FEAT-159 TASK-1090).
 relates_to:
 - concept: func:parrot.knowledge.ontology.concept_catalog.seed.seed_concepts_from_yaml

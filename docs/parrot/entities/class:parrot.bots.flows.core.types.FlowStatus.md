@@ -4,7 +4,7 @@ title: FlowStatus
 id: class:parrot.bots.flows.core.types.FlowStatus
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Overall execution status for a flow/crew run.
 ---
 

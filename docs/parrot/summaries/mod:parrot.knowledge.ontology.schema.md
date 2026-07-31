@@ -4,7 +4,7 @@ title: parrot.knowledge.ontology.schema
 id: mod:parrot.knowledge.ontology.schema
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic v2 models for ontology YAML validation and runtime representation.
 relates_to:
 - concept: class:parrot.knowledge.ontology.schema.AuthorizationRule

@@ -4,7 +4,7 @@ title: dynamic_import_helper()
 id: func:parrot.plugins.dynamic_import_helper
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Helper for __getattr__ to dynamically import plugin modules.
 ---
 

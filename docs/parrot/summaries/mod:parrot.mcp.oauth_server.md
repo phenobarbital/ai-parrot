@@ -4,7 +4,7 @@ title: parrot.mcp.oauth_server
 id: mod:parrot.mcp.oauth_server
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OAuth server-side classes for MCP — extracted from parrot.mcp.oauth in FEAT-203.
 relates_to:
 - concept: class:parrot.mcp.oauth_server.APIKeyRecord

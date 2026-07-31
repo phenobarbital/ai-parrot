@@ -20,12 +20,25 @@ CLAUDE_MD_END = "<!-- parrot:wiki:end -->"
 #: used to find (and remove) our hook entries when merging settings.
 HOOK_COMMAND = "wikitoolkit claude-hook"
 
-#: Tool matcher for the PreToolUse nudge.
-HOOK_MATCHER = "Grep|Glob|Read"
+#: Tool matcher for the PreToolUse nudge. Includes ``Bash`` so shell-based
+#: searches (``grep``/``rg``/``find`` run via the Bash tool) are nudged too —
+#: the hook decides per-command whether a given Bash call is actually a
+#: repo search (see ``hook._should_nudge_bash``).
+HOOK_MATCHER = "Grep|Glob|Read|Bash"
 
 #: Managed-block markers inside .git/hooks/post-commit.
 GIT_HOOK_BEGIN = "# >>> parrot-wiki post-commit >>>"
 GIT_HOOK_END = "# <<< parrot-wiki post-commit <<<"
+
+#: Permission allow-rules merged into .claude/settings.json so wiki
+#: queries run without a permission prompt. Covers the bare CLI, the
+#: ``parrot wiki`` alias, and the common venv-activation compound.
+PERMISSION_RULES: tuple[str, ...] = (
+    "Bash(wikitoolkit:*)",
+    "Bash(parrot wiki:*)",
+    "Bash(source .venv/bin/activate && wikitoolkit:*)",
+    "Bash(source .venv/bin/activate && parrot wiki:*)",
+)
 
 #: Filename of the slash command (under .claude/commands/).
 SLASH_COMMAND_FILENAME = "parrotwiki.md"
@@ -39,12 +52,13 @@ CLAUDE_MD_SECTION = f"""{CLAUDE_MD_BEGIN}
 
 This repository maintains a machine-first knowledge graph of the
 codebase (pages + typed edges over a local SQLite plane, built by
-`wikitoolkit build`). For questions about the codebase — where
-something lives, how modules relate, what a subsystem does — PREFER
-scoped wiki queries over reading whole files or grepping raw source:
+`wikitoolkit build`). For ANY question about the codebase — where
+something lives, how modules relate, what a subsystem does — you MUST
+run a scoped wiki query FIRST, before Grep/Glob/Read or any shell
+search (`grep`/`rg`/`find`/`cat` via Bash):
 
 - `wikitoolkit query "<question>"` — token-budgeted, ranked page
-  stubs for a scoped question. Start here.
+  stubs for a scoped question. ALWAYS start here.
 - `wikitoolkit page <id>` — read one page in full (file summaries,
   API outlines, content). Use the ids returned by `query`.
 - `wikitoolkit related <id>` — follow typed edges (`contains`,
@@ -53,10 +67,48 @@ scoped wiki queries over reading whole files or grepping raw source:
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
 
+**Query discipline** (avoids the two most common ways the wiki
+"fails" — which are usually caller error, not missing coverage):
+
+1. **Query for the *thing*, not for your *hypothesis* about it.** The
+   ranking is lexical — extra concept words steer it toward those
+   concepts. To locate a class or feature, name the symbol/module/
+   subsystem you want (`"attestation model service"`), not your theory
+   about where it might live.
+2. **Follow the thread before falling back.** If a result scores low
+   or names a parent module, resolve it with `wikitoolkit page <id>`
+   or `wikitoolkit related <id>` — one hop usually lands the real
+   page. Do NOT jump to grep just because the first `query` didn't
+   rank the exact page first.
+
+Only fall back to Grep/Glob/Read (or shell search) once a clean query
+*and* a page/related follow-up have genuinely come up empty — and say
+so before you do. Consider `wikitoolkit build` if results look stale.
+
+**Saving knowledge (persistent memory).** The wiki is also your
+durable memory — what you save here survives this session and is
+found by future `wikitoolkit query` calls ("the agent forgets, the
+graph does not"). When you learn a durable fact, make a decision, or
+extract a lesson worth keeping, SAVE it:
+
+- `wikitoolkit remember "<fact>" --category [note|decision|lesson|concept]
+  [--title "<short title>"] [--link <page_id> --rel <relation>]` —
+  file new knowledge (idempotent: same title+category updates the
+  existing memory). Link it to the pages it is about.
+- `wikitoolkit note <page_id> "<text>"` — append an attributed,
+  dated note to an existing page.
+- `wikitoolkit link <src_id> <dst_id> --rel <relation>` — connect
+  two pages with a typed, asserted edge.
+- `wikitoolkit memories` — list saved memories;
+  `wikitoolkit audit` — the attributed write log.
+
+Save selectively: durable decisions, gotchas, and cross-file
+relationships — not session chatter. Every write is attributed and
+auditable.
+
 The `/parrotwiki` command wraps these (e.g. `/parrotwiki query how
-does ingest work`, `/parrotwiki --wiki` to export a human-readable
-markdown wiki). Fall back to Grep/Glob/Read when the wiki has no
-answer, and consider `wikitoolkit build` if results look stale.
+does ingest work`, `/parrotwiki remember <fact>`, `/parrotwiki --wiki`
+to export a human-readable markdown wiki).
 {CLAUDE_MD_END}
 """
 
@@ -66,7 +118,7 @@ answer, and consider `wikitoolkit build` if results look stale.
 
 SLASH_COMMAND_MD = """---
 description: Query or maintain the repository LLM-wiki knowledge graph (wikitoolkit)
-argument-hint: [query <question> | page <id> | related <id> | status | build | --wiki [dir]]
+argument-hint: [query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | status | build | --wiki [dir]]
 allowed-tools: Bash(wikitoolkit:*)
 ---
 
@@ -87,6 +139,17 @@ matching `wikitoolkit` command with Bash:
   neighbours connect.
 - `status` — run `wikitoolkit status` and report plane health.
 - `build` — run `wikitoolkit build` and report what changed.
+- `remember <fact>` — save durable knowledge: run
+  `wikitoolkit remember "<fact>" --category <note|decision|lesson|concept>`
+  (add `--title` for a short handle and `--link <page_id>` to connect
+  it to the pages it is about). Report the saved page id.
+- `note <id> <text>` — run `wikitoolkit note <id> "<text>"` to append
+  an attributed note to an existing page.
+- `link <a> <b>` — run `wikitoolkit link <a> <b> --rel <relation>`
+  to connect two pages (default relation `references`).
+- `memories` — run `wikitoolkit memories` and summarise what has
+  been saved.
+- `audit` — run `wikitoolkit audit` and summarise recent writes.
 - `--wiki [dir]` — build a human-readable markdown wiki from the
   graph: run `wikitoolkit export -o <dir>` (default `docs/wiki`) and
   list what was written.
@@ -116,10 +179,10 @@ GIT_HOOK_NEW_FILE = f"""#!/bin/sh
 # --------------------------------------------------------------------------
 
 NUDGE_TEXT = (
-    "This repository has an LLM-wiki knowledge graph of the codebase. "
-    "Before scanning raw files, prefer a scoped query: "
-    "`wikitoolkit query \"<question>\"` returns ranked, token-budgeted "
-    "page stubs; follow up with `wikitoolkit page <id>` (full page) or "
-    "`wikitoolkit related <id>` (typed edges). Fall back to direct "
-    "Grep/Glob/Read when the wiki has no answer."
+    "STOP — this repository has an LLM-wiki knowledge graph and CLAUDE.md "
+    "requires querying it BEFORE raw file scans (Grep/Glob/Read or "
+    "grep/rg/find via Bash). Run `wikitoolkit query \"<question>\"` first "
+    "(ranked, token-budgeted page stubs), then `wikitoolkit page <id>` / "
+    "`wikitoolkit related <id>` to drill in. Only fall back to raw search "
+    "after a query AND a page/related follow-up came up empty."
 )

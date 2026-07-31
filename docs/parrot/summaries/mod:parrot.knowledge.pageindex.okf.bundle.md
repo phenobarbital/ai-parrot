@@ -4,7 +4,7 @@ title: parrot.knowledge.pageindex.okf.bundle
 id: mod:parrot.knowledge.pageindex.okf.bundle
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OKF v0.1 bundle import/export for PageIndex.
 relates_to:
 - concept: class:parrot.knowledge.pageindex.okf.bundle.ExportReport

@@ -4,7 +4,7 @@ title: PowerBIQueryTool
 id: class:parrot_tools.powerbi.PowerBIQueryTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Tool for executing DAX queries against a Power BI dataset.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

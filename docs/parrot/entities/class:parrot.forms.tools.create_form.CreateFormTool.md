@@ -4,7 +4,7 @@ title: CreateFormTool
 id: class:parrot.forms.tools.create_form.CreateFormTool
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create a FormSchema from a natural language prompt using an LLM.
 relates_to:
 - concept: class:parrot.tools.abstract.AbstractTool

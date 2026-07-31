@@ -4,7 +4,7 @@ title: parrot_tools.scraping.drivers.page_driver
 id: mod:parrot_tools.scraping.drivers.page_driver
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: PageDriver — a lightweight AbstractDriver over a single Playwright Page.
 relates_to:
 - concept: class:parrot_tools.scraping.drivers.page_driver.PageDriver

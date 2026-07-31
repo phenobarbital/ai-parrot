@@ -4,7 +4,7 @@ title: Smart OutputFormatter Documentation
 id: doc:docs-outputs-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: The **Smart OutputFormatter** is an intelligent rendering system that automatically
   detects visualization types (Folium maps, Plotly charts, DataFrames, etc.) and renders
   them appropriately based on the environment (Terminal, HTML, Jupyter).

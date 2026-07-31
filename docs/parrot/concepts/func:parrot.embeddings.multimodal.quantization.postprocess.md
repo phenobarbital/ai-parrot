@@ -4,7 +4,7 @@ title: postprocess()
 id: func:parrot.embeddings.multimodal.quantization.postprocess
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Apply the full post-processing pipeline: slice -> normalize -> quantize.'
 ---
 

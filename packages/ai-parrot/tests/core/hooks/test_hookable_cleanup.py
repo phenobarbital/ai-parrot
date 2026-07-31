@@ -9,7 +9,7 @@ Exercises the four contract points specified in TASK-815:
 import pytest
 from unittest.mock import AsyncMock
 
-from parrot.core.hooks.mixins import HookableAgent
+from navigator_eventbus.hooks.mixins import HookableAgent
 
 
 # ---------------------------------------------------------------------------

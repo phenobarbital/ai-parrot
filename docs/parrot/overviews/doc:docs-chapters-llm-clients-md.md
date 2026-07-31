@@ -4,7 +4,7 @@ title: LLM Clients
 id: doc:docs-chapters-llm-clients-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AI-Parrot talks to every LLM provider through a single
 relates_to:
 - concept: mod:parrot.clients

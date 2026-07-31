@@ -4,7 +4,7 @@ title: A2AProxyRouter
 id: class:parrot.a2a.router.A2AProxyRouter
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Proxy/Gateway for routing requests to A2A agents without LLM processing.
 ---
 

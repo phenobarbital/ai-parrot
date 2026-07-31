@@ -4,7 +4,7 @@ title: parrot.storage.metrics
 id: mod:parrot.storage.metrics
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: StorageMetrics protocol and no-op default implementation.
 relates_to:
 - concept: class:parrot.storage.metrics.NoopStorageMetrics

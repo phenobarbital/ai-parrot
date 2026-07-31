@@ -4,7 +4,7 @@ title: parrot_tools.odoo.transport.detect
 id: mod:parrot_tools.odoo.transport.detect
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Auto-detect the best Odoo external API transport for a given server.
 relates_to:
 - concept: func:parrot_tools.odoo.transport.detect.auto_detect_transport

@@ -99,7 +99,7 @@ def basic_template():
 def toolkit(fake_store, basic_template):
     tk = InfographicToolkit(artifact_store=fake_store)
     bot = MagicMock()
-    bot._get_repl_locals = MagicMock(return_value={"rev": pd.DataFrame([{"x": 1}])})
+    bot._get_repl_locals = AsyncMock(return_value={"rev": pd.DataFrame([{"x": 1}])})
     # _resolve_scope prefers _current_* (set by PandasAgent.ask at runtime);
     # None here exercises the user_id/agent_id/session_id fallback.
     bot._current_user_id = None
@@ -187,7 +187,7 @@ async def test_e2e_enhance_fallback(toolkit, basic_template, caplog):
     toolkit._bot.enhance_infographic = AsyncMock(
         return_value='<script src="https://evil/x.js"></script>'
     )
-    toolkit._bot._get_repl_locals = MagicMock(
+    toolkit._bot._get_repl_locals = AsyncMock(
         return_value={"rev": pd.DataFrame([{"x": 1}])}
     )
     with caplog.at_level("WARNING"):
@@ -307,7 +307,7 @@ async def test_render_financial_variance_end_to_end(fake_store):
     """
     tk = InfographicToolkit(artifact_store=fake_store)
     bot = MagicMock()
-    bot._get_repl_locals = MagicMock(return_value={
+    bot._get_repl_locals = AsyncMock(return_value={
         "fp_daily": pd.DataFrame({"date": [1, 2], "rev_total": [2.3, 3.7]}),
     })
     bot.user_id = "u"

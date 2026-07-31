@@ -4,7 +4,7 @@ title: 5. Hardening — anti-prompt-injection, PBAC and tool gating
 id: doc:docs-architecture-05-hardening-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: 'Hardening is layered: every request crosses **transport auth → user'
 ---
 

@@ -4,7 +4,7 @@ title: HitlTierAdvancedEvent
 id: class:parrot.human.events.HitlTierAdvancedEvent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Emitted when the escalation cursor moves from one tier to another.
 ---
 

@@ -4,7 +4,7 @@ title: O365DeviceCodeCredentialResolver
 id: class:parrot.auth.oauth2.o365_devicecode_provider.O365DeviceCodeCredentialResolver
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Device-code (headless) credential resolver for O365 (FEAT-266).
 relates_to:
 - concept: class:parrot.auth.credentials.CredentialResolver

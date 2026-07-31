@@ -4,7 +4,7 @@ title: create_skill_trigger_middleware()
 id: func:parrot.skills.middleware.create_skill_trigger_middleware
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Create a PromptMiddleware that detects /trigger patterns.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.handlers.avatar_fullmode
 id: mod:parrot.handlers.avatar_fullmode
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: FULL Mode avatar endpoint — start/stop sessions and list avatars/voices (FEAT-248).
 relates_to:
 - concept: class:parrot.handlers.avatar_fullmode.FullmodeAvatarsView

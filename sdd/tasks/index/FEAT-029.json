@@ -10,7 +10,7 @@
     {
       "id": "TASK-208",
       "slug": "videoreel-model-changes",
-      "title": "Model Changes \u2014 VideoReelScene.reference_image + VideoReelRequest.reference_images",
+      "title": "Model Changes — VideoReelScene.reference_image + VideoReelRequest.reference_images",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -23,7 +23,7 @@
     {
       "id": "TASK-209",
       "slug": "process-scene-reference-image",
-      "title": "_process_scene() \u2014 Pass reference_image to generate_image()",
+      "title": "_process_scene() — Pass reference_image to generate_image()",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -33,12 +33,12 @@
         "TASK-208"
       ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-209-process-scene-reference-image.md"
+      "file": "sdd/tasks/completed/TASK-209-process-scene-reference-image.md"
     },
     {
       "id": "TASK-210",
       "slug": "generate-video-reel-reference-images",
-      "title": "_generate_video_reel() \u2014 Apply reference_images onto scenes",
+      "title": "_generate_video_reel() — Apply reference_images onto scenes",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -53,7 +53,7 @@
     {
       "id": "TASK-211",
       "slug": "handler-multipart-upload",
-      "title": "VideoReelHandler \u2014 Multipart Upload + Temp File Cleanup",
+      "title": "VideoReelHandler — Multipart Upload + Temp File Cleanup",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -68,7 +68,7 @@
     {
       "id": "TASK-212",
       "slug": "videoreel-upload-tests",
-      "title": "Tests \u2014 VideoReel Reference Image Upload",
+      "title": "Tests — VideoReel Reference Image Upload",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",

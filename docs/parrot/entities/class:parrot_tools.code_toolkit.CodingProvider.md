@@ -4,7 +4,7 @@ title: CodingProvider
 id: class:parrot_tools.code_toolkit.CodingProvider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Provider protocol implemented by coding backends.
 ---
 

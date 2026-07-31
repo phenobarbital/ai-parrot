@@ -4,7 +4,7 @@ title: parrot.integrations.whatsapp.bridge_wrapper
 id: mod:parrot.integrations.whatsapp.bridge_wrapper
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: WhatsApp Bridge Agent Wrapper.
 relates_to:
 - concept: class:parrot.integrations.whatsapp.bridge_wrapper.WhatsAppBridgeWrapper

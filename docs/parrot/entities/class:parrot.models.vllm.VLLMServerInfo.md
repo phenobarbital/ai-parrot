@@ -4,7 +4,7 @@ title: VLLMServerInfo
 id: class:parrot.models.vllm.VLLMServerInfo
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: vLLM server information model.
 ---
 

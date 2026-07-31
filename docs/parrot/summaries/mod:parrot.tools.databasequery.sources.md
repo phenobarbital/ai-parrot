@@ -4,7 +4,7 @@ title: parrot.tools.databasequery.sources
 id: mod:parrot.tools.databasequery.sources
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: DatabaseToolkit — Source Registry & Driver Alias Resolution.
 relates_to:
 - concept: func:parrot.tools.databasequery.sources.get_source_class

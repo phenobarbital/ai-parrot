@@ -4,7 +4,7 @@ title: parrot.skills.middleware
 id: mod:parrot.skills.middleware
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Skill trigger middleware for the prompt pipeline.
 relates_to:
 - concept: func:parrot.skills.middleware.create_skill_trigger_middleware

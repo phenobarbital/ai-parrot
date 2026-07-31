@@ -4,7 +4,7 @@ title: parrot_tools.google.places
 id: mod:parrot_tools.google.places
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Google Business Profile Tools.
 relates_to:
 - concept: class:parrot_tools.google.places.GoogleBusinessTool

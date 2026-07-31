@@ -4,7 +4,7 @@ title: WorkdayResponseParser
 id: class:parrot_tools.workday.models.WorkdayResponseParser
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Parser that transforms verbose Zeep responses into clean Pydantic models.
 ---
 

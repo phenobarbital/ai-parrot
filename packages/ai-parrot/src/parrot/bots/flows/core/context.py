@@ -30,7 +30,7 @@ from .result import NodeExecutionInfo
 from .types import AgentLike, AgentRef
 
 if TYPE_CHECKING:
-    from parrot.core.events.lifecycle.trace import TraceContext
+    from parrot.core.events.lifecycle import TraceContext
     from parrot.registry.registry import AgentRegistry
 
 

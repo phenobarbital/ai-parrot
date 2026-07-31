@@ -4,7 +4,7 @@ title: CompanyInfoToolkit
 id: class:parrot_tools.company_info.tool.CompanyInfoToolkit
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Toolkit for scraping company information from multiple platforms.
 relates_to:
 - concept: class:parrot.tools.toolkit.AbstractToolkit

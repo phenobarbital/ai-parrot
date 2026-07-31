@@ -4,7 +4,7 @@ title: is_unique_violation()
 id: func:parrot_formdesigner.services._db_utils.is_unique_violation
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return True when ``exc`` is a Postgres UNIQUE constraint violation.
 ---
 

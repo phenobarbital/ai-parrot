@@ -4,7 +4,7 @@ title: project_permission_context()
 id: func:parrot.tools.executors.abstract.project_permission_context
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Project a PermissionContext into a JSON-safe dict.
 ---
 

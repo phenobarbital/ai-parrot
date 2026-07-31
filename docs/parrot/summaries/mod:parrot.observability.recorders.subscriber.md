@@ -4,7 +4,7 @@ title: parrot.observability.recorders.subscriber
 id: mod:parrot.observability.recorders.subscriber
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: UsageRecordingSubscriber — turns LLM-call events into UsageRecords + fan-out.
 relates_to:
 - concept: class:parrot.observability.recorders.subscriber.UsageRecordingSubscriber

@@ -4,7 +4,7 @@ title: JSONRenderer
 id: class:parrot.outputs.formats.json.JSONRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Renderer for JSON output.
 relates_to:
 - concept: class:parrot.outputs.formats.base.BaseRenderer

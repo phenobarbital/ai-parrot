@@ -4,7 +4,7 @@ title: parrot_formdesigner.tools.services.abstract
 id: mod:parrot_formdesigner.tools.services.abstract
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AbstractFormService — strategy interface for form-source services.
 relates_to:
 - concept: class:parrot_formdesigner.tools.services.abstract.AbstractFormService

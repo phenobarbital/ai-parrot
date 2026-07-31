@@ -90,7 +90,7 @@ class MSAgentSDKConfig:
     oauth_connections: Dict[str, str] = field(default_factory=dict)
     obo_scopes: Dict[str, List[str]] = field(default_factory=dict)
     enable_semantic_cards: bool = True
-    max_table_rows: int = 15
+    max_table_rows: int = 50
     max_card_bytes: int = 25_000
 
     def __post_init__(self) -> None:
@@ -241,6 +241,9 @@ class MSAgentIntegrationConfig:
     # A2A companion (always on)
     url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    # Output mode requested from the agent on A2A companion turns
+    # ("text" = markdown-free plain text for Copilot; "default" = native output).
+    output_mode: str = "text"
 
     # Credential broker
     enable_credential_broker: bool = False
@@ -340,6 +343,7 @@ class MSAgentIntegrationConfig:
             obo_scopes=data.get("obo_scopes", {}),
             url=data.get("url"),
             tags=data.get("tags", []),
+            output_mode=data.get("output_mode", "text"),
             enable_credential_broker=data.get("enable_credential_broker", False),
             credentials=data.get("credentials", []),
             o365_client_id=data.get("o365_client_id"),

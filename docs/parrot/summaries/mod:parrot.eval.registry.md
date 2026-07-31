@@ -4,7 +4,7 @@ title: parrot.eval.registry
 id: mod:parrot.eval.registry
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Lightweight decorator registries for evaluators and metrics.
 relates_to:
 - concept: func:parrot.eval.registry.get_evaluator

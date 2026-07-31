@@ -4,7 +4,7 @@ title: CLIDaemonHumanChannel
 id: class:parrot.human.channels.cli.CLIDaemonHumanChannel
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: CLI channel for when the agent runs as a daemon/background service.
 relates_to:
 - concept: class:parrot.human.channels.base.HumanChannel

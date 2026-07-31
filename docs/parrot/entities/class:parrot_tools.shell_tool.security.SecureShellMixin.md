@@ -4,7 +4,7 @@ title: SecureShellMixin
 id: class:parrot_tools.shell_tool.security.SecureShellMixin
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Mixin that adds security validation to ShellTool via composition.
 ---
 

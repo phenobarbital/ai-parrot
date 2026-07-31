@@ -4,7 +4,7 @@ title: FilesystemTransportConfig
 id: class:parrot.autonomous.transport.filesystem.config.FilesystemTransportConfig
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic v2 configuration for the FilesystemTransport.
 ---
 

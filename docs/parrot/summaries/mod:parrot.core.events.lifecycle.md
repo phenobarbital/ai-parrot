@@ -4,7 +4,7 @@ title: parrot.core.events.lifecycle
 id: mod:parrot.core.events.lifecycle
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Lifecycle Events System — typed, frozen, observability-first events.
 relates_to:
 - concept: mod:parrot.core.events.lifecycle.base

@@ -4,7 +4,7 @@ title: CapabilityEntry
 id: class:parrot.registry.capabilities.models.CapabilityEntry
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A registered capability in the semantic index.
 ---
 

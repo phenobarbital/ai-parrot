@@ -4,7 +4,7 @@ title: FEAT-107 Review Fixes Implementation Plan
 id: doc:docs-superpowers-plans-2026-04-17-feat107-review-fixes-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: cd /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-107-jira-oauth2-3lo
 relates_to:
 - concept: mod:parrot.auth

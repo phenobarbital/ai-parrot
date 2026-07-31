@@ -4,7 +4,7 @@ title: parrot_formdesigner.renderers.telegram.router
 id: mod:parrot_formdesigner.renderers.telegram.router
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Telegram form conversation router.
 relates_to:
 - concept: class:parrot_formdesigner.renderers.telegram.router.FormFilling

@@ -1,0 +1,18 @@
+FEAT-310 emit() overhead benchmark
+date               : 2026-07-20T12:36:39.586431+00:00
+python             : 3.11.14
+iterations         : 10000 (warmup 500)
+handler            : async, sleeps 50 ms per event (slow on purpose)
+
+mean               :      20.77 µs (       20771 ns)
+p50                :      17.14 µs (       17139 ns)
+p99                :      45.05 µs (       45054 ns)
+p99.9              :     285.32 µs (      285323 ns)
+max                :   18245.26 µs (    18245257 ns)
+
+FEAT-177 budget    :    2000.00 µs (     2000000 ns)  (0.1% of 2.0s reference LLM call)
+otel hot-path line :     200.00 µs (      200000 ns)  (~200 µs)
+
+p99 within FEAT-177 budget (2 ms) : PASS
+p99 within otel line (200 µs)     : PASS
+[93;1m[ERROR] 2026-07-20 14:36:44,586 navigator_eventbus.core(core.py:233) :: BusCore drain deadline (5.0s) exceeded; 10100 envelopes abandoned (dropped_on_close=10100)[0m

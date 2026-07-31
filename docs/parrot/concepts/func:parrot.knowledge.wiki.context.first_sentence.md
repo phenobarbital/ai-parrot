@@ -4,7 +4,7 @@ title: first_sentence()
 id: func:parrot.knowledge.wiki.context.first_sentence
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Return the lead sentence of ``text``, hard-capped at ``max_chars``.
 ---
 

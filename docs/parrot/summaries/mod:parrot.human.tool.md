@@ -4,7 +4,7 @@ title: parrot.human.tool
 id: mod:parrot.human.tool
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HumanTool — an AbstractTool that asks a human for input.
 relates_to:
 - concept: class:parrot.human.tool.HumanTool

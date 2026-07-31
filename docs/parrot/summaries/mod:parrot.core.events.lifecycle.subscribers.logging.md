@@ -4,7 +4,7 @@ title: parrot.core.events.lifecycle.subscribers.logging
 id: mod:parrot.core.events.lifecycle.subscribers.logging
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: LoggingSubscriber — logs every LifecycleEvent via the standard logging framework.
 relates_to:
 - concept: class:parrot.core.events.lifecycle.subscribers.logging.LoggingSubscriber

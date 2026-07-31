@@ -75,7 +75,9 @@ CREATE TABLE IF NOT EXISTS pages (
     source_id   TEXT,
     token_count INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    updated_at  TEXT NOT NULL,
+    origin      TEXT NOT NULL DEFAULT 'ingest',
+    asserted_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pages_category ON pages(category);
 CREATE INDEX IF NOT EXISTS idx_pages_source   ON pages(source_id);
@@ -101,6 +103,23 @@ CREATE TABLE IF NOT EXISTS embeddings (
     model      TEXT NOT NULL DEFAULT ''
 );
 """
+
+# Columns added after the original FEAT-260 schema shipped.  ``CREATE TABLE
+# IF NOT EXISTS`` silently skips existing databases, so ``_migrate`` ALTERs
+# these in when missing (idempotent, no data rewrite).
+_MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "pages": [
+        ("origin", "TEXT NOT NULL DEFAULT 'ingest'"),
+        ("asserted_by", "TEXT"),
+    ],
+}
+
+#: Tables ``WIKI_SCHEMA_SQL`` creates. The per-connection presence probe
+#: replays the schema when ANY of them is missing (fresh plane, external
+#: replacement, or a partial legacy database), not just ``pages``.
+_SCHEMA_TABLES = frozenset(
+    {"meta", "sources", "pages", "edges", "pages_fts", "embeddings"}
+)
 
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -195,6 +214,11 @@ class WikiPageRecord(BaseModel):
         body: Full markdown body (lives in the DB — no sidecar reads).
         source_id: Originating source id (``sources.source_id``).
         token_count: Estimated token cost of the body.
+        origin: How the page came to exist — ``"ingest"`` (derived from
+            a source), ``"authored"`` (written by an agent tool), or
+            ``"memory"`` (saved via the ``remember`` authoring surface).
+        asserted_by: Identity of the writer for authored/memory pages,
+            e.g. ``"agent:<id>"`` or ``"human:<user>"``.
     """
 
     concept_id: str = Field(..., min_length=1)
@@ -205,6 +229,8 @@ class WikiPageRecord(BaseModel):
     body: str = ""
     source_id: Optional[str] = None
     token_count: int = Field(default=0, ge=0)
+    origin: str = "ingest"
+    asserted_by: Optional[str] = None
 
 
 def rank_by_cosine(
@@ -272,7 +298,7 @@ class BaseWikiStore(ABC):
     async def upsert_pages(self, pages: list[WikiPageRecord]) -> int: ...
 
     @abstractmethod
-    async def add_edges(self, edges: list[tuple[str, str, str]]) -> int: ...
+    async def add_edges(self, edges: list[tuple]) -> int: ...
 
     @abstractmethod
     async def replace_source_slice(
@@ -298,7 +324,10 @@ class BaseWikiStore(ABC):
 
     @abstractmethod
     async def list_pages(
-        self, category: Optional[str] = None, limit: int = 100
+        self,
+        category: Optional[str] = None,
+        limit: int = 100,
+        origin: Optional[list[str]] = None,
     ) -> list[dict[str, Any]]: ...
 
     @abstractmethod
@@ -492,15 +521,17 @@ class SQLiteWikiStore(BaseWikiStore):
         misclassified error cannot permanently disable writes and an
         environment that becomes writable again heals automatically.
         """
+        placeholders = ", ".join("?" * len(_SCHEMA_TABLES))
         yielded = False
         try:
             async with aiosqlite.connect(str(self._db_path)) as conn:
                 conn.row_factory = aiosqlite.Row
                 cur = await conn.execute(
-                    "SELECT 1 FROM sqlite_master"
-                    " WHERE type = 'table' AND name = 'pages' LIMIT 1"
+                    "SELECT count(*) FROM sqlite_master"
+                    f" WHERE type = 'table' AND name IN ({placeholders})",
+                    sorted(_SCHEMA_TABLES),
                 )
-                if await cur.fetchone() is None:
+                if (await cur.fetchone())[0] < len(_SCHEMA_TABLES):
                     # Serialize first-time init across concurrent tasks
                     # of this instance; the DDL is idempotent, so the
                     # lock only avoids spurious cross-task lock errors.
@@ -518,6 +549,10 @@ class SQLiteWikiStore(BaseWikiStore):
                                 ("wiki_name", self._wiki_name),
                             )
                         await conn.commit()
+                # Column migrations run on every connection — the probe
+                # only proves the table exists, not that post-schema
+                # columns (origin/asserted_by) are present.
+                await self._migrate(conn)
                 yielded = True
                 yield conn
             return
@@ -618,6 +653,22 @@ class SQLiteWikiStore(BaseWikiStore):
                 self._db_path,
             )
 
+    async def _migrate(self, conn: aiosqlite.Connection) -> None:
+        """Add columns that post-date the original schema when missing.
+
+        ``CREATE TABLE IF NOT EXISTS`` never alters existing tables, so
+        wiki databases created before the origin/asserted_by columns
+        shipped are upgraded here via idempotent ``ALTER TABLE``.
+        """
+        for table, columns in _MIGRATION_COLUMNS.items():
+            async with conn.execute(f"PRAGMA table_info({table})") as cur:
+                existing = {row["name"] for row in await cur.fetchall()}
+            for name, col_type in columns:
+                if name not in existing:
+                    await conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {col_type}"
+                    )
+
     async def _upsert_pages_conn(
         self,
         conn: aiosqlite.Connection,
@@ -628,13 +679,15 @@ class SQLiteWikiStore(BaseWikiStore):
         await conn.executemany(
             "INSERT INTO pages"
             " (concept_id, node_id, title, category, summary, body,"
-            "  source_id, token_count, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "  source_id, token_count, created_at, updated_at,"
+            "  origin, asserted_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(concept_id) DO UPDATE SET"
             "  node_id=excluded.node_id, title=excluded.title,"
             "  category=excluded.category, summary=excluded.summary,"
             "  body=excluded.body, source_id=excluded.source_id,"
-            "  token_count=excluded.token_count, updated_at=excluded.updated_at",
+            "  token_count=excluded.token_count, updated_at=excluded.updated_at,"
+            "  origin=excluded.origin, asserted_by=excluded.asserted_by",
             [
                 (
                     p.concept_id,
@@ -647,6 +700,8 @@ class SQLiteWikiStore(BaseWikiStore):
                     p.token_count or estimate_tokens(p.body),
                     now,
                     now,
+                    p.origin,
+                    p.asserted_by,
                 )
                 for p in pages
             ],
@@ -664,12 +719,22 @@ class SQLiteWikiStore(BaseWikiStore):
     async def _insert_edges_conn(
         self,
         conn: aiosqlite.Connection,
-        edges: list[tuple[str, str, str]],
+        edges: list[tuple],
     ) -> None:
-        """Insert (src, dst, rel) edge tuples on an open connection."""
+        """Insert edge tuples on an open connection.
+
+        Accepts both ``(src, dst, rel)`` (provenance defaults to
+        ``'extracted'``) and ``(src, dst, rel, provenance)`` tuples —
+        the 4th element marks agent/human-authored edges ``'asserted'``.
+        """
+        rows = [
+            (e[0], e[1], e[2], e[3] if len(e) > 3 else "extracted")
+            for e in edges
+        ]
         await conn.executemany(
-            "INSERT OR REPLACE INTO edges (src, dst, rel) VALUES (?, ?, ?)",
-            edges,
+            "INSERT OR REPLACE INTO edges (src, dst, rel, provenance)"
+            " VALUES (?, ?, ?, ?)",
+            rows,
         )
 
     # ------------------------------------------------------------------
@@ -692,11 +757,13 @@ class SQLiteWikiStore(BaseWikiStore):
             await conn.commit()
         return len(pages)
 
-    async def add_edges(self, edges: list[tuple[str, str, str]]) -> int:
+    async def add_edges(self, edges: list[tuple]) -> int:
         """Insert typed edges.
 
         Args:
-            edges: ``(src, dst, rel)`` tuples; ``rel`` is an open string.
+            edges: ``(src, dst, rel)`` or ``(src, dst, rel, provenance)``
+                tuples; ``rel`` is an open string. A missing provenance
+                defaults to ``'extracted'``.
 
         Returns:
             Number of edges written.
@@ -862,7 +929,7 @@ class SQLiteWikiStore(BaseWikiStore):
         """
         cols = (
             "concept_id, node_id, title, category, summary, source_id,"
-            " token_count, created_at, updated_at"
+            " token_count, created_at, updated_at, origin, asserted_by"
         )
         if include_body:
             cols += ", body"
@@ -881,24 +948,36 @@ class SQLiteWikiStore(BaseWikiStore):
         self,
         category: Optional[str] = None,
         limit: int = 100,
+        origin: Optional[list[str]] = None,
     ) -> list[dict[str, Any]]:
-        """List page stubs (no bodies), optionally filtered by category.
+        """List page stubs (no bodies), optionally filtered.
 
         Args:
             category: Exact category pre-filter (open string).
             limit: Maximum rows returned.
+            origin: Optional origin filter, e.g. ``["memory", "authored"]``
+                to list only agent-saved knowledge.
 
         Returns:
             List of stub dicts ordered by ``updated_at`` (newest first).
         """
         sql = (
             "SELECT concept_id, node_id, title, category, summary,"
-            " source_id, token_count, updated_at FROM pages"
+            " source_id, token_count, updated_at, origin, asserted_by"
+            " FROM pages"
         )
+        clauses: list[str] = []
         params: tuple[Any, ...] = ()
         if category is not None:
-            sql += " WHERE category = ?"
-            params = (category,)
+            clauses.append("category = ?")
+            params += (category,)
+        if origin:
+            clauses.append(
+                f"origin IN ({', '.join('?' for _ in origin)})"
+            )
+            params += tuple(origin)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params += (limit,)
         async with self._connect() as conn:

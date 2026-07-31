@@ -4,7 +4,7 @@ title: EmployeesTool - Employee Hierarchy Tool for AI-Parrot
 id: doc:docs-hierarchy-tool-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A comprehensive tool for querying and analyzing employee organizational hierarchies
   in AI-Parrot. This tool provides a unified interface for agents and chatbots to
   access employee relationships, reporting structures, and departmental information.

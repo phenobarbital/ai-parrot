@@ -4,7 +4,7 @@ title: OrchestratorAgent
 id: class:parrot.bots.flows.agents.orchestrator.OrchestratorAgent
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: An orchestrator agent that can coordinate multiple specialized agents.
 relates_to:
 - concept: class:parrot.bots.agent.BasicAgent

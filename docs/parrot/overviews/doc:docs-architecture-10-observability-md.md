@@ -4,7 +4,7 @@ title: 10. Observability — OpenLIT + OpenTelemetry
 id: doc:docs-architecture-10-observability-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: AI-Parrot ships a first-class observability subsystem that turns every LLM
 relates_to:
 - concept: mod:parrot.observability

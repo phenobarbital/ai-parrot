@@ -4,7 +4,7 @@ title: embedding_tree_walk()
 id: func:parrot.knowledge.pageindex.vector_walk.embedding_tree_walk
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Beam search over per-node embeddings to propose candidate node_ids.
 ---
 

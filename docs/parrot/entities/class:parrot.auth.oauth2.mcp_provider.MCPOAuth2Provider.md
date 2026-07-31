@@ -4,7 +4,7 @@ title: MCPOAuth2Provider
 id: class:parrot.auth.oauth2.mcp_provider.MCPOAuth2Provider
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: OAuth2 provider for an MCP server connection.
 relates_to:
 - concept: class:parrot.auth.oauth2.registry.OAuth2Provider

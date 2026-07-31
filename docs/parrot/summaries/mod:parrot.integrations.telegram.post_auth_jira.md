@@ -4,7 +4,7 @@ title: parrot.integrations.telegram.post_auth_jira
 id: mod:parrot.integrations.telegram.post_auth_jira
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Jira implementation of the ``PostAuthProvider`` protocol.
 relates_to:
 - concept: class:parrot.integrations.telegram.post_auth_jira.JiraPostAuthProvider

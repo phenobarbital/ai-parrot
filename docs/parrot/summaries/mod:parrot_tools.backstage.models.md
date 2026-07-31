@@ -4,7 +4,7 @@ title: parrot_tools.backstage.models
 id: mod:parrot_tools.backstage.models
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Pydantic models for Backstage Catalog API responses.
 relates_to:
 - concept: class:parrot_tools.backstage.models.EntitiesQueryResponse

@@ -4,7 +4,7 @@ title: PythonCodeSanitizer
 id: class:parrot.security.python_sanitizer.PythonCodeSanitizer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Allowlist-first AST gate for Python code.
 ---
 

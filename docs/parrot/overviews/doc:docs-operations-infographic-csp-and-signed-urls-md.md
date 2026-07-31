@@ -4,7 +4,7 @@ title: Infographic CSP and Signed URLs — Operations Guide
 id: doc:docs-operations-infographic-csp-and-signed-urls-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: GET /api/v1/artifacts/public/{signature}/{artifact_id}.html
 relates_to:
 - concept: mod:parrot.handlers.artifacts

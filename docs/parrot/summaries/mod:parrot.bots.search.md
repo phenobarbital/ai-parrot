@@ -4,7 +4,7 @@ title: parrot.bots.search
 id: mod:parrot.bots.search
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: WebSearchAgent implementation for the ai-parrot framework.
 relates_to:
 - concept: class:parrot.bots.search.WebSearchAgent

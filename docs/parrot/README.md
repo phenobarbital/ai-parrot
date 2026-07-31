@@ -14,27 +14,27 @@
 
 ## Contents
 
-- **6362** pages from **1756** Python modules and **205** documents
-- **11586** typed cross-reference edges
+- **9030** pages from **1764** Python modules and **2828** documents
+- **19053** typed cross-reference edges
 
 ### Pages by category
 
-- `concept`: 912
-- `entity`: 3248
-- `overview`: 446
-- `summary`: 1756
+- `concept`: 944
+- `entity`: 3253
+- `overview`: 3069
+- `summary`: 1764
 
 ### Edges by relation
 
-- `contains`: 1988
-- `defines`: 4160
+- `contains`: 1997
+- `defines`: 4197
 - `extends`: 826
-- `mentions`: 340
-- `references`: 4272
+- `mentions`: 7751
+- `references`: 4282
 
 ### Knowledge map
 
-- [`graph.html`](./graph.html) — 1998 nodes, 6260 edges, 25 communities (modularity 0.7768)
+- [`graph.html`](./graph.html) — 2007 nodes, 6279 edges, 28 communities (modularity 0.7743)
 
 ## Querying the wiki
 
@@ -57,4 +57,4 @@ source .venv/bin/activate
 python scripts/build_llm_wiki.py --preset ai-parrot
 ```
 
-_Generated 2026-07-14T22:20:29+00:00 in 24774.6 ms._
+_Generated 2026-07-16T08:35:23+00:00 in 93359.2 ms._

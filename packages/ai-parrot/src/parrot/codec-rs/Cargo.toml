@@ -1,0 +1,22 @@
+[package]
+name = "parrot_codec"
+version = "0.1.0"
+edition = "2021"
+description = "Optional Rust columnar-transform extension for parrot.tools.compression (FEAT-380)"
+
+[lib]
+name = "parrot_codec"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["extension-module"] }
+# `preserve_order` keeps object-key insertion order matching the JSON text
+# order (the Python side's dict order) — required for the "first-seen
+# order across rows" determinism guarantee (G4); without it serde_json's
+# default Map is a sorted BTreeMap, which would silently reorder columns.
+serde_json = { version = "1.0", features = ["preserve_order"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

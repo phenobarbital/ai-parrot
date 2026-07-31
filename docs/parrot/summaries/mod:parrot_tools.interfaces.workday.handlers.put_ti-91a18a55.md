@@ -4,7 +4,7 @@ title: parrot_tools.interfaces.workday.handlers.put_time_clock_events
 id: mod:parrot_tools.interfaces.workday.handlers.put_time_clock_events
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: PutTimeClockEventsType — handler for Put_Time_Clock_Events.
 relates_to:
 - concept: class:parrot_tools.interfaces.workday.handlers.put_time_clock_events.PutTimeClockEventsType

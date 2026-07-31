@@ -4,7 +4,7 @@ title: register_openapi_toolkit()
 id: func:parrot.bots.factory.tools.openapi_register.register_openapi_toolkit
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Materialise + register an OpenAPI toolkit.
 ---
 

@@ -4,7 +4,7 @@ title: parrot.services.identity_mapping
 id: mod:parrot.services.identity_mapping
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: IdentityMappingService — CRUD for navigator-auth ``user_identities``.
 relates_to:
 - concept: class:parrot.services.identity_mapping.IdentityMappingService

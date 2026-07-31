@@ -4,7 +4,7 @@ title: parrot.voice.tts.backend
 id: mod:parrot.voice.tts.backend
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Abstract TTS Backend.
 relates_to:
 - concept: class:parrot.voice.tts.backend.AbstractTTSBackend

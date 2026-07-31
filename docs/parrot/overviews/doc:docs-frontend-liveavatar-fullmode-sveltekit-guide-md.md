@@ -4,7 +4,7 @@ title: Guía Frontend (SvelteKit) — LiveAvatar FULL Mode + VoiceBot (FEAT-248)
 id: doc:docs-frontend-liveavatar-fullmode-sveltekit-guide-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: para conversar **por voz con un agente de ai-parrot mostrando un avatar
 ---
 

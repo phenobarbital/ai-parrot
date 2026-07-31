@@ -4,8 +4,8 @@ title: Cython Development
 id: doc:agent-rules-cython-development-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
-summary: 'trigger: glob'
+timestamp: '2026-07-16T08:34:12+00:00'
+summary: You are an expert in Cython development.
 ---
 
 ---

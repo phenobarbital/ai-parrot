@@ -4,7 +4,7 @@ title: ClassifyBase
 id: class:parrot.interfaces.images.plugins.classifybase.ClassifyBase
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: ClassifyBase is an Abstract base class for performing image classification.
 relates_to:
 - concept: class:parrot.interfaces.images.plugins.abstract.ImagePlugin

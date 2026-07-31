@@ -4,7 +4,7 @@ title: StructuredTableRenderer
 id: class:parrot.outputs.formats.structured_table.StructuredTableRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Library-agnostic table renderer for the STRUCTURED_TABLE output mode.
 relates_to:
 - concept: class:parrot.outputs.formats.chart.BaseChart

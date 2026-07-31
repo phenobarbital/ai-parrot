@@ -4,7 +4,7 @@ title: MatrixA2ATransport
 id: class:parrot.integrations.matrix.a2a_transport.MatrixA2ATransport
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: A2A transport layer using Matrix as the message bus.
 ---
 

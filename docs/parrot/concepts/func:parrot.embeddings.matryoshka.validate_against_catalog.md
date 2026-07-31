@@ -4,7 +4,7 @@ title: validate_against_catalog()
 id: func:parrot.embeddings.matryoshka.validate_against_catalog
 tags:
 - concept
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Raise ``ConfigError`` if ``cfg`` is not satisfiable for ``model_name``.
 ---
 

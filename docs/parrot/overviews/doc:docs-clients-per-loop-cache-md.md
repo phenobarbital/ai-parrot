@@ -4,7 +4,7 @@ title: Per-Loop LLM Client Cache
 id: doc:docs-clients-per-loop-cache-md
 tags:
 - overview
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: cross-loop runtime errors in production.
 relates_to:
 - concept: mod:parrot.clients.base

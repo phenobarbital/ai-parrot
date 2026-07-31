@@ -4,7 +4,7 @@ title: AudioFieldRenderer
 id: class:parrot_formdesigner.renderers.fields.audio.AudioFieldRenderer
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: HTML5 field renderer for FieldType.AUDIO fields.
 ---
 

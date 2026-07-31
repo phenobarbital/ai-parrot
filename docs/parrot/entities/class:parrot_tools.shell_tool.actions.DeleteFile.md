@@ -4,7 +4,7 @@ title: DeleteFile
 id: class:parrot_tools.shell_tool.actions.DeleteFile
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deletes a file or directory (with optional recursion).
 ---
 

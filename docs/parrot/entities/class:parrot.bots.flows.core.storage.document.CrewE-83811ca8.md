@@ -4,7 +4,7 @@ title: CrewExecutionDocument
 id: class:parrot.bots.flows.core.storage.document.CrewExecutionDocument
 tags:
 - entity
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Deterministic, LLM-free consolidated record of one crew execution.
 ---
 

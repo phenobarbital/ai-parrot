@@ -4,7 +4,7 @@ title: parrot.tools.dataset_manager.sources.dialects
 id: mod:parrot.tools.dataset_manager.sources.dialects
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: Driver–Dialect Map for FEAT-228 Data-Plane Authorization.
 relates_to:
 - concept: func:parrot.tools.dataset_manager.sources.dialects.driver_to_dialect

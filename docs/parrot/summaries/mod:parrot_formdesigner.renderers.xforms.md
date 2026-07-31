@@ -4,7 +4,7 @@ title: parrot_formdesigner.renderers.xforms
 id: mod:parrot_formdesigner.renderers.xforms
 tags:
 - summary
-timestamp: '2026-07-14T22:20:21+00:00'
+timestamp: '2026-07-16T08:34:12+00:00'
 summary: XForms 1.1 (W3C) exporter for ``FormSchema``.
 relates_to:
 - concept: class:parrot_formdesigner.renderers.xforms.XFormsRenderer
