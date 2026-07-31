@@ -709,11 +709,20 @@ class JavaScriptScanner(LanguageScanner):
 
     @property
     def mode(self) -> str:
-        """``"tree-sitter"`` when either JS/TS grammar loads, else
-        ``"heuristic"``."""
+        """``"tree-sitter"`` only when **both** selectable grammars load.
+
+        This scanner picks between the TypeScript and JavaScript grammars
+        per file, so reporting ``"tree-sitter"`` while either one is
+        missing overstates what the outlines are worth: the files routed
+        to the absent grammar silently took the regex path. Requiring both
+        was the correction made in FEAT-396 — until then the check was an
+        ``or``, and since the JavaScript grammar always loaded, TypeScript
+        and Svelte files were reported as tree-sitter while being parsed
+        by regex.
+        """
         if (
             treesitter.get_parser("typescript") is not None
-            or treesitter.get_parser("javascript") is not None
+            and treesitter.get_parser("javascript") is not None
         ):
             return "tree-sitter"
         return "heuristic"

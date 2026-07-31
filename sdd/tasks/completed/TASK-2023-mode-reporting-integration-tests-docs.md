@@ -267,12 +267,75 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session (Opus 5), with Emmanuel Arroyo
+**Date**: 2026-07-31
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
 
-**navigator-svelte verification**: `.svelte` references edges before: ___ / after: ___
+`mode` tightened from `or` to `and` (plus a docstring explaining why), the three
+integration tests added, and `.svelte` documented. `pyproject.toml` confirmed
+unchanged — no new dependency, as the spec predicted.
 
-**Deviations from spec**: none | describe if any
+The correction, with only the TypeScript wheel made unavailable:
+
+```
+                  typescript   javascript   mode
+before ("or")     None         Parser       tree-sitter   <- overstated
+after  ("and")    None         Parser       heuristic
+```
+
+Two test-quality problems found and fixed while satisfying the acceptance
+criteria — both would have produced a green suite that proved nothing:
+
+1. **`test_svelte_heuristic_parity` was vacuous as scaffolded.** The task's
+   sketch took `force_heuristic` as a fixture, which applies to the whole test —
+   so *both* scans ran on the stdlib path and "identical imports and edges" was
+   trivially true. Rewritten to scan once as the environment allows, then patch
+   `get_parser` to `None` between the two scans, and skip outright when no
+   grammar is available so it never pretends to compare something it did not.
+2. **"The whole suite passes with tree-sitter uninstalled" was unverified.** I
+   actually ran it, by shadowing `tree_sitter` and the four grammar wheels with
+   modules that raise `ImportError`. That exposed a gap in my own TASK-2019
+   guards: they probed with `find_spec`, which reports a module that exists but
+   raises on import as present, so seven tests failed instead of skipping. The
+   guard now imports for real. Result:
+
+   ```
+   with the extra     139 passed,   1 skipped
+   without the extra  131 passed,   9 skipped,  0 failed
+   ```
+
+Docs: `.svelte` added to the `module` category row and the JS/TS language row
+(whose `references` cell now also mentions alias specifiers, since TASK-2022
+changed what resolves), plus a short paragraph on how components are handled and
+a **Changed in 0.26.0** callout warning that the reported `mode` of existing
+repositories will change — with the reason, so it reads as a correction rather
+than a regression.
+
+**navigator-svelte verification**: **NOT RUN — the repository is not present on
+this machine.** The acceptance criterion "scanning `navigator-svelte` produces
+> 0 `references` edges out of `.svelte` files" is therefore unverified against
+that repo. What *is* verified is the same claim on a fixture of the identical
+shape — a SvelteKit repo whose `$lib` alias is declared nowhere but by convention
+— in `test_scan_svelte_fixture_repo` and `test_polyglot_svelte_alongside_python`,
+both of which assert the edge exists where the pre-FEAT-396 scanner produced
+none. **Someone with the repo checked out should run this before the feature is
+called done.**
+
+Verification (`~/.venvs/parrot-lite`):
+- `tests/knowledge/wiki/languages/` — **139 passed, 1 skipped** (132+1 after
+  TASK-2022; +7)
+- wider `tests/knowledge/wiki/` — 166 failed / 402 passed, **identical failure
+  count to clean `dev`** (166/333), i.e. no regression across the whole feature
+- with the optional extra simulated absent — **131 passed, 9 skipped, 0 failed**
+- `ruff check` on `javascript.py` and the whole test package — clean
+- `tests/knowledge/wiki/test_integration.py` still does not collect
+  (`ModuleNotFoundError: pytest_asyncio`), identical on clean `dev`
+
+CI was not consulted at any point in this feature: `dev` has been red since
+2026-07-27 on an unrelated `pillow-heif` conflict that kills `uv sync` before
+any test runs.
+
+**Deviations from spec**: none in scope. One acceptance criterion
+(`navigator-svelte`) is explicitly left unverified for lack of the repository,
+as detailed above — flagged rather than quietly checked off.

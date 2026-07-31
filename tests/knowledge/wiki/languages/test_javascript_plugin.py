@@ -534,3 +534,35 @@ class TestAliasResolution:
         assert hash(index) is not None
         with pytest.raises(FrozenInstanceError):
             index.files = frozenset()
+
+
+# ---------------------------------------------------------------------------
+# FEAT-396 / TASK-2023 — honest mode reporting
+# ---------------------------------------------------------------------------
+
+
+class TestModeReporting:
+    """`mode` must not overstate what the outlines are worth."""
+
+    @pytest.mark.parametrize(
+        ("available", "expected"),
+        [
+            (("javascript",), "heuristic"),
+            (("typescript",), "heuristic"),
+            ((), "heuristic"),
+            (("javascript", "typescript"), "tree-sitter"),
+        ],
+    )
+    def test_mode_requires_both_grammars(self, monkeypatch, available, expected):
+        """One grammar loading is not tree-sitter mode.
+
+        Before FEAT-396 this was an `or`, and the JavaScript grammar
+        always loaded — so TypeScript files were reported as tree-sitter
+        while actually being parsed by regex.
+        """
+        monkeypatch.setattr(
+            treesitter,
+            "get_parser",
+            lambda language: object() if language in available else None,
+        )
+        assert JavaScriptScanner().mode == expected

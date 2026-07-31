@@ -1,5 +1,6 @@
 """Tests for the cached, never-raising tree-sitter grammar loader."""
 
+import importlib
 import importlib.util
 import sys
 from types import SimpleNamespace
@@ -9,9 +10,30 @@ from parrot.knowledge.wiki.languages import treesitter
 from parrot.knowledge.wiki.languages.treesitter import get_parser
 
 
+def _importable(module_name: str) -> bool:
+    """Whether ``module_name`` actually imports here.
+
+    Deliberately imports rather than probing with ``find_spec``: a module
+    can be discoverable yet raise on import, and only an import proves
+    the difference. Independent of ``_build_parser``'s callable
+    resolution, which is what these tests exist to check.
+    """
+    try:
+        importlib.import_module(module_name)
+    except Exception:  # noqa: BLE001 - any failure means "not usable here"
+        return False
+    return True
+
+
 def _wheel_installed(module_name: str) -> bool:
-    """Whether an optional grammar wheel is importable in this env."""
-    return importlib.util.find_spec(module_name) is not None
+    """Whether a grammar could load at all in this environment.
+
+    Requires ``tree_sitter`` itself as well as the grammar wheel: with
+    the core package unusable, ``_build_parser`` returns ``None``
+    whatever wheels are present, so these tests must skip rather than
+    fail when the optional extra is absent.
+    """
+    return _importable("tree_sitter") and _importable(module_name)
 
 
 @pytest.fixture

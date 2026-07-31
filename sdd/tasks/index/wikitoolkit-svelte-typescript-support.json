@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-31T21:35:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-01T00:10:00+00:00",
   "tasks": [
     {
       "id": "TASK-2019",
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-396",
       "feature": "wikitoolkit-svelte-typescript-support",
       "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,9 +103,9 @@
       "parallel": false,
       "parallelism_notes": "Module 5. Closing task: the integration tests exercise all four preceding modules end-to-end, and the mode tightening is only correct once TASK-2019 makes the TypeScript grammar actually load. Depends on everything by construction.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2023-mode-reporting-integration-tests-docs.md"
+      "started_at": "2026-07-31T23:40:00+00:00",
+      "completed_at": "2026-08-01T00:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2023-mode-reporting-integration-tests-docs.md"
     }
   ]
 }
