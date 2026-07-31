@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-397
 **Date**: 2026-08-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 **Brainstorm**: `sdd/proposals/tokens-observability.brainstorm.md`
 
@@ -574,9 +574,9 @@ Reference accumulation pattern: `clients/gemma4.py:528-546`.
       / `parrot.client.rounds`) — confirm against OTel SemConv conventions
       during Module 10; may prefer `gen_ai.`-prefixed names if a fitting
       SemConv exists. — *Owner: implementer*
-- [ ] Should `Gemma4Client` (already accumulating) get `ClientRoundEvent`
+- [x] Should `Gemma4Client` (already accumulating) get `ClientRoundEvent`
       emission in this feature or in the follow-up batch with Bedrock/HF?
-      Default: follow-up. — *Owner: Jesus Lara*
+      Default: follow-up. — *Owner: Jesus Lara*: follow-up
 
 ---
 
