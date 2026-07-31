@@ -202,10 +202,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Added `auto_open: bool = False` class attribute, `self._opened: bool = False`
+instance attribute (set in `__init__`), and `_open()` / `_close()` / `_ensure_open()`
+async methods to `AbstractTool` in `abstract.py`. `_ensure_open()` calls `_open()` at
+most once and only sets `_opened = True` on success (retries on failure). `_close()`
+resets `_opened = False` for reuse. Inserted `if self.auto_open: await
+self._ensure_open()` at the top of the existing `try:` block in `execute()`, before
+`self.logger.info("Executing tool: %s", ...)`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Verified manually with a `TrackingTool` (auto_open=True) scenario: `_open()` called
+exactly once across two `execute()` calls, `_close()` resets state, a `NoAutoOpen`
+tool (default `auto_open=False`) never triggers `_open()`, and a `FailOpen` tool
+that raises in `_open()` keeps `_opened=False` and retries on the next call.
 
-**Deviations from spec**: none | describe if any
+`ruff check` on `abstract.py`: 58 pre-existing errors, unchanged before/after (no
+new violations introduced). `pytest packages/ai-parrot/tests/tools/ -v`: 51
+failed / 674 passed / 8 skipped — identical to the unmodified `dev` baseline
+(verified by running the same suite in the main repo checkout); all 51 failures
+are pre-existing and unrelated to this change (databasequery toolkit tests,
+`test_auto_registration_hooks.py` — missing `validate_database_query` attribute /
+registry wiring issues, not touched by this task).
+
+**Deviations from spec**: none.

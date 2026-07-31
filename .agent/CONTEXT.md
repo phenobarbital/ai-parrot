@@ -26,6 +26,15 @@ Location: `parrot/tools/`
 - Simple functions: use `@tool` decorator
 - Complex collections: inherit `AbstractToolkit`
 - Every tool MUST have a docstring — it becomes the LLM's tool description
+- Reserved lifecycle-hook names (FEAT-391): `_open()`, `_close()`,
+  `_ensure_open()`, plus the `auto_open`/`_opened`/`_open_lock` attributes
+  are defined on both `AbstractTool` and `AbstractToolkit` for opt-in lazy
+  resource lifecycle (DB connections, HTTP sessions, etc.). Do not
+  redefine these names for unrelated purposes in subclasses — they are
+  underscore-prefixed precisely so `_generate_tools()` never exposes them
+  as LLM-callable tools, and `auto_open=True` wires them into
+  `execute()`/`ToolkitTool._execute()`/`ToolManager.cleanup_toolkits()`
+  automatically.
 
 ### AgentCrew
 Location: `parrot/bots/flows/crew/crew.py`
