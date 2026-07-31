@@ -63,6 +63,10 @@ def select_form() -> FormSchema:
 def mock_registry(boolean_form):
     reg = AsyncMock(spec=FormRegistry)
     reg.get = AsyncMock(return_value=boolean_form)
+    # FEAT-389: start_form() resolves the incoming (bot-facing) slug via
+    # get_by_slug(), not get() — get() is reserved for form_uid lookups
+    # (used by _submit_form et al., still exercised directly below).
+    reg.get_by_slug = AsyncMock(return_value=boolean_form)
     return reg
 
 
@@ -90,7 +94,7 @@ class TestTelegramFormRouter:
 
     @pytest.mark.asyncio
     async def test_start_form_not_found(self, mock_registry):
-        mock_registry.get = AsyncMock(return_value=None)
+        mock_registry.get_by_slug = AsyncMock(return_value=None)
         renderer = TelegramRenderer(base_url="https://example.com")
         router = TelegramFormRouter(renderer=renderer, registry=mock_registry)
 
@@ -137,7 +141,7 @@ class TestTelegramFormRouter:
                 )
             ],
         )
-        mock_registry.get = AsyncMock(return_value=text_form)
+        mock_registry.get_by_slug = AsyncMock(return_value=text_form)
         renderer = TelegramRenderer(base_url="https://example.com")
         router = TelegramFormRouter(renderer=renderer, registry=mock_registry)
 

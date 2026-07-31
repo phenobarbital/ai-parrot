@@ -285,20 +285,22 @@ async def test_inflight_response_keeps_version():
         tenant="t1",
     )
     await registry.register(original, tenant="t1")
-    inflight_version = await svc.publish("recap", tenant="t1")  # "1.1"
+    inflight_version = await svc.publish(original.form_uid, tenant="t1")  # "1.1"
 
     # An in-flight response pins this version.
     # Meanwhile the form is edited (starting from the CURRENT live form,
     # whose version was bumped by publish) and re-published (v1.2):
-    live = await registry.get("recap", tenant="t1")
+    live = await registry.get(original.form_uid, tenant="t1")
     edited = live.model_copy(deep=True)
     edited.title = "Recap v2 — restructured"
     await registry.register(edited, tenant="t1", overwrite=True)
-    newer_version = await svc.publish("recap", tenant="t1")  # "1.2"
+    newer_version = await svc.publish(original.form_uid, tenant="t1")  # "1.2"
     assert newer_version != inflight_version
 
     # The in-flight response still resolves against its pinned snapshot:
-    pinned = await svc.get_published("recap", version=inflight_version, tenant="t1")
+    pinned = await svc.get_published(
+        original.form_uid, version=inflight_version, tenant="t1"
+    )
     assert pinned is not None
     assert str(pinned.title) == "Recap v1"
     assert pinned.published_version == inflight_version

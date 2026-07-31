@@ -18,7 +18,7 @@ class TestAudioSessionConfig:
 
     def test_defaults(self):
         """AudioSessionConfig has correct default values."""
-        cfg = AudioSessionConfig(form_id="f1")
+        cfg = AudioSessionConfig(form_uid="f1")
         assert cfg.locale == "en"
         assert cfg.tts_mime_format == "audio/wav"
         assert cfg.auto_advance is True
@@ -26,7 +26,7 @@ class TestAudioSessionConfig:
 
     def test_supertonic_defaults(self):
         """FEAT-236: SuperTonic-first defaults and STT confirm threshold."""
-        cfg = AudioSessionConfig(form_id="x")
+        cfg = AudioSessionConfig(form_uid="x")
         assert cfg.tts_backend == "supertonic"
         assert cfg.stt_confirm_threshold == 0.6
         assert cfg.enumerate_options is True
@@ -34,33 +34,33 @@ class TestAudioSessionConfig:
 
     def test_stt_confirm_threshold_bounds(self):
         """stt_confirm_threshold is bounded to the 0.0–1.0 range."""
-        assert AudioSessionConfig(form_id="x", stt_confirm_threshold=0.0)
-        assert AudioSessionConfig(form_id="x", stt_confirm_threshold=1.0)
+        assert AudioSessionConfig(form_uid="x", stt_confirm_threshold=0.0)
+        assert AudioSessionConfig(form_uid="x", stt_confirm_threshold=1.0)
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="x", stt_confirm_threshold=1.5)
+            AudioSessionConfig(form_uid="x", stt_confirm_threshold=1.5)
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="x", stt_confirm_threshold=-0.1)
+            AudioSessionConfig(form_uid="x", stt_confirm_threshold=-0.1)
 
     def test_tts_backend_rejects_unknown(self):
         """tts_backend only accepts 'supertonic' or 'google'."""
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="x", tts_backend="elevenlabs")
+            AudioSessionConfig(form_uid="x", tts_backend="elevenlabs")
 
-    def test_requires_form_id(self):
-        """AudioSessionConfig raises ValidationError when form_id is missing."""
+    def test_requires_form_uid(self):
+        """AudioSessionConfig raises ValidationError when form_uid is missing."""
         with pytest.raises(ValidationError):
             AudioSessionConfig()  # type: ignore[call-arg]
 
     def test_custom_values(self):
         """AudioSessionConfig accepts custom locale and voice."""
-        cfg = AudioSessionConfig(form_id="f1", locale="es", tts_voice="Wavenet-A")
+        cfg = AudioSessionConfig(form_uid="f1", locale="es", tts_voice="Wavenet-A")
         assert cfg.locale == "es"
         assert cfg.tts_voice == "Wavenet-A"
 
     def test_extra_fields_forbidden(self):
         """AudioSessionConfig rejects extra fields."""
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="f1", unknown_field="x")
+            AudioSessionConfig(form_uid="f1", unknown_field="x")
 
 
 class TestVoiceMode:
@@ -149,7 +149,7 @@ class TestAudioFormManifest:
         """AudioFormManifest validates with required fields."""
         q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
         manifest = AudioFormManifest(
-            form_id="f1",
+            form_uid="f1",
             title="Test Form",
             total_questions=1,
             questions=[q],
@@ -165,7 +165,7 @@ class TestAudioFormManifest:
             for i in range(3)
         ]
         manifest = AudioFormManifest(
-            form_id="f1",
+            form_uid="f1",
             title="Test Form",
             total_questions=3,
             questions=questions,
@@ -209,7 +209,7 @@ class TestAudioSessionState:
 
     def test_initial_state(self):
         """AudioSessionState initializes with correct defaults."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         assert state.current_index == 0
         assert state.answers == {}
         assert state.completed is False
@@ -217,19 +217,19 @@ class TestAudioSessionState:
 
     def test_add_answer(self):
         """AudioSessionState can accumulate answers."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.answers["name"] = AudioAnswer(field_id="name", value="Alice", source="text")
         assert "name" in state.answers
         assert state.answers["name"].value == "Alice"
 
     def test_advance_index(self):
         """AudioSessionState.current_index can be incremented."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.current_index = 2
         assert state.current_index == 2
 
     def test_mark_completed(self):
         """AudioSessionState.completed can be set to True."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.completed = True
         assert state.completed is True

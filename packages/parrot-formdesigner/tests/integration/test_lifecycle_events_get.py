@@ -37,8 +37,11 @@ def _clear_registry() -> None:  # type: ignore[return]
     _clear_event_registry_for_tests()
 
 
+_UNKNOWN_FORM_UID = "00000000-0000-0000-0000-000000000000"
+
+
 def _make_form(form_id: str = "test_form", events: FormEventsConfig | None = None) -> FormSchema:
-    """Build a minimal FormSchema."""
+    """Build a minimal FormSchema. form_uid is auto-generated."""
     return FormSchema(
         form_id=form_id,
         title={"en": "Test Form"},
@@ -47,10 +50,17 @@ def _make_form(form_id: str = "test_form", events: FormEventsConfig | None = Non
     )
 
 
-def _make_request(form_id: str = "test_form") -> MagicMock:
-    """Build a mocked aiohttp Request."""
+def _make_request(form_uid: str = _UNKNOWN_FORM_UID) -> MagicMock:
+    """Build a mocked aiohttp Request.
+
+    Args:
+        form_uid: Value for the ``{form_uid}`` path parameter (FEAT-389) —
+            MUST be a well-formed UUID string (validated by
+            ``extract_form_uid()``). Defaults to a well-formed, never
+            registered UUID for "not found" tests.
+    """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    req.match_info = {"form_uid": form_uid}
     req.method = "GET"
     req.headers = {}
     # No auth context set
@@ -85,7 +95,7 @@ class TestGetFormOnBeforeOpen:
         """Form without events config returns 200 unchanged — no-op."""
         form = _make_form(events=None)
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_form(req)
 
@@ -108,7 +118,7 @@ class TestGetFormOnBeforeOpen:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_form(req)
 
@@ -128,7 +138,7 @@ class TestGetFormOnBeforeOpen:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_form(req)
 
@@ -150,7 +160,7 @@ class TestGetFormOnBeforeOpen:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_form(req)
 
@@ -161,7 +171,7 @@ class TestGetFormOnBeforeOpen:
     async def test_get_form_404_when_form_not_found(self) -> None:
         """Form not found returns 404 (lifecycle hooks not invoked)."""
         handler = _make_handler(form=None)
-        req = _make_request("nonexistent")
+        req = _make_request()
 
         resp = await handler.get_form(req)
 
@@ -180,7 +190,7 @@ class TestGetSchemaOnSchemaLoaded:
         """Form without events returns schema byte-identical to pre-change."""
         form = _make_form(events=None)
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_schema(req)
 
@@ -204,7 +214,7 @@ class TestGetSchemaOnSchemaLoaded:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_schema(req)
 
@@ -224,7 +234,7 @@ class TestGetSchemaOnSchemaLoaded:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_schema(req)
 
@@ -245,7 +255,7 @@ class TestGetSchemaOnSchemaLoaded:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_request()
+        req = _make_request(form.form_uid)
 
         resp = await handler.get_schema(req)
 
@@ -257,7 +267,7 @@ class TestGetSchemaOnSchemaLoaded:
     async def test_get_schema_404_when_form_not_found(self) -> None:
         """Form not found returns 404."""
         handler = _make_handler(form=None)
-        req = _make_request("nonexistent")
+        req = _make_request()
 
         resp = await handler.get_schema(req)
 

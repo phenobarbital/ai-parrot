@@ -71,13 +71,18 @@ def _make_form(form_id: str = "test-form") -> FormSchema:
 
 def _make_request(
     method: str = "POST",
-    form_id: str = "test-form",
+    form_uid: str = "11111111-1111-1111-1111-111111111111",
     session_id: str | None = "sess-1",
     body: dict | None = None,
 ) -> MagicMock:
-    """Build a mocked aiohttp request."""
+    """Build a mocked aiohttp request.
+
+    ``form_uid`` (FEAT-389) must be a well-formed UUID string — the
+    handlers' ``extract_form_uid()`` helper validates the path segment
+    and raises ``HTTPBadRequest`` for anything else.
+    """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    req.match_info = {"form_uid": form_uid}
     req.method = method
 
     # Session attribute

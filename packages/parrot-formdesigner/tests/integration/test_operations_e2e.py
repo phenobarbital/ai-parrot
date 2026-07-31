@@ -1,4 +1,4 @@
-"""Integration tests for ``PATCH /api/v1/forms/{id}/operations``.
+"""Integration tests for ``PATCH /api/v1/forms/{form_uid}/operations``.
 
 End-to-end via aiohttp test client. Asserts:
 - Successful round-trip bumps the version and persists the new shape.
@@ -45,7 +45,7 @@ async def _make_client(aiohttp_client, registry: FormRegistry):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_patch(
-        "/api/v1/forms/{form_id}/operations", handle_operations
+        "/api/v1/forms/{form_uid}/operations", handle_operations
     )
     return await aiohttp_client(app)
 
@@ -56,7 +56,7 @@ async def test_successful_round_trip_bumps_version(aiohttp_client, sample_form):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        f"/api/v1/forms/{sample_form.form_id}/operations",
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
         json={
             "operations": [
                 {
@@ -81,7 +81,7 @@ async def test_successful_round_trip_bumps_version(aiohttp_client, sample_form):
     assert {s["section_id"] for s in body["form"]["sections"]} == {"s1", "s2"}
 
     # Persisted
-    again = await registry.get(sample_form.form_id)
+    again = await registry.get(sample_form.form_uid)
     assert again is not None and again.version == "1.1"
     assert any(s.section_id == "s2" for s in again.sections)
 
@@ -92,7 +92,7 @@ async def test_atomic_failure_no_change(aiohttp_client, sample_form):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        f"/api/v1/forms/{sample_form.form_id}/operations",
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
         json={
             "operations": [
                 {
@@ -111,7 +111,7 @@ async def test_atomic_failure_no_change(aiohttp_client, sample_form):
     body = await resp.json()
     assert body["errors"][0]["index"] == 1
 
-    again = await registry.get(sample_form.form_id)
+    again = await registry.get(sample_form.form_uid)
     assert len(again.sections) == len(sample_form.sections)
     assert again.version == "1.0"
 
@@ -122,7 +122,7 @@ async def test_duplicate_field_rejected(aiohttp_client, sample_form):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        f"/api/v1/forms/{sample_form.form_id}/operations",
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
         json={
             "operations": [
                 {
@@ -151,7 +151,7 @@ async def test_circular_depends_on_rejected(aiohttp_client, sample_form):
 
     # Update name to depend on itself.
     resp = await client.patch(
-        f"/api/v1/forms/{sample_form.form_id}/operations",
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
         json={
             "operations": [
                 {
@@ -185,7 +185,7 @@ async def test_if_match_mismatch_412(aiohttp_client, sample_form):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        f"/api/v1/forms/{sample_form.form_id}/operations",
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
         headers={"If-Match": "0.9"},
         json={"operations": []},
     )
@@ -201,7 +201,7 @@ async def test_if_match_correct_version_succeeds(aiohttp_client, sample_form):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        f"/api/v1/forms/{sample_form.form_id}/operations",
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
         headers={"If-Match": "1.0"},
         json={
             "operations": [
@@ -222,7 +222,7 @@ async def test_unknown_form_404(aiohttp_client):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        "/api/v1/forms/missing/operations",
+        "/api/v1/forms/00000000-0000-0000-0000-000000000000/operations",
         json={"operations": []},
     )
     assert resp.status == 404
@@ -234,7 +234,7 @@ async def test_invalid_envelope_422(aiohttp_client, sample_form):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        f"/api/v1/forms/{sample_form.form_id}/operations",
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
         json={
             "operations": [
                 {"op": "unknown_op_type", "foo": "bar"}
@@ -268,7 +268,7 @@ async def test_move_field_round_trip(aiohttp_client):
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.patch(
-        f"/api/v1/forms/{form.form_id}/operations",
+        f"/api/v1/forms/{form.form_uid}/operations",
         json={
             "operations": [
                 {

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-07-30T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-07-31T14:10:42+00:00",
   "tasks": [
     {
       "id": "TASK-1972",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all others depend on this",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1972-formschema-add-form-uid.md"
+      "completed_at": "2026-07-30T15:02:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1972-formschema-add-form-uid.md"
     },
     {
       "id": "TASK-1973",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Must complete before API/UI route tasks",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1973-registry-reindex-form-uid.md"
+      "completed_at": "2026-07-30T21:09:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1973-registry-reindex-form-uid.md"
     },
     {
       "id": "TASK-1974",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Independent of registry changes — only needs FormSchema.form_uid",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1974-postgres-storage-form-uid.md"
+      "completed_at": "2026-07-30T22:00:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1974-postgres-storage-form-uid.md"
     },
     {
       "id": "TASK-1975",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends on storage DDL being finalized first",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1975-migration-scripts.md"
+      "completed_at": "2026-07-30T22:08:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1975-migration-scripts.md"
     },
     {
       "id": "TASK-1976",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Can run in parallel with storage/submissions/blob tasks after registry is done",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1976-api-routes-form-uid.md"
+      "completed_at": "2026-07-31T00:38:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1976-api-routes-form-uid.md"
     },
     {
       "id": "TASK-1977",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Uses extract_form_uid() from TASK-1976",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1977-operations-form-uid.md"
+      "completed_at": "2026-07-31T00:42:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1977-operations-form-uid.md"
     },
     {
       "id": "TASK-1978",
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Independent of API/storage — only needs FormSchema + Registry",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1978-createformtool-form-uid.md"
+      "completed_at": "2026-07-31T00:48:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1978-createformtool-form-uid.md"
     },
     {
       "id": "TASK-1979",
@@ -154,7 +154,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -164,8 +164,8 @@
       "parallelism_notes": "Independent — only needs FormSchema.form_uid to exist",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1979-submissions-form-uid.md"
+      "completed_at": "2026-07-31T00:57:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1979-submissions-form-uid.md"
     },
     {
       "id": "TASK-1980",
@@ -174,7 +174,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Independent — only needs FormSchema.form_uid to exist",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1980-blob-storage-form-uid.md"
+      "completed_at": "2026-07-31T01:05:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1980-blob-storage-form-uid.md"
     },
     {
       "id": "TASK-1981",
@@ -194,7 +194,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "Independent of API handlers — only needs registry on form_uid",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1981-ui-routes-form-uid.md"
+      "completed_at": "2026-07-31T01:09:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1981-ui-routes-form-uid.md"
     },
     {
       "id": "TASK-1982",
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-389",
       "feature": "form-uid-stable-identity",
       "spec": "sdd/specs/form-uid-stable-identity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -227,14 +227,38 @@
         "TASK-1978",
         "TASK-1979",
         "TASK-1980",
-        "TASK-1981"
+        "TASK-1981",
+        "TASK-1990"
       ],
       "parallel": false,
       "parallelism_notes": "Final task — validates all modules work together",
       "assigned_to": null,
       "started_at": "2026-07-30T14:53:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1982-tests-form-uid.md"
+      "completed_at": "2026-07-31T14:10:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1982-tests-form-uid.md"
+    },
+    {
+      "id": "TASK-1990",
+      "slug": "remaining-registry-consumers-form-uid",
+      "title": "Remaining FormRegistry/storage consumers — form_uid only",
+      "feature_id": "FEAT-389",
+      "feature": "form-uid-stable-identity",
+      "spec": "sdd/specs/form-uid-stable-identity.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-1973",
+        "TASK-1974",
+        "TASK-1976",
+        "TASK-1981"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Catch-all consumer audit gap found during TASK-1973; must run after routes are renamed (TASK-1976/1981) and before final tests (TASK-1982).",
+      "assigned_to": null,
+      "started_at": "2026-07-30T17:46:57+00:00",
+      "completed_at": "2026-07-31T14:00:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1990-remaining-registry-consumers-form-uid.md"
     }
   ]
 }

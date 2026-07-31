@@ -29,13 +29,14 @@ def test_setup_mounts_routes_and_registers_form_registry():
     expected = {
         "/api/v1/forms",
         "/api/v1/forms/from-db",
-        "/api/v1/forms/{form_id}",
-        "/api/v1/forms/{form_id}/schema",
-        "/api/v1/forms/{form_id}/style",
-        "/api/v1/forms/{form_id}/render/{format}",
-        "/api/v1/forms/{form_id}/validate",
-        "/api/v1/forms/{form_id}/data",
-        "/api/v1/forms/{form_id}/operations",
+        "/api/v1/forms/blank",
+        "/api/v1/forms/{form_uid}",
+        "/api/v1/forms/{form_uid}/schema",
+        "/api/v1/forms/{form_uid}/style",
+        "/api/v1/forms/{form_uid}/render/{format}",
+        "/api/v1/forms/{form_uid}/validate",
+        "/api/v1/forms/{form_uid}/data",
+        "/api/v1/forms/{form_uid}/operations",
         "/api/v1/form-controls",
     }
     assert expected.issubset(paths)

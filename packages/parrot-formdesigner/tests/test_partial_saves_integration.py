@@ -121,16 +121,20 @@ def _make_registry(form: FormSchema | None) -> FormRegistry:
 
 
 def _make_request(
-    form_id: str = "test-form",
+    form_uid: str = "11111111-1111-1111-1111-111111111111",
     session_id: str | None = "sess-1",
     body: dict | None = None,
     merge_partials: bool = False,
     method: str = "POST",
 ) -> MagicMock:
+    """``form_uid`` (FEAT-389) must be a well-formed UUID string — the
+    handlers' ``extract_form_uid()`` helper validates the path segment
+    and raises ``HTTPBadRequest`` for anything else.
+    """
     from aiohttp import web
 
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    req.match_info = {"form_uid": form_uid}
     req.method = method
 
     if session_id is not None:

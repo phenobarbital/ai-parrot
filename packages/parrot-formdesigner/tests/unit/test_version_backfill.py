@@ -51,8 +51,10 @@ async def test_backfill_marks_existing_forms():
     changed = await svc.backfill_published(tenant="t1")
     assert changed == 2
 
-    a = await reg.get("form-a", tenant="t1")
-    b = await reg.get("form-b", tenant="t1")
+    # FEAT-389: reg.get() is form_uid-keyed post-TASK-1973; these tests know
+    # only the human-readable slug, so resolve via get_by_slug().
+    a = await reg.get_by_slug("form-a", tenant="t1")
+    b = await reg.get_by_slug("form-b", tenant="t1")
     assert a.published_version == "1.0"
     assert b.published_version == "1.0"
 
@@ -64,7 +66,7 @@ async def test_backfill_preserves_existing_version_string():
 
     await svc.backfill_published(tenant="t1")
 
-    form = await reg.get("form-v2", tenant="t1")
+    form = await reg.get_by_slug("form-v2", tenant="t1")
     assert form.published_version == "2.0"
 
 
@@ -136,8 +138,8 @@ async def test_backfill_dry_run_persists_nothing():
     assert changed == 2
 
     # published_version must remain None after a dry-run
-    a = await reg.get("form-a", tenant="t1")
-    b = await reg.get("form-b", tenant="t1")
+    a = await reg.get_by_slug("form-a", tenant="t1")
+    b = await reg.get_by_slug("form-b", tenant="t1")
     assert a.published_version is None
     assert b.published_version is None
 
@@ -165,12 +167,15 @@ async def test_backfill_dry_run_then_real_run():
 
 async def test_backfill_records_version_meta():
     """After backfill, list_versions() returns the backfilled version entry."""
-    reg = await _registry_with_forms(_legacy_form("form-a"))
+    form = _legacy_form("form-a")
+    reg = await _registry_with_forms(form)
     svc = FormVersionService(reg)
 
     await svc.backfill_published(tenant="t1")
 
-    versions = await svc.list_versions("form-a", tenant="t1")
+    # FEAT-389: list_versions() is form_uid-keyed (internal _meta rekey);
+    # use the actual form_uid, not the human-readable slug.
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
     assert len(versions) == 1
     assert versions[0].version == "1.0"
     assert versions[0].is_frozen is True

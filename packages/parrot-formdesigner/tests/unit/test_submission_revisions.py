@@ -21,6 +21,8 @@ from parrot_formdesigner.services.submissions import (
 
 from .test_storage_schema_tenant import _RecordingConn, _RecordingPool
 
+_TEST_FORM_UID = "550e8400-e29b-41d4-a716-446655440000"
+
 
 # ---------------------------------------------------------------------------
 # A pool whose connection returns pre-seeded rows for reads
@@ -57,6 +59,7 @@ def _db_row(
     revision: int | None = None,
     context: str | None = None,
     data: str = '{"q1": "yes"}',
+    form_uid: str | None = _TEST_FORM_UID,
 ) -> dict:
     """A dict shaped like an asyncpg Record for the SELECT column set.
 
@@ -65,6 +68,7 @@ def _db_row(
     """
     return {
         "submission_id": submission_id,
+        "form_uid": form_uid,
         "form_id": "f-1",
         "form_version": "1.0",
         "data": data,
@@ -95,7 +99,7 @@ def _db_row(
 class TestFormSubmissionRevisionFields:
     def test_defaults_none(self) -> None:
         sub = FormSubmission(
-            form_id="f", form_version="1.0", data={}, is_valid=True
+            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
         )
         assert sub.root_submission_id is None
         assert sub.revision is None
@@ -103,6 +107,7 @@ class TestFormSubmissionRevisionFields:
 
     def test_roundtrip(self) -> None:
         sub = FormSubmission(
+            form_uid=_TEST_FORM_UID,
             form_id="f",
             form_version="1.0",
             data={},
@@ -158,6 +163,7 @@ class TestStoreRevisionColumns:
         pool = _RecordingPool()
         await FormSubmissionStorage(pool=pool).store(
             FormSubmission(
+                form_uid=_TEST_FORM_UID,
                 form_id="f",
                 form_version="1.0",
                 data={},
@@ -169,10 +175,11 @@ class TestStoreRevisionColumns:
             )
         )
         sql, args = pool.conn.executed[0]
-        # args (1-indexed): ... 18 root_submission_id, 19 revision, 20 context
-        assert args[17] == "sub-1"
-        assert args[18] == 1
-        assert json.loads(args[19]) == {"geofence_status": "ok"}
+        # args (1-indexed, FEAT-389 form_uid is #2): ... 19 root_submission_id,
+        # 20 revision, 21 context
+        assert args[18] == "sub-1"
+        assert args[19] == 1
+        assert json.loads(args[20]) == {"geofence_status": "ok"}
         assert sql.strip().upper().startswith("INSERT INTO")
 
     @pytest.mark.asyncio
@@ -180,13 +187,13 @@ class TestStoreRevisionColumns:
         pool = _RecordingPool()
         await FormSubmissionStorage(pool=pool).store(
             FormSubmission(
-                form_id="f", form_version="1.0", data={}, is_valid=True
+                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
             )
         )
         _, args = pool.conn.executed[0]
-        assert args[17] is None  # root_submission_id
-        assert args[18] is None  # revision
-        assert args[19] is None  # context
+        assert args[18] is None  # root_submission_id
+        assert args[19] is None  # revision
+        assert args[20] is None  # context
 
     @pytest.mark.asyncio
     async def test_store_never_updates_or_deletes(self) -> None:
@@ -194,13 +201,13 @@ class TestStoreRevisionColumns:
         storage = FormSubmissionStorage(pool=pool)
         await storage.store(
             FormSubmission(
-                form_id="f", form_version="1.0", data={}, is_valid=True,
+                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True,
                 submission_id="sub-1", root_submission_id="sub-1", revision=1,
             )
         )
         await storage.store(
             FormSubmission(
-                form_id="f", form_version="1.0", data={}, is_valid=True,
+                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True,
                 submission_id="sub-2", root_submission_id="sub-1", revision=2,
             )
         )

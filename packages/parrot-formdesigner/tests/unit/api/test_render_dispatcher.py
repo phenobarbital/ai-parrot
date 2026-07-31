@@ -113,11 +113,11 @@ async def test_dispatcher_returns_415_for_unknown_format(aiohttp_client, sample_
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_id}/render/{format}", handle_render
+        "/api/v1/forms/{form_uid}/render/{format}", handle_render
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(f"/api/v1/forms/{sample_form.form_id}/render/foo")
+    resp = await client.get(f"/api/v1/forms/{sample_form.form_uid}/render/foo")
     assert resp.status == 415
     body = await resp.json()
     assert "supported" in body
@@ -141,12 +141,12 @@ async def test_dispatcher_html_delegates(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_id}/render/{format}", handle_render
+        "/api/v1/forms/{form_uid}/render/{format}", handle_render
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/forms/{sample_form.form_id}/render/html"
+        f"/api/v1/forms/{sample_form.form_uid}/render/html"
     )
     assert resp.status == 200
     assert resp.content_type == "text/html"
@@ -179,12 +179,12 @@ async def test_dispatcher_adaptive_delegates(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_id}/render/{format}", handle_render
+        "/api/v1/forms/{form_uid}/render/{format}", handle_render
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/forms/{sample_form.form_id}/render/adaptive"
+        f"/api/v1/forms/{sample_form.form_uid}/render/adaptive"
     )
     assert resp.status == 200
     assert resp.content_type == "application/json"
@@ -198,9 +198,13 @@ async def test_dispatcher_404_when_form_unknown(aiohttp_client):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_id}/render/{format}", handle_render
+        "/api/v1/forms/{form_uid}/render/{format}", handle_render
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get("/api/v1/forms/missing/render/html")
+    # FEAT-389: must be a well-formed (but unregistered) UUID — extract_form_uid()
+    # validates format before the registry lookup runs.
+    resp = await client.get(
+        "/api/v1/forms/00000000-0000-0000-0000-000000000000/render/html"
+    )
     assert resp.status == 404

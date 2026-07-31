@@ -372,12 +372,14 @@ class HTML5Renderer(AbstractFormRenderer):
     # Lifecycle injection helpers (FEAT-188)
     # ------------------------------------------------------------------
 
-    # Raw JS template — uses unique sentinels __FORM_ID__ and __EVENTS_CONFIG__
-    # to avoid Python str.format() brace conflicts with the JS object literals.
+    # Raw JS template — uses unique sentinels __FORM_ID__, __FORM_UID__, and
+    # __EVENTS_CONFIG__ to avoid Python str.format() brace conflicts with the
+    # JS object literals.
     _LIFECYCLE_SCRIPT_TEMPLATE = (
         "\n<script>\n"
         "(function() {\n"
         "  var FORM_ID = __FORM_ID__;\n"
+        "  var FORM_UID = __FORM_UID__;\n"
         "  var EVENTS_CONFIG = __EVENTS_CONFIG__;\n"
         "  var formEl = document.getElementById('parrot-form-' + FORM_ID);\n"
         "  if (!formEl) return;\n"
@@ -398,7 +400,7 @@ class HTML5Renderer(AbstractFormRenderer):
         "    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;\n"
         "    var timer = ctl ? setTimeout(function() { ctl.abort(); }, timeoutMs) : null;\n"
         "    return fetch(\n"
-        "      '/api/v1/forms/' + FORM_ID + '/events/' + eventName,\n"
+        "      '/api/v1/forms/' + FORM_UID + '/events/' + eventName,\n"
         "      {\n"
         "        method: 'POST',\n"
         "        credentials: 'same-origin',\n"
@@ -525,6 +527,13 @@ class HTML5Renderer(AbstractFormRenderer):
         script = (
             self._LIFECYCLE_SCRIPT_TEMPLATE
             .replace("__FORM_ID__", json.dumps(form.form_id))
+            # FEAT-389 (code-review fix): the remote-event dispatch URL below
+            # must hit the {form_uid}-keyed route (api/routes.py renamed it
+            # from {form_id}) or extract_form_uid() 400s on the slug — a
+            # real regression this migration introduced. FORM_ID is kept
+            # for the DOM element-id lookup and event-payload labels above,
+            # which are unaffected by the route rename.
+            .replace("__FORM_UID__", json.dumps(form.form_uid))
             .replace("__EVENTS_CONFIG__", json.dumps(events_config))
         )
 

@@ -1,19 +1,22 @@
-"""Unit tests for FormRegistry.clone_form (FEAT-183).
+"""Unit tests for FormRegistry.clone_form (FEAT-183, updated FEAT-389).
 
 Tests exercise the clone_form method in isolation — no storage backend,
 no HTTP layer.  All tests are async (asyncio_mode = "auto" in pyproject.toml).
+
+FEAT-389: clone_form()'s first parameter is now ``source_form_uid`` (the
+immutable primary key), not ``source_form_id`` (the mutable slug) — tests
+pass ``sample_form.form_uid`` (or the returned clone's ``.form_uid``)
+instead of the literal slug string.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.registry import FormRegistry
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -31,7 +34,7 @@ def sample_form() -> FormSchema:
         form_id="source-form",
         title="Source Form",
         version="2.3",
-        created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2025, 1, 1, tzinfo=UTC),
         sections=[
             FormSection(
                 section_id="sec1",
@@ -76,38 +79,55 @@ async def registry(sample_form: FormSchema) -> FormRegistry:
 
 
 @pytest.mark.asyncio
-async def test_clone_basic(registry: FormRegistry) -> None:
+async def test_clone_basic(registry: FormRegistry, sample_form: FormSchema) -> None:
     """Clone produces a form with the given new_form_id."""
-    clone = await registry.clone_form("source-form", "cloned-form")
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
     assert clone.form_id == "cloned-form"
 
 
 @pytest.mark.asyncio
-async def test_clone_resets_version(registry: FormRegistry) -> None:
+async def test_clone_generates_new_uid(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """The clone always gets a fresh form_uid, distinct from the source."""
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
+    assert clone.form_uid != sample_form.form_uid
+
+
+@pytest.mark.asyncio
+async def test_clone_resets_version(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """Source has version "2.3"; clone always starts at "1.0"."""
-    clone = await registry.clone_form("source-form", "cloned-form")
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
     assert clone.version == "1.0"
 
 
 @pytest.mark.asyncio
-async def test_clone_resets_created_at(registry: FormRegistry) -> None:
+async def test_clone_resets_created_at(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """created_at is set to None on the clone (storage assigns a fresh value)."""
-    clone = await registry.clone_form("source-form", "cloned-form")
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
     assert clone.created_at is None
 
 
 @pytest.mark.asyncio
-async def test_clone_sets_cloned_from_meta(registry: FormRegistry) -> None:
-    """meta["cloned_from"] records the source form_id for provenance."""
-    clone = await registry.clone_form("source-form", "cloned-form")
+async def test_clone_sets_cloned_from_meta(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """meta["cloned_from"] records the source form_uid for provenance."""
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
     assert clone.meta is not None
-    assert clone.meta["cloned_from"] == "source-form"
+    assert clone.meta["cloned_from"] == sample_form.form_uid
 
 
 @pytest.mark.asyncio
-async def test_clone_preserves_sections(registry: FormRegistry) -> None:
+async def test_clone_preserves_sections(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """All sections and fields from the source are present in the clone."""
-    clone = await registry.clone_form("source-form", "cloned-form")
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
     assert len(clone.sections) == 1
     assert clone.sections[0].section_id == "sec1"
     assert clone.sections[0].fields[0].field_id == "name"
@@ -119,13 +139,15 @@ async def test_clone_preserves_sections(registry: FormRegistry) -> None:
 
 
 @pytest.mark.asyncio
-async def test_clone_deep_copy(registry: FormRegistry) -> None:
+async def test_clone_deep_copy(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """Mutating the clone does NOT affect the source form."""
-    clone = await registry.clone_form("source-form", "cloned-form")
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
     # Mutate a nested object on the clone
     clone.sections[0].fields[0].label = "Changed Label"
 
-    source = await registry.get("source-form")
+    source = await registry.get(sample_form.form_uid)
     assert source is not None
     assert source.sections[0].fields[0].label == "Full Name"
 
@@ -136,10 +158,12 @@ async def test_clone_deep_copy(registry: FormRegistry) -> None:
 
 
 @pytest.mark.asyncio
-async def test_clone_with_patch(registry: FormRegistry) -> None:
+async def test_clone_with_patch(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """Merge-patch overrides are applied to the cloned form."""
     clone = await registry.clone_form(
-        "source-form",
+        sample_form.form_uid,
         "patched-clone",
         patch={"title": "Patched Title"},
     )
@@ -148,14 +172,31 @@ async def test_clone_with_patch(registry: FormRegistry) -> None:
 
 
 @pytest.mark.asyncio
-async def test_clone_patch_cannot_change_form_id(registry: FormRegistry) -> None:
+async def test_clone_patch_cannot_change_form_id(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """A form_id key in the patch is ignored — new_form_id wins."""
     clone = await registry.clone_form(
-        "source-form",
+        sample_form.form_uid,
         "correct-id",
         patch={"form_id": "attacker-id"},
     )
     assert clone.form_id == "correct-id"
+
+
+@pytest.mark.asyncio
+async def test_clone_patch_cannot_change_form_uid(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """A form_uid key in the patch is ignored — the freshly generated
+    form_uid always wins (FEAT-389)."""
+    clone = await registry.clone_form(
+        sample_form.form_uid,
+        "uid-patch-attempt",
+        patch={"form_uid": "attacker-uid"},
+    )
+    assert clone.form_uid != "attacker-uid"
+    assert clone.form_uid != sample_form.form_uid
 
 
 # ---------------------------------------------------------------------------
@@ -168,12 +209,15 @@ async def test_clone_source_not_found() -> None:
     """Raises KeyError when the source form does not exist in the registry."""
     registry = FormRegistry(require_tenant=False)
     with pytest.raises(KeyError, match="not found"):
-        await registry.clone_form("nonexistent", "new-form")
+        await registry.clone_form("nonexistent-uid", "new-form")
 
 
 @pytest.mark.asyncio
-async def test_clone_duplicate_form_id(registry: FormRegistry) -> None:
-    """Raises FormAlreadyExistsError (a ValueError) when new_form_id is taken."""
+async def test_clone_duplicate_form_id(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """Raises FormAlreadyExistsError (a ValueError) when new_form_id (slug)
+    is already taken by a different form_uid."""
     from parrot_formdesigner.services.registry import FormAlreadyExistsError
 
     existing = FormSchema(
@@ -183,18 +227,20 @@ async def test_clone_duplicate_form_id(registry: FormRegistry) -> None:
     )
     await registry.register(existing)
     with pytest.raises(FormAlreadyExistsError, match="already exists"):
-        await registry.clone_form("source-form", "taken-id")
+        await registry.clone_form(sample_form.form_uid, "taken-id")
 
 
 @pytest.mark.asyncio
-async def test_clone_validation_error(registry: FormRegistry) -> None:
+async def test_clone_validation_error(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """A patch that breaks schema structure raises ValueError."""
     # Patch 'sections' to an invalid value — FormSchema.sections must be a list
     # of FormSection dicts; providing a string triggers a ValidationError
     # inside clone_form which is caught and re-raised as ValueError.
     with pytest.raises(ValueError):
         await registry.clone_form(
-            "source-form",
+            sample_form.form_uid,
             "broken-clone",
             patch={"sections": "not-a-list"},
         )
@@ -213,12 +259,12 @@ async def test_clone_with_tenant(sample_form: FormSchema) -> None:
     await reg.register(sample_form)
 
     clone = await reg.clone_form(
-        "source-form",
+        sample_form.form_uid,
         "tenant-clone",
         tenant="acme",
     )
     assert clone.tenant == "acme"
-    assert await reg.contains("tenant-clone", tenant="acme")
+    assert await reg.contains(clone.form_uid, tenant="acme")
 
 
 # ---------------------------------------------------------------------------
@@ -227,19 +273,23 @@ async def test_clone_with_tenant(sample_form: FormSchema) -> None:
 
 
 @pytest.mark.asyncio
-async def test_clone_registers_new_form(registry: FormRegistry) -> None:
+async def test_clone_registers_new_form(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """After cloning, the new form is retrievable from the registry."""
-    await registry.clone_form("source-form", "registered-clone")
-    clone = await registry.get("registered-clone")
-    assert clone is not None
-    assert clone.form_id == "registered-clone"
+    clone = await registry.clone_form(sample_form.form_uid, "registered-clone")
+    result = await registry.get(clone.form_uid)
+    assert result is not None
+    assert result.form_id == "registered-clone"
 
 
 @pytest.mark.asyncio
-async def test_clone_source_still_present(registry: FormRegistry) -> None:
+async def test_clone_source_still_present(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
     """Cloning does not remove or modify the source form in the registry."""
-    await registry.clone_form("source-form", "new-clone")
-    source = await registry.get("source-form")
+    await registry.clone_form(sample_form.form_uid, "new-clone")
+    source = await registry.get(sample_form.form_uid)
     assert source is not None
     assert source.form_id == "source-form"
     assert source.version == "2.3"
