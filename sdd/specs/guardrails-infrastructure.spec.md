@@ -253,6 +253,16 @@ New bot kwarg: `guardrails: list[str | dict | Guardrail] | None = None`.
   block-vs-`_wrap_flagged_input` mitigation); legacy ctor-flag mapping;
   `PromptPipeline` wrapped as legacy TRANSFORM guardrail and its two
   registration sites migrated; behavioral-compat test suite.
+- **Constraint — lazy-import of pytector**: The `PromptInjectionGuardrail`
+  owns the `import pytector` / `import torch` boundary — the import MUST
+  happen inside the guardrail (its `__init__` or first `check()` call),
+  NOT at `AbstractBot.__init__` time. Today `AbstractBot.__init__` loads
+  the shared detector unconditionally when pytector is installed
+  (`PYTECTOR_ENABLED`, `bots/abstract.py:63,675`), which pulls in torch,
+  transformers, and TensorFlow into every bot — even those with
+  `injection_detection=False`. The migration must remove that eager load
+  from `AbstractBot` and gate it entirely on whether the
+  `PromptInjectionGuardrail` is registered for the bot.
 - **Depends on**: Module 1.
 
 ### Module 3: guardrails-output-plugins
