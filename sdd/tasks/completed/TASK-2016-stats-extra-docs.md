@@ -66,11 +66,21 @@ from parrot.knowledge.wiki.languages import all_scanners
 ### Existing Signatures (verified 2026-07-31)
 
 ```python
-# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:515-529
-def _write_reports(output_dir, wiki_name, store_stats, okf_report, graph_stats):
+# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:508-531
+# CORRECTION (verified 2026-07-31): the function is named
+# `_write_build_stats`, not `_write_reports` — the contract's original
+# name is stale. Called from `build()` at line ~730.
+def _write_build_stats(output_dir, wiki_name, store_stats, okf_report, graph_stats):
     # Writes wiki_stats.json with keys: wiki_name, generated_at, pages, edges,
     # categories, okf, graph
     # New: add "languages" key
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:1072
+# def status(path_, as_json) -> None: builds a `payload` dict (root,
+# wiki_name, backend, storage_dir, stats, sources, stale_sources) and
+# either dumps it as JSON or echoes selected fields. New: add a
+# "languages" key to `payload` + one `click.echo` line in the
+# human-readable branch.
 
 # packages/ai-parrot/pyproject.toml:184-187
 # graphindex = [
@@ -231,8 +241,43 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Corrected the Codebase Contract's stale function name
+(`_write_reports` → `_write_build_stats`, verified at cli.py:508) before
+implementing. Added `"languages": {name: s.mode for name, s in
+all_scanners().items()}` to both `_write_build_stats()`'s `wiki_stats.json`
+payload and `status()`'s JSON payload + a `Languages :` line in its
+human-readable output. Verified PyPI wheel availability for the four
+grammar packages before choosing: `tree-sitter-php`, `-typescript`,
+`-javascript`, `-rust` all ship `abi3` wheels covering py3.10-3.12
+(checked 2026-07-31) — chose Option A (individual wheels, the
+`tree_sitter_python`/graphindex precedent) over `tree-sitter-language-pack`.
+Added the `wiki-languages` extra to `packages/ai-parrot/pyproject.toml`;
+deliberately did NOT add it to the `all` meta-extra, matching the existing
+`graphindex` extra's own precedent (also excluded from `all`). Added a
+"Language support" section (support table, extra install instructions,
+fallback-behavior explanation) to `documentation/parrot-wiki-cli.md` plus
+smaller touch-ups to the intro, Core Concepts, `status`, and "How it works"
+sections referencing it; `repo_scan.py`'s module docstring was already
+softened to "no *required* external parsers" in TASK-2012. Created the
+`polyglot_repo` fixture (py/php+composer.json/ts×2/rs×2/html) in
+`conftest.py` and the polyglot integration test, verifying: every file
+gets a page, `FileSlice.language` is correct per file (including `None`
+for HTML/config), HTML gets a `<title>`-based summary with no outline,
+every deep-scanned language gets an outline, JS/TS and Rust cross-file
+edges resolve correctly, and PHP-sourced edges never target a `.ts`/`.js`
+file. Full `tests/knowledge/wiki/` suite (501 tests) passes; `ruff check`
+and `mypy` clean on all new/modified files (the two pre-existing lint
+findings `ruff` reports elsewhere in `cli.py` — an unsorted import block
+and an f-string without placeholders, both outside the diff — predate
+this task and were left untouched per file-fidelity/no-scope-creep).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Did not commit the literal
+`test_existing_python_regression` test (a `subprocess.run(["python",
+"-m", "pytest", ...])` wrapper) from the Test Specification — spawning a
+nested pytest process inside the suite is fragile/slow and redundant with
+directly running `pytest tests/knowledge/wiki/ -v` before every commit
+throughout this feature (501 tests passing, verified immediately before
+this commit), which is what the actual Acceptance Criteria bullet
+requires ("`pytest tests/knowledge/wiki/ -v` passes entirely").

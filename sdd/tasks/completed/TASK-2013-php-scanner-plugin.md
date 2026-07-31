@@ -243,8 +243,37 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Implemented `PhpScanner` (heuristic mode fully tested; a
+best-effort tree-sitter path is implemented but untestable in this dev
+environment since `tree_sitter_php` is not installed — no `wiki-languages`
+extra yet, that lands in TASK-2016 — so it is exercised only via defensive
+`try/except` degrade-to-empty, never invoked by the test suite).
+Heuristic outline extracts classes/interfaces/traits/enums/functions/
+methods with PHPDoc first-line association (whitespace + modifier-keyword
+gap check) and brace-depth method-vs-function classification. Group
+`use A\{B, C};` expands to full dotted paths. `require`/`include`
+(including `__DIR__ .` concatenation) extracted as raw specifiers.
+`resolve_import` handles PSR-4 (via `composer.json` autoload map, parsed
+from disk relative to CWD — `build_reference_index`'s `Iterable[str]`
+signature per the frozen TASK-2010 ABC has no repo-root parameter, so
+this only resolves when the process CWD is the scanned repo root, the
+common case for the `wikitoolkit build` CLI; falls back to namespace-tail
+matching otherwise, never raises) and relative require paths. Created
+`tests/knowledge/wiki/languages/conftest.py` with the `force_heuristic`
+fixture (monkeypatches `treesitter.get_parser`, which required switching
+`php.py`'s import to `from parrot.knowledge.wiki.languages import
+treesitter` + `treesitter.get_parser(...)` module-attribute calls instead
+of a bound name, so the monkeypatch is visible to the scanner — this
+same pattern should be reused by TASK-2014/2015). 13/13 new tests pass;
+full `tests/knowledge/wiki/` suite (474 tests) passes; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Heuristic regexes use a `(?<![\w$])` lookbehind
+instead of the contract's literal `^...` + `re.MULTILINE` line anchoring.
+Verified both cannot be satisfied simultaneously: the task's own
+`test_php_tolerates_html_prefix` fixture (`'<html><body><?php class Foo
+{} ?>'`) has no newline before `class`, so a strict line-start anchor
+would never match it. The lookbehind keeps the same "no nested
+quantifiers, bounded character classes" property that actually prevents
+catastrophic backtracking, so the safety goal is preserved.

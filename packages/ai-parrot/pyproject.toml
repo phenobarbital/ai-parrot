@@ -190,6 +190,23 @@ graphindex = [
     "orjson>=3.9",
 ]
 
+# LLM Wiki pluggable per-language scanners (FEAT-394) — accurate
+# tree-sitter outlines for PHP/JS/TS/Rust `wikitoolkit build` plugins.
+# Optional: every plugin degrades to a stdlib-only heuristic when this
+# extra is not installed, so core install gains zero new dependencies.
+# Individual grammar wheels (not `tree-sitter-languages`, which is
+# effectively unmaintained and incompatible with `tree-sitter>=0.23` on
+# newer Pythons per the graphindex extra's own precedent) — each ships
+# `abi3` wheels covering py3.10-3.12, verified on PyPI 2026-07-31,
+# following the `tree_sitter_python` pattern already used by graphindex.
+wiki-languages = [
+    "tree-sitter>=0.23",
+    "tree-sitter-php>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-rust>=0.23",
+]
+
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203
 # scheduler = ["apscheduler==3.11.2"]  # use ai-parrot-server[scheduler] instead
 

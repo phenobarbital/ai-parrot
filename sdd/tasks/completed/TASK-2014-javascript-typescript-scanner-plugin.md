@@ -249,8 +249,41 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: Implemented `JavaScriptScanner` claiming all five suffixes.
+Heuristic mode uses the exact regex patterns from the Codebase Contract
+(export class/function/const/interface/type, non-exported class/function,
+import-from/side-effect-import/require) plus a local JSDoc-block finder
+for the ": doc" suffix. Imports are filtered to relative-only
+(`spec.startswith(".")`) at extraction time, so bare packages like
+`react`/`lodash` never even reach `resolve_import`. `resolve_import`
+does extension guessing (`.ts/.tsx/.js/.jsx/.mjs` then `/index.*`) with
+a `_normalize_posix` helper to collapse `../` segments (duplicated from
+the equivalent PHP helper rather than imported — each plugin module
+stays self-contained per the spec's parallelism design, sharing only
+base/treesitter/registry/conftest). A best-effort tree-sitter path is
+implemented but untestable here (no grammar installed until TASK-2016's
+extra). Registered as `"javascript"` for `.js/.jsx/.mjs/.ts/.tsx`.
+12/12 new tests pass; full `tests/knowledge/wiki/` suite (486 tests)
+passes; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's own literal Test Specification block
+for `test_jsts_relative_resolution` (`from_file="src/services/user.ts"`,
+expecting `"./base/model"` → `"src/base/model.ts"` and `"./utils"` →
+`"src/utils/index.ts"`) is internally inconsistent with the also-literal
+`resolve_import` pseudocode in Implementation Notes: standard relative-
+import semantics (`PurePosixPath(from_file).parent / spec`, exactly as
+given) resolve `"./base/model"` relative to `from_file`'s *own* directory
+(`src/services/`), landing on `src/services/base/model.ts` — never
+`src/base/model.ts` — no matter how the traversal is implemented; the
+fixture's directory depths don't match its own expected outputs. Kept
+the literal pseudocode (correct, standard resolution semantics — verified
+against the acceptance criterion's general description, which names no
+exact paths) and wrote my own internally-consistent fixture achieving the
+same expected string values by placing `from_file` at `src/user.ts`
+instead of `src/services/user.ts`, and using `"../../base/model"` (not
+`"../base/model"`) for the parent-relative case, matching the actual
+directory depth. Behavior (extension guessing, relative-only resolution)
+is implemented exactly as specified — only the test fixture's paths were
+corrected.

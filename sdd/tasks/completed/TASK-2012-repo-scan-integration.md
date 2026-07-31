@@ -246,8 +246,30 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-07-31
+**Notes**: `FileSlice` gained the additive `language: Optional[str] = None`
+field. `build_file_slice()` now consults `scanner_for(suffix)` (wrapped in
+try/except → degrade to shallow page, logged warning, never raises)
+instead of the hardcoded `.py/.pyi` branch, and sets `FileSlice.language`.
+Added `_html_title_summary()` (dedicated helper, does not extend the
+frontmatter-aware `_markdown_summary()`) wired into a new `_HTML_SUFFIXES`
+branch. `build_import_edges()` now groups files by `language`, builds each
+scanner's reference index once over the full repo file list, and resolves
+through that scanner's `resolve_import` — proven isolated via a
+temporarily-registered fake second scanner in the new integration test
+(no PHP/JS/Rust plugin needed for this task's isolation guarantee).
+`.php` added to `CODE_SUFFIXES`; `.html`/`.htm` added to `DOC_SUFFIXES`.
+Incremental fast-path in `scan_repository()` now checks `scanned_suffixes()`
+instead of the hardcoded Python suffix set. `_python_outline`/`_module_index`
+kept as thin wrappers delegating to `PythonScanner` (grep confirmed the
+only caller besides `build_file_slice`/`build_import_edges` was the
+TASK-2011 byte-identical test, so removing them would have required
+touching a file outside this task's scope) — the now-unused `import ast`
+was removed. Full `tests/knowledge/wiki/` suite (461 tests, including all
+of `test_repo_scan.py` unchanged) passes; `ruff check` clean aside from
+the pre-existing repo-wide `UP045` (`Optional[X]` vs `X | None`) baseline
+already present in this file before this task (verified: same rule fires
+on unmodified lines; not gated by any CI workflow in this repo).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
