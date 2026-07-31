@@ -42,45 +42,11 @@ def migration_006():
 
 # ---------------------------------------------------------------------------
 # Fixtures — raw (pre-migration) schema_json documents
+#
+# legacy_schema_json is a package-wide shared fixture (tests/conftest.py,
+# FEAT-393 TASK-2009 — Module 15 fixture consolidation); only
+# migrated_schema_json (built ON TOP of it) stays local to this file.
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def legacy_schema_json() -> dict:
-    """A pre-FEAT-393 document: no *_uid keys anywhere, and a rule
-    reference authored by field_id (depends_on)."""
-    return {
-        "form_id": "legacy-form",
-        "title": "Legacy Form",
-        "sections": [
-            {
-                "section_id": "s1",
-                "fields": [
-                    {
-                        "field_id": "country",
-                        "field_type": "select",
-                        "label": "Country",
-                    },
-                    {
-                        "field_id": "state",
-                        "field_type": "text",
-                        "label": "State",
-                        "depends_on": {
-                            "conditions": [
-                                {
-                                    "field_id": "country",
-                                    "operator": "eq",
-                                    "value": "US",
-                                }
-                            ],
-                            "logic": "and",
-                            "effect": "show",
-                        },
-                    },
-                ],
-            }
-        ],
-    }
 
 
 @pytest.fixture

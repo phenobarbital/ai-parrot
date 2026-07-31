@@ -7,13 +7,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
-
 from parrot_formdesigner.core.constraints import (
     ConditionOperator,
-    DependencyOperation,
     DependencyRule,
     FieldCondition,
-    PostDependency,
 )
 from parrot_formdesigner.core.resolution import (
     find_field_by_uid,
@@ -24,7 +21,6 @@ from parrot_formdesigner.core.schema import (
     FormField,
     FormSchema,
     FormSection,
-    FormSubsection,
 )
 from parrot_formdesigner.core.types import FieldType
 
@@ -39,44 +35,9 @@ def _form(sections: list[FormSection], form_id: str = "f") -> FormSchema:
     return FormSchema(form_id=form_id, title="Test", sections=sections)
 
 
-@pytest.fixture
-def form_with_rules() -> FormSchema:
-    """FormSchema whose depends_on / post_depends / operations reference
-    fields by authored field_id, for resolution-pass tests."""
-    a = _field("a")
-    b = _field(
-        "b",
-        depends_on=DependencyRule(
-            conditions=[FieldCondition(field_id="a", operator=ConditionOperator.EQ, value="x")],
-            operations=[DependencyOperation(op="copy", operands=["a"], target="c")],
-        ),
-        post_depends=[
-            PostDependency(
-                target="c",
-                effect="calc",
-                conditions=[FieldCondition(field_id="a", operator=ConditionOperator.EQ, value="x")],
-                operation=DependencyOperation(op="copy", operands=["a"], target="c"),
-            )
-        ],
-    )
-    c = _field("c")
-    return _form([FormSection(section_id="s", fields=[a, b, c])])
-
-
-@pytest.fixture
-def form_with_nested_fields() -> FormSchema:
-    """FormSchema with sections, a subsection, a GROUP (children) and an
-    ARRAY (item_template) — exercises the full-tree traversal."""
-    group = _field(
-        "group", field_type=FieldType.GROUP, children=[_field("child")]
-    )
-    array_field = _field(
-        "arr", field_type=FieldType.ARRAY, item_template=_field("item")
-    )
-    subsection = FormSubsection(subsection_id="sub", fields=[_field("in_sub")])
-    return _form([
-        FormSection(section_id="s", fields=[group, array_field, subsection])
-    ])
+# form_with_rules / form_with_nested_fields fixtures moved to the
+# package-wide tests/conftest.py (FEAT-393, TASK-2009 — Module 15 fixture
+# consolidation). Referenced below as normal pytest fixture parameters.
 
 
 def test_resolves_depends_on_condition(form_with_rules: FormSchema):
