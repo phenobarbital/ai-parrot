@@ -30,8 +30,8 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Optional
 
 from pydantic import BaseModel, Field
 
@@ -169,7 +169,7 @@ class FileSlice(BaseModel):
     rel_path: str
     record: WikiPageRecord
     imports: list[str] = Field(default_factory=list)
-    language: Optional[str] = None
+    language: str | None = None
 
 
 class RepoScan(BaseModel):
@@ -194,8 +194,8 @@ class RepoScan(BaseModel):
 
 def is_wiki_relevant(
     rel_path: str,
-    suffixes: Optional[Iterable[str]] = None,
-    exclude_dirs: Optional[Iterable[str]] = None,
+    suffixes: Iterable[str] | None = None,
+    exclude_dirs: Iterable[str] | None = None,
 ) -> bool:
     """Whether a repository-relative path is in wiki scope.
 
@@ -256,7 +256,7 @@ def dir_concept_id(rel_path: str) -> str:
 
 def find_wiki_bundle_dirs(
     root: Path,
-    exclude_dirs: Optional[Iterable[str]] = None,
+    exclude_dirs: Iterable[str] | None = None,
 ) -> list[str]:
     """Locate exported wiki bundles nested inside ``root``.
 
@@ -347,8 +347,8 @@ def is_inside_wiki_bundle(root: Path, rel_path: str) -> bool:
 
 def discover_repo_files(
     root: Path,
-    suffixes: Optional[Iterable[str]] = None,
-    exclude_dirs: Optional[Iterable[str]] = None,
+    suffixes: Iterable[str] | None = None,
+    exclude_dirs: Iterable[str] | None = None,
     use_git: bool = True,
 ) -> list[str]:
     """Enumerate candidate source files under ``root``.
@@ -375,7 +375,7 @@ def discover_repo_files(
     excluded.extend(find_wiki_bundle_dirs(root, exclude_dirs=excluded))
     pruned = DEFAULT_EXCLUDE_DIRS | frozenset(excluded)
 
-    rel_paths: Optional[list[str]] = None
+    rel_paths: list[str] | None = None
     if use_git:
         rel_paths = _git_ls_files(root)
     if rel_paths is None:
@@ -388,7 +388,7 @@ def discover_repo_files(
     })
 
 
-def _git_ls_files(root: Path) -> Optional[list[str]]:
+def _git_ls_files(root: Path) -> list[str] | None:
     """List files via git (respecting .gitignore), or None if unavailable."""
     try:
         proc = subprocess.run(
@@ -551,7 +551,7 @@ def build_file_slice(
     rel_path: str,
     body_max_chars: int = DEFAULT_BODY_MAX_CHARS,
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
-) -> Optional[FileSlice]:
+) -> FileSlice | None:
     """Build the wiki page record for a single repository file.
 
     Args:
@@ -579,7 +579,7 @@ def build_file_slice(
     suffix = PurePosixPath(rel_path).suffix.lower()
     imports: list[str] = []
     sections: list[str] = []
-    language: Optional[str] = None
+    language: str | None = None
 
     scanner = scanner_for(suffix)
     if scanner is not None:
@@ -710,7 +710,7 @@ def _module_index(rel_paths: Iterable[str]) -> dict[str, str]:
 
 def build_import_edges(
     files: list[FileSlice],
-    index_paths: Optional[Iterable[str]] = None,
+    index_paths: Iterable[str] | None = None,
 ) -> list[tuple[str, str, str]]:
     """Derive ``references`` edges between file pages from their imports.
 
@@ -768,12 +768,12 @@ def build_import_edges(
 
 def scan_repository(
     root: Path,
-    suffixes: Optional[Iterable[str]] = None,
-    exclude_dirs: Optional[Iterable[str]] = None,
+    suffixes: Iterable[str] | None = None,
+    exclude_dirs: Iterable[str] | None = None,
     body_max_chars: int = DEFAULT_BODY_MAX_CHARS,
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
     use_git: bool = True,
-    rel_paths: Optional[Iterable[str]] = None,
+    rel_paths: Iterable[str] | None = None,
 ) -> RepoScan:
     """Scan a repository into wiki page records and edges.
 
