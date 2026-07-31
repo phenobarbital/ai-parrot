@@ -33,7 +33,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallelism_notes": "core/schema.py is the shared root of every later task.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1996-core-model-uids-validator.md"
+      "completed_at": "2026-07-31T17:26:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1996-core-model-uids-validator.md"
     },
     {
       "id": "TASK-1997",
