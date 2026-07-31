@@ -312,15 +312,39 @@ a **Changed in 0.26.0** callout warning that the reported `mode` of existing
 repositories will change — with the reason, so it reads as a correction rather
 than a regression.
 
-**navigator-svelte verification**: **NOT RUN — the repository is not present on
-this machine.** The acceptance criterion "scanning `navigator-svelte` produces
-> 0 `references` edges out of `.svelte` files" is therefore unverified against
-that repo. What *is* verified is the same claim on a fixture of the identical
-shape — a SvelteKit repo whose `$lib` alias is declared nowhere but by convention
-— in `test_scan_svelte_fixture_repo` and `test_polyglot_svelte_alongside_python`,
-both of which assert the edge exists where the pre-FEAT-396 scanner produced
-none. **Someone with the repo checked out should run this before the feature is
-called done.**
+**navigator-svelte verification**: **RUN AND PASSED**, against
+`~/Documentos/Proyecto navigator-svelte/navigator-svelte` (2026-07-31). Scanned
+with `use_git=True`, so `git ls-files` excludes the gitignored `.svelte-kit/` —
+the fresh-clone condition the criterion is about.
+
+The repo matches the spec's §1 measurements exactly (920 `.svelte` under `src/`,
+883 with `<script lang="ts">`, 2976 `$lib` and 271 `$app` imports), and — the
+part that matters — declares its `$lib` alias **nowhere**: neither
+`svelte.config.js` nor the committed `tsconfig.json` has one. Resolution here
+rests entirely on the SvelteKit convention fallback.
+
+| | before (`dev`) | after (FEAT-396) |
+|---|---|---|
+| files scanned | 2670 | 3594 |
+| `.svelte` files scanned | 0 | 924 |
+| `.svelte` with an API outline | 0 | 885 |
+| total `references` edges | 674 | 4303 |
+| **`references` edges out of `.svelte`** | **0** | **2477** |
+
+Criterion met: 0 → 2477.
+
+Related checks on the same scan:
+- **No new dangling edges.** Two exist, but they are byte-identical before and
+  after — a `.ts` test file importing `.json` fixtures
+  (`tests/components/widgets/PhotoFeed/PhotoFeed.test.ts`). Pre-existing, not
+  `.svelte`-sourced, out of scope here.
+- **Virtual and external specifiers correctly dropped**: 210 `$app/`, 4 `$env/`
+  and 988 bare npm specifiers were seen on `.svelte` files and produced no edges.
+- **`mode` reports `tree-sitter`** honestly — both grammars load.
+- The 39 `.svelte` files with no outline were spot-checked and are genuinely
+  declaration-free (`Loading.svelte` holds a lone import; `ChatGoogle.svelte` is
+  markup and a `<svelte:head>`). Empty outline is the correct result, not a
+  parse failure.
 
 Verification (`~/.venvs/parrot-lite`):
 - `tests/knowledge/wiki/languages/` — **139 passed, 1 skipped** (132+1 after
@@ -336,6 +360,5 @@ CI was not consulted at any point in this feature: `dev` has been red since
 2026-07-27 on an unrelated `pillow-heif` conflict that kills `uv sync` before
 any test runs.
 
-**Deviations from spec**: none in scope. One acceptance criterion
-(`navigator-svelte`) is explicitly left unverified for lack of the repository,
-as detailed above — flagged rather than quietly checked off.
+**Deviations from spec**: none. Every acceptance criterion in spec §5 is
+verified, including the `navigator-svelte` one.
