@@ -73,7 +73,7 @@
       "feature_id": "FEAT-393",
       "feature": "formdesigner-field-uid",
       "spec": "sdd/specs/formdesigner-field-uid.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Sequential in the per-spec worktree; distinct files from 1999/2001-2007 but shares fixtures.",
       "assigned_to": null,
       "started_at": "2026-07-31T16:26:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1998-validators-evaluator-rekey.md"
+      "completed_at": "2026-07-31T17:44:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1998-validators-evaluator-rekey.md"
     },
     {
       "id": "TASK-1999",
