@@ -13,16 +13,94 @@ PreToolUse hook can import them with minimal startup cost.
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+try:  # POSIX only — see wiki_write_lock().
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX platform
+    fcntl = None  # type: ignore[assignment]
 
 #: Directory (relative to repo root) holding parrot project state.
 PARROT_DIR = ".parrot"
 
 #: Config filename inside :data:`PARROT_DIR`.
 CONFIG_FILENAME = "wiki.json"
+
+#: Lock filename inside the wiki storage directory, guarding writers.
+LOCK_FILENAME = "wiki.lock"
+
+#: Poll interval while waiting for a contended lock.
+_LOCK_POLL_SECONDS = 0.05
+
+
+@contextmanager
+def wiki_write_lock(store_dir: Path, timeout: float = 0.0) -> Iterator[bool]:
+    """Hold the exclusive writer lock for a wiki store.
+
+    A full ``build`` rewrites the entire store and can run for many
+    minutes, while the git post-commit hook fires ``upsert --changed``
+    on its own schedule. Without mutual exclusion the two write the
+    same SQLite file concurrently.
+
+    The lock lives **beside the store**, not at the repository root:
+    ``storage_dir`` may be absolute, so two repositories can share one
+    store and must contend on the same lock for it to mean anything.
+    Pass :meth:`WikiProjectConfig.storage_path`, never the repo root.
+
+    It is advisory: the context manager yields whether the lock was
+    acquired and lets the caller decide what that means. ``build``
+    refuses; ``upsert`` waits briefly (so back-to-back commits are not
+    silently dropped) and then skips, because a commit hook must never
+    stall behind a multi-minute build. The lock is held via ``flock``
+    on an open descriptor, so the kernel releases it if the holder
+    crashes — no stale lock file can wedge the wiki.
+
+    On platforms without :mod:`fcntl` it degrades to a no-op and always
+    yields ``True``: no protection, but no false blocking either.
+
+    Args:
+        store_dir: Directory holding the wiki store, created if absent.
+        timeout: Seconds to keep retrying before giving up. ``0.0``
+            (the default) tries exactly once.
+
+    Yields:
+        ``True`` when the lock is held by this caller, ``False`` when
+        another process holds it.
+    """
+    store_dir.mkdir(parents=True, exist_ok=True)
+    handle = open(store_dir / LOCK_FILENAME, "a+")  # noqa: SIM115 - closed below
+    try:
+        if fcntl is None:  # pragma: no cover - non-POSIX platform
+            yield True
+            return
+
+        deadline = time.monotonic() + max(timeout, 0.0)
+        acquired = False
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(_LOCK_POLL_SECONDS)
+
+        if not acquired:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
 
 
 class ClaudeIntegrationConfig(BaseModel):
