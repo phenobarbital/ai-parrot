@@ -1313,13 +1313,12 @@ class FormAPIHandler:
                     status=422,
                 )
 
-            # Build submission record.
-            # NOTE: FormSubmission gains a form_uid field in TASK-1979 (not
-            # this task) — until then, form_id is the only identifier it
-            # accepts. Use form.form_id (the loaded form's actual slug), NOT
-            # the URL's form_uid, since they are different values now.
+            # Build submission record. FormSubmission.form_uid is required
+            # (TASK-1979) — form.form_uid is the loaded form's stable
+            # identity; form.form_id is its (possibly renamed) slug.
             submission = FormSubmission(
                 submission_id=str(uuid.uuid4()),
+                form_uid=form.form_uid,
                 form_id=form.form_id,
                 form_version=form.version,
                 data=result.sanitized_data,
