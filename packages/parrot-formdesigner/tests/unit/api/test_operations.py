@@ -255,6 +255,65 @@ def test_remove_field_inside_subsection():
     assert out.sections[0].fields[0].fields == []
 
 
+def test_remove_field_inside_group_children():
+    """Regression test (code review follow-up): fields nested inside a
+    GROUP's children are addressable by every batched operation, not just
+    top-level section fields and one level into subsections. Mirrors the
+    same fix already applied to EditToolkit's _replace_field_in_form —
+    _locate_field previously could not reach a GROUP-child field at all,
+    even though the field genuinely existed in the form."""
+    child = FormField(field_id="child", field_type=FieldType.TEXT, label="Child")
+    group = FormField(
+        field_id="group", field_type=FieldType.GROUP, label="Group", children=[child]
+    )
+    form = FormSchema(
+        form_id="t",
+        title={"en": "T"},
+        sections=[FormSection(section_id="s1", fields=[group])],
+    )
+    op = RemoveField(
+        op="remove_field",
+        section_uid=form.sections[0].section_uid,
+        field_uid=child.field_uid,
+    )
+    out = _apply_remove_field(form, op)
+    assert out.sections[0].fields[0].children == []
+
+
+def test_move_field_duplicate_uid_nested_in_group_rejected():
+    """Regression test (code review follow-up): _apply_move_field's
+    destination-collision check must catch a duplicate field_uid nested
+    inside a GROUP/ARRAY in the destination section, not just top-level
+    fields — it now walks the full tree (walk_fields), not iter_fields()
+    (subsection-flattening only)."""
+    moving_field = FormField(field_id="moving", field_type=FieldType.TEXT, label="Moving")
+    src_section = FormSection(section_id="src", fields=[moving_field])
+    # Destination section has a GROUP whose child shares moving_field's UID
+    # (simulating a client-forged duplicate — upsert-origin duplication).
+    # model_copy bypasses FormSchema._validate_unique_identity so the
+    # fixture itself can hold the (otherwise-rejected) duplicate — the
+    # move_field collision check under test is what's expected to catch it.
+    dup_child = moving_field.model_copy(update={"field_id": "dup"})
+    group = FormField(
+        field_id="group", field_type=FieldType.GROUP, label="Group", children=[dup_child]
+    )
+    dst_section = FormSection(section_id="dst", fields=[group])
+    form = FormSchema(
+        form_id="t",
+        title={"en": "T"},
+        sections=[src_section, FormSection(section_id="other", fields=[])],
+    ).model_copy(update={"sections": [src_section, dst_section]})
+    op = MoveField.model_validate({
+        "op": "move_field",
+        "from": {"section_uid": str(src_section.section_uid), "field_uid": str(moving_field.field_uid)},
+        "to": {"section_uid": str(dst_section.section_uid)},
+    })
+    with pytest.raises(OperationError, match="duplicate field_uid"):
+        _apply_move_field(form, op)
+    # Rolled back — the field is still in its original location.
+    assert form.sections[0].fields[0].field_id == "moving"
+
+
 def test_remove_field_unknown_id(form):
     op = RemoveField(
         op="remove_field",

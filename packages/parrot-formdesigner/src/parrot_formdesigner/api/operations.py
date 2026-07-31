@@ -28,7 +28,13 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..core.resolution import resolve_rule_references
-from ..core.schema import FormField, FormSchema, FormSection, FormSubsection
+from ..core.schema import (
+    FormField,
+    FormSchema,
+    FormSection,
+    FormSubsection,
+    walk_fields,
+)
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _get_request_tenant
 from .handlers import extract_form_uid
@@ -238,9 +244,19 @@ def _locate_field(
 ) -> tuple[list, int]:
     """Locate a field by ``field_uid`` within a section (FEAT-393).
 
-    Searches the section's own top-level ``FormField`` items AND every
-    subsection's fields — replaces ``_field_index``, which silently
-    skipped subsection items.
+    Searches the section's own top-level ``FormField`` items, every
+    subsection's fields, and recursively through GROUP ``children`` at
+    any nesting depth — replaces ``_field_index``, which silently
+    skipped subsection items. (Code review follow-up: the ``children``
+    recursion closes a gap where a field nested in a GROUP was
+    unreachable by any batched edit operation — remove_field/
+    update_field/move_field/duplicate_field — even though EditToolkit's
+    equivalent tools already reached it via ``find_field_by_uid``.)
+
+    NOT extended to ARRAY ``item_template``: it is a single field (not a
+    list member it could be spliced out of), so remove/move/duplicate
+    semantics don't apply to it the way they do to a list item — only
+    read paths (``find_field_by_uid``) address it.
 
     Args:
         section: The section to search.
@@ -248,21 +264,32 @@ def _locate_field(
 
     Returns:
         A ``(containing_list, index)`` tuple — the list the field lives in
-        (either ``section.fields`` or a subsection's ``fields``) and its
-        index within that list.
+        (``section.fields``, a subsection's ``fields``, or some field's
+        ``children``, at any depth) and its index within that list.
 
     Raises:
         OperationError: If no field with this ``field_uid`` exists anywhere
-            in the section (including its subsections).
+            in the section (including subsections and nested children).
     """
-    for i, item in enumerate(section.fields):
-        if isinstance(item, FormField) and item.field_uid == field_uid:
-            return section.fields, i
-    for item in section.fields:
-        if isinstance(item, FormSubsection):
-            for j, f in enumerate(item.fields):
-                if f.field_uid == field_uid:
-                    return item.fields, j
+
+    def _search(items: list) -> tuple[list, int] | None:
+        for i, item in enumerate(items):
+            if isinstance(item, FormSubsection):
+                found = _search(item.fields)
+                if found is not None:
+                    return found
+                continue
+            if item.field_uid == field_uid:
+                return items, i
+            if item.children:
+                found = _search(item.children)
+                if found is not None:
+                    return found
+        return None
+
+    found = _search(section.fields)
+    if found is not None:
+        return found
     raise OperationError(-1, "?", f"field '{field_uid}' not found")
 
 
@@ -346,7 +373,10 @@ def _apply_move_field(form: FormSchema, op: MoveField) -> FormSchema:
 
     # When moving within the same section, the destination position refers
     # to the new index AFTER removal — we do not need a special case.
-    if any(f.field_uid == field.field_uid for f in dst_section.iter_fields()):
+    # walk_fields (not iter_fields(), which only flattens subsections) so
+    # a duplicate UID nested in a GROUP/ARRAY in the destination section is
+    # also caught (code review follow-up).
+    if any(f.field_uid == field.field_uid for f in walk_fields(dst_section.fields)):
         # Restore original location before raising.
         src_list.insert(src_fi, field)
         raise OperationError(
