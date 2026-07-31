@@ -32,16 +32,16 @@
       "feature_id": "FEAT-396",
       "feature": "wikitoolkit-svelte-typescript-support",
       "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Module 2. Order-independent from TASK-2019 (different files), but both must precede TASK-2021. Not parallel: it edits javascript.py, which 2021/2022/2023 also edit, so a separate worktree would collide on merge.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2020-claim-svelte-suffix.md"
+      "started_at": "2026-07-31T22:20:00+00:00",
+      "completed_at": "2026-07-31T22:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2020-claim-svelte-suffix.md"
     },
     {
       "id": "TASK-2021",

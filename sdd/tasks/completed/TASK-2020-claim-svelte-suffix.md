@@ -211,10 +211,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session (Opus 5), with Emmanuel Arroyo
+**Date**: 2026-07-31
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
 
-**Deviations from spec**: none | describe if any
+Two frozenset entries, as scoped: `".svelte"` added to `CODE_SUFFIXES`
+(`repo_scan.py`) and to `JavaScriptScanner.suffixes` (`javascript.py`), each with
+a short comment pointing at FEAT-396. Nothing else in either module was touched.
+`_SUFFIX_INDEX` and `DEFAULT_SUFFIXES` picked the suffix up on their own, exactly
+as the contract predicted — no registry edit, no `_SCANNERS` change.
+
+Measured before/after:
+
+```
+                            before      after
+scanner_for(".svelte")      None        JavaScriptScanner
+".svelte" in CODE_SUFFIXES  False       True
+scanned_suffixes()          9 suffixes  10 suffixes (+ .svelte)
+```
+
+And on a real component body, confirming the split with TASK-2021:
+
+```
+imports  ['./util']   <- already work, this task's actual payload
+outline  []           <- still degraded, TASK-2021 fixes it
+summary  ''
+```
+
+Tests: three added, not two. Beyond the two the task named
+(`test_registry_claims_svelte`, `test_code_suffixes_contains_svelte`) I added
+`test_svelte_file_is_scanned_and_imports_resolve`, an end-to-end scan asserting
+the `references` edge `src/lib/Widget.svelte -> src/lib/util.ts`. Rationale: that
+edge is the value this task actually delivers, and TASK-2021's contract requires
+imports keep working unchanged once `<script>` pre-extraction lands — so it
+doubles as that task's regression guard. Per the task's own warning I did **not**
+assert anything about the degraded outline, which TASK-2021 will change.
+
+Verification (`~/.venvs/parrot-lite`):
+- `tests/knowledge/wiki/languages/` — **81 passed, 1 skipped** (78+1 after
+  TASK-2019; +3 from this task)
+- wider `tests/knowledge/wiki/` — 166 failed / 344 passed, **identical failure
+  count to clean `dev`** (166/333). Pre-existing `parrot-lite` env limits.
+- `ruff check` on all four changed files — **All checks passed** (via `uvx`)
+
+**Deviations from spec**: none. One addition beyond the letter of the scope: the
+third test described above. No source file outside the two named was modified.
+
+**Note for TASK-2021**: with the suffix claimed but no `<script>` extraction yet,
+a `.svelte` file resolves to `language="javascript"` (its suffix is neither `.ts`
+nor `.tsx`) and the JS grammar parses the markup to an empty outline. The spec's
+§6 measurement recorded 2 lines of markup garbage instead of `[]` — that came
+from a different component through the heuristic path, not a contradiction.

@@ -15,6 +15,7 @@ from parrot.knowledge.wiki import languages as languages_module
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
 from parrot.knowledge.wiki.repo_scan import (
     CODE_SUFFIXES,
+    DEFAULT_SUFFIXES,
     DOC_SUFFIXES,
     build_file_slice,
     build_import_edges,
@@ -201,3 +202,45 @@ class TestIncrementalFastpathGeneralized:
         # never discovered because no changed file needed repo-wide
         # discovery to resolve import targets.
         assert [fs.rel_path for fs in scan.files] == ["README.md"]
+
+
+class TestSvelteSuffixClaimed:
+    """FEAT-396 / TASK-2020 — `.svelte` enters the scanned suffix set."""
+
+    def test_code_suffixes_contains_svelte(self):
+        """`.svelte` is a code suffix and flows into the default set.
+
+        ``DEFAULT_SUFFIXES`` is a union, so it picks the entry up with no
+        second edit.
+        """
+        assert ".svelte" in CODE_SUFFIXES
+        assert ".svelte" in DEFAULT_SUFFIXES
+        assert ".svelte" not in DOC_SUFFIXES
+
+    def test_svelte_file_is_scanned_and_imports_resolve(self, tmp_path: Path):
+        """The value this task delivers: components are no longer invisible.
+
+        The outline is still degraded until TASK-2021 — deliberately not
+        asserted here. Imports already work on raw Svelte source, and
+        TASK-2021's contract requires they keep working unchanged, so this
+        doubles as that task's regression guard.
+        """
+        _write(tmp_path, "src/lib/util.ts", "export function helper() {}\n")
+        _write(
+            tmp_path,
+            "src/lib/Widget.svelte",
+            '<script lang="ts">\n'
+            "  import { helper } from './util'\n"
+            "</script>\n"
+            "<div>hi</div>\n",
+        )
+        scan = scan_repository(tmp_path, use_git=False)
+
+        scanned = {fs.rel_path for fs in scan.files}
+        assert "src/lib/Widget.svelte" in scanned
+
+        assert (
+            file_concept_id("src/lib/Widget.svelte"),
+            file_concept_id("src/lib/util.ts"),
+            "references",
+        ) in scan.import_edges

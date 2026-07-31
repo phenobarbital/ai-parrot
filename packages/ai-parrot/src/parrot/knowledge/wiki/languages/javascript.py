@@ -140,8 +140,11 @@ class JavaScriptScanner(LanguageScanner):
     """Deep extractor for JavaScript/TypeScript files."""
 
     name: ClassVar[str] = "javascript"
+    #: ``.svelte`` rides along (FEAT-396): a component's ``<script>`` block
+    #: is JS/TS, so it is extracted and parsed here rather than by a
+    #: separate framework scanner. ``_SUFFIX_INDEX`` derives the routing.
     suffixes: ClassVar[frozenset[str]] = frozenset(
-        {".js", ".jsx", ".mjs", ".ts", ".tsx"}
+        {".js", ".jsx", ".mjs", ".ts", ".tsx", ".svelte"}
     )
 
     # -- outline ------------------------------------------------------------
