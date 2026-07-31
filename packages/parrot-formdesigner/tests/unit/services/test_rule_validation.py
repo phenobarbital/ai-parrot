@@ -121,7 +121,12 @@ class TestUnknownReferences:
         """Same orphaned-field_uid scenario as
         test_depends_on_references_unknown_field, for a post_depends
         condition (FEAT-393 — see that test's docstring for why this
-        constructs a "resolved" condition directly)."""
+        constructs a "resolved" condition directly, WITHOUT going through
+        resolve_rule_references() — that function now validates an
+        already-set field_uid against the form's known UIDs too (code
+        review fix), so it would correctly raise on this orphan UID
+        earlier than this test intends to exercise; validate_rules() is
+        the layer under test here, not resolve_rule_references())."""
         orphan_uid = uuid.uuid4()
         cond = FieldCondition(field_uid=orphan_uid, operator=ConditionOperator.EQ, value="x")
         f1 = _field("f1")
@@ -132,12 +137,10 @@ class TestUnknownReferences:
             ],
         )
         f3 = _field("f3")
-        form = resolve_rule_references(
-            FormSchema(
-                form_id="test",
-                title="Test",
-                sections=[FormSection(section_id="s1", fields=[f1, f2, f3])],
-            )
+        form = FormSchema(
+            form_id="test",
+            title="Test",
+            sections=[FormSection(section_id="s1", fields=[f1, f2, f3])],
         )
         errors = validator.validate_rules(form)
         assert any("unknown field" in e for e in errors), errors

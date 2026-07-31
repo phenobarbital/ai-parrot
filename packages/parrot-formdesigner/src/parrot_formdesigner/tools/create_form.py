@@ -621,6 +621,12 @@ class CreateFormTool(AbstractTool):
                 form = self._assembler.assemble_from_fields(
                     fields, form_id=form_id, title=form_id or "Form"
                 )
+            # FEAT-393: resolve authored field_id rule references to
+            # field_uid before returning — same build-boundary pass the
+            # LLM path applies right after FormSchema.model_validate()
+            # (code review fix: this deterministic path was missing it,
+            # silently leaving depends_on/post_depends unresolved).
+            form = resolve_rule_references(form)
         except (ValidationError, ValueError) as exc:
             return ToolResult(
                 success=False,

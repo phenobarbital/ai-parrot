@@ -667,8 +667,17 @@ class EditToolkit(AbstractToolkit):
         if field is None:
             return {"error": f"Field '{field_uid}' not found."}
 
+        try:
+            target_uuid = uuid.UUID(target)
+        except (ValueError, TypeError, AttributeError):
+            return {"error": f"'{target}' is not a valid target field_uid (UUID string)."}
+
         existing = list(field.post_depends or [])
-        updated = [p for p in existing if p.target != target]
+        # Compare as UUIDs, not raw strings — post.target is always stored
+        # canonical (str(uuid.UUID(...))) post-resolution, but a caller-
+        # supplied target in a different (still valid) UUID case/format
+        # must still match (code review fix).
+        updated = [p for p in existing if uuid.UUID(p.target) != target_uuid]
         if len(updated) == len(existing):
             return {
                 "error": f"No post_depends with target='{target}' found on field '{field_uid}'."
@@ -696,7 +705,13 @@ class EditToolkit(AbstractToolkit):
         """Return a deep copy of *form* with the field matching *field_uid*
         replaced by *new_field* (FEAT-393).
 
-        Searches section-level fields AND every subsection's fields.
+        Searches the FULL tree — section-level fields, subsections, GROUP
+        ``children``, and ARRAY ``item_template`` — mirroring
+        ``core.schema.walk_fields``'s canonical traversal shape (code
+        review fix: the previous version only searched one level into
+        subsections, silently no-opping — and callers still reported
+        ``success: True`` — for a field nested in ``children``/
+        ``item_template``).
 
         Args:
             form: The source FormSchema.
@@ -706,21 +721,34 @@ class EditToolkit(AbstractToolkit):
         Returns:
             A new FormSchema with the field swapped.
         """
-        new_sections = []
-        for section in form.sections:
+
+        def _replace_in_items(items: list) -> list:
             new_items = []
-            for item in section.fields:
-                if isinstance(item, FormField) and item.field_uid == field_uid:
+            for item in items:
+                if isinstance(item, FormSubsection):
+                    new_items.append(
+                        item.model_copy(
+                            update={"fields": _replace_in_items(item.fields)}
+                        )
+                    )
+                    continue
+                if item.field_uid == field_uid:
                     new_items.append(new_field)
-                elif isinstance(item, FormSubsection):
-                    new_sub_fields = [
-                        new_field if f.field_uid == field_uid else f
-                        for f in item.fields
-                    ]
-                    new_items.append(item.model_copy(update={"fields": new_sub_fields}))
-                else:
-                    new_items.append(item)
-            new_sections.append(section.model_copy(update={"fields": new_items}))
+                    continue
+                updates: dict[str, Any] = {}
+                if item.children:
+                    updates["children"] = _replace_in_items(item.children)
+                if item.item_template is not None:
+                    updates["item_template"] = _replace_in_items(
+                        [item.item_template]
+                    )[0]
+                new_items.append(item.model_copy(update=updates) if updates else item)
+            return new_items
+
+        new_sections = [
+            section.model_copy(update={"fields": _replace_in_items(section.fields)})
+            for section in form.sections
+        ]
         return form.model_copy(update={"sections": new_sections})
 
     async def _check_rules(self, form: FormSchema) -> list[str]:

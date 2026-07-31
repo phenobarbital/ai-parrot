@@ -82,7 +82,18 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
         if (cond.source or "field") != "field":
             return  # location_variable / visit_context: key-based, no field ref
         if cond.field_uid is not None:
-            return  # already resolved
+            # Already UID-shaped (idempotent re-run, or client-supplied) —
+            # still must be validated against this form's known UIDs, same
+            # as every other reference kind below. A pre-set field_uid is a
+            # normal writable Pydantic field, so an unvalidated short-circuit
+            # here would let a dangling/foreign reference smuggle straight
+            # past resolution (code review finding, FEAT-393).
+            if str(cond.field_uid) not in known_uids:
+                raise ValueError(
+                    f"Field {owner!r}: condition references unknown field_uid "
+                    f"{cond.field_uid!r}"
+                )
+            return
         cond.field_uid = uuid.UUID(_uid_for(cond.field_id or "", owner, "condition"))
 
     for f in form.iter_fields_recursive():

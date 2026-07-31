@@ -309,6 +309,59 @@ async def test_move_field_round_trip(aiohttp_client):
     assert sections[1]["fields"][0]["field_id"] == "x"
 
 
+async def test_move_field_malformed_uuid_returns_422_not_500(aiohttp_client, sample_form):
+    """FEAT-393 code review regression: a malformed UUID string in
+    move_field's from/to dict must return 422 (OperationError), not an
+    uncaught ValueError -> 500 — the uuid.UUID(...) parses in
+    _apply_move_field were previously unguarded."""
+    registry = FormRegistry()
+    await registry.register(sample_form)
+    client = await _make_client(aiohttp_client, registry)
+
+    resp = await client.patch(
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
+        json={
+            "operations": [
+                {
+                    "op": "move_field",
+                    "from": {
+                        "section_uid": "not-a-uuid",
+                        "field_uid": str(sample_form.sections[0].fields[0].field_uid),
+                    },
+                    "to": {"section_uid": str(sample_form.sections[0].section_uid), "position": 0},
+                }
+            ]
+        },
+    )
+    assert resp.status == 422
+    body = await resp.json()
+    assert body["errors"][0]["op"] == "move_field"
+
+
+async def test_duplicate_field_malformed_uuid_returns_422_not_500(aiohttp_client, sample_form):
+    """FEAT-393 code review regression: same malformed-UUID guard for
+    duplicate_field's from dict."""
+    registry = FormRegistry()
+    await registry.register(sample_form)
+    client = await _make_client(aiohttp_client, registry)
+
+    resp = await client.patch(
+        f"/api/v1/forms/{sample_form.form_uid}/operations",
+        json={
+            "operations": [
+                {
+                    "op": "duplicate_field",
+                    "from": {"section_uid": "not-a-uuid", "field_uid": "also-not-a-uuid"},
+                    "as_field_id": "name_2",
+                }
+            ]
+        },
+    )
+    assert resp.status == 422
+    body = await resp.json()
+    assert body["errors"][0]["op"] == "duplicate_field"
+
+
 async def test_handle_operations_reresolves_rules(aiohttp_client):
     """Renaming a field's field_id via update_field keeps a depends_on
     rule (authored against the OLD field_id) working, because

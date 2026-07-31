@@ -66,6 +66,33 @@ class TestAddDependency:
         assert toolkit.form.sections[0].fields[1].depends_on is not None  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
+    async def test_add_dependency_on_group_child_field_persists(self) -> None:
+        """FEAT-393 code review regression: add_dependency on a field
+        nested inside a GROUP's children must actually persist the rule
+        (previously, ``_replace_field_in_form`` only searched top-level
+        section fields and one level into subsections, so a GROUP-child
+        target silently no-opped while still reporting success=True)."""
+        trigger = _field("trigger")
+        child = _field("child")
+        group = FormField(
+            field_id="group", field_type=FieldType.GROUP, label="group", children=[child]
+        )
+        form = _form(trigger, group)
+        toolkit = EditToolkit(form)
+
+        result = await toolkit.add_dependency(
+            str(child.field_uid),
+            {"conditions": [_cond("trigger")], "logic": "and", "effect": "show"},
+        )
+        assert result.get("success") is True
+
+        persisted_child = next(
+            f for f in toolkit.form.iter_fields_recursive() if f.field_id == "child"
+        )
+        assert persisted_child.depends_on is not None
+        assert persisted_child.depends_on.conditions[0].field_id == "trigger"
+
+    @pytest.mark.asyncio
     async def test_add_dependency_invalid_rule_returns_error(self) -> None:
         """An invalid rule (bad logic) returns an error and does not mutate the form."""
         f1 = _field("f1")
@@ -278,6 +305,29 @@ class TestRemovePostDependency:
         toolkit = EditToolkit(form)
 
         result = await toolkit.remove_post_dependency(str(f1.field_uid), str(f2.field_uid))
+        assert result.get("success") is True
+        updated = toolkit.form.sections[0].fields[0]
+        assert isinstance(updated, FormField)
+        assert updated.post_depends is None
+
+    @pytest.mark.asyncio
+    async def test_remove_post_dependency_matches_non_canonical_uuid_case(self) -> None:
+        """FEAT-393 code review regression: target matching must compare
+        as UUIDs, not raw strings — a non-canonical-case (but valid and
+        equal) UUID string must still match the stored canonical target."""
+        f2 = _field("f2")
+        f1 = FormField(
+            field_id="f1",
+            field_type=FieldType.TEXT,
+            label="f1",
+            post_depends=[PostDependency(target=str(f2.field_uid), effect="show")],
+        )
+        form = _form(f1, f2)
+        toolkit = EditToolkit(form)
+
+        result = await toolkit.remove_post_dependency(
+            str(f1.field_uid), str(f2.field_uid).upper()
+        )
         assert result.get("success") is True
         updated = toolkit.form.sections[0].fields[0]
         assert isinstance(updated, FormField)

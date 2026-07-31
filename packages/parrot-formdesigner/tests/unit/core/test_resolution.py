@@ -72,6 +72,28 @@ def test_unknown_reference_errors(form_with_rules: FormSchema):
         resolve_rule_references(form_with_rules)
 
 
+def test_preset_condition_field_uid_validated_against_known_uids():
+    """FEAT-393 code review regression: a condition whose field_uid is
+    ALREADY set (client-supplied, or a stale/foreign UID) must still be
+    validated against the form's known UIDs — a bare
+    `if cond.field_uid is not None: return` short-circuit previously let a
+    dangling/foreign field_uid smuggle straight past resolution, unlike
+    every other reference kind (operands/target), which always revalidate
+    even when already UID-shaped."""
+    dangling_uid = uuid.uuid4()
+    field = _field(
+        "a",
+        depends_on=DependencyRule(
+            conditions=[
+                FieldCondition(field_uid=dangling_uid, operator=ConditionOperator.EQ, value="x")
+            ],
+        ),
+    )
+    form = _form([FormSection(section_id="s", fields=[field])])
+    with pytest.raises(ValueError, match="references unknown field_uid"):
+        resolve_rule_references(form)
+
+
 def test_empty_reference_errors():
     field = _field(
         "a",

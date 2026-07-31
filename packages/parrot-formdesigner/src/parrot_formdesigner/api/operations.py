@@ -327,9 +327,14 @@ def _apply_move_field(form: FormSchema, op: MoveField) -> FormSchema:
             "move_field",
             "move_field requires from.section_uid, from.field_uid, to.section_uid",
         )
-    src_section_uid = uuid.UUID(str(src_section_uid))
-    src_field_uid = uuid.UUID(str(src_field_uid))
-    dst_section_uid = uuid.UUID(str(dst_section_uid))
+    try:
+        src_section_uid = uuid.UUID(str(src_section_uid))
+        src_field_uid = uuid.UUID(str(src_field_uid))
+        dst_section_uid = uuid.UUID(str(dst_section_uid))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise OperationError(
+            -1, "move_field", f"section_uid/field_uid must be valid UUID strings: {exc}"
+        ) from exc
 
     src_si = _section_index_by_uid(form, src_section_uid)
     src_section = form.sections[src_si]
@@ -374,8 +379,13 @@ def _apply_update_field(form: FormSchema, op: UpdateField) -> FormSchema:
     """
     si = _section_index_by_uid(form, op.section_uid)
     container, fi = _locate_field(form.sections[si], op.field_uid)
-    if "field_uid" in op.patch and str(op.patch["field_uid"]) != str(op.field_uid):
-        raise OperationError(-1, "update_field", "field_uid is immutable")
+    if "field_uid" in op.patch:
+        try:
+            patch_uid_matches = uuid.UUID(str(op.patch["field_uid"])) == op.field_uid
+        except (ValueError, AttributeError, TypeError):
+            patch_uid_matches = False
+        if not patch_uid_matches:
+            raise OperationError(-1, "update_field", "field_uid is immutable")
     existing = container[fi].model_dump()
     merged = _deep_merge(existing, op.patch)
     merged["field_uid"] = str(op.field_uid)  # identity pin moves to the UID
@@ -434,8 +444,15 @@ def _apply_duplicate_field(
             "duplicate_field",
             "duplicate_field requires from.section_uid and from.field_uid",
         )
-    src_section_uid = uuid.UUID(str(src_section_uid))
-    src_field_uid = uuid.UUID(str(src_field_uid))
+    try:
+        src_section_uid = uuid.UUID(str(src_section_uid))
+        src_field_uid = uuid.UUID(str(src_field_uid))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise OperationError(
+            -1,
+            "duplicate_field",
+            f"section_uid/field_uid must be valid UUID strings: {exc}",
+        ) from exc
     si = _section_index_by_uid(form, src_section_uid)
     section = form.sections[si]
     field_list, fi = _locate_field(section, src_field_uid)
