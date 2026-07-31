@@ -93,25 +93,25 @@ def setup_form_ui(
         f"{bp}/gallery", _page_wrap(page.gallery, protect=protect_pages)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/schema",
+        f"{bp}/forms/{{form_uid}}/schema",
         _page_wrap(page.view_schema, protect=protect_pages),
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}",
+        f"{bp}/forms/{{form_uid}}",
         _page_wrap(page.render_form, protect=protect_pages),
     )
     app.router.add_post(
-        f"{bp}/forms/{{form_id}}",
+        f"{bp}/forms/{{form_uid}}",
         _page_wrap(page.submit_form, protect=protect_pages),
     )
 
     # Telegram WebApp routes — PUBLIC (no auth).
     app.router.add_get(
-        f"{bp}/forms/{{form_id}}/telegram", telegram.serve_webapp
+        f"{bp}/forms/{{form_uid}}/telegram", telegram.serve_webapp
     )
     # Telegram REST fallback (for WebApp payloads > 4 KB) — public.
     app.router.add_post(
-        f"{bp}/api/v1/forms/{{form_id}}/telegram-submit",
+        f"{bp}/api/v1/forms/{{form_uid}}/telegram-submit",
         telegram.rest_fallback,
     )
 
