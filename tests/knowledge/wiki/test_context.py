@@ -49,7 +49,41 @@ class TestStubLine:
 
     def test_minimal_result(self):
         line = stub_line({"concept_id": "x"})
-        assert line == "- [x] x"
+        assert line == "- [x]"
+
+    def test_omits_title_that_only_repeats_the_id(self):
+        line = stub_line(
+            {
+                "concept_id": "file:parrot/tools/base.py",
+                "title": "parrot/tools/base.py",
+            }
+        )
+        assert line == "- [file:parrot/tools/base.py]"
+
+    def test_keeps_a_title_that_adds_information(self):
+        line = stub_line({"concept_id": "mem-3f32cf69", "title": "Graph sync gotcha"})
+        assert line == "- [mem-3f32cf69] Graph sync gotcha"
+
+    def test_strips_only_the_leading_id_prefix(self):
+        # The path itself contains a second ':' — de-duplication must not
+        # mistake it for the id prefix and mangle the comparison.
+        rid = "file:docs/parrot/summaries/mod:parrot.skills.md"
+        line = stub_line({"concept_id": rid, "title": rid.removeprefix("file:")})
+        assert line == f"- [{rid}]"
+
+    def test_omits_dir_title_that_only_adds_a_trailing_slash(self):
+        # repo_scan emits directory titles as "<relpath>/" against a
+        # "dir:<relpath>" id — the slash is not information.
+        line = stub_line({"concept_id": "dir:tests/knowledge", "title": "tests/knowledge/"})
+        assert line == "- [dir:tests/knowledge]"
+
+    def test_omits_pkg_title_that_only_repeats_the_id(self):
+        line = stub_line({"concept_id": "pkg:parrot.skills", "title": "parrot.skills"})
+        assert line == "- [pkg:parrot.skills]"
+
+    def test_drops_frontmatter_delimiter_lead(self):
+        line = stub_line({"concept_id": "x", "title": "Title", "summary": "---"})
+        assert line == "- [x] Title"
 
 
 class TestPackResults:

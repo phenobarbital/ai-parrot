@@ -12,10 +12,12 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from parrot.knowledge.wiki import cli as cli_module
 from parrot.knowledge.wiki.cli import _changed_files_from_git, wiki
 from parrot.knowledge.wiki.project import (
     config_path,
     load_project_config,
+    wiki_write_lock,
 )
 
 PY_STORE = '"""A tiny key-value store module."""\n\n\nclass Store:\n    """In-memory key-value store."""\n\n    def get(self, key):\n        """Fetch a value."""\n        return key\n'
@@ -45,6 +47,26 @@ def _build(runner: CliRunner, repo: Path, *extra: str):
     )
     assert result.exit_code == 0, result.output
     return result
+
+
+def _store_dir(repo: Path) -> Path:
+    """The directory the writer lock guards — beside the store, not the root."""
+    return load_project_config(repo).storage_path(repo)
+
+
+class TestBuildLock:
+    def test_build_refuses_while_another_writer_holds_the_lock(self, runner, repo):
+        with wiki_write_lock(_store_dir(repo)) as held:
+            assert held is True
+            result = runner.invoke(
+                wiki, ["build", "--path", str(repo), "--no-git"]
+            )
+        assert result.exit_code != 0
+        assert "in progress" in result.output.lower()
+
+    def test_build_releases_the_lock_for_the_next_run(self, runner, repo):
+        _build(runner, repo)
+        _build(runner, repo)
 
 
 class TestBuild:
@@ -288,6 +310,44 @@ class TestUpsert:
         )
         assert result.exit_code == 0
         assert "No wiki-relevant files" in result.output
+
+    def test_upsert_ignores_a_nested_wiki_bundle(self, runner, repo):
+        # Incremental upsert must apply the same guardrail as a full
+        # build: a directory that is itself a wiki export is not content.
+        _build(runner, repo)
+        bundle = repo / "docs" / "legacy_wiki"
+        bundle.mkdir(parents=True, exist_ok=True)
+        (bundle / "wiki_stats.json").write_text("{}", encoding="utf-8")
+        (bundle / "index.md").write_text("# Legacy wiki\n", encoding="utf-8")
+
+        result = runner.invoke(
+            wiki, ["upsert", "docs/legacy_wiki/index.md", "--path", str(repo)]
+        )
+        assert result.exit_code == 0
+        assert "No wiki-relevant files" in result.output
+
+    def test_upsert_skips_while_another_writer_holds_the_lock(
+        self, runner, repo, monkeypatch
+    ):
+        # The git post-commit hook must never stall behind a build that
+        # can run for minutes, nor write the store underneath it.
+        monkeypatch.setattr(cli_module, "UPSERT_LOCK_WAIT_SECONDS", 0.1)
+        _build(runner, repo)
+        with wiki_write_lock(_store_dir(repo)) as held:
+            assert held is True
+            result = runner.invoke(
+                wiki, ["upsert", "pkg/util.py", "--path", str(repo)]
+            )
+        assert result.exit_code == 0
+        assert "in progress" in result.output.lower()
+
+    def test_upsert_proceeds_once_the_lock_is_free(self, runner, repo):
+        _build(runner, repo)
+        with wiki_write_lock(_store_dir(repo)) as held:
+            assert held is True
+        result = runner.invoke(wiki, ["upsert", "pkg/util.py", "--path", str(repo)])
+        assert result.exit_code == 0
+        assert "in progress" not in result.output.lower()
 
     def test_upsert_before_build_is_noop(self, runner, tmp_path):
         (tmp_path / "a.py").write_text("x = 1", encoding="utf-8")

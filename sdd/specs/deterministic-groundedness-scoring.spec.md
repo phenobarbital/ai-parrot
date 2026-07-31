@@ -16,6 +16,19 @@ base_branch: dev
 > (`sdd/specs/pii-detection-redaction.spec.md`) — shares seams and, later,
 > extraction machinery; neither depends on the other to ship.
 
+> **v0.2 — Guardrails repositioning.** This feature is now a **plugin of
+> the unified guardrails infrastructure** (FEAT-396,
+> `sdd/proposals/guardrails-infrastructure.brainstorm.md`). Unchanged:
+> Modules 1–2 (extractors, normalization, `EvidenceIndex`, scorer,
+> precision-aware tolerance, canonical test cases, benchmark gates).
+> Re-targeted: Module 3's seam wiring (bot kwargs, `get_response()`/
+> `ask_stream` hooks, metadata attachment, telemetry) is delivered as a
+> **`GroundednessGuardrail`** — a FLAG-only plugin on the OUTPUT pipeline
+> of `parrot/bots/guardrails/` (its report lands in
+> `AIMessage.metadata["guardrails"]["groundedness"]`). Implementation
+> depends on FEAT-396 `guardrails-core`. Where this spec's integration
+> sections conflict with the guardrails spec, the guardrails spec wins.
+
 ---
 
 ## 1. Motivation & Business Requirements
@@ -502,3 +515,4 @@ class AIMessage(BaseModel):
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-07-22 | Jesús Lara / Claude Code | Initial draft from `deterministic-groundedness-scoring.brainstorm.md` (Option A, prototype-validated) |
+| 0.2 | 2026-07-24 | Jesús Lara / Claude Code | Repositioned as plugin of the unified guardrails infrastructure (FEAT-396): Module 3 seam wiring → `GroundednessGuardrail` (FLAG-only, OUTPUT pipeline); engine unchanged |

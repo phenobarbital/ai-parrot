@@ -36,14 +36,17 @@ from parrot.knowledge.wiki.context import (
     pack_results,
     truncate_to_tokens,
 )
+from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     WikiProjectConfig,
     find_project_root,
     load_project_config,
     save_project_config,
+    wiki_write_lock,
 )
 from parrot.knowledge.wiki.repo_scan import (
+    is_inside_wiki_bundle,
     is_wiki_relevant,
     scan_repository,
 )
@@ -53,6 +56,11 @@ from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 import logging
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
+
+#: How long `upsert` waits for a contended store lock before skipping.
+#: Long enough to outlast a peer upsert (sub-second), short enough that
+#: a commit hook never stalls behind a multi-minute build.
+UPSERT_LOCK_WAIT_SECONDS = 3.0
 
 
 # --------------------------------------------------------------------------
@@ -518,6 +526,7 @@ def _write_build_stats(
         "categories": store_stats.get("categories", {}),
         "okf": okf_report,
         "graph": graph_stats,
+        "languages": {name: s.mode for name, s in all_scanners().items()},
     }
     (output_dir / "wiki_stats.json").write_text(
         json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8",
@@ -653,91 +662,99 @@ def build(
     map, a wiki_stats.json build report, and a README.md entry point.
     """
     root, config = _resolve_project(path_)
-    if name:
-        config.wiki_name = name
-    if backend:
-        config.backend = backend  # type: ignore[assignment]
-
-    if not quiet:
-        click.echo(f"Scanning {root} ...")
-    scan = scan_repository(
-        root,
-        suffixes=config.include_suffixes or None,
-        exclude_dirs=config.exclude_dirs,
-        body_max_chars=config.body_max_chars,
-        max_file_bytes=config.max_file_kb * 1024,
-        use_git=not no_git,
-    )
-
-    output_dir = config.storage_path(root)
-
-    async def _pipeline() -> dict[str, Any]:
-        store = _open_store(root, config)
-        sources = _open_sources(root, config)
-        counts = await _ingest_files(store, sources, root, scan, force=force)
-        await store.upsert_pages(scan.dir_records)
-        await store.add_edges(scan.dir_edges)
-        counts["removed"] = await _prune_removed(store, sources, root, scan)
-        counts["stats"] = await store.stats()
-
-        okf_report: Optional[dict[str, Any]] = None
-        if not no_export:
-            okf_report = await _export_okf(
-                store, output_dir, config.wiki_name,
+    with wiki_write_lock(config.storage_path(root)) as _acquired:
+        if not _acquired:
+            click.echo(
+                "Another wiki writer is in progress (build or upsert) — "
+                "refusing to run two writers against the same store. Wait "
+                "for it to finish, then retry."
             )
-            # Exclude the export output from future scans.
-            try:
-                export_rel = output_dir.resolve().relative_to(root).as_posix()
-            except ValueError:
-                export_rel = None
-            if export_rel and export_rel not in config.exclude_dirs:
-                config.exclude_dirs.append(export_rel)
-        counts["okf"] = okf_report
+            raise SystemExit(1)
+        if name:
+            config.wiki_name = name
+        if backend:
+            config.backend = backend  # type: ignore[assignment]
 
-        graph_stats: Optional[dict[str, Any]] = None
-        if not no_graph:
-            kinds = frozenset(
-                k.strip() for k in graph_kinds.split(",") if k.strip()
-            )
-            graph_stats = await _export_graph_html(
-                store, output_dir, config.wiki_name, kinds,
-            )
-        counts["graph"] = graph_stats
-
-        return counts
-
-    counts = _run(_pipeline())
-    save_project_config(root, config)
-
-    stats = counts["stats"]
-
-    # Write wiki_stats.json + README.md.
-    _write_build_stats(
-        output_dir, config.wiki_name, stats,
-        counts.get("okf"), counts.get("graph"),
-    )
-
-    click.echo(
-        f"Wiki '{config.wiki_name}' built at "
-        f"{output_dir} — "
-        f"{counts['written']} ingested, {counts['unchanged']} unchanged, "
-        f"{counts['removed']} removed; "
-        f"{stats.get('pages', 0)} pages, {stats.get('edges', 0)} edges."
-    )
-    okf = counts.get("okf")
-    if okf and not quiet:
-        click.echo(f"OKF bundle: {okf['files_written']} files exported.")
-    graph = counts.get("graph")
-    if graph and graph.get("exported") and not quiet:
-        click.echo(
-            f"Graph: {graph['nodes']} nodes, {graph['edges']} edges "
-            f"→ {graph['html']}"
+        if not quiet:
+            click.echo(f"Scanning {root} ...")
+        scan = scan_repository(
+            root,
+            suffixes=config.include_suffixes or None,
+            exclude_dirs=config.exclude_dirs,
+            body_max_chars=config.body_max_chars,
+            max_file_bytes=config.max_file_kb * 1024,
+            use_git=not no_git,
         )
-    if scan.skipped and not quiet:
-        click.echo(f"Skipped {len(scan.skipped)} binary/oversized files.")
-        if len(scan.skipped) <= 10:
-            for path in scan.skipped:
-                click.echo(f"  - {path}")
+
+        output_dir = config.storage_path(root)
+
+        async def _pipeline() -> dict[str, Any]:
+            store = _open_store(root, config)
+            sources = _open_sources(root, config)
+            counts = await _ingest_files(store, sources, root, scan, force=force)
+            await store.upsert_pages(scan.dir_records)
+            await store.add_edges(scan.dir_edges)
+            counts["removed"] = await _prune_removed(store, sources, root, scan)
+            counts["stats"] = await store.stats()
+
+            okf_report: Optional[dict[str, Any]] = None
+            if not no_export:
+                okf_report = await _export_okf(
+                    store, output_dir, config.wiki_name,
+                )
+                # Exclude the export output from future scans.
+                try:
+                    export_rel = output_dir.resolve().relative_to(root).as_posix()
+                except ValueError:
+                    export_rel = None
+                if export_rel and export_rel not in config.exclude_dirs:
+                    config.exclude_dirs.append(export_rel)
+            counts["okf"] = okf_report
+
+            graph_stats: Optional[dict[str, Any]] = None
+            if not no_graph:
+                kinds = frozenset(
+                    k.strip() for k in graph_kinds.split(",") if k.strip()
+                )
+                graph_stats = await _export_graph_html(
+                    store, output_dir, config.wiki_name, kinds,
+                )
+            counts["graph"] = graph_stats
+
+            return counts
+
+        counts = _run(_pipeline())
+        save_project_config(root, config)
+
+        stats = counts["stats"]
+
+        # Write wiki_stats.json + README.md.
+        _write_build_stats(
+            output_dir, config.wiki_name, stats,
+            counts.get("okf"), counts.get("graph"),
+        )
+
+        click.echo(
+            f"Wiki '{config.wiki_name}' built at "
+            f"{output_dir} — "
+            f"{counts['written']} ingested, {counts['unchanged']} unchanged, "
+            f"{counts['removed']} removed; "
+            f"{stats.get('pages', 0)} pages, {stats.get('edges', 0)} edges."
+        )
+        okf = counts.get("okf")
+        if okf and not quiet:
+            click.echo(f"OKF bundle: {okf['files_written']} files exported.")
+        graph = counts.get("graph")
+        if graph and graph.get("exported") and not quiet:
+            click.echo(
+                f"Graph: {graph['nodes']} nodes, {graph['edges']} edges "
+                f"→ {graph['html']}"
+            )
+        if scan.skipped and not quiet:
+            click.echo(f"Skipped {len(scan.skipped)} binary/oversized files.")
+            if len(scan.skipped) <= 10:
+                for path in scan.skipped:
+                    click.echo(f"  - {path}")
 
 
 def _changed_files_from_git(root: Path) -> list[str]:
@@ -799,74 +816,90 @@ def upsert(
     next full `wikitoolkit build`.
     """
     root, config = _resolve_project(path_)
-    if not config.is_built(root):
-        if not quiet:
-            click.echo("Wiki not built yet — run `wikitoolkit build` first.")
-        return
+    # Wait out a peer upsert (sub-second) rather than dropping the
+    # commit's files; give up quickly if a multi-minute build holds it.
+    with wiki_write_lock(
+        config.storage_path(root), timeout=UPSERT_LOCK_WAIT_SECONDS
+    ) as _acquired:
+        if not _acquired:
+            if not quiet:
+                click.echo(
+                    "Another wiki writer is in progress (likely a full "
+                    "build) — skipping this upsert; the build will cover "
+                    "these files."
+                )
+            return
+        if not config.is_built(root):
+            if not quiet:
+                click.echo("Wiki not built yet — run `wikitoolkit build` first.")
+            return
 
-    rel_paths = list(paths)
-    if changed:
-        rel_paths.extend(_changed_files_from_git(root))
-    if not rel_paths:
-        if not quiet:
-            click.echo("Nothing to upsert (no paths given).")
-        return
+        rel_paths = list(paths)
+        if changed:
+            rel_paths.extend(_changed_files_from_git(root))
+        if not rel_paths:
+            if not quiet:
+                click.echo("Nothing to upsert (no paths given).")
+            return
 
-    normalized: list[str] = []
-    for rel in rel_paths:
-        p = Path(rel)
-        if p.is_absolute():
-            try:
-                rel = p.resolve().relative_to(root).as_posix()
-            except ValueError:
-                continue
-        rel = PurePosixPath(rel).as_posix()
-        # Same selection filter as full discovery — the two paths must
-        # never disagree about what belongs in the wiki.
-        if is_wiki_relevant(
-            rel,
+        normalized: list[str] = []
+        for rel in rel_paths:
+            p = Path(rel)
+            if p.is_absolute():
+                try:
+                    rel = p.resolve().relative_to(root).as_posix()
+                except ValueError:
+                    continue
+            rel = PurePosixPath(rel).as_posix()
+            # Same selection filter as full discovery — the two paths must
+            # never disagree about what belongs in the wiki. The bundle
+            # guardrail is checked per path (ancestor walk) rather than by
+            # discovering every bundle in the repo, so a docs-only commit
+            # keeps its O(1) fast path.
+            if is_wiki_relevant(
+                rel,
+                suffixes=config.include_suffixes or None,
+                exclude_dirs=config.exclude_dirs,
+            ) and not is_inside_wiki_bundle(root, rel):
+                normalized.append(rel)
+
+        existing = [rel for rel in normalized if (root / rel).is_file()]
+        deleted = [rel for rel in normalized if not (root / rel).is_file()]
+        if not existing and not deleted:
+            if not quiet:
+                click.echo("No wiki-relevant files in the given set.")
+            return
+
+        scan = scan_repository(
+            root,
             suffixes=config.include_suffixes or None,
             exclude_dirs=config.exclude_dirs,
-        ):
-            normalized.append(rel)
-
-    existing = [rel for rel in normalized if (root / rel).is_file()]
-    deleted = [rel for rel in normalized if not (root / rel).is_file()]
-    if not existing and not deleted:
-        if not quiet:
-            click.echo("No wiki-relevant files in the given set.")
-        return
-
-    scan = scan_repository(
-        root,
-        suffixes=config.include_suffixes or None,
-        exclude_dirs=config.exclude_dirs,
-        body_max_chars=config.body_max_chars,
-        max_file_bytes=config.max_file_kb * 1024,
-        rel_paths=existing,
-    )
-
-    async def _pipeline() -> dict[str, int]:
-        store = _open_store(root, config)
-        sources = _open_sources(root, config)
-        counts = await _ingest_files(store, sources, root, scan, force=True)
-        removed = 0
-        for rel in deleted:
-            uri = str((root / rel).resolve())
-            source_id = await asyncio.to_thread(sources.find_by_uri, uri)
-            if source_id:
-                await store.replace_source_slice(source_id, [], [])
-                await asyncio.to_thread(sources.remove_source, source_id)
-                removed += 1
-        counts["removed"] = removed
-        return counts
-
-    counts = _run(_pipeline())
-    if not quiet:
-        click.echo(
-            f"Upserted {counts['written']} page(s), "
-            f"removed {counts['removed']}."
+            body_max_chars=config.body_max_chars,
+            max_file_bytes=config.max_file_kb * 1024,
+            rel_paths=existing,
         )
+
+        async def _pipeline() -> dict[str, int]:
+            store = _open_store(root, config)
+            sources = _open_sources(root, config)
+            counts = await _ingest_files(store, sources, root, scan, force=True)
+            removed = 0
+            for rel in deleted:
+                uri = str((root / rel).resolve())
+                source_id = await asyncio.to_thread(sources.find_by_uri, uri)
+                if source_id:
+                    await store.replace_source_slice(source_id, [], [])
+                    await asyncio.to_thread(sources.remove_source, source_id)
+                    removed += 1
+            counts["removed"] = removed
+            return counts
+
+        counts = _run(_pipeline())
+        if not quiet:
+            click.echo(
+                f"Upserted {counts['written']} page(s), "
+                f"removed {counts['removed']}."
+            )
 
 
 @wiki.command()
@@ -1057,6 +1090,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
         "stats": stats,
         "sources": len(entries),
         "stale_sources": len(stale),
+        "languages": {name: s.mode for name, s in all_scanners().items()},
     }
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -1070,6 +1104,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
         f"~{stats.get('total_tokens', 0)} tokens"
     )
     click.echo(f"Categories: {stats.get('categories', {})}")
+    click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")

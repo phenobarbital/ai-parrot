@@ -9,8 +9,12 @@ identically for each.  All tests use real on-disk state under
 for real.
 """
 
+import os
+import sqlite3
 from pathlib import Path
+from unittest import mock
 
+import aiosqlite
 import pytest
 
 from parrot.knowledge.wiki.store import (
@@ -359,3 +363,224 @@ class TestRebuildFromTree:
         assert report["pages_written"] == 1
         page = await store.get_page("0000")  # falls back to node_id identity
         assert page is not None and page["body"] == ""
+
+
+_skip_root = pytest.mark.skipif(
+    os.geteuid() == 0, reason="chmod is a no-op for root"
+)
+
+
+class TestReadOnlyFallback:
+    """An existing SQLite plane stays queryable on a read-only filesystem.
+
+    Read-only review sandboxes (e.g. `codex exec review`) deny all writes;
+    the WAL journal + schema replay used to make even pure queries die
+    with ``sqlite3.OperationalError: unable to open database file``.
+    """
+
+    @pytest.fixture()
+    async def ro_plane(self, tmp_path: Path):
+        """A populated plane whose directory is then made read-only."""
+        store = create_wiki_store(tmp_path, wiki_name="ro", backend="sqlite")
+        await store.upsert_pages(
+            [_page("ro-page", body="# ro\n\nneedle haystack content")]
+        )
+        db = tmp_path / "wiki.db"
+        db.chmod(0o444)
+        tmp_path.chmod(0o555)
+        try:
+            yield tmp_path
+        finally:
+            tmp_path.chmod(0o755)
+            db.chmod(0o644)
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_reads_survive_readonly_fs(self, ro_plane: Path):
+        store = create_wiki_store(ro_plane, wiki_name="ro", backend="sqlite")
+        page = await store.get_page("ro-page")
+        assert page is not None and "needle" in page["body"]
+        hits = await store.search_fts("needle", limit=5)
+        assert [h["concept_id"] for h in hits] == ["ro-page"]
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_writes_fail_with_readonly_error(self, ro_plane: Path):
+        store = create_wiki_store(ro_plane, wiki_name="ro", backend="sqlite")
+        await store.get_page("ro-page")  # flips the store into ro mode
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            await store.upsert_pages([_page("nope")])
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_missing_db_still_raises(self, tmp_path: Path):
+        """A genuinely absent database is never masked by the fallback."""
+        sub = tmp_path / "empty"
+        sub.mkdir()
+        sub.chmod(0o555)
+        try:
+            store = create_wiki_store(sub, wiki_name="ro", backend="sqlite")
+            with pytest.raises(sqlite3.OperationalError):
+                await store.get_page("anything")
+        finally:
+            sub.chmod(0o755)
+
+    @pytest.mark.asyncio
+    async def test_transient_errors_propagate_and_recover(self, tmp_path: Path):
+        """A lock/transient failure propagates; the store stays writable."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        fresh = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+
+        def locked(self, sql, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+        with mock.patch.object(aiosqlite.Connection, "execute", locked):
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                await fresh.get_page("p1")
+        # The store recovers once the contention is gone — including writes.
+        assert await fresh.get_page("p1") is not None
+        await fresh.upsert_pages([_page("p2")])
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_longlived_instance_survives_readonly_transition(
+        self, tmp_path: Path
+    ):
+        """A store that already served writes keeps serving reads after
+        the filesystem turns read-only mid-life (remount, snapshot swap)
+        — the presence probe forces the lazy open before yield on every
+        connection, so the fallback is reachable for the SAME instance."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        assert await store.get_page("p1") is not None
+        (tmp_path / "wiki.db").chmod(0o444)
+        tmp_path.chmod(0o555)
+        try:
+            page = await store.get_page("p1")  # same instance, degraded
+            assert page is not None and "needle" not in (page["body"] or "")
+        finally:
+            tmp_path.chmod(0o755)
+            (tmp_path / "wiki.db").chmod(0o644)
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_writable_again_heals_write_path(self, tmp_path: Path):
+        """Degradation is not sticky: a plane that becomes writable again
+        serves writes without a new store instance."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        (tmp_path / "wiki.db").chmod(0o444)
+        tmp_path.chmod(0o555)
+        try:
+            fresh = create_wiki_store(
+                tmp_path, wiki_name="w", backend="sqlite"
+            )
+            assert await fresh.get_page("p1") is not None  # degraded read
+        finally:
+            tmp_path.chmod(0o755)
+            (tmp_path / "wiki.db").chmod(0o644)
+        await fresh.upsert_pages([_page("p2")])
+        assert await fresh.get_page("p2") is not None
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_concurrent_writer_served_by_locking_ro_path(
+        self, tmp_path: Path
+    ):
+        """With live -wal/-shm sidecars from a real writer, reads go
+        through plain mode=ro (full locking) and SEE the WAL content."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        writer = sqlite3.connect(tmp_path / "wiki.db")
+        try:
+            writer.execute(
+                "UPDATE pages SET summary = 'from-writer'"
+                " WHERE concept_id = 'p1'"
+            )
+            writer.commit()  # committed into the WAL, not yet checkpointed
+            assert (tmp_path / "wiki.db-wal").stat().st_size > 0
+            (tmp_path / "wiki.db").chmod(0o444)
+            tmp_path.chmod(0o555)
+            fresh = create_wiki_store(
+                tmp_path, wiki_name="w", backend="sqlite"
+            )
+            page = await fresh.get_page("p1")
+            assert page is not None
+            assert page["summary"] == "from-writer"
+        finally:
+            tmp_path.chmod(0o755)
+            (tmp_path / "wiki.db").chmod(0o644)
+            writer.close()
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_live_wal_refuses_immutable_fallback(self, tmp_path: Path):
+        """A non-empty -wal holds committed data an immutable reader would
+        silently miss — the store must raise instead of serving it."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        (tmp_path / "wiki.db-wal").write_bytes(b"\x00" * 32)
+        (tmp_path / "wiki.db").chmod(0o444)
+        tmp_path.chmod(0o555)
+        try:
+            fresh = create_wiki_store(
+                tmp_path, wiki_name="w", backend="sqlite"
+            )
+            with pytest.raises(sqlite3.OperationalError):
+                await fresh.get_page("p1")
+        finally:
+            tmp_path.chmod(0o755)
+            (tmp_path / "wiki.db").chmod(0o644)
+
+    @pytest.mark.asyncio
+    async def test_schema_replay_skipped_when_schema_present(
+        self, tmp_path: Path
+    ):
+        """The schema replay runs only when the presence probe misses."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        scripts: list[str] = []
+        orig = aiosqlite.Connection.executescript
+
+        def spy(self, sql):
+            scripts.append(sql)
+            return orig(self, sql)
+
+        with mock.patch.object(aiosqlite.Connection, "executescript", spy):
+            assert await store.get_page("p1") is not None
+        assert scripts == []
+
+    @pytest.mark.asyncio
+    async def test_replaced_database_heals(self, tmp_path: Path):
+        """An externally deleted/replaced database is re-initialized by
+        the same store instance instead of failing with 'no such table'."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        for suffix in ("", "-wal", "-shm"):
+            (tmp_path / f"wiki.db{suffix}").unlink(missing_ok=True)
+        assert await store.get_page("p1") is None  # fresh plane, no crash
+        await store.upsert_pages([_page("p2")])
+        assert await store.get_page("p2") is not None
+
+    @_skip_root
+    @pytest.mark.asyncio
+    async def test_hot_rollback_journal_refuses_immutable(
+        self, tmp_path: Path
+    ):
+        """A hot -journal is refused like a live WAL — an immutable read
+        would serve un-rolled-back data."""
+        store = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await store.upsert_pages([_page("p1")])
+        (tmp_path / "wiki.db-journal").write_bytes(b"\x00" * 32)
+        (tmp_path / "wiki.db").chmod(0o444)
+        tmp_path.chmod(0o555)
+        try:
+            fresh = create_wiki_store(
+                tmp_path, wiki_name="w", backend="sqlite"
+            )
+            with pytest.raises(sqlite3.OperationalError):
+                await fresh.get_page("p1")
+        finally:
+            tmp_path.chmod(0o755)
+            (tmp_path / "wiki.db").chmod(0o644)
