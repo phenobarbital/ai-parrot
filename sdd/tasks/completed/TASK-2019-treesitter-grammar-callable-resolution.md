@@ -297,10 +297,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session (Opus 5), with Emmanuel Arroyo
+**Date**: 2026-07-31
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
 
-**Deviations from spec**: none | describe if any
+`_build_parser` now resolves the grammar callable from a new
+`_GRAMMAR_CALLABLES` table instead of hardcoding `grammar_module.language()`.
+`language` is listed first for every language, so the single-grammar wheels
+(`javascript`, `rust`) resolve exactly as before; `typescript` and `php` fall
+through to `language_typescript` / `language_php`. `_DEFAULT_GRAMMAR_CALLABLES`
+covers any language added to `_GRAMMAR_MODULES` without a table entry. Each
+candidate is attempted under its own guard, so a callable that exists but fails
+to build (e.g. an ABI mismatch) is skipped rather than aborting the search — one
+broken callable can never mask a working one. A debug line records which
+callable succeeded; exhausting every candidate raises an `AttributeError` that
+the pre-existing outer `except Exception` converts to the usual `None`
+degradation, so the never-raising contract is unchanged.
+
+Measured before/after with the wheels installed:
+
+```
+                  before        after
+typescript        None          <tree_sitter.Parser>
+php               None          <tree_sitter.Parser>
+javascript        <Parser>      <Parser>          (unchanged)
+```
+
+Tests: `test_treesitter.py` goes from 3 to 12 tests. Beyond the two the task
+required, the resolution *order* is pinned deterministically
+(`test_build_parser_prefers_plain_language` asserts `language()` is called and
+`language_typescript()` is not) using a `SimpleNamespace` stand-in injected via
+`sys.modules` plus a real capsule borrowed from `tree_sitter_javascript` — this
+proves the no-regression guarantee without depending on which wheels happen to
+be installed.
+
+Added a `clear_parser_cache` fixture that empties `_PARSER_CACHE` **before and
+after** each test. The pre-existing `test_get_parser_missing_dep_returns_none`
+leaves `_PARSER_CACHE["php"] = None` behind (monkeypatch restores
+`_GRAMMAR_MODULES` but not the cache), which would have made the new php
+assertion pass or fail depending on collection order.
+
+Verification (`~/.venvs/parrot-lite`, per the task's local recipe):
+- `tests/knowledge/wiki/languages/` — **78 passed, 1 skipped** (baseline on
+  clean `dev` was 70 passed)
+- the 1 skip is `rust`: `tree-sitter-rust` is **not installed** in that venv, so
+  the rust non-regression assertion is guarded by a wheel check rather than
+  asserting a `Parser`
+- wider `tests/knowledge/wiki/` — 166 failed / 341 passed, **identical failure
+  count to clean `dev`** (166 failed / 333 passed). Those failures are
+  pre-existing `parrot-lite` environment limits, not regressions; only
+  `languages/` is self-contained in that venv.
+- `tests/knowledge/wiki/test_integration.py` does not collect —
+  `ModuleNotFoundError: pytest_asyncio`, also identical on clean `dev`
+- `ruff check` on both changed files — **All checks passed** (run via `uvx`;
+  ruff is not installed in `.venv` or `parrot-lite`)
+
+CI was **not** consulted: `dev` has been red since 2026-07-27 on an unrelated
+`pillow-heif` conflict (`ai-parrot[all]` wants `>=1.3.0`, `flowtask>=5.12.3`
+pins `==0.22.0`) that kills `uv sync` before any test runs.
+
+**Deviations from spec**: none. Scope held to `treesitter.py` + its test file;
+`javascript.py` untouched.
+
+**Follow-up for the owner** (spec §7, unchanged by this task): the reported
+`mode` for existing PHP/TypeScript repos will change once TASK-2023 tightens
+`JavaScriptScanner.mode`, because those files were silently on the regex path
+until this fix. That is the correction, not a regression. Worth raising with
+Jesús Lara as a FEAT-394 follow-up — lead with the before/after table above,
+not the diagnosis.
