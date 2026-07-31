@@ -87,6 +87,13 @@ search — never as a primary key").
   that must populate it — TASK-1980 only touches `blob_storage.py` itself).
   Keep `form_id=form.form_id` too (kept for backwards-compat metadata per
   spec's Data Models section).
+  **CONFIRMED during TASK-1980**: `BlobMetadata.form_uid` is a REQUIRED
+  field (no default) — this call site currently raises `ValidationError`
+  in addition to the pre-existing `match_info["form_id"]` `KeyError` (this
+  endpoint has been completely non-functional since TASK-1976's route
+  rename; fixing the match_info key alone is not sufficient — form_uid=
+  MUST be added to the `BlobMetadata(...)` call in the same pass, or the
+  endpoint will still 500 with `ValidationError` instead of `KeyError`).
 
 ### 3. `api/audio_ws.py`
 - `AudioFormWSHandler.handle_websocket()`: `request.match_info.get("form_id", "")`
