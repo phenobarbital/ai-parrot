@@ -121,10 +121,27 @@ CompletionUsage.from_groq(usage: Any)                # line 118
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Instrumented `groq.py::ask()` following the same pattern as
+TASK-2034/2035: round 1 is the initial request (line ~399), timed via
+`_lc_round_t0_groq`; a local `_lc_groq_extract_usage()` helper builds
+`(CompletionUsage, raw_usage_dict)` from `response.usage` via
+`CompletionUsage.from_groq` + `usage_obj.model_dump()`. Each loop
+iteration accumulates via `+`, collects round-scoped tool names, and
+calls `self._emit_round_event(...)` after tool execution (before the
+continuation SDK call). Post-loop, the accumulated total overrides
+`ai_message.usage` and sets `extra_usage["rounds"]` when `> 1`.
+Confirmed Groq's timing fields (`completion_time`) survive accumulation
+via `CompletionUsage.__add__`'s None-aware sum (explicit test: two rounds
+at 0.5s + a third → 1.5s). Created
+`tests/unit/clients/test_groq_multiround_usage.py` (4 tests: 3-round
+accumulation incl. timing-field sum, single-round no-event, after-call
+totals, missing-usage round) — all pass on first run. Ran
+`tests/unit/clients/` (40 passed, `-k groq` subset included).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. Note (discovered while writing tests, not
+a code change): like `OpenAIClient.ask()`, `GroqClient.ask()` doesn't call
+`self._ensure_client()` before using `self.client` — pre-existing,
+unrelated to this task. Tests use the supported `get_client()` +
+`_ensure_client()` mechanism.
