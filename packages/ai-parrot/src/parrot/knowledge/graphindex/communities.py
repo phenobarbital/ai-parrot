@@ -1,15 +1,21 @@
-"""Louvain community detection for GraphIndex (FEAT-191).
+"""Community detection for GraphIndex (FEAT-191, Leiden added FEAT-401).
 
-Runs Louvain modularity-maximisation over the assembled
-``rustworkx.PyDiGraph`` via networkx (rustworkx 0.17 has no community
-detection), computes per-community cohesion + global modularity, and
-writes a stable ``community_id`` onto every node's ``domain_tags``
-so the assignment round-trips through
+Runs Leiden (default) or Louvain modularity-maximisation over the
+assembled ``rustworkx.PyDiGraph``, computes per-community cohesion +
+global modularity, and writes a stable ``community_id`` onto every
+node's ``domain_tags`` so the assignment round-trips through
 :func:`parrot.knowledge.graphindex.persist._node_to_doc` to ArangoDB
 with zero persist-layer changes.
 
+Louvain runs via networkx (rustworkx 0.17 has no community detection).
+Leiden (FEAT-401) runs via the optional ``leidenalg`` + ``python-igraph``
+dependencies (``pip install ai-parrot[leiden]``) and guarantees
+internally well-connected communities; when those packages are not
+importable, :func:`detect_communities` silently falls back to Louvain
+with a logged warning.
+
 Optionally consumes :class:`SignalRelevanceConfig` (FEAT-190) to weight
-edges by ``signal_relevance(a, b).combined`` before Louvain runs, so
+edges by ``signal_relevance(a, b).combined`` before detection runs, so
 community boundaries respect the signal model rather than raw edge
 counts. The FEAT-190 import is lazy — FEAT-191 ships standalone.
 """
@@ -19,15 +25,18 @@ import hashlib
 import logging
 import re
 from collections import Counter
-from typing import TYPE_CHECKING, Iterable, Optional
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import rustworkx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from parrot.knowledge.graphindex.schema import UniversalNode
 
 if TYPE_CHECKING:
+    import igraph
+
     from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
 
 logger = logging.getLogger(__name__)
@@ -74,7 +83,13 @@ class Community(BaseModel):
 
 
 class CommunitiesResult(BaseModel):
-    """Full Louvain partition + per-community metadata."""
+    """Full partition + per-community metadata.
+
+    Args:
+        algorithm: Which algorithm produced this partition — ``"leiden"``
+            or ``"louvain"`` (FEAT-401). Defaults to ``"louvain"`` for
+            backward compatibility with pre-FEAT-401 callers.
+    """
 
     modularity: float
     resolution: float
@@ -82,6 +97,22 @@ class CommunitiesResult(BaseModel):
     weighted: bool
     communities: list[Community]
     node_to_community: dict[str, str]
+    algorithm: str = "louvain"
+
+    model_config = ConfigDict(frozen=True)
+
+
+class HierarchicalCommunitiesResult(BaseModel):
+    """Multi-resolution Leiden/Louvain partitions (FEAT-401).
+
+    Args:
+        resolutions: The resolutions swept, ascending.
+        levels: One :class:`CommunitiesResult` per resolution, in the
+            same order as ``resolutions``.
+    """
+
+    resolutions: list[float]
+    levels: list[CommunitiesResult]
 
     model_config = ConfigDict(frozen=True)
 
@@ -179,8 +210,8 @@ def _stable_community_id(member_node_ids: Iterable[str]) -> str:
 def _to_undirected_networkx(
     graph: rustworkx.PyDiGraph,
     nodes: list[UniversalNode],
-    signal_config: Optional["SignalRelevanceConfig"] = None,
-    embedder: Optional[object] = None,
+    signal_config: SignalRelevanceConfig | None = None,
+    embedder: object | None = None,
 ) -> nx.Graph:
     """Build an undirected networkx view of ``graph``.
 
@@ -214,7 +245,7 @@ def _to_undirected_networkx(
     weight_fn = _build_weight_fn(graph, nodes, signal_config, embedder)
 
     seen_pairs: set[tuple[str, str]] = set()
-    for _eidx, (src_idx, tgt_idx, _payload) in graph.edge_index_map().items():
+    for src_idx, tgt_idx, _payload in graph.edge_index_map().values():
         a = idx_to_node_id.get(src_idx)
         b = idx_to_node_id.get(tgt_idx)
         if not a or not b or a == b:
@@ -236,8 +267,8 @@ def _to_undirected_networkx(
 def _build_weight_fn(
     graph: rustworkx.PyDiGraph,
     nodes: list[UniversalNode],
-    signal_config: Optional["SignalRelevanceConfig"],
-    embedder: Optional[object],
+    signal_config: SignalRelevanceConfig | None,
+    embedder: object | None,
 ):
     """Return a (a, b) → float weight function, or None for unweighted."""
     if signal_config is None:
@@ -265,6 +296,130 @@ def _build_weight_fn(
         return max(0.001, rel.combined)
 
     return _weight
+
+
+# ---------------------------------------------------------------------------
+# rustworkx → igraph conversion (Leiden, FEAT-401)
+# ---------------------------------------------------------------------------
+
+
+def _to_igraph(
+    graph: rustworkx.PyDiGraph,
+    nodes: list[UniversalNode],
+    signal_config: SignalRelevanceConfig | None = None,
+    embedder: object | None = None,
+) -> tuple[igraph.Graph, list[str]]:
+    """Build an undirected igraph view of ``graph`` for Leiden (FEAT-401).
+
+    Mirrors :func:`_to_undirected_networkx`: directed a→b and b→a
+    collapse into one undirected edge (max weight wins when both
+    directions exist); isolated nodes are added explicitly so
+    ``leidenalg`` places them in their own singleton community, same as
+    the Louvain path.
+
+    ``igraph`` is imported lazily by the caller — this function assumes
+    it is already importable.
+
+    Args:
+        graph: The assembled PyDiGraph.
+        nodes: The UniversalNode list (forwarded to the signal-weight
+            lookup; not mutated).
+        signal_config: Optional FEAT-190 config; when set, edges are
+            weighted by ``signal_relevance(a, b).combined``.
+        embedder: Optional embedder forwarded to FEAT-190 when computing
+            edge weights (ignored unless ``signal_config`` is set).
+
+    Returns:
+        A tuple of ``(igraph.Graph, vertex_node_ids)`` where
+        ``vertex_node_ids[i]`` is the ``node_id`` of igraph vertex
+        ``i`` — needed to map ``leidenalg`` partition membership back
+        onto :class:`UniversalNode` ids.
+    """
+    import igraph  # lazy — optional dependency (FEAT-401)
+
+    idx_to_node_id: dict[int, str] = {}
+    vertex_node_ids: list[str] = []
+    for idx in graph.node_indices():
+        payload = graph[idx]
+        if not isinstance(payload, dict):
+            continue
+        node_id = payload.get("node_id")
+        if not node_id:
+            continue
+        idx_to_node_id[idx] = node_id
+        vertex_node_ids.append(node_id)
+
+    node_id_to_vertex = {nid: i for i, nid in enumerate(vertex_node_ids)}
+
+    # Optionally pre-compute per-pair signal weights.
+    weight_fn = _build_weight_fn(graph, nodes, signal_config, embedder)
+
+    edge_weight: dict[tuple[str, str], float] = {}
+    for src_idx, tgt_idx, _payload in graph.edge_index_map().values():
+        a = idx_to_node_id.get(src_idx)
+        b = idx_to_node_id.get(tgt_idx)
+        if not a or not b or a == b:
+            continue
+        key = (a, b) if a < b else (b, a)
+        w = weight_fn(a, b) if weight_fn is not None else 1.0
+        if key in edge_weight:
+            # Edge already added (the reverse direction or a parallel
+            # edge). Keep the larger weight.
+            edge_weight[key] = max(edge_weight[key], w)
+        else:
+            edge_weight[key] = w
+
+    ig_graph = igraph.Graph()
+    ig_graph.add_vertices(len(vertex_node_ids))
+    edges = [(node_id_to_vertex[a], node_id_to_vertex[b]) for a, b in edge_weight]
+    ig_graph.add_edges(edges)
+    ig_graph.es["weight"] = list(edge_weight.values())
+
+    return ig_graph, vertex_node_ids
+
+
+def _run_leiden(
+    graph: rustworkx.PyDiGraph,
+    nodes: list[UniversalNode],
+    resolution: float,
+    seed: int,
+    signal_config: SignalRelevanceConfig | None,
+    embedder: object | None,
+) -> list[set[str]] | None:
+    """Run Leiden detection, or return ``None`` when unavailable.
+
+    Returns ``None`` (rather than raising) when ``leidenalg`` /
+    ``python-igraph`` are not importable, so :func:`detect_communities`
+    can fall back to Louvain with a logged warning.
+    """
+    try:
+        import leidenalg
+    except ImportError:
+        logger.warning(
+            "communities: algorithm='leiden' requested but 'leidenalg' "
+            "(and/or 'python-igraph') is not installed — falling back "
+            "to Louvain. Install with `pip install ai-parrot[leiden]`."
+        )
+        return None
+
+    ig_graph, vertex_node_ids = _to_igraph(
+        graph, nodes, signal_config=signal_config, embedder=embedder,
+    )
+    if ig_graph.vcount() == 0:
+        return []
+
+    partition = leidenalg.find_partition(
+        ig_graph,
+        leidenalg.RBConfigurationVertexPartition,
+        weights="weight",
+        resolution_parameter=resolution,
+        seed=seed,
+    )
+
+    grouped: dict[int, set[str]] = {}
+    for vertex_idx, community_idx in enumerate(partition.membership):
+        grouped.setdefault(community_idx, set()).add(vertex_node_ids[vertex_idx])
+    return list(grouped.values())
 
 
 # ---------------------------------------------------------------------------
@@ -352,49 +507,74 @@ def detect_communities(
     nodes: list[UniversalNode],
     resolution: float = 1.0,
     seed: int = 42,
-    signal_config: Optional["SignalRelevanceConfig"] = None,
-    embedder: Optional[object] = None,
+    signal_config: SignalRelevanceConfig | None = None,
+    embedder: object | None = None,
     write_back_to_nodes: bool = True,
+    algorithm: str = "leiden",
 ) -> CommunitiesResult:
-    """Run Louvain community detection on the assembled graph.
+    """Run community detection on the assembled graph (FEAT-401).
 
     Args:
         graph: The assembled PyDiGraph.
         nodes: The UniversalNode list; mutated in-place when
             ``write_back_to_nodes=True``.
-        resolution: Louvain γ resolution parameter. >1.0 finds smaller
-            (tighter) communities; <1.0 finds larger ones.
+        resolution: Resolution parameter (Louvain γ / Leiden
+            ``resolution_parameter``). >1.0 finds smaller (tighter)
+            communities; <1.0 finds larger ones.
         seed: RNG seed for deterministic results across builds.
         signal_config: Optional FEAT-190 config; when set, edges are
             weighted by ``signal_relevance(a, b).combined`` before
-            Louvain runs.
+            detection runs.
         embedder: Optional embedder forwarded to FEAT-190 when computing
             edge weights (ignored unless ``signal_config`` is set).
         write_back_to_nodes: When True (default), writes
             ``domain_tags['community_id']`` into every node and
             ``domain_tags['community_centroid']=True`` for each centroid.
+        algorithm: ``"leiden"`` (default) or ``"louvain"``. Leiden
+            guarantees internally well-connected communities and
+            requires the optional ``leidenalg`` + ``python-igraph``
+            dependencies (``pip install ai-parrot[leiden]``); when they
+            are not importable, silently falls back to Louvain with a
+            logged warning. ``"louvain"`` always uses the existing
+            networkx code path (pre-FEAT-401 behaviour).
 
     Returns:
         :class:`CommunitiesResult` with global modularity, the
-        partition, and a `node_id → community_id` lookup.
+        partition, the algorithm that actually ran, and a
+        `node_id → community_id` lookup.
     """
     nx_graph = _to_undirected_networkx(
         graph, nodes, signal_config=signal_config, embedder=embedder,
     )
 
-    partition_sets: list[set[str]] = list(
-        nx.community.louvain_communities(
-            nx_graph,
-            weight="weight",
-            resolution=resolution,
-            seed=seed,
+    used_algorithm = "louvain"
+    partition_sets: list[set[str]] = []
+
+    if algorithm == "leiden":
+        leiden_partition = _run_leiden(
+            graph, nodes, resolution=resolution, seed=seed,
+            signal_config=signal_config, embedder=embedder,
         )
-    )
+        if leiden_partition is not None:
+            partition_sets = leiden_partition
+            used_algorithm = "leiden"
+
+    if used_algorithm == "louvain":
+        partition_sets = list(
+            nx.community.louvain_communities(
+                nx_graph,
+                weight="weight",
+                resolution=resolution,
+                seed=seed,
+            )
+        )
+
     if not partition_sets:
         return CommunitiesResult(
             modularity=0.0, resolution=resolution, seed=seed,
             weighted=signal_config is not None,
             communities=[], node_to_community={},
+            algorithm=used_algorithm,
         )
 
     global_q = float(
@@ -453,6 +633,78 @@ def detect_communities(
         weighted=signal_config is not None,
         communities=communities,
         node_to_community=node_to_community,
+        algorithm=used_algorithm,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hierarchical / multi-resolution communities (FEAT-401)
+# ---------------------------------------------------------------------------
+
+
+#: Default resolutions swept by detect_hierarchical_communities. Fixed
+#: rather than auto-tuned (see spec §8 Open Questions) — deterministic,
+#: debuggable, and callers can override via the ``resolutions`` param.
+_DEFAULT_HIERARCHICAL_RESOLUTIONS: list[float] = [0.25, 0.5, 1.0, 2.0, 4.0]
+
+#: Below this node count, hierarchical detection short-circuits to a
+#: single resolution (a multi-resolution sweep is not meaningful on a
+#: tiny graph and only adds noise).
+_HIERARCHICAL_TINY_GRAPH_THRESHOLD = 20
+
+
+def detect_hierarchical_communities(
+    graph: rustworkx.PyDiGraph,
+    nodes: list[UniversalNode],
+    resolutions: list[float] | None = None,
+    seed: int = 42,
+    signal_config: SignalRelevanceConfig | None = None,
+    embedder: object | None = None,
+) -> HierarchicalCommunitiesResult:
+    """Run community detection at multiple resolutions (FEAT-401).
+
+    Uses Leiden's native recursive refinement (falling back to Louvain
+    per-resolution when ``leidenalg`` is unavailable, same as
+    :func:`detect_communities`) to expose hierarchical / multi-scale
+    community structure.
+
+    Args:
+        graph: The assembled PyDiGraph.
+        nodes: The UniversalNode list. Never mutated by this function —
+            each resolution runs with ``write_back_to_nodes=False``
+            since a node cannot hold more than one community assignment
+            per hierarchy level.
+        resolutions: Resolutions to sweep, ascending. Defaults to
+            ``[0.25, 0.5, 1.0, 2.0, 4.0]``; short-circuits to ``[1.0]``
+            when ``nodes`` has fewer than 20 entries. Explicit values
+            are never short-circuited, even for tiny graphs.
+        seed: RNG seed forwarded to every resolution's detection run.
+        signal_config: Optional FEAT-190 config forwarded unchanged.
+        embedder: Optional embedder forwarded unchanged.
+
+    Returns:
+        :class:`HierarchicalCommunitiesResult` with one
+        :class:`CommunitiesResult` per resolution, sorted ascending.
+    """
+    if resolutions is None:
+        if len(nodes) < _HIERARCHICAL_TINY_GRAPH_THRESHOLD:
+            resolutions = [1.0]
+        else:
+            resolutions = list(_DEFAULT_HIERARCHICAL_RESOLUTIONS)
+
+    sorted_resolutions = sorted(resolutions)
+    levels = [
+        detect_communities(
+            graph, nodes,
+            resolution=res, seed=seed,
+            signal_config=signal_config, embedder=embedder,
+            write_back_to_nodes=False,
+        )
+        for res in sorted_resolutions
+    ]
+    return HierarchicalCommunitiesResult(
+        resolutions=sorted_resolutions,
+        levels=levels,
     )
 
 
