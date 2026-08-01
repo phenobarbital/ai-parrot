@@ -141,4 +141,42 @@ if config.storage_backend == "arangodb":
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added an `"arangodb"` branch to `create_wiki_store()` in `store.py`
+(signature extended with `**kwargs` for `arango_params`/`database`/
+`text_analyzer`, lazily importing `ArangoDBWikiStore`), exported
+`ArangoDBWikiStore` from `parrot.knowledge.wiki.__init__` via
+`_EXPORT_MODULES`, and wired `LLMWikiToolkit.__init__` (`toolkit.py`) to
+construct `ArangoDBWikiStore` directly (bypassing the factory) when
+`config.storage_backend == "arangodb"`.
+
+**Design decision** — `resolve_arango_params()` (TASK-2058) takes a
+`WikiProjectConfig`, but `LLMWikiToolkit` is constructed with a
+`WikiConfig` (no arango-specific fields, by design — only
+`WikiProjectConfig`/`.parrot/wiki.json` carries them). Rather than adding
+arango fields to `WikiConfig` (out of this task's scope) or changing
+`resolve_arango_params()`'s signature (would violate TASK-2058's already-
+implemented contract), the toolkit wiring constructs a minimal
+`WikiProjectConfig(wiki_name=config.wiki_name)` just to reuse
+`resolve_arango_params()` unchanged — giving the same `ARANGODB_*`
+env-var resolution with sensible defaults, no new fields, no signature
+changes.
+
+**Sources wiring**: left the existing `else` branch (`backend="json"`)
+covering `storage_backend == "arangodb"` as-is — `SourceCollectionManager`
+does not yet accept `"arangodb"` (that is TASK-2060's job, explicitly
+listed as NOT in this task's scope, and not in this task's Files to
+Create/Modify). No `sources.py` change was made here.
+
+11 unit tests added in `tests/knowledge/wiki/test_factory_arango.py`
+(factory dispatch + kwargs passthrough for all 3 backends, unknown-backend
+error, package export). Full `tests/knowledge/wiki/` suite (640 tests,
+including `test_toolkit.py`) re-run — all passing, no regressions.
+`ruff check` on all 3 modified files shows the exact same finding
+counts/kinds as their pre-existing baseline (verified via `git show
+HEAD~N`) — no new lint debt.
+
+**Bookkeeping fix**: also caught and corrected a gap in the previous
+TASK-2058 completion commit, where the deletion of
+`sdd/tasks/active/TASK-2058-config-extension.md` was never staged
+(leaving git tracking the file at both `active/` and `completed/`) —
+fixed in a small dedicated commit before this task's work.
