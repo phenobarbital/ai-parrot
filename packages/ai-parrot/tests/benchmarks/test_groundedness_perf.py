@@ -8,6 +8,13 @@ Appendix A). These benchmarks gate on that budget directly with raw
 Codebase Contract (``pytest-benchmark`` is available elsewhere in the repo
 for other suites, but is deliberately NOT used here).
 
+Spec §4's benchmark table is explicit that the typical-case gate measures
+"index built per call" — each timed iteration below rebuilds the
+``EvidenceIndex`` from the raw ``ToolCall`` results before scoring, matching
+the brainstorm prototype's own methodology (its measured 2.4 ms figure
+"includ[ed] per-call EvidenceIndex build — a per-turn cache would roughly
+halve it").
+
 Unlike ``tests/benchmarks/test_guardrails_pipeline_perf.py`` (which uses the
 ``pytest-benchmark`` plugin and is skipped without ``--benchmark-only``),
 these tests run in normal ``pytest`` invocations — they assert a hard
@@ -39,7 +46,8 @@ def _percentiles(durations_ms: list[float]) -> tuple[float, float, float]:
 
 class TestGroundednessPerf:
     def test_typical_case_p99_under_10ms(self):
-        """1 KB answer vs 3x2 KB evidence: p99 < 10 ms (spec §5 hard gate)."""
+        """1 KB answer vs 3x2 KB evidence (index built per call): p99 < 10 ms
+        (spec §4/§5 hard gate)."""
         policy = GroundednessPolicy()
         scorer = GroundednessScorer(policy)
         answer = "Revenue was $1,243,500 for Q2 2026. " * 25  # ~1 KB
@@ -49,11 +57,11 @@ class TestGroundednessPerf:
             )
             for i in range(3)
         ]
-        evidence = EvidenceIndex.from_tool_calls(tool_calls, policy)
 
         durations: list[float] = []
         for _ in range(_ITERATIONS):
             start = time.perf_counter()
+            evidence = EvidenceIndex.from_tool_calls(tool_calls, policy)
             scorer.score(answer, evidence)
             durations.append((time.perf_counter() - start) * 1000)
 
@@ -65,7 +73,8 @@ class TestGroundednessPerf:
         assert p99 < 10.0, f"p99={p99:.2f}ms exceeds 10ms gate"
 
     def test_heavy_case_p99_under_50ms(self):
-        """4 KB answer vs 10x4 KB evidence: p99 < 50 ms (informational gate)."""
+        """4 KB answer vs 10x4 KB evidence (index built per call): p99 < 50 ms
+        (informational gate)."""
         policy = GroundednessPolicy()
         scorer = GroundednessScorer(policy)
         answer = "Revenue was $1,243,500 for Q2 2026. " * 100  # ~4 KB
@@ -75,11 +84,11 @@ class TestGroundednessPerf:
             )
             for i in range(10)
         ]
-        evidence = EvidenceIndex.from_tool_calls(tool_calls, policy)
 
         durations: list[float] = []
         for _ in range(_ITERATIONS):
             start = time.perf_counter()
+            evidence = EvidenceIndex.from_tool_calls(tool_calls, policy)
             scorer.score(answer, evidence)
             durations.append((time.perf_counter() - start) * 1000)
 

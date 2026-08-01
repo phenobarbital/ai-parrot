@@ -41,6 +41,134 @@ def _verdict_map(report) -> dict[tuple[AtomKind, str], str]:
     return mapping
 
 
+class TestEvidenceIndex:
+    """Direct coverage of `EvidenceIndex.from_tool_calls` (spec §4's
+    `test_evidence_index`, M2): dict/list payload traversal,
+    `max_evidence_bytes` -> `evidence_truncated`, and the
+    `include_user_prompt_as_evidence` toggle."""
+
+    def test_builds_from_string_result(self):
+        policy = GroundednessPolicy()
+        evidence = EvidenceIndex.from_tool_calls(
+            [_tool_call("Revenue was $1,243,500.")], policy,
+        )
+        assert evidence.tool_call_count == 1
+        assert 1243500.0 in {v for v, _raw in evidence.numeric_by_kind[AtomKind.MONEY]}
+
+    def test_traverses_nested_dict_payload(self):
+        """A dict `ToolCall.result` (the typical JSON tool-output shape) is
+        recursively walked — atoms are extracted from every string value at
+        any nesting depth."""
+        policy = GroundednessPolicy()
+        tool_call = ToolCall(
+            id="1", name="lookup", arguments={},
+            result={
+                "summary": "Reference invoice INV-2210.",
+                "details": {"contact": "finance@acme.example.com"},
+            },
+        )
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert "inv-2210" in evidence.by_kind[AtomKind.IDENTIFIER]
+        assert "finance@acme.example.com" in evidence.by_kind[AtomKind.IDENTIFIER]
+
+    def test_traverses_list_payload(self):
+        """A list `ToolCall.result` is recursively walked element-by-element."""
+        policy = GroundednessPolicy()
+        tool_call = ToolCall(
+            id="1", name="lookup", arguments={},
+            result=["Revenue was $1,243,500.", "Reference invoice INV-2210."],
+        )
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert 1243500.0 in {v for v, _raw in evidence.numeric_by_kind[AtomKind.MONEY]}
+        assert "inv-2210" in evidence.by_kind[AtomKind.IDENTIFIER]
+
+    def test_none_result_is_skipped(self):
+        policy = GroundednessPolicy()
+        tool_call = ToolCall(id="1", name="lookup", arguments={}, result=None)
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert evidence.tool_call_count == 1
+        assert evidence.evidence_truncated is False
+        assert all(len(v) == 0 for v in evidence.by_kind.values())
+
+    def test_max_evidence_bytes_sets_truncated_flag(self):
+        policy = GroundednessPolicy(max_evidence_bytes=16)
+        tool_call = ToolCall(
+            id="1", name="lookup", arguments={},
+            result="Revenue was $1,243,500 across 4,812 orders this quarter.",
+        )
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert evidence.evidence_truncated is True
+
+    def test_within_max_evidence_bytes_not_truncated(self):
+        policy = GroundednessPolicy(max_evidence_bytes=262_144)
+        tool_call = ToolCall(
+            id="1", name="lookup", arguments={}, result="Revenue was $1,243,500.",
+        )
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert evidence.evidence_truncated is False
+
+    def test_user_prompt_included_when_toggle_enabled(self):
+        policy = GroundednessPolicy(include_user_prompt_as_evidence=True)
+        evidence = EvidenceIndex.from_tool_calls(
+            [], policy, user_prompt="I expect the invoice INV-2210 total.",
+        )
+
+        assert "inv-2210" in evidence.by_kind[AtomKind.IDENTIFIER]
+
+    def test_user_prompt_excluded_when_toggle_disabled(self):
+        policy = GroundednessPolicy(include_user_prompt_as_evidence=False)
+        evidence = EvidenceIndex.from_tool_calls(
+            [], policy, user_prompt="I expect the invoice INV-2210 total.",
+        )
+
+        assert "inv-2210" not in evidence.by_kind[AtomKind.IDENTIFIER]
+
+    def test_raw_json_numeric_scalar_loses_money_percent_kind(self):
+        """KNOWN LIMIT (documented in docs/groundedness.md): a bare JSON
+        scalar (e.g. `{"revenue": 1243500}`, the typical shape a tool
+        returns before any string formatting) is indexed as `NUMBER`-kind
+        evidence, not `MONEY`/`PERCENT` — the extractor recovers atom kind
+        from surface-form signals ($, %, digit patterns) that a bare
+        Python int/float's `str()` does not carry. Combined with the
+        intentional kind-isolation invariant (`TestKindIsolation` above —
+        "a money claim is only ever matched against money evidence"), a
+        correctly-cited `"$1,243,500"` answer scores `unsupported` against
+        evidence sourced from `{"revenue": 1243500}` rather than a
+        pre-formatted `"$1,243,500"` string. Pinned here as a known,
+        tested limitation rather than a silent gap."""
+        policy = GroundednessPolicy()
+        tool_call = ToolCall(
+            id="1", name="lookup", arguments={}, result={"revenue": 1243500},
+        )
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+        scorer = GroundednessScorer(policy)
+
+        report = scorer.score("Revenue was $1,243,500.", evidence)
+
+        assert 1243500.0 in {v for v, _raw in evidence.numeric_by_kind[AtomKind.NUMBER]}
+        assert evidence.numeric_by_kind[AtomKind.MONEY] == []
+        assert report.unsupported[0].atom.kind == AtomKind.MONEY
+
+    def test_dict_keys_are_not_scanned_as_evidence(self):
+        """KNOWN LIMIT (documented in docs/groundedness.md): `from_tool_calls`
+        walks dict *values* only (`evidence.py`'s `walk()`) — an identifier
+        used as a JSON object key (e.g. `{"INV-2210": {...}}`) is invisible
+        to the evidence index. Pinned here as a known, tested limitation."""
+        policy = GroundednessPolicy()
+        tool_call = ToolCall(
+            id="1", name="lookup", arguments={},
+            result={"INV-2210": {"amount": 500}},
+        )
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert evidence.by_kind[AtomKind.IDENTIFIER] == set()
+
+
 class TestExactMatch:
     def test_supported_exact_money_match(self):
         policy = GroundednessPolicy()

@@ -150,6 +150,25 @@ All knobs live on `GroundednessPolicy` (see
 
 ## Known limits
 
+- **Raw JSON numeric scalars lose their money/percent formatting**: atom
+  *kind* is recovered from surface-form signals in text (`$`, `%`, digit
+  patterns) — a tool result shaped as `{"revenue": 1243500}` (a bare
+  Python `int`/`float`, the typical shape before any string formatting)
+  is indexed as `number`-kind evidence, not `money`. Combined with the
+  intentional kind-isolation rule above (a money claim is *never* matched
+  against percent/bare-number evidence — kept separate specifically so a
+  same-valued `$500`/`500%` pair never cross-matches), a correctly-cited
+  `"$1,243,500"` answer scores `unsupported` against evidence sourced
+  from a bare `1243500` rather than a pre-formatted `"$1,243,500"`
+  string. Mitigation: tools that pre-format currency/percent values as
+  strings in their results (`"$1,243,500"` rather than `1243500`) avoid
+  this entirely. Pinned as a regression test
+  (`test_raw_json_numeric_scalar_loses_money_percent_kind`).
+- **Dict keys are not scanned as evidence**: `EvidenceIndex.from_tool_calls`
+  walks dict *values* recursively but not keys — an identifier used as a
+  JSON object key (e.g. `{"INV-2210": {...}}` rather than
+  `{"invoice": "INV-2210"}`) is invisible to the evidence index. Pinned
+  as a regression test (`test_dict_keys_are_not_scanned_as_evidence`).
 - **Small-integer blindness**: bare integers below `min_number_digits`
   (default 4) are skipped entirely as noise — a corrupted 3-digit count
   goes unverified on either side of the comparison. The floor is
