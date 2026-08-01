@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-01T10:32:49+00:00
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2024
@@ -302,4 +304,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. `pipeline.py` added with ordered execution,
+BLOCK short-circuit, error contract, and telemetry; `__init__.py`
+exports updated. Verified by `/sdd-done`: commit `5a919b7fb` found, all
+3 listed files present.

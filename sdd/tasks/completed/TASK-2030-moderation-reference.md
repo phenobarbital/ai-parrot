@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-01T10:32:49+00:00
+**Verification**: verified
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2024, TASK-2025, TASK-2026
@@ -265,4 +267,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. `builtin/moderation.py` adds
+`ModerationGuardrail` + backend `Protocol` + stub implementation,
+registered as `"moderation"`. Verified by `/sdd-done`: commit
+`f05d1e5b4` found, all 3 listed files present.

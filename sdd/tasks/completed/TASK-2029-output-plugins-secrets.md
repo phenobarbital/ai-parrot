@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-01T10:32:49+00:00
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2024, TASK-2025, TASK-2026
@@ -236,4 +238,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. `builtin/secrets.py` adds `SecretsGuardrail`,
+registered as `"secrets"`; OUTPUT pipeline wired into
+`abstract.py::get_response()` and OUTPUT_STREAM/TOOL_OUTPUT wired into
+`bots/base.py` and `tools/abstract.py` (FEAT-252 hook delegation).
+Follow-up commit `345471413` (adversarial code review) hardened the
+TOOL_OUTPUT/OUTPUT_STREAM wiring further. Verified by `/sdd-done`:
+commit `3b799b9ae` found, all 7 listed files present.

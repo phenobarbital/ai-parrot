@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-01T10:32:49+00:00
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2024, TASK-2025
@@ -241,4 +243,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. `registry.py` (named guardrail registry) and
+`config.py` (config coercion + pipeline builder) added; `abstract.py`
+gained the `guardrails` kwarg wiring. Verified by `/sdd-done`: commit
+`c61b859e4` found, all 5 listed files present.

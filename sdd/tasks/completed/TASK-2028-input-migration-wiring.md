@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-01T10:32:49+00:00
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-2024, TASK-2025, TASK-2026, TASK-2027
@@ -274,4 +276,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. `_sanitize_question` and `PromptPipeline`
+call sites in `bots/base.py` replaced with the INPUT pipeline;
+`builtin/legacy_pipeline.py` wraps `PromptPipeline` for compat;
+`search.py`/`skills/mixin.py` migrated pipeline registration. Verified
+by `/sdd-done`: commit `af0b7d3e9` found, all 6 listed files present.

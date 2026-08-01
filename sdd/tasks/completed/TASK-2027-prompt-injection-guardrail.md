@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-01T10:32:49+00:00
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2024, TASK-2025, TASK-2026
@@ -269,4 +271,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. `builtin/prompt_injection.py` adds
+`PromptInjectionGuardrail` with lazy `pytector` import; registered as
+`"prompt_injection"` in the registry. Verified by `/sdd-done`: commit
+`1ea0cdddf` found, all 4 listed files present.

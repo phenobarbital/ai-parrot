@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-01T10:32:49+00:00
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -204,4 +206,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. `parrot/bots/guardrails/` package created with
+`base.py` (enums, result/context models, `Guardrail` ABC) and
+`streaming.py` (`StreamingGuardrail` ABC), plus unit tests. Verified by
+`/sdd-done`: commit `e21b9c099` found, all 4 listed files present.
