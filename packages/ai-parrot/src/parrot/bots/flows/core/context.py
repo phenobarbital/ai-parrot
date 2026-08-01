@@ -33,6 +33,9 @@ if TYPE_CHECKING:
     from parrot.core.events.lifecycle import TraceContext
     from parrot.registry.registry import AgentRegistry
 
+    from .checkpoint.model import ContextSnapshot
+    from .checkpoint.serializer import FlowStateSerializer
+
 
 # ---------------------------------------------------------------------------
 # Exception
@@ -252,6 +255,56 @@ class FlowContext:
                 if dep in self.results
             },
         }
+
+    # ── Checkpointing (FEAT-399) ───────────────────────────────────────────
+
+    def to_snapshot(
+        self,
+        *,
+        serializer: "FlowStateSerializer",
+        include_responses: bool = False,
+    ) -> "ContextSnapshot":
+        """Serialize this context into a ``ContextSnapshot`` for checkpointing.
+
+        Excludes ``agent_registry``/``synthesis_client``/``trace_context`` —
+        they are not serializable and are re-bound/re-seeded by
+        ``AgentsFlow.resume()``. ``errors`` (live ``Exception`` instances)
+        are encoded as structured ``{type, message, repr}`` dicts, never
+        reconstructed as exception objects.
+
+        Args:
+            serializer: ``FlowStateSerializer`` used to make ``results``/
+                ``responses`` JSON-safe (registered types round-trip via
+                the type registry; unregistered values degrade to a
+                lossy tagged repr instead of failing).
+            include_responses: When True, raw ``responses`` are also
+                captured (heavy; results-only by default, spec resolved
+                OQ2).
+
+        Returns:
+            A ``ContextSnapshot`` capturing this context's serializable state.
+        """
+        from .checkpoint.model import ContextSnapshot
+
+        results_safe, _ = serializer.to_safe_with_meta(self.results)
+        responses_safe: Optional[Dict[str, Any]] = None
+        if include_responses:
+            responses_safe, _ = serializer.to_safe_with_meta(self.responses)
+
+        errors_structured = {
+            node_id: serializer.encode_error(exc)
+            for node_id, exc in self.errors.items()
+        }
+
+        return ContextSnapshot(
+            initial_task=self.initial_task,
+            results=results_safe,
+            responses=responses_safe,
+            completed_tasks=sorted(self.completed_tasks),
+            completion_order=list(self.completion_order),
+            shared_data=dict(self.shared_data),
+            errors=errors_structured,
+        )
 
     # ── Backward-compat aliases ───────────────────────────────────────────
 

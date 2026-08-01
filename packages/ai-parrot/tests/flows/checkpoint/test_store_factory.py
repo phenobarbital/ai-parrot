@@ -6,9 +6,24 @@ requiring Redis or any durable DB driver.
 """
 from typing import Any
 
+import parrot.bots.flows.core.checkpoint.store.factory as factory_module
 import pytest
 from parrot.bots.flows.core.checkpoint import CheckpointStore, FlowCheckpoint
-from parrot.bots.flows.core.checkpoint.store.factory import get_checkpoint_store
+
+# NOTE: `factory_module` is captured once here and used directly (attribute
+# access + `monkeypatch.setattr(factory_module, ...)`) rather than via a
+# string-path monkeypatch target. A sibling test module
+# (`tests/test_orchestrator_agent.py`) deliberately pops every
+# `"parrot.bots" in key` entry from `sys.modules` at IMPORT time to force a
+# fresh reimport for its own module-stub isolation. In a full-suite run that
+# executes before this file, `monkeypatch.setattr("parrot.bots.flows.core."
+# "checkpoint.store.factory._import_class", ...)` would resolve/patch a
+# *different* (freshly reloaded) module object than the one
+# `get_checkpoint_store`'s already-imported closure actually reads from,
+# silently no-op'ing the patch. Holding this module reference directly and
+# calling `factory_module.get_checkpoint_store(...)` keeps everything
+# consistent regardless of what happens to `sys.modules` afterward.
+get_checkpoint_store = factory_module.get_checkpoint_store
 
 
 class FakeCheckpointStore(CheckpointStore):
@@ -62,43 +77,30 @@ def test_factory_arg_name_selection(monkeypatch):
         called["path"] = path
         return FakeCheckpointStore
 
-    monkeypatch.setattr(
-        "parrot.bots.flows.core.checkpoint.store.factory._import_class",
-        fake_import,
-    )
+    monkeypatch.setattr(factory_module, "_import_class", fake_import)
     store = get_checkpoint_store("redis")
     assert isinstance(store, FakeCheckpointStore)
     assert "redis" in called["path"]
 
 
 def test_factory_env_fallback(monkeypatch):
+    monkeypatch.setattr(factory_module, "FLOW_CHECKPOINT_STORE", "redis")
     monkeypatch.setattr(
-        "parrot.bots.flows.core.checkpoint.store.factory.FLOW_CHECKPOINT_STORE",
-        "redis",
-    )
-    monkeypatch.setattr(
-        "parrot.bots.flows.core.checkpoint.store.factory._import_class",
-        lambda path: FakeCheckpointStore,
+        factory_module, "_import_class", lambda path: FakeCheckpointStore
     )
     store = get_checkpoint_store(None)
     assert isinstance(store, FakeCheckpointStore)
 
 
 def test_factory_default_is_redis(monkeypatch):
-    monkeypatch.setattr(
-        "parrot.bots.flows.core.checkpoint.store.factory.FLOW_CHECKPOINT_STORE",
-        None,
-    )
+    monkeypatch.setattr(factory_module, "FLOW_CHECKPOINT_STORE", None)
     captured = {}
 
     def fake_import(path):
         captured["path"] = path
         return FakeCheckpointStore
 
-    monkeypatch.setattr(
-        "parrot.bots.flows.core.checkpoint.store.factory._import_class",
-        fake_import,
-    )
+    monkeypatch.setattr(factory_module, "_import_class", fake_import)
     get_checkpoint_store(None)
     assert "redis" in captured["path"]
 
@@ -111,8 +113,7 @@ def test_factory_durable_backends_pass_driver_kwarg(monkeypatch):
             captured["driver"] = driver
 
     monkeypatch.setattr(
-        "parrot.bots.flows.core.checkpoint.store.factory._import_class",
-        lambda path: RecordingDurableStore,
+        factory_module, "_import_class", lambda path: RecordingDurableStore
     )
     for driver in ("sqlite", "postgres", "mongodb"):
         get_checkpoint_store(driver)

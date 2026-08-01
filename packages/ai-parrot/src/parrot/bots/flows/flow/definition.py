@@ -288,6 +288,33 @@ class FlowMetadata(BaseModel):
         description="FAISS index type: 'Flat', 'FlatIP', or 'HNSW'"
     )
 
+    # ── State checkpointing (FEAT-399) ─────────────────────────────────────
+    # All default to off/unset so existing definitions parse unchanged.
+    checkpoint: bool = Field(
+        default=False,
+        description="Enable AgentsFlow state checkpointing for this flow"
+    )
+    checkpoint_retention: Optional[int] = Field(
+        default=None,
+        description="Ephemeral (Redis) checkpoint TTL in seconds; "
+        "defaults to FLOW_CHECKPOINT_REDIS_TTL when unset"
+    )
+    checkpoint_history: Optional[int] = Field(
+        default=None,
+        description="Max retained checkpoints per flow; defaults to "
+        "FLOW_CHECKPOINT_HISTORY when unset"
+    )
+    checkpoint_include_responses: bool = Field(
+        default=False,
+        description="Include raw per-node responses in checkpoints "
+        "(heavy; results-only by default)"
+    )
+    durable: bool = Field(
+        default=False,
+        description="Write-through every checkpoint to the durable "
+        "store in addition to the ephemeral one"
+    )
+
 
 # ---------------------------------------------------------------------------
 # FlowDefinition (root model)

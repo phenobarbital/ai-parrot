@@ -35,12 +35,13 @@ from ..core.result import (
     build_node_metadata,
     determine_run_status,
 )
+from ..core.checkpoint.errors import FlowNotExportableError
 from ..core.storage import PersistenceMixin
 from ..core.storage.synthesis import synthesize_results
 from ..core.types import DependencyResults
 
 # Declarative layer (intra-subpackage)
-from .definition import FlowDefinition, NodeDefinition
+from .definition import EdgeDefinition, FlowDefinition, NodeDefinition
 
 # Decision-node canonical implementations (TASK-1311)
 from .nodes import (
@@ -456,6 +457,100 @@ class AgentsFlow(PersistenceMixin):
         # Attach custom-node factories (keyed by NodeDefinition.type).
         flow._node_factories = dict(node_factories or {})
         return flow
+
+    # ── Graph → FlowDefinition export (FEAT-399 TASK-2052) ─────────────────
+
+    @staticmethod
+    def _registry_type_name(node: Node) -> Optional[str]:
+        """Return the ``NODE_REGISTRY`` key for ``node``'s class, if any.
+
+        Prefers an exact class match; falls back to ``isinstance`` for
+        registered base classes (covers subclasses of a registered type).
+
+        Args:
+            node: The node instance to look up.
+
+        Returns:
+            The registered type name, or ``None`` if unregistered.
+        """
+        node_cls = type(node)
+        for type_name, cls in NODE_REGISTRY.items():
+            if cls is node_cls:
+                return type_name
+        for type_name, cls in NODE_REGISTRY.items():
+            if isinstance(node, cls):
+                return type_name
+        return None
+
+    def to_definition(self) -> FlowDefinition:
+        """Export this flow's graph to a ``FlowDefinition`` (spec §3 Module 7).
+
+        For a flow already built via ``from_definition()``, returns the
+        bound ``FlowDefinition`` unchanged. For a programmatic flow (built
+        via ``add_node``/``add_edge``), inverts the mapping performed by
+        ``from_definition``/``_materialize_nodes`` to construct one: every
+        node's type must be registered in ``NODE_REGISTRY``, and every
+        ``agent``-type node must expose a resolvable string ``agent_ref``
+        (its wrapped agent's ``.name``). This is a pure export — it never
+        mutates the flow.
+
+        Returns:
+            A validated ``FlowDefinition`` equivalent to this flow's graph.
+
+        Raises:
+            FlowNotExportableError: If a node's class is not registered in
+                ``NODE_REGISTRY``, an ``agent``-type node has no resolvable
+                string ``agent_ref``, or an edge's ``predicate`` is a live
+                Python callable (only CEL expression strings round-trip).
+        """
+        if self._definition is not None:
+            return self._definition
+
+        node_defs: list[NodeDefinition] = []
+        for node_id, node in self._nodes.items():
+            type_name = self._registry_type_name(node)
+            if type_name is None:
+                raise FlowNotExportableError(
+                    f"Node {node_id!r} (class {type(node).__name__}) is not "
+                    "registered in NODE_REGISTRY; cannot export flow "
+                    f"{self.name!r} to a FlowDefinition."
+                )
+
+            agent_ref: Optional[str] = None
+            if type_name == "agent":
+                agent_ref = getattr(getattr(node, "agent", None), "name", None)
+                if not agent_ref:
+                    raise FlowNotExportableError(
+                        f"Node {node_id!r} of type 'agent' has no resolvable "
+                        "string agent_ref (its agent has no stable .name); "
+                        f"cannot export flow {self.name!r} to a FlowDefinition."
+                    )
+
+            node_defs.append(
+                NodeDefinition(id=node_id, type=type_name, agent_ref=agent_ref)
+            )
+
+        edge_defs: list[EdgeDefinition] = []
+        for edge in self._edges:
+            if edge.predicate is not None and not isinstance(edge.predicate, str):
+                raise FlowNotExportableError(
+                    f"Edge {edge.from_!r} -> {edge.to!r} has a live Python "
+                    "callable predicate; cannot export flow "
+                    f"{self.name!r} to a FlowDefinition (only CEL expression "
+                    "strings round-trip)."
+                )
+            edge_defs.append(
+                EdgeDefinition(
+                    **{
+                        "from": edge.from_,
+                        "to": edge.to,
+                        "condition": edge.condition,
+                        "predicate": edge.predicate,
+                    }
+                )
+            )
+
+        return FlowDefinition(flow=self.name, nodes=node_defs, edges=edge_defs)
 
     # ── Scheduler (TASK-1067) ─────────────────────────────────────────────
 
