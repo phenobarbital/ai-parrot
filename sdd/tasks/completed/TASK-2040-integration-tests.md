@@ -121,10 +121,50 @@ class TestMultiRoundEndToEnd:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Created
+`tests/integration/observability/test_multiround_usage.py` with both
+required tests, driving a real `AnthropicClient` (mocked SDK, same 3-round
+fixture pattern as TASK-2034's unit tests) through `with scope() as
+registry:` (real `EventRegistry` + `InMemoryMetricReader`), subscribing
+only on the GLOBAL registry (matching real production wiring —
+`MetricsSubscriber.register(global_registry)` at app bootstrap):
+- `test_multiround_end_to_end`: asserts 2 `ClientRoundEvent`s (round
+  1 & 2, correct tool names/tokens), `AIMessage.usage` = accumulated
+  (450/60) with `extra_usage["rounds"] == 3`, `AfterClientCallEvent`
+  totals (450/60), `parrot.client.round.token.usage` recording exactly 4
+  data points (2 rounds × input/output) with correct per-round values,
+  `parrot.client.rounds` summing to 2, and `gen_ai.client.token.usage`
+  recording EXACTLY 2 data points (450/60) — proving no per-round
+  double-counting.
+- `test_per_agent_round_attribution`: under `agent_identity("bot-a")`,
+  both `parrot.client.round.token.usage` and `parrot.client.rounds` carry
+  `parrot.agent.name == "bot-a"`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Ran the full acceptance-criteria sweep (`test_completion_usage_add.py` +
+`test_client_round_event.py` + `tests/unit/clients/` +
+`test_per_round_metrics.py` + `tests/integration/observability/`): 77
+passed. Also ran the broader `tests/unit/clients/` + `tests/unit/
+observability/` + `tests/integration/observability/`: 176 passed.
 
-**Deviations from spec**: none
+**Deviations from spec**: This integration test exposed a real production
+bug in TASK-2033's `AbstractClient._emit_round_event()` (`clients/base.py`),
+fixed here per this task's explicit authorization ("If an integration
+test exposes a bug, fix it in the owning module and note the
+deviation"). The short-circuit `if not self.events.has_subscribers(
+ClientRoundEvent): return` checked ONLY the client's own isolated
+registry (`forward_to_global=False` by design) — but real consumers like
+`MetricsSubscriber` subscribe on the GLOBAL registry, reached only via
+the explicit `forward_to_global()` bridge that runs AFTER the
+short-circuit. Since no production caller subscribes directly on an
+individual client instance, `ClientRoundEvent` would have been
+silently constructed-and-dropped in every real deployment — the entire
+per-round metrics pipeline (Module 10) would have been dead on arrival.
+Fixed by also checking `navigator_eventbus.lifecycle.global_registry.
+get_global_registry().has_subscribers(ClientRoundEvent)` before
+short-circuiting (lazy import inside the method, mirroring existing
+deferred-import patterns in this codebase). Re-ran
+`tests/unit/clients/test_emit_round_event.py` (TASK-2033's own suite,
+including its zero-subscriber short-circuit test) to confirm the fix
+doesn't regress it — 4 passed.

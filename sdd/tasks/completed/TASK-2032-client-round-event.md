@@ -167,10 +167,21 @@ def test_to_dict_json_safe():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added `ClientRoundEvent` frozen dataclass to
+`events/lifecycle/events/client.py` (after `PromptCacheSkippedEvent`),
+exported via `events/__init__.py` import block + `__all__`. Created
+`tests/unit/events/lifecycle/test_client_round_event.py` (4 tests, all
+pass). Ran full `tests/unit/events/` suite: 190 passed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The task's inline Test Specification examples
+construct `ClientRoundEvent(client_name=..., ...)` without a
+`trace_context` kwarg. Verified against sibling coverage
+(`test_concrete_events.py::ALL_CLASSES`) that `LifecycleEvent.trace_context`
+has no default and is required on every event subclass — this is true for
+every existing lifecycle event, not something introduced by this task. All
+tests were written passing `trace_context=TraceContext.new_root()`
+(the `navigator_eventbus.lifecycle.trace.TraceContext` fixture pattern used
+throughout `tests/unit/events/lifecycle/`), matching real usage instead of
+the stale inline example.

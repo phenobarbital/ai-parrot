@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-01T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-01T10:32:32+00:00",
   "tasks": [
     {
       "id": "TASK-2046",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation task — every other task imports these models.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2046-checkpoint-model-and-errors.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2046-checkpoint-model-and-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2047",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Adds the ormsgpack dependency; upstream of both stores and the checkpointer.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2047-flow-state-serializer.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2047-flow-state-serializer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2048",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Shares checkpoint/__init__.py with TASK-2047; keep sequential to avoid trivial conflicts.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2048-checkpoint-store-abc-factory-config.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2048-checkpoint-store-abc-factory-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2049",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +87,9 @@
       "parallelism_notes": "Disjoint files from TASK-2050 (store/redis.py vs store/durable.py); both only append re-exports to store/__init__.py. Can run as parallel subagents after TASK-2048.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2049-redis-checkpoint-store.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2049-redis-checkpoint-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2050",
@@ -94,7 +98,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -106,8 +110,9 @@
       "parallelism_notes": "Disjoint files from TASK-2049; see its notes.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2050-durable-checkpoint-store.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2050-durable-checkpoint-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2051",
@@ -116,7 +121,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -129,8 +134,9 @@
       "parallelism_notes": "Consumes serializer + store contract; testable with a fake store (Redis not required).",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2051-flow-checkpointer.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2051-flow-checkpointer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2052",
@@ -139,7 +145,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -149,8 +155,9 @@
       "parallelism_notes": "Touches only flow-layer files (flow.py graph export, definition.py, context.py) — no overlap with checkpoint-plane tasks 2047-2051; can run in parallel with them after TASK-2046.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2052-flow-definition-export.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2052-flow-definition-export.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2053",
@@ -159,7 +166,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -170,8 +177,9 @@
       "parallelism_notes": "Integration heart — modifies flow.py after TASK-2052 already touched it; strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2053-agentsflow-suspend-resume.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2053-agentsflow-suspend-resume.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2054",
@@ -180,7 +188,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -190,8 +198,9 @@
       "parallelism_notes": "Modifies flow.py (register/unregister hookup) — keep sequential with TASK-2053; TASK-2055 may run in parallel with this one (disjoint files except the optional recovery-service registration, coordinated via completion notes).",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2054-flow-recovery-service.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2054-flow-recovery-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2055",
@@ -200,7 +209,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -210,8 +219,9 @@
       "parallelism_notes": "Handler files are disjoint from TASK-2054's recovery.py; parallelizable after TASK-2053.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2055-http-checkpoint-handlers.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2055-http-checkpoint-handlers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2056",
@@ -220,7 +230,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -232,8 +242,9 @@
       "parallelism_notes": "Docs-only; must document the landed implementation, so it goes last.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2056-docs-and-example.md"
+      "completed_at": "2026-08-01T10:32:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2056-docs-and-example.md",
+      "verification": "verified"
     }
   ]
 }

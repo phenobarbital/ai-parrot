@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-396
 **Date**: 2026-07-31
 **Author**: Emmanuel Arroyo (emman6321@gmail.com)
-**Status**: draft
+**Status**: implemented
 **Target version**: 0.26.0
 
 ---
@@ -273,28 +273,28 @@ def svelte_repo(tmp_path):
 
 ## 5. Acceptance Criteria
 
-- [ ] `scanner_for(".svelte")` returns the `JavaScriptScanner`; `".svelte"` is in
+- [x] `scanner_for(".svelte")` returns the `JavaScriptScanner`; `".svelte"` is in
       `CODE_SUFFIXES` and in `scanned_suffixes()`.
-- [ ] `treesitter.get_parser("typescript")` returns a `Parser` (not `None`) with
+- [x] `treesitter.get_parser("typescript")` returns a `Parser` (not `None`) with
       `ai-parrot[wiki-languages]` installed — it returns `None` today, see §7.
-- [ ] `treesitter.get_parser("php")` likewise returns a `Parser`.
-- [ ] `treesitter.get_parser("javascript")` and `get_parser("rust")` keep working unchanged —
+- [x] `treesitter.get_parser("php")` likewise returns a `Parser`.
+- [x] `treesitter.get_parser("javascript")` and `get_parser("rust")` keep working unchanged —
       Module 1 must not regress the single-grammar wheels.
-- [ ] A `.svelte` file with `<script lang="ts">` yields a non-empty `outline`, and its `summary`
+- [x] A `.svelte` file with `<script lang="ts">` yields a non-empty `outline`, and its `summary`
       is never the literal `<script lang="ts">` line.
-- [ ] `$lib/...` specifiers resolve to real files in a repo whose alias is declared **only** by
+- [x] `$lib/...` specifiers resolve to real files in a repo whose alias is declared **only** by
       SvelteKit convention (no committed `paths`, `.svelte-kit/` absent).
-- [ ] Unresolvable specifiers (`$app/environment`, bare packages) return `None` — no dangling
+- [x] Unresolvable specifiers (`$app/environment`, bare packages) return `None` — no dangling
       edges in the graph.
-- [ ] Scanning `navigator-svelte` produces > 0 `references` edges out of `.svelte` files, where
+- [x] Scanning `navigator-svelte` produces > 0 `references` edges out of `.svelte` files, where
       the current build produces 0.
-- [ ] Behaviour on `.js`/`.jsx`/`.mjs`/`.ts`/`.tsx` files is unchanged except for the grammar fix:
+- [x] Behaviour on `.js`/`.jsx`/`.mjs`/`.ts`/`.tsx` files is unchanged except for the grammar fix:
       the existing `test_javascript_plugin.py` suite passes untouched.
-- [ ] The full existing suite passes: `pytest tests/knowledge/wiki/ -v`.
-- [ ] Every new code path degrades without the optional extra — the whole suite passes with
+- [x] The full existing suite passes: `pytest tests/knowledge/wiki/ -v`.
+- [x] Every new code path degrades without the optional extra — the whole suite passes with
       tree-sitter uninstalled.
-- [ ] `mode` reports `"heuristic"` unless **both** grammars this scanner can select actually load.
-- [ ] `documentation/parrot-wiki-cli.md` lists `.svelte` among supported suffixes.
+- [x] `mode` reports `"heuristic"` unless **both** grammars this scanner can select actually load.
+- [x] `documentation/parrot-wiki-cli.md` lists `.svelte` among supported suffixes.
 
 ---
 

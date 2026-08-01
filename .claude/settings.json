@@ -12,13 +12,5 @@
         ]
       }
     ]
-  },
-  "permissions": {
-    "allow": [
-      "Bash(wikitoolkit:*)",
-      "Bash(parrot wiki:*)",
-      "Bash(source .venv/bin/activate && wikitoolkit:*)",
-      "Bash(source .venv/bin/activate && parrot wiki:*)"
-    ]
   }
 }

@@ -278,6 +278,16 @@ class ToolManager(MCPToolManagerMixin):
         # Secret/PII redaction is opt-in per agent: the owning agent sets this
         # flag and execute_tool() stamps it onto tools before dispatch.
         self.enable_redaction: bool = False
+        # FEAT-396 (TASK-2029, corrected post-review): the owning bot's
+        # TOOL_OUTPUT `GuardrailPipeline` (`AbstractBot._guardrail_pipelines
+        # [GuardrailStage.TOOL_OUTPUT]`), stamped here right after
+        # `AbstractBot.__init__` builds it, then copied onto each tool the
+        # same way `enable_redaction` is (tools have no bot back-reference
+        # by design). ``None`` when this manager isn't owned by a
+        # guardrails-aware bot (e.g. constructed standalone in tests) — the
+        # FEAT-252 hook falls back to the pre-FEAT-396 default-policy
+        # scrubber singleton in that case.
+        self._tool_output_pipeline: Optional[Any] = None
         self.pandas_tool_name: str = "python_pandas"
         self._wired_toolkits: set = set()  # Track auto-wired toolkit instances
 
@@ -590,8 +600,14 @@ class ToolManager(MCPToolManagerMixin):
         """
         tool_name = name or getattr(tool, 'name', None) or tool.__class__.__name__
         if isinstance(tool, AbstractTool) or isinstance(tool, ToolDefinition):
-            if isinstance(tool, AbstractTool) and self.enable_redaction:
-                tool.enable_redaction = True
+            if isinstance(tool, AbstractTool):
+                if self.enable_redaction:
+                    tool.enable_redaction = True
+                # FEAT-396: always stamp the pipeline reference (not gated
+                # on enable_redaction) — a bot may register TOOL_OUTPUT
+                # guardrails explicitly via `guardrails=[...]` without also
+                # setting the legacy enable_redaction flag.
+                tool._tool_output_pipeline = self._tool_output_pipeline
             self._tools[tool_name] = tool
             self._apply_execution_policy(tool)
             self.logger.debug(
@@ -652,8 +668,12 @@ class ToolManager(MCPToolManagerMixin):
             return
         try:
             if isinstance(tool, (ToolDefinition, AbstractTool)):
-                if isinstance(tool, AbstractTool) and self.enable_redaction:
-                    tool.enable_redaction = True
+                if isinstance(tool, AbstractTool):
+                    if self.enable_redaction:
+                        tool.enable_redaction = True
+                    # FEAT-396: see add_tool() for why this isn't gated on
+                    # enable_redaction.
+                    tool._tool_output_pipeline = self._tool_output_pipeline
                 self._tools[tool_name] = tool
                 # Auto-wire ToolManager for ToolkitTool instances
                 self._auto_wire_toolkit(tool)
@@ -1447,6 +1467,11 @@ class ToolManager(MCPToolManagerMixin):
                 # so AbstractTool.execute() scrubs only for flagged agents.
                 if self.enable_redaction and not tool.enable_redaction:
                     tool.enable_redaction = True
+                # FEAT-396: keep the per-bot TOOL_OUTPUT pipeline reference
+                # in sync too (defensive re-stamp, mirrors enable_redaction
+                # above — see add_tool()/register_tool()).
+                if getattr(tool, '_tool_output_pipeline', None) is not self._tool_output_pipeline:
+                    tool._tool_output_pipeline = self._tool_output_pipeline
                 # === Grant guard check (FEAT-211) ===
                 # If a GrantGuard is configured and the tool requires a grant,
                 # authorize before dispatching to tool.execute().

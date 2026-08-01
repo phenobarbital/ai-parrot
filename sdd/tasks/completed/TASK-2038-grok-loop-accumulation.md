@@ -126,10 +126,27 @@ CompletionUsage.from_grok(usage: Any)                # line 239
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Instrumented `grok.py::ask()`'s `while current_turn < max_turns:`
+loop — simplest of the five clients since every `chat.sample()` call
+happens uniformly inside the loop (no separate pre-loop "initial call"),
+so `current_turn` IS the 1-indexed round number directly. Each iteration
+times the `chat.sample()` call, builds `CompletionUsage.from_grok(response.
+usage)` when usage is truthy, accumulates via `+`, and — per the task's
+explicit implementation note — reuses `per_round.extra_usage` as the
+JSON-safe `raw_usage` (never the raw xai_sdk protobuf object, since
+`from_grok`'s protobuf branch already getattr-extracts a plain dict).
+`self._emit_round_event(...)` fires after tool execution, before
+`continue`. Post-loop, the accumulated total overrides `ai_message.usage`
+and sets `extra_usage["rounds"]` when `current_turn > 1`. Created
+`tests/unit/clients/test_grok_multiround_usage.py` (4 tests, including an
+explicit `json.dumps(event.to_dict())` check per round event proving
+raw_usage is JSON-safe) — all pass on first run. Ran `tests/unit/clients/`
+(44 passed). Also ran the top-level `tests/test_grok_client.py` +
+`tests/test_grok_client_new.py`: confirmed via `git stash` that all 10
+errors there are pre-existing and identical with/without this change
+(unrelated AttributeError-based setup issues, plus one pre-existing
+`@pytest.mark.integration` skip).
 
 **Deviations from spec**: none

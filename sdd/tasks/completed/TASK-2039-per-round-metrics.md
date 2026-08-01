@@ -145,10 +145,18 @@ class TestPerRoundMetrics:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added `ClientRoundEvent` import, the dedicated
+`parrot.client.round.token.usage` histogram + `parrot.client.rounds`
+counter, subscription in `register()`, and `_on_client_round` handler
+(records input/output tokens only when not None; always increments the
+rounds counter; `parrot.agent.name` falls back to `"unknown"`). Kept the
+`parrot.`-prefixed instrument names per the spec's default (open question
+in spec §8 left the final SemConv naming to the implementer; no existing
+`gen_ai.*` SemConv fits a per-round token histogram today). Created
+`tests/unit/observability/test_per_round_metrics.py` (5 tests incl. the
+explicit double-count guard) — all pass. Ran
+`tests/unit/observability/` + `tests/integration/observability/`: 130 passed.
 
 **Deviations from spec**: none
