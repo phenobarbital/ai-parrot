@@ -32,7 +32,7 @@
       "feature_id": "FEAT-401",
       "feature": "leiden-community-detection-and-inter-community-relations",
       "spec": "sdd/specs/leiden-community-detection-and-inter-community-relations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on CommunitiesResult.algorithm field added by TASK-2064",
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2065-inter-community-relations.md"
+      "completed_at": "2026-08-01T17:49:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2065-inter-community-relations.md"
     },
     {
       "id": "TASK-2066",

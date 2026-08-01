@@ -271,10 +271,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Created `inter_community.py` with `InterCommunityRelation`,
+`InterCommunityGraph` (both frozen Pydantic models) and
+`compute_inter_community_graph()`. Iterates `graph.edge_index_map()`,
+classifies each edge as internal (same community) or cross-community,
+accumulates directed counts/weights per unordered (lexicographically
+sorted) community-id pair, and an `incident_edges[cid]` total (internal
+edges count once toward their own community; a cross edge counts once
+toward each side) used as the coupling-ratio denominator:
+`coupling_ratio = cross_total(A,B) / (incident(A) + incident(B))`.
+Density = `connected_pairs / C(community_count, 2)`. Wrote 13 new tests
+in `test_inter_community.py` with hand-constructed `CommunitiesResult`
+fixtures (not going through `detect_communities`, for exact control
+over partition + hand-computed expected coupling ratios/density) —
+covers basic relation, directed A→B vs B→A counts, label propagation,
+coupling ratio on a known topology (hand-computed 0.2), weighted edges,
+isolated communities (zero relations/density), 3-community 1-pair-connected
+density (1/3), single-community and empty-graph edge cases, and
+deterministic ordering. `ruff check --fix` applied cleanly (import
+sort + removing a now-redundant quoted forward-reference under
+`from __future__ import annotations`); `ruff check` and full test run
+are both clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The coupling-ratio "total incident
+edges for the pair" denominator was under-specified in the spec beyond
+prose — implemented as `incident(A) + incident(B)` (each cross edge
+counted once per side, matching a standard inter-cluster bond-strength
+formula) and locked in with a hand-computed test case.
