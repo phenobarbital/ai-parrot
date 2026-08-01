@@ -72,7 +72,7 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Tests exercise the full pipeline (M1+M2+M3); must run after all modules implemented.",
       "assigned_to": null,
       "started_at": "2026-08-01T10:48:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2044-groundedness-tests.md"
+      "completed_at": "2026-08-01T16:57:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2044-groundedness-tests.md"
     },
     {
       "id": "TASK-2045",
