@@ -12,22 +12,25 @@ Exposed two ways:
 - ``parrot wiki <command>`` — subcommand of the main parrot CLI.
 
 Commands:
-    build    Generate/refresh the KB graph from the repository.
-    upsert   Incrementally re-ingest specific/changed files.
-    query    Scoped question → token-budgeted context pack.
-    page     Read one wiki page (progressive disclosure).
-    related  Follow typed edges from a page.
-    status   Plane statistics + staleness report.
-    export   Export the wiki as a human-readable markdown bundle.
+    build        Generate/refresh the KB graph from the repository.
+    upsert       Incrementally re-ingest specific/changed files.
+    query        Scoped question → token-budgeted context pack.
+    page         Read one wiki page (progressive disclosure).
+    related      Follow typed edges from a page.
+    communities  Community detection + inter-community relations (FEAT-401).
+    status       Plane statistics + staleness report.
+    export       Export the wiki as a human-readable markdown bundle.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path, PurePosixPath
+import logging
 import subprocess
-from typing import Any, Optional
+from datetime import UTC
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 import click
 
@@ -53,8 +56,6 @@ from parrot.knowledge.wiki.repo_scan import (
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 
-import logging
-
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
 #: How long `upsert` waits for a contended store lock before skipping.
@@ -72,7 +73,7 @@ path_option = click.option(
     "--path", "path_", default=None, help="Repo root (default: auto-detect)."
 )
 
-def _resolve_project(path: Optional[str]) -> tuple[Path, WikiProjectConfig]:
+def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
     """Resolve the repo root + config, aborting with guidance if absent."""
     if path:
         root = Path(path).resolve()
@@ -139,7 +140,7 @@ def _run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
-def _env_setting(name: str) -> Optional[str]:
+def _env_setting(name: str) -> str | None:
     """Read a wiki env setting (``WIKI_STORE`` / ``WIKI_STORE_BACKEND``).
 
     Prefers navconfig (so values in ``.env`` are honoured, matching the
@@ -158,9 +159,9 @@ def _env_setting(name: str) -> Optional[str]:
 
 
 def _resolve_read_store(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
 ) -> BaseWikiStore:
     """Open a store for a read command (``query`` / ``page`` / ``related``).
 
@@ -359,10 +360,7 @@ async def _prune_removed(
     stubs = await store.list_pages(limit=1_000_000)
     for stub in stubs:
         cid = str(stub.get("concept_id", ""))
-        if cid.startswith("file:") and cid not in expected_files:
-            if await store.delete_page(cid):
-                removed += 1
-        elif cid.startswith("dir:") and cid not in expected_dirs:
+        if cid.startswith("file:") and cid not in expected_files or cid.startswith("dir:") and cid not in expected_dirs:
             if await store.delete_page(cid):
                 removed += 1
     return removed
@@ -407,25 +405,24 @@ async def _export_okf(
     }
 
 
-async def _export_graph_html(
+async def _load_graphindex_nodes_edges(
     store: BaseWikiStore,
-    output_dir: Path,
-    wiki_name: str,
     graph_kinds: frozenset[str],
-) -> dict[str, Any]:
-    """Build the interactive graph.html from the wiki store contents."""
-    try:
-        from parrot.knowledge.graphindex.assemble import GraphAssembler
-        from parrot.knowledge.graphindex.schema import (
-            EdgeKind,
-            NodeKind,
-            UniversalEdge,
-            UniversalNode,
-        )
-        from parrot.knowledge.graphindex.export_html import export_graph
-    except ImportError as exc:
-        _cli_logger.warning("graph export unavailable: %s", exc)
-        return {"exported": False, "reason": str(exc)}
+) -> tuple[list[Any], list[Any]]:
+    """Reconstruct ``UniversalNode``/``UniversalEdge`` lists from the wiki
+    store's pages + typed edges, filtered to ``graph_kinds`` categories.
+
+    Shared by the ``build`` graph.html export and the on-demand
+    ``communities`` CLI command (FEAT-401) — both need the same
+    wiki-page → GraphIndex-schema adaptation. Returns ``([], [])`` when
+    no pages match ``graph_kinds``.
+    """
+    from parrot.knowledge.graphindex.schema import (
+        EdgeKind,
+        NodeKind,
+        UniversalEdge,
+        UniversalNode,
+    )
 
     pages = await store.dump_pages()
     edges = await store.dump_edges()
@@ -435,7 +432,7 @@ async def _export_graph_html(
         if p.get("category", "") in graph_kinds
     ]
     if not kind_pages:
-        return {"nodes": 0, "edges": 0, "exported": False}
+        return [], []
 
     node_ids = {p["concept_id"] for p in kind_pages}
 
@@ -461,6 +458,27 @@ async def _export_graph_html(
                 target_id=dst,
                 kind=EdgeKind[ek_name],
             ))
+
+    return nodes, graph_edges
+
+
+async def _export_graph_html(
+    store: BaseWikiStore,
+    output_dir: Path,
+    wiki_name: str,
+    graph_kinds: frozenset[str],
+) -> dict[str, Any]:
+    """Build the interactive graph.html from the wiki store contents."""
+    try:
+        from parrot.knowledge.graphindex.assemble import GraphAssembler
+        from parrot.knowledge.graphindex.export_html import export_graph
+    except ImportError as exc:
+        _cli_logger.warning("graph export unavailable: %s", exc)
+        return {"exported": False, "reason": str(exc)}
+
+    nodes, graph_edges = await _load_graphindex_nodes_edges(store, graph_kinds)
+    if not nodes:
+        return {"nodes": 0, "edges": 0, "exported": False}
 
     assembler = GraphAssembler(tenant_id=wiki_name)
     assembler.add_nodes(nodes)
@@ -510,15 +528,15 @@ def _write_build_stats(
     output_dir: Path,
     wiki_name: str,
     store_stats: dict[str, Any],
-    okf_report: Optional[dict[str, Any]],
-    graph_stats: Optional[dict[str, Any]],
+    okf_report: dict[str, Any] | None,
+    graph_stats: dict[str, Any] | None,
 ) -> None:
     """Write wiki_stats.json and README.md into the output directory."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     stats: dict[str, Any] = {
         "wiki_name": wiki_name,
-        "generated_at": datetime.now(tz=timezone.utc).strftime(
+        "generated_at": datetime.now(tz=UTC).strftime(
             "%Y-%m-%dT%H:%M:%S+00:00"
         ),
         "pages": store_stats.get("pages", 0),
@@ -588,7 +606,7 @@ def _write_build_stats(
         "## Querying",
         "",
         "```bash",
-        f"wikitoolkit query \"your question\" --path .",
+        "wikitoolkit query \"your question\" --path .",
         "```",
         "",
         f"_Generated {stats['generated_at']}._",
@@ -641,9 +659,9 @@ def wiki() -> None:
     help="Comma list of page categories included in graph.html.",
 )
 def build(
-    path_: Optional[str],
-    name: Optional[str],
-    backend: Optional[str],
+    path_: str | None,
+    name: str | None,
+    backend: str | None,
     force: bool,
     no_git: bool,
     quiet: bool,
@@ -697,7 +715,7 @@ def build(
             counts["removed"] = await _prune_removed(store, sources, root, scan)
             counts["stats"] = await store.stats()
 
-            okf_report: Optional[dict[str, Any]] = None
+            okf_report: dict[str, Any] | None = None
             if not no_export:
                 okf_report = await _export_okf(
                     store, output_dir, config.wiki_name,
@@ -711,7 +729,7 @@ def build(
                     config.exclude_dirs.append(export_rel)
             counts["okf"] = okf_report
 
-            graph_stats: Optional[dict[str, Any]] = None
+            graph_stats: dict[str, Any] | None = None
             if not no_graph:
                 kinds = frozenset(
                     k.strip() for k in graph_kinds.split(",") if k.strip()
@@ -804,7 +822,7 @@ def _changed_files_from_git(root: Path) -> list[str]:
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output (for git hooks).")
 def upsert(
     paths: tuple[str, ...],
-    path_: Optional[str],
+    path_: str | None,
     changed: bool,
     quiet: bool,
 ) -> None:
@@ -932,12 +950,12 @@ def upsert(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON results.")
 def query(
     question: str,
-    path_: Optional[str],
+    path_: str | None,
     top_k: int,
     budget: int,
-    category: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    category: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     as_table: bool,
     show_body: bool,
     as_json: bool,
@@ -1000,10 +1018,10 @@ def query(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def page(
     page_id: str,
-    path_: Optional[str],
-    max_tokens: Optional[int],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    max_tokens: int | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     as_json: bool,
 ) -> None:
     """Read one wiki page in full (progressive disclosure)."""
@@ -1044,11 +1062,11 @@ def page(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def related(
     page_id: str,
-    path_: Optional[str],
-    rel: Optional[str],
+    path_: str | None,
+    rel: str | None,
     direction: str,
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    store_opt: str | None,
+    backend_opt: str | None,
     as_json: bool,
 ) -> None:
     """List pages linked to PAGE_ID by typed edges."""
@@ -1071,7 +1089,7 @@ def related(
 @wiki.command()
 @path_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
-def status(path_: Optional[str], as_json: bool) -> None:
+def status(path_: str | None, as_json: bool) -> None:
     """Show wiki plane statistics and source staleness."""
     root, config = _resolve_project(path_)
     if not config.is_built(root):
@@ -1113,13 +1131,115 @@ def status(path_: Optional[str], as_json: bool) -> None:
 @wiki.command()
 @path_option
 @click.option(
+    "--graph-kinds",
+    default="module,document,overview",
+    show_default=True,
+    help="Comma list of page categories included in the community graph.",
+)
+@click.option(
+    "--inter",
+    "show_inter",
+    is_flag=True,
+    help="Also compute and print inter-community relations (FEAT-401).",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def communities(
+    path_: str | None,
+    graph_kinds: str,
+    show_inter: bool,
+    as_json: bool,
+) -> None:
+    """Show detected communities, or inter-community relations with --inter.
+
+    Runs Leiden (falling back to Louvain, FEAT-401) community detection
+    on demand from the current wiki store contents — no need to re-run
+    `wikitoolkit build` or regenerate graph.html. With `--inter`, also
+    computes the inter-community meta-graph (which community pairs are
+    connected, coupling ratios, edge direction) for cross-subsystem
+    questions like "how do the auth and payment areas relate?". Output
+    is token-budgeted for LLM-agent consumption.
+    """
+    root, config = _resolve_project(path_)
+    if not config.is_built(root):
+        click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
+        return
+    store = _open_store(root, config)
+
+    kinds = frozenset(k.strip() for k in graph_kinds.split(",") if k.strip())
+    nodes, graph_edges = _run(_load_graphindex_nodes_edges(store, kinds))
+    if not nodes:
+        click.echo(
+            "No pages found for --graph-kinds="
+            f"{graph_kinds!r}. Run `wikitoolkit build` first, or widen "
+            "--graph-kinds."
+        )
+        return
+
+    from parrot.knowledge.graphindex.assemble import GraphAssembler
+    from parrot.knowledge.graphindex.communities import detect_communities
+
+    assembler = GraphAssembler(tenant_id=config.wiki_name)
+    assembler.add_nodes(nodes)
+    assembler.add_edges(graph_edges)
+    communities_result = detect_communities(
+        assembler.graph, nodes, write_back_to_nodes=False,
+    )
+
+    if not show_inter:
+        if as_json:
+            click.echo(json.dumps(
+                communities_result.model_dump(mode="json"), indent=2,
+            ))
+            return
+        click.echo(
+            f"# Communities ({len(communities_result.communities)}, "
+            f"algorithm={communities_result.algorithm}, "
+            f"modularity={communities_result.modularity:.4f})\n"
+        )
+        if not communities_result.communities:
+            click.echo("(no communities detected)")
+            return
+        for c in communities_result.communities:
+            click.echo(f"| `{c.community_id}` | {c.label or '(unlabeled)'} | {c.size} members |")
+        return
+
+    from parrot.knowledge.graphindex.inter_community import (
+        compute_inter_community_graph,
+    )
+
+    inter = compute_inter_community_graph(assembler.graph, communities_result)
+
+    if as_json:
+        click.echo(json.dumps(inter.model_dump(mode="json"), indent=2))
+        return
+
+    click.echo(
+        f"Inter-Community Relations (density: {inter.density:.1%}, "
+        f"{inter.connected_pairs}/{inter.total_possible_pairs} pairs)\n"
+    )
+    if not inter.relations:
+        click.echo("(no cross-community edges detected)")
+        return
+    for rel in inter.relations:
+        arrow = "→" if rel.directed_edge_count >= rel.reverse_edge_count else "←"
+        src = rel.source_label or rel.source_community_id
+        tgt = rel.target_label or rel.target_community_id
+        click.echo(
+            f"| {src} {arrow} {tgt} | {rel.directed_edge_count}→, "
+            f"{rel.reverse_edge_count}← | coupling: {rel.coupling_ratio:.2f} |"
+        )
+
+
+@wiki.command()
+@path_option
+@click.option(
     "--output",
     "-o",
     default="docs/wiki",
     show_default=True,
     help="Output directory for the markdown bundle (relative to root).",
 )
-def export(path_: Optional[str], output: str) -> None:
+def export(path_: str | None, output: str) -> None:
     """Export the wiki as a human-readable markdown bundle.
 
     Writes one markdown file per page (YAML frontmatter + body) plus a
@@ -1154,7 +1274,7 @@ def export(path_: Optional[str], output: str) -> None:
 # Authoring / persistent-memory commands ("save things in the brain")
 # --------------------------------------------------------------------------
 
-def _authoring_identity(by: Optional[str]) -> str:
+def _authoring_identity(by: str | None) -> str:
     """Resolve who is asserting a write.
 
     Precedence: explicit ``--by`` > ``CLAUDE_AGENT_ID`` /
@@ -1176,7 +1296,7 @@ def _authoring_identity(by: Optional[str]) -> str:
         return "human:unknown"
 
 
-def _authoring_run_id() -> Optional[str]:
+def _authoring_run_id() -> str | None:
     """Session/run identifier from the ambient environment, if any."""
     import os
 
@@ -1188,10 +1308,10 @@ def _authoring_run_id() -> Optional[str]:
 
 
 def _resolve_write_store(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-) -> tuple[BaseWikiStore, Path, Optional[Path], Optional[WikiProjectConfig]]:
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+) -> tuple[BaseWikiStore, Path, Path | None, WikiProjectConfig | None]:
     """Open a store for an authoring command, creating the plane lazily.
 
     Same precedence as ``_resolve_read_store`` (``--store`` > ``--path``
@@ -1224,8 +1344,8 @@ def _sync_memory_to_graph(
     text: str,
     links: list[tuple[str, str]],
     asserted_by: str,
-    run_id: Optional[str],
-) -> Optional[str]:
+    run_id: str | None,
+) -> str | None:
     """Mirror a remembered fact into the project's GraphIndex plane.
 
     Publishes one audited commit containing a ``CONCEPT`` node for the
@@ -1313,8 +1433,8 @@ def _extract_into_graph(
     text: str,
     source_uri: str,
     asserted_by: str,
-    run_id: Optional[str],
-) -> Optional[dict[str, Any]]:
+    run_id: str | None,
+) -> dict[str, Any] | None:
     """Run LLM entity/relation extraction into the project graph plane.
 
     Requires a ``WIKI_EXTRACT_LLM`` provider spec (env / .env, e.g.
@@ -1395,15 +1515,15 @@ def _extract_into_graph(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def remember(
     text: str,
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-    title: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+    title: str | None,
     category: str,
     links: tuple[str, ...],
     rel: str,
-    source_uri: Optional[str],
-    by: Optional[str],
+    source_uri: str | None,
+    by: str | None,
     extract_: bool,
     as_json: bool,
 ) -> None:
@@ -1427,7 +1547,7 @@ def remember(
     if not resolved_title:
         raise click.ClickException("Cannot remember empty text.")
     page_id = "mem-" + hashlib.sha1(
-        f"{resolved_title}::{category}".encode("utf-8")
+        f"{resolved_title}::{category}".encode()
     ).hexdigest()[:12]
 
     from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
@@ -1470,14 +1590,14 @@ def remember(
         + (f", run: {run_id}" if run_id else ""),
     )
 
-    commit_id: Optional[str] = None
+    commit_id: str | None = None
     if root is not None and config is not None and config.sync_graph:
         commit_id = _sync_memory_to_graph(
             root, config, store, page_id, resolved_title, text,
             linked, asserted_by, run_id,
         )
 
-    extraction: Optional[dict[str, Any]] = None
+    extraction: dict[str, Any] | None = None
     if extract_ and root is not None and config is not None:
         extraction = _extract_into_graph(
             root, config, text,
@@ -1529,14 +1649,14 @@ def remember(
 def note(
     page_id: str,
     text: str,
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-    by: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+    by: str | None,
     as_json: bool,
 ) -> None:
     """Append an attributed note to an existing wiki page."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     store, storage_dir, _root, _config = _resolve_write_store(
         path_, store_opt, backend_opt
@@ -1547,7 +1667,7 @@ def note(
             f"Page {page_id!r} not found. Search first: wikitoolkit query \"...\""
         )
     asserted_by = _authoring_identity(by)
-    stamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+    stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
     body = str(page.get("body") or "")
     body += f"\n\n> **Note ({stamp}, {asserted_by}):** {text}"
 
@@ -1594,11 +1714,11 @@ def note(
 def link(
     src: str,
     dst: str,
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     rel: str,
-    by: Optional[str],
+    by: str | None,
     as_json: bool,
 ) -> None:
     """Connect two existing wiki pages with an asserted, typed edge."""
@@ -1641,10 +1761,10 @@ def link(
 @click.option("--limit", default=50, type=int, help="Maximum rows.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def memories(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-    category: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+    category: str | None,
     limit: int,
     as_json: bool,
 ) -> None:
@@ -1677,9 +1797,9 @@ def memories(
 @click.option("--limit", default=30, type=int, help="Maximum entries per plane.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def audit(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     limit: int,
     as_json: bool,
 ) -> None:
@@ -1736,7 +1856,7 @@ def audit(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def ground(
     claim: str,
-    path_: Optional[str],
+    path_: str | None,
     as_json: bool,
 ) -> None:
     """Check a claim against the project knowledge graph (grounding).

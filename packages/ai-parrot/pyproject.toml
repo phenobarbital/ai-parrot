@@ -210,6 +210,16 @@ wiki-languages = [
     "tree-sitter-rust>=0.23",
 ]
 
+# Leiden community detection for GraphIndex (FEAT-401) — guarantees
+# internally well-connected communities, unlike Louvain. `python-igraph`
+# is a C library (~15 MB installed); kept opt-in like `graphindex` and
+# `wiki-languages` above. `detect_communities()` falls back to Louvain
+# with a logged warning when this extra is not installed.
+leiden = [
+    "leidenalg>=0.10",
+    "python-igraph>=0.10",
+]
+
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203
 # scheduler = ["apscheduler==3.11.2"]  # use ai-parrot-server[scheduler] instead
 
