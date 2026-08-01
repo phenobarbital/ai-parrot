@@ -72,6 +72,11 @@ from parrot.core.events.lifecycle.events import (
     # FEAT-397: Per-Round Token Usage Observability
     ClientRoundEvent,
 )
+# FEAT-397: used by _emit_round_event()'s has_subscribers() fallback check —
+# hoisted to module scope (not re-imported per round) since sys.modules
+# caching aside, this runs on every tool round once MetricsSubscriber is
+# wired globally.
+from navigator_eventbus.lifecycle.global_registry import get_global_registry
 # FEAT-228: per-agent cost/usage metrics — read invoking agent's identity at event build time
 from parrot.observability.context import current_agent_name
 
@@ -528,7 +533,6 @@ $backstory
             # subscribers in production — fall back to checking the current
             # global registry before giving up, so MetricsSubscriber (or any
             # other global observer) actually receives round events.
-            from navigator_eventbus.lifecycle.global_registry import get_global_registry
             if not get_global_registry().has_subscribers(ClientRoundEvent):
                 return
 
