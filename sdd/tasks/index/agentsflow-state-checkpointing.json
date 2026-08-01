@@ -200,7 +200,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -210,8 +210,8 @@
       "parallelism_notes": "Handler files are disjoint from TASK-2054's recovery.py; parallelizable after TASK-2053.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2055-http-checkpoint-handlers.md"
+      "completed_at": "2026-08-01T01:45:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2055-http-checkpoint-handlers.md"
     },
     {
       "id": "TASK-2056",
