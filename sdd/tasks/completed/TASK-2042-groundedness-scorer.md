@@ -317,3 +317,65 @@ responsibility.
 rationale above, which resolves an internal tension in this task's own
 acceptance criteria (byte-identical determinism vs. a wall-clock timing
 field) in favor of the explicitly-stated determinism requirement.
+
+**Post-completion addendum (2026-08-01)**: ran an adversarial
+`code-reviewer` agent (neutral brief: diff + acceptance criteria only,
+cross-checked against an independent `codex exec` read-only review) on
+the TASK-2041+2042 diff before pushing. It found real, reproducible
+🟠 Important correctness gaps, empirically verified, in the numeric-
+matching core — significant given this feature's whole purpose is
+catching corrupted/fabricated figures:
+
+1. `EvidenceIndex.numeric_values` pooled MONEY/PERCENT/NUMBER evidence
+   into one flat list with no kind check, so e.g. a fabricated `$45`
+   claim scored `supported` against unrelated evidence `"45%"` (same
+   float, wrong unit). **Fixed**: split into per-kind
+   `numeric_by_kind: dict[AtomKind, list[...]]`; `_classify_numeric`
+   now only compares same-kind evidence.
+2. Money/percent/number regexes had no leading-sign support — `"-15.3%"`
+   silently normalized to `+15.3`. **Fixed**: `-?` prefix added to all
+   three extraction patterns and `normalize_number()`.
+3. `count_significant_digits()` counted leading zeros before the first
+   non-zero digit as significant (`"0.005"` → 4, not 1 per standard
+   sig-fig convention), collapsing the precision-aware tolerance for
+   sub-1 values to near float-exact equality. **Fixed**: leading zeros
+   before the first `[1-9]` are now excluded from the count.
+4. Bare (no `$`) magnitude-suffixed numbers (`"2.5M downloads"`) were
+   silently dropped rather than extracted — `_NUMBER_RE` had no suffix
+   support and the 3-digit mantissa fell under the noise floor.
+   **Fixed**: `_NUMBER_RE` gained the same `[kKmMbB]?` suffix as money,
+   exempted from `min_number_digits` (matching money's existing
+   no-floor suffix handling).
+5. `_DATE_MONTHNAME_RE` was missing `re.IGNORECASE` while
+   `normalize_date()`'s own month lookup is case-insensitive, so
+   `"january 2, 2026"` silently lost its DATE identity. **Fixed**:
+   flag added.
+6. `mypy packages/ai-parrot/src/parrot/security/groundedness/` reported
+   real errors (Optional-narrowing at the numeric-match division,
+   variable-name reuse across incompatible types in `normalize_date`/
+   `extract_atoms`, a bare-`str` vs `Literal` verdict type) — the
+   original implementation had only been checked with `ruff`, not
+   `mypy`, despite the project's "strict type hints" convention.
+   **Fixed**: package is now `mypy`-clean (pre-existing errors remain
+   in unrelated files elsewhere in the repo, not touched by this
+   feature).
+
+Also flagged (not fixed, per the 🟡 Suggestion/💡 Nitpick triage rule —
+noted here for the PR reviewer, no action taken): freeform alphanumeric
+identifiers can leak embedded digits as spurious NUMBER atoms;
+`max_evidence_bytes` truncation drops a whole oversized leaf string
+rather than a fitting prefix; user-prompt evidence is still folded in
+after tool-call truncation already occurred; `_URL_RE` doesn't exclude
+trailing sentence punctuation; `EvidenceIndex.by_kind` uses an
+unparameterized `set` type hint. The `GroundednessReport.duration_ms
+Field(exclude=True)` design (see above) was reviewed and judged a
+defensible, disclosed trade-off rather than a bug, but the reviewer
+recommends the spec owner bless it explicitly for Module 3's telemetry
+path (TASK-2043) rather than let it stand as an implementation-only
+decision.
+
+All six fixes committed in
+`fix(deterministic-groundedness-scoring): address code-review findings
+on TASK-2041/2042`; every original acceptance-criteria scenario from
+both tasks re-verified passing with no regressions, plus a new
+regression check per fix.

@@ -257,3 +257,17 @@ digits, at the `min_number_digits` floor), not a `DATE` atom. Flagging
 this as a likely documentation inconsistency rather than guessing at an
 unspecified fiscal-quarter date format — no ad-hoc "Q2 2026" parsing was
 added.
+
+**Post-completion addendum (2026-08-01)**: an adversarial code review
+(see TASK-2042's addendum for the full review) found and this session
+fixed several correctness gaps in `extractors.py`/`normalize.py`: no
+leading-sign support on money/percent/number (a "-15.3%" silently
+normalized to +15.3), `count_significant_digits()` over-counting leading
+zeros for values under 1 ("0.005" reported as 4 sig digits instead of
+1), bare magnitude-suffixed numbers without "$" ("2.5M downloads")
+being silently dropped instead of extracted, and the month-name date
+regex missing case-insensitivity (normalize_date() itself is
+case-insensitive, the extractor regex wasn't). All fixed in commit
+`fix(deterministic-groundedness-scoring): address code-review findings
+on TASK-2041/2042`; every original acceptance-criteria scenario
+re-verified passing with no regressions.
