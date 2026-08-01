@@ -496,6 +496,189 @@ NodeDefinition(
 
 ---
 
+## State Checkpointing & Resume
+
+FEAT-399 adds opt-in, LangGraph-parity checkpointing: a long-running flow
+can survive a crash, a deploy, or a suspension, and resume from its last
+completed node — or re-fork from an older historical checkpoint. It is
+**off by default and byte-identical when disabled** — nothing below
+changes existing behavior unless you pass `checkpoint=True`.
+
+### Two-Tier Design
+
+| Tier | Backend | Purpose | Retention |
+|---|---|---|---|
+| **Ephemeral** (always used when `checkpoint=True`) | Redis | The live checkpoint stream — self-cleaning | TTL (default 24h) + bounded history (default 10) |
+| **Durable** (opt-in) | sqlite \| postgres \| mongodb (via `asyncdb`) | Indefinite recovery for suspended/critical flows | No expiry — deletion is explicit |
+
+Checkpoints are **not** the same as `PersistenceMixin`'s result storage:
+that plane persists final results for audit; this plane persists
+*recoverable state* so a killed run can continue.
+
+### Opt-In Usage
+
+```python
+from parrot.bots.flows import AgentsFlow
+
+flow = AgentsFlow.from_definition(
+    definition,
+    agent_registry=registry,
+    checkpoint=True,                       # opt-in; default False
+    checkpoint_retention=86400,             # Redis TTL, seconds (default: FLOW_CHECKPOINT_REDIS_TTL)
+    checkpoint_history=10,                  # max retained checkpoints (default: FLOW_CHECKPOINT_HISTORY)
+    checkpoint_include_responses=False,     # raw responses too? heavy, off by default
+    durable=False,                          # write-through every checkpoint to a durable store too
+    checkpoint_store=None,                  # str | CheckpointStore | None (env fallback)
+    durable_store=None,                     # str | CheckpointStore | None
+    flow_id=None,                           # auto-generated UUID4 when omitted
+)
+result = await flow.run_flow("Write a short article about asyncio")
+```
+
+The same options are accepted by `from_definition()` directly, and by a
+`FlowMetadata` checkpoint block on a declarative `FlowDefinition`
+(`checkpoint`, `checkpoint_retention`, `checkpoint_history`,
+`checkpoint_include_responses`, `durable`) — a constructor-level
+argument always wins over the metadata block when both are given.
+
+A checkpoint is written after **every node completion**, embedding the
+flow's `FlowDefinition` graph snapshot, the serialized `FlowContext`
+(extracted `results`, completed-node set/order, `shared_data`,
+structured errors), per-node FSM states, and memory references
+(`session_id`/`chatbot_id`/`user_id` — never the memory content itself).
+
+### The Three Durable Triggers
+
+Durable persistence only happens when one of these fires:
+
+1. **`durable=True` write-through** — every checkpoint is written to
+   both tiers as it happens.
+2. **Explicit `suspend()`/`dump()`** — call `await flow.suspend()` at any
+   point during a run (requires an active `run_flow()` call and a
+   configured `durable_store`); it copies the ephemeral store's retained
+   history to the durable store and writes a final
+   `status="suspended"` checkpoint to both.
+3. **Graceful-shutdown hook** — `FlowRecoveryService` suspends every
+   active checkpointed flow within a configurable deadline
+   (`FLOW_CHECKPOINT_SHUTDOWN_DEADLINE`, default 15s) when your aiohttp
+   app shuts down:
+
+   ```python
+   from parrot.bots.flows.core.checkpoint.recovery import get_recovery_service
+
+   # In your aiohttp app's setup():
+   get_recovery_service().attach_to_app(app)
+   ```
+
+   `AgentsFlow.run_flow()` registers/unregisters itself with this shared
+   service automatically whenever `checkpoint=True` — no per-flow wiring
+   needed. Flows that miss the deadline are logged `ERROR` with their
+   `flow_id`s; their last Redis checkpoint stays recoverable until its
+   TTL expires.
+
+### Resuming a Flow
+
+```python
+from parrot.bots.flows import AgentsFlow
+
+# Resume the latest checkpoint for a flow_id (e.g. after a crash/restart —
+# only flow_id + a fresh AgentRegistry are needed, no reference to the
+# original AgentsFlow instance):
+resumed = await AgentsFlow.resume(flow_id, agent_registry=registry)
+result = await resumed.run_flow()   # no args — the resume-seeded context is used automatically
+
+# Re-fork from an older, specific checkpoint instead of the latest:
+resumed = await AgentsFlow.resume(flow_id, checkpoint_id=7, agent_registry=registry)
+await resumed.run_flow()
+```
+
+`resume()` loads the checkpoint (durable store first, then ephemeral
+fallback — `CheckpointNotFoundError` if neither has it), acquires a
+resume lease (raises `FlowLockedError` if another holder already holds
+it — a heartbeat-renewed ~60s TTL, `FLOW_CHECKPOINT_LEASE_TTL`, so a
+dead holder's lease naturally expires and allows takeover), rebuilds the
+flow via `from_definition(checkpoint.definition, ...)`, and seeds a
+fresh `FlowContext` marking every node in the checkpoint's
+`completion_order` as already completed. **Completed nodes are never
+re-executed** — the scheduler dispatches only the frontier.
+
+### Programmatic Flows: `to_definition()`
+
+Flows built with `add_node()`/`add_edge()` (not `from_definition()`) are
+also checkpointable — `AgentsFlow.to_definition()` exports the live
+graph to a `FlowDefinition` on demand:
+
+```python
+definition = flow.to_definition()   # pure export — never mutates the flow
+```
+
+Every node's type must be registered in `NODE_REGISTRY`, and every
+`agent`-type node must expose a resolvable string `agent_ref` (its
+wrapped agent's `.name`) — otherwise `to_definition()` raises
+`FlowNotExportableError` naming the offending node. This validation runs
+**up front**, the moment you enable `checkpoint=True` on a programmatic
+flow — not lazily at resume time.
+
+### ⚠️ Idempotency Caveat (At-Least-Once Per Node)
+
+Checkpoint granularity is **node completion**, not mid-node progress. A
+node that was in-flight when the process died **re-runs entirely** on
+resume — this is at-least-once, not exactly-once, execution. **Nodes
+with side effects (API calls, writes, charges, sends) must be
+idempotent**, or must tolerate being invoked twice for the same logical
+step.
+
+### ⚠️ Lossy Checkpoints
+
+Checkpoint values are serialized through a small type registry
+(`FlowStateSerializer`) plus `ormsgpack` — never `pickle`. Registered
+Pydantic types (e.g. `AIMessage`) round-trip with full type identity;
+anything unregistered **degrades to a tagged string repr** instead of
+failing the checkpoint write. When this happens the checkpoint's `lossy`
+flag is set, and `resume()` logs a `WARNING` naming the flow — the
+affected node's dependency result will be a degraded string on resume,
+not the original object. Checkpoint write failures (of any kind) are
+always logged as warnings and **never fail or block the flow**.
+
+### `FLOW_CHECKPOINT_*` Environment Variables
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `FLOW_CHECKPOINT_STORE` | `redis` | Ephemeral store backend |
+| `FLOW_CHECKPOINT_DURABLE_STORE` | unset | Durable backend: `sqlite` \| `postgres` \| `mongodb` |
+| `FLOW_CHECKPOINT_REDIS_TTL` | `86400` | Ephemeral retention, seconds (24h) |
+| `FLOW_CHECKPOINT_HISTORY` | `10` | Retained checkpoints per flow |
+| `FLOW_CHECKPOINT_SHUTDOWN_DEADLINE` | `15` | Graceful-shutdown suspend deadline, seconds |
+| `FLOW_CHECKPOINT_LEASE_TTL` | `60` | Resume lease TTL, heartbeat-renewed |
+
+### HTTP Ops Endpoints
+
+Behind the existing `parrot/handlers/` auth conventions
+(`@is_authenticated()`/`@user_session()` — no new auth mechanism):
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/flows/checkpoints` | List recoverable flows (`?status=suspended` filter) |
+| `GET` | `/api/v1/flows/checkpoints/{flow_id}` | Checkpoint history for a flow |
+| `POST` | `/api/v1/flows/checkpoints/{flow_id}/resume` | Resume (body: `{"checkpoint_id": optional}`) — `202 Accepted`, runs in the background |
+| `DELETE` | `/api/v1/flows/checkpoints/{flow_id}` | Delete a flow's checkpoints from both tiers |
+
+`FlowLockedError` maps to `409 Conflict`; `CheckpointNotFoundError` maps
+to `404 Not Found`.
+
+### What's Not Included (v1)
+
+- **Auto-resume-on-startup** — resume is always programmatic or via the
+  HTTP endpoint above; nothing scans for and relaunches suspended flows
+  automatically.
+- **AgentCrew checkpointing** — a separate, phase-2 spec consuming the
+  same `CheckpointStore` contract.
+
+See `examples/flow/agentsflow_checkpointing.py` for a full runnable
+kill-and-resume + re-fork example (Redis only — no LLM API key needed).
+
+---
+
 ## See Also
 
 - [Node Types Reference](node-types.md) — all node types, registry, custom nodes

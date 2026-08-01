@@ -99,8 +99,39 @@ class FlowContext:                                              # line 52
 ### Does NOT Exist
 - ~~`AgentsFlow.suspend()` / `AgentsFlow.resume()`~~ — introduced HERE.
 - ~~`FlowContext.from_snapshot()`~~ — deliberately does not exist; seed via `mark_completed()` (spec §2 Internal Behavior step 5).
-- ~~Scheduler-level "skip node" API~~ — none needed: readiness is computed from `completed_tasks` (`FlowContext.can_execute`, context.py:160); pre-seeding is sufficient. Verify with the counter test, do NOT patch the scheduler.
 - ~~`checkpoint=` handling in `from_definition` today~~ — this task adds the `FlowMetadata` block honoring.
+
+### Codebase Contract CORRECTION (verified stale during this task — 2026-08-01)
+The original contract claimed "readiness is computed from `completed_tasks`
+(`FlowContext.can_execute`, context.py:160); pre-seeding is sufficient... do
+NOT patch the scheduler." This is **factually incorrect** for the current
+`run_flow()` implementation — verified by grep: `completed_tasks` and
+`can_execute` are **never referenced anywhere in `flow.py`**. The
+scheduler's dispatch decisions run entirely off *local* variables
+(`completed`/`failed`/`skipped`/`results`/`tasks`, all reset to empty at
+the top of every `run_flow()` call) — `ctx.mark_completed()` updates
+`FlowContext` for other consumers (`get_input_for_node`, etc.) but the
+scheduler's own OR-join (`_resolve_ready_targets()`, explicit/add_edge
+mode) and AND-join (inline dependency check, definition-driven/legacy
+mode — **`explicit_mode` is `False` whenever `self._definition is not
+None`, i.e. exactly the `from_definition()`/`resume()` path**) dispatch
+loops never consult it. Pre-seeding `ctx.completed_tasks` alone would
+NOT skip re-executing completed nodes.
+
+**Corrected, minimal approach** (verified by reading `run_flow()` in
+full, lines ~788-1352): seed the scheduler's own local `completed` set
+and `results` dict from `ctx.completed_tasks`/`ctx.results` at the top
+of `run_flow()` (no-op — same as today's `set()`/`{}` — when they're
+empty, i.e. every non-resume call), add an `if nid in completed:
+continue` guard to the "Initial dispatch — entry nodes" block (today it
+unconditionally spawns every entry node), and add one frontier-dispatch
+pass right after initial dispatch and before the main event loop: call
+`_resolve_ready_targets()` for `explicit_mode` (already a generic,
+tested OR-join fixpoint — no changes needed there), or a small new
+AND-join fixpoint over `node.dependencies` for the definition-driven/
+legacy path. This is a surgical, purely-additive change (guarded by `if
+completed:` / seeded-empty-by-default) — it does not restructure the
+scheduler's existing dispatch/retry/back-edge logic at all.
 
 ---
 
@@ -169,10 +200,144 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: This was the integration heart of the feature. Implemented:
 
-**Completed by**:
-**Date**:
-**Notes**:
+- **Constructor opts** (`checkpoint`, `checkpoint_retention`,
+  `checkpoint_history`, `checkpoint_include_responses`, `durable`,
+  `checkpoint_store`, `durable_store`, `flow_id`) — all keyword-only,
+  popped before `**kwargs` forwarding, defaults preserve byte-identical
+  behavior. `from_definition()` extended with the same opts (each
+  `Optional`, falling back to `definition.metadata.checkpoint*` when
+  `None`; constructor-level override always wins).
+- **`run_flow()` split**: renamed the existing ~560-line scheduler body
+  to `_run_flow_scheduler(ctx, on_complete=...)` (verbatim move, zero
+  reformatting — see the Codebase Contract Correction below for why a
+  textual `try/finally` wrap was rejected) and added a new thin
+  `run_flow()` wrapper that resolves `ctx` (including consuming
+  `self._resume_seed_context` when set by `resume()`), calls
+  `_ensure_checkpointer(ctx)`, and wraps the scheduler call in
+  `try/finally` (release lease + `checkpointer.aclose()` always run,
+  listener always deregistered).
+- **`_ensure_checkpointer()`**: reuses an already-attached checkpointer
+  (set by `resume()`, lease already acquired there — never re-acquired)
+  or, when `checkpoint=True`, validates exportability
+  (`to_definition()`, fail-fast `FlowNotExportableError`), resolves
+  stores via `get_checkpoint_store()`, builds the `FlowCheckpointer`,
+  and acquires the lease (`FlowLockedError` propagates before any node
+  runs).
+- **`suspend()`**: requires an active checkpointer + `self._active_ctx`
+  (set only while `run_flow()` is executing); delegates to
+  `checkpointer.dump()`.
+- **`resume()`**: loads the checkpoint (durable first, ephemeral
+  fallback, `CheckpointNotFoundError` on miss), warns on `lossy`,
+  acquires the lease fail-fast via a throwaway `FlowCheckpointer` (reused
+  by `run_flow()` later), rebuilds via `from_definition()`, and seeds a
+  fresh `FlowContext` (`serializer.from_safe()` on results/responses,
+  `mark_completed()` per `completion_order` entry, `shared_data`
+  restored) stored as `flow._resume_seed_context` for the next
+  `run_flow()` call.
 
-**Deviations from spec**: none
+**Codebase Contract CORRECTION (verified stale, flagged mid-task —
+already recorded in this task file's Codebase Contract section above):**
+the original contract claimed pre-seeding `ctx.completed_tasks` alone
+was sufficient (scheduler reads `can_execute`/`completed_tasks`) and
+said not to patch the scheduler. Grepped `flow.py`: neither
+`completed_tasks` nor `can_execute` is referenced anywhere — the
+scheduler's dispatch runs entirely off local
+`completed`/`failed`/`skipped`/`results` (reset to empty every
+`run_flow()` call); `ctx.mark_completed()` only updates `FlowContext`
+for other consumers. Made the minimal necessary fix: seed the
+scheduler's local `completed`/`results` from
+`ctx.completed_tasks`/`.results` (no-op when empty — every non-resume
+call), added an `if nid in completed: continue` guard to the
+"Initial dispatch — entry nodes" block, and added one frontier-dispatch
+pass right after (calling the existing `_resolve_ready_targets()` for
+explicit/`add_edge()` mode; a small new AND-join fixpoint over
+`node.dependencies` for the definition-driven/legacy path, since
+`explicit_mode` is `False` whenever `self._definition is not None` —
+exactly the `from_definition()`/`resume()` path). Verified via the
+`test_resume_skips_completed_nodes` counter test (both unit/fake-store
+and real-Redis e2e) that this actually works end-to-end.
+
+**Process note**: extracting `_run_flow_scheduler()` (rather than
+wrapping the existing 560-line scheduler body in a textual
+`try/finally`, which would require re-indenting every line by 4 spaces —
+high risk of a subtle bracket/indentation bug in the most delicate part
+of the codebase) is a pure "extract method" refactor: the body moved
+verbatim into a same-nesting-depth method, no line touched beyond the
+`def` boundary.
+
+**Discovered a second, pre-existing, dormant framework bug (not fixed,
+out of scope, worked around in tests only)**: `AgentsFlow._run_node()`
+unconditionally calls `node.fsm.schedule()` for every dispatched node,
+but only `AgentNode` declares an `fsm` field (`core/node.py`) —
+`StartNode`/`EndNode` have none. No existing test exercises a
+definition-driven `"start"`/`"end"` typed node through `run_flow()`
+(`_start_node_def()` in `test_agents_flow.py` is defined but never
+called; every passing `from_definition()` + `run_flow()` test chains
+plain `"agent"`-typed nodes only) — confirmed by reproducing the crash
+in isolation and then confirming zero existing tests hit this path.
+Worked around by using agent-only linear chains (no start/end nodes) in
+all of this task's new tests, matching the existing codebase's own
+pattern; documented prominently in both new test files' module/class
+docstrings for the next reader. **Not fixed** — `core/node.py` is not in
+this task's file list and fixing a foundational Node class is a
+separate, deliberate decision outside FEAT-399's scope.
+
+**Discovered a third, pre-existing, general test-suite hazard
+(unrelated to FEAT-399, confirmed on `dev` baseline, not fixed — out of
+scope)**: `tests/test_orchestrator_agent.py` pops every
+`"parrot.bots" in key` entry from `sys.modules` at import time (its own
+module-stub isolation strategy) then re-imports
+`parrot.bots.flows.agents`, creating a second "generation" of the
+`parrot.bots.flows.*` module tree alongside whatever any
+already-collected test module (via pytest's collect-all-then-run
+model) is still holding direct references to. When
+`tests/bots/flows/test_storage_parity.py` (which imports
+`test_orchestrator_agent` inside one of its test bodies) runs before a
+`bots/flows`-adjacent test in the same pytest session (default
+alphabetical collection order: `"bots" < "flows"`), Pydantic model
+validation across the two generations can fail (`"Input should be an
+instance of FlowDefinition"` for an object that literally *is* a
+`FlowDefinition`, just from the other generation). **Verified this is
+NOT a FEAT-399 regression**: reproduced the identical failure combining
+`test_storage_parity.py` with the pre-existing, untouched
+`test_agents_flow.py::TestDecisionNodeRouting::test_decision_approve_branch_runs`
+on the `dev` baseline (zero FEAT-399 changes) — same failure, same
+root cause. This is a latent, general hazard for the whole
+`bots/flows` test tree whenever combined with `test_storage_parity.py`
+in one session, not something introduced or worsened here.
+`test_orchestrator_agent.py` is not in this task's file list; fixing its
+overly-broad `"parrot.bots" in key` substring match is a separate,
+deliberate decision outside FEAT-399's scope. This task's own
+acceptance-criterion invocation (`pytest packages/ai-parrot/tests/flows/
+checkpoint/ packages/ai-parrot/tests/integration/test_checkpoint_e2e.py
+-v`) passes cleanly (54 passed, 14 skipped) since it never combines with
+`test_storage_parity.py`; the broader "existing flow suite passes
+unmodified" criterion was verified against `bots/flows/` +
+`test_flow_definition.py`/`test_flow_integration.py`/
+`test_flow_loader.py`/`test_svelteflow_adapter.py` together (380 passed,
+9 skipped, only the 2 already-known pre-existing
+`TestImports::test_import_from_package` flakes — identical to the `dev`
+baseline with zero FEAT-399 changes).
+
+**Test coverage**: `test_suspend_resume.py` (5 tests, in-memory
+`FakeCheckpointStore`, no Redis) — checkpoint-disabled byte-identical
+default, resume-skips-completed-nodes via node-execution counters
+(re-fork from a historical checkpoint_id), lease-conflict
+`FlowLockedError`, missing-checkpoint `CheckpointNotFoundError`,
+suspend() → durable `status="suspended"`. `test_checkpoint_e2e.py` (5
+tests, real `RedisCheckpointStore` + sqlite `DurableCheckpointStore`,
+Redis-skippable, verified against a throwaway `docker run redis:7-alpine`
+container): kill/resume, re-fork from historical checkpoint,
+durable write-through (both tiers get every checkpoint), suspend→dump→
+resume purely from durable after the ephemeral tier is flushed, and
+memory_refs reattachment on resume. `ruff check` clean on all new/
+modified files.
+
+**Deviations from spec**: none (the scheduler-seed patch, the extract-
+method refactor, and the two discovered-but-unfixed pre-existing bugs
+are documented corrections/findings, not functional deviations from the
+spec's design).

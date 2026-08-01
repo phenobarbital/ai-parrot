@@ -143,10 +143,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Created `parrot/bots/flows/core/checkpoint/` with `model.py`
+(`MemoryRefs`, `NodeStateSnapshot`, `ContextSnapshot`, `FlowCheckpoint`),
+`errors.py` (`FlowLockedError`, `CheckpointNotFoundError`,
+`FlowNotExportableError`), and `__init__.py` re-exporting all seven names.
+Added `tests/flows/checkpoint/test_checkpoint_model.py` with 6 tests
+covering model round-trip (incl. embedded `FlowDefinition`), the `status`
+Literal rejecting unknown values, structured `errors` dicts, defaults, and
+the three error types' base classes. All 6 tests pass; `ruff check` clean.
 
 **Deviations from spec**: none

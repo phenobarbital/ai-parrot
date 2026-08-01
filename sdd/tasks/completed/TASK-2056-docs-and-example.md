@@ -119,10 +119,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Extended `docs/orchestration/agentsflow.md` with a "State
+Checkpointing & Resume" section (placed before "See Also", matching the
+existing doc's structure) covering every required item: two-tier design
+table, opt-in constructor kwargs (with the `FlowMetadata` block +
+constructor-wins precedence), the three durable triggers (write-through/
+suspend-dump/graceful-shutdown with the `attach_to_app()` snippet),
+`resume()`/re-fork semantics, `to_definition()` + the `NODE_REGISTRY`
+requirement, the idempotency caveat and lossy-checkpoint behavior as
+explicitly flagged `⚠️` call-outs (both are spec §7 acceptance-criteria
+items, not optional footnotes), the `FLOW_CHECKPOINT_*` env var table,
+and the HTTP ops endpoint table with the 409/404 mappings. Verified
+every code snippet's imports/API calls against the LANDED
+implementation (not the spec) by actually running them in a Python
+REPL: `from parrot.bots.flows import AgentsFlow`,
+`from parrot.bots.flows.core.checkpoint.recovery import
+get_recovery_service`, `from parrot.bots.flows.core.checkpoint.errors
+import FlowLockedError, CheckpointNotFoundError,
+FlowNotExportableError`, and confirmed `AgentsFlow.resume`/`.suspend`/
+`.to_definition` all exist.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Created `examples/flow/agentsflow_checkpointing.py` matching
+`agentsflow_standalone.py`'s style/structure (module docstring, `USE_LLM`-
+style header comment, `EXAMPLE N` sections, a `main()` with a try/except
+that prints a helpful hint on failure). Two runnable scenarios: (1) kill-
+and-resume — run a 3-node linear flow with `checkpoint=True`, then call
+`AgentsFlow.resume()` on a **fresh** `AgentsFlow` instance (no reference
+to the original), with per-node call counters proving zero re-execution;
+(2) re-fork from the checkpoint written right after the first node,
+proving the downstream nodes re-run while the upstream one doesn't. Uses
+a lightweight `CountingAgent`/`StaticRegistry` stub (not `BasicAgent`) so
+the example needs **no LLM API key** — only a local Redis, matching the
+task's "must run without Postgres/Mongo" constraint literally (Redis
+only) while keeping it fully self-contained. A third, uncalled
+`_durable_tier_and_shutdown_snippet()` function (marked `# pragma: no
+cover - docs only`) shows the `durable=True` + `DurableCheckpointStore`
++ `FlowRecoveryService.attach_to_app()` wiring as copy-pasteable
+reference, with an inline comment on swapping `driver="sqlite"` for
+`"postgres"`/`"mongodb"`.
 
-**Deviations from spec**: none
+**Verified end-to-end against a real throwaway Redis** (`docker run
+redis:7-alpine`), not just import-checked: both examples ran cleanly,
+printed the expected call counts (`researcher=1, writer=1, editor=1`
+after resume; `researcher=1, writer=2, editor=2` after re-fork,
+confirming only downstream nodes re-ran), and the `lossy` warning fired
+correctly (the `Response` stub class isn't a registered Pydantic type,
+so `FlowStateSerializer` degrades it to a tagged repr as designed —
+this is the CORRECT documented behavior, not a bug). `ruff check`
+clean.
+
+**Deviations from spec**: none.

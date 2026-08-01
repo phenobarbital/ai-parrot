@@ -144,10 +144,49 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Implemented `recovery.py` (`FlowRecoveryService`): `register()`/
+`unregister()` keyed by `flow.flow_id` (overwrite-on-duplicate, no
+error); `shutdown(deadline=FLOW_CHECKPOINT_SHUTDOWN_DEADLINE)` suspends
+every registered flow in parallel via `asyncio.wait(..., timeout=deadline)`,
+never raises (per-flow `suspend()` failures logged as warnings), and logs
+ONE `ERROR` line listing every flow_id that missed the deadline (their
+last Redis checkpoint stays recoverable until TTL, per spec) — pending
+tasks are cancelled after the deadline. `attach_to_app()` appends to
+`app.on_shutdown`; `install_signal_handlers()` best-effort registers
+SIGTERM/SIGINT via `loop.add_signal_handler`, catching
+`NotImplementedError`/`RuntimeError` (platforms without signal support)
+as a logged warning rather than raising. Module-level
+`get_recovery_service()` lazily creates and returns a process-wide
+singleton so `AgentsFlow` and the future HTTP handlers (TASK-2055) share
+one registry without a DI framework.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Wired `register()`/`unregister()` into `AgentsFlow.run_flow()`'s
+existing checkpointer try/finally (TASK-2053): registers right after
+`_ensure_checkpointer()` returns a non-`None` checkpointer, unregisters
+in the `finally` block before `checkpointer.aclose()` — guarded so
+flows without `checkpoint=True` never touch the service at all (matches
+spec AC1: zero behavior change when checkpointing is disabled).
 
-**Deviations from spec**: none
+Added `test_recovery_service.py`: 7 tests — deadline behavior with a
+fast + a slow (1s) `FakeFlow` (0.1s deadline; fast suspends, slow logs
+ERROR with its flow_id, no exception raised), idempotent/empty shutdown,
+suspend-failure isolation (warning, not raised), register/unregister
+lifecycle (including no-op double-unregister), same-flow_id overwrite,
+`attach_to_app()` actually triggering suspend via a real
+`aiohttp.web.AppRunner.cleanup()` cycle, and the module-level singleton
+accessor. All 7 pass; full `tests/flows/checkpoint/` suite: 61 passed, 9
+skipped. `ruff check` clean on the two new files.
+
+**Pre-existing hazard note (already documented in TASK-2053, unchanged
+here)**: combining `tests/bots/flows/test_storage_parity.py` with
+`tests/flows/checkpoint/test_suspend_resume.py` in one pytest session
+still reproduces the same pre-existing, unrelated cross-generation
+module hazard (confirmed on `dev` baseline with a completely untouched
+pre-existing test) — this task's own scoped acceptance-criterion
+invocation (`pytest packages/ai-parrot/tests/flows/checkpoint/
+test_recovery_service.py -v`) passes cleanly, and the recovery-service
+addition introduces no NEW instance of this hazard.
+
+**Deviations from spec**: none.
