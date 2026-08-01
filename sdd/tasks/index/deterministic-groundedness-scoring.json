@@ -32,7 +32,7 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-2041 (extractors/models). Strict chain.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:18:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2042-groundedness-scorer.md"
+      "completed_at": "2026-08-01T00:33:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2042-groundedness-scorer.md"
     },
     {
       "id": "TASK-2043",
