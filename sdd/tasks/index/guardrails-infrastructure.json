@@ -95,7 +95,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -108,8 +108,8 @@
       "parallelism_notes": "Highest-risk task — touches BaseBot input sites, must be sequential after TASK-2027",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2028-input-migration-wiring.md"
+      "completed_at": "2026-08-01T01:14:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2028-input-migration-wiring.md"
     },
     {
       "id": "TASK-2029",
