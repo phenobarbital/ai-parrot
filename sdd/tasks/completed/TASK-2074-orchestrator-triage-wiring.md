@@ -165,10 +165,76 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, autonomous)
+**Date**: 2026-08-02
+**Notes**: Read `ingest.py:123-306` (`ingest()`) in full before editing, per
+the Agent Instructions. Confirmed the idempotent replace mechanism is
+`self._store.replace_source_slice(source_id, records, edges)` (Step 4) —
+the "Does NOT Exist" note was right that `replace_source_slice` isn't a
+`SourceCollectionManager` symbol; it lives on the store. Added
+`ingest(..., *, triage: Optional[ManifestDocEntry] = None,
+charter_version: Optional[str] = None)`. With `triage=None` the method is
+untouched in every branch — verified by all 19 pre-existing
+`test_ingest.py` tests passing unchanged.
 
-**Completed by**:
-**Date**:
-**Notes**:
+With `triage` given: `effective_destination = triage.decision or
+triage.proposed_action`; `"discard"` short-circuits via a new
+`_record_discard()` helper (zero PageIndex/WikiStore/GraphIndex calls,
+only `SourceCollectionManager.record_decision(..., destination="discard",
+pages_generated=[])` + bookkeeper `DISCARD`); `"admit"`/`"archive"` run
+the normal pipeline with `triage.briefing` forwarded to
+`_create_wiki_pages(..., hint=...)` → `insert_content(tree_name, content,
+hint=hint)` (filling the dropped slot at the former `ingest.py:343`), and
+`"archive"` forces `category_override="archive"` through
+`_build_page_records` onto every created `WikiPageRecord` (both the
+tree-resolved and mocked-toolkit-fallback code paths). Persistence
+switches from `mark_ingested` to `record_decision` (TASK-2073) only when
+`triage is not None`, tagging the bookkeeper line `ADMIT`/`ARCHIVE`
+(`format_decision_log_details`) instead of `INGEST`. The pre-existing
+staleness-skip early-return is scoped to `triage is None` only — a
+triage-driven re-application (e.g. re-running `--review`) always
+re-persists decision fields even on unchanged content, relying on
+`replace_source_slice` for the actual page-level idempotence (verified in
+`test_orchestrator_reapply_idempotent`: 2 calls to `insert_content`, same
+`source_id`, page count stays at 3 — not 6).
 
-**Deviations from spec**: none
+Resolved one real vocabulary mismatch between tasks: `ManifestDocEntry.
+proposed_action`/`.decision` (TASK-2070, matches spec §2 Data Models
+verbatim) use `"admit"|"archive"|"discard"`, while TASK-2073's
+`sources.destination` column was documented as `"wiki"|"archive"|
+"discard"` (matching `Charter.destinations`, TASK-2069). Added a small
+`_DESTINATION_TO_SOURCES_COLUMN = {"admit": "wiki", "archive": "archive",
+"discard": "discard"}` map so the `sources.destination` column keeps
+TASK-2073's documented vocabulary while the orchestrator's own routing
+logic (category override, discard short-circuit, bookkeeper tag
+selection) uses `ManifestDocEntry`'s vocabulary directly — verified via
+`test_orchestrator_admit_writes_admit_log_and_decision_fields` asserting
+`entry.destination == "wiki"` for an `"admit"` triage decision.
+
+Added `charter_version: Optional[str] = None` as a second keyword-only
+param (not in the task's "e.g." minimal-surface suggestion) because
+`ManifestDocEntry` itself does not carry a charter version — only
+`ManifestRunHeader.charter_version` does (one per manifest run, not per
+entry) — so the caller that holds the run header (TASK-2075's CLI) must
+pass it through explicitly for `record_decision`'s `charter_version` to
+be populated. Additive and optional; does not change the documented
+`triage` parameter's behavior.
+
+All 28 tests in `test_ingest.py` pass (19 pre-existing unchanged + 9 new
+in `TestOrchestratorTriageWiring`, matching every scenario in the Test
+Specification plus a few extra: hint-is-None on the legacy path, both
+bookkeeper tags, decision-overrides-proposed_action). Full
+`tests/knowledge/wiki/` regression run: 745 passed, 2 skipped (unrelated),
+7 deselected (`test_arango_integration.py`, live-DB-only) — no
+regressions from the shared `ingest.py` changes.
+
+**Deviations from spec**: none in class/method names or documented
+behavior. Same judgment call as TASK-2072/2073 on the "ruff check clean"
+acceptance criterion: `ingest.py` carries pre-existing `UP045` findings
+(`Optional[...]` used pervasively already); every new `Optional[...]`
+parameter this task added (`triage`, `charter_version`, `hint`,
+`category_override`) matches that established convention exactly — no
+new category of finding, verified line-by-line against `git diff`.
+`test_ingest.py`'s pre-existing `unittest.mock.patch` unused-import and
+one blind `pytest.raises(Exception)` are untouched, confirmed via
+`git diff` (my additions are purely appended, not interleaved).

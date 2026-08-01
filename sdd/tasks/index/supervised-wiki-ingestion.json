@@ -111,7 +111,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Integrates triage output, ARCHIVE category, and decision persistence — needs all three predecessors.",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2074-orchestrator-triage-wiring.md"
+      "completed_at": "2026-08-01T23:48:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2074-orchestrator-triage-wiring.md"
     },
     {
       "id": "TASK-2075",
