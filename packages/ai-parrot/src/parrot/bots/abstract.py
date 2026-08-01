@@ -149,6 +149,10 @@ def _infer_store_type(store: Any) -> Any:
 from .dynamic_values import dynamic_values
 from .middleware import PromptPipeline
 from .prompts.builder import PromptBuilder
+# FEAT-396: Unified guardrails infrastructure
+from .guardrails.base import Guardrail, GuardrailStage
+from .guardrails.config import build_pipelines_from_config
+from .guardrails.pipeline import GuardrailPipeline
 # FEAT-176: Lifecycle Events System
 # FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
 # imported here via the parrot.core.events.lifecycle re-export facade.
@@ -301,6 +305,7 @@ class AbstractBot(
         prompt_builder: PromptBuilder = None,
         prompt_preset: str = None,
         event_bus: Optional[Any] = None,
+        guardrails: Optional[List[Union[str, Dict[str, Any], Guardrail]]] = None,
         **kwargs
     ):
         """
@@ -334,6 +339,13 @@ class AbstractBot(
             event_bus: Optional ``EventBus`` instance for dual-emit lifecycle
                 subscribers.  When ``None`` (default), the per-bot registry
                 forwards to the global registry only.
+            guardrails (list[str | dict | Guardrail]): Unified guardrails
+                infrastructure (FEAT-396) — names, ``{"name": ...,
+                **policy}`` dicts, or ``Guardrail`` instances to register in
+                addition to whatever the legacy security flags above map to
+                (``injection_detection``/``strict_mode``/``block_on_threat``/
+                ``injection_probability_threshold`` -> ``"prompt_injection"``;
+                ``enable_redaction`` -> ``"secrets"``). Default ``None``.
             **kwargs: Additional keyword arguments for configuration.
 
         """
@@ -685,6 +697,24 @@ class AbstractBot(
         self._security_logger = SecurityEventLogger(
             db_pool=getattr(self, 'db_pool', None),
             logger=self.logger
+        )
+
+        # FEAT-396: Unified guardrails infrastructure. Build one
+        # GuardrailPipeline per stage from the `guardrails` kwarg plus the
+        # legacy security flags above (mapped to equivalent registrations
+        # here; the flags themselves are left untouched for the existing
+        # `_sanitize_question`/redaction code paths to keep reading until
+        # those seams are migrated onto these pipelines). Registry
+        # validation happens eagerly, right here, not on first use.
+        self._guardrail_pipelines: Dict[GuardrailStage, GuardrailPipeline] = build_pipelines_from_config(
+            guardrails=guardrails,
+            legacy_flags={
+                "strict_mode": self.strict_mode,
+                "block_on_threat": self.block_on_threat,
+                "injection_detection": self.injection_detection,
+                "injection_probability_threshold": self.injection_probability_threshold,
+                "enable_redaction": self.enable_redaction,
+            },
         )
 
         # FEAT-176: Emit ToolManagerReadyEvent now that the registry is live.
