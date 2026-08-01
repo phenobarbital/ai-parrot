@@ -19,6 +19,7 @@ from .base import (
     GuardrailStage,
 )
 from .config import build_pipelines_from_config
+from .events import GuardrailActionEvent
 from .pipeline import GuardrailPipeline, GuardrailTelemetryEntry, PipelineOutcome
 from .registry import build_guardrails, register_guardrail
 from .streaming import StreamingGuardrail
@@ -26,6 +27,7 @@ from .streaming import StreamingGuardrail
 __all__ = [
     "Guardrail",
     "GuardrailAction",
+    "GuardrailActionEvent",
     "GuardrailContext",
     "GuardrailPipeline",
     "GuardrailResult",

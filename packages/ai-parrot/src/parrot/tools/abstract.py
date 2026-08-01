@@ -70,16 +70,16 @@ def _default_scrubber():
 
 
 # FEAT-396 (TASK-2029) — lazy import, same reasoning as _get_output_scrubber()
-# above, PLUS: tools are decoupled from their owning bot (only the plain
-# `enable_redaction: bool` flag is stamped onto a tool by ToolManager — see
-# `enable_redaction` class attribute below — there is no per-bot
-# GuardrailPipeline reference reachable from here). So this hook cannot
-# literally "run the owning bot's TOOL_OUTPUT GuardrailPipeline"; instead it
-# resolves the same "secrets" guardrail the registry/config would build for
-# any bot with enable_redaction=True, via a process-wide singleton — the
-# direct architectural analogue of the previous `_default_scrubber()`
-# singleton, now sourced through the pluggable guardrails registry so
-# future TOOL_OUTPUT guardrails (PII, etc.) compose the same way.
+# above. Fallback-only default guardrail: used when a tool has no
+# `_tool_output_pipeline` stamped on it (e.g. constructed/executed outside
+# a guardrails-aware bot). The normal, per-bot-config-respecting path is
+# `_run_tool_output_guardrails()` below, which resolves the tool's
+# `_tool_output_pipeline` — the OWNING BOT's real TOOL_OUTPUT
+# `GuardrailPipeline` (`AbstractBot._guardrail_pipelines[GuardrailStage.
+# TOOL_OUTPUT]`, stamped onto the tool by `ToolManager` — see
+# `tools/manager.py`) — so a bot's `guardrails=[...]` registrations
+# (custom Guardrail subclasses, a non-default SecretsGuardrail policy) are
+# actually honored here, not silently ignored.
 _DEFAULT_SECRETS_GUARDRAIL = None  # initialised on first use (module-level singleton)
 
 
@@ -90,6 +90,53 @@ def _default_secrets_guardrail():
         from ..bots.guardrails.builtin.secrets import SecretsGuardrail  # noqa: PLC0415
         _DEFAULT_SECRETS_GUARDRAIL = SecretsGuardrail()
     return _DEFAULT_SECRETS_GUARDRAIL
+
+
+async def _run_tool_output_guardrails(pipeline: Optional[Any], value: Any, tool_name: str) -> Any:
+    """Apply TOOL_OUTPUT guardrails to a single `ToolResult` field.
+
+    Resolves ``pipeline`` (the calling tool's ``_tool_output_pipeline`` —
+    the owning bot's real `GuardrailPipeline`, or ``None``) rather than a
+    hardcoded default, so a bot's own `guardrails=[...]` config is
+    actually honored.
+
+    ``value`` may be ``str`` (routed through the real pipeline — full
+    BLOCK/TRANSFORM/FLAG semantics via `Guardrail.check()`) or non-``str``
+    (``ToolResult.result``/``.metadata`` are frequently dict/list —
+    `Guardrail.check(content: str)`/`GuardrailResult.content` are
+    Pydantic-typed ``str``-only, TASK-2024, so non-string values are
+    instead routed to each registered guardrail's ``scrub(value,
+    tool_name)`` escape hatch when it exposes one — e.g. `SecretsGuardrail`
+    — and left untouched by guardrails that don't).
+
+    Args:
+        pipeline: The tool's `_tool_output_pipeline`, or ``None`` (falls
+            back to the process-wide default `SecretsGuardrail`).
+        value: The field value to scrub.
+        tool_name: Audit-log tool-name hint.
+
+    Returns:
+        The (possibly transformed) value. On BLOCK (string content only),
+        a canned placeholder — never the offending content.
+    """
+    if pipeline is None or not pipeline.has_guardrails:
+        return _default_secrets_guardrail().scrub(value, tool_name=tool_name)
+
+    if isinstance(value, str):
+        from ..bots.guardrails.base import GuardrailContext, GuardrailStage  # noqa: PLC0415
+        ctx = GuardrailContext(
+            stage=GuardrailStage.TOOL_OUTPUT, agent_name=tool_name, tool_name=tool_name,
+        )
+        outcome = await pipeline.run(value, ctx)
+        if outcome.blocked:
+            return f"[content removed by guardrail: {outcome.reason}]"
+        return outcome.content if outcome.content is not None else value
+
+    for guardrail in pipeline.guardrails:
+        scrub = getattr(guardrail, "scrub", None)
+        if callable(scrub):
+            value = scrub(value, tool_name=tool_name)
+    return value
 
 
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
@@ -176,6 +223,13 @@ class AbstractTool(EventEmitterMixin, ABC):
     # agent (via ToolManager) stamps this flag on its tools when the agent is
     # created with ``enable_redaction=True``; unflagged agents skip scrubbing.
     enable_redaction: bool = False
+    # FEAT-396 (TASK-2029, corrected post-review): the owning bot's
+    # TOOL_OUTPUT GuardrailPipeline, stamped by ToolManager alongside
+    # enable_redaction above (tools have no bot back-reference by design —
+    # see `parrot.bots.guardrails`). ``None`` for tools not owned by a
+    # guardrails-aware bot (e.g. constructed standalone); the FEAT-252 hook
+    # falls back to `_default_secrets_guardrail()` in that case.
+    _tool_output_pipeline: Optional[Any] = None
     # FEAT-391: opt-in lazy resource lifecycle. When True, execute() calls
     # _ensure_open() (which calls _open() at most once) before the first
     # _execute(). Tools that don't manage external resources leave this
@@ -610,6 +664,20 @@ class AbstractTool(EventEmitterMixin, ABC):
         except Exception:
             return 0
 
+    def _has_tool_output_guardrails(self) -> bool:
+        """Whether the owning bot registered real TOOL_OUTPUT guardrails.
+
+        FEAT-396 (TASK-2029, corrected post-review): a bot may register a
+        custom TOOL_OUTPUT `Guardrail` via `guardrails=[...]` without also
+        setting the legacy `enable_redaction` flag — the FEAT-252 hook must
+        still run in that case, not only when `enable_redaction` is True.
+
+        Returns:
+            True if `self._tool_output_pipeline` is set and non-empty.
+        """
+        pipeline = self._tool_output_pipeline
+        return pipeline is not None and pipeline.has_guardrails
+
     # ── Core execution ────────────────────────────────────────────────────────
 
     async def execute(self, *args, **kwargs) -> ToolResult:
@@ -803,30 +871,37 @@ class AbstractTool(EventEmitterMixin, ABC):
             # This is the ONLY place scrubbing happens on the way out; all
             # downstream callers receive a pre-scrubbed ToolResult.
             # Redaction is opt-in per agent: only tools stamped with
-            # enable_redaction=True (flagged agents) are scrubbed.
-            # FEAT-396 (TASK-2029): delegates through the "secrets" guardrail
-            # (`_default_secrets_guardrail()`) instead of the raw scrubber
-            # singleton — see that function's docstring for why this can't
-            # literally route through a per-bot `GuardrailPipeline`.
-            if self.enable_redaction:
+            # enable_redaction=True (flagged agents) are scrubbed — OR
+            # whose owning bot registered real TOOL_OUTPUT guardrails via
+            # `guardrails=[...]` (FEAT-396, corrected post-review: a bot
+            # can register a custom TOOL_OUTPUT guardrail WITHOUT also
+            # setting the legacy enable_redaction flag; gating on that flag
+            # alone would silently skip it).
+            # `_run_tool_output_guardrails()` resolves this tool's OWNING
+            # BOT's real TOOL_OUTPUT `GuardrailPipeline`
+            # (`self._tool_output_pipeline`, stamped by `ToolManager`) —
+            # honoring per-bot `guardrails=[...]` config — falling back to
+            # the process-wide default `SecretsGuardrail` only when no
+            # pipeline was stamped (tool used outside a bot context).
+            if self.enable_redaction or self._has_tool_output_guardrails():
                 try:
-                    _scrubber = _default_secrets_guardrail()
+                    _pipeline = self._tool_output_pipeline
                     if tool_result.result is not None:
                         tool_result = tool_result.model_copy(
-                            update={"result": _scrubber.scrub(
-                                tool_result.result, tool_name=_tool_name
+                            update={"result": await _run_tool_output_guardrails(
+                                _pipeline, tool_result.result, _tool_name
                             )}
                         )
                     if tool_result.error is not None:
                         tool_result = tool_result.model_copy(
-                            update={"error": _scrubber.scrub(
-                                tool_result.error, tool_name=_tool_name
+                            update={"error": await _run_tool_output_guardrails(
+                                _pipeline, tool_result.error, _tool_name
                             )}
                         )
                     if tool_result.metadata:
                         tool_result = tool_result.model_copy(
-                            update={"metadata": _scrubber.scrub(
-                                tool_result.metadata, tool_name=_tool_name
+                            update={"metadata": await _run_tool_output_guardrails(
+                                _pipeline, tool_result.metadata, _tool_name
                             )}
                         )
                 except Exception as _scrub_exc:  # never let scrub errors break tool execution
@@ -880,10 +955,11 @@ class AbstractTool(EventEmitterMixin, ABC):
             self.logger.error("%s", error_msg)
             self.logger.debug("%s", traceback.format_exc())
 
-            if self.enable_redaction:
+            if self.enable_redaction or self._has_tool_output_guardrails():
                 try:
-                    _scrubber = _default_secrets_guardrail()
-                    error_msg = _scrubber.scrub(error_msg, tool_name=_tool_name)
+                    error_msg = await _run_tool_output_guardrails(
+                        self._tool_output_pipeline, error_msg, _tool_name
+                    )
                 except Exception:
                     pass
 

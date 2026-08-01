@@ -5,19 +5,30 @@ Covers the seams `SecretsGuardrail` was wired into:
 - `BaseBot.ask()` — the channel-egress scrub now applies to ALL output
   modes, not just the legacy 4 chat modes (deliberate behavior extension).
 - `BaseBot.ask_stream()` — StreamingGuardrail adapter scaffolding (feed/
-  flush) plus the final-AIMessage OUTPUT pipeline run.
+  flush) plus the OUTPUT_STREAM `GuardrailPipeline` plus the final-AIMessage
+  OUTPUT pipeline run.
 - `AbstractTool.execute()`'s FEAT-252 hook — delegates through
-  `_default_secrets_guardrail()` instead of the raw `_default_scrubber()`
-  singleton (behavioral parity verified against the existing
-  `tests/test_feat252_containment.py` suite, which stays green unmodified).
+  `_run_tool_output_guardrails()`, which resolves the tool's OWNING BOT's
+  real TOOL_OUTPUT `GuardrailPipeline` (stamped by `ToolManager`, see
+  `TestToolOutputPerBotResolution` below), falling back to the process-wide
+  default `SecretsGuardrail` only when no pipeline was stamped. Behavioral
+  parity for the default-policy path verified against the existing
+  `tests/test_feat252_containment.py` suite, which stays green unmodified.
 """
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
 from parrot.bots.basic import BasicBot
-from parrot.bots.guardrails.base import GuardrailStage
+from parrot.bots.guardrails.base import (
+    Guardrail,
+    GuardrailAction,
+    GuardrailResult,
+    GuardrailStage,
+)
 from parrot.bots.guardrails.streaming import StreamingGuardrail
 from parrot.models import AIMessage, CompletionUsage
+from parrot.tools.abstract import AbstractTool
 
 
 def _patched_bot(**kwargs) -> BasicBot:
@@ -113,12 +124,15 @@ class TestStreamingGuardrailAdapterScaffolding:
         bot = _patched_bot()
         assert bot._streaming_guardrails == []
 
-    def test_feed_flush_passthrough_when_empty(self):
+    @pytest.mark.asyncio
+    async def test_feed_flush_passthrough_when_empty(self):
         bot = _patched_bot()
-        assert bot._feed_streaming_guardrails("hello") == "hello"
+        text, blocked = await bot._feed_streaming_guardrails("hello")
+        assert (text, blocked) == ("hello", False)
         assert bot._flush_streaming_guardrails() == ""
 
-    def test_registered_adapter_transforms_chunks(self):
+    @pytest.mark.asyncio
+    async def test_registered_adapter_transforms_chunks(self):
         """Proves the StreamingGuardrail scaffolding (TASK-2024 contract)
         actually drives ask_stream's per-chunk loop end-to-end, even though
         no built-in guardrail implements it yet."""
@@ -133,10 +147,12 @@ class TestStreamingGuardrailAdapterScaffolding:
 
         bot._streaming_guardrails.append(UpperAdapter())
 
-        assert bot._feed_streaming_guardrails("hello") == "HELLO"
+        text, blocked = await bot._feed_streaming_guardrails("hello")
+        assert (text, blocked) == ("HELLO", False)
         assert bot._flush_streaming_guardrails() == "[END]"
 
-    def test_withholding_adapter_can_buffer(self):
+    @pytest.mark.asyncio
+    async def test_withholding_adapter_can_buffer(self):
         bot = _patched_bot()
 
         class BufferingAdapter(StreamingGuardrail):
@@ -152,18 +168,70 @@ class TestStreamingGuardrailAdapterScaffolding:
 
         bot._streaming_guardrails.append(BufferingAdapter())
 
-        assert bot._feed_streaming_guardrails("a") == ""
-        assert bot._feed_streaming_guardrails("b") == ""
+        text_a, blocked_a = await bot._feed_streaming_guardrails("a")
+        text_b, blocked_b = await bot._feed_streaming_guardrails("b")
+        assert (text_a, blocked_a) == ("", False)
+        assert (text_b, blocked_b) == ("", False)
         assert bot._flush_streaming_guardrails() == "ab"
+
+    @pytest.mark.asyncio
+    async def test_custom_guardrail_registered_for_output_stream_actually_runs(self):
+        """Regression test: a custom Guardrail declaring
+        stages={GuardrailStage.OUTPUT_STREAM} must actually be invoked by
+        ask_stream's chunk loop — the OUTPUT_STREAM GuardrailPipeline
+        `build_pipelines_from_config` builds was previously constructed but
+        never run anywhere (dead pipeline), fixed post-review."""
+        from parrot.bots.guardrails.base import (
+            Guardrail,
+            GuardrailAction,
+            GuardrailResult,
+        )
+
+        seen_chunks = []
+
+        class RecordingStreamGuardrail(Guardrail):
+            name = "recorder"
+            stages: ClassVar[set] = {GuardrailStage.OUTPUT_STREAM}
+            priority = 50
+            on_error = "fail_open"
+
+            async def check(self, content, ctx):
+                seen_chunks.append(content)
+                return GuardrailResult(action=GuardrailAction.TRANSFORM, content=content.upper())
+
+        bot = _patched_bot(guardrails=[RecordingStreamGuardrail()])
+        assert bot._guardrail_pipelines[GuardrailStage.OUTPUT_STREAM].has_guardrails
+
+        text, blocked = await bot._feed_streaming_guardrails("hello")
+        assert blocked is False
+        assert text == "HELLO"
+        assert seen_chunks == ["hello"]
+
+    @pytest.mark.asyncio
+    async def test_custom_guardrail_can_block_the_stream(self):
+        class BlockingStreamGuardrail(Guardrail):
+            name = "blocker"
+            stages: ClassVar[set] = {GuardrailStage.OUTPUT_STREAM}
+            priority = 50
+            on_error = "fail_closed"
+
+            async def check(self, content, ctx):
+                return GuardrailResult(action=GuardrailAction.BLOCK, reason="blocked_stream")
+
+        bot = _patched_bot(guardrails=[BlockingStreamGuardrail()])
+
+        text, blocked = await bot._feed_streaming_guardrails("hello")
+        assert blocked is True
+        assert text == ""
 
 
 class TestSecretsToolOutputRegressionSuite:
-    """The actual tool-seam regression coverage lives in the existing,
-    pre-migration `tests/test_feat252_containment.py` suite (18 tests,
-    unmodified) — it stays green against the FEAT-396 hook change (now
-    routed through `_default_secrets_guardrail()` instead of the raw
-    `_default_scrubber()` singleton), which is the behavioral-parity
-    signal for the FEAT-252 tool-output redaction path this task rewires."""
+    """The actual DEFAULT-policy tool-seam regression coverage lives in the
+    existing, pre-migration `tests/test_feat252_containment.py` suite (18
+    tests, unmodified) — it stays green against the FEAT-396 hook change,
+    which is the behavioral-parity signal for that path. The PER-BOT
+    resolution behavior (the actual fix — see `TestToolOutputPerBotResolution`
+    below) has no pre-migration equivalent, since it didn't exist before."""
 
     def test_containment_suite_file_exists(self):
         from pathlib import Path
@@ -172,3 +240,164 @@ class TestSecretsToolOutputRegressionSuite:
             Path(__file__).resolve().parents[1] / "test_feat252_containment.py"
         )
         assert suite.is_file()
+
+
+class _EchoTool(AbstractTool):
+    """Minimal tool returning whatever `result` was constructed with."""
+    name = "echo_tool"
+    description = "test"
+
+    def __init__(self, result, **kwargs):
+        super().__init__(**kwargs)
+        self._result = result
+
+    async def _execute(self, **kwargs):
+        return self._result
+
+
+class TestToolOutputPerBotResolution:
+    """Regression tests for the TOOL_OUTPUT architecture gap found in code
+    review: `ToolManager`/`AbstractTool` previously had no reference to the
+    owning bot's TOOL_OUTPUT `GuardrailPipeline` at all — the FEAT-252 hook
+    always used a hardcoded, process-wide default `SecretsGuardrail`
+    (default `ScrubPolicy`), so a bot's `guardrails=[...]` TOOL_OUTPUT
+    registrations (a custom Guardrail subclass, or a non-default
+    `SecretsGuardrail` policy) were silently ignored — a direct AC
+    violation ("a custom Guardrail subclass can be attached per bot via
+    guardrails=[...] at any stage"). Fixed by stamping the real per-bot
+    pipeline onto `ToolManager`/`AbstractTool`, mirroring the existing
+    `enable_redaction` stamping chain exactly (`tools/manager.py`)."""
+
+    @pytest.mark.asyncio
+    async def test_custom_tool_output_guardrail_actually_runs(self):
+        """A custom Guardrail registered via guardrails=[...] for
+        TOOL_OUTPUT must be invoked when a bot executes a tool — not
+        silently bypassed in favor of the hardcoded default."""
+        seen = []
+
+        class RecordingToolOutputGuardrail(Guardrail):
+            name = "recorder"
+            stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+            priority = 20
+            on_error = "fail_open"
+
+            async def check(self, content, ctx):
+                seen.append(content)
+                return GuardrailResult(action=GuardrailAction.TRANSFORM, content=content.upper())
+
+        bot = _patched_bot(guardrails=[RecordingToolOutputGuardrail()])
+        tool = _EchoTool(result="hello world")
+        bot.tool_manager.add_tool(tool)
+
+        # NOTE: ToolManager.execute_tool() unwraps ToolResult and returns
+        # `.result` directly (see tools/manager.py's `return out`).
+        result = await bot.tool_manager.execute_tool("echo_tool", {})
+
+        assert seen == ["hello world"]
+        assert result == "HELLO WORLD"
+
+    @pytest.mark.asyncio
+    async def test_custom_tool_output_guardrail_can_block(self):
+        class BlockingToolOutputGuardrail(Guardrail):
+            name = "blocker"
+            stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+            priority = 20
+            on_error = "fail_closed"
+
+            async def check(self, content, ctx):
+                return GuardrailResult(action=GuardrailAction.BLOCK, reason="blocked_tool_output")
+
+        bot = _patched_bot(guardrails=[BlockingToolOutputGuardrail()])
+        tool = _EchoTool(result="secret plan")
+        bot.tool_manager.add_tool(tool)
+
+        result = await bot.tool_manager.execute_tool("echo_tool", {})
+
+        assert "secret plan" not in str(result)
+        assert "blocked_tool_output" in str(result)
+
+    @pytest.mark.asyncio
+    async def test_non_string_result_uses_scrub_escape_hatch(self):
+        """dict/list ToolResult.result values can't go through
+        Guardrail.check(content: str) — SecretsGuardrail's scrub() escape
+        hatch is used instead, resolved from the REAL per-bot pipeline
+        (proving the fix applies to the non-string path too, not just the
+        string BLOCK/TRANSFORM path above)."""
+        bot = _patched_bot(enable_redaction=True)
+        tool = _EchoTool(result={"api_key": "sk-1234abcdefghij", "ok": "plain"})
+        bot.tool_manager.add_tool(tool)
+
+        result = await bot.tool_manager.execute_tool("echo_tool", {})
+
+        assert result["ok"] == "plain"
+        assert "sk-1234abcdefghij" not in str(result["api_key"])
+
+    @pytest.mark.asyncio
+    async def test_no_bot_falls_back_to_default_singleton(self):
+        """A tool with no `_tool_output_pipeline` stamped (not owned by a
+        guardrails-aware bot) falls back to the pre-FEAT-396 default-policy
+        scrubber — matching `test_feat252_containment.py`'s standalone-tool
+        usage pattern exactly."""
+        tool = _EchoTool(result="API_KEY=sk-1234abcdefghij")
+        tool.enable_redaction = True
+        assert tool._tool_output_pipeline is None
+
+        result = await tool.execute()
+
+        assert "sk-1234abcdefghij" not in str(result.result)
+
+
+class TestGuardrailTelemetryReachesObserver:
+    """Regression tests for the telemetry gap found in code review:
+    `GuardrailPipeline.on_telemetry` (TASK-2025) was never actually
+    supplied by any bot-wiring code, so no `GuardrailTelemetryEntry` ever
+    reached a real FEAT-176 observer despite being recorded on every run —
+    a direct AC violation ("Telemetry emits guardrail name/stage/action/
+    duration/counts... via existing FEAT-176 observers"). Fixed by wiring
+    `AbstractBot._on_guardrail_telemetry` as `on_telemetry` for every
+    stage's pipeline and forwarding each entry as a `GuardrailActionEvent`
+    (a new, additive FEAT-176 `LifecycleEvent` subclass — see
+    `guardrails/events.py` — following the same pattern
+    `parrot.eval.events` already established for another feature)."""
+
+    @pytest.mark.asyncio
+    async def test_output_stage_guardrail_run_emits_telemetry_event(self):
+        import asyncio
+
+        from parrot.bots.guardrails.events import GuardrailActionEvent
+
+        bot = _patched_bot(enable_redaction=True)
+        captured = []
+
+        async def _capture(event):
+            captured.append(event)
+
+        bot.events.subscribe(GuardrailActionEvent, _capture)
+
+        response = _ai_message("API_KEY=sk-1234abcdefghij")
+        await bot._run_output_pipeline(response, method="ask")
+        # emit_nowait schedules dispatch as a fire-and-forget task on the
+        # running loop rather than awaiting it inline — yield control so
+        # the scheduled task actually runs before asserting.
+        await asyncio.sleep(0.05)
+
+        assert len(captured) == 1
+        event = captured[0]
+        assert event.guardrail_name == "secrets"
+        assert event.stage == "output"
+        assert event.action == "transform"
+        assert event.duration_ms >= 0
+        assert event.agent_name == "TestBot"
+
+    @pytest.mark.asyncio
+    async def test_telemetry_never_carries_content(self):
+        """Never a literal AC in the field set (structurally impossible —
+        GuardrailActionEvent has no content-shaped field) — asserted
+        explicitly for documentation/regression value."""
+        from dataclasses import fields as dataclass_fields
+
+        from parrot.bots.guardrails.events import GuardrailActionEvent
+
+        field_names = {f.name for f in dataclass_fields(GuardrailActionEvent)}
+        assert "content" not in field_names
+        assert "text" not in field_names

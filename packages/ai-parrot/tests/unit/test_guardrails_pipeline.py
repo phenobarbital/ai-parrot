@@ -179,14 +179,34 @@ class TestPipelineFlagAccumulation:
 
 @pytest.mark.asyncio
 class TestPipelineIdempotency:
+    """`GuardrailPipeline` itself does NOT memoize outcomes across `run()`
+    calls (a pipeline-level (stage, content) cache was removed post-review
+    — see pipeline.py's module docstring: it silently suppressed
+    side-effecting guardrails like PromptInjectionGuardrail's security
+    audit logging and LegacyPipelineGuardrail's wrapped LLM call on repeat
+    identical input, which is a correctness/security regression, not an
+    optimization). Outcome idempotency (same input -> same output) is
+    still achievable when a guardrail's own transform is naturally
+    idempotent (e.g. `str.upper()`) or implements its own content-marker
+    check (e.g. `SecretsGuardrail` + `_already_scrubbed`,
+    `tests/unit/test_guardrails_secrets.py::test_idempotent`)."""
+
     async def test_double_run_idempotent(self, ctx):
+        """Naturally-idempotent TRANSFORM (str.upper()) produces the same
+        content on a second run — without requiring pipeline-level caching."""
         pipeline = GuardrailPipeline()
         pipeline.add(TransformGuardrail())
         outcome1 = await pipeline.run("hello", ctx)
         outcome2 = await pipeline.run(outcome1.content, ctx)
         assert outcome1.content == outcome2.content
 
-    async def test_repeat_same_content_uses_stamp_cache(self, ctx):
+    async def test_repeat_same_content_reinvokes_check_every_run(self, ctx):
+        """Regression test for the removed stamp cache: a guardrail with
+        side effects (here, simulated via a call counter — in production
+        this is PromptInjectionGuardrail's SecurityEventLogger audit trail
+        or LegacyPipelineGuardrail's wrapped LLM call) MUST run on every
+        `run()` call, even for identical repeat content — the pipeline
+        must never silently skip check() to "optimize" a repeat input."""
         calls = 0
 
         class CountingTransform(Guardrail):
@@ -204,7 +224,8 @@ class TestPipelineIdempotency:
         pipeline.add(CountingTransform())
         outcome1 = await pipeline.run("hello", ctx)
         outcome2 = await pipeline.run("hello", ctx)
-        assert calls == 1
+        assert calls == 2
+        assert outcome1.content == outcome2.content == "HELLO"
         assert outcome1.content == outcome2.content == "HELLO"
 
 

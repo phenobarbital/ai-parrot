@@ -119,7 +119,8 @@ from .prompts.builder import PromptBuilder
 from .guardrails.base import Guardrail, GuardrailContext, GuardrailStage
 from .guardrails.builtin.legacy_pipeline import LegacyPipelineGuardrail
 from .guardrails.config import build_pipelines_from_config
-from .guardrails.pipeline import GuardrailPipeline, PipelineOutcome
+from .guardrails.events import GuardrailActionEvent
+from .guardrails.pipeline import GuardrailPipeline, GuardrailTelemetryEntry, PipelineOutcome
 from .guardrails.streaming import StreamingGuardrail
 # FEAT-176: Lifecycle Events System
 # FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
@@ -660,7 +661,10 @@ class AbstractBot(
         # GuardrailPipeline per stage from the `guardrails` kwarg plus the
         # legacy security flags above (mapped to equivalent registrations
         # here). Registry validation happens eagerly, right here, not on
-        # first use.
+        # first use. `on_telemetry=self._on_guardrail_telemetry` forwards
+        # every GuardrailTelemetryEntry to a FEAT-176 observer (added
+        # post-review — previously never wired, so no guardrail telemetry
+        # ever reached an observer despite `GuardrailPipeline` recording it).
         self._guardrail_pipelines: Dict[GuardrailStage, GuardrailPipeline] = build_pipelines_from_config(
             guardrails=guardrails,
             legacy_flags={
@@ -670,6 +674,7 @@ class AbstractBot(
                 "injection_probability_threshold": self.injection_probability_threshold,
                 "enable_redaction": self.enable_redaction,
             },
+            on_telemetry=self._on_guardrail_telemetry,
         )
         # FEAT-396 (TASK-2028): always register the legacy PromptPipeline
         # compat guardrail — unconditionally, even while self._prompt_pipeline
@@ -688,6 +693,15 @@ class AbstractBot(
         # `_flush_streaming_guardrails` are zero-overhead passthroughs until
         # a future transform-capable OUTPUT guardrail registers one here.
         self._streaming_guardrails: List[StreamingGuardrail] = []
+        # FEAT-396 (TASK-2029, corrected post-review): stamp the real
+        # TOOL_OUTPUT pipeline onto the tool manager (which in turn stamps
+        # it onto every tool it registers/executes, alongside
+        # `enable_redaction` — see `tools/manager.py`). Tools have no bot
+        # back-reference by design, so this is how `tools/abstract.py`'s
+        # FEAT-252 hook resolves THIS bot's `guardrails=[...]` TOOL_OUTPUT
+        # registrations instead of silently falling back to a hardcoded
+        # default-policy singleton.
+        self.tool_manager._tool_output_pipeline = self._guardrail_pipelines[GuardrailStage.TOOL_OUTPUT]
 
         # FEAT-176: Emit ToolManagerReadyEvent now that the registry is live.
         if getattr(self, '_tool_manager_ready_pending', False):
@@ -1936,26 +1950,53 @@ class AbstractBot(
 
         return response
 
-    def _feed_streaming_guardrails(self, chunk: str) -> str:
-        """Run ``chunk`` through each registered `StreamingGuardrail`, in order.
+    async def _feed_streaming_guardrails(self, chunk: str) -> tuple[str, bool]:
+        """Run ``chunk`` through the OUTPUT_STREAM guardrail chain.
 
-        FEAT-396 (TASK-2029): scaffolding for transform-capable OUTPUT
-        guardrails to operate on `ask_stream` chunks (spec §2
-        `StreamingGuardrail` contract, TASK-2024). ``self.
-        _streaming_guardrails`` is empty by default — no built-in guardrail
-        implements it yet — making this a zero-overhead passthrough until a
-        future plugin registers one.
+        Two complementary mechanisms, both driven per-chunk:
+          1. Registered `StreamingGuardrail` adapters (``self.
+             _streaming_guardrails``) — incremental ``feed()``/``flush()``
+             transforms (spec §2 `StreamingGuardrail` contract, TASK-2024).
+             Empty by default; no built-in guardrail implements it yet.
+          2. The OUTPUT_STREAM `GuardrailPipeline`
+             (``self._guardrail_pipelines[GuardrailStage.OUTPUT_STREAM]``)
+             — regular `Guardrail` instances a caller registered with
+             ``stages={GuardrailStage.OUTPUT_STREAM}`` via
+             ``guardrails=[...]``, run via the same ``check()``/BLOCK/
+             TRANSFORM/FLAG semantics every other stage uses. Building
+             this pipeline (`build_pipelines_from_config`, TASK-2026) but
+             never invoking it here left custom OUTPUT_STREAM guardrails
+             silently dead — fixed post-review.
+
+        Both are zero-overhead no-ops when nothing is registered for
+        either mechanism (the common case today).
 
         Args:
             chunk: The next raw chunk yielded by the LLM client.
 
         Returns:
-            The (possibly transformed, possibly empty while an adapter
-            withholds content) chunk to actually yield to the caller.
+            A ``(text, blocked)`` tuple. ``text`` is the (possibly
+            transformed, possibly empty while an adapter withholds
+            content) chunk to actually yield to the caller. When
+            ``blocked`` is True, ``text`` is empty and the caller must
+            stop streaming further chunks.
         """
         for adapter in self._streaming_guardrails:
             chunk = adapter.feed(chunk)
-        return chunk
+
+        pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT_STREAM]
+        if chunk and pipeline.has_guardrails:
+            ctx = GuardrailContext(
+                stage=GuardrailStage.OUTPUT_STREAM,
+                agent_name=self.name,
+                method="ask_stream",
+            )
+            outcome = await pipeline.run(chunk, ctx)
+            if outcome.blocked:
+                return "", True
+            chunk = outcome.content if outcome.content is not None else chunk
+
+        return chunk, False
 
     def _flush_streaming_guardrails(self) -> str:
         """Flush any content withheld by registered `StreamingGuardrail` adapters.
@@ -1966,6 +2007,34 @@ class AbstractBot(
             adapters are registered.
         """
         return "".join(adapter.flush() for adapter in self._streaming_guardrails)
+
+    def _on_guardrail_telemetry(self, entry: GuardrailTelemetryEntry) -> None:
+        """Forward one `GuardrailTelemetryEntry` to a FEAT-176 observer.
+
+        Passed as ``on_telemetry`` to `build_pipelines_from_config()`
+        (`__init__`), so every `GuardrailPipeline.run()` call across all
+        four stages routes its per-guardrail telemetry here. Never
+        forwards content — only name/stage/action/duration, per spec §2
+        (`GuardrailTelemetryEntry` itself is content-free by construction).
+
+        Uses ``emit_nowait`` (schedules on the running loop, or drops
+        silently if none — same pattern as `AgentInitializedEvent` etc.
+        elsewhere in this method) since a guardrail may run outside a
+        request-scoped async context.
+
+        Args:
+            entry: The telemetry record for one guardrail execution.
+        """
+        self.events.emit_nowait(GuardrailActionEvent(
+            trace_context=TraceContext.new_root(),
+            guardrail_name=entry.name,
+            stage=entry.stage.value,
+            action=entry.action.value,
+            duration_ms=entry.duration_ms,
+            agent_name=self.name,
+            source_type="guardrail",
+            source_name=entry.name,
+        ))
 
     async def _sanitize_question(
         self,

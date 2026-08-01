@@ -3,8 +3,24 @@
 ``GuardrailPipeline`` runs the guardrails registered for a single stage
 (INPUT, TOOL_OUTPUT, OUTPUT, OUTPUT_STREAM) in priority order, applying
 BLOCK short-circuit, TRANSFORM chaining, FLAG accumulation, per-guardrail
-error contracts, idempotency stamping, and telemetry recording. See
+error contracts, and telemetry recording. See
 ``sdd/specs/guardrails-infrastructure.spec.md`` §2/§3 Module 1 (FEAT-396).
+
+Note on idempotency: earlier revisions of this module memoized outcomes in
+a pipeline-level ``(stage, content)`` cache, generalizing the
+``_already_scrubbed`` precedent (`security/redaction.py:122`) from "one
+guardrail's own content-marker check" to "skip re-invoking every guardrail
+for repeat input." That generalization was incorrect and has been removed
+(FEAT-396 code review, post-TASK-2030): guardrails with side effects beyond
+their return value — `PromptInjectionGuardrail`'s `SecurityEventLogger`
+audit trail, `LegacyPipelineGuardrail`'s wrapped LLM call
+(`bots/search.py`'s competitor-query pivot) — would silently stop firing on
+the second occurrence of identical content, which is a correctness and
+security regression, not an optimization. Per-guardrail idempotency (e.g.
+`SecretsGuardrail` checking `_already_scrubbed` before re-scrubbing) is the
+correct place for this concern — each guardrail knows whether its own
+`check()` is safe to skip on already-processed content; the pipeline does
+not.
 
 Note on telemetry: this module never imports the FEAT-176 lifecycle-events
 system directly (not part of this task's verified Codebase Contract, and
@@ -16,20 +32,12 @@ without this module depending on that subsystem.
 """
 import logging
 import time
-from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .base import Guardrail, GuardrailAction, GuardrailContext, GuardrailStage
-
-# Bounded idempotency stamp cache size (per pipeline instance). Prevents
-# unbounded memory growth on long-lived bots while still catching the
-# common case of a caller accidentally re-running the pipeline on content
-# it just produced (the `_already_scrubbed` precedent generalized to the
-# whole pipeline, `security/redaction.py:122`).
-_STAMP_CACHE_MAXSIZE = 256
 
 
 class GuardrailTelemetryEntry(BaseModel):
@@ -98,7 +106,6 @@ class GuardrailPipeline:
                 must never break a guardrail run.
         """
         self._guardrails: list[Guardrail] = []
-        self._stamp_cache: OrderedDict[tuple[GuardrailStage, str], PipelineOutcome] = OrderedDict()
         self._on_telemetry = on_telemetry
         self.logger = logging.getLogger(__name__)
 
@@ -110,14 +117,23 @@ class GuardrailPipeline:
         """
         self._guardrails.append(guardrail)
         self._guardrails.sort(key=lambda g: g.priority)
-        # Composition changed — stale stamps could hide guardrails that
-        # would now run against previously-seen content.
-        self._stamp_cache.clear()
 
     @property
     def has_guardrails(self) -> bool:
         """Whether any guardrail is registered on this pipeline."""
         return bool(self._guardrails)
+
+    @property
+    def guardrails(self) -> tuple[Guardrail, ...]:
+        """The registered guardrails, in execution (priority) order.
+
+        Read-only view for callers that need Any-typed access a guardrail
+        may expose beyond the string-only `check()` contract (e.g. a
+        `scrub(value, tool_name)` escape hatch — see `tools/abstract.py`'s
+        TOOL_OUTPUT hook, which needs this for non-string `ToolResult`
+        fields that cannot be expressed as `Guardrail.check(content: str)`).
+        """
+        return tuple(self._guardrails)
 
     async def run(self, content: str, ctx: GuardrailContext) -> PipelineOutcome:
         """Execute all registered guardrails against ``content``.
@@ -132,16 +148,6 @@ class GuardrailPipeline:
         """
         if not self.has_guardrails:
             return PipelineOutcome(content=content, blocked=False)
-
-        stamp_key = (ctx.stage, content)
-        cached = self._stamp_cache.get(stamp_key)
-        if cached is not None:
-            # Idempotency: this exact (stage, content) pair was already
-            # fully processed by the current guardrail set — return the
-            # memoized outcome instead of re-invoking check() on every
-            # guardrail (prevents double transformation).
-            self._stamp_cache.move_to_end(stamp_key)
-            return cached
 
         working_content = content
         blocked = False
@@ -191,23 +197,13 @@ class GuardrailPipeline:
                 flag_reports[guardrail.name] = result.report or {}
             # PASS: no-op, working_content unchanged
 
-        outcome = PipelineOutcome(
+        return PipelineOutcome(
             content=None if blocked else working_content,
             blocked=blocked,
             reason=reason,
             flag_reports=flag_reports,
             telemetry=telemetry,
         )
-
-        if not blocked:
-            # Only stamp successful (non-blocked) outcomes — a BLOCK should
-            # be re-evaluated every time (e.g. after config changes), not
-            # memoized as a terminal cache entry.
-            self._stamp_cache[stamp_key] = outcome
-            if len(self._stamp_cache) > _STAMP_CACHE_MAXSIZE:
-                self._stamp_cache.popitem(last=False)
-
-        return outcome
 
     def _record(
         self,

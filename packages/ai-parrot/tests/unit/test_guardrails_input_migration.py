@@ -299,20 +299,16 @@ class TestLegacyPipelineWrapper:
 
         bot._prompt_pipeline.add(PromptMiddleware(name="shout", priority=10, transform=_shout))
 
-        # NOTE: uses a *different* input than the first call above.
-        # GuardrailPipeline's idempotency stamp cache (TASK-2025) memoizes
-        # by (stage, content) alone — re-submitting the exact same "hello"
-        # here would hit the cached pre-mutation outcome rather than
-        # re-running the (now-populated) legacy pipeline. That is TASK-2025's
-        # documented, tested behavior (`test_repeat_same_content_uses_stamp_cache`),
-        # not something this task changes; a content-invariant guardrail like
-        # LegacyPipelineGuardrail combined with the cache is a known,
-        # narrow interaction (same exact input text resubmitted after a
-        # prompt_pipeline mutation) — see TASK-2028's Completion Note.
+        # Re-submits the EXACT SAME "hello" input as the first call above.
+        # GuardrailPipeline no longer memoizes outcomes across run() calls
+        # (a pipeline-level (stage, content) cache was removed post-review
+        # — see pipeline.py's module docstring), so this correctly re-runs
+        # the now-populated legacy pipeline instead of returning a stale
+        # pre-mutation outcome.
         outcome2 = await bot._run_input_pipeline(
-            question="hello there", user_id="u1", session_id="s1", method="ask",
+            question="hello", user_id="u1", session_id="s1", method="ask",
         )
-        assert outcome2.content == "hello there!!!"
+        assert outcome2.content == "hello!!!"
 
 
 class TestLazyImportBoundary:

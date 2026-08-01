@@ -1792,23 +1792,28 @@ class BaseBot(AbstractBot):
                 ai_message = None
                 stream_error: Optional[Exception] = None
                 try:
+                    _stream_blocked = False
                     async for chunk in client.ask_stream(**llm_kwargs):
                         if isinstance(chunk, AIMessage):
                             ai_message = chunk
                         else:
                             # FEAT-396 (TASK-2029): wrap chunk yields through
-                            # registered StreamingGuardrail adapters (empty
-                            # by default today — zero-overhead passthrough;
-                            # see `_feed_streaming_guardrails`).
-                            transformed_chunk = self._feed_streaming_guardrails(chunk)
+                            # registered StreamingGuardrail adapters + the
+                            # OUTPUT_STREAM GuardrailPipeline (both empty by
+                            # default today — zero-overhead passthrough; see
+                            # `_feed_streaming_guardrails`).
+                            transformed_chunk, _stream_blocked = await self._feed_streaming_guardrails(chunk)
+                            if _stream_blocked:
+                                break
                             full_response += transformed_chunk
                             if transformed_chunk:
                                 yield transformed_chunk
-                    # Flush any content a StreamingGuardrail adapter withheld.
-                    _stream_tail = self._flush_streaming_guardrails()
-                    if _stream_tail:
-                        full_response += _stream_tail
-                        yield _stream_tail
+                    if not _stream_blocked:
+                        # Flush any content a StreamingGuardrail adapter withheld.
+                        _stream_tail = self._flush_streaming_guardrails()
+                        if _stream_tail:
+                            full_response += _stream_tail
+                            yield _stream_tail
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -1839,8 +1844,10 @@ class BaseBot(AbstractBot):
 
                 if ai_message is None:
                     # Defensive fallback: client did not yield an AIMessage sentinel
-                    # (either because it errored mid-stream, or because the client
-                    # implementation forgot to yield the final envelope).
+                    # (either because it errored mid-stream, because a
+                    # guardrail blocked the stream (FEAT-396 TASK-2029), or
+                    # because the client implementation forgot to yield the
+                    # final envelope).
                     # Use prompt_for_llm (the actual text sent to the LLM) so that
                     # ai_message.input is consistent with what client-yielded
                     # AIMessages carry.
@@ -1858,8 +1865,9 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         session_id=session_id,
                         turn_id=_turn_id,
-                        finish_reason="error" if stream_error else "completed",
-                        stop_reason="error" if stream_error else "completed",
+                        finish_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
+                        stop_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
+                        metadata={'error': 'security_block'} if _stream_blocked else {},
                     )
                 elif stream_error and not (ai_message.response or '').strip():
                     # Client yielded an AIMessage but it carries no text (e.g.
