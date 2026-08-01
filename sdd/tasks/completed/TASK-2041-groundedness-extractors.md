@@ -223,10 +223,51 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-01
+**Notes**: Implemented `parrot/security/groundedness/{__init__,models,normalize,extractors}.py`
+exactly as scoped. `extract_atoms(text, min_number_digits=4)` runs the five
+extractors in claim-priority order (money → percent → date → identifier →
+number) over an NFKC-normalized copy of the text, using half-open span
+overlap checks to de-overlap claims. `normalize.py` provides
+`nfkc_normalize`, `normalize_number` (magnitude suffixes k/M/B, thousand
+separators, currency/percent stripping), `normalize_date` (MM/DD/YYYY,
+"Month DD, YYYY", YYYY-MM-DD → ISO-8601), `normalize_identifier`
+(NFKC + casefold), and `count_significant_digits` (digit count of the
+numeric mantissa, excluding separators/suffix — feeds TASK-2042's
+precision-aware tolerance rule). `ruff check` passes with zero errors.
+Manually verified every scenario from this task's Test Specification
+block (money/percent/date/identifier/number extraction, de-overlap,
+`min_number_digits` floor, magnitude-suffix and thousand-separator
+normalization, multi-format date convergence, significant-digit
+counting, NFKC fullwidth-digit extraction) via an ad-hoc script — all
+passed. Formal `tests/unit/security/test_groundedness_extractors.py` is
+out of scope here per this task's explicit "NOT in scope" note; it is
+TASK-2044's responsibility.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: One acceptance-criteria bullet in this task
+file — `extract_atoms("Revenue was $1.24M for Q2 2026")` "returns atoms
+for money + date" — could not be satisfied literally: "Q2 2026" is not
+one of the three date formats this task (and the spec's Module 1
+responsibility list: `MM/DD/YYYY`, `Month DD, YYYY`, `YYYY-MM-DD`) define,
+and it is not exercised by this task's own formal `Test Specification`
+pytest block, which has no such case. Implemented the money atom
+correctly (`$1.24M`); "2026" is extracted as a bare `NUMBER` atom (4
+digits, at the `min_number_digits` floor), not a `DATE` atom. Flagging
+this as a likely documentation inconsistency rather than guessing at an
+unspecified fiscal-quarter date format — no ad-hoc "Q2 2026" parsing was
+added.
 
-**Deviations from spec**: none | describe if any
+**Post-completion addendum (2026-08-01)**: an adversarial code review
+(see TASK-2042's addendum for the full review) found and this session
+fixed several correctness gaps in `extractors.py`/`normalize.py`: no
+leading-sign support on money/percent/number (a "-15.3%" silently
+normalized to +15.3), `count_significant_digits()` over-counting leading
+zeros for values under 1 ("0.005" reported as 4 sig digits instead of
+1), bare magnitude-suffixed numbers without "$" ("2.5M downloads")
+being silently dropped instead of extracted, and the month-name date
+regex missing case-insensitivity (normalize_date() itself is
+case-insensitive, the extractor regex wasn't). All fixed in commit
+`fix(deterministic-groundedness-scoring): address code-review findings
+on TASK-2041/2042`; every original acceptance-criteria scenario
+re-verified passing with no regressions.

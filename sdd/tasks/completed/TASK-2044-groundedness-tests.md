@@ -192,10 +192,75 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-01
+**Notes**: Implemented the full test suite under `packages/ai-parrot/tests/`
+(the existing home of all groundedness code and prior security test files):
+`tests/fixtures/groundedness/canonical_cases.yaml` — the 5 canonical
+prototype cases from the brainstorm's Appendix A (faithful, transposed
+digits, invented identifiers, no hard data, rounded paraphrase), all
+scored against the SAME two shared tool-output evidence strings so the
+fixture exercises exact-match / precision-tolerance / contradicted-band /
+no-factual-content behavior against one consistent evidence set;
+`tests/unit/security/test_groundedness_extractors.py` (per-kind
+positive/negative, de-overlap, NFKC fullwidth-digit pre-pass,
+`min_number_digits` noise floor incl. the magnitude-suffix exemption);
+`tests/unit/security/test_groundedness_normalize.py` (magnitude suffixes,
+separators, sign handling, all 3 date formats + error paths,
+`count_significant_digits` incl. the degenerate all-zero literal);
+`tests/unit/security/test_groundedness_scorer.py` (exact match, kind
+isolation — a money claim is never "supported" by same-valued
+percent/number evidence, precision-aware tolerance, contradicted band,
+`no_evidence`/`no_factual_content` edge cases, 100-run determinism via
+`model_dump_json()` equality, and the 5 canonical cases parametrized
+against the shared YAML fixture); `tests/unit/security/
+test_groundedness_guardrail.py` (FLAG-only invariant — `result.content`
+is always `None`, never TRANSFORM/BLOCK; non-fatal degradation to PASS on
+both a `scorer.score()` exception AND an `EvidenceIndex.from_tool_calls()`
+exception; graceful `no_evidence` fallback when `ctx.extras['ai_message']`
+is absent; telemetry hygiene — atom raw values from both answer and
+evidence never appear in `caplog`, only score/counts; the `min_alert_score`
+INFO log); `tests/integration/test_groundedness_end_to_end.py` (`ask()`
+and `ask_stream()` full round trips via a `_patched_bot`/fake-LLM pattern
+mirroring the existing `test_guardrails_input_migration.py`/
+`test_guardrails_output.py` suites — `enable_groundedness=True` attaches
+the report to `AIMessage.metadata["guardrails"]["groundedness"]` on both
+entrypoints' final message; `enable_groundedness=False` (default) leaves
+`metadata["guardrails"]` free of a `"groundedness"` key and leaves
+`response.output` byte-identical, proving the scoring-only invariant
+end-to-end). Verified every canonical case's expected verdict/score by
+hand-tracing the actual `extract_atoms`/`normalize_number`/
+`count_significant_digits`/`GroundednessScorer._classify_numeric` logic
+against the fixture's evidence and answer text before asserting, per the
+Codebase Contract's anti-hallucination discipline — no test assertion was
+written against an assumed/hoped-for behavior. All 94 new tests pass;
+`ruff check` clean (one auto-fixable import-order finding, fixed); the
+pre-existing guardrails suite (`test_guardrails_core_models.py`,
+`test_guardrails_pipeline.py`, `test_guardrails_registry_config.py`,
+`test_guardrails_output.py` — 61 tests) still passes unmodified,
+confirming no regression from the new fixtures/imports.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **Path prefix**: the Scope/Files table lists paths as `tests/...`
+   without a package prefix; placed all files under
+   `packages/ai-parrot/tests/...` — the existing (and only) home of
+   `tests/unit/security/`-adjacent security tests, the guardrails test
+   suite, and the `parrot.security.groundedness` package itself under
+   `packages/ai-parrot/src/`. No ambiguity once the existing repo layout
+   is checked (a monorepo of `packages/*` distributions, not a
+   single-package repo).
+2. **Integration test client-seam split**: `ask()` resolves its LLM client
+   via `self.get_client()` (async-context-manager) + the overridable
+   `execute_llm_call()` hook — mocked exactly as `_wire_fake_llm` does in
+   `test_guardrails_input_migration.py`. `ask_stream()` instead reads
+   `self._llm` directly (an async-context-manager whose `.ask_stream()` is
+   an async generator) — not documented in the task's Codebase Contract,
+   discovered by reading `bots/base.py`'s `ask_stream()` implementation
+   directly. Both seams are pre-existing, unmodified bot internals; no
+   production code changed to accommodate the tests.
+3. **Extra assertions beyond the Test Specification skeleton**: added a
+   `test_ask_stream_default_off_no_report` and a
+   `test_default_off`-response-text-identity assertion (byte-identical
+   `result.output` with scoring on vs off) — direct evidence for the
+   scoring-only invariant AC that the skeleton's `test_default_off`
+   docstring names but the given `...` stub did not assert.

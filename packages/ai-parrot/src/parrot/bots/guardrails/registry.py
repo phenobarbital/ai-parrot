@@ -28,10 +28,13 @@ _GUARDRAIL_FACTORIES: dict[str, Callable[..., Guardrail]] = {}
 # Reserved names for guardrails whose engines are separate, not-yet-landed
 # features (spec §1 Non-Goals / §6 "Does NOT Exist"). Requesting one raises
 # a clear NotImplementedError instead of a confusing ImportError/KeyError.
+#
+# "groundedness" unreserved by FEAT-398 (TASK-2043): the engine landed
+# (parrot.security.groundedness) and `GroundednessGuardrail` is registered
+# below via the same lazy-factory pattern as the other built-ins.
 _RESERVED_NAMES: dict[str, str] = {
     "pii": "FEAT-324 (pii-detection-redaction)",
     "pseudonymize": "FEAT-324 (pii-detection-redaction)",
-    "groundedness": "FEAT-398 (deterministic-groundedness-scoring)",
 }
 
 
@@ -151,4 +154,12 @@ register_guardrail(
 register_guardrail(
     "moderation",
     _make_lazy_factory("parrot.bots.guardrails.builtin.moderation", "ModerationGuardrail"),
+)
+# FEAT-398 (TASK-2043): groundedness scoring lives outside `bots/guardrails`,
+# in `parrot.security.groundedness` — same lazy-import discipline: the
+# module (and its stdlib-only extractor/scorer machinery) is only imported
+# the first time "groundedness" is actually requested.
+register_guardrail(
+    "groundedness",
+    _make_lazy_factory("parrot.security.groundedness.guardrail", "GroundednessGuardrail"),
 )

@@ -722,6 +722,12 @@ class BaseBot(AbstractBot):
                 response.session_id = session_id
                 response.turn_id = turn_id
 
+                # FEAT-396 code review fix: surface INPUT-stage FLAG reports
+                # (computed above by `_run_input_pipeline`, previously
+                # discarded) the same way `_run_output_pipeline` already
+                # does for OUTPUT-stage ones.
+                self._merge_guardrail_reports(response, _input_outcome.flag_reports)
+
                 if response_model:
                     return response  # return structured response directly
 
@@ -1315,6 +1321,12 @@ class BaseBot(AbstractBot):
                     use_tools,
                 )
 
+                # FEAT-396 code review fix: surface INPUT-stage FLAG reports
+                # (computed above by `_run_input_pipeline`, previously
+                # discarded) the same way `_run_output_pipeline` already
+                # does for OUTPUT-stage ones.
+                self._merge_guardrail_reports(response, _input_outcome.flag_reports)
+
                 # Save conversation turn
                 phase_started = time.perf_counter()
                 if use_conversation_history and memory:
@@ -1791,6 +1803,12 @@ class BaseBot(AbstractBot):
                 full_response = ""
                 ai_message = None
                 stream_error: Optional[Exception] = None
+                # FEAT-396 code review fix: OUTPUT_STREAM FLAG reports were
+                # computed per-chunk by `_feed_streaming_guardrails` and
+                # then discarded — accumulate them here and merge onto the
+                # final `ai_message.metadata['guardrails']` below, same as
+                # `_run_output_pipeline` already does for the OUTPUT stage.
+                _stream_flag_reports: dict[str, dict[str, Any]] = {}
                 try:
                     _stream_blocked = False
                     async for chunk in client.ask_stream(**llm_kwargs):
@@ -1802,7 +1820,11 @@ class BaseBot(AbstractBot):
                             # OUTPUT_STREAM GuardrailPipeline (both empty by
                             # default today — zero-overhead passthrough; see
                             # `_feed_streaming_guardrails`).
-                            transformed_chunk, _stream_blocked = await self._feed_streaming_guardrails(chunk)
+                            transformed_chunk, _stream_blocked, _chunk_flags = (
+                                await self._feed_streaming_guardrails(chunk)
+                            )
+                            if _chunk_flags:
+                                _stream_flag_reports.update(_chunk_flags)
                             if _stream_blocked:
                                 break
                             full_response += transformed_chunk
@@ -1878,6 +1900,13 @@ class BaseBot(AbstractBot):
                     ai_message.output = ai_message.output or full_response
                     ai_message.finish_reason = "error"
                     ai_message.stop_reason = "error"
+
+                # FEAT-396 code review fix: surface INPUT-stage and
+                # accumulated OUTPUT_STREAM-stage FLAG reports (previously
+                # discarded) onto the final envelope, same as the OUTPUT
+                # stage already gets via `_run_output_pipeline` below.
+                self._merge_guardrail_reports(ai_message, _input_outcome.flag_reports)
+                self._merge_guardrail_reports(ai_message, _stream_flag_reports)
 
                 # FEAT-396 (TASK-2029): run the OUTPUT guardrail pipeline on
                 # the final AIMessage at stream close (chunks were already
