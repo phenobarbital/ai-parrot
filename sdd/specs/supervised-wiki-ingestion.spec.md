@@ -12,7 +12,7 @@ reuse_feature_id: FEAT-402
 **Feature ID**: FEAT-402
 **Date**: 2026-08-02
 **Author**: Jesus Lara (proposal research: Cowork session 2026-07-30; spec: Claude session 2026-08-02)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Proposal**: `sdd/proposals/supervised-wiki-ingestion.proposal.md`
 **Research state**: `sdd/state/FEAT-402-supervised-wiki-ingestion/`
@@ -655,10 +655,11 @@ class StructuredOutputConfig:                            # 66-67
   *Resolved in spec Q&A (2026-08-02, Jesus)*: appended to the charter's
   `examples`/`examples_file`; charter stays the single versioned policy
   artifact. (§2, Module 1, §5.)
-- [ ] **Default thresholds for a corporate-docs charter** (reference
-  sketch: admit 0.75 / reject 0.35) — calibrate on a real corpus during
-  implementation; ship reference values as the documented example
-  charter, not hardcoded defaults. — *Owner: Jesus*
+- [x] **Default thresholds for a corporate-docs charter** — *Resolved at
+  spec approval (2026-08-02, Jesus)*: calibrate on a real corpus during
+  implementation to find the real values; the reference sketch
+  (admit 0.75 / reject 0.35) ships only as the documented example
+  charter, never as hardcoded defaults.
 
 ---
 
@@ -681,3 +682,4 @@ class StructuredOutputConfig:                            # 66-67
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-02 | Jesus Lara + Claude | Initial draft from proposal FEAT-402 + spec Q&A + contract re-verification on dev @ ad6365242 |
+| 0.2 | 2026-08-02 | Jesus Lara | Approved; thresholds resolved: calibrate on a real corpus during implementation |
