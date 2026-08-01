@@ -128,19 +128,16 @@ class TestEvidenceIndex:
 
         assert "inv-2210" not in evidence.by_kind[AtomKind.IDENTIFIER]
 
-    def test_raw_json_numeric_scalar_loses_money_percent_kind(self):
-        """KNOWN LIMIT (documented in docs/groundedness.md): a bare JSON
-        scalar (e.g. `{"revenue": 1243500}`, the typical shape a tool
-        returns before any string formatting) is indexed as `NUMBER`-kind
-        evidence, not `MONEY`/`PERCENT` — the extractor recovers atom kind
-        from surface-form signals ($, %, digit patterns) that a bare
-        Python int/float's `str()` does not carry. Combined with the
-        intentional kind-isolation invariant (`TestKindIsolation` above —
-        "a money claim is only ever matched against money evidence"), a
-        correctly-cited `"$1,243,500"` answer scores `unsupported` against
-        evidence sourced from `{"revenue": 1243500}` rather than a
-        pre-formatted `"$1,243,500"` string. Pinned here as a known,
-        tested limitation rather than a silent gap."""
+    def test_raw_json_numeric_scalar_is_indexed_under_every_numeric_kind(self):
+        """FIXED (was a known limit): a bare JSON scalar (e.g.
+        `{"revenue": 1243500}`, the typical shape a tool returns before any
+        string formatting) carries no `$`/`%` surface-form signal, so its
+        kind is ambiguous — `add_raw_numeric_scalar` (evidence.py) indexes
+        it under MONEY, PERCENT, and NUMBER so a correctly-formatted
+        `"$1,243,500"` answer is `supported`, not `unsupported`. String
+        evidence with an explicit sign (the `TestKindIsolation` case above)
+        is unaffected — it keeps exactly the kind its surface form
+        signals."""
         policy = GroundednessPolicy()
         tool_call = ToolCall(
             id="1", name="lookup", arguments={}, result={"revenue": 1243500},
@@ -150,15 +147,37 @@ class TestEvidenceIndex:
 
         report = scorer.score("Revenue was $1,243,500.", evidence)
 
+        assert 1243500.0 in {v for v, _raw in evidence.numeric_by_kind[AtomKind.MONEY]}
+        assert 1243500.0 in {v for v, _raw in evidence.numeric_by_kind[AtomKind.PERCENT]}
         assert 1243500.0 in {v for v, _raw in evidence.numeric_by_kind[AtomKind.NUMBER]}
-        assert evidence.numeric_by_kind[AtomKind.MONEY] == []
-        assert report.unsupported[0].atom.kind == AtomKind.MONEY
+        assert report.score == 1.0
+        assert report.supported[0].atom.kind == AtomKind.MONEY
 
-    def test_dict_keys_are_not_scanned_as_evidence(self):
-        """KNOWN LIMIT (documented in docs/groundedness.md): `from_tool_calls`
-        walks dict *values* only (`evidence.py`'s `walk()`) — an identifier
-        used as a JSON object key (e.g. `{"INV-2210": {...}}`) is invisible
-        to the evidence index. Pinned here as a known, tested limitation."""
+    def test_raw_numeric_scalar_bypasses_min_number_digits_floor(self):
+        """A raw scalar is a deliberate returned value, not incidental text
+        noise, so it is exempt from the `min_number_digits` floor —
+        mirroring the money/magnitude-suffix exemptions in extractors.py."""
+        policy = GroundednessPolicy(min_number_digits=4)
+        tool_call = ToolCall(
+            id="1", name="lookup", arguments={}, result={"discount_percent": 15},
+        )
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert 15.0 in {v for v, _raw in evidence.numeric_by_kind[AtomKind.PERCENT]}
+
+    def test_raw_boolean_scalar_yields_no_atoms(self):
+        """A JSON boolean (Python `bool`, an `int` subclass) is not treated
+        as a numeric scalar — it carries no hard-data atom."""
+        policy = GroundednessPolicy()
+        tool_call = ToolCall(id="1", name="lookup", arguments={}, result={"active": True})
+        evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
+
+        assert all(len(v) == 0 for v in evidence.numeric_by_kind.values())
+
+    def test_dict_keys_are_scanned_as_evidence(self):
+        """FIXED (was a known limit): `from_tool_calls` walks dict *keys* in
+        addition to values — an identifier used as a JSON object key (e.g.
+        `{"INV-2210": {...}}`) is now visible to the evidence index."""
         policy = GroundednessPolicy()
         tool_call = ToolCall(
             id="1", name="lookup", arguments={},
@@ -166,7 +185,7 @@ class TestEvidenceIndex:
         )
         evidence = EvidenceIndex.from_tool_calls([tool_call], policy)
 
-        assert evidence.by_kind[AtomKind.IDENTIFIER] == set()
+        assert "inv-2210" in evidence.by_kind[AtomKind.IDENTIFIER]
 
 
 class TestExactMatch:

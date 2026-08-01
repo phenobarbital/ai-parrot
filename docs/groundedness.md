@@ -101,6 +101,31 @@ Because the guardrail is FLAG-only, the response text delivered to the
 caller is **byte-identical** whether `enable_groundedness` is `True` or
 `False` — the scoring-only invariant.
 
+### Evidence extraction from tool results
+
+`ToolCall.result` payloads are walked recursively — evidence atoms are
+extracted from every string encountered anywhere in the payload (dict
+values *and* keys, list elements, at any nesting depth), so both of
+these tool-output shapes are indexed correctly:
+
+```python
+{"summary": "Revenue was $1,243,500. Reference invoice INV-2210."}
+{"INV-2210": {"amount": "$1,243,500"}}   # identifier used as a dict key
+```
+
+Money/percent/number claims are normally matched only against evidence
+of the *same* kind — a `$500` claim is never "supported" by an
+unrelated `500%` in the evidence, even though the numeric value matches.
+A bare JSON `int`/`float` leaf is the one deliberate exception: shapes
+like `{"revenue": 1243500}` (the typical tool-output form before any
+string formatting) carry no `$`/`%` surface-form signal to say what
+*kind* of fact they are, unlike a string atom (whose kind is
+unambiguous — a `$` or `%` sign is either there or it isn't). Such raw
+scalars are therefore indexed under **every** numeric kind (`money`,
+`percent`, `number`) so a correctly-formatted `"$1,243,500"` or `"15%"`
+answer still matches; string evidence is unaffected and keeps exactly
+the kind its surface form signals.
+
 ## Report semantics
 
 `result.metadata["guardrails"]["groundedness"]` is a serialized
@@ -150,25 +175,6 @@ All knobs live on `GroundednessPolicy` (see
 
 ## Known limits
 
-- **Raw JSON numeric scalars lose their money/percent formatting**: atom
-  *kind* is recovered from surface-form signals in text (`$`, `%`, digit
-  patterns) — a tool result shaped as `{"revenue": 1243500}` (a bare
-  Python `int`/`float`, the typical shape before any string formatting)
-  is indexed as `number`-kind evidence, not `money`. Combined with the
-  intentional kind-isolation rule above (a money claim is *never* matched
-  against percent/bare-number evidence — kept separate specifically so a
-  same-valued `$500`/`500%` pair never cross-matches), a correctly-cited
-  `"$1,243,500"` answer scores `unsupported` against evidence sourced
-  from a bare `1243500` rather than a pre-formatted `"$1,243,500"`
-  string. Mitigation: tools that pre-format currency/percent values as
-  strings in their results (`"$1,243,500"` rather than `1243500`) avoid
-  this entirely. Pinned as a regression test
-  (`test_raw_json_numeric_scalar_loses_money_percent_kind`).
-- **Dict keys are not scanned as evidence**: `EvidenceIndex.from_tool_calls`
-  walks dict *values* recursively but not keys — an identifier used as a
-  JSON object key (e.g. `{"INV-2210": {...}}` rather than
-  `{"invoice": "INV-2210"}`) is invisible to the evidence index. Pinned
-  as a regression test (`test_dict_keys_are_not_scanned_as_evidence`).
 - **Small-integer blindness**: bare integers below `min_number_digits`
   (default 4) are skipped entirely as noise — a corrupted 3-digit count
   goes unverified on either side of the comparison. The floor is
