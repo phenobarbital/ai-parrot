@@ -149,10 +149,25 @@ CompletionUsage.from_claude(usage: Dict[str, Any])   # line 131
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Instrumented the `while True:` tool loop in `claude.py::ask()`
+(lines ~534-660 post-edit): per-round timing (`_lc_round_t0`), per-round
+`CompletionUsage.from_claude()` build + `+`-accumulation (skipped when
+`result.get("usage")` is falsy), round-scoped tool-name collection, and a
+`self._emit_round_event(...)` call after tool execution for `tool_use`
+rounds only (not the final round). Post-loop, the accumulated total
+overrides `ai_message.usage` and sets `extra_usage["rounds"]` when
+`round_number > 1` — single-round calls are untouched (bit-for-bit
+identical, verified by test). `_emit_after_call` picks up the accumulated
+totals automatically via the existing `getattr(ai_message, 'usage', ...)`
+read. Created `tests/unit/clients/test_claude_multiround_usage.py` (4
+tests: 3-round accumulation, single-round no-event, after-call totals,
+missing-usage round) — all pass. Ran `tests/unit/clients/` (27 passed,
+`-k claude` → 4 passed, matching the task's acceptance criterion). Also
+ran the top-level `tests/test_anthropic_client.py` and confirmed (via
+`git stash`) that its 4 failures are pre-existing and unrelated — a
+Pydantic `AIMessage(content=...)` construction missing required fields,
+present identically before this task's changes.
 
 **Deviations from spec**: none

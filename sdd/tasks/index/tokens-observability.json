@@ -70,7 +70,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Touches only clients/claude.py + its own test file; independent of the other four client tasks.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2034-claude-loop-accumulation.md"
+      "completed_at": "2026-08-01T00:42:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2034-claude-loop-accumulation.md"
     },
     {
       "id": "TASK-2035",
