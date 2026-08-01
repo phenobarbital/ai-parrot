@@ -178,4 +178,22 @@ class TestWikiProjectConfigArango:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Extended `WikiProjectConfig.backend` (`project.py`) and
+`WikiConfig.storage_backend` (`models.py`) Literals to include
+`"arangodb"`, added `arango_database`/`arango_credentials_env`/
+`arango_text_analyzer` fields (all defaulted, so existing `wiki.json`
+files parse unchanged and `backend="sqlite"` stays the default), and
+added `resolve_arango_params(config) -> dict` in `project.py` that reads
+`ARANGODB_*` (or a custom-prefixed) env vars plus the config's
+`arango_database`/`wiki_name` for the default database name — mirroring
+`graphindex/loader.py`'s `_resolve_arango()` convention. No credentials
+are hardcoded.
+
+13 unit tests added in `tests/knowledge/wiki/test_config_arango.py`
+(config parsing, defaults, round-trip, env-var resolution with/without
+overrides), all passing. Full `tests/knowledge/wiki/` suite (629 tests)
+re-run to confirm no regressions from the Literal/field extensions.
+`ruff check` on the two modified files shows only a single pre-existing
+`UP045` finding on an unrelated line in `project.py` (`git_root:
+Optional[Path]` in `find_project_root`, confirmed present before this
+task's changes) — not a regression.

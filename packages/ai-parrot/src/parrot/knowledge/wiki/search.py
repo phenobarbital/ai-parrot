@@ -26,7 +26,7 @@ import logging
 from typing import Any, Awaitable, Callable, Optional
 
 from parrot.knowledge.wiki.models import WikiPageCategory, WikiSearchResult
-from parrot.knowledge.wiki.store import WikiStore
+from parrot.knowledge.wiki.store import BaseWikiStore
 
 
 class WikiCombinedSearch:
@@ -49,7 +49,7 @@ class WikiCombinedSearch:
         pageindex_toolkit: Any,
         graphindex_toolkit: Any,
         default_weights: Optional[dict[str, float]] = None,
-        store: Optional[WikiStore] = None,
+        store: Optional[BaseWikiStore] = None,
         embedder: Optional[Callable[[str], Awaitable[list[float]]]] = None,
     ) -> None:
         """Initialise combined search.
@@ -63,8 +63,8 @@ class WikiCombinedSearch:
                 keys ``"lexical"`` / ``"vector"`` or the legacy aliases
                 ``"pageindex"`` / ``"graphindex"``.  Defaults to
                 ``{"pageindex": 0.6, "graphindex": 0.4}``.
-            store: :class:`WikiStore` retrieval plane.  When provided,
-                all searches run against it (preferred path).
+            store: :class:`BaseWikiStore` retrieval plane.  When
+                provided, all searches run against it (preferred path).
             embedder: Optional async ``text -> vector`` callable used
                 for the vector leg of store-backed search.
         """
