@@ -13,11 +13,12 @@ PreToolUse hook can import them with minimal startup cost.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -124,7 +125,8 @@ class WikiProjectConfig(BaseModel):
     Attributes:
         wiki_name: Wiki identifier; defaults to the repo directory name.
         storage_dir: Wiki storage directory, relative to the repo root.
-        backend: Retrieval-plane backend (``sqlite`` or ``memory``).
+        backend: Retrieval-plane backend (``sqlite``, ``memory``, or
+            ``arangodb``).
         include_suffixes: File suffixes scanned into the wiki; empty
             means the scanner defaults.
         exclude_dirs: Extra directory names pruned during scans.
@@ -134,11 +136,18 @@ class WikiProjectConfig(BaseModel):
         sync_graph: When ``True``, authoring commands (``remember`` /
             ``link``) also mirror their writes into the project's
             GraphIndex plane (``.parrot/graph/``) as audited commits.
+        arango_database: ArangoDB database name for the ``arangodb``
+            backend; defaults to ``wiki_{wiki_name}`` when omitted.
+        arango_credentials_env: Env var prefix used to resolve ArangoDB
+            credentials (e.g. ``ARANGODB`` -> ``ARANGODB_HOST``,
+            ``ARANGODB_PASSWORD``, ...).
+        arango_text_analyzer: ArangoSearch text analyzer used for the
+            pages view's full-text search (e.g. ``"text_en"``).
     """
 
     wiki_name: str = Field(default="codebase")
     storage_dir: str = Field(default=f"{PARROT_DIR}/wiki")
-    backend: Literal["sqlite", "memory"] = Field(default="sqlite")
+    backend: Literal["sqlite", "memory", "arangodb"] = Field(default="sqlite")
     include_suffixes: list[str] = Field(default_factory=list)
     exclude_dirs: list[str] = Field(default_factory=list)
     body_max_chars: int = Field(default=16_000, ge=1_000)
@@ -147,6 +156,21 @@ class WikiProjectConfig(BaseModel):
         default_factory=ClaudeIntegrationConfig
     )
     sync_graph: bool = Field(default=False)
+    arango_database: Optional[str] = Field(
+        default=None,
+        description="ArangoDB database name; defaults to wiki_{wiki_name}",
+    )
+    arango_credentials_env: str = Field(
+        default="ARANGODB",
+        description=(
+            "Env var prefix for credentials (e.g. ARANGODB -> "
+            "ARANGODB_HOST, ARANGODB_PASSWORD)"
+        ),
+    )
+    arango_text_analyzer: str = Field(
+        default="text_en",
+        description="ArangoSearch text analyzer for FTS",
+    )
 
     def graph_path(self, root: Path) -> Path:
         """Directory of the project's GraphIndex plane (``.parrot/graph``)."""
@@ -166,6 +190,34 @@ class WikiProjectConfig(BaseModel):
         if self.backend == "sqlite":
             return self.db_path(root).exists()
         return (self.storage_path(root) / "pages").exists()
+
+
+def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
+    """Resolve ArangoDB connection params from environment variables.
+
+    Credentials are never hardcoded in ``wiki.json`` — only the env var
+    prefix (:attr:`WikiProjectConfig.arango_credentials_env`, default
+    ``"ARANGODB"``) and the database name are configurable there. This
+    mirrors the established ``ARANGODB_*`` convention used elsewhere in
+    the codebase (e.g. ``graphindex/loader.py``).
+
+    Args:
+        config: Project config carrying the ArangoDB backend settings.
+
+    Returns:
+        Connection params dict for ``AsyncDB("arangodb", params=...)``:
+        ``host``, ``port``, ``protocol``, ``username``, ``password``,
+        ``database``.
+    """
+    prefix = config.arango_credentials_env
+    return {
+        "host": os.environ.get(f"{prefix}_HOST", "127.0.0.1"),
+        "port": int(os.environ.get(f"{prefix}_PORT", "8529")),
+        "protocol": os.environ.get(f"{prefix}_PROTOCOL", "http"),
+        "username": os.environ.get(f"{prefix}_USERNAME", "root"),
+        "password": os.environ.get(f"{prefix}_PASSWORD", ""),
+        "database": config.arango_database or f"wiki_{config.wiki_name}",
+    }
 
 
 def config_path(root: Path) -> Path:
