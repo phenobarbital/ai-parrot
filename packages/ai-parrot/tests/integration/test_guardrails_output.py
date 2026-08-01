@@ -127,8 +127,9 @@ class TestStreamingGuardrailAdapterScaffolding:
     @pytest.mark.asyncio
     async def test_feed_flush_passthrough_when_empty(self):
         bot = _patched_bot()
-        text, blocked = await bot._feed_streaming_guardrails("hello")
+        text, blocked, flag_reports = await bot._feed_streaming_guardrails("hello")
         assert (text, blocked) == ("hello", False)
+        assert flag_reports == {}
         assert bot._flush_streaming_guardrails() == ""
 
     @pytest.mark.asyncio
@@ -147,7 +148,7 @@ class TestStreamingGuardrailAdapterScaffolding:
 
         bot._streaming_guardrails.append(UpperAdapter())
 
-        text, blocked = await bot._feed_streaming_guardrails("hello")
+        text, blocked, _ = await bot._feed_streaming_guardrails("hello")
         assert (text, blocked) == ("HELLO", False)
         assert bot._flush_streaming_guardrails() == "[END]"
 
@@ -168,8 +169,8 @@ class TestStreamingGuardrailAdapterScaffolding:
 
         bot._streaming_guardrails.append(BufferingAdapter())
 
-        text_a, blocked_a = await bot._feed_streaming_guardrails("a")
-        text_b, blocked_b = await bot._feed_streaming_guardrails("b")
+        text_a, blocked_a, _ = await bot._feed_streaming_guardrails("a")
+        text_b, blocked_b, _ = await bot._feed_streaming_guardrails("b")
         assert (text_a, blocked_a) == ("", False)
         assert (text_b, blocked_b) == ("", False)
         assert bot._flush_streaming_guardrails() == "ab"
@@ -202,7 +203,7 @@ class TestStreamingGuardrailAdapterScaffolding:
         bot = _patched_bot(guardrails=[RecordingStreamGuardrail()])
         assert bot._guardrail_pipelines[GuardrailStage.OUTPUT_STREAM].has_guardrails
 
-        text, blocked = await bot._feed_streaming_guardrails("hello")
+        text, blocked, _ = await bot._feed_streaming_guardrails("hello")
         assert blocked is False
         assert text == "HELLO"
         assert seen_chunks == ["hello"]
@@ -220,9 +221,10 @@ class TestStreamingGuardrailAdapterScaffolding:
 
         bot = _patched_bot(guardrails=[BlockingStreamGuardrail()])
 
-        text, blocked = await bot._feed_streaming_guardrails("hello")
+        text, blocked, flag_reports = await bot._feed_streaming_guardrails("hello")
         assert blocked is True
         assert text == ""
+        assert flag_reports == {}
 
 
 class TestSecretsToolOutputRegressionSuite:
@@ -401,3 +403,228 @@ class TestGuardrailTelemetryReachesObserver:
         field_names = {f.name for f in dataclass_fields(GuardrailActionEvent)}
         assert "content" not in field_names
         assert "text" not in field_names
+
+
+class TestFlagReportsSurfaceAcrossAllStages:
+    """Regression tests for the code-review CRITICAL finding: FLAG reports
+    were only ever surfaced onto `AIMessage.metadata["guardrails"]` for the
+    OUTPUT stage (via `_run_output_pipeline`) — INPUT, TOOL_OUTPUT and
+    OUTPUT_STREAM FLAG reports were computed, timed and telemetered, then
+    silently discarded, directly violating the acceptance criterion "FLAG
+    reports appear under `AIMessage.metadata["guardrails"]`". Fixed via the
+    shared `AbstractBot._merge_guardrail_reports()` helper (INPUT/
+    OUTPUT_STREAM, called from `BaseBot.invoke`/`ask`/`ask_stream`) and by
+    threading `PipelineOutcome.flag_reports` back out of
+    `_run_tool_output_guardrails()` (TOOL_OUTPUT, called from
+    `AbstractTool.execute()`)."""
+
+    @pytest.mark.asyncio
+    async def test_merge_guardrail_reports_helper_attaches_to_metadata(self):
+        """Direct unit test of the shared merge helper every stage's
+        seam now calls — the actual fix for the CRITICAL finding."""
+        bot = _patched_bot()
+        response = _ai_message("hello")
+
+        bot._merge_guardrail_reports(response, {"moderation": {"flagged": True}})
+
+        assert response.metadata["guardrails"] == {"moderation": {"flagged": True}}
+
+    @pytest.mark.asyncio
+    async def test_merge_guardrail_reports_is_noop_when_empty(self):
+        bot = _patched_bot()
+        response = _ai_message("hello")
+
+        bot._merge_guardrail_reports(response, {})
+
+        assert "guardrails" not in response.metadata
+
+    @pytest.mark.asyncio
+    async def test_input_stage_flag_report_computed_and_mergeable(self):
+        """`_run_input_pipeline` outcome carries the FLAG report for a
+        custom INPUT guardrail — proving the data `invoke`/`ask` merge
+        onto the final response (via `_merge_guardrail_reports`) actually
+        exists at the seam, closing the gap where it was previously
+        computed and discarded."""
+
+        class FlaggingInputGuardrail(Guardrail):
+            name = "input_flagger"
+            stages: ClassVar[set] = {GuardrailStage.INPUT}
+            priority = 50
+            on_error = "fail_open"
+
+            async def check(self, content, ctx):
+                return GuardrailResult(
+                    action=GuardrailAction.FLAG,
+                    report={"flagged_text_len": len(content)},
+                )
+
+        bot = _patched_bot(guardrails=[FlaggingInputGuardrail()])
+
+        outcome = await bot._run_input_pipeline(
+            question="hello world",
+            user_id="u1",
+            session_id="s1",
+            method="ask",
+        )
+
+        assert outcome.flag_reports == {"input_flagger": {"flagged_text_len": 11}}
+
+        response = _ai_message("hi")
+        bot._merge_guardrail_reports(response, outcome.flag_reports)
+        assert response.metadata["guardrails"] == {
+            "input_flagger": {"flagged_text_len": 11}
+        }
+
+    @pytest.mark.asyncio
+    async def test_output_stream_flag_report_returned_per_chunk(self):
+        """`_feed_streaming_guardrails` now returns the OUTPUT_STREAM FLAG
+        report alongside (text, blocked) instead of discarding it — the
+        caller (`ask_stream`) accumulates these across chunks and merges
+        them onto the final `AIMessage.metadata['guardrails']`."""
+
+        class FlaggingStreamGuardrail(Guardrail):
+            name = "stream_flagger"
+            stages: ClassVar[set] = {GuardrailStage.OUTPUT_STREAM}
+            priority = 50
+            on_error = "fail_open"
+
+            async def check(self, content, ctx):
+                return GuardrailResult(
+                    action=GuardrailAction.FLAG, report={"seen": content}
+                )
+
+        bot = _patched_bot(guardrails=[FlaggingStreamGuardrail()])
+
+        text, blocked, flag_reports = await bot._feed_streaming_guardrails("hi")
+
+        assert blocked is False
+        assert text == "hi"
+        assert flag_reports == {"stream_flagger": {"seen": "hi"}}
+
+    @pytest.mark.asyncio
+    async def test_tool_output_flag_report_reaches_result_metadata(self):
+        """A FLAG-only TOOL_OUTPUT guardrail's report must reach
+        `ToolResult.metadata['guardrails']` — previously
+        `_run_tool_output_guardrails()` returned only the (unchanged)
+        value, dropping `PipelineOutcome.flag_reports` entirely, so
+        TOOL_OUTPUT FLAGs had no plumbing path to the caller at all."""
+
+        class FlaggingToolOutputGuardrail(Guardrail):
+            name = "tool_flagger"
+            stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+            priority = 50
+            on_error = "fail_open"
+
+            async def check(self, content, ctx):
+                return GuardrailResult(
+                    action=GuardrailAction.FLAG, report={"tool_name": ctx.tool_name}
+                )
+
+        bot = _patched_bot(guardrails=[FlaggingToolOutputGuardrail()])
+        tool = _EchoTool(result="hello world")
+        bot.tool_manager.add_tool(tool)
+
+        # Call execute() directly (not tool_manager.execute_tool, which
+        # unwraps to `.result`) so the full ToolResult.metadata is visible.
+        tool_result = await tool.execute()
+
+        assert tool_result.result == "hello world"
+        assert tool_result.metadata["guardrails"] == {
+            "tool_flagger": {"tool_name": "echo_tool"}
+        }
+
+
+class TestToolOutputFailClosedNonStringContent:
+    """Regression tests for the code-review IMPORTANT finding:
+    `on_error="fail_closed"` was not honored for non-string `ToolResult`
+    fields (dict/list) — `_run_tool_output_guardrails()` routed those
+    through each guardrail's `scrub()` escape hatch directly, with no
+    error handling, so a raising `fail_closed` guardrail's exception
+    propagated up to `AbstractTool.execute()`'s blanket
+    `except Exception: # never let scrub errors break tool execution`
+    and was silently swallowed as pass-through — unconditionally fail-open
+    for non-string content regardless of the guardrail's declared policy."""
+
+    @pytest.mark.asyncio
+    async def test_fail_closed_scrub_error_blocks_dict_value(self):
+        from parrot.bots.guardrails.pipeline import GuardrailPipeline
+        from parrot.tools.abstract import _run_tool_output_guardrails
+
+        class RaisingFailClosedGuardrail(Guardrail):
+            name = "raiser"
+            stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+            priority = 50
+            on_error = "fail_closed"
+
+            async def check(self, content, ctx):  # pragma: no cover - unused here
+                raise NotImplementedError
+
+            def scrub(self, value, tool_name=None):
+                raise RuntimeError("scrub blew up")
+
+        pipeline = GuardrailPipeline()
+        pipeline.add(RaisingFailClosedGuardrail())
+
+        value, flag_reports = await _run_tool_output_guardrails(
+            pipeline, {"secret": "value"}, "some_tool"
+        )
+
+        assert value == {"_blocked_by_guardrail": "raiser"}
+        assert flag_reports == {}
+
+    @pytest.mark.asyncio
+    async def test_fail_closed_scrub_error_blocks_list_value(self):
+        from parrot.bots.guardrails.pipeline import GuardrailPipeline
+        from parrot.tools.abstract import _run_tool_output_guardrails
+
+        class RaisingFailClosedGuardrail(Guardrail):
+            name = "raiser"
+            stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+            priority = 50
+            on_error = "fail_closed"
+
+            async def check(self, content, ctx):  # pragma: no cover - unused here
+                raise NotImplementedError
+
+            def scrub(self, value, tool_name=None):
+                raise RuntimeError("scrub blew up")
+
+        pipeline = GuardrailPipeline()
+        pipeline.add(RaisingFailClosedGuardrail())
+
+        value, flag_reports = await _run_tool_output_guardrails(
+            pipeline, ["a", "b"], "some_tool"
+        )
+
+        assert value == ["[content removed by guardrail: raiser]"]
+        assert flag_reports == {}
+
+    @pytest.mark.asyncio
+    async def test_fail_open_scrub_error_leaves_value_unchanged(self):
+        """Unchanged pre-existing behavior for `on_error="fail_open"`
+        (the default, and `SecretsGuardrail`'s own policy) — a raising
+        guardrail must NOT block; content passes through untouched."""
+        from parrot.bots.guardrails.pipeline import GuardrailPipeline
+        from parrot.tools.abstract import _run_tool_output_guardrails
+
+        class RaisingFailOpenGuardrail(Guardrail):
+            name = "raiser"
+            stages: ClassVar[set] = {GuardrailStage.TOOL_OUTPUT}
+            priority = 50
+            on_error = "fail_open"
+
+            async def check(self, content, ctx):  # pragma: no cover - unused here
+                raise NotImplementedError
+
+            def scrub(self, value, tool_name=None):
+                raise RuntimeError("scrub blew up")
+
+        pipeline = GuardrailPipeline()
+        pipeline.add(RaisingFailOpenGuardrail())
+
+        value, flag_reports = await _run_tool_output_guardrails(
+            pipeline, {"secret": "value"}, "some_tool"
+        )
+
+        assert value == {"secret": "value"}
+        assert flag_reports == {}
