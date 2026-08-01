@@ -14,7 +14,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2024-guardrails-core-models.md"
+      "completed_at": "2026-08-01T00:30:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2024-guardrails-core-models.md"
     },
     {
       "id": "TASK-2025",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-2024 types; must complete before any wiring task",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2025-guardrails-pipeline.md"
+      "completed_at": "2026-08-01T00:34:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2025-guardrails-pipeline.md"
     },
     {
       "id": "TASK-2026",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on both core types and pipeline; gates all plugin tasks",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2026-guardrails-registry-config.md"
+      "completed_at": "2026-08-01T00:43:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2026-guardrails-registry-config.md"
     },
     {
       "id": "TASK-2027",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Can run parallel with TASK-2029 and TASK-2030 — creates plugin only, does not touch BaseBot seams",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2027-prompt-injection-guardrail.md"
+      "completed_at": "2026-08-01T00:50:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2027-prompt-injection-guardrail.md"
     },
     {
       "id": "TASK-2028",
@@ -95,7 +95,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -108,8 +108,8 @@
       "parallelism_notes": "Highest-risk task — touches BaseBot input sites, must be sequential after TASK-2027",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2028-input-migration-wiring.md"
+      "completed_at": "2026-08-01T01:14:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2028-input-migration-wiring.md"
     },
     {
       "id": "TASK-2029",
@@ -118,7 +118,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -130,8 +130,8 @@
       "parallelism_notes": "Parallel with TASK-2027/2028 — touches disjoint files: tool hook + get_response + ask_stream output path vs input path",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2029-output-plugins-secrets.md"
+      "completed_at": "2026-08-01T01:32:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2029-output-plugins-secrets.md"
     },
     {
       "id": "TASK-2030",
@@ -140,7 +140,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -152,8 +152,8 @@
       "parallelism_notes": "Independent module — only depends on core types, does not touch any bot seams",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2030-moderation-reference.md"
+      "completed_at": "2026-08-01T01:35:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2030-moderation-reference.md"
     }
   ]
 }
