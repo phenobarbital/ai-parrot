@@ -1,0 +1,146 @@
+{
+  "feat_id": "FEAT-400",
+  "title": "ArangoDB as Configurable Backend for LLM Wiki (WikiToolkit)",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbols": ["BaseWikiStore", "SQLiteWikiStore", "WikiPageRecord", "create_wiki_store", "rank_by_cosine", "WIKI_SCHEMA_SQL"],
+      "role": "Core abstraction layer — new ArangoDBWikiStore goes here; factory extended here",
+      "confidence": "high",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+      "symbols": ["WikiProjectConfig"],
+      "role": "Config model — backend Literal extended, ArangoDB connection fields added",
+      "confidence": "high",
+      "evidence": ["F001", "F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/sources.py",
+      "symbols": ["SourceCollectionManager"],
+      "role": "Source metadata persistence — needs new backend or sidecar strategy",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py",
+      "symbols": ["LLMWikiToolkit"],
+      "role": "Wiring point — maps config backend to store + sources construction",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbols": ["_resolve_read_store", "_make_sources"],
+      "role": "CLI — backend option and store resolution, needs arangodb branch",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/search.py",
+      "symbols": ["WikiCombinedSearch"],
+      "role": "Type annotation fix only — uses WikiStore alias instead of BaseWikiStore",
+      "confidence": "high",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ingest.py",
+      "symbols": ["WikiIngestOrchestrator"],
+      "role": "Type annotation fix only — same WikiStore→BaseWikiStore",
+      "confidence": "high",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+      "symbols": ["OntologyGraphStore"],
+      "role": "Reusable ArangoDB wrapper — connection, tenant isolation, UPSERT patterns",
+      "confidence": "high",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/src/parrot/stores/arango.py",
+      "symbols": ["ArangoDBStore"],
+      "role": "Reference implementation — ArangoSearch view creation, FTS, vector, hybrid search patterns",
+      "confidence": "high",
+      "evidence": ["F004"]
+    }
+  ],
+
+  "hypothesis": {
+    "statement": "The BaseWikiStore abstraction is already well-factored with two working backends. Adding ArangoDB requires: (1) a new ArangoDBWikiStore class implementing 15 abstract methods via AQL + ArangoSearch views, (2) config + factory extensions, (3) SourceCollectionManager strategy. The asyncdb driver and ArangoDBStore in ai-parrot-embeddings provide all needed ArangoSearch building blocks (view creation, BM25, vector search, hybrid search). OntologyGraphStore provides the connection + tenant isolation pattern. No architectural changes needed — this is a clean additive extension.",
+    "confidence": "high",
+    "supporting": ["F001", "F002", "F003", "F004"],
+    "reasoning": "Two backends already prove the abstraction works. Every consumer (search, ingest, toolkit, CLI) operates through BaseWikiStore. The asyncdb driver already has create_arangosearch_view, fulltext_search, vector_search, and hybrid_search methods. The only net-new work is the ArangoDBWikiStore implementation itself."
+  },
+
+  "scope": {
+    "in_scope": [
+      "New ArangoDBWikiStore(BaseWikiStore) class with 15 method implementations",
+      "ArangoSearch view creation (text_analyzer + identity for vectors)",
+      "WikiProjectConfig extension: backend='arangodb' + connection fields",
+      "create_wiki_store() factory extension",
+      "SourceCollectionManager strategy for arangodb backend",
+      "CLI --backend arangodb support",
+      "LLMWikiToolkit wiring for arangodb",
+      "Type annotation fixes in search.py and ingest.py (WikiStore→BaseWikiStore)",
+      "Integration tests with ArangoDB test instance"
+    ],
+    "out_of_scope": [
+      "Migrating existing SQLite wikis to ArangoDB (future tooling)",
+      "ArangoDB cluster/replication configuration",
+      "Multi-tenant wiki isolation (single wiki_name per config for now)",
+      "Native ArangoDB vector index (APPROX_NEAR) — use asyncdb's dot-product approach for now",
+      "Commit/audit/revert protocol on the ArangoDB backend (SQLitePersistence has it, not needed for wiki)"
+    ]
+  },
+
+  "confidence_map": [
+    {"claim": "BaseWikiStore contract is sufficient for ArangoDB", "confidence": "high", "evidence": ["F001"]},
+    {"claim": "InMemoryWikiStore proves abstraction completeness", "confidence": "high", "evidence": ["F001"]},
+    {"claim": "asyncdb driver has all needed ArangoSearch methods", "confidence": "high", "evidence": ["F004"]},
+    {"claim": "ArangoDBStore patterns are directly reusable for view creation", "confidence": "high", "evidence": ["F004"]},
+    {"claim": "OntologyGraphStore connection pattern is reusable", "confidence": "high", "evidence": ["F002"]},
+    {"claim": "SourceCollectionManager can use JSON sidecar for arangodb", "confidence": "medium", "evidence": ["F003"]},
+    {"claim": "CLI --backend flag already plumbed for arbitrary strings", "confidence": "high", "evidence": ["F003"]},
+    {"claim": "No consumer depends on SQLite-specific behavior", "confidence": "high", "evidence": ["F001", "F003"]}
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the ArangoDB wiki use a dedicated database or share the existing ontology database?",
+      "impacts_claims": ["scope"],
+      "plausible_answers": [
+        "Dedicated database per wiki (e.g. wiki_{wiki_name})",
+        "Shared database with the ontology graph (prefix collections with wiki_)",
+        "Configurable — let the user decide via wiki.json"
+      ]
+    },
+    {
+      "id": "U2",
+      "question": "For SourceCollectionManager: add an ArangoDB backend, keep JSON sidecar, or make it pluggable?",
+      "impacts_claims": ["scope"],
+      "plausible_answers": [
+        "JSON sidecar (simplest — sources are small metadata, ~100s of entries)",
+        "ArangoDB collection in the same database (full parity, no local files needed)",
+        "Pluggable — let the wiki store own source tracking via a new abstract method"
+      ]
+    }
+  ],
+
+  "constraints": [
+    {"type": "credential_security", "detail": "Credentials MUST come from env vars (ARANGODB_* pattern) or navconfig, never hardcoded in wiki.json", "evidence": ["F002"]},
+    {"type": "async_compatibility", "detail": "asyncdb is async; SourceCollectionManager is sync (sqlite3). New ArangoDB paths need async adaptation or asyncio.to_thread bridging", "evidence": ["F003"]},
+    {"type": "backwards_compatibility", "detail": "Default backend must remain 'sqlite' — zero config change for existing users", "evidence": ["F001"]},
+    {"type": "dependency", "detail": "asyncdb[arangodb] is already a dependency; no new packages needed", "evidence": ["F004"]}
+  ],
+
+  "recommended_next_command": {
+    "command": "/sdd-spec FEAT-400",
+    "rationale": "High-confidence localization with clear scope. The abstraction is already proven — this is a clean additive feature, not exploratory. Ready for spec."
+  }
+}
