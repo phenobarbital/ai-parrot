@@ -1743,6 +1743,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         session_id: Optional[str] = None,
         messages: Optional[List[Dict[str, Any]]] = None,
         stop_tools: Optional[set] = None,
+        # FEAT-397: per-round token usage observability. Both are optional
+        # and default to None so existing callers (e.g. resume()) that do
+        # not pass them see zero behavioral change — accumulation and round
+        # event emission are opt-in via these params, mirroring the
+        # existing all_tool_calls in/out-parameter pattern above rather
+        # than changing this method's return contract.
+        round_tc: Optional[Any] = None,
+        initial_round_usage: Optional[CompletionUsage] = None,
+        initial_round_raw_usage: Optional[dict] = None,
+        initial_round_duration_ms: float = 0.0,
+        usage_state: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
@@ -1752,10 +1763,32 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 stop tool executes successfully its result is still sent back
                 to the model, but further tool-calling is disabled so the
                 model must produce a final text answer on the next turn.
+            round_tc: TraceContext for ClientRoundEvent emission (FEAT-397).
+                When None, no round events are emitted from this method.
+            initial_round_usage: The CALLER's already-computed CompletionUsage
+                for round 1 (the ``initial_response``, whose SDK call happened
+                in ``ask()`` before this method was invoked).
+            initial_round_raw_usage: JSON-safe raw usage dict for round 1.
+            initial_round_duration_ms: Wall-clock duration of round 1's SDK call.
+            usage_state: Mutable dict the method populates in place with
+                ``{"accumulated": Optional[CompletionUsage], "rounds": int}``
+                covering round 1 (seeded from the args above) through every
+                round this method's loop receives. When None, no accumulation
+                is performed.
         """
         current_response = initial_response
         current_config = config
         iteration = 0
+
+        # FEAT-397: seed round-1 accounting (the initial ask() call) and
+        # track the "current round's" usage/raw_usage/duration so the event
+        # emitted for round N (further down) can use them.
+        if usage_state is not None:
+            usage_state["accumulated"] = initial_round_usage
+            usage_state["rounds"] = 1
+        _lc_round_usage = initial_round_usage
+        _lc_round_raw_usage = initial_round_raw_usage
+        _lc_round_duration_ms = initial_round_duration_ms
 
         if active_tool_names is None:
             active_tool_names = set()
@@ -2019,8 +2052,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if summary_part:
                 next_prompt_parts.append(summary_part)
 
+            # FEAT-397: emit ClientRoundEvent for round `iteration` — the
+            # function calls just executed above belong to `current_response`
+            # (round 1 = initial_response, rounds 2..N = responses this loop
+            # received). Usage/raw_usage/duration were carried from when this
+            # round's response was first received (seeded pre-loop for round 1,
+            # or set at the end of the previous iteration otherwise).
+            if round_tc is not None:
+                self._emit_round_event(
+                    round_tc,
+                    client_name="google",
+                    model=model or "",
+                    round_number=iteration,
+                    usage=_lc_round_usage,
+                    raw_usage=_lc_round_raw_usage,
+                    tool_calls=[fc.name for fc in function_calls],
+                    duration_ms=_lc_round_duration_ms,
+                )
+
             # Send responses back
             retry_count = 0
+            _lc_round_t0 = time.perf_counter()
             try:
                 self.logger.debug(f"Sending {len(next_prompt_parts)} responses back to model")
                 while retry_count < max_retries:
@@ -2098,6 +2150,33 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             self.logger.error("Max retries reached, aborting")
                             raise e
                         await asyncio.sleep(delay)
+
+                # FEAT-397: extract & accumulate this NEW round's usage (the
+                # response just received above becomes round `iteration + 1`
+                # when the loop's next pass checks it for function calls).
+                # Only reached on success — an exception here propagates to
+                # the outer except below, so no partial/failed round is
+                # counted or accumulated.
+                _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
+                _lc_usage_metadata = getattr(current_response, "usage_metadata", None)
+                if _lc_usage_metadata:
+                    _lc_round_raw_usage = {
+                        "prompt_token_count": getattr(_lc_usage_metadata, "prompt_token_count", 0),
+                        "candidates_token_count": getattr(_lc_usage_metadata, "candidates_token_count", 0),
+                        "total_token_count": getattr(_lc_usage_metadata, "total_token_count", 0),
+                    }
+                    _lc_round_usage = CompletionUsage.from_gemini(_lc_round_raw_usage)
+                    if usage_state is not None:
+                        usage_state["accumulated"] = (
+                            _lc_round_usage
+                            if usage_state.get("accumulated") is None
+                            else usage_state["accumulated"] + _lc_round_usage
+                        )
+                else:
+                    _lc_round_usage = None
+                    _lc_round_raw_usage = None
+                if usage_state is not None:
+                    usage_state["rounds"] = iteration + 1
 
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (
@@ -3187,6 +3266,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         current_model = model
         chat = self.client.aio.chats.create(model=current_model, history=history)
         retry_count = 0
+        # FEAT-397: time round 1's SDK call (the initial response) across
+        # every retry attempt, so the round-1 ClientRoundEvent's duration_ms
+        # reflects the full time spent, matching the other priority clients.
+        _lc_round1_t0 = time.perf_counter()
         while retry_count < max_retries:
             try:
                 phase_started = time.perf_counter()
@@ -3287,6 +3370,23 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if has_function_calls:
             self._log_non_text_parts(response, where="initial response")
 
+        # FEAT-397: round 1's usage — the initial response's usage_metadata,
+        # extracted here so it (a) feeds the accumulated total and (b) seeds
+        # the round-1 ClientRoundEvent emitted from inside the multiturn
+        # handler for round 1's tool execution.
+        _lc_round1_duration_ms = (time.perf_counter() - _lc_round1_t0) * 1000
+        _lc_round1_usage_metadata = getattr(response, "usage_metadata", None)
+        _lc_round1_usage = None
+        _lc_round1_raw_usage = None
+        if _lc_round1_usage_metadata:
+            _lc_round1_raw_usage = {
+                "prompt_token_count": getattr(_lc_round1_usage_metadata, "prompt_token_count", 0),
+                "candidates_token_count": getattr(_lc_round1_usage_metadata, "candidates_token_count", 0),
+                "total_token_count": getattr(_lc_round1_usage_metadata, "total_token_count", 0),
+            }
+            _lc_round1_usage = CompletionUsage.from_gemini(_lc_round1_raw_usage)
+        _lc_usage_state: Dict[str, Any] = {}
+
         # Multi-turn function calling loop
         phase_started = time.perf_counter()
         final_response = await self._handle_multiturn_function_calls(
@@ -3303,6 +3403,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             session_id=session_id,
             messages=messages,
             stop_tools=stop_tools,
+            round_tc=_lc_tc_google,
+            initial_round_usage=_lc_round1_usage,
+            initial_round_raw_usage=_lc_round1_raw_usage,
+            initial_round_duration_ms=_lc_round1_duration_ms,
+            usage_state=_lc_usage_state,
         )
         self.logger.debug(
             "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
@@ -3576,6 +3681,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             (time.perf_counter() - phase_started) * 1000,
             (time.perf_counter() - ask_started) * 1000,
         )
+
+        # FEAT-397: replace the initial-response-only usage (the bug —
+        # AIMessageFactory.from_gemini built `usage` from the INITIAL
+        # `response`, discarding every multiturn round's tokens) with the
+        # accumulated multi-round total. For single-round calls (no function
+        # calls at all), `_lc_usage_state` stays empty and `.get(...)`
+        # defaults preserve the factory's original usage untouched.
+        _lc_google_accumulated_usage = _lc_usage_state.get("accumulated")
+        _lc_google_rounds = _lc_usage_state.get("rounds", 1)
+        if _lc_google_accumulated_usage is not None:
+            if _lc_google_rounds > 1:
+                _lc_google_accumulated_usage.extra_usage["rounds"] = _lc_google_rounds
+            ai_message.usage = _lc_google_accumulated_usage
 
         # Override provider to distinguish from Vertex AI
         ai_message.provider = "google_genai"
