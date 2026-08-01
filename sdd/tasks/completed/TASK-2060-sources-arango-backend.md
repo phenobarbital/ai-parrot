@@ -138,4 +138,36 @@ The `wiki_sources` collection stores documents matching `SourceManifestEntry`:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `"arangodb"` to `SourceCollectionManager`'s accepted `backend`
+values (`Literal["sqlite", "json", "arangodb"]`) plus a new `arango_db:
+Optional[Any]` constructor param — a connected `asyncdb` ArangoDB driver
+instance (the same connection `ArangoDBWikiStore` uses internally),
+required when `backend="arangodb"` (raises `ValueError` otherwise, same
+as the pre-existing unknown-backend validation).
+
+Implemented the async ArangoDB-backed helpers (`_async_upsert`,
+`_async_list_sources`, `_async_get_source`, `_async_remove_source`,
+`_async_find_id_by_uri`) against a `wiki_sources` collection (literal
+`_ARANGO_SOURCES_COLLECTION = "wiki_sources"`, duplicated rather than
+imported from `arango_store.py` so sqlite/json-only consumers never pull
+in `asyncdb`), using the same AQL UPSERT / `NoDataFound`-as-empty-result
+handling pattern as `ArangoDBWikiStore._query`/`_execute`. Public sync
+methods (`_upsert`, `list_sources`, `get_source`, `remove_source`,
+`_find_id_by_uri`) dispatch to these via a new `_run_async()` bridge:
+`asyncio.run()` when no loop is running, otherwise offloaded to a
+`ThreadPoolExecutor` (nested `asyncio.run()` cannot run inside an active
+loop) — matching the task's suggested bridging strategy. `add_source()`,
+`is_stale()`, `mark_ingested()`, and `find_by_uri()` needed no changes —
+they already call through the dispatch points above.
+
+18 unit tests added in `tests/knowledge/wiki/test_sources_arango.py`
+(construction/validation, all 5 CRUD dispatch paths, `mark_ingested`
+round-trip, and the AQL bridging helpers' error handling), all passing.
+Full `tests/knowledge/wiki/` suite (658 tests) re-run — no regressions on
+the sqlite/json backends. `ruff check` on `sources.py` shows 9 `UP045`
+findings (up from a 5-finding baseline) — all on the new `Optional[Any]`/
+`Optional[SourceManifestEntry]` annotations this task added, following
+the exact same `Optional[...]` convention used throughout the rest of
+this file and every sibling module in `parrot/knowledge/wiki/` (none of
+which have ever had this rule auto-fixed) — not new lint debt by any
+different standard than the rest of the codebase.
