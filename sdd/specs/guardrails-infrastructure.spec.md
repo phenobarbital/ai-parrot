@@ -13,7 +13,7 @@ base_branch: dev
 
 > Source brainstorm: `sdd/proposals/guardrails-infrastructure.brainstorm.md`
 > (Recommended Option A). Plugin features: FEAT-324
-> (`pii-detection-redaction`, v0.4) and FEAT-325
+> (`pii-detection-redaction`, v0.4) and FEAT-398
 > (`deterministic-groundedness-scoring`, v0.2) deliver their integration
 > layers as plugins of this infrastructure; their engines are unchanged.
 
@@ -57,7 +57,7 @@ abstraction.
 - Built-in plugins: `PromptInjectionGuardrail` (migrates
   `_sanitize_question`), `SecretsGuardrail` (wraps `OutputScrubber`),
   sockets for FEAT-324 (`PIIGuardrail`/`PseudonymizeGuardrail`) and
-  FEAT-325 (`GroundednessGuardrail`), `ModerationGuardrail` reference
+  FEAT-398 (`GroundednessGuardrail`), `ModerationGuardrail` reference
   interface + stub backend.
 - `StreamingGuardrail` adapter contract (`feed`/`flush`) so transforming
   output guardrails can run on `ask_stream` chunks.
@@ -67,7 +67,7 @@ abstraction.
 
 - Concrete moderation backends (OpenAI moderation API, local classifiers,
   keyword lists) — follow-ups behind the `ModerationBackend` protocol.
-- Implementing the FEAT-324/FEAT-325 engines — separate features; this
+- Implementing the FEAT-324/FEAT-398 engines — separate features; this
   spec defines the sockets their plugins fill.
 - Wrapping provider-native guardrails (Bedrock `apply_guardrail_text`,
   Google safety settings) — noted as a possible future `ProviderGuardrail`.
@@ -160,7 +160,7 @@ ask_stream chunk loop ── OUTPUT_STREAM ─► [StreamingGuardrail adapters]
 | `bots/middleware.py` + registration sites (`bots/search.py:119`, `skills/mixin.py:178`) | deprecates | wrapped as legacy TRANSFORM guardrail; sites migrated |
 | `security/` engines (`prompt_injection.py:27`, `redaction.py:128,149`) | uses | unchanged; plugins are thin wrappers |
 | FEAT-176 observers | uses | uniform telemetry |
-| FEAT-324 / FEAT-325 | provides sockets | their plugins register here (spec v0.4 / v0.2) |
+| FEAT-324 / FEAT-398 | provides sockets | their plugins register here (spec v0.4 / v0.2) |
 
 No breaking changes: with no `guardrails` kwarg and default legacy flags,
 behavior is bit-identical to today.
@@ -253,6 +253,16 @@ New bot kwarg: `guardrails: list[str | dict | Guardrail] | None = None`.
   block-vs-`_wrap_flagged_input` mitigation); legacy ctor-flag mapping;
   `PromptPipeline` wrapped as legacy TRANSFORM guardrail and its two
   registration sites migrated; behavioral-compat test suite.
+- **Constraint — lazy-import of pytector**: The `PromptInjectionGuardrail`
+  owns the `import pytector` / `import torch` boundary — the import MUST
+  happen inside the guardrail (its `__init__` or first `check()` call),
+  NOT at `AbstractBot.__init__` time. Today `AbstractBot.__init__` loads
+  the shared detector unconditionally when pytector is installed
+  (`PYTECTOR_ENABLED`, `bots/abstract.py:63,675`), which pulls in torch,
+  transformers, and TensorFlow into every bot — even those with
+  `injection_detection=False`. The migration must remove that eager load
+  from `AbstractBot` and gate it entirely on whether the
+  `PromptInjectionGuardrail` is registered for the bot.
 - **Depends on**: Module 1.
 
 ### Module 3: guardrails-output-plugins

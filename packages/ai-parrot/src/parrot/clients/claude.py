@@ -530,8 +530,14 @@ class AnthropicClient(AbstractClient):
         all_tool_calls = []
         used_fallback = False
 
+        # FEAT-397: per-round token usage accumulation across the tool loop
+        _lc_round_number = 0
+        _lc_accumulated_usage: "Optional[CompletionUsage]" = None
+
         # Handle tool calls in a loop
         while True:
+            # FEAT-397: time this round's SDK call for the round event's duration_ms
+            _lc_round_t0 = _lc_time.perf_counter()
             # Use the Anthropic SDK to create messages
             try:
                 response = await self._sdk_create(payload)
@@ -548,11 +554,28 @@ class AnthropicClient(AbstractClient):
                     raise
             # Convert Message object to dict for compatibility
             result = response.model_dump()
+            _lc_round_number += 1
+            _lc_round_duration_ms = (_lc_time.perf_counter() - _lc_round_t0) * 1000
+
+            # FEAT-397: build this round's usage and accumulate. Rounds where
+            # the provider reported no usage are skipped (accumulator
+            # untouched); the round event still fires with usage=None.
+            _lc_round_raw_usage = result.get("usage") or None
+            if _lc_round_raw_usage:
+                _lc_round_usage = CompletionUsage.from_claude(_lc_round_raw_usage)
+                _lc_accumulated_usage = (
+                    _lc_round_usage
+                    if _lc_accumulated_usage is None
+                    else _lc_accumulated_usage + _lc_round_usage
+                )
+            else:
+                _lc_round_usage = None
 
             # Check if Claude wants to use a tool
             if result.get("stop_reason") == "tool_use":
                 tool_results = []
                 found_new_tools = False
+                _lc_round_tool_names = []
 
                 for content_block in result["content"]:
                     if content_block["type"] == "tool_use":
@@ -608,10 +631,23 @@ class AnthropicClient(AbstractClient):
                             })
 
                         all_tool_calls.append(tc)
+                        _lc_round_tool_names.append(tool_name)
 
                 # Update available tools if new ones found
                 if lazy_loading and found_new_tools:
                      payload["tools"] = self._prepare_tools(filter_names=list(active_tool_names))
+
+                # FEAT-397: emit ClientRoundEvent after tool execution for this round
+                self._emit_round_event(
+                    _lc_tc,
+                    client_name=self._telemetry_client_name,
+                    model=model,
+                    round_number=_lc_round_number,
+                    usage=_lc_round_usage,
+                    raw_usage=_lc_round_raw_usage,
+                    tool_calls=_lc_round_tool_names,
+                    duration_ms=_lc_round_duration_ms,
+                )
 
                 # Add tool results and continue conversation
                 messages.append({"role": "assistant", "content": result["content"]})
@@ -675,6 +711,15 @@ class AnthropicClient(AbstractClient):
             structured_output=final_output,
             tool_calls=all_tool_calls
         )
+
+        # FEAT-397: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round calls (no tool use), the
+        # accumulated total equals the last (only) round's usage, so this
+        # is a no-op for existing single-round behavior.
+        if _lc_accumulated_usage is not None:
+            if _lc_round_number > 1:
+                _lc_accumulated_usage.extra_usage["rounds"] = _lc_round_number
+            ai_message.usage = _lc_accumulated_usage
 
         # Add fallback metadata if fallback was used
         if used_fallback:
