@@ -14,7 +14,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — every other task imports these models.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2046-checkpoint-model-and-errors.md"
+      "completed_at": "2026-08-01T00:27:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2046-checkpoint-model-and-errors.md"
     },
     {
       "id": "TASK-2047",
