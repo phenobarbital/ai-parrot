@@ -100,13 +100,32 @@ class LLMWikiToolkit(AbstractToolkit):
         self.agent_id = agent_id
 
         # Initialise helper components.  The WikiStore plane is the
-        # retrieval backend — SQLite (storage_dir/wiki.db) or the
-        # in-memory + OKF-bundle-directory backend, per config.
-        self._store = create_wiki_store(
-            config.storage_dir,
-            wiki_name=config.wiki_name,
-            backend=config.storage_backend,
-        )
+        # retrieval backend — SQLite (storage_dir/wiki.db), the
+        # in-memory + OKF-bundle-directory backend, or a server-hosted
+        # ArangoDB backend, per config.
+        if config.storage_backend == "arangodb":
+            # Bypass the factory: ArangoDB connection params come from
+            # ARANGODB_* env vars (never from WikiConfig, which carries
+            # no arango-specific fields), resolved the same way
+            # WikiProjectConfig-driven callers do.
+            from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+            from parrot.knowledge.wiki.project import (
+                WikiProjectConfig,
+                resolve_arango_params,
+            )
+
+            arango_params = resolve_arango_params(
+                WikiProjectConfig(wiki_name=config.wiki_name)
+            )
+            self._store = ArangoDBWikiStore(
+                arango_params, wiki_name=config.wiki_name
+            )
+        else:
+            self._store = create_wiki_store(
+                config.storage_dir,
+                wiki_name=config.wiki_name,
+                backend=config.storage_backend,
+            )
         sources_dir = config.storage_dir / "sources"
         if config.storage_backend == "sqlite":
             self._sources = SourceCollectionManager(
