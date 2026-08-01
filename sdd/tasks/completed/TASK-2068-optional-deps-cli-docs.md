@@ -198,10 +198,65 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added a `leiden` optional extra to `packages/ai-parrot/pyproject.toml`
+(`leidenalg>=0.10`, `python-igraph>=0.10`) right after the sibling
+`wiki-languages` extra, with a comment explaining the opt-in rationale
+(matches the existing `graphindex`/`wiki-languages` C-dependency
+pattern) — verified NOT pulled into `all`/`all-fast` and parseable via
+`tomllib`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Added a new `communities` command to the `wikitoolkit` CLI
+(`parrot.knowledge.wiki.cli`, a `click` group — verified the framework
+by reading the file first, contradicting the task's own "argparse or
+click (verify before implementing)" hedge). Extracted the wiki-page →
+`UniversalNode`/`UniversalEdge` adaptation (previously inline in
+`_export_graph_html`, used by `build`) into a shared
+`_load_graphindex_nodes_edges()` helper so both the `build` graph.html
+export and the new on-demand `communities` command stay in sync — a
+minimal, low-risk refactor confined to this already-in-scope file.
+`communities` runs Leiden/Louvain detection fresh from the current wiki
+store contents (no need to re-run `build`); without `--inter` it lists
+communities (id/label/size); with `--inter` it computes
+`compute_inter_community_graph()` and prints a compact
+`density`/pairs header plus one row per relation
+(`A → B | 3→, 1← | coupling: 0.29`, direction arrow based on which
+side dominates) — matches the Implementation Notes' example format.
+`--json` emits the raw `CommunitiesResult`/`InterCommunityGraph`
+`model_dump()`. Both the "wiki not built" and "no pages match
+--graph-kinds" and "no cross-community edges" paths degrade
+gracefully (friendly message, exit 0) per acceptance criteria — verified
+by hand with a real `CliRunner` smoke run before writing tests.
 
-**Deviations from spec**: none | describe if any
+Created `packages/ai-parrot/tests/knowledge/wiki/` (did not exist at
+all — no `wiki/` test package existed in this repo prior to this task,
+confirmed by directory listing) with `__init__.py` (matching the
+one-line-docstring convention used by sibling `tests/knowledge/<pkg>/`
+directories) and `test_cli.py`: 8 tests using a real `click.testing.CliRunner`
+against a tiny synthetic repo built end-to-end via `wiki build` (no
+mocking of the GraphIndex pipeline) — covers the plain listing, `--json`
+for both modes, the three graceful-degradation paths, and (using a
+two-module repo with one cross-package import) a real populated
+inter-community relation row. Discovered the app's logging handler
+writes ANSI-coloured lines to the same stdout stream `CliRunner`
+captures; added a `_strip_log_lines()` test helper to isolate the
+command's own `click.echo` output before parsing `--json` — otherwise
+`json.loads()` fails on the mixed stream. `pip install ai-parrot[leiden]`
+install docs already exist in `communities.py`'s docstrings (added by
+TASK-2064) — the Scope's "and/or" phrasing let this be satisfied
+without re-touching a file outside this task's Files list. `ruff check`
+on all touched files shows only 2 pre-existing findings in `cli.py`
+(SIM102, ISC004 — confirmed via `git stash`, both far from any line I
+touched) and the RUF059 pattern is absent from my new test file.
+
+**Deviations from spec**: none. Codebase-contract note: the contract's
+suggested import block (`from parrot.knowledge.graphindex.inter_community
+import InterCommunityGraph, compute_inter_community_graph` at module
+top-level) was NOT followed literally — `cli.py` imports both lazily
+inside the `communities` command body instead, matching this file's
+own established pattern (every other GraphIndex/analytics import in
+`cli.py`, including in `_export_graph_html`, is a deferred in-function
+import) rather than adding a new top-level dependency to a CLI module
+whose docstring advertises itself as usable "fully offline" with a
+light dependency footprint.
