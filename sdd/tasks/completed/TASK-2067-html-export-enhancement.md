@@ -230,10 +230,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added `inter_community_relations: list[dict]` and
+`inter_community_density: Optional[float]` fields to `GraphExportPayload`
+(additive defaults, backward-compatible). Extended
+`build_export_payload()` with matching optional params, passed through
+verbatim (stays pure, no `inter_community` import). Extended
+`export_graph()` with an `inter_community: Optional[Any] = None` param,
+adapted via `getattr` duck-typing (per the Implementation Notes
+constraint — never imports `InterCommunityGraph` at module level) into
+plain dicts for the payload. Added a collapsible `<details
+id="interCommunityPanel" style="display:none">` table panel to the
+`_HTML_TEMPLATE` body (6 columns: Community A, Community B, Edges →,
+Edges ←, Weight, Coupling — plus a → / ← direction arrow prefixed onto
+the Community B cell per the scope's "direction arrow" requirement) and
+a small IIFE in the existing `<script>` block that populates the table
+from `GRAPH.inter_community_relations` and reveals the panel
+(`display:block`) only when relations is non-empty — reusing the
+template's existing `esc()` HTML-escaper (hoisted function declaration)
+rather than duplicating it. Verified end-to-end with a manual
+`export_graph()` smoke test (real `InterCommunityGraph` → `graph.json` +
+`graph.html`) before writing the test suite. Added 7 tests to
+`test_export_html.py`: payload field defaults/population, JSON
+round-trip with/without inter-community data, HTML table-panel markup
+presence, the hidden-by-default static markup, `getattr` duck-typing
+(via a bare `SimpleNamespace`, not the real Pydantic model, to prove no
+import-time coupling), and a no-regression check on the pre-FEAT-401
+call signature. All 25 tests in the file pass (18 pre-existing + 7 new);
+`ruff check` shows only pre-existing `RUF059` (unused unpacked
+fixture-tuple variables — a convention already used 30+ times in this
+file) findings, confirmed via `git stash` to predate this task; my own
+new tests were written to avoid adding to that count.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from scope (flagged, not silently done)**: `builder.py`
+Stage 6.6 (`export_graph(... )` call) is NOT wired to pass
+`analytics.inter_community` through, even though this task's
+Implementation Notes say "The builder calls `export_graph()` at Stage
+6.6 — pass `inter_community` from the analytics result there." The
+task's own **Files to Create/Modify** table lists only
+`export_html.py` + `test_export_html.py` — NOT `builder.py`. Per
+Cardinal Rule 2 (File Fidelity), I did not touch `builder.py`. This
+means the full pipeline does not yet auto-populate the HTML/JSON
+inter-community panel end-to-end from a real `build()` call; the new
+`export_graph(inter_community=...)` parameter works correctly when
+called directly (as `wikitoolkit`/agents or a future task would), and
+is covered by tests, but the one-line `builder.py` wiring
+(`inter_community=analytics.inter_community` alongside the existing
+`communities=self.last_community_result` kwarg) is left for a follow-up
+task or an explicit scope correction — flagging per Cardinal Rule 4
+rather than silently expanding this task's file list.
