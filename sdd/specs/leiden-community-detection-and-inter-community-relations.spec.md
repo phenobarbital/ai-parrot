@@ -192,6 +192,7 @@ def detect_hierarchical_communities(
     graph: rustworkx.PyDiGraph,
     nodes: list[UniversalNode],
     resolutions: list[float] | None = None,  # default: [0.25, 0.5, 1.0, 2.0, 4.0]
+                                             # short-circuits to [1.0] when <20 nodes
     seed: int = 42,
     signal_config: Optional[SignalRelevanceConfig] = None,
     embedder: Optional[object] = None,
@@ -237,16 +238,20 @@ def compute_inter_community_graph(
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/graphindex/export_html.py`,
   `packages/ai-parrot/src/parrot/knowledge/graphindex/analytics.py`
 - **Responsibility**: Add inter-community relations to `graph.json` payload
-  and render a summary table or meta-graph layer in `graph.html`. Add
+  and render a **collapsible summary table panel** in `graph.html` (columns:
+  community pair, edge count, weight, coupling ratio, direction arrow). Add
   `## Inter-Community Relations` section to `GRAPH_REPORT.md`.
 - **Depends on**: Module 2, Module 3
 
-### Module 5: Optional Dependency & Install Instructions
+### Module 5: Optional Dependency, CLI & Install Instructions
 
-- **Path**: `packages/ai-parrot/pyproject.toml`, `docs/`
+- **Path**: `packages/ai-parrot/pyproject.toml`,
+  `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py`, `docs/`
 - **Responsibility**: Add `leiden` optional extra; add install instructions
-  to docstrings / docs.
-- **Depends on**: None (can run in parallel with Modules 1-4)
+  to docstrings / docs. Add `wikitoolkit communities --inter` CLI subcommand
+  (or equivalent flag) so agents can query inter-community relations
+  on-demand without regenerating the full report.
+- **Depends on**: Module 2 (for `InterCommunityGraph` model)
 
 ---
 
@@ -556,15 +561,26 @@ conda install -c conda-forge leidenalg
 
 ## 8. Open Questions
 
-- [ ] Should `detect_hierarchical_communities()` default resolutions be
+- [x] Should `detect_hierarchical_communities()` default resolutions be
       `[0.25, 0.5, 1.0, 2.0, 4.0]` or should they be auto-tuned based on
-      graph size? — *Owner: Jesús*
-- [ ] Should inter-community relations be surfaced in the `wikitoolkit`
+      graph size? — *Owner: Jesús* — **Resolved**: Use fixed defaults
+      `[0.25, 0.5, 1.0, 2.0, 4.0]`. They are deterministic, debuggable,
+      and the `resolutions` parameter already lets callers customize. For
+      tiny graphs (<20 nodes), short-circuit to `[1.0]` only.
+- [x] Should inter-community relations be surfaced in the `wikitoolkit`
       CLI (e.g. `wikitoolkit communities --inter`), or only in the
-      report/export? — *Owner: Jesús*
-- [ ] Should the HTML export render inter-community edges as a separate
+      report/export? — *Owner: Jesús* — **Resolved**: Both. The
+      report/export provides the full picture on build, but agents need
+      on-demand CLI access (`wikitoolkit communities --inter` or similar
+      subcommand) to answer cross-subsystem questions without regenerating
+      the report. The CLI is the primary agent interface.
+- [x] Should the HTML export render inter-community edges as a separate
       force-directed meta-graph layer, or as a summary table panel?
-      — *Owner: Jesús*
+      — *Owner: Jesús* — **Resolved**: Summary table panel. A collapsible
+      table with columns (community pair, edge count, weight, coupling
+      ratio, direction arrow) delivers the information with minimal ECharts
+      complexity. A force-directed meta-graph overlay can be a follow-up
+      if the table proves insufficient.
 
 ---
 
@@ -585,3 +601,4 @@ conda install -c conda-forge leidenalg
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-01 | Jesús Lara | Initial draft |
+| 0.2 | 2026-08-01 | Jesús Lara | Resolve all open questions: fixed hierarchical defaults with tiny-graph short-circuit, CLI + report/export for inter-community, summary table panel for HTML |
