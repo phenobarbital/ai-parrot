@@ -75,6 +75,7 @@ class SourceCollectionManager:
         db_path: Optional[Path] = None,
         backend: Literal["sqlite", "json", "arangodb"] = "sqlite",
         arango_db: Optional[Any] = None,
+        arango_store: Optional[Any] = None,
     ) -> None:
         """Initialise the manager's chosen persistence backend.
 
@@ -87,14 +88,24 @@ class SourceCollectionManager:
                 :class:`SQLiteWikiStore`.
             backend: ``"sqlite"`` (default), ``"json"``, or
                 ``"arangodb"``.
-            arango_db: Connected ``asyncdb`` ArangoDB driver instance
-                (the same connection used by ``ArangoDBWikiStore`` —
-                see its ``_db`` attribute after ``initialize()``).
-                Required when ``backend="arangodb"``.
+            arango_db: Already-connected ``asyncdb`` ArangoDB driver
+                instance (the same connection used by
+                ``ArangoDBWikiStore`` — see its ``_db`` attribute after
+                ``initialize()``). One of ``arango_db``/``arango_store``
+                is required when ``backend="arangodb"``.
+            arango_store: An ``ArangoDBWikiStore`` instance to lazily
+                ``initialize()`` (idempotent) and read ``._db`` from at
+                first use, instead of requiring an already-connected
+                driver at construction time. Lets callers that cannot
+                ``await`` here (e.g. ``LLMWikiToolkit.__init__``, which
+                is synchronous) still wire the ``arangodb`` backend
+                correctly. Takes precedence over ``arango_db`` when both
+                are given.
 
         Raises:
             ValueError: For an unknown ``backend`` value, or when
-                ``backend="arangodb"`` is given without ``arango_db``.
+                ``backend="arangodb"`` is given without ``arango_db``
+                or ``arango_store``.
         """
         if backend not in ("sqlite", "json", "arangodb"):
             raise ValueError(
@@ -111,6 +122,25 @@ class SourceCollectionManager:
         self.logger: logging.Logger = logging.getLogger(__name__)
         self._manifest: dict[str, SourceManifestEntry] = {}
         self._arango_db: Optional[Any] = arango_db
+        self._arango_store: Optional[Any] = arango_store
+        self._arango_loop: Optional[asyncio.AbstractEventLoop] = None
+        if backend == "arangodb":
+            if arango_db is None and arango_store is None:
+                raise ValueError(
+                    "SourceCollectionManager(backend='arangodb') requires"
+                    " either arango_db (an already-connected connection)"
+                    " or arango_store (an ArangoDBWikiStore to lazily"
+                    " initialize)"
+                )
+            # Captured so _run_async() can tell whether a later
+            # asyncio.to_thread(...) call is being bridged back onto the
+            # SAME loop the arango connection is bound to (see
+            # _run_async's docstring) — None when constructed outside
+            # any running loop (e.g. the sync CLI `status` command).
+            try:
+                self._arango_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._arango_loop = None
         if backend == "sqlite":
             from parrot.knowledge.wiki.store import WIKI_SCHEMA_SQL
 
@@ -119,12 +149,7 @@ class SourceCollectionManager:
                 conn.executescript(WIKI_SCHEMA_SQL)
             self._migrate_json_manifest()
         elif backend == "arangodb":
-            if arango_db is None:
-                raise ValueError(
-                    "SourceCollectionManager(backend='arangodb') requires"
-                    " an arango_db connection (e.g. the shared AsyncDB"
-                    " instance from ArangoDBWikiStore)"
-                )
+            pass  # validated above; connection resolved lazily at first use
         else:
             self._load_manifest()
 
@@ -453,12 +478,34 @@ class SourceCollectionManager:
     def _run_async(self, coro: Any) -> Any:
         """Bridge an async ArangoDB call from this manager's sync API.
 
-        Mirrors the ``asyncio.run()`` pattern the ``wikitoolkit`` CLI
-        already uses to drive its own async store calls. When invoked
-        from within a running event loop (a caller that reaches into
-        this manager without ``asyncio.to_thread``), ``asyncio.run()``
-        cannot be nested — the coroutine is instead run to completion
-        on a dedicated thread.
+        The ``arangodb`` backend's connection (``asyncdb``/``arangoasync``,
+        backed by ``aiohttp``) is bound to the event loop it was created
+        on — ``aiohttp``'s connector captures ``asyncio.get_running_loop()``
+        at construction and cannot be driven from a different loop.  A
+        naive bridge that always does ``asyncio.run(coro)`` (spinning up
+        a brand-new loop whenever one isn't already running in the
+        *current* thread — which is exactly the case inside an
+        ``asyncio.to_thread(...)`` worker) would silently reuse the
+        shared connection from that new, unrelated loop.
+
+        So when this manager was constructed while a loop was already
+        running (``self._arango_loop`` is set — the CLI's ``build``/
+        ``upsert`` pipelines, which then call these sync methods via
+        ``asyncio.to_thread(...)``), the coroutine is instead scheduled
+        back onto *that* loop via ``run_coroutine_threadsafe`` — safe
+        because ``asyncio.to_thread`` suspends the caller without
+        blocking the loop, leaving it free to run the rescheduled
+        coroutine concurrently. Calling a sync method directly from
+        *that same* loop's own thread (no ``to_thread`` offload) would
+        deadlock waiting on itself, so that combination raises instead
+        of hanging.
+
+        Outside any captured loop (e.g. the sync ``status`` command, or
+        a mocked/no-op test double), this falls back to a plain
+        ``asyncio.run(coro)`` — or, if some other unrelated loop happens
+        to be running in the current thread, a dedicated thread's own
+        fresh loop (safe there since ``self._arango_db``/``_arango_store``
+        was never bound to that unrelated loop in the first place).
 
         Args:
             coro: The coroutine to run to completion.
@@ -466,6 +513,25 @@ class SourceCollectionManager:
         Returns:
             The coroutine's result.
         """
+        if self._arango_loop is not None:
+            try:
+                current = asyncio.get_running_loop()
+            except RuntimeError:
+                current = None
+            if current is self._arango_loop:
+                coro.close()
+                raise RuntimeError(
+                    "SourceCollectionManager(backend='arangodb') sync"
+                    " methods must be invoked via asyncio.to_thread(...)"
+                    " when called from the same event loop the arango"
+                    " connection was initialized on (calling them"
+                    " directly here would deadlock)."
+                )
+            if current is None:
+                return asyncio.run_coroutine_threadsafe(
+                    coro, self._arango_loop
+                ).result()
+
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -475,6 +541,20 @@ class SourceCollectionManager:
 
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return pool.submit(asyncio.run, coro).result()
+
+    async def _resolve_arango_db(self) -> Any:
+        """Return the connected ArangoDB driver for this manager's backend.
+
+        When constructed with ``arango_store`` rather than an already-
+        connected ``arango_db``, this lazily (and idempotently) connects
+        it on first use — lets synchronous constructors (e.g.
+        ``LLMWikiToolkit.__init__``) wire the backend without needing to
+        ``await`` anything themselves.
+        """
+        if self._arango_store is not None:
+            await self._arango_store.initialize()
+            return self._arango_store._db
+        return self._arango_db
 
     async def _arango_query(
         self, aql: str, bind_vars: dict[str, Any]
@@ -486,7 +566,8 @@ class SourceCollectionManager:
         driver surfaces a zero-row cursor as a non-``None`` ``error``
         string rather than an empty list.
         """
-        result, error = await self._arango_db.query(aql, bind_vars=bind_vars)
+        db = await self._resolve_arango_db()
+        result, error = await db.query(aql, bind_vars=bind_vars)
         if error:
             if "no data found" in str(error).lower():
                 return []
@@ -497,7 +578,8 @@ class SourceCollectionManager:
         self, aql: str, bind_vars: dict[str, Any]
     ) -> list[Any]:
         """Run a write AQL statement (UPSERT/UPDATE/REMOVE)."""
-        result, error = await self._arango_db.execute(aql, bind_vars=bind_vars)
+        db = await self._resolve_arango_db()
+        result, error = await db.execute(aql, bind_vars=bind_vars)
         if error:
             raise RuntimeError(f"ArangoDB execute failed: {error}")
         return result or []

@@ -4,6 +4,7 @@ Mocks the ``arango_db`` connection the same way ``test_arango_store.py``
 mocks ``asyncdb`` — no real ArangoDB server is needed.
 """
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -52,7 +53,7 @@ class TestSourceCollectionManagerArangoInit:
         assert mgr._arango_db is mock_arango_db
 
     def test_arangodb_backend_requires_connection(self, tmp_path: Path):
-        with pytest.raises(ValueError, match="requires an arango_db connection"):
+        with pytest.raises(ValueError, match="requires either arango_db"):
             SourceCollectionManager(tmp_path / "sources", backend="arangodb")
 
     def test_unknown_backend_still_rejected(self, tmp_path: Path):
@@ -190,3 +191,103 @@ class TestArangoQueryHelpers:
         mock_arango_db.execute = AsyncMock(return_value=(None, "Write failed"))
         with pytest.raises(RuntimeError):
             await manager._arango_execute("REMOVE 'x' IN @@collection", {})
+
+
+class TestLazyArangoStoreConstruction:
+    """``arango_store=`` (lazy) as an alternative to ``arango_db=`` (eager)."""
+
+    def test_requires_arango_db_or_arango_store(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="requires either arango_db"):
+            SourceCollectionManager(tmp_path / "sources", backend="arangodb")
+
+    def test_arango_store_accepted(self, tmp_path: Path):
+        fake_store = MagicMock()
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_store=fake_store
+        )
+        assert mgr._arango_store is fake_store
+        assert mgr._arango_db is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_arango_db_initializes_lazily(self, tmp_path: Path):
+        fake_store = MagicMock()
+        fake_store.initialize = AsyncMock()
+        fake_store._db = "the-connection"
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_store=fake_store
+        )
+        db = await mgr._resolve_arango_db()
+        fake_store.initialize.assert_awaited_once()
+        assert db == "the-connection"
+
+    @pytest.mark.asyncio
+    async def test_arango_query_uses_lazily_resolved_store(self, tmp_path: Path):
+        fake_db = MagicMock()
+        fake_db.query = AsyncMock(return_value=(["row"], None))
+        fake_store = MagicMock()
+        fake_store.initialize = AsyncMock()
+        fake_store._db = fake_db
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_store=fake_store
+        )
+        result = await mgr._arango_query("FOR doc IN @@collection RETURN doc", {})
+        assert result == ["row"]
+        fake_store.initialize.assert_awaited_once()
+
+
+class TestRunAsyncLoopAffinity:
+    """``_run_async`` must never drive the shared connection cross-loop.
+
+    Regression coverage for a FEAT-400 code-review finding: a naive
+    ``asyncio.run(coro)`` bridge would spin up a brand-new event loop
+    inside an ``asyncio.to_thread(...)`` worker and use it to drive the
+    arango connection that is actually bound to the ORIGINAL loop
+    (``aiohttp``/``arangoasync`` connections capture their creating
+    loop). ``_run_async`` must instead reschedule back onto the
+    captured loop via ``run_coroutine_threadsafe`` — and must refuse
+    (not deadlock) when called directly from that same loop's own
+    thread without a ``to_thread`` offload.
+    """
+
+    @pytest.mark.asyncio
+    async def test_captures_running_loop_at_construction(self, tmp_path: Path):
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_db=MagicMock()
+        )
+        assert mgr._arango_loop is asyncio.get_running_loop()
+
+    def test_no_captured_loop_outside_any_running_loop(self, tmp_path: Path):
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_db=MagicMock()
+        )
+        assert mgr._arango_loop is None
+
+    @pytest.mark.asyncio
+    async def test_direct_call_on_same_loop_raises_instead_of_deadlocking(
+        self, tmp_path: Path
+    ):
+        mock_db = MagicMock()
+        mock_db.query = AsyncMock(return_value=([], None))
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_db=mock_db
+        )
+        # Direct (non-to_thread) call from the SAME loop the manager
+        # captured at construction — must raise a clear error, not hang.
+        with pytest.raises(RuntimeError, match="asyncio.to_thread"):
+            mgr.list_sources()
+
+    @pytest.mark.asyncio
+    async def test_to_thread_call_reschedules_onto_captured_loop(
+        self, tmp_path: Path
+    ):
+        mock_db = MagicMock()
+        mock_db.query = AsyncMock(return_value=([], None))
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_db=mock_db
+        )
+        # From a worker thread (asyncio.to_thread has no running loop of
+        # its own), the call must succeed by scheduling back onto the
+        # loop captured at construction — not raise, not hang.
+        result = await asyncio.to_thread(mgr.list_sources)
+        assert result == []
+        mock_db.query.assert_awaited()

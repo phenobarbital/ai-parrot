@@ -156,7 +156,7 @@ class WikiIngestOrchestrator:
         )
         if existing_id:
             source_id = existing_id
-            entry = self._sources.get_source(source_id)
+            entry = await asyncio.to_thread(self._sources.get_source, source_id)
             is_stale = await asyncio.to_thread(
                 self._sources.is_stale, source_id
             )

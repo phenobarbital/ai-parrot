@@ -131,6 +131,13 @@ class LLMWikiToolkit(AbstractToolkit):
             self._sources = SourceCollectionManager(
                 sources_dir, db_path=config.storage_dir / "wiki.db"
             )
+        elif config.storage_backend == "arangodb":
+            # arango_store (not arango_db): __init__ is synchronous and
+            # cannot await self._store.initialize() itself — the manager
+            # lazily initializes it (idempotent) on first actual use.
+            self._sources = SourceCollectionManager(
+                sources_dir, backend="arangodb", arango_store=self._store
+            )
         else:
             self._sources = SourceCollectionManager(
                 sources_dir, backend="json"
@@ -272,7 +279,7 @@ class LLMWikiToolkit(AbstractToolkit):
         # Orphans: sources with zero derived pages (SQL join); falls back
         # to the registry's pages_generated when the pages table is empty
         # for that source but ids were recorded (e.g. store sync skipped).
-        all_sources = self._sources.list_sources()
+        all_sources = await asyncio.to_thread(self._sources.list_sources)
         recorded = {
             s.source_id for s in all_sources if s.pages_generated
         }
@@ -391,7 +398,7 @@ class LLMWikiToolkit(AbstractToolkit):
             List of wiki info dicts, each with keys: wiki_name, storage_dir,
             source_count.
         """
-        sources = self._sources.list_sources()
+        sources = await asyncio.to_thread(self._sources.list_sources)
         return [
             {
                 "wiki_name": self._config.wiki_name,
@@ -413,7 +420,7 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with keys: wiki_name, storage_dir, source_count,
             search_weights, page_categories.
         """
-        sources = self._sources.list_sources()
+        sources = await asyncio.to_thread(self._sources.list_sources)
         return {
             "wiki_name": wiki_name,
             "storage_dir": str(self._config.storage_dir),
@@ -442,8 +449,8 @@ class LLMWikiToolkit(AbstractToolkit):
             "delete_wiki called for '%s' — clearing manifest only", wiki_name
         )
         # Remove all manifest entries
-        for entry in self._sources.list_sources():
-            self._sources.remove_source(entry.source_id)
+        for entry in await asyncio.to_thread(self._sources.list_sources):
+            await asyncio.to_thread(self._sources.remove_source, entry.source_id)
 
         return {
             "status": "deleted",
@@ -810,7 +817,8 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             List of source dicts (serialised :class:`SourceManifestEntry`).
         """
-        return [e.model_dump() for e in self._sources.list_sources()]
+        sources = await asyncio.to_thread(self._sources.list_sources)
+        return [e.model_dump() for e in sources]
 
     async def get_source_info(
         self,
@@ -827,7 +835,7 @@ class LLMWikiToolkit(AbstractToolkit):
             Source manifest entry dict, or ``{"error": "not_found"}`` when
             the source_id is unknown.
         """
-        entry = self._sources.get_source(source_id)
+        entry = await asyncio.to_thread(self._sources.get_source, source_id)
         if entry is None:
             return {"error": "not_found", "source_id": source_id}
         return entry.model_dump()
@@ -847,12 +855,12 @@ class LLMWikiToolkit(AbstractToolkit):
             :class:`IngestReport` dict, or an error dict when the source
             is not tracked.
         """
-        entry = self._sources.get_source(source_id)
+        entry = await asyncio.to_thread(self._sources.get_source, source_id)
         if entry is None:
             return {"error": "not_found", "source_id": source_id}
 
         # Force staleness by removing the entry and re-adding
-        self._sources.remove_source(source_id)
+        await asyncio.to_thread(self._sources.remove_source, source_id)
         report = await self._ingest_orch.ingest(entry.source_uri, self._config)
         return report.model_dump()
 
@@ -1051,7 +1059,7 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with keys: status, wiki_name, index_length.
         """
         storage_dir = self._config_for(wiki_name).storage_dir
-        sources = self._sources.list_sources()
+        sources = await asyncio.to_thread(self._sources.list_sources)
         content = await asyncio.to_thread(
             self._bookkeeper.rebuild_index,
             storage_dir,

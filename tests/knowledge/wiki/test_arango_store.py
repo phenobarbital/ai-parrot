@@ -47,7 +47,15 @@ def arango_params():
 
 @pytest.fixture
 def mock_db():
-    """Mocked ``asyncdb`` ArangoDB driver instance."""
+    """Mocked ``asyncdb`` ArangoDB driver instance.
+
+    ``_connection`` mocks the underlying ``arangoasync.database.Database``
+    directly (``views()`` / ``create_view()``) — ``_create_pages_view()``
+    drives that layer directly rather than the installed ``asyncdb``
+    driver's own ``create_arangosearch_view()`` wrapper, which has an
+    unawaited-coroutine bug against a real server (see
+    ``ArangoDBWikiStore._create_pages_view``'s docstring).
+    """
     db = MagicMock()
     db.connection = AsyncMock(return_value=db)
     db.close = AsyncMock()
@@ -56,6 +64,9 @@ def mock_db():
     db.create_arangosearch_view = AsyncMock()
     db.query = AsyncMock(return_value=([], None))
     db.execute = AsyncMock(return_value=([], None))
+    db._connection = MagicMock()
+    db._connection.views = AsyncMock(return_value=[])
+    db._connection.create_view = AsyncMock()
     return db
 
 
@@ -111,10 +122,20 @@ class TestArangoDBWikiStore:
         )
         assert edge_call.kwargs.get("edge") is True
 
-        mock_db.create_arangosearch_view.assert_awaited_once()
-        view_args, view_kwargs = mock_db.create_arangosearch_view.call_args
-        assert view_args[0] == "test_pages_view"
-        assert PAGES_COLLECTION in view_kwargs["links"]
+        mock_db._connection.views.assert_awaited_once()
+        mock_db._connection.create_view.assert_awaited_once()
+        view_kwargs = mock_db._connection.create_view.call_args.kwargs
+        assert view_kwargs["name"] == "test_pages_view"
+        assert view_kwargs["view_type"] == "arangosearch"
+        assert PAGES_COLLECTION in view_kwargs["properties"]["links"]
+
+    @pytest.mark.asyncio
+    async def test_initialize_skips_existing_view(self, store, mock_db):
+        mock_db._connection.views = AsyncMock(
+            return_value=[{"name": "test_pages_view"}]
+        )
+        await store.initialize()
+        mock_db._connection.create_view.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_initialize_idempotent(self, store, mock_db):

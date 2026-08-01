@@ -34,7 +34,14 @@ def runner() -> CliRunner:
 
 @pytest.fixture
 def mock_arango_driver():
-    """Mocked ``asyncdb`` ArangoDB driver instance (already connected)."""
+    """Mocked ``asyncdb`` ArangoDB driver instance (already connected).
+
+    ``_connection`` mocks the underlying ``arangoasync.database.Database``
+    directly — ``ArangoDBWikiStore._create_pages_view()`` drives that
+    layer's ``views()``/``create_view()`` rather than the installed
+    ``asyncdb`` driver's own (buggy against a real server)
+    ``create_arangosearch_view()`` wrapper.
+    """
     db = MagicMock()
     db.connection = AsyncMock(return_value=db)
     db.close = AsyncMock()
@@ -43,6 +50,9 @@ def mock_arango_driver():
     db.create_arangosearch_view = AsyncMock()
     db.query = AsyncMock(return_value=([], None))
     db.execute = AsyncMock(return_value=([], None))
+    db._connection = MagicMock()
+    db._connection.views = AsyncMock(return_value=[])
+    db._connection.create_view = AsyncMock()
     return db
 
 
@@ -85,7 +95,7 @@ class TestBuildBackendChoice:
         ):
             result = _build_arangodb(runner, repo, "--no-graph", "--no-export")
         assert result.exit_code == 0, result.output
-        mock_arango_driver.create_arangosearch_view.assert_awaited_once()
+        mock_arango_driver._connection.create_view.assert_awaited_once()
         assert mock_arango_driver.create_collection.await_count == 5
 
     def test_sqlite_backend_still_works(self, runner, repo):

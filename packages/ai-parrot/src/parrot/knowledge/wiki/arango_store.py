@@ -143,16 +143,43 @@ class ArangoDBWikiStore(BaseWikiStore):
                 if not await self._db.collection_exists(name):
                     await self._db.create_collection(name, edge=is_edge)
 
-            await self._db.create_arangosearch_view(
-                self._view_name,
-                links={
+            await self._create_pages_view()
+            self._initialized = True
+
+    async def _create_pages_view(self) -> None:
+        """Create the ArangoSearch pages view if it does not already exist.
+
+        Drives the underlying ``arangoasync.database.Database`` directly
+        (via ``self._db._connection``) instead of going through the
+        installed ``asyncdb`` driver's own
+        ``arangodb.create_arangosearch_view()`` wrapper: that wrapper
+        calls ``self._connection.views()`` and
+        ``self._connection.create_view()`` WITHOUT ``await``ing them,
+        even though both are ``async def`` on ``arangoasync``'s
+        ``Database`` (verified directly against the installed package —
+        ``inspect.iscoroutinefunction`` is ``True`` for both). Calling
+        the wrapper as documented therefore raises
+        ``TypeError: 'coroutine' object is not iterable`` against any
+        real server. This is a bug in the vendored dependency, not a
+        supported/documented alternate call shape — worked around here
+        rather than silently reproducing it.
+        """
+        connection = self._db._connection
+        existing_views = await connection.views()
+        if any(v.get("name") == self._view_name for v in existing_views):
+            return
+        await connection.create_view(
+            name=self._view_name,
+            view_type="arangosearch",
+            properties={
+                "links": {
                     PAGES_COLLECTION: {
                         "analyzers": [self._text_analyzer],
                         "fields": {"title": {}, "summary": {}, "body": {}},
                     }
-                },
-            )
-            self._initialized = True
+                }
+            },
+        )
 
     async def close(self) -> None:
         """Close the underlying ArangoDB connection."""
