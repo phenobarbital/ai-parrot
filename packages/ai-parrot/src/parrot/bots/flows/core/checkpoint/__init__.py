@@ -16,12 +16,18 @@ from .model import (
     NodeStateSnapshot,
 )
 from .serializer import FlowStateSerializer
-from .store import CheckpointStore, RedisCheckpointStore, get_checkpoint_store
+from .store import (
+    CheckpointStore,
+    DurableCheckpointStore,
+    RedisCheckpointStore,
+    get_checkpoint_store,
+)
 
 __all__ = [
     "CheckpointNotFoundError",
     "CheckpointStore",
     "ContextSnapshot",
+    "DurableCheckpointStore",
     "FlowCheckpoint",
     "FlowLockedError",
     "FlowNotExportableError",
