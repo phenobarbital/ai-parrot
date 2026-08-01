@@ -8,14 +8,23 @@ mutates, masks, or blocks a response.
 
 See ``sdd/specs/deterministic-groundedness-scoring.spec.md`` for the full
 design. This package currently exposes Module 1 (atom extraction and
-normalization); the evidence index, scorer, and policy/report models
-(Module 2) and the bot-seam wiring (Module 3) land in later tasks.
+normalization) and Module 2 (evidence index, scorer, policy/report
+models); the bot-seam wiring (Module 3, ``GroundednessGuardrail``) lands
+in a later task.
 """
+from .evidence import EvidenceIndex
 from .extractors import extract_atoms
 from .models import Atom, AtomKind
+from .policy import AtomVerdict, GroundednessPolicy, GroundednessReport
+from .scorer import GroundednessScorer
 
 __all__ = [
     "Atom",
     "AtomKind",
+    "AtomVerdict",
+    "EvidenceIndex",
+    "GroundednessPolicy",
+    "GroundednessReport",
+    "GroundednessScorer",
     "extract_atoms",
 ]
