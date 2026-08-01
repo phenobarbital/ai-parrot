@@ -52,7 +52,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Imports charter (2069) and review models (2070).",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2071-ingest-triage-router.md"
+      "completed_at": "2026-08-01T23:27:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2071-ingest-triage-router.md"
     },
     {
       "id": "TASK-2072",
