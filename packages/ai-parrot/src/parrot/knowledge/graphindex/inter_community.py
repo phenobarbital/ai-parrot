@@ -46,8 +46,12 @@ class InterCommunityRelation(BaseModel):
             ``"weight"`` payload).
         reverse_weight: Sum of edge weights for target → source edges.
         coupling_ratio: Cross-edges between this pair (both directions)
-            divided by all edges incident to either community
-            (internal + cross to any other community), in ``[0, 1]``.
+            divided by the union of all edges incident to either
+            community (internal + cross to any other community; each
+            A-B edge is counted once, not once per side), in
+            ``[0, 1]``. Reaches ``1.0`` only when every edge touching
+            either community is one of the A-B cross edges (no
+            internal edges, no cross-edges to any third community).
     """
 
     source_community_id: str
@@ -169,7 +173,14 @@ def compute_inter_community_graph(
         fwd_weight = directed_weight.get((a, b), 0.0)
         rev_weight = directed_weight.get((b, a), 0.0)
         cross_total = fwd_count + rev_count
-        incident_total = incident_edges.get(a, 0) + incident_edges.get(b, 0)
+        # incident_edges[a] + incident_edges[b] double-counts every A-B
+        # cross edge (once from each side) — subtract cross_total once to
+        # get the true union of edges incident to either community, so
+        # coupling_ratio is a proper [0, 1] ratio (1.0 only when every
+        # edge touching A or B is one of the A-B cross edges).
+        incident_total = (
+            incident_edges.get(a, 0) + incident_edges.get(b, 0) - cross_total
+        )
         coupling_ratio = (
             cross_total / incident_total if incident_total > 0 else 0.0
         )

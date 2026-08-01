@@ -370,3 +370,33 @@ class TestCommunityAlgorithmParam:
             await builder.build(sources, ctx)
         assert builder.last_community_result is None
         mock_compute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_inter_community_reaches_export_graph(self, tmp_path):
+        """Stage 6.6 must forward analytics.inter_community into
+        export_graph(inter_community=...) — a real build() with both
+        community detection and HTML export enabled must not silently
+        drop the FEAT-401 meta-graph from graph.json/graph.html."""
+        builder = GraphIndexBuilder(
+            persistence=make_persistence(),
+            embedder=make_embedder(),
+            output_dir=tmp_path,
+            detect_communities_enabled=True,
+            export_html_enabled=True,
+        )
+        sources = SourceConfig(tenant_id="t")
+        ctx = make_ctx("t")
+        sentinel_inter_community = MagicMock(name="inter_community_sentinel")
+        with (
+            patch(
+                "parrot.knowledge.graphindex.builder.compute_inter_community_graph",
+            ) as mock_compute,
+            patch(
+                "parrot.knowledge.graphindex.export_html.export_graph",
+            ) as mock_export,
+        ):
+            mock_compute.return_value = sentinel_inter_community
+            mock_export.return_value = (tmp_path / "graph.html", tmp_path / "graph.json")
+            await builder.build(sources, ctx)
+        mock_export.assert_called_once()
+        assert mock_export.call_args.kwargs["inter_community"] is sentinel_inter_community

@@ -360,7 +360,10 @@ async def _prune_removed(
     stubs = await store.list_pages(limit=1_000_000)
     for stub in stubs:
         cid = str(stub.get("concept_id", ""))
-        if cid.startswith("file:") and cid not in expected_files or cid.startswith("dir:") and cid not in expected_dirs:
+        if cid.startswith("file:") and cid not in expected_files:
+            if await store.delete_page(cid):
+                removed += 1
+        elif cid.startswith("dir:") and cid not in expected_dirs:
             if await store.delete_page(cid):
                 removed += 1
     return removed

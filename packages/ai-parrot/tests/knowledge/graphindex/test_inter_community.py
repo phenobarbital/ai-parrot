@@ -58,7 +58,10 @@ def _two_triangles_with_cross_edges() -> tuple[rustworkx.PyDiGraph, CommunitiesR
       - directed A→B count = 1 (a1→b1), B→A count = 1 (b2→a2)
       - incident(A) = 3 internal + 1 (a1→b1) + 1 (b2→a2) = 5
       - incident(B) = 3 internal + 1 (a1→b1) + 1 (b2→a2) = 5
-      - coupling_ratio = cross_total(2) / incident_total(10) = 0.2
+      - cross_total = 2; union incident = incident(A) + incident(B)
+        - cross_total = 5 + 5 - 2 = 8 (each A-B edge counted once,
+        not once per side)
+      - coupling_ratio = cross_total(2) / union_incident(8) = 0.25
     """
     g = rustworkx.PyDiGraph()
     idxs: dict[str, int] = {}
@@ -168,11 +171,26 @@ class TestInterCommunityGraph:
         assert {rel.source_label, rel.target_label} == {"A", "B"}
 
     def test_coupling_ratio_known_topology(self):
-        """Hand-computed: cross_total=2, incident_total=10 → 0.2."""
+        """Hand-computed: cross_total=2, union_incident=8 → 0.25 (each
+        A-B edge counted once in the union, not once per side)."""
         graph, communities = _two_triangles_with_cross_edges()
         result = compute_inter_community_graph(graph, communities)
         rel = result.relations[0]
-        assert rel.coupling_ratio == pytest.approx(0.2)
+        assert rel.coupling_ratio == pytest.approx(0.25)
+
+    def test_coupling_ratio_never_exceeds_one(self):
+        """coupling_ratio is a proper [0, 1] ratio — reaches (but never
+        exceeds) 1.0 when every edge touching either community is one
+        of the A-B cross edges (no internal edges, no third-community
+        edges)."""
+        g = rustworkx.PyDiGraph()
+        idxs = {nid: _add(g, nid) for nid in ["a1", "b1"]}
+        g.add_edge(idxs["a1"], idxs["b1"], {"kind": "references"})
+        comm_a = _community("cid_a", ["a1"])
+        comm_b = _community("cid_b", ["b1"])
+        result = compute_inter_community_graph(g, _communities_result(comm_a, comm_b))
+        rel = result.relations[0]
+        assert rel.coupling_ratio == pytest.approx(1.0)
 
     def test_weights_default_to_one_per_edge(self):
         graph, communities = _two_triangles_with_cross_edges()

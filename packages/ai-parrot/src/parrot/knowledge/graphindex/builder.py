@@ -83,14 +83,16 @@ class GraphIndexBuilder:
             FEAT-192 toolkit, the LLM-Wiki orchestrator) read this
             attribute when they need to score node relevance with
             tenant-specific weights instead of library defaults.
-        detect_communities_enabled: When True, run FEAT-191 Louvain
-            community detection between resolve and persist; the
+        detect_communities_enabled: When True, run community detection
+            (FEAT-191 Louvain, or FEAT-401 Leiden — see
+            ``community_algorithm``) between resolve and persist; the
             partition is stored on ``self.last_community_result``
             and ``community_id`` is written into every node's
             ``domain_tags`` so it round-trips through persistence.
             Default False — opt-in.
-        community_resolution: Louvain γ resolution parameter
-            (>1.0 finds smaller/tighter communities).
+        community_resolution: Resolution parameter (Louvain γ / Leiden
+            ``resolution_parameter``); >1.0 finds smaller/tighter
+            communities.
         community_algorithm: Which community detection algorithm to
             run — ``"leiden"`` (default, FEAT-401) or ``"louvain"``.
             Forwarded to ``detect_communities(algorithm=...)``; Leiden
@@ -310,6 +312,7 @@ class GraphIndexBuilder:
                     self.output_dir,
                     communities=self.last_community_result,
                     analytics=analytics,
+                    inter_community=getattr(analytics, "inter_community", None),
                 )
                 logger.info(
                     "Stage 6.6 complete: interactive map written to %s",
