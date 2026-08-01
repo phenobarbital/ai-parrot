@@ -52,7 +52,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on both core types and pipeline; gates all plugin tasks",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2026-guardrails-registry-config.md"
+      "completed_at": "2026-08-01T00:43:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2026-guardrails-registry-config.md"
     },
     {
       "id": "TASK-2027",
