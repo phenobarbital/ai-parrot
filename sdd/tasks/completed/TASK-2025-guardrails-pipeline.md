@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: done
-**Completed**: 2026-08-01T10:32:49+00:00
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2024
@@ -304,7 +302,36 @@ When you pick up this task:
 
 ## Completion Note
 
-Implemented as specified. `pipeline.py` added with ordered execution,
-BLOCK short-circuit, error contract, and telemetry; `__init__.py`
-exports updated. Verified by `/sdd-done`: commit `5a919b7fb` found, all
-3 listed files present.
+Implemented `parrot/bots/guardrails/pipeline.py` with `GuardrailTelemetryEntry`,
+`PipelineOutcome`, and `GuardrailPipeline` (`add`, `has_guardrails`, `run`)
+exactly per scope. `run()`: priority-ordered execution, BLOCK short-circuit
+(`content=None` on block, discarding prior TRANSFORMs), TRANSFORM chaining,
+FLAG accumulation keyed by guardrail name, `fail_open`/`fail_closed` error
+contract (`fail_closed` exceptions become `BLOCK` with reason
+`guardrail_error:<name>`), telemetry per guardrail (name/stage/action/
+duration_ms — never content), empty-pipeline zero-overhead fast path.
+
+Design decision on "idempotency stamping" (flagged for visibility, not a
+deviation): the task's own Codebase Contract lists `_already_scrubbed` only
+as a *precedent*, not something to import — the pipeline is generic and
+doesn't know about guardrail-specific redaction markers. Implemented as a
+bounded (256-entry) per-pipeline LRU cache keyed by `(stage, content)` that
+memoizes successful (non-blocked) outcomes, invalidated whenever `add()`
+changes the guardrail composition. This prevents any guardrail's `check()`
+from running twice on identical content without embedding invisible marker
+characters into real LLM/user-facing text. Covered by
+`test_repeat_same_content_uses_stamp_cache` (asserts the guardrail is
+invoked exactly once across two `run()` calls with identical content).
+
+Design decision on FEAT-176 telemetry: this task's Codebase Contract does
+not list any FEAT-176 import as verified, and "bot wiring" is explicitly
+out of scope. Rather than guess an unverified import, `GuardrailPipeline`
+accepts an optional `on_telemetry: Callable[[GuardrailTelemetryEntry], None]`
+constructor callback (swallows its own exceptions so a broken sink can
+never break a guardrail run). TASK-2026 (bot wiring) can pass a FEAT-176
+forwarder through this seam.
+
+26 tests added (`test_guardrails_pipeline.py`, 20 new + the 6 from the
+task's own spec expanded with stable-ordering, multi-flag, telemetry, and
+stamp-cache cases), all passing together with the TASK-2024 suite (26
+total). `ruff check parrot/bots/guardrails/` clean.

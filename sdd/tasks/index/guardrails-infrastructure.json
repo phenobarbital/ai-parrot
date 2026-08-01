@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-01T18:00:00Z",
-  "completed_at": "2026-08-01T10:32:28+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-2024",
@@ -22,9 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": "2026-08-01T10:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2024-guardrails-core-models.md",
-      "verification": "verified"
+      "completed_at": "2026-08-01T00:30:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2024-guardrails-core-models.md"
     },
     {
       "id": "TASK-2025",
@@ -43,9 +42,8 @@
       "parallelism_notes": "Depends on TASK-2024 types; must complete before any wiring task",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": "2026-08-01T10:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2025-guardrails-pipeline.md",
-      "verification": "verified"
+      "completed_at": "2026-08-01T00:34:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2025-guardrails-pipeline.md"
     },
     {
       "id": "TASK-2026",
@@ -65,9 +63,8 @@
       "parallelism_notes": "Depends on both core types and pipeline; gates all plugin tasks",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": "2026-08-01T10:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2026-guardrails-registry-config.md",
-      "verification": "verified"
+      "completed_at": "2026-08-01T00:43:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2026-guardrails-registry-config.md"
     },
     {
       "id": "TASK-2027",
@@ -88,9 +85,8 @@
       "parallelism_notes": "Can run parallel with TASK-2029 and TASK-2030 — creates plugin only, does not touch BaseBot seams",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": "2026-08-01T10:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2027-prompt-injection-guardrail.md",
-      "verification": "verified"
+      "completed_at": "2026-08-01T00:50:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2027-prompt-injection-guardrail.md"
     },
     {
       "id": "TASK-2028",
@@ -112,9 +108,8 @@
       "parallelism_notes": "Highest-risk task — touches BaseBot input sites, must be sequential after TASK-2027",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": "2026-08-01T10:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2028-input-migration-wiring.md",
-      "verification": "verified"
+      "completed_at": "2026-08-01T01:14:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2028-input-migration-wiring.md"
     },
     {
       "id": "TASK-2029",
@@ -135,9 +130,8 @@
       "parallelism_notes": "Parallel with TASK-2027/2028 — touches disjoint files: tool hook + get_response + ask_stream output path vs input path",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": "2026-08-01T10:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2029-output-plugins-secrets.md",
-      "verification": "verified"
+      "completed_at": "2026-08-01T01:32:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2029-output-plugins-secrets.md"
     },
     {
       "id": "TASK-2030",
@@ -158,9 +152,8 @@
       "parallelism_notes": "Independent module — only depends on core types, does not touch any bot seams",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": "2026-08-01T10:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2030-moderation-reference.md",
-      "verification": "verified"
+      "completed_at": "2026-08-01T01:35:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2030-moderation-reference.md"
     }
   ]
 }

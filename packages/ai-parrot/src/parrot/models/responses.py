@@ -278,6 +278,20 @@ class AIMessage(BaseModel):
         """Check if tools were used."""
         return len(self.tool_calls) > 0
 
+    def total_usage(self) -> CompletionUsage:
+        """Total token usage across all rounds of the generating call.
+
+        For multi-round tool-use calls, ``self.usage`` already holds the
+        accumulated total across every round (clients accumulate via
+        :meth:`CompletionUsage.__add__` before setting it here). This
+        method exists as a stable, documented entry point in case
+        per-round usage history is exposed in a future iteration.
+
+        Returns:
+            The accumulated :class:`CompletionUsage` for this message.
+        """
+        return self.usage
+
     def add_tool_call(self, tool_call: ToolCall) -> None:
         """Add a tool call to the response."""
         self.tool_calls.append(tool_call)  # pylint: disable=E1101 # noqa

@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: done
-**Completed**: 2026-08-01T10:32:49+00:00
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -206,7 +204,20 @@ When you pick up this task:
 
 ## Completion Note
 
-Implemented as specified. `parrot/bots/guardrails/` package created with
-`base.py` (enums, result/context models, `Guardrail` ABC) and
-`streaming.py` (`StreamingGuardrail` ABC), plus unit tests. Verified by
-`/sdd-done`: commit `e21b9c099` found, all 4 listed files present.
+Implemented exactly as scoped: `parrot/bots/guardrails/base.py` (`GuardrailStage`,
+`GuardrailAction`, `GuardrailResult`, `GuardrailContext`, `Guardrail` ABC),
+`parrot/bots/guardrails/streaming.py` (`StreamingGuardrail` ABC), and
+`parrot/bots/guardrails/__init__.py` re-exporting all six public names. No
+pipeline/registry/plugin logic added (out of scope for this task).
+
+13 unit tests added in `tests/unit/test_guardrails_core_models.py`, all
+passing (`pytest packages/ai-parrot/tests/unit/test_guardrails_core_models.py -v`).
+`ruff check parrot/bots/guardrails/` clean (post `--fix` + manual `ClassVar`
+annotations on two ad-hoc test-only Guardrail subclasses to satisfy RUF012).
+
+Worktree note: the compiled Cython `.so` extensions (`parrot.utils.types`,
+`parrot.utils.parsers.toml`, `parrot.yaml_rs`) are gitignored build
+artifacts not present in a fresh worktree checkout; they were copied from
+the main repo's `.venv`-matching build (cpython-311) to make `import parrot`
+resolve locally for testing. No source files were touched by this — purely
+a local test-environment workaround, not part of the commit.

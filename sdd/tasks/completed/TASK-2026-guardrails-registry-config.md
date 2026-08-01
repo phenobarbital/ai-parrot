@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: done
-**Completed**: 2026-08-01T10:32:49+00:00
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2024, TASK-2025
@@ -243,7 +241,48 @@ When you pick up this task:
 
 ## Completion Note
 
-Implemented as specified. `registry.py` (named guardrail registry) and
-`config.py` (config coercion + pipeline builder) added; `abstract.py`
-gained the `guardrails` kwarg wiring. Verified by `/sdd-done`: commit
-`c61b859e4` found, all 5 listed files present.
+Implemented exactly per scope: `registry.py` (`register_guardrail`,
+`build_guardrails`, reserved-name handling for `pii`/`pseudonymize`/
+`groundedness`), `config.py` (`build_pipelines_from_config` with legacy-flag
+mapping + no-duplicate-registration), `__init__.py` re-exports, and
+`AbstractBot.__init__` wiring (`guardrails` kwarg, `self._guardrail_pipelines`
+built eagerly at construction, legacy flag attributes left untouched for
+`_sanitize_question` to keep reading until TASK-2028).
+
+**Important sequencing note (not a deviation, flagged for visibility):**
+`registry.py` pre-registers `"prompt_injection"`, `"secrets"`, and
+`"moderation"` via **lazy factories** (`_make_lazy_factory`) that only
+`importlib.import_module()` the real plugin module
+(`parrot.bots.guardrails.builtin.*`) the first time the factory is actually
+*called* — never at `registry.py` import time. This is necessary because
+those plugin classes are created by TASK-2027/2029/2030, which structurally
+depend on this task and haven't run yet. Consequence: since
+`injection_detection` defaults to `True` on `AbstractBot`, constructing ANY
+bot with default flags between this commit and TASK-2027's commit raises
+`ModuleNotFoundError` (verified: `BasicBot(name="x")` fails;
+`BasicBot(name="x", injection_detection=False, enable_redaction=False)`
+succeeds and produces a correct 4-stage `_guardrail_pipelines` dict). This
+window is intentional and closes with the very next task in this run
+(TASK-2027); the alternative — creating `builtin/prompt_injection.py` here
+— would violate this task's File Fidelity boundary.
+
+Per the same reasoning, this task's own tests
+(`test_guardrails_registry_config.py`) test the legacy-flag → pipeline
+mapping logic using `monkeypatch.setitem` to install temporary stub
+factories under the real `"prompt_injection"`/`"secrets"` names, rather
+than depending on the not-yet-built plugins. This matches the spec's own
+§4 Test Specification table, which assigns end-to-end
+`test_legacy_flag_mapping` compat testing to Module 2 (TASK-2027/2028), not
+Module 1 — TASK-2027/2029 add their own compat suites against the real
+classes.
+
+Lint hazard avoided: `ruff check --fix` on `abstract.py` (a large
+pre-existing file) attempted to rewrite ~230 unrelated lines across the
+whole file (pyupgrade/BLE001 etc. on code untouched by this task). Reverted
+via `git checkout` and reapplied only the 4 intentional edits by hand
+(diff: +30 lines, 0 unrelated changes) — `ruff check --select F,E9` on the
+file shows zero issues introduced by this task's lines (the one pre-existing
+F841 at line 2663 is unrelated, far from this task's edits).
+
+17 tests added, all passing together with TASK-2024/2025 (43 total).
+`ruff check parrot/bots/guardrails/` clean.

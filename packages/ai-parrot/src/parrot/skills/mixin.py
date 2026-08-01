@@ -175,7 +175,14 @@ class SkillRegistryMixin:
             )
             await self._skill_file_registry.load()
 
-            # Register trigger middleware in prompt pipeline
+            # Register trigger middleware in prompt pipeline.
+            # FEAT-396 (TASK-2028): no wiring change needed here either —
+            # like bots/search.py's competitor pipeline, whatever middleware
+            # this appends to an existing `self._prompt_pipeline` keeps
+            # applying through the unified INPUT `GuardrailPipeline` via the
+            # always-registered `LegacyPipelineGuardrail` (see
+            # `AbstractBot.__init__`), which resolves `self._prompt_pipeline`
+            # dynamically rather than snapshotting it at construction time.
             prompt_pipeline = getattr(self, '_prompt_pipeline', None)
             if prompt_pipeline is not None:
                 mw = create_skill_trigger_middleware(

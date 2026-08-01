@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: done
-**Completed**: 2026-08-01T10:32:49+00:00
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2024, TASK-2025, TASK-2026
@@ -271,7 +269,42 @@ When you pick up this task:
 
 ## Completion Note
 
-Implemented as specified. `builtin/prompt_injection.py` adds
-`PromptInjectionGuardrail` with lazy `pytector` import; registered as
-`"prompt_injection"` in the registry. Verified by `/sdd-done`: commit
-`1ea0cdddf` found, all 4 listed files present.
+Implemented `builtin/__init__.py` and `builtin/prompt_injection.py`
+(`PromptInjectionGuardrail`) exactly per scope: `name="prompt_injection"`,
+`stages={INPUT}`, `priority=10`, `on_error` = `fail_closed` iff
+`block_on_threat`, config params `strict_mode`/`block_on_threat`/
+`injection_probability_threshold`, lazy pytector import inside `__init__`
+via `importlib.util.find_spec` + the shared singleton
+(`parrot.bots.abstract._get_shared_injection_detector`, imported at module
+scope so tests can `unittest.mock.patch` it without loading the real
+deBERTa model). `check()` mirrors `_sanitize_question`
+(`bots/abstract.py:1866-1971`) exactly: trusted-source bypass
+(`ctx.extras["trusted_source"]`), `strict_mode` bypass, framework-pattern
+stripping, pytector-vs-regex detection branch, `SecurityEventLogger`
+logging, BLOCK (category `reason` only, `content=None`) for
+CRITICAL/HIGH threats under `block_on_threat`, else TRANSFORM with the
+verbatim-ported `_wrap_flagged_input` marker. Preserved the legacy code's
+un-keyed `max()` over `ThreatLevel` intentionally (byte-for-byte compat,
+not a new bug — see inline comment).
+
+`registry.py` needed NO modification: TASK-2026 already pre-registered
+`"prompt_injection"` via a lazy factory pointing at this exact module
+path/class name, so once this file existed the registration resolved
+correctly with zero further changes. Verified: `build_guardrails(["prompt_injection"])`
+now returns a working `PromptInjectionGuardrail` instance, and — critically —
+`BasicBot(name="x")` with ALL DEFAULT flags (`injection_detection=True`)
+now constructs successfully again, closing the transient breakage window
+documented in TASK-2026's Completion Note. Re-ran the pre-existing
+`tests/unit/bots/test_abstract_lifecycle.py` (11 tests, unrelated to this
+feature, exercises default `BasicBot` construction) — all pass.
+
+Adapted the task's illustrative test fixture: a bare `MagicMock()` return
+from `detect_injection()`, when unpacked as `a, b = ...`, raises
+`ValueError` (MagicMock's default `__iter__` yields nothing) rather than
+behaving as a "no threat" result — the fixture now sets an explicit
+`detect_injection.return_value = (False, 0.0)` default so
+`test_clean_input_passes` is deterministic; tests exercising detection
+override it per-case. 13 tests added (stages/priority/on_error/bypass/
+block/transform/threshold/lazy-import/registration), all passing together
+with TASK-2024-2026 (56 total). `ruff check parrot/bots/guardrails/`
+clean.

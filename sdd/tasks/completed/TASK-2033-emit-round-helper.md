@@ -159,10 +159,18 @@ class TestEmitRoundEvent:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added `AbstractClient._emit_round_event()` in `clients/base.py`
+right after `_emit_before_call` (before `_emit_after_call`), following the
+same fire-and-forget `emit_nowait` + `forward_to_global` pattern, with the
+`has_subscribers(ClientRoundEvent)` short-circuit checked first (mirroring
+the `ClientStreamChunkEvent` hot-path guards used in `claude.py`/`gpt.py`/
+`groq.py`/`grok.py`). Added `ClientRoundEvent` to the `events/__init__`
+import block and `Sequence` to the typing imports. Created
+`tests/unit/clients/test_emit_round_event.py` (4 tests: short-circuit,
+payload mapping, usage=None, agent_name from ContextVar) — all pass.
+Ran `tests/unit/clients/` (23 passed) including the pre-existing
+`test_client_lifecycle.py` suite.
 
 **Deviations from spec**: none

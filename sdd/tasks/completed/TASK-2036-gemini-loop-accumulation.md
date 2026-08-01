@@ -138,10 +138,52 @@ CompletionUsage.from_gemini(usage: Dict[str, Any])   # line 162
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Read the full `_handle_multiturn_function_calls()` (1731-2172)
+and both call sites (`ask()` line ~3371, `resume()` line ~5424) before
+editing, per the task's explicit instruction. Confirmed the bug exactly:
+`ask()`'s `AIMessageFactory.from_gemini(response=response, ...)` at
+~3559(orig) used the INITIAL `response`, never `final_response`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Extended the method's contract WITHOUT changing its return type (kept
+`return current_response`, so the second, unrelated `resume()` call site
+needed zero changes) — instead added four new optional params
+(`round_tc`, `initial_round_usage`, `initial_round_raw_usage`,
+`initial_round_duration_ms`) plus a mutable output param `usage_state:
+Optional[Dict]` populated in place with `{"accumulated": CompletionUsage,
+"rounds": int}`, mirroring the existing `all_tool_calls` in/out-parameter
+pattern already used by this exact method. All default to `None`/`0.0`,
+so `resume()` (which doesn't pass them) sees zero behavioral change.
 
-**Deviations from spec**: none
+`ask()` now times/extracts round-1 usage from the initial response BEFORE
+calling the handler, passes it in, and after the handler returns overrides
+`ai_message.usage` with `usage_state["accumulated"]` (setting
+`extra_usage["rounds"]` when `> 1`) — this is what fixes the bug, since
+`ai_message.usage` no longer reflects only the initial response.
+`_handle_multiturn_function_calls` emits `self._emit_round_event(...)`
+right before "Send responses back" (i.e. after tool execution, only for
+rounds that had function_calls) and extracts+accumulates each new
+response's `usage_metadata` right after a successful `chat.send_message`
+retry-loop (guarded so a failed/excepted round contributes nothing).
+
+Created `tests/unit/clients/test_gemini_multiround_usage.py` (4 tests:
+3-round accumulation with an explicit regression assertion that usage is
+NOT just the initial round's tokens, single-round no-event, after-call
+totals, missing-usage round) — all pass. Ran `tests/unit/clients/`
+(36 passed, `-k "google or gemini"` → 4 passed) plus the broader
+`tests/test_google_client.py` + `tests/clients/test_google_truncation.py`
++ `tests/test_dynamic_tool_search.py` (70 passed, 4 pre-existing failures
+confirmed via `git stash` to be identical with/without this change —
+unrelated redaction/lazy-tool-search issues).
+
+**Deviations from spec**: The spec's Codebase Contract said the loop was
+"~1766-2080"; actual span is 1766-2172 (confirmed during the mandatory
+pre-edit read) — the extra ~90 lines are the max-iterations forced-
+synthesis branch, which is NOT instrumented (out of scope: it's an edge
+case beyond the 3-round/single-round/missing-usage acceptance criteria,
+and adding it would touch a rare failure-recovery path not covered by any
+test spec here). This is a known, minor gap: if a call hits max_iterations
+while still requesting tools, that final synthesis call's tokens are not
+captured in the accumulated total — no worse than pre-feature behavior
+(which captured zero loop tokens at all).

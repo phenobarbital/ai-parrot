@@ -55,10 +55,13 @@ _PYTHON_SCANNER = PythonScanner()
 # --------------------------------------------------------------------------
 
 #: File suffixes treated as source code (category ``module``).
+#:
+#: ``.svelte`` is claimed by the JS/TS scanner (FEAT-396), which analyses
+#: the component's ``<script>`` block — not its markup.
 CODE_SUFFIXES: frozenset[str] = frozenset({
     ".py", ".pyx", ".pxd", ".pyi",
     ".rs", ".go", ".java", ".kt", ".c", ".h", ".cpp", ".hpp",
-    ".js", ".jsx", ".ts", ".tsx", ".mjs",
+    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".svelte",
     ".php",
     ".sql", ".sh", ".bash",
 })

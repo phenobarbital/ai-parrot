@@ -5,6 +5,7 @@ from parrot.knowledge.wiki.languages import (
     scanned_suffixes,
     scanner_for,
 )
+from parrot.knowledge.wiki.languages.javascript import JavaScriptScanner
 
 
 def test_scanner_for_unknown_suffix_returns_none():
@@ -24,3 +25,14 @@ def test_scanned_suffixes_is_frozenset():
 def test_all_scanners_returns_dict():
     scanners = all_scanners()
     assert isinstance(scanners, dict)
+
+
+def test_registry_claims_svelte():
+    """`.svelte` routes to the JS scanner (FEAT-396 / TASK-2020).
+
+    Routing is derived: adding the suffix to
+    ``JavaScriptScanner.suffixes`` is enough, because ``_SUFFIX_INDEX``
+    is a comprehension over the registered scanners' suffix sets.
+    """
+    assert isinstance(scanner_for(".svelte"), JavaScriptScanner)
+    assert ".svelte" in scanned_suffixes()

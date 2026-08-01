@@ -390,14 +390,40 @@ class GroqClient(AbstractClient):
                 else:
                     request_args["response_format"] = {"type": "json_object"}
 
+        # FEAT-397: per-round token usage accumulation across the tool loop.
+        def _lc_groq_extract_usage(response_obj):
+            """Build (per-round CompletionUsage, JSON-safe raw usage dict) from
+            a groq.py SDK response's ``.usage``."""
+            usage_obj = getattr(response_obj, "usage", None)
+            if not usage_obj:
+                return None, None
+            per_round = CompletionUsage.from_groq(usage_obj)
+            raw = None
+            if hasattr(usage_obj, "model_dump"):
+                try:
+                    raw = usage_obj.model_dump()
+                except Exception:  # pylint: disable=broad-except
+                    raw = None
+            elif isinstance(usage_obj, dict):
+                raw = usage_obj
+            return per_round, raw
+
         # Make initial request
         self.logger.debug(
             f"Groq request: use_tools={use_tools}, "
             f"request_output_config={'yes' if request_output_config else 'no'}, "
             f"tools_in_request={'tools' in request_args}"
         )
+        _lc_round_number_groq = 1
+        _lc_accumulated_usage_groq: "Optional[CompletionUsage]" = None
+        _lc_round_t0_groq = _lc_time_groq.perf_counter()
         response = await self.client.chat.completions.create(**request_args)
         result = response.choices[0].message
+        # FEAT-397: round 1 is this initial call.
+        _lc_round_duration_groq = (_lc_time_groq.perf_counter() - _lc_round_t0_groq) * 1000
+        _lc_round_usage_groq, _lc_round_raw_usage_groq = _lc_groq_extract_usage(response)
+        if _lc_round_usage_groq is not None:
+            _lc_accumulated_usage_groq = _lc_round_usage_groq
 
         # Handle tool calls in a loop (only if tools were enabled)
         if use_tools:
@@ -407,6 +433,7 @@ class GroqClient(AbstractClient):
 
             while result.tool_calls and conversation_turns < max_turns:
                 conversation_turns += 1
+                _lc_round_tool_names_groq = []
 
                 # Add the assistant's message with tool calls to conversation
                 messages.append({
@@ -473,6 +500,7 @@ class GroqClient(AbstractClient):
                         })
 
                     all_tool_calls.append(tc)
+                    _lc_round_tool_names_groq.append(tool_name)
 
                 # Continue conversation with tool results to get final response
                 continue_args = {
@@ -495,8 +523,32 @@ class GroqClient(AbstractClient):
                     # Force final response without more tool calls
                     continue_args["tool_choice"] = "none"
 
+                # FEAT-397: emit ClientRoundEvent for the round whose tool
+                # calls were just executed above.
+                self._emit_round_event(
+                    _lc_tc_groq,
+                    client_name="groq",
+                    model=model,
+                    round_number=_lc_round_number_groq,
+                    usage=_lc_round_usage_groq,
+                    raw_usage=_lc_round_raw_usage_groq,
+                    tool_calls=_lc_round_tool_names_groq,
+                    duration_ms=_lc_round_duration_groq,
+                )
+
+                _lc_round_t0_groq = _lc_time_groq.perf_counter()
                 response = await self.client.chat.completions.create(**continue_args)
                 result = response.choices[0].message
+                # FEAT-397: accumulate this new round's usage
+                _lc_round_number_groq += 1
+                _lc_round_duration_groq = (_lc_time_groq.perf_counter() - _lc_round_t0_groq) * 1000
+                _lc_round_usage_groq, _lc_round_raw_usage_groq = _lc_groq_extract_usage(response)
+                if _lc_round_usage_groq is not None:
+                    _lc_accumulated_usage_groq = (
+                        _lc_round_usage_groq
+                        if _lc_accumulated_usage_groq is None
+                        else _lc_accumulated_usage_groq + _lc_round_usage_groq
+                    )
 
         # Handle structured output after tools if needed
         final_output = None
@@ -599,6 +651,15 @@ class GroqClient(AbstractClient):
             turn_id=turn_id,
             structured_output=structured_payload
         )
+
+        # FEAT-397: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round calls (no tool use), the
+        # accumulated total equals the last (only) round's usage, so this
+        # is a no-op for existing single-round behavior.
+        if _lc_accumulated_usage_groq is not None:
+            if _lc_round_number_groq > 1:
+                _lc_accumulated_usage_groq.extra_usage["rounds"] = _lc_round_number_groq
+            ai_message.usage = _lc_accumulated_usage_groq
 
         # Add tool calls to the response
         ai_message.tool_calls = all_tool_calls

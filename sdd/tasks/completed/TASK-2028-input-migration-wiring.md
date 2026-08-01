@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-396 — Unified Guardrails Infrastructure
 **Spec**: `sdd/specs/guardrails-infrastructure.spec.md`
-**Status**: done
-**Completed**: 2026-08-01T10:32:49+00:00
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-2024, TASK-2025, TASK-2026, TASK-2027
@@ -276,8 +274,103 @@ When you pick up this task:
 
 ## Completion Note
 
-Implemented as specified. `_sanitize_question` and `PromptPipeline`
-call sites in `bots/base.py` replaced with the INPUT pipeline;
-`builtin/legacy_pipeline.py` wraps `PromptPipeline` for compat;
-`search.py`/`skills/mixin.py` migrated pipeline registration. Verified
-by `/sdd-done`: commit `af0b7d3e9` found, all 6 listed files present.
+Implemented per scope: `base.py`'s three `_sanitize_question`+`PromptPipeline`
+call pairs (invoke `:625/632/641`, ask `:997/1004/1017`, ask_stream
+`:1641/1648/1657`) replaced with a single shared `AbstractBot.
+_run_input_pipeline()` helper call each, invoking
+`self._guardrail_pipelines[GuardrailStage.INPUT].run()`. `prompt_for_llm`
+invariant preserved (`question` binding never reassigned — only
+`prompt_for_llm = _input_outcome.content`). BLOCK short-circuits with the
+same canned shapes (invoke: `AIMessage` w/ `error=security_block`; ask:
+same + `threats_detected`; ask_stream: yields the canned string, returns).
+The `ask_stream` `method:'ask'` copy-paste bug is fixed as a side effect of
+threading `method='ask_stream'` explicitly through `_run_input_pipeline`.
+`abstract.py`: removed `PYTECTOR_ENABLED`/`_get_shared_injection_detector`/
+eager `_framework_sanitizer`/`_injection_detector` loading; `_sanitize_question`
+is now a thin, `DeprecationWarning`-emitting delegate to
+`_run_input_pipeline` (raises `PromptInjectionException` on block, for
+compat); `_wrap_flagged_input` kept, marked deprecated, unused internally
+(logic ported verbatim into `PromptInjectionGuardrail`). `_prompt_pipeline`
+property getter/setter untouched — see design note below.
+
+**Design decision — dynamic `LegacyPipelineGuardrail` instead of hooking
+the property setter:** the task's Key Constraints say "setting
+[`_prompt_pipeline`] wraps the pipeline as a `LegacyPipelineGuardrail`."
+Both existing registration sites (`bots/search.py:_setup_competitor_pipeline`,
+`skills/mixin.py`) mutate `self._prompt_pipeline` directly, bypassing the
+property setter entirely, and do so *after* `AbstractBot.__init__` returns
+— so hooking the setter would miss both real call sites. Instead,
+`AbstractBot.__init__` registers exactly ONE `LegacyPipelineGuardrail`
+unconditionally (even while `_prompt_pipeline` is still `None`), holding a
+`lambda: self._prompt_pipeline` getter closure resolved fresh on every
+`check()`. This transparently picks up a pipeline created/populated at any
+point in the bot's lifetime. Consequence: `search.py`/`skills/mixin.py`
+needed no functional changes (only clarifying comments — see below);
+covered by `test_pipeline_set_after_construction_still_applies`.
+
+**Two additional files touched beyond this task's own file list, both
+necessary to fulfill scope items *explicitly stated in this task*, not
+scope creep:**
+1. `guardrails/builtin/prompt_injection.py` (TASK-2027's file) — this
+   task's own scope says "Remove `PYTECTOR_ENABLED` constant and
+   `_get_shared_injection_detector()` — **moved to the plugin**." Since
+   TASK-2027 had imported the singleton FROM `abstract.py`
+   (`from parrot.bots.abstract import _get_shared_injection_detector`),
+   deleting it from `abstract.py` without relocating it would leave a
+   dangling `ImportError`. Moved the full singleton (constants + function)
+   into `prompt_injection.py` verbatim; the pytector import boundary now
+   has exactly one owner. Existing `unittest.mock.patch(
+   "parrot.bots.guardrails.builtin.prompt_injection._get_shared_injection_detector")`
+   call sites in TASK-2027's tests kept working unchanged (same module
+   path, now a local definition instead of a re-export).
+2. `guardrails/pipeline.py` (TASK-2025's file) — this task's own AC
+   requires `ask()`'s BLOCK response to preserve `metadata['threats_detected']`
+   (spec §4 `test_injection_guardrail_compat`: "same `threats_detected`
+   metadata"). `PipelineOutcome` had no channel for a BLOCK-time payload
+   (`GuardrailResult.report` was only read for FLAG). Added: when a
+   guardrail BLOCKs with a non-empty `report`, the pipeline now also
+   stores it in `flag_reports[guardrail.name]` (additive, backward
+   compatible — existing FLAG-only tests unaffected). `PromptInjectionGuardrail.check()`
+   now sets `report={"threats_detected": len(threats)}` on its BLOCK
+   result; `bots/base.py`'s `ask()` reads
+   `outcome.flag_reports.get('prompt_injection', {}).get('threats_detected', 0)`.
+
+**Pre-existing bug found and fixed (in-scope, not speculative):**
+`AIMessage(content=..., metadata=...)` — used verbatim in the
+pre-migration canned-block responses at `invoke()`/`ask()` — is not a
+valid construction: `content` is a read/write *property* backed by
+`output` (not a Pydantic field), and `input`/`output`/`model`/`provider`/
+`usage` are all required with no defaults. This raises
+`pydantic.ValidationError` the moment a block actually occurs — apparently
+never exercised by any pre-existing test (a dead, untested error path).
+Since this task's own AC/golden tests exercise the BLOCK path end-to-end
+for the first time, this had to be fixed here (not deferrable) using the
+same minimal-`AIMessage` pattern already established elsewhere in the file
+(`bots/base.py`'s `ask_stream` defensive-fallback `AIMessage`, previously
+at `:1807`).
+
+**Known interaction (documented, not fixed — belongs to TASK-2025's
+design, not this task):** `GuardrailPipeline`'s idempotency stamp cache
+memoizes by `(stage, content)` alone. `LegacyPipelineGuardrail`'s output
+depends on external mutable state (`self._prompt_pipeline`'s current
+middlewares), not purely on `content` — so resubmitting the *exact same*
+question text before and after a `_prompt_pipeline` mutation can return a
+stale cached outcome. Narrow edge case (same-bot-instance, identical input
+text, pipeline reconfigured in between); documented in
+`test_pipeline_set_after_construction_still_applies` and left as a
+forward-looking note for whoever revisits TASK-2025's cache design.
+
+**Regression verification:** `packages/ai-parrot/tests/unit/bots/` +
+`packages/ai-parrot/tests/bots/` (1176 tests) run against this worktree
+produced byte-for-byte the SAME 69 failures / 1107 passes / 9 skips as
+running the identical suite against unmodified `origin/dev` — confirmed
+via `diff` on sorted FAILED lists (identical). Zero regressions introduced.
+`BasicAgent(injection_detection=False)` verified to not import
+torch/pytector (AC). 15 new tests in `test_guardrails_input_migration.py`
+(golden `_run_input_pipeline` behavior, prompt_for_llm invariant, full
+invoke/ask/ask_stream end-to-end via a minimal fake-LLM harness, legacy
+pipeline wrapper, lazy-import boundary, deprecated-delegate compat) — all
+passing together with TASK-2024-2027 (71 total in the guardrails suite).
+`ruff check parrot/bots/guardrails/` clean; `ruff check --select F,E9` on
+`base.py`/`abstract.py`/`search.py`/`skills/mixin.py` shows zero issues on
+this task's lines (2 pre-existing F841s elsewhere, unrelated, unchanged).
