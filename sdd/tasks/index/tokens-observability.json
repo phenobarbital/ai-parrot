@@ -14,7 +14,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only parrot/models/ — no overlap with events or clients tasks.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2031-usage-model-primitives.md"
+      "completed_at": "2026-08-01T00:32:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2031-usage-model-primitives.md"
     },
     {
       "id": "TASK-2032",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only the events package — independent of TASK-2031.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2032-client-round-event.md"
+      "completed_at": "2026-08-01T00:34:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2032-client-round-event.md"
     },
     {
       "id": "TASK-2033",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Modifies clients/base.py which all client tasks build on; must land before TASK-2034…2038.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2033-emit-round-helper.md"
+      "completed_at": "2026-08-01T00:36:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2033-emit-round-helper.md"
     },
     {
       "id": "TASK-2034",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Touches only clients/claude.py + its own test file; independent of the other four client tasks.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2034-claude-loop-accumulation.md"
+      "completed_at": "2026-08-01T00:42:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2034-claude-loop-accumulation.md"
     },
     {
       "id": "TASK-2035",
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Touches only clients/gpt.py + its own test file.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2035-openai-loop-accumulation.md"
+      "completed_at": "2026-08-01T00:49:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2035-openai-loop-accumulation.md"
     },
     {
       "id": "TASK-2036",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Touches only clients/google/client.py + its own test file. Largest behavioral change (fixes first-response usage bug).",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2036-gemini-loop-accumulation.md"
+      "completed_at": "2026-08-01T00:59:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2036-gemini-loop-accumulation.md"
     },
     {
       "id": "TASK-2037",
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Touches only clients/groq.py + its own test file.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2037-groq-loop-accumulation.md"
+      "completed_at": "2026-08-01T01:02:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2037-groq-loop-accumulation.md"
     },
     {
       "id": "TASK-2038",
@@ -154,7 +154,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -165,8 +165,8 @@
       "parallelism_notes": "Touches only clients/grok.py + its own test file.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2038-grok-loop-accumulation.md"
+      "completed_at": "2026-08-01T01:06:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2038-grok-loop-accumulation.md"
     },
     {
       "id": "TASK-2039",
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +185,8 @@
       "parallelism_notes": "Touches only observability/subscribers/metrics.py + its own test file; independent of all client tasks.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2039-per-round-metrics.md"
+      "completed_at": "2026-08-01T00:38:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2039-per-round-metrics.md"
     },
     {
       "id": "TASK-2040",
@@ -195,7 +195,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -210,8 +210,8 @@
       "parallelism_notes": "Final validation gate — requires every implementation task merged.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2040-integration-tests.md"
+      "completed_at": "2026-08-01T01:12:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2040-integration-tests.md"
     }
   ]
 }
