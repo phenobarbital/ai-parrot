@@ -6,9 +6,9 @@ Provides one pluggable ``Guardrail`` abstraction with four stages
 moderation, and future controls plug into.
 
 This module currently exposes the core data models, enums, the
-``Guardrail`` ABC, and the ``StreamingGuardrail`` adapter contract
-(TASK-2024). Pipeline execution, registry/config coercion, and built-in
-plugins are added by later tasks in this feature.
+``Guardrail`` ABC, the ``StreamingGuardrail`` adapter contract (TASK-2024),
+and the ``GuardrailPipeline`` execution engine (TASK-2025). Registry/config
+coercion and built-in plugins are added by later tasks in this feature.
 """
 from .base import (
     Guardrail,
@@ -17,13 +17,17 @@ from .base import (
     GuardrailResult,
     GuardrailStage,
 )
+from .pipeline import GuardrailPipeline, GuardrailTelemetryEntry, PipelineOutcome
 from .streaming import StreamingGuardrail
 
 __all__ = [
     "Guardrail",
     "GuardrailAction",
     "GuardrailContext",
+    "GuardrailPipeline",
     "GuardrailResult",
     "GuardrailStage",
+    "GuardrailTelemetryEntry",
+    "PipelineOutcome",
     "StreamingGuardrail",
 ]
