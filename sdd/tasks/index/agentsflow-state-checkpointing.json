@@ -52,7 +52,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Shares checkpoint/__init__.py with TASK-2047; keep sequential to avoid trivial conflicts.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2048-checkpoint-store-abc-factory-config.md"
+      "completed_at": "2026-08-01T00:33:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2048-checkpoint-store-abc-factory-config.md"
     },
     {
       "id": "TASK-2049",
