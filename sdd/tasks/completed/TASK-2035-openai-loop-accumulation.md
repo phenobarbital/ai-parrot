@@ -129,10 +129,29 @@ CompletionUsage.from_openai(usage: Any)              # line 109
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Instrumented `gpt.py::ask()`: round 1 is the initial (pre-loop)
+call (both `_responses_completion`/`_chat_completion` paths write through
+the same `response.usage`), timed via `_lc_round_t0_gpt`; each subsequent
+loop iteration (rounds 2..N) re-times, re-extracts, and accumulates via a
+local `_lc_gpt_extract_usage()` helper (`CompletionUsage.from_openai` +
+JSON-safe `raw_usage` via `usage_obj.model_dump()`, falling back to `None`
+when unavailable). `self._emit_round_event(...)` fires after tool
+execution for each round that had tool_calls, using round-scoped tool
+names. Post-loop, the accumulated total overrides `ai_message.usage` and
+sets `extra_usage["rounds"]` when `> 1` round — single-round calls
+untouched. Created `tests/unit/clients/test_openai_multiround_usage.py`
+(5 tests: 3-round chat-completions accumulation, single-round no-event,
+after-call totals, missing-usage round, plus a dedicated Responses-API
+path accumulation test using model="o3"). Ran `tests/unit/clients/`
+(32 passed, `-k openai` → 5 passed).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. Note (discovered while writing tests, not
+a code change): `OpenAIClient.ask()` does not call `self._ensure_client()`
+before using `self.client` — pre-existing, unrelated to this task (the
+loop-local `client` property refactor also broke the old
+`client.client = mock_instance` pattern used by
+`tests/test_openai_client.py`, confirmed pre-existing via `git stash`).
+Tests here work around it via the supported `get_client()` +
+`_ensure_client()` mechanism; not fixed as it's out of this task's scope.

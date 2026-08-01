@@ -129,7 +129,7 @@ parrot claude status         # see what's installed
 
 | Category | Applies to |
 | --- | --- |
-| `module` | Source code (`.py`, `.php`, `.rs`, `.go`, `.ts`, `.sql`, …) |
+| `module` | Source code (`.py`, `.php`, `.rs`, `.go`, `.ts`, `.svelte`, `.sql`, …) |
 | `document` | Docs (`.md`, `.rst`, `.txt`, `.html`, `.htm`) |
 | `config` | Config (`.toml`, `.yaml`, `.json`, `.ini`, …) |
 | `overview` | Directory overview pages |
@@ -170,9 +170,16 @@ from their import statements (FEAT-394).
 | --- | --- | --- | --- |
 | Python | `.py`, `.pyi` | classes, functions, docstrings (`ast`) | dotted-import resolution, src-layout aware |
 | PHP | `.php` | classes, interfaces, traits, enums, functions, methods + docblock | `use`/`require`/`include`, via `composer.json` PSR-4 or namespace-tail matching |
-| JS / TS | `.js`, `.jsx`, `.mjs`, `.ts`, `.tsx` | exported classes/functions/consts/interfaces/type aliases | relative `import`/`export … from`/`require()` only — bare package names are dropped |
+| JS / TS | `.js`, `.jsx`, `.mjs`, `.ts`, `.tsx`, `.svelte` | exported classes/functions/consts/interfaces/type aliases | relative `import`/`export … from`/`require()`, plus alias specifiers (`$lib/…`, `tsconfig.json` `paths`); anything unresolvable — npm packages, `$app/*` — is dropped |
 | Rust | `.rs` | `pub` structs/enums/traits/fns, `impl` blocks + `///` doc comments | `use crate::…`, `mod foo;`, via crate layout (`src/lib.rs`/`src/main.rs`) |
 | HTML | `.html`, `.htm` | *shallow only* — summary from `<title>` or first heading | none |
+
+**Svelte components** are handled by the JS/TS scanner, not a separate one: the
+`<script>` block is extracted and parsed (its `lang` attribute picks the grammar,
+so `<script lang="ts">` is parsed as TypeScript), while markup semantics —
+component usage, `{#if}`/`{#each}`, slots — are out of scope. `$lib/…` resolves
+even when the repository declares the alias nowhere, since SvelteKit's own
+declaration lives in the generated, gitignored `.svelte-kit/tsconfig.json`.
 
 **Accurate parsing vs. the heuristic fallback.** PHP/JS-TS/Rust outlines use
 `tree-sitter` grammars when available, and degrade *silently* to a bounded,
@@ -181,6 +188,15 @@ warns, for a missing optional grammar. Python always uses the stdlib `ast`
 module (no tree-sitter involved). Check which mode is active for each
 language via [`parrot wiki status`](#parrot-wiki-status) or the `languages`
 block in `wiki_stats.json`.
+
+> **Changed in 0.26.0.** The JS/TS scanner reports `tree-sitter` only when
+> *both* grammars it selects between — TypeScript and JavaScript — actually
+> load. It previously reported `tree-sitter` if either did, which was
+> misleading: the TypeScript grammar was never loading (the wheel exposes
+> `language_typescript()`, not `language()`), so `.ts`/`.tsx` files were parsed
+> by regex while being reported as tree-sitter. The same wheel-loading bug
+> affected `.php`. Expect the reported mode of existing repositories to change
+> after upgrading — that is the correction, not a regression.
 
 **Installing accurate parsing** — the `wiki-languages` extra:
 

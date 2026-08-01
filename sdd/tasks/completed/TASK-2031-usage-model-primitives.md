@@ -162,10 +162,19 @@ def test_total_usage_identity():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added `CompletionUsage.__add__` (models/basic.py) implementing
+int-sum for token fields, None-aware sum for timing/cost fields, and
+shallow-merge (right wins) for `extra_usage`, plus a docstring paragraph
+documenting the `extra_usage["rounds"]` convention. Added
+`AIMessage.total_usage()` (models/responses.py) returning `self.usage`.
+Created `tests/unit/models/test_completion_usage_add.py` (8 tests, all
+pass). Also ran the full `tests/unit/models/` suite (99 passed / 2 failed);
+confirmed via `git stash` that the 2 failures
+(`test_chart_config_convergence.py::test_serializes_agnostic_config` and
+`::test_as_chart_config_parses_back`) are pre-existing, test-order-dependent
+failures unrelated to this task (reproduce identically without this
+change).
 
 **Deviations from spec**: none
