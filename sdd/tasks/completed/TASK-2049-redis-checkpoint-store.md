@@ -141,10 +141,48 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Implemented `store/redis.py` (`RedisCheckpointStore`) using the
+exact key layout from spec §3 Module 4: `flowckpt:{flow_id}:latest`,
+`:cp:{checkpoint_id}`, `:history` (zset, score=checkpoint_id, trimmed via
+`ZREMRANGEBYRANK`), `:lease` (`SET NX PX`). TTL/history defaults come
+from `FLOW_CHECKPOINT_REDIS_TTL`/`FLOW_CHECKPOINT_HISTORY`, overridable
+via constructor; every `put()` refreshes TTL on `cp`/`latest`/`history`
+keys (lease has its own independent `PX`). Connection pattern copied
+from `RedisResultStorage` (AsyncDB `redis` driver, lazy `_ensure()`,
+idempotent `close()`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviation worth flagging (not a spec deviation, an implementation
+necessity)**: the AsyncDB `redis` driver connects with
+`decode_responses=True` (verified by reading
+`asyncdb/drivers/redis.py:150`), so redis-py UTF-8-decodes every GET
+reply. Raw ormsgpack bytes are not valid UTF-8 in general, so storing
+them directly would raise `UnicodeDecodeError` on read. Fixed by
+base64-encoding the packed bytes before `SET` and base64-decoding after
+`GET` (`_encode_payload`/`_decode_payload`). Confirmed necessary and
+correct by running the full test suite against a real throwaway Redis
+(`docker run redis:7-alpine`) — all 5 tests pass round-trip, including
+history trim (13 writes → 10 retained, ids 3-12) and the full lease
+lifecycle (acquire/conflict/renew/holder-checked release/expiry
+takeover). `renew_lease`/`release_lease` are GET-then-act (not atomic
+via Lua) — acceptable per spec §7 ("Redis lease is advisory... matches
+at-least-once semantics").
 
-**Deviations from spec**: none
+`store/__init__.py` and the top-level `checkpoint/__init__.py` re-export
+`RedisCheckpointStore` directly (not lazy) since the `redis` driver is
+already a base project dependency — verified importable
+(`redis==5.2.1`) with no extra cost, unlike the heavier optional
+sqlite/postgres/mongodb drivers reserved for `DurableCheckpointStore`
+(TASK-2050).
+
+Added `test_redis_store.py` with a socket-based `_redis_available()`
+skip guard (`pytest.mark.skipif`) — cleanly skips when no Redis is
+reachable at `REDIS_URL` (verified: 5 skipped on this machine with no
+local Redis) and all 5 pass against the throwaway container. `ruff
+check` clean.
+
+**Deviations from spec**: none (the base64 encoding is an implementation
+detail to satisfy the store contract correctly through the existing
+AsyncDB redis driver, not a change to the spec's key layout or
+semantics).

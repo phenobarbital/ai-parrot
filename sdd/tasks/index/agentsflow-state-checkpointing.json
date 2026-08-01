@@ -72,7 +72,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Disjoint files from TASK-2050 (store/redis.py vs store/durable.py); both only append re-exports to store/__init__.py. Can run as parallel subagents after TASK-2048.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2049-redis-checkpoint-store.md"
+      "completed_at": "2026-08-01T00:38:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2049-redis-checkpoint-store.md"
     },
     {
       "id": "TASK-2050",
