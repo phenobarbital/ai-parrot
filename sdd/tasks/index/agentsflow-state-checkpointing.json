@@ -159,7 +159,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -170,8 +170,8 @@
       "parallelism_notes": "Integration heart — modifies flow.py after TASK-2052 already touched it; strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2053-agentsflow-suspend-resume.md"
+      "completed_at": "2026-08-01T01:27:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2053-agentsflow-suspend-resume.md"
     },
     {
       "id": "TASK-2054",
