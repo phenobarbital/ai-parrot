@@ -9,7 +9,7 @@ reuse_feature_id: FEAT-400
 **Feature ID**: FEAT-400
 **Date**: 2026-08-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 
 ---
