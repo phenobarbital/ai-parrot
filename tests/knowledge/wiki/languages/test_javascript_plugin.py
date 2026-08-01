@@ -533,6 +533,64 @@ class TestAliasResolution:
             == "src/lib/util.ts"
         )
 
+    @pytest.mark.parametrize(
+        "config_name", ["tsconfig.json", "jsconfig.json", "svelte.config.js"]
+    )
+    def test_non_utf8_config_does_not_abort_the_scan(
+        self, tmp_path, restore_scan_root, config_name
+    ):
+        """A config file that is not valid UTF-8 must degrade, not crash.
+
+        `UnicodeDecodeError` is a `ValueError`, not an `OSError`, so a
+        read guarded only by `OSError` leaks it. `repo_scan` calls
+        `build_reference_index` unguarded, so the leak aborts the whole
+        scan — for any JS/TS repository, not just Svelte ones.
+        """
+        (tmp_path / config_name).write_bytes(b"\xff\xfe{\x00}\x00")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src/a.ts").write_text("import { b } from './b'\n")
+        (tmp_path / "src/b.ts").write_text("export const b = 2\n")
+        restore_scan_root(tmp_path)
+
+        scanner = JavaScriptScanner()
+        index = scanner.build_reference_index(
+            [config_name, "src/a.ts", "src/b.ts"]
+        )
+        # Relative resolution is unaffected by the unreadable config.
+        assert scanner.resolve_import("./b", "src/a.ts", index) == "src/b.ts"
+
+    def test_non_utf8_config_scan_completes_end_to_end(self, tmp_path):
+        """The same, through the real entry point that has no guard."""
+        (tmp_path / "tsconfig.json").write_bytes(b"\xff\xfe{\x00}\x00")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src/a.ts").write_text("import { b } from './b'\n")
+        (tmp_path / "src/b.ts").write_text("export const b = 2\n")
+
+        from parrot.knowledge.wiki.repo_scan import scan_repository
+
+        scan = scan_repository(tmp_path, use_git=False)
+        assert {fs.rel_path for fs in scan.files} >= {"src/a.ts", "src/b.ts"}
+
+    def test_tsconfig_paths_keeps_every_fallback_target(
+        self, tmp_path, restore_scan_root
+    ):
+        """A `paths` entry may list fallbacks; all of them stay usable."""
+        (tmp_path / "tsconfig.json").write_text(
+            '{"compilerOptions": {"baseUrl": ".", "paths": {'
+            '"$lib/*": ["missing/*", "src/lib/*"]}}}'
+        )
+        (tmp_path / "src/lib").mkdir(parents=True)
+        (tmp_path / "src/lib/util.ts").write_text("export function helper() {}\n")
+        restore_scan_root(tmp_path)
+
+        scanner = JavaScriptScanner()
+        index = scanner.build_reference_index(["tsconfig.json", "src/lib/util.ts"])
+        # The first target expands to nothing; the second must still be tried.
+        assert (
+            scanner.resolve_import("$lib/util", "src/routes/x.svelte", index)
+            == "src/lib/util.ts"
+        )
+
     def test_no_scan_root_does_not_raise(self, restore_scan_root):
         """A scanner used outside a scan still builds a usable index."""
         restore_scan_root(None)
@@ -565,7 +623,11 @@ class TestAliasResolution:
         """JsIndex keeps the frozenset's immutability guarantees."""
         restore_scan_root(None)
         index = JavaScriptScanner().build_reference_index(["a.ts"])
-        assert hash(index) is not None
+        # The point is that hashing does not raise, and that equal indexes
+        # hash equally — `hash(x) is not None` would hold for any value.
+        assert hash(index) == hash(
+            JavaScriptScanner().build_reference_index(["a.ts"])
+        )
         with pytest.raises(FrozenInstanceError):
             index.files = frozenset()
 
