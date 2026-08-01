@@ -74,6 +74,7 @@ from ..handlers.crew.execution_history_handler import CrewExecutionHistoryHandle
 from ..handlers.crew.tool_catalog import CrewToolCatalogHandler
 from ..handlers.crew.special_nodes import CrewSpecialNodeCatalogHandler
 from ..handlers.crew.redis_persistence import CrewRedis
+from ..handlers.flows.checkpoints import FlowCheckpointHandler
 from ..openapi.config import setup_swagger
 from ..conf import (
     BOT_CLEANUP_TIMEOUT,
@@ -1977,6 +1978,9 @@ class BotManager:
             )
             CrewHandler.configure(self.app, '/api/v1/crew')
             CrewExecutionHandler.configure(self.app, '/api/v1/crews')
+        # AgentsFlow state checkpointing ops surface (FEAT-399): list/history/
+        # resume/delete over the CheckpointStore contract.
+        FlowCheckpointHandler.configure(self.app, '/api/v1/flows/checkpoints')
         # Agent Config CRUD
         router.add_view(
             '/api/v1/agents/config',
