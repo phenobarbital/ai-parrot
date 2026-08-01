@@ -69,6 +69,29 @@ def _default_scrubber():
     return _DEFAULT_SCRUBBER
 
 
+# FEAT-396 (TASK-2029) — lazy import, same reasoning as _get_output_scrubber()
+# above, PLUS: tools are decoupled from their owning bot (only the plain
+# `enable_redaction: bool` flag is stamped onto a tool by ToolManager — see
+# `enable_redaction` class attribute below — there is no per-bot
+# GuardrailPipeline reference reachable from here). So this hook cannot
+# literally "run the owning bot's TOOL_OUTPUT GuardrailPipeline"; instead it
+# resolves the same "secrets" guardrail the registry/config would build for
+# any bot with enable_redaction=True, via a process-wide singleton — the
+# direct architectural analogue of the previous `_default_scrubber()`
+# singleton, now sourced through the pluggable guardrails registry so
+# future TOOL_OUTPUT guardrails (PII, etc.) compose the same way.
+_DEFAULT_SECRETS_GUARDRAIL = None  # initialised on first use (module-level singleton)
+
+
+def _default_secrets_guardrail():
+    """Return the module-level singleton SecretsGuardrail (FEAT-396 TASK-2029)."""
+    global _DEFAULT_SECRETS_GUARDRAIL  # noqa: PLW0603
+    if _DEFAULT_SECRETS_GUARDRAIL is None:
+        from ..bots.guardrails.builtin.secrets import SecretsGuardrail  # noqa: PLC0415
+        _DEFAULT_SECRETS_GUARDRAIL = SecretsGuardrail()
+    return _DEFAULT_SECRETS_GUARDRAIL
+
+
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
 logging.getLogger(name='h5py').setLevel(logging.INFO)
 logging.getLogger(name='datasets').setLevel(logging.WARNING)
@@ -781,9 +804,13 @@ class AbstractTool(EventEmitterMixin, ABC):
             # downstream callers receive a pre-scrubbed ToolResult.
             # Redaction is opt-in per agent: only tools stamped with
             # enable_redaction=True (flagged agents) are scrubbed.
+            # FEAT-396 (TASK-2029): delegates through the "secrets" guardrail
+            # (`_default_secrets_guardrail()`) instead of the raw scrubber
+            # singleton — see that function's docstring for why this can't
+            # literally route through a per-bot `GuardrailPipeline`.
             if self.enable_redaction:
                 try:
-                    _scrubber = _default_scrubber()
+                    _scrubber = _default_secrets_guardrail()
                     if tool_result.result is not None:
                         tool_result = tool_result.model_copy(
                             update={"result": _scrubber.scrub(
@@ -855,7 +882,7 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             if self.enable_redaction:
                 try:
-                    _scrubber = _default_scrubber()
+                    _scrubber = _default_secrets_guardrail()
                     error_msg = _scrubber.scrub(error_msg, tool_name=_tool_name)
                 except Exception:
                     pass

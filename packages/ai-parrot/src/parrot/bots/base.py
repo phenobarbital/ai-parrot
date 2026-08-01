@@ -20,7 +20,6 @@ from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
 from ..utils.helpers import RequestContext, _current_ctx
-from ..security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1612)
 from .prompts import (
     OUTPUT_SYSTEM_PROMPT
 )
@@ -56,8 +55,10 @@ from parrot.core.events.lifecycle.events import (
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
 from parrot.observability.context import current_agent_name
 
-# FEAT-252 (TASK-1612): module-level egress scrubber singleton for channel delivery
-_BOT_EGRESS_SCRUBBER: OutputScrubber = OutputScrubber(ScrubPolicy())
+# FEAT-252 (TASK-1612): the module-level egress scrubber singleton that used
+# to live here was removed in FEAT-396 (TASK-2029) — the unified OUTPUT
+# GuardrailPipeline (SecretsGuardrail) now covers channel egress for ALL
+# output modes, superseding the 4-chat-mode-only scrub this singleton served.
 
 
 class BaseBot(AbstractBot):
@@ -533,7 +534,7 @@ class BaseBot(AbstractBot):
                         source_name=self.name,
                     ))
                     # return the response Object:
-                    return self.get_response(
+                    return await self.get_response(
                         response,
                         return_sources,
                         return_context
@@ -750,7 +751,7 @@ class BaseBot(AbstractBot):
                     result=response.output
                 )
 
-                return self.get_response(
+                return await self.get_response(
                     response,
                     return_sources=False,
                     return_context=False
@@ -1444,12 +1445,12 @@ class BaseBot(AbstractBot):
                     OutputMode.SLACK,
                     OutputMode.WHATSAPP,
                 ]:
-                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery.
-                    # Opt-in per agent — only flagged agents redact.
-                    if getattr(self, 'enable_redaction', False) and isinstance(response.output, str):
-                        response.output = _BOT_EGRESS_SCRUBBER.scrub(
-                            response.output, tool_name=self.name
-                        )
+                    # FEAT-252 (TASK-1612) channel-egress scrub used to run
+                    # HERE, gated to these 4 chat modes only. FEAT-396
+                    # (TASK-2029) folds it into the general OUTPUT
+                    # GuardrailPipeline call below, which now runs for ALL
+                    # output modes (a deliberate behavior extension — spec
+                    # §2) — nothing mode-specific left to do here.
                     response.output_mode = output_mode
 
                 elif output_mode == OutputMode.A2UI:
@@ -1472,6 +1473,11 @@ class BaseBot(AbstractBot):
                     # Assign extracted data if we found any
                     if extracted_data and not response.data:
                         response.data = extracted_data
+
+                # FEAT-396 (TASK-2029): unified OUTPUT guardrail pipeline —
+                # runs for every output_mode (supersedes the old 4-chat-mode-only
+                # channel-egress scrub branch above).
+                response = await self._run_output_pipeline(response, method='ask')
 
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED,
@@ -1790,8 +1796,19 @@ class BaseBot(AbstractBot):
                         if isinstance(chunk, AIMessage):
                             ai_message = chunk
                         else:
-                            full_response += chunk
-                            yield chunk
+                            # FEAT-396 (TASK-2029): wrap chunk yields through
+                            # registered StreamingGuardrail adapters (empty
+                            # by default today — zero-overhead passthrough;
+                            # see `_feed_streaming_guardrails`).
+                            transformed_chunk = self._feed_streaming_guardrails(chunk)
+                            full_response += transformed_chunk
+                            if transformed_chunk:
+                                yield transformed_chunk
+                    # Flush any content a StreamingGuardrail adapter withheld.
+                    _stream_tail = self._flush_streaming_guardrails()
+                    if _stream_tail:
+                        full_response += _stream_tail
+                        yield _stream_tail
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -1853,6 +1870,11 @@ class BaseBot(AbstractBot):
                     ai_message.output = ai_message.output or full_response
                     ai_message.finish_reason = "error"
                     ai_message.stop_reason = "error"
+
+                # FEAT-396 (TASK-2029): run the OUTPUT guardrail pipeline on
+                # the final AIMessage at stream close (chunks were already
+                # covered by the StreamingGuardrail adapters above).
+                ai_message = await self._run_output_pipeline(ai_message, method='ask_stream')
 
                 # FEAT-176: emit AfterInvokeEvent on success.
                 _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
