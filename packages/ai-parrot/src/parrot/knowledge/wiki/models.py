@@ -65,9 +65,10 @@ class WikiConfig(BaseModel):
         sync_graph: When ``True``, wiki writes also mirror pages into
             GraphIndex.  Off by default — the WikiStore plane is the
             wiki's retrieval backend.
-        storage_backend: ``"sqlite"`` (default; single-file ``wiki.db``)
-            or ``"memory"`` (in-memory indexes + OKF markdown bundle
-            directory — no SQLite dependency).
+        storage_backend: ``"sqlite"`` (default; single-file ``wiki.db``),
+            ``"memory"`` (in-memory indexes + OKF markdown bundle
+            directory — no SQLite dependency), or ``"arangodb"``
+            (server-hosted, shared retrieval plane).
     """
 
     wiki_name: str = Field(..., description="Unique wiki name / identifier")
@@ -99,13 +100,14 @@ class WikiConfig(BaseModel):
             "the WikiStore plane is the retrieval backend."
         ),
     )
-    storage_backend: Literal["sqlite", "memory"] = Field(
+    storage_backend: Literal["sqlite", "memory", "arangodb"] = Field(
         default="sqlite",
         description=(
             "Retrieval-plane backend: 'sqlite' (single-file wiki.db, "
-            "FTS5/BM25) or 'memory' (in-memory indexes persisted as an "
-            "OKF markdown bundle under {storage_dir}/pages/). Explicit "
-            "selection only — no auto-fallback."
+            "FTS5/BM25), 'memory' (in-memory indexes persisted as an "
+            "OKF markdown bundle under {storage_dir}/pages/), or "
+            "'arangodb' (server-hosted, shared retrieval plane). "
+            "Explicit selection only — no auto-fallback."
         ),
     )
 

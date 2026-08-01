@@ -93,4 +93,33 @@ class WikiIngestOrchestrator:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Annotation-only change, exactly as scoped: in `search.py`,
+`from parrot.knowledge.wiki.store import WikiStore` →
+`import BaseWikiStore`, and `WikiCombinedSearch.__init__`'s
+`store: Optional[WikiStore] = None` → `Optional[BaseWikiStore]` (plus
+the matching docstring `:class:` reference). Same two changes in
+`ingest.py` for `WikiIngestOrchestrator.__init__`. Verified via
+`grep -rn "Optional\[WikiStore\]\|: WikiStore\b\|import WikiStore\b"
+packages/ai-parrot/src/parrot/knowledge/wiki/*.py` that no other file in
+the package still types anything as the narrow `WikiStore` alias — these
+were the only two. Left all non-annotation prose mentions of "WikiStore"
+(module docstrings, log message text, inline comments) untouched — they
+describe the retrieval plane generically, not the parameter's type, and
+touching them would be scope creep beyond "annotation-only".
+
+No runtime behavior change (no logic touched). Full
+`tests/knowledge/wiki/` suite (665 tests) re-run — all passing, no
+regressions. `ruff check` on both files matches their pre-existing
+baseline exactly (7 findings on `search.py`, 9 on `ingest.py` — same
+codes, same counts).
+
+`mypy` on `ingest.py`: clean (0 errors). `mypy` on `search.py`: 3
+pre-existing `union-attr` errors at lines 162/174/305 (`self._store`
+used without a `None` guard in `search_fts`/`search_vector`/
+`neighbors` calls) — confirmed via `mypy` against the pre-change file
+that these are IDENTICAL errors that existed before this task (same
+lines, same nullability issue, only the reported type name changed from
+`SQLiteWikiStore` to `BaseWikiStore`). Fixing them would require adding
+`None`-guards/asserts — a structural code change outside this task's
+explicit "annotation-only" / "NOT in scope: any behavioral changes"
+boundary — so left as pre-existing and not touched here.

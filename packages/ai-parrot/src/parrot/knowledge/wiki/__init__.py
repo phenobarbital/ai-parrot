@@ -66,6 +66,7 @@ _EXPORT_MODULES: dict[str, str] = {
     "WikiStore": "parrot.knowledge.wiki.store",
     "SQLiteWikiStore": "parrot.knowledge.wiki.store",
     "InMemoryWikiStore": "parrot.knowledge.wiki.file_store",
+    "ArangoDBWikiStore": "parrot.knowledge.wiki.arango_store",
     "create_wiki_store": "parrot.knowledge.wiki.store",
     "WikiPageRecord": "parrot.knowledge.wiki.store",
     # Context packing
