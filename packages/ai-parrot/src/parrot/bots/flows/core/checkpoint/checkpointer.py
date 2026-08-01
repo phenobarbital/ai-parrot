@@ -333,15 +333,23 @@ class FlowCheckpointer:
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
     async def aclose(self) -> None:
-        """Await pending writes and release the lease.
+        """Await pending writes, then release the lease.
 
         Idempotent: safe to call multiple times and before any write has
         been scheduled. Does not close the stores it was given — it does
         not own their lifecycle.
-        """
-        await self.release_lease()
 
+        Order matters here: pending fire-and-forget checkpoint writes MUST
+        land before the lease is released. Releasing first would open a
+        window where a concurrent `resume()` (racing in right after the
+        lease frees up) could acquire the lease and read a checkpoint that
+        is missing the write still in flight — silently reintroducing the
+        double-execution the lease exists to prevent (code review finding,
+        FEAT-399).
+        """
         pending = self._pending_tasks
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
             pending.clear()
+
+        await self.release_lease()
