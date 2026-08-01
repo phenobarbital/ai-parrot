@@ -56,14 +56,24 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 
 CREATE TABLE IF NOT EXISTS sources (
-    source_id       TEXT PRIMARY KEY,
-    source_uri      TEXT NOT NULL UNIQUE,
-    file_hash       TEXT NOT NULL,
-    mtime           REAL NOT NULL,
-    ingested_at     TEXT NOT NULL,
-    pages_generated TEXT NOT NULL DEFAULT '[]',
-    status          TEXT NOT NULL DEFAULT 'ingested'
+    source_id        TEXT PRIMARY KEY,
+    source_uri       TEXT NOT NULL UNIQUE,
+    file_hash        TEXT NOT NULL,
+    mtime            REAL NOT NULL,
+    ingested_at      TEXT NOT NULL,
+    pages_generated  TEXT NOT NULL DEFAULT '[]',
+    status           TEXT NOT NULL DEFAULT 'ingested',
+    destination      TEXT,
+    decision_source  TEXT,
+    charter_version  TEXT,
+    composite_score  REAL
 );
+-- destination/decision_source/charter_version/composite_score (FEAT-402,
+-- TASK-2073): supervised-ingestion triage decision provenance. All four
+-- are nullable/defaulted (NULL) so this CREATE TABLE IF NOT EXISTS is a
+-- no-op on already-existing pre-FEAT-402 databases — those get the same
+-- four columns via the idempotent ALTER TABLE migration in
+-- SourceCollectionManager._migrate_sources_columns (sources.py).
 
 CREATE TABLE IF NOT EXISTS pages (
     concept_id  TEXT PRIMARY KEY,

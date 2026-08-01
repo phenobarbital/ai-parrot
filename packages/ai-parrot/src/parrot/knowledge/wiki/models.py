@@ -171,6 +171,18 @@ class SourceManifestEntry(BaseModel):
             updated during this ingest.
         status: Lifecycle status.  ``"ingested"`` after a successful ingest;
             may be ``"stale"`` or ``"error"`` as appropriate.
+        destination: Supervised-ingestion (FEAT-402) triage destination —
+            ``"wiki"``, ``"archive"``, or ``"discard"``. ``None`` for
+            sources that never went through triage (e.g. `wikitoolkit
+            build`).
+        decision_source: Who/what made the triage decision —
+            ``"heuristic"``, ``"model"``, ``"human"``, or ``"auto"``.
+            ``None`` when not applicable.
+        charter_version: Version of the editorial charter the decision
+            was made against, for audit/reproducibility. ``None`` when
+            not applicable.
+        composite_score: The weighted composite triage score in
+            ``[0, 1]``, or ``None`` when not applicable.
     """
 
     source_id: str = Field(..., description="Stable source identifier")
@@ -185,6 +197,30 @@ class SourceManifestEntry(BaseModel):
     status: str = Field(
         default="ingested",
         description="Source lifecycle status",
+    )
+    destination: Optional[str] = Field(
+        default=None,
+        description=(
+            "Supervised-ingestion (FEAT-402) triage destination: "
+            "'wiki' | 'archive' | 'discard'. None when not triaged."
+        ),
+    )
+    decision_source: Optional[str] = Field(
+        default=None,
+        description=(
+            "Who/what made the triage decision: 'heuristic' | 'model' | "
+            "'human' | 'auto'. None when not triaged."
+        ),
+    )
+    charter_version: Optional[str] = Field(
+        default=None,
+        description="Editorial charter version the decision was made against.",
+    )
+    composite_score: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Weighted composite triage score in [0, 1].",
     )
 
 
