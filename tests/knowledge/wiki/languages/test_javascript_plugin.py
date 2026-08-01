@@ -436,6 +436,40 @@ class TestAliasResolution:
             == "src/widgets/Btn.ts"
         )
 
+    def test_alias_falls_through_to_shorter_prefix(
+        self, tmp_path, restore_scan_root
+    ):
+        """A more specific alias that expands to nothing must not shadow.
+
+        `$lib/components/*` -> `src/widgets/*` is the longest match for
+        `$lib/components/Btn`, but no such file exists; the broader
+        `$lib/*` -> `src/lib/*` does resolve and must still be tried.
+        """
+        (tmp_path / "tsconfig.json").write_text(
+            '{"compilerOptions": {"baseUrl": ".", "paths": {'
+            '"$lib/*": ["src/lib/*"], '
+            '"$lib/components/*": ["src/widgets/*"]}}}'
+        )
+        (tmp_path / "src/widgets").mkdir(parents=True)
+        (tmp_path / "src/widgets/Other.ts").write_text("export const O = 1\n")
+        (tmp_path / "src/lib/components").mkdir(parents=True)
+        (tmp_path / "src/lib/components/Btn.ts").write_text("export const B = 2\n")
+        restore_scan_root(tmp_path)
+
+        scanner = JavaScriptScanner()
+        index = scanner.build_reference_index([
+            "tsconfig.json", "src/widgets/Other.ts", "src/lib/components/Btn.ts",
+        ])
+        # The longest prefix is tried first and misses...
+        assert index.aliases[0][0] == "$lib/components/"
+        # ...but resolution falls through to `$lib/` rather than giving up.
+        assert (
+            scanner.resolve_import(
+                "$lib/components/Btn", "src/routes/+page.svelte", index
+            )
+            == "src/lib/components/Btn.ts"
+        )
+
     @pytest.mark.parametrize("spec", ["$app/environment", "$env/static/public"])
     def test_alias_unresolved_returns_none(
         self, svelte_repo, restore_scan_root, spec

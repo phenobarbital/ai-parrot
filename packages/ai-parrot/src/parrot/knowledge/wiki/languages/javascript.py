@@ -5,13 +5,19 @@ A single scanner claims every JS/TS suffix (``.js``/``.jsx``/``.mjs``/
 (exported and non-exported classes, functions, consts, interfaces, type
 aliases, with their JSDoc first line) via tree-sitter when the optional
 ``ai-parrot[wiki-languages]`` extra is installed, or a bounded,
-line-anchored regex heuristic otherwise. Only **relative** import
-specifiers (``./``, ``../``) are resolved — bare package names
-(``react``, ``lodash``) are dropped at extraction time, never even
-reaching :meth:`resolve_import`. Relative specifiers resolve via
+line-anchored regex heuristic otherwise.
+
+Import extraction keeps **every** specifier as written; deciding what is
+resolvable happens in :meth:`JavaScriptScanner.resolve_import`, which
+alone has the per-scan alias map (FEAT-396). Relative specifiers
+(``./``, ``../``) resolve against the importing file's directory via
 extension guessing (``.ts``/``.tsx``/``.js``/``.jsx``/``.mjs``, then
-``/index.*``); ``tsconfig.json`` path aliases are explicitly out of scope
-for v1 (per spec).
+``/index.*``). Non-relative ones are matched against the repository's
+alias map — ``$lib/…`` and ``tsconfig.json``/``jsconfig.json`` ``paths``
+— using the same guessing once the prefix is expanded. Anything still
+unresolved (an npm package such as ``react``, or a SvelteKit virtual
+module such as ``$app/environment``) yields ``None`` and the edge is
+dropped rather than left dangling.
 
 Svelte components are handled by extraction, not by a separate scanner:
 :func:`_extract_script_blocks` pulls the ``<script>`` bodies out before
@@ -374,13 +380,20 @@ def _discover_aliases(file_set: frozenset[str]) -> tuple[tuple[str, str], ...]:
 
     1. ``svelte.config.js`` — an explicit ``kit.alias`` block.
     2. ``tsconfig.json`` / ``jsconfig.json`` — ``compilerOptions.paths``.
-    3. SvelteKit convention — ``$lib/`` maps to ``src/lib/`` whenever a
-       ``svelte.config.js`` exists at the repository root.
+    3. SvelteKit convention — ``$lib/`` maps to ``src/lib/`` alongside any
+       ``svelte.config.js`` found.
 
     Step 3 is the common case, not a nicety: SvelteKit's own ``$lib``
     declaration lives in the **generated, gitignored**
     ``.svelte-kit/tsconfig.json``, and the committed ``tsconfig.json``
     merely extends it — so a fresh clone declares no alias anywhere.
+
+    *Known limitation*: ``$lib/`` is a single global prefix, so a
+    monorepo with several ``svelte.config.js`` files gets one convention
+    mapping, resolved against whichever config sorts first — not
+    necessarily the one at the repository root. Explicit declarations
+    (steps 1 and 2) always win over the convention, so a monorepo that
+    declares its aliases is unaffected.
 
     Args:
         file_set: Every scanned repository path. ``build_reference_index``
@@ -643,7 +656,7 @@ class JavaScriptScanner(LanguageScanner):
         return JsIndex(files=files, aliases=_discover_aliases(files))
 
     def _guess_target(self, base_str: str, file_set: frozenset[str]) -> str | None:
-        """Match a extension-less repo path against the scanned files.
+        """Match an extension-less repo path against the scanned files.
 
         Tries the path as written, then each known extension, then each
         ``index.*`` file inside it.
@@ -677,10 +690,14 @@ class JavaScriptScanner(LanguageScanner):
 
         Relative specifiers (``./x``, ``../x``) resolve against the
         importing file's directory. Non-relative ones are matched against
-        the repository's alias map, longest prefix first; anything left
-        over — an npm package, or a SvelteKit virtual module such as
-        ``$app/environment`` — has no file here and yields ``None``, so
-        the edge is dropped rather than left dangling.
+        the repository's alias map, **every** matching prefix being tried
+        longest-first until one lands on a real file — a more specific
+        alias that expands to nothing must not shadow a broader one that
+        would have resolved, which is also how TypeScript's own ``paths``
+        resolution behaves. Anything left over — an npm package, or a
+        SvelteKit virtual module such as ``$app/environment`` — has no
+        file here and yields ``None``, so the edge is dropped rather than
+        left dangling.
 
         Args:
             spec: A raw import specifier.
@@ -700,11 +717,14 @@ class JavaScriptScanner(LanguageScanner):
             return self._guess_target(_normalize_posix(base), file_set)
 
         for prefix, target in aliases:
-            if spec.startswith(prefix):
-                expanded = target + spec[len(prefix):]
-                return self._guess_target(
-                    _normalize_posix(PurePosixPath(expanded)), file_set
-                )
+            if not spec.startswith(prefix):
+                continue
+            expanded = target + spec[len(prefix):]
+            resolved = self._guess_target(
+                _normalize_posix(PurePosixPath(expanded)), file_set
+            )
+            if resolved is not None:
+                return resolved
         return None
 
     @property
