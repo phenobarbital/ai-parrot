@@ -1,5 +1,5 @@
 ---
-id: FEAT-XXX
+id: FEAT-402
 title: Supervised ingestion for LLM Wiki — charter-driven triage router with HITL manifest review
 slug: supervised-wiki-ingestion
 type: feature
@@ -13,28 +13,28 @@ source:
   summary_oneline: Add charter-scored, HITL-reviewable "supervised ingestion" for document corpora to wikitoolkit
 overall_confidence: high
 base_branch: dev
-research_state: sdd/state/FEAT-XXX-supervised-wiki-ingestion/
+research_state: sdd/state/FEAT-402-supervised-wiki-ingestion/
 created: 2026-07-30
-updated: 2026-07-30
+updated: 2026-08-02
 ---
 
-# FEAT-XXX — Supervised ingestion for LLM Wiki (charter-driven triage + HITL manifest review)
+# FEAT-402 — Supervised ingestion for LLM Wiki (charter-driven triage + HITL manifest review)
 
 > **Mode**: enrichment
 > **Confidence**: high
 > **Source**: `inline` (brainstorm 2026-07-30) + `file`: 3 reference schemas — see §0
-> **Audit**: [`sdd/state/FEAT-XXX-supervised-wiki-ingestion/`](../state/FEAT-XXX-supervised-wiki-ingestion/)
+> **Audit**: [`sdd/state/FEAT-402-supervised-wiki-ingestion/`](../state/FEAT-402-supervised-wiki-ingestion/)
 
-> **Note on the id**: `FEAT-XXX` is a placeholder. Per FEAT-387, the real id
-> must be allocated with `scripts/sdd/reserve_ids.py` against
-> `sdd/tasks/.id_ledger.json` before committing this proposal to `dev`.
+> **Note on the id**: `FEAT-402` was allocated per FEAT-387 via
+> `scripts/sdd/reserve_ids.py` against `sdd/tasks/.id_ledger.json`
+> (ledger commit `00ba864fa`, 2026-08-02).
 
 ---
 
 ## 0. Origin
 
 The original request, preserved verbatim (es), is at
-`sdd/state/FEAT-XXX-supervised-wiki-ingestion/source.md`. Abridged:
+`sdd/state/FEAT-402-supervised-wiki-ingestion/source.md`. Abridged:
 
 > En este escrito sobre Wiki LLM […] habla de "assisted ingestion" o de
 > "supervised ingestion", por ahora, comandos como "wikitoolkit build" solo
@@ -47,7 +47,7 @@ The original request, preserved verbatim (es), is at
 > se contaron chistes, se debería descartar del wiki.
 
 **Reference design artifacts** (produced during the brainstorm, copied into
-`sdd/state/FEAT-XXX-supervised-wiki-ingestion/references/`):
+`sdd/state/FEAT-402-supervised-wiki-ingestion/references/`):
 
 | File | Role |
 |------|------|
@@ -91,7 +91,7 @@ place, which keeps the scope well-bounded.
 ## 2. Codebase Findings
 
 > All entries are grounded in the research findings persisted at
-> `sdd/state/FEAT-XXX-supervised-wiki-ingestion/findings/`. Each cites the
+> `sdd/state/FEAT-402-supervised-wiki-ingestion/findings/`. Each cites the
 > finding ID(s) that justify its inclusion. **No fabricated paths or symbols.**
 > Line numbers refer to `main` @ `e4724a0e` (2026-07-30).
 
@@ -329,9 +329,9 @@ architectural fork remains that would justify a brainstorm round.
 
 | Artifact | Path |
 |----------|------|
-| Source (raw) | `sdd/state/FEAT-XXX-supervised-wiki-ingestion/source.md` |
-| Findings (digests) | `sdd/state/FEAT-XXX-supervised-wiki-ingestion/findings/F001-*.md` … `F012-*.md` |
-| Reference schemas | `sdd/state/FEAT-XXX-supervised-wiki-ingestion/references/{charter.example.yaml, manifest.example.jsonl, schemas.py}` |
+| Source (raw) | `sdd/state/FEAT-402-supervised-wiki-ingestion/source.md` |
+| Findings (digests) | `sdd/state/FEAT-402-supervised-wiki-ingestion/findings/F001-*.md` … `F012-*.md` |
+| Reference schemas | `sdd/state/FEAT-402-supervised-wiki-ingestion/references/{charter.example.yaml, manifest.example.jsonl, schemas.py}` |
 | State checkpoints / research plan / synthesis JSON | not produced — research ran interactively in a Cowork session, not via `/sdd-proposal` |
 
 **Budget consumed** (approximate; interactive session, no hard budget):
