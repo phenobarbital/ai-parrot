@@ -302,4 +302,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `ArangoDBWikiStore(BaseWikiStore)` in
+`packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py` with all 15
+abstract methods, `initialize()` (creates the database via the driver's
+own `connection()`, the 5 `wiki_*` collections, and the
+`{wiki_name}_pages_view` ArangoSearch view), and `close()`.
+
+**Codebase Contract correction**: the task's Implementation Notes pointed
+at `OntologyGraphStore`'s `db.execute_query(...)` pattern, but the
+installed `asyncdb.drivers.arangodb.arangodb` driver (verified by reading
+`.venv/lib/python3.11/site-packages/asyncdb/drivers/arangodb.py`) has no
+`execute_query` method — `OntologyGraphStore` itself calls a method that
+does not exist on the real driver (pre-existing issue, out of this task's
+scope). Used the driver's actual verified methods instead: `query()` /
+`execute()` (both return a `(result, error)` tuple/list — NOT exceptions),
+`insert_document`/`collection_exists`/`create_collection`/
+`create_arangosearch_view`/`connection`/`close`. `query()` internally
+raises `NoDataFound` on an empty cursor and surfaces it as a non-`None`
+`error` string; a `_query()` helper treats that specific case as `[]`
+(a normal empty-result outcome for most read paths here) and re-raises
+everything else as `RuntimeError`.
+
+AQL UPSERT pattern follows `OntologyGraphStore.upsert_nodes()`'s style
+(`UPSERT {...} INSERT ... UPDATE ... IN @@collection`). Edge `_key` is the
+literal `"<src>__<dst>__<rel>"` composite from the spec's data model;
+`_from`/`_to` are prefixed with `wiki_pages/` per the task's constraint.
+`search_vector()` fetches embeddings via AQL `DOCUMENT()` joins and
+delegates ranking to the shared `rank_by_cosine()` (no native ArangoDB
+vector index, per spec Non-Goals).
+
+37 unit tests added in `tests/knowledge/wiki/test_arango_store.py`, all
+passing, covering construction, lifecycle (`initialize`/`close`,
+idempotency), the `_query`/`_execute` error-handling helpers, all 5 write
+methods, and all 10 read/lint methods. `ruff check` on the new file shows
+only `UP045`/`UP017` findings — confirmed identical in kind/count-pattern
+to the pre-existing `store.py`/`file_store.py` (same `Optional[...]` +
+`datetime.timezone.utc` project convention), not a regression.
+
+Not in scope (per task): config wiring (TASK-2058), factory wiring
+(TASK-2059), `SourceCollectionManager` backend (TASK-2060), CLI (TASK-2061).

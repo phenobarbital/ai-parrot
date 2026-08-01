@@ -686,6 +686,49 @@ class AbstractBot(
         self._guardrail_pipelines[GuardrailStage.INPUT].add(
             LegacyPipelineGuardrail(lambda: self._prompt_pipeline)
         )
+        # NOTE (code review, post-merge): `LegacyPipelineGuardrail` is
+        # registered unconditionally above, and `PromptInjectionGuardrail`
+        # is registered by `build_pipelines_from_config` whenever
+        # `injection_detection` is True (the default — see the
+        # `legacy_flags` dict above). So for the vast majority of real bots
+        # the INPUT `GuardrailPipeline` is never actually empty, and
+        # `GuardrailPipeline.run()`'s "zero overhead" short-circuit
+        # (`pipeline.py:149`) is not reached on the hot path — every
+        # `invoke`/`ask`/`ask_stream` call runs the priority loop and emits
+        # a `GuardrailActionEvent` per registered guardrail via
+        # `_on_guardrail_telemetry`. That "empty pipeline == zero overhead"
+        # framing is accurate for `GuardrailPipeline` in isolation (and for
+        # the TOOL_OUTPUT/OUTPUT_STREAM stages, which have no default
+        # registrations), not for a default-configured bot's INPUT stage.
+        # Documented here rather than changed — this is a deliberate
+        # accepted telemetry-volume increase versus pre-migration
+        # behavior, not a bug.
+        # FEAT-398: Deterministic groundedness scoring, OPT-IN per agent via
+        # `enable_groundedness=True` (mirrors `enable_redaction`'s convention
+        # above). Registered as a FLAG-only OUTPUT-stage `GroundednessGuardrail`
+        # — it never transforms/blocks, so response text stays byte-identical
+        # regardless of this flag (spec §5 scoring-only invariant). Deferred,
+        # function-local import: `parrot.security.groundedness` sits outside
+        # `parrot.bots` and importing `.guardrail` pulls in
+        # `parrot.bots.guardrails`, which (via `parrot.bots.__init__`) would
+        # re-enter this very module if imported at module level — importing
+        # here, well after `parrot.bots.abstract` has finished loading,
+        # avoids that cycle entirely.
+        self.enable_groundedness: bool = bool(kwargs.pop('enable_groundedness', False))
+        _groundedness_policy_kwarg = kwargs.pop('groundedness_policy', None)
+        self.groundedness_policy: Optional[Any] = None
+        if self.enable_groundedness:
+            from parrot.security.groundedness.guardrail import GroundednessGuardrail
+            from parrot.security.groundedness.policy import GroundednessPolicy
+            if isinstance(_groundedness_policy_kwarg, GroundednessPolicy):
+                self.groundedness_policy = _groundedness_policy_kwarg
+            elif isinstance(_groundedness_policy_kwarg, dict):
+                self.groundedness_policy = GroundednessPolicy(**_groundedness_policy_kwarg)
+            else:
+                self.groundedness_policy = GroundednessPolicy()
+            self._guardrail_pipelines[GuardrailStage.OUTPUT].add(
+                GroundednessGuardrail(policy=self.groundedness_policy)
+            )
         # FEAT-396 (TASK-2029): registered StreamingGuardrail adapters for
         # ask_stream's OUTPUT_STREAM chunk loop. Empty by default — no
         # built-in guardrail implements `StreamingGuardrail` yet (see
@@ -1931,7 +1974,14 @@ class AbstractBot(
             user_id=str(response.user_id) if response.user_id is not None else None,
             session_id=response.session_id,
             method=method,
-            extras={'chatbot_id': str(self.chatbot_id)},
+            # FEAT-398: carries the outgoing `AIMessage` itself (not just
+            # `chatbot_id`) so an OUTPUT-stage observer guardrail — e.g.
+            # `GroundednessGuardrail` — can read `.tool_calls` (the turn's
+            # evidence) and `.input` (the original user prompt) without a
+            # new `GuardrailContext` field. `content` (passed to `run()`
+            # below) is still the sole value any guardrail may TRANSFORM;
+            # `ai_message` here is read-only context.
+            extras={'chatbot_id': str(self.chatbot_id), 'ai_message': response},
         )
         outcome = await pipeline.run(response.output, ctx)
 
@@ -1950,7 +2000,34 @@ class AbstractBot(
 
         return response
 
-    async def _feed_streaming_guardrails(self, chunk: str) -> tuple[str, bool]:
+    def _merge_guardrail_reports(
+        self, response: AIMessage, flag_reports: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """Merge FLAG-stage guardrail reports onto ``response.metadata['guardrails']``.
+
+        Code-review fix (post-merge, FEAT-396): `_run_output_pipeline` was
+        the only place that ever surfaced ``PipelineOutcome.flag_reports``
+        onto the returned `AIMessage` — INPUT-stage (and, via
+        `_feed_streaming_guardrails`, OUTPUT_STREAM-stage) reports were
+        computed, timed, and telemetered, then silently discarded, so a
+        bot configured with an INPUT/OUTPUT_STREAM FLAG-only guardrail
+        (e.g. `ModerationGuardrail` with the default ``action="flag"``
+        policy) had zero observable effect on flagged input. `BaseBot.
+        invoke`/`ask`/`ask_stream` now call this for every stage's outcome
+        so all FLAG reports reach the caller the same way, per spec §5
+        ("FLAG reports appear under `AIMessage.metadata["guardrails"]`").
+
+        Args:
+            response: The `AIMessage` to attach reports to (mutated in place).
+            flag_reports: Reports keyed by guardrail name, from a
+                `PipelineOutcome.flag_reports`. No-op when empty.
+        """
+        if flag_reports:
+            response.metadata.setdefault('guardrails', {}).update(flag_reports)
+
+    async def _feed_streaming_guardrails(
+        self, chunk: str
+    ) -> tuple[str, bool, Dict[str, Dict[str, Any]]]:
         """Run ``chunk`` through the OUTPUT_STREAM guardrail chain.
 
         Two complementary mechanisms, both driven per-chunk:
@@ -1971,15 +2048,37 @@ class AbstractBot(
         Both are zero-overhead no-ops when nothing is registered for
         either mechanism (the common case today).
 
+        Note (streaming redaction gap, code review): ``SecretsGuardrail``
+        is registered for ``TOOL_OUTPUT``/``OUTPUT`` only, not
+        ``OUTPUT_STREAM`` — no built-in guardrail implements the
+        incremental `StreamingGuardrail` contract yet. So a bot with
+        ``enable_redaction=True`` streams chunks through THIS pipeline
+        (which, absent a registered OUTPUT_STREAM guardrail, is a
+        passthrough) before the OUTPUT pipeline (where redaction lives)
+        ever runs, at stream close, on the fully-assembled message. If a
+        secret appears mid-stream, the live chunks the caller already
+        received are NOT redacted — only the final `AIMessage` returned by
+        `ask_stream` is. This matches the integration-point design in
+        ``sdd/specs/guardrails-infrastructure.spec.md`` §"stream close",
+        but is a real, security-relevant caveat: `enable_redaction=True`
+        does not protect real-time `ask_stream` output today. Flagged here
+        rather than fixed — implementing true incremental redaction is a
+        `StreamingGuardrail` follow-up, not a bug in this pipeline.
+
         Args:
             chunk: The next raw chunk yielded by the LLM client.
 
         Returns:
-            A ``(text, blocked)`` tuple. ``text`` is the (possibly
-            transformed, possibly empty while an adapter withholds
-            content) chunk to actually yield to the caller. When
+            A ``(text, blocked, flag_reports)`` tuple. ``text`` is the
+            (possibly transformed, possibly empty while an adapter
+            withholds content) chunk to actually yield to the caller. When
             ``blocked`` is True, ``text`` is empty and the caller must
-            stop streaming further chunks.
+            stop streaming further chunks. ``flag_reports`` carries any
+            FLAG-stage reports from this chunk's pipeline run (empty dict
+            when nothing was registered or nothing flagged) — the caller
+            accumulates these across chunks and merges them onto the final
+            `AIMessage.metadata['guardrails']` via `_merge_guardrail_reports`
+            (code review fix: previously computed and discarded per-chunk).
         """
         for adapter in self._streaming_guardrails:
             chunk = adapter.feed(chunk)
@@ -1993,10 +2092,11 @@ class AbstractBot(
             )
             outcome = await pipeline.run(chunk, ctx)
             if outcome.blocked:
-                return "", True
+                return "", True, {}
             chunk = outcome.content if outcome.content is not None else chunk
+            return chunk, False, outcome.flag_reports
 
-        return chunk, False
+        return chunk, False, {}
 
     def _flush_streaming_guardrails(self) -> str:
         """Flush any content withheld by registered `StreamingGuardrail` adapters.

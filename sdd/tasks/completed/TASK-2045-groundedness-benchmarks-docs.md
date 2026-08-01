@@ -171,10 +171,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-01
+**Notes**: Created `packages/ai-parrot/tests/benchmarks/test_groundedness_perf.py`
+following the task's own Test Specification skeleton (raw
+`time.perf_counter()`, 1000 iterations, p50/p99/max computed from sorted
+durations, printed for visibility with `-s`): Benchmark 1 (1 KB answer vs
+3×2 KB tool-output evidence) asserts the spec's hard p99 < 10 ms gate —
+measured p99 ≈ 1.2 ms; Benchmark 2 (4 KB answer vs 10×4 KB evidence)
+asserts the informational p99 < 50 ms gate — measured p99 ≈ 6.1 ms. Both
+comfortably clear their gates (not flaky-close). Deliberately did NOT use
+the `pytest-benchmark` plugin/`@pytest.mark.benchmark` marker even though
+it is already a dev-dependency used by sibling suites
+(`test_guardrails_pipeline_perf.py`) — the Codebase Contract explicitly
+lists it under "Does NOT Exist" for this task ("do NOT add external
+deps; use raw time.perf_counter()"), and unmarked tests run in normal
+`pytest` invocations (not skipped by `tests/benchmarks/conftest.py`,
+which only skips tests carrying the `benchmark` keyword), matching the
+AC's plain `pytest tests/benchmarks/test_groundedness_perf.py -v` command.
+Created `docs/groundedness.md` (repo-root `docs/` — confirmed as the
+correct location: the spec's own AC literally says "Documentation
+updated in `docs/`", and root `docs/` holds 85 other feature docs vs.
+the sparse `packages/ai-parrot/docs/` which holds only one unrelated
+FEAT-176 file): covers what the scorer does/doesn't do (tripwire, not
+truth oracle), enablement (`enable_groundedness`/`groundedness_policy`,
+dict-or-model), where the report lands on both `ask()` and
+`ask_stream()`, full report-field semantics including the
+precision-aware tolerance rule (with the prototype's own
+fixed-tolerance rejection rationale), every `GroundednessPolicy` knob,
+the four honest known limits from spec §7 (small-integer blindness,
+outside-knowledge-scores-unsupported, en-US locale bias, not a
+semantic-hallucination replacement), and a performance table pulling the
+just-measured p50/p99/max numbers. Verified benchmarks pass and `ruff
+check` is clean on the new benchmark file; re-ran the full groundedness
+suite (94 unit/integration tests from TASK-2044 + these 2 benchmarks =
+96) to confirm no regression.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — one path clarification only (see
+Notes above: `docs/groundedness.md` resolved to repo-root `docs/`,
+matching both the task's literal path and the spec's own AC wording).

@@ -57,6 +57,8 @@ def _get_output_scrubber():
     from ..security.redaction import OutputScrubber, ScrubPolicy  # noqa: PLC0415
     return OutputScrubber, ScrubPolicy
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_SCRUBBER = None  # initialised on first use (module-level singleton)
 
 
@@ -92,7 +94,9 @@ def _default_secrets_guardrail():
     return _DEFAULT_SECRETS_GUARDRAIL
 
 
-async def _run_tool_output_guardrails(pipeline: Optional[Any], value: Any, tool_name: str) -> Any:
+async def _run_tool_output_guardrails(
+    pipeline: Optional[Any], value: Any, tool_name: str
+) -> tuple[Any, dict[str, dict[str, Any]]]:
     """Apply TOOL_OUTPUT guardrails to a single `ToolResult` field.
 
     Resolves ``pipeline`` (the calling tool's ``_tool_output_pipeline`` —
@@ -109,6 +113,13 @@ async def _run_tool_output_guardrails(pipeline: Optional[Any], value: Any, tool_
     tool_name)`` escape hatch when it exposes one — e.g. `SecretsGuardrail`
     — and left untouched by guardrails that don't).
 
+    ``on_error`` is honored for BOTH content shapes (code review fix,
+    post-TASK-2029): a ``fail_closed`` guardrail whose ``scrub()`` raises
+    on non-string content now blocks that field (type-preserving
+    placeholder — dict/list stay dict/list) instead of silently passing
+    the unscrubbed value through, matching the acceptance criterion "a
+    raising `fail_closed` [guardrail] blocks it" for the string path.
+
     Args:
         pipeline: The tool's `_tool_output_pipeline`, or ``None`` (falls
             back to the process-wide default `SecretsGuardrail`).
@@ -116,11 +127,15 @@ async def _run_tool_output_guardrails(pipeline: Optional[Any], value: Any, tool_
         tool_name: Audit-log tool-name hint.
 
     Returns:
-        The (possibly transformed) value. On BLOCK (string content only),
-        a canned placeholder — never the offending content.
+        A ``(value, flag_reports)`` tuple. ``value`` is the (possibly
+        transformed) field content — on BLOCK, a canned placeholder, never
+        the offending content. ``flag_reports`` carries FLAG-stage reports
+        keyed by guardrail name (string path only — the ``scrub()`` escape
+        hatch has no report concept), for the caller to attach to
+        ``ToolResult.metadata["guardrails"]``.
     """
     if pipeline is None or not pipeline.has_guardrails:
-        return _default_secrets_guardrail().scrub(value, tool_name=tool_name)
+        return _default_secrets_guardrail().scrub(value, tool_name=tool_name), {}
 
     if isinstance(value, str):
         from ..bots.guardrails.base import GuardrailContext, GuardrailStage  # noqa: PLC0415
@@ -129,14 +144,35 @@ async def _run_tool_output_guardrails(pipeline: Optional[Any], value: Any, tool_
         )
         outcome = await pipeline.run(value, ctx)
         if outcome.blocked:
-            return f"[content removed by guardrail: {outcome.reason}]"
-        return outcome.content if outcome.content is not None else value
+            return f"[content removed by guardrail: {outcome.reason}]", {}
+        return (outcome.content if outcome.content is not None else value), outcome.flag_reports
 
     for guardrail in pipeline.guardrails:
         scrub = getattr(guardrail, "scrub", None)
-        if callable(scrub):
+        if not callable(scrub):
+            continue
+        try:
             value = scrub(value, tool_name=tool_name)
-    return value
+        except Exception as exc:  # noqa: BLE001 - guardrail error contract, see on_error
+            if getattr(guardrail, "on_error", "fail_open") == "fail_closed":
+                logger.error(
+                    "Guardrail '%s' raised %s while scrubbing non-string TOOL_OUTPUT "
+                    "content for tool %s; on_error=fail_closed -> blocking",
+                    guardrail.name, type(exc).__name__, tool_name,
+                )
+                placeholder = f"[content removed by guardrail: {guardrail.name}]"
+                if isinstance(value, dict):
+                    return {"_blocked_by_guardrail": guardrail.name}, {}
+                if isinstance(value, list):
+                    return [placeholder], {}
+                return placeholder, {}
+            logger.warning(
+                "Guardrail '%s' raised %s while scrubbing non-string TOOL_OUTPUT "
+                "content for tool %s; on_error=fail_open -> leaving unchanged",
+                guardrail.name, type(exc).__name__, tool_name,
+            )
+            continue
+    return value, {}
 
 
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
@@ -886,24 +922,34 @@ class AbstractTool(EventEmitterMixin, ABC):
             if self.enable_redaction or self._has_tool_output_guardrails():
                 try:
                     _pipeline = self._tool_output_pipeline
+                    # FEAT-396 code review fix: FLAG reports were computed
+                    # by the TOOL_OUTPUT pipeline and then discarded — no
+                    # caller ever surfaced them, unlike the OUTPUT stage's
+                    # `AIMessage.metadata["guardrails"]` handling. Accumulate
+                    # them here and attach below, same shape/key convention.
+                    _tool_flag_reports: dict[str, dict[str, Any]] = {}
                     if tool_result.result is not None:
-                        tool_result = tool_result.model_copy(
-                            update={"result": await _run_tool_output_guardrails(
-                                _pipeline, tool_result.result, _tool_name
-                            )}
+                        _scrubbed_result, _reports = await _run_tool_output_guardrails(
+                            _pipeline, tool_result.result, _tool_name
                         )
+                        tool_result = tool_result.model_copy(update={"result": _scrubbed_result})
+                        _tool_flag_reports.update(_reports)
                     if tool_result.error is not None:
-                        tool_result = tool_result.model_copy(
-                            update={"error": await _run_tool_output_guardrails(
-                                _pipeline, tool_result.error, _tool_name
-                            )}
+                        _scrubbed_error, _reports = await _run_tool_output_guardrails(
+                            _pipeline, tool_result.error, _tool_name
                         )
+                        tool_result = tool_result.model_copy(update={"error": _scrubbed_error})
+                        _tool_flag_reports.update(_reports)
                     if tool_result.metadata:
-                        tool_result = tool_result.model_copy(
-                            update={"metadata": await _run_tool_output_guardrails(
-                                _pipeline, tool_result.metadata, _tool_name
-                            )}
+                        _scrubbed_metadata, _reports = await _run_tool_output_guardrails(
+                            _pipeline, tool_result.metadata, _tool_name
                         )
+                        tool_result = tool_result.model_copy(update={"metadata": _scrubbed_metadata})
+                        _tool_flag_reports.update(_reports)
+                    if _tool_flag_reports:
+                        _merged_metadata = dict(tool_result.metadata)
+                        _merged_metadata.setdefault('guardrails', {}).update(_tool_flag_reports)
+                        tool_result = tool_result.model_copy(update={"metadata": _merged_metadata})
                 except Exception as _scrub_exc:  # never let scrub errors break tool execution
                     self.logger.warning(
                         "OutputScrubber error in tool %s (non-fatal): %s",
@@ -957,7 +1003,7 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             if self.enable_redaction or self._has_tool_output_guardrails():
                 try:
-                    error_msg = await _run_tool_output_guardrails(
+                    error_msg, _ = await _run_tool_output_guardrails(
                         self._tool_output_pipeline, error_msg, _tool_name
                     )
                 except Exception:

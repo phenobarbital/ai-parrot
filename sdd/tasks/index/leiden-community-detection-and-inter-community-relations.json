@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-01T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-01T20:30:11+00:00",
   "tasks": [
     {
       "id": "TASK-2064",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
       "completed_at": "2026-08-01T17:44:05+00:00",
-      "file": "sdd/tasks/completed/TASK-2064-leiden-algorithm-integration.md"
+      "file": "sdd/tasks/completed/TASK-2064-leiden-algorithm-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2065",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
       "completed_at": "2026-08-01T17:49:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2065-inter-community-relations.md"
+      "file": "sdd/tasks/completed/TASK-2065-inter-community-relations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2066",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
       "completed_at": "2026-08-01T18:02:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2066-builder-analytics-integration.md"
+      "file": "sdd/tasks/completed/TASK-2066-builder-analytics-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2067",
@@ -85,7 +88,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
       "completed_at": "2026-08-01T18:12:23+00:00",
-      "file": "sdd/tasks/completed/TASK-2067-html-export-enhancement.md"
+      "file": "sdd/tasks/completed/TASK-2067-html-export-enhancement.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2068",
@@ -105,7 +109,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
       "completed_at": "2026-08-01T18:23:57+00:00",
-      "file": "sdd/tasks/completed/TASK-2068-optional-deps-cli-docs.md"
+      "file": "sdd/tasks/completed/TASK-2068-optional-deps-cli-docs.md",
+      "verification": "verified"
     }
   ]
 }

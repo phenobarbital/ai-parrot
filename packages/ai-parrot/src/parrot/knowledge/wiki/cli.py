@@ -107,18 +107,45 @@ def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
 def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
     """Create the retrieval-plane store for a repo."""
     storage = config.storage_path(root)
+    if config.backend == "arangodb":
+        from parrot.knowledge.wiki.project import resolve_arango_params
+
+        return create_wiki_store(
+            storage,
+            wiki_name=config.wiki_name,
+            backend="arangodb",
+            arango_params=resolve_arango_params(config),
+            database=config.arango_database or "",
+            text_analyzer=config.arango_text_analyzer,
+        )
     storage.mkdir(parents=True, exist_ok=True)
     return create_wiki_store(
         storage, wiki_name=config.wiki_name, backend=config.backend
     )
 
 
-def _open_sources(root: Path, config: WikiProjectConfig) -> SourceCollectionManager:
-    """Create the source manifest manager matching the store backend."""
+def _open_sources(
+    root: Path,
+    config: WikiProjectConfig,
+    store: Optional[BaseWikiStore] = None,
+) -> SourceCollectionManager:
+    """Create the source manifest manager matching the store backend.
+
+    For the ``arangodb`` backend, ``store`` must already be an
+    *initialized* (connected) ``ArangoDBWikiStore`` — its ``asyncdb``
+    connection is shared with the returned manager rather than opening a
+    second one. Callers are responsible for ``await store.initialize()``
+    (or ``asyncio.run(...)`` from a sync context) before this is called.
+    """
     storage = config.storage_path(root)
     if config.backend == "sqlite":
         return SourceCollectionManager(
             storage / "sources", db_path=storage / "wiki.db"
+        )
+    if config.backend == "arangodb":
+        arango_db = getattr(store, "_db", None)
+        return SourceCollectionManager(
+            storage / "sources", backend="arangodb", arango_db=arango_db
         )
     return SourceCollectionManager(storage / "sources", backend="json")
 
@@ -176,7 +203,23 @@ def _resolve_read_store(
     redirected by ``WIKI_STORE``)::
 
         --store  >  --path project  >  WIKI_STORE env  >  auto-detected project
+
+    An explicit ``--backend arangodb`` always resolves via the project
+    config (ArangoDB is server-hosted — there is no local ``--store``
+    directory to point at) and connects eagerly here, so an unreachable
+    server fails with a clear message before any query is attempted.
     """
+    if backend_opt == "arangodb":
+        root, config = _resolve_project(path_)
+        store = _open_store(root, config)
+        try:
+            _run(store.initialize())
+        except Exception as exc:  # surfaced as a clear CLI error
+            raise click.ClickException(
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
+                f"{exc}"
+            ) from exc
+        return store
     store_override = store_opt
     if not store_override and not path_:
         # Only consult the env when neither an explicit store nor an
@@ -203,7 +246,7 @@ def _store_options(func: Any) -> Any:
     func = click.option(
         "--backend",
         "backend_opt",
-        type=click.Choice(["sqlite", "memory"]),
+        type=click.Choice(["sqlite", "memory", "arangodb"]),
         default=None,
         help="Backend for --store (default: sqlite / WIKI_STORE_BACKEND).",
     )(func)
@@ -654,7 +697,7 @@ def wiki() -> None:
 @click.option("--name", default=None, help="Wiki name (default: repo directory name).")
 @click.option(
     "--backend",
-    type=click.Choice(["sqlite", "memory"]),
+    type=click.Choice(["sqlite", "memory", "arangodb"]),
     default=None,
     help="Retrieval-plane backend (default: sqlite).",
 )
@@ -727,7 +770,9 @@ def build(
 
         async def _pipeline() -> dict[str, Any]:
             store = _open_store(root, config)
-            sources = _open_sources(root, config)
+            if config.backend == "arangodb":
+                await store.initialize()
+            sources = _open_sources(root, config, store=store)
             counts = await _ingest_files(store, sources, root, scan, force=force)
             await store.upsert_pages(scan.dir_records)
             await store.add_edges(scan.dir_edges)
@@ -760,7 +805,15 @@ def build(
 
             return counts
 
-        counts = _run(_pipeline())
+        try:
+            counts = _run(_pipeline())
+        except Exception as exc:  # surfaced as a clear CLI error
+            if config.backend == "arangodb":
+                raise click.ClickException(
+                    f"Could not connect to ArangoDB for wiki "
+                    f"{config.wiki_name!r}: {exc}"
+                ) from exc
+            raise
         save_project_config(root, config)
 
         stats = counts["stats"]
@@ -918,7 +971,9 @@ def upsert(
 
         async def _pipeline() -> dict[str, int]:
             store = _open_store(root, config)
-            sources = _open_sources(root, config)
+            if config.backend == "arangodb":
+                await store.initialize()
+            sources = _open_sources(root, config, store=store)
             counts = await _ingest_files(store, sources, root, scan, force=True)
             removed = 0
             for rel in deleted:
@@ -931,7 +986,15 @@ def upsert(
             counts["removed"] = removed
             return counts
 
-        counts = _run(_pipeline())
+        try:
+            counts = _run(_pipeline())
+        except Exception as exc:  # surfaced as a clear CLI error
+            if config.backend == "arangodb":
+                raise click.ClickException(
+                    f"Could not connect to ArangoDB for wiki "
+                    f"{config.wiki_name!r}: {exc}"
+                ) from exc
+            raise
         if not quiet:
             click.echo(
                 f"Upserted {counts['written']} page(s), "
@@ -1115,7 +1178,15 @@ def status(path_: str | None, as_json: bool) -> None:
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
         return
     store = _open_store(root, config)
-    sources = _open_sources(root, config)
+    if config.backend == "arangodb":
+        try:
+            _run(store.initialize())
+        except Exception as exc:  # surfaced as a clear CLI error
+            raise click.ClickException(
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
+                f"{exc}"
+            ) from exc
+    sources = _open_sources(root, config, store=store)
     stats = _run(store.stats())
     entries = sources.list_sources()
     stale = [e.source_id for e in entries if sources.is_stale(e.source_id)]

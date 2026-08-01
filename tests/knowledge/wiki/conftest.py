@@ -7,7 +7,10 @@ Provides reusable fixtures for:
   unit and integration tests that must not make real LLM API calls
 """
 
+import os
+import uuid
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,6 +19,20 @@ from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.models import WikiConfig
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the ``arangodb`` marker (FEAT-400, TASK-2063).
+
+    Real-ArangoDB integration tests are opt-in via ``TEST_ARANGODB_HOST``
+    — the marker just documents/groups them (e.g. ``-m "not arangodb"``),
+    the actual skip is a ``pytest.mark.skipif`` in the test module itself.
+    """
+    config.addinivalue_line(
+        "markers",
+        "arangodb: integration tests requiring a real ArangoDB instance "
+        "(set TEST_ARANGODB_HOST to enable; skipped otherwise)",
+    )
 
 
 @pytest.fixture
@@ -161,3 +178,53 @@ def wiki_toolkit(
         :class:`LLMWikiToolkit` ready for integration tests.
     """
     return LLMWikiToolkit(mock_pi, mock_gi, mock_okf, wiki_config)
+
+
+@pytest.fixture
+def arango_params() -> dict[str, Any]:
+    """ArangoDB connection params for a real test instance.
+
+    Read from ``TEST_ARANGODB_*`` env vars (never ``ARANGODB_*`` —
+    keeps integration-test credentials separate from any real
+    ``.env``-configured wiki), falling back to the local-dev defaults.
+    """
+    return {
+        "host": os.environ.get("TEST_ARANGODB_HOST", "127.0.0.1"),
+        "port": int(os.environ.get("TEST_ARANGODB_PORT", "8529")),
+        "username": os.environ.get("TEST_ARANGODB_USERNAME", "root"),
+        "password": os.environ.get("TEST_ARANGODB_PASSWORD", ""),
+    }
+
+
+@pytest.fixture
+async def arango_test_db(arango_params: dict[str, Any]):
+    """Initialized ``ArangoDBWikiStore`` against a fresh, disposable database.
+
+    Args:
+        arango_params: Connection params (see :func:`arango_params`).
+
+    Yields:
+        A connected :class:`ArangoDBWikiStore` for a uniquely-named
+        ``test_wiki_<hex>`` database, dropped again on teardown.
+    """
+    from asyncdb import AsyncDB
+
+    from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+
+    db_name = f"test_wiki_{uuid.uuid4().hex[:8]}"
+    store = ArangoDBWikiStore(
+        arango_params, database=db_name, wiki_name="integration_test"
+    )
+    await store.initialize()
+    try:
+        yield store
+    finally:
+        await store.close()
+        admin_db = AsyncDB(
+            "arangodb", params={**arango_params, "database": "_system"}
+        )
+        await admin_db.connection()
+        try:
+            await admin_db.drop_database(db_name)
+        finally:
+            await admin_db.close()

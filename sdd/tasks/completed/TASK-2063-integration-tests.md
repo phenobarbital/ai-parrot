@@ -118,4 +118,49 @@ pytestmark = pytest.mark.skipif(
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `tests/knowledge/wiki/test_arango_integration.py` covering all 7
+Key Test Scenarios from the task/spec: build+FTS query, embedding
+upsert+vector search round-trip, source add→stale-detect→re-ingest→
+remove cycle, edge creation+bidirectional `neighbors()` traversal,
+`stats()` counts, `orphan_sources`/`broken_edges`/`missing_bodies` lint
+checks, and a full CLI round-trip (`wikitoolkit build --backend
+arangodb` → `wikitoolkit query`) via `CliRunner` against a real server.
+Every test is gated by `pytestmark = [pytest.mark.arangodb,
+pytest.mark.skipif(not os.environ.get("TEST_ARANGODB_HOST"), ...)]` —
+skips cleanly with no server configured (verified: all 7 report
+`SKIPPED`, not `FAILED`/`ERROR`, and no `PytestUnknownMarkWarning`).
+
+Extended `tests/knowledge/wiki/conftest.py` with: a `pytest_configure()`
+hook registering the `arangodb` marker (its `addinivalue_line` call is
+the actual registration site — the task's Codebase Contract said this
+marker "needs to be registered in `conftest.py` or `pyproject.toml`";
+this repo's real pytest config file is `pytest.ini`, not
+`pyproject.toml`, but `pytest_configure()` in `conftest.py` was already
+one of the two named options and keeps the change inside this task's
+Files to Create/Modify — no `pytest.ini` edit needed); an `arango_params`
+fixture reading `TEST_ARANGODB_*` env vars (deliberately NOT
+`ARANGODB_*`, to keep integration-test credentials separate from any
+real `.env`-configured wiki); and an `arango_test_db` async fixture that
+creates a uniquely-named `test_wiki_<hex>` database, yields an
+initialized `ArangoDBWikiStore`, and always tears it down (`close()` +
+`drop_database()` in a `finally`) even if the test body raises.
+
+**Verified in this sandbox** (no real ArangoDB server, no
+`TEST_ARANGODB_HOST`, no docker container providing one — confirmed via
+`docker ps`): the skip mechanism itself (all 7 tests → `SKIPPED`), that
+`conftest.py`'s changes don't regress the rest of the suite (665 passed,
+9 skipped — 7 new arangodb skips + 2 pre-existing), and lint parity
+(`conftest.py` has fewer findings than its own baseline; the new test
+file is fully clean after an import-sort fix).
+
+**NOT verified in this sandbox** (documented limitation, not a gap in
+the implementation): "All integration tests pass with a real ArangoDB
+instance" — this repository has no provisioned ArangoDB service
+reachable from this environment. The tests are written and structured
+to run correctly per the spec's Key Test Scenarios and this task's own
+`arango_test_db`/skip-mechanism design (mirrored faithfully from the
+Implementation Notes), but have only been exercised via the skip path
+here. Recommend running once against a real instance (e.g. the `docker
+run arangodb/arangodb` command in the test module's docstring, with
+`TEST_ARANGODB_HOST=127.0.0.1`) before/during `/sdd-done` review or in a
+CI job with an ArangoDB service container.

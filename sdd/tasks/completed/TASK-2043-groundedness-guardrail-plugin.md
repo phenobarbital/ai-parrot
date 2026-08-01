@@ -80,14 +80,35 @@ from parrot.security.groundedness.policy import GroundednessPolicy, Groundedness
 from parrot.models.basic import ToolCall              # models/basic.py:23
 from parrot.models.responses import AIMessage         # models/responses.py:72
 
-# From FEAT-396 (guardrails-infrastructure) — VERIFY EXISTENCE BEFORE USING
-# These are DESIGNED signatures from the FEAT-396 spec; they do NOT exist yet.
-# When FEAT-396 lands, verify actual import paths and signatures.
-# from parrot.bots.guardrails import (
-#     Guardrail, GuardrailResult, GuardrailContext,
-#     GuardrailStage, GuardrailAction, register_guardrail,
-# )
+# From FEAT-396 (guardrails-infrastructure) — VERIFIED 2026-08-01, worktree
+# merged origin/dev @ 16f53dbc7 (PR #1094) to pick up the landed feature.
+from parrot.bots.guardrails import (
+    Guardrail, GuardrailAction, GuardrailContext, GuardrailResult,
+    GuardrailStage, register_guardrail,
+)
 ```
+
+**Contract correction (2026-08-01, this task):** `GuardrailContext` (base.py)
+has NO `ai_message` field — it only carries `stage`/`agent_name`/`user_id`/
+`session_id`/`method`/`tool_name`/`extras: dict[str, Any]`. The OUTPUT-stage
+context built in `_run_output_pipeline` (`abstract.py:1928`) only set
+`extras={'chatbot_id': ...}` — no tool_calls were available to a FLAG
+guardrail. Fixed by adding `extras['ai_message'] = response` at that call
+site (the only OUTPUT-pipeline `ctx` construction site) so
+`GroundednessGuardrail.check()` reads `ctx.extras.get("ai_message")` for
+`.tool_calls` / `.input` (user prompt), instead of the non-existent
+`ctx.ai_message`.
+
+Also: `registry.py`'s `_RESERVED_NAMES` dict (added in FEAT-396,
+`bots/guardrails/registry.py:31-35`) explicitly reserves `"groundedness"` and
+raises `NotImplementedError` from `_build_by_name`/`build_guardrails` until
+this feature unreserves it — its own docstring anticipates this. Since the
+Scope explicitly calls for `register_guardrail("groundedness", ...)`, this
+task also touches `bots/guardrails/registry.py` (not in the original file
+list) to remove the reservation and add the lazy factory registration,
+matching the `prompt_injection`/`secrets`/`moderation` pattern exactly —
+otherwise `guardrails=["groundedness"]`/dict-config would keep raising
+`NotImplementedError` even after this task ships.
 
 ### Existing Signatures to Use
 
@@ -231,10 +252,56 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-01
+**Notes**: Worktree was created before FEAT-396 landed on `dev`; merged
+`origin/dev` (PR #1094, `16f53dbc7`) into the feature branch first to bring
+in the guardrails infrastructure (main repo's local `dev` was independently
+stuck mid-merge-conflict on the same PR — untouched, worked entirely from
+`origin/dev` instead). Implemented `GroundednessGuardrail` (OUTPUT stage,
+FLAG-only, priority 200 observer band) in
+`parrot/security/groundedness/guardrail.py`; wired `enable_groundedness` /
+`groundedness_policy` (dict→`GroundednessPolicy` coercion) into
+`AbstractBot.__init__` right after `_guardrail_pipelines` is built (deferred
+`from parrot.security.groundedness...` import inside `__init__` to avoid a
+`parrot.bots` ⇄ `parrot.security.groundedness` import cycle through
+`parrot.bots.guardrails`). Verified manually: default-off (no guardrail
+registered, `enable_groundedness=False`/`groundedness_policy=None`), dict
+policy coercion, FLAG report with score+counts attached, non-fatal PASS on
+a forced scoring exception (warning logged, no report), and graceful
+`no_evidence` fallback when `ctx.extras["ai_message"]` is absent. Existing
+guardrails test suite (116 tests across
+`test_guardrails_{core_models,pipeline,registry_config,moderation,secrets,
+prompt_injection,input_migration}.py` + `integration/test_guardrails_
+output.py`) passes. `ruff check` clean on all touched/created files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**:
+1. **Contract correction**: `GuardrailContext` has no `.ai_message` field
+   (only `extras: dict[str, Any]`). Added `extras['ai_message'] = response`
+   at the sole OUTPUT-stage `GuardrailContext` construction site
+   (`abstract.py::_run_output_pipeline`, ~line 1928) so the guardrail can
+   read `tool_calls`/`input` — `check()` reads
+   `ctx.extras.get("ai_message")` instead of the non-existent
+   `ctx.ai_message`. Covers both `ask()` and `ask_stream()` (both already
+   route through `_run_output_pipeline`), so no `base.py` change was
+   needed despite the Codebase Contract citing a `base.py:1871` seam.
+2. **Extra file touched**: `parrot/bots/guardrails/registry.py` — the
+   Scope explicitly requires `register_guardrail("groundedness", ...)`,
+   but FEAT-396's `_RESERVED_NAMES` dict reserved `"groundedness"` and
+   raised `NotImplementedError` from `build_guardrails`/`_build_by_name`
+   until unreserved (its own docstring anticipates this hand-off).
+   Removed the reservation and added the lazy-factory registration,
+   matching the `prompt_injection`/`secrets`/`moderation` pattern exactly.
+3. **Extra file touched**: `tests/unit/test_guardrails_registry_config.py`
+   — `test_reserved_groundedness_raises` asserted the now-obsolete
+   reserved-name behavior; replaced with `test_groundedness_builds`
+   asserting the guardrail now builds successfully by name.
 
-**Deviations from spec**: none | describe if any
+Telemetry ("score + counts, never atom values") is emitted via
+`self.logger.info(...)` inside `check()` (score + per-verdict counts only,
+no atom raw values) rather than a new FEAT-176 lifecycle event class —
+`events.py` was not in this task's file list, the spec's Test
+Specification explicitly validates telemetry via `caplog`, and every
+guardrail execution already gets a content-free `GuardrailActionEvent`
+(name/stage/action/duration) automatically via the pre-existing
+`on_telemetry` wiring, so no infrastructure gap was left unaddressed.
