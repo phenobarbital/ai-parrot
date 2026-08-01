@@ -265,4 +265,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `builtin/moderation.py` exactly per scope: `ModerationPolicy`
+(Pydantic model — `categories: list[str]`, `threshold: float = 0.8`,
+`action: Literal["flag","block"] = "flag"`, validated via a `pattern`
+constraint), `ModerationBackend` (`Protocol` with `async classify(text) ->
+dict[str, float]`), `StubModerationBackend` (always returns `{}`, logs
+call shape by length only — never content), `ModerationGuardrail`
+(`name="moderation"`, `stages={INPUT, OUTPUT}`, `priority=50`, `on_error`
+= `fail_closed` iff `policy.action=="block"`). `check()` calls
+`backend.classify(content)`, filters scores to only categories present in
+`policy.categories` (a backend may legitimately return categories the
+policy doesn't track — those are ignored, covered by
+`test_category_not_in_policy_is_ignored`), compares against
+`policy.threshold`, and returns PASS / FLAG (report = triggered
+category→score dict) / BLOCK (reason = `"moderation:<sorted,categories>"`,
+never content) per `policy.action`.
+
+`registry.py` needed no modification — TASK-2026 already pre-registered
+`"moderation"` via a lazy factory pointing at this exact module/class path,
+the same pattern already established by TASK-2027 (`prompt_injection`) and
+TASK-2029 (`secrets`).
+
+14 tests added (stub backend allow-all, policy defaults + validation,
+name/priority/stages, default-backend-is-stub, PASS/FLAG/BLOCK paths,
+category-filtering, multi-category report, `on_error` selection,
+registry resolution by name and by policy dict) — all passing together
+with TASK-2024-2029 (126 total across the full guardrails + FEAT-252
+containment suites). `ruff check parrot/bots/guardrails/` clean. No new
+runtime dependencies (Pydantic + stdlib `typing.Protocol` only, both
+already core deps).
+
+This closes FEAT-396 — all 7 tasks (TASK-2024 through TASK-2030) are
+now `"done"`.

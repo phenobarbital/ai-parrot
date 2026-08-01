@@ -140,7 +140,7 @@
       "feature_id": "FEAT-396",
       "feature": "guardrails-infrastructure",
       "spec": "sdd/specs/guardrails-infrastructure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -152,8 +152,8 @@
       "parallelism_notes": "Independent module — only depends on core types, does not touch any bot seams",
       "assigned_to": null,
       "started_at": "2026-08-01T00:25:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2030-moderation-reference.md"
+      "completed_at": "2026-08-01T01:35:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2030-moderation-reference.md"
     }
   ]
 }
