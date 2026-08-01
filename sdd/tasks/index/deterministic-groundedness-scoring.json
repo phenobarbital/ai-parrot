@@ -14,14 +14,14 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "All FEAT-398 tasks form a strict dependency chain (M1→M2→M3→tests→benchmarks); no parallelism possible within this feature.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-01T00:18:30+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2041-groundedness-extractors.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2041"],
+      "depends_on": [
+        "TASK-2041"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-2041 (extractors/models). Strict chain.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-01T00:18:30+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2042-groundedness-scorer.md"
     },
@@ -53,7 +55,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2042"],
+      "depends_on": [
+        "TASK-2042"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-2042 (scorer). Also blocked on FEAT-396 (guardrails-infrastructure) landing first.",
       "assigned_to": null,
@@ -71,7 +75,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2043"],
+      "depends_on": [
+        "TASK-2043"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests exercise the full pipeline (M1+M2+M3); must run after all modules implemented.",
       "assigned_to": null,
@@ -89,7 +95,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2044"],
+      "depends_on": [
+        "TASK-2044"
+      ],
       "parallel": false,
       "parallelism_notes": "Benchmarks need the full scorer pipeline; docs written last.",
       "assigned_to": null,
