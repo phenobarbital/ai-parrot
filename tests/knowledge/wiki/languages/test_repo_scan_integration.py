@@ -15,6 +15,7 @@ from parrot.knowledge.wiki import languages as languages_module
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
 from parrot.knowledge.wiki.repo_scan import (
     CODE_SUFFIXES,
+    DEFAULT_SUFFIXES,
     DOC_SUFFIXES,
     build_file_slice,
     build_import_edges,
@@ -201,3 +202,103 @@ class TestIncrementalFastpathGeneralized:
         # never discovered because no changed file needed repo-wide
         # discovery to resolve import targets.
         assert [fs.rel_path for fs in scan.files] == ["README.md"]
+
+
+class TestSvelteSuffixClaimed:
+    """FEAT-396 / TASK-2020 — `.svelte` enters the scanned suffix set."""
+
+    def test_code_suffixes_contains_svelte(self):
+        """`.svelte` is a code suffix and flows into the default set.
+
+        ``DEFAULT_SUFFIXES`` is a union, so it picks the entry up with no
+        second edit.
+        """
+        assert ".svelte" in CODE_SUFFIXES
+        assert ".svelte" in DEFAULT_SUFFIXES
+        assert ".svelte" not in DOC_SUFFIXES
+
+    def test_svelte_file_is_scanned_and_imports_resolve(self, tmp_path: Path):
+        """The value this task delivers: components are no longer invisible.
+
+        The outline is still degraded until TASK-2021 — deliberately not
+        asserted here. Imports already work on raw Svelte source, and
+        TASK-2021's contract requires they keep working unchanged, so this
+        doubles as that task's regression guard.
+        """
+        _write(tmp_path, "src/lib/util.ts", "export function helper() {}\n")
+        _write(
+            tmp_path,
+            "src/lib/Widget.svelte",
+            '<script lang="ts">\n'
+            "  import { helper } from './util'\n"
+            "</script>\n"
+            "<div>hi</div>\n",
+        )
+        scan = scan_repository(tmp_path, use_git=False)
+
+        scanned = {fs.rel_path for fs in scan.files}
+        assert "src/lib/Widget.svelte" in scanned
+
+        assert (
+            file_concept_id("src/lib/Widget.svelte"),
+            file_concept_id("src/lib/util.ts"),
+            "references",
+        ) in scan.import_edges
+
+
+class TestSvelteEndToEnd:
+    """FEAT-396 / TASK-2023 — full-scan behaviour on a SvelteKit repo."""
+
+    def test_scan_svelte_fixture_repo(self, svelte_repo):
+        """A `$lib` import becomes a real edge, with no alias declared.
+
+        The whole point of the convention fallback: `svelte_repo` has a
+        `svelte.config.js` with an empty `kit` block, no `paths` entry
+        anywhere, and no `.svelte-kit/` — a fresh clone.
+        """
+        scan = scan_repository(svelte_repo, use_git=False)
+        by_path = {fs.rel_path: fs for fs in scan.files}
+
+        assert "src/lib/Widget.svelte" in by_path
+        assert by_path["src/lib/Widget.svelte"].language == "javascript"
+        assert "## API outline" in by_path["src/lib/Widget.svelte"].record.body
+
+        assert (
+            file_concept_id("src/lib/Widget.svelte"),
+            file_concept_id("src/lib/util.ts"),
+            "references",
+        ) in scan.import_edges
+
+    def test_svelte_heuristic_parity(self, svelte_repo, monkeypatch):
+        """Without grammars: identical imports and edges, degraded outline.
+
+        Deliberately does NOT use the ``force_heuristic`` fixture — that
+        would apply to the whole test, leaving both scans on the stdlib
+        path and making the comparison vacuously true. The grammar is
+        disabled only between the two scans.
+        """
+        if languages_module.treesitter.get_parser("typescript") is None:
+            pytest.skip("typescript grammar unavailable — nothing to compare")
+
+        with_grammar = scan_repository(svelte_repo, use_git=False)
+        by_path = {fs.rel_path: fs for fs in with_grammar.files}
+        baseline_slice = by_path["src/lib/Widget.svelte"]
+        baseline_imports = baseline_slice.imports
+        baseline_edges = set(with_grammar.import_edges)
+        assert baseline_edges, "the fixture must produce at least one edge"
+
+        monkeypatch.setattr(
+            languages_module.treesitter, "get_parser", lambda language: None
+        )
+        degraded = scan_repository(svelte_repo, use_git=False)
+        degraded_slice = {
+            fs.rel_path: fs for fs in degraded.files
+        }["src/lib/Widget.svelte"]
+
+        # Graph-shaping output is identical with or without the grammar.
+        assert degraded_slice.imports == baseline_imports
+        assert set(degraded.import_edges) == baseline_edges
+
+        # The outline may degrade, but must not vanish.
+        assert "## API outline" in degraded_slice.record.body
+        assert "label" in degraded_slice.record.body
