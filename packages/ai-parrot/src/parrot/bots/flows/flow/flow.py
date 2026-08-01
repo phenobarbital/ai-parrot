@@ -46,6 +46,7 @@ from ..core.checkpoint.errors import (
 from ..core.checkpoint.model import FlowCheckpoint, MemoryRefs
 from ..core.checkpoint.serializer import FlowStateSerializer
 from ..core.checkpoint.store.base import CheckpointStore
+from ..core.checkpoint.recovery import get_recovery_service
 from ..core.checkpoint.store.factory import get_checkpoint_store
 from ..core.storage import PersistenceMixin
 from ..core.storage.synthesis import synthesize_results
@@ -957,11 +958,19 @@ class AgentsFlow(PersistenceMixin):
 
         self._active_ctx = ctx
         checkpointer, listener = await self._ensure_checkpointer(ctx)
+        if checkpointer is not None:
+            # Track this run so a graceful-shutdown hook (FlowRecoveryService,
+            # FEAT-399 TASK-2054) can suspend it. A no-op when no service has
+            # ever been requested (get_recovery_service() lazily creates the
+            # process-wide default; registration itself has no side effects
+            # beyond a dict entry until shutdown() is actually invoked).
+            get_recovery_service().register(self)
         try:
             return await self._run_flow_scheduler(ctx, on_complete=on_complete)
         finally:
             self._active_ctx = None
             if checkpointer is not None:
+                get_recovery_service().unregister(self)
                 if listener is not None:
                     try:
                         self._node_event_listeners.remove(listener)

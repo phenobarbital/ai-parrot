@@ -16,6 +16,7 @@ from .model import (
     MemoryRefs,
     NodeStateSnapshot,
 )
+from .recovery import FlowRecoveryService, get_recovery_service
 from .serializer import FlowStateSerializer
 from .store import (
     CheckpointStore,
@@ -33,9 +34,11 @@ __all__ = [
     "FlowCheckpointer",
     "FlowLockedError",
     "FlowNotExportableError",
+    "FlowRecoveryService",
     "FlowStateSerializer",
     "MemoryRefs",
     "NodeStateSnapshot",
     "RedisCheckpointStore",
     "get_checkpoint_store",
+    "get_recovery_service",
 ]
