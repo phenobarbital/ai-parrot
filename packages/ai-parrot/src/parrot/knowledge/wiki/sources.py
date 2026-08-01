@@ -25,6 +25,7 @@ file.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -36,14 +37,21 @@ from typing import Any, Literal, Optional
 
 from parrot.knowledge.wiki.models import SourceManifestEntry
 
+#: ``wiki_sources`` collection name — matches
+#: ``parrot.knowledge.wiki.arango_store.SOURCES_COLLECTION``. Duplicated
+#: as a literal (rather than imported) so lightweight sqlite/json
+#: consumers of this module never pull in ``asyncdb``.
+_ARANGO_SOURCES_COLLECTION = "wiki_sources"
+
 
 class SourceCollectionManager:
     """Manages the raw-source collection for a single wiki instance.
 
     Attributes:
         sources_dir: Directory where raw source files live.
-        backend: ``"sqlite"`` (sources table in ``wiki.db``) or
-            ``"json"`` (``.manifest.json`` in ``sources_dir``).
+        backend: ``"sqlite"`` (sources table in ``wiki.db``), ``"json"``
+            (``.manifest.json`` in ``sources_dir``), or ``"arangodb"``
+            (``wiki_sources`` collection in a shared ArangoDB database).
         db_path: Path of the shared ``wiki.db`` file (sqlite mode).
         manifest_path: ``.manifest.json`` location (json-mode storage;
             sqlite-mode legacy migration source).
@@ -65,7 +73,8 @@ class SourceCollectionManager:
         self,
         sources_dir: Path,
         db_path: Optional[Path] = None,
-        backend: Literal["sqlite", "json"] = "sqlite",
+        backend: Literal["sqlite", "json", "arangodb"] = "sqlite",
+        arango_db: Optional[Any] = None,
     ) -> None:
         """Initialise the manager's chosen persistence backend.
 
@@ -76,14 +85,21 @@ class SourceCollectionManager:
                 (sqlite mode only).  When omitted, defaults to
                 ``<sources_dir>/../wiki.db`` — the same file used by
                 :class:`SQLiteWikiStore`.
-            backend: ``"sqlite"`` (default) or ``"json"``.
+            backend: ``"sqlite"`` (default), ``"json"``, or
+                ``"arangodb"``.
+            arango_db: Connected ``asyncdb`` ArangoDB driver instance
+                (the same connection used by ``ArangoDBWikiStore`` —
+                see its ``_db`` attribute after ``initialize()``).
+                Required when ``backend="arangodb"``.
 
         Raises:
-            ValueError: For an unknown ``backend`` value.
+            ValueError: For an unknown ``backend`` value, or when
+                ``backend="arangodb"`` is given without ``arango_db``.
         """
-        if backend not in ("sqlite", "json"):
+        if backend not in ("sqlite", "json", "arangodb"):
             raise ValueError(
-                f"Unknown sources backend {backend!r} — expected 'sqlite' or 'json'"
+                f"Unknown sources backend {backend!r} — expected 'sqlite',"
+                " 'json', or 'arangodb'"
             )
         self.sources_dir: Path = Path(sources_dir)
         self.sources_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +110,7 @@ class SourceCollectionManager:
         self.manifest_path: Path = self.sources_dir / self._MANIFEST_FILENAME
         self.logger: logging.Logger = logging.getLogger(__name__)
         self._manifest: dict[str, SourceManifestEntry] = {}
+        self._arango_db: Optional[Any] = arango_db
         if backend == "sqlite":
             from parrot.knowledge.wiki.store import WIKI_SCHEMA_SQL
 
@@ -101,6 +118,13 @@ class SourceCollectionManager:
             with self._connect() as conn:
                 conn.executescript(WIKI_SCHEMA_SQL)
             self._migrate_json_manifest()
+        elif backend == "arangodb":
+            if arango_db is None:
+                raise ValueError(
+                    "SourceCollectionManager(backend='arangodb') requires"
+                    " an arango_db connection (e.g. the shared AsyncDB"
+                    " instance from ArangoDBWikiStore)"
+                )
         else:
             self._load_manifest()
 
@@ -159,6 +183,8 @@ class SourceCollectionManager:
         """
         if self.backend == "json":
             return list(self._manifest.values())
+        if self.backend == "arangodb":
+            return self._run_async(self._async_list_sources())
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM sources ORDER BY rowid"
@@ -177,6 +203,8 @@ class SourceCollectionManager:
         """
         if self.backend == "json":
             return self._manifest.get(source_id)
+        if self.backend == "arangodb":
+            return self._run_async(self._async_get_source(source_id))
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM sources WHERE source_id = ?", (source_id,)
@@ -282,6 +310,11 @@ class SourceCollectionManager:
             self._save_manifest()
             self.logger.debug("Source removed: source_id=%s", source_id)
             return True
+        if self.backend == "arangodb":
+            removed = self._run_async(self._async_remove_source(source_id))
+            if removed:
+                self.logger.debug("Source removed: source_id=%s", source_id)
+            return removed
         with self._connect() as conn:
             cur = conn.execute(
                 "DELETE FROM sources WHERE source_id = ?", (source_id,)
@@ -323,6 +356,9 @@ class SourceCollectionManager:
         if self.backend == "json":
             self._manifest[entry.source_id] = entry
             self._save_manifest()
+            return
+        if self.backend == "arangodb":
+            self._run_async(self._async_upsert(entry))
             return
         with self._connect() as conn:
             conn.execute(
@@ -401,12 +437,140 @@ class SourceCollectionManager:
                 if entry.source_uri == source_uri:
                     return sid
             return None
+        if self.backend == "arangodb":
+            return self._run_async(self._async_find_id_by_uri(source_uri))
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT source_id FROM sources WHERE source_uri = ?",
                 (source_uri,),
             ).fetchone()
         return row["source_id"] if row else None
+
+    # ------------------------------------------------------------------
+    # ArangoDB-backend persistence (storage_backend="arangodb" wikis)
+    # ------------------------------------------------------------------
+
+    def _run_async(self, coro: Any) -> Any:
+        """Bridge an async ArangoDB call from this manager's sync API.
+
+        Mirrors the ``asyncio.run()`` pattern the ``wikitoolkit`` CLI
+        already uses to drive its own async store calls. When invoked
+        from within a running event loop (a caller that reaches into
+        this manager without ``asyncio.to_thread``), ``asyncio.run()``
+        cannot be nested — the coroutine is instead run to completion
+        on a dedicated thread.
+
+        Args:
+            coro: The coroutine to run to completion.
+
+        Returns:
+            The coroutine's result.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+
+    async def _arango_query(
+        self, aql: str, bind_vars: dict[str, Any]
+    ) -> list[Any]:
+        """Run a read AQL query, treating an empty result as ``[]``.
+
+        Same ``NoDataFound``-as-empty-result handling as
+        :meth:`ArangoDBWikiStore._query` — the underlying ``asyncdb``
+        driver surfaces a zero-row cursor as a non-``None`` ``error``
+        string rather than an empty list.
+        """
+        result, error = await self._arango_db.query(aql, bind_vars=bind_vars)
+        if error:
+            if "no data found" in str(error).lower():
+                return []
+            raise RuntimeError(f"ArangoDB query failed: {error}")
+        return result or []
+
+    async def _arango_execute(
+        self, aql: str, bind_vars: dict[str, Any]
+    ) -> list[Any]:
+        """Run a write AQL statement (UPSERT/UPDATE/REMOVE)."""
+        result, error = await self._arango_db.execute(aql, bind_vars=bind_vars)
+        if error:
+            raise RuntimeError(f"ArangoDB execute failed: {error}")
+        return result or []
+
+    @staticmethod
+    def _doc_to_entry(doc: dict[str, Any]) -> SourceManifestEntry:
+        """Convert a ``wiki_sources`` document into a manifest entry."""
+        return SourceManifestEntry(
+            source_id=doc["source_id"],
+            source_uri=doc["source_uri"],
+            file_hash=doc["file_hash"],
+            mtime=doc["mtime"],
+            ingested_at=doc["ingested_at"],
+            pages_generated=doc.get("pages_generated") or [],
+            status=doc.get("status", "ingested"),
+        )
+
+    async def _async_upsert(self, entry: SourceManifestEntry) -> None:
+        """Insert or update one source entry in ``wiki_sources`` via AQL UPSERT."""
+        doc = {
+            "_key": entry.source_id,
+            "source_id": entry.source_id,
+            "source_uri": entry.source_uri,
+            "file_hash": entry.file_hash,
+            "mtime": entry.mtime,
+            "ingested_at": entry.ingested_at,
+            "pages_generated": entry.pages_generated,
+            "status": entry.status,
+        }
+        await self._arango_execute(
+            "UPSERT {_key: @key} INSERT @doc UPDATE @doc IN @@collection",
+            {
+                "key": entry.source_id,
+                "doc": doc,
+                "@collection": _ARANGO_SOURCES_COLLECTION,
+            },
+        )
+
+    async def _async_list_sources(self) -> list[SourceManifestEntry]:
+        """Return every tracked source from ``wiki_sources``."""
+        rows = await self._arango_query(
+            "FOR doc IN @@collection RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION},
+        )
+        return [self._doc_to_entry(row) for row in rows]
+
+    async def _async_get_source(
+        self, source_id: str
+    ) -> Optional[SourceManifestEntry]:
+        """Fetch a single source document by its ``_key``."""
+        rows = await self._arango_query(
+            "FOR doc IN @@collection FILTER doc._key == @key LIMIT 1 RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "key": source_id},
+        )
+        return self._doc_to_entry(rows[0]) if rows else None
+
+    async def _async_remove_source(self, source_id: str) -> bool:
+        """Delete a source document; ``True`` when a row was removed."""
+        rows = await self._arango_query(
+            "FOR doc IN @@collection FILTER doc._key == @key"
+            " REMOVE doc IN @@collection RETURN OLD",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "key": source_id},
+        )
+        return bool(rows)
+
+    async def _async_find_id_by_uri(self, source_uri: str) -> Optional[str]:
+        """Look up an existing source ID by URI."""
+        rows = await self._arango_query(
+            "FOR doc IN @@collection FILTER doc.source_uri == @uri"
+            " LIMIT 1 RETURN doc.source_id",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "uri": source_uri},
+        )
+        return rows[0] if rows else None
 
     def _migrate_json_manifest(self) -> None:
         """One-time migration of a legacy ``.manifest.json`` into SQLite.
