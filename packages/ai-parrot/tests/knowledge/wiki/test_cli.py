@@ -83,6 +83,31 @@ class TestCommunitiesCommand:
         assert result.exception is None
         assert "not built" in result.output.lower()
 
+    def test_edgeless_selection_does_not_crash(self, tmp_path):
+        """Narrowing --graph-kinds down to pages with no edges between
+        them (here: two independent docs, no cross-references, and the
+        default 'overview' dir-containment node excluded) must not
+        raise ZeroDivisionError — nx.community.modularity() divides by
+        deg_sum**2 internally and blows up on a truly edgeless graph."""
+        (tmp_path / "a.md").write_text("# A\n\nDoc A content.\n")
+        (tmp_path / "b.md").write_text("# B\n\nDoc B content.\n")
+        runner = CliRunner()
+        build = runner.invoke(
+            wiki, ["build", "--path", str(tmp_path), "--no-graph", "--quiet"],
+        )
+        assert build.exit_code == 0, build.output
+        result = runner.invoke(
+            wiki,
+            [
+                "communities", "--path", str(tmp_path),
+                "--graph-kinds", "document",
+            ],
+        )
+        assert result.exit_code == 0
+        assert result.exception is None
+        output = _strip_log_lines(result.output)
+        assert "modularity=0.0000" in output
+
     def test_no_matching_graph_kinds_is_graceful(self, built_wiki):
         """No pages match --graph-kinds → friendly message, not a crash."""
         runner = CliRunner()

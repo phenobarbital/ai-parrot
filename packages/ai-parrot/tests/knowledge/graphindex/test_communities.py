@@ -361,6 +361,24 @@ class TestDetectCommunities:
         assert result.node_to_community == {}
         assert result.modularity == 0.0
 
+    @pytest.mark.parametrize("algorithm", ["louvain", "leiden"])
+    def test_edgeless_graph_does_not_raise(self, algorithm):
+        """Nodes with NO edges at all (every node isolated) must not
+        crash — nx.community.modularity() divides by deg_sum**2
+        internally and raises ZeroDivisionError when there is zero
+        total edge weight. Reachable in practice via a narrow
+        wikitoolkit --graph-kinds selection with no cross-page edges."""
+        g = rustworkx.PyDiGraph()
+        nodes = [_node("a"), _node("b")]
+        for n in nodes:
+            _add(g, n)
+        result = detect_communities(g, nodes, algorithm=algorithm,
+                                     write_back_to_nodes=False)
+        assert result.modularity == 0.0
+        assert len(result.communities) == 2
+        assert all(c.size == 1 for c in result.communities)
+        assert all(c.cohesion == 0.0 for c in result.communities)
+
     def test_weighted_flag_reflects_signal_config(self):
         g, nodes = _build_two_cliques()
         from parrot.knowledge.graphindex.signals import SignalRelevanceConfig

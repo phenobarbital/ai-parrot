@@ -577,14 +577,20 @@ def detect_communities(
             algorithm=used_algorithm,
         )
 
-    global_q = float(
-        nx.community.modularity(
-            nx_graph, partition_sets, weight="weight", resolution=resolution,
-        )
-    )
-
-    # Compute total weight once for per-community modularity contribution.
+    # Compute total weight once — also guards the modularity() call below:
+    # nx.community.modularity() divides by deg_sum**2 internally and raises
+    # ZeroDivisionError on an edgeless graph (e.g. every node isolated, no
+    # edges at all — reachable in practice via a narrow CLI --graph-kinds
+    # selection). Modularity is trivially 0.0 when there is no edge weight
+    # to explain, same treatment as the empty-partition short-circuit above.
     total_weight = _total_edge_weight(nx_graph)
+    global_q = (
+        float(nx.community.modularity(
+            nx_graph, partition_sets, weight="weight", resolution=resolution,
+        ))
+        if total_weight > 0.0
+        else 0.0
+    )
 
     title_lookup = {n.node_id: n.title for n in nodes}
 

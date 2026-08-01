@@ -211,9 +211,10 @@ class GraphIndexBuilder:
             errors.append(f"Resolution failed: {exc}")
             inferred_edges = []
 
-        # Stage 4.5: Louvain community detection (FEAT-191, opt-in).
-        # Runs between resolve and persist so the community_id rides
-        # along on UniversalNode.domain_tags to ArangoDB.
+        # Stage 4.5: community detection (FEAT-191 Louvain, FEAT-401
+        # Leiden default; opt-in). Runs between resolve and persist so
+        # the community_id rides along on UniversalNode.domain_tags to
+        # ArangoDB.
         if self.detect_communities_enabled:
             try:
                 self.last_community_result = detect_communities(

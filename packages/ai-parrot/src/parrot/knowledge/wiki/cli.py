@@ -489,6 +489,7 @@ async def _export_graph_html(
 
     communities = None
     analytics = None
+    inter_community = None
     try:
         from parrot.knowledge.graphindex.communities import detect_communities
         communities = detect_communities(
@@ -501,6 +502,20 @@ async def _export_graph_html(
         analytics = compute_analytics(assembler.graph, nodes, graph_edges)
     except Exception as exc:  # noqa: BLE001
         _cli_logger.warning("analytics skipped: %s", exc)
+    if communities is not None:
+        # FEAT-401: same treatment as GraphIndexBuilder Stage 6 — the
+        # report/export "provides the full picture on build" (spec §8),
+        # so the wiki's own build → graph.html path gets it too, not
+        # just the on-demand `communities --inter` CLI command.
+        try:
+            from parrot.knowledge.graphindex.inter_community import (
+                compute_inter_community_graph,
+            )
+            inter_community = compute_inter_community_graph(
+                assembler.graph, communities,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _cli_logger.warning("inter-community relations skipped: %s", exc)
 
     try:
         html_path, json_path = export_graph(
@@ -508,6 +523,7 @@ async def _export_graph_html(
             output_dir,
             communities=communities,
             analytics=analytics,
+            inter_community=inter_community,
             title=f"{wiki_name} — Knowledge Map",
         )
     except Exception as exc:  # noqa: BLE001
