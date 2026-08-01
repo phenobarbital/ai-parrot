@@ -149,10 +149,46 @@ class FlowStateSerializer:
             Tuple of ``(packed_bytes, lossy)`` where ``lossy`` is True if
             any value in the structure degraded to a tagged repr.
         """
-        lossy_flag = [False]
-        prepared = self._encode_value(obj, lossy_flag)
+        prepared, lossy = self.to_safe_with_meta(obj)
         packed = ormsgpack.packb(prepared, default=self._default_hook)
-        return packed, lossy_flag[0]
+        return packed, lossy
+
+    def to_safe_with_meta(self, obj: Any) -> tuple[Any, bool]:
+        """Recursively convert ``obj`` into a JSON-safe structure.
+
+        This is the per-value transform step used internally by
+        ``encode_with_meta()`` before the final ormsgpack ``packb()`` — it
+        applies the same type-registry tag-enveloping and lossy
+        degradation, but stops short of byte-packing. Callers that need a
+        JSON-safe (dict/list/primitive) representation of arbitrary
+        per-node values — e.g. ``ContextSnapshot.results``/``.responses``,
+        which are typed ``dict[str, Any]`` and are packed again as part of
+        the *whole* checkpoint by the store layer — use this instead of
+        ``encode_with_meta()`` to avoid double-encoding to bytes.
+
+        Args:
+            obj: Arbitrary structure (dict/list/Pydantic model/primitive).
+
+        Returns:
+            Tuple of ``(safe_structure, lossy)``.
+        """
+        lossy_flag = [False]
+        safe = self._encode_value(obj, lossy_flag)
+        return safe, lossy_flag[0]
+
+    def from_safe(self, safe: Any) -> Any:
+        """Reconstruct values produced by ``to_safe_with_meta()``.
+
+        Args:
+            safe: A JSON-safe structure previously produced by
+                ``to_safe_with_meta()``.
+
+        Returns:
+            The reconstructed structure — registered models rebuilt via
+            ``model_validate``, lossy envelopes replaced by their repr
+            string, everything else returned as plain dict/list/primitives.
+        """
+        return self._decode_value(safe)
 
     def encode(self, obj: Any) -> bytes:
         """Encode ``obj`` to ormsgpack bytes (discarding the lossy flag).
