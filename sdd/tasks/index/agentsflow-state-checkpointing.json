@@ -32,7 +32,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Adds the ormsgpack dependency; upstream of both stores and the checkpointer.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2047-flow-state-serializer.md"
+      "completed_at": "2026-08-01T00:30:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2047-flow-state-serializer.md"
     },
     {
       "id": "TASK-2048",
