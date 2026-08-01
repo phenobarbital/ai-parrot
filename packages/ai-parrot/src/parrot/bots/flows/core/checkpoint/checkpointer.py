@@ -14,9 +14,9 @@ fire-and-forget + pending-task-set discipline mirrors `PersistenceMixin`
 and awaited (with ``return_exceptions=True``) in ``aclose()``; write
 failures are logged as warnings only.
 
-`FlowContext.to_snapshot()` does not exist yet (TASK-2052) — the
-snapshot is assembled here directly from the public `FlowContext` fields
-listed in this module's tests/contract.
+Snapshot assembly delegates to `FlowContext.to_snapshot()` (added by
+TASK-2052) — this module owns only the `FlowCheckpoint` wrapper
+(checkpoint id/parent chain, definition, node states, memory refs).
 """
 from __future__ import annotations
 
@@ -29,7 +29,6 @@ from navconfig.logging import logging
 
 from parrot.bots.flows.core.checkpoint.errors import FlowLockedError
 from parrot.bots.flows.core.checkpoint.model import (
-    ContextSnapshot,
     FlowCheckpoint,
     MemoryRefs,
     NodeStateSnapshot,
@@ -114,6 +113,14 @@ class FlowCheckpointer:
     ) -> FlowCheckpoint:
         """Assemble a `FlowCheckpoint` from the current `FlowContext` state.
 
+        Delegates the `ContextSnapshot` assembly (results/responses
+        encoding, completed-node bookkeeping, structured errors) to
+        `FlowContext.to_snapshot()` (TASK-2052) — this method owns only
+        the `FlowCheckpoint` wrapper: the monotonic checkpoint id/parent
+        chain, the embedded `FlowDefinition`, per-node FSM states, and
+        memory refs (post-review fix, FEAT-399: this used to duplicate
+        `to_snapshot()`'s logic inline instead of calling it).
+
         Args:
             ctx: The live `FlowContext` (its non-serializable fields —
                 `agent_registry`/`synthesis_client`/`trace_context` —
@@ -124,18 +131,13 @@ class FlowCheckpointer:
         Returns:
             The assembled `FlowCheckpoint` (not yet persisted).
         """
-        results_safe, results_lossy = self._serializer.to_safe_with_meta(ctx.results)
-        responses_safe: dict[str, Any] | None = None
-        responses_lossy = False
-        if self._include_responses:
-            responses_safe, responses_lossy = self._serializer.to_safe_with_meta(
-                ctx.responses
-            )
-
-        errors_structured = {
-            node_id: self._serializer.encode_error(exc)
-            for node_id, exc in ctx.errors.items()
-        }
+        lossy_out: list[bool] = []
+        context_snapshot = ctx.to_snapshot(
+            serializer=self._serializer,
+            include_responses=self._include_responses,
+            lossy_out=lossy_out,
+        )
+        lossy = lossy_out[0] if lossy_out else False
 
         node_states = [
             NodeStateSnapshot(
@@ -145,16 +147,6 @@ class FlowCheckpointer:
             )
             for node_id, info in ctx.node_metadata.items()
         ]
-
-        context_snapshot = ContextSnapshot(
-            initial_task=ctx.initial_task,
-            results=results_safe,
-            responses=responses_safe,
-            completed_tasks=sorted(ctx.completed_tasks),
-            completion_order=list(ctx.completion_order),
-            shared_data=dict(ctx.shared_data),
-            errors=errors_structured,
-        )
 
         checkpoint_id = self._last_checkpoint_id + 1
         checkpoint = FlowCheckpoint(
@@ -168,7 +160,7 @@ class FlowCheckpointer:
             context=context_snapshot,
             node_states=node_states,
             memory_refs=self._memory_refs,
-            lossy=results_lossy or responses_lossy,
+            lossy=lossy,
         )
         self._last_checkpoint_id = checkpoint_id
         self._parent_checkpoint_id = checkpoint_id

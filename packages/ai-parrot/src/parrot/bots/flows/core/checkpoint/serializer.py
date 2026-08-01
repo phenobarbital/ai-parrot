@@ -21,6 +21,9 @@ _TYPE_KEY = "__type__"
 _DATA_KEY = "data"
 _REPR_KEY = "__repr__"
 _LOSSY_TAG = "lossy"
+_DATETIME_TAG = "__datetime__"
+_UUID_TAG = "__uuid__"
+_ESCAPED_DICT_TAG = "__escaped_dict__"
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,18 @@ class FlowStateSerializer:
     never as reconstructable objects (spec §7: ``FlowContext.errors``
     holds live Exceptions; checkpoints must never attempt to rebuild
     them on resume).
+
+    ``datetime``/``uuid.UUID`` are explicitly tagged (not left to
+    ormsgpack's own encoding) — ``ormsgpack.unpackb()`` does not restore
+    them to their original type on its own, it returns plain strings, so
+    without tagging they would silently lose type fidelity (never
+    flagged ``lossy``, since the round-trip technically "succeeds").
+
+    A plain ``dict`` whose own keys happen to collide with the reserved
+    ``"__type__"`` sentinel (e.g. a tool result naturally shaped like
+    ``{"__type__": "lossy", ...}``) is escaped in a tagged wrapper on
+    encode so ``decode()`` can tell a real envelope apart from user data
+    that merely looks like one, instead of misinterpreting it.
     """
 
     def __init__(self) -> None:
@@ -90,9 +105,17 @@ class FlowStateSerializer:
         if value is None or isinstance(value, (str, int, float, bool, bytes)):
             return value
 
-        if isinstance(value, (datetime, uuid.UUID)):
-            # ormsgpack serializes these natively; no wrapping needed.
-            return value
+        if isinstance(value, datetime):
+            # ormsgpack round-trips datetime as a plain string on unpackb
+            # (verified: it does NOT reconstruct a datetime object) — tag
+            # it explicitly so decode restores a real datetime instead of
+            # silently degrading type fidelity without flagging `lossy`
+            # (code review finding, FEAT-399).
+            return {_TYPE_KEY: _DATETIME_TAG, _DATA_KEY: value.isoformat()}
+
+        if isinstance(value, uuid.UUID):
+            # Same rationale as datetime above.
+            return {_TYPE_KEY: _UUID_TAG, _DATA_KEY: str(value)}
 
         if isinstance(value, BaseException):
             return self.encode_error(value)
@@ -114,9 +137,19 @@ class FlowStateSerializer:
             return {_TYPE_KEY: _LOSSY_TAG, _REPR_KEY: repr(value)}
 
         if isinstance(value, dict):
-            return {
+            encoded = {
                 str(k): self._encode_value(v, lossy_flag) for k, v in value.items()
             }
+            if _TYPE_KEY in encoded:
+                # Collision guard: a real dict from user/tool data happens
+                # to contain our reserved sentinel key (e.g. a tool result
+                # shaped like {"__type__": "lossy", ...}). Without this,
+                # decode would misinterpret it as one of our own envelopes
+                # and silently return the wrong value instead of the
+                # original dict (code review finding, FEAT-399). Escape it
+                # in a tagged wrapper so decode can tell the two apart.
+                return {_TYPE_KEY: _ESCAPED_DICT_TAG, _DATA_KEY: encoded}
+            return encoded
 
         if isinstance(value, (list, tuple)):
             return [self._encode_value(v, lossy_flag) for v in value]
@@ -208,6 +241,16 @@ class FlowStateSerializer:
                 tag = value[_TYPE_KEY]
                 if tag == _LOSSY_TAG:
                     return value.get(_REPR_KEY)
+                if tag == _DATETIME_TAG:
+                    return datetime.fromisoformat(value[_DATA_KEY])
+                if tag == _UUID_TAG:
+                    return uuid.UUID(value[_DATA_KEY])
+                if tag == _ESCAPED_DICT_TAG:
+                    # Unwrap a collision-escaped plain dict (see the encode
+                    # side's collision guard) — the inner dict is already
+                    # encoded, just recurse into its values.
+                    inner = value.get(_DATA_KEY, {})
+                    return {k: self._decode_value(v) for k, v in inner.items()}
                 model_cls = self._registry.get(tag)
                 if model_cls is not None:
                     return model_cls.model_validate(

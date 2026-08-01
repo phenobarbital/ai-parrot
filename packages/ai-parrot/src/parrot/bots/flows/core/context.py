@@ -263,6 +263,7 @@ class FlowContext:
         *,
         serializer: "FlowStateSerializer",
         include_responses: bool = False,
+        lossy_out: Optional[list] = None,
     ) -> "ContextSnapshot":
         """Serialize this context into a ``ContextSnapshot`` for checkpointing.
 
@@ -280,16 +281,29 @@ class FlowContext:
             include_responses: When True, raw ``responses`` are also
                 captured (heavy; results-only by default, spec resolved
                 OQ2).
+            lossy_out: Optional output list — if provided, ``True``/``False``
+                is appended reporting whether ``results``/``responses``
+                degraded any value to a lossy tagged repr. Backward-compatible
+                opt-in (added post-review, FEAT-399): callers that need the
+                lossy signal (e.g. ``FlowCheckpointer._build_checkpoint()``,
+                which embeds it in ``FlowCheckpoint.lossy``) pass a list to
+                receive it without changing this method's return type for
+                existing callers.
 
         Returns:
             A ``ContextSnapshot`` capturing this context's serializable state.
         """
         from .checkpoint.model import ContextSnapshot
 
-        results_safe, _ = serializer.to_safe_with_meta(self.results)
+        results_safe, results_lossy = serializer.to_safe_with_meta(self.results)
         responses_safe: Optional[Dict[str, Any]] = None
+        responses_lossy = False
         if include_responses:
-            responses_safe, _ = serializer.to_safe_with_meta(self.responses)
+            responses_safe, responses_lossy = serializer.to_safe_with_meta(
+                self.responses
+            )
+        if lossy_out is not None:
+            lossy_out.append(results_lossy or responses_lossy)
 
         errors_structured = {
             node_id: serializer.encode_error(exc)
