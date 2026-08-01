@@ -94,7 +94,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -106,8 +106,8 @@
       "parallelism_notes": "Disjoint files from TASK-2049; see its notes.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2050-durable-checkpoint-store.md"
+      "completed_at": "2026-08-01T00:48:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2050-durable-checkpoint-store.md"
     },
     {
       "id": "TASK-2051",
