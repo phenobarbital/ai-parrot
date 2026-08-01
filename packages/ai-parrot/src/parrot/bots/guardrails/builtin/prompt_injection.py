@@ -6,17 +6,22 @@ as a self-contained INPUT `Guardrail`. See
 ``sdd/specs/guardrails-infrastructure.spec.md`` §3 Module 2 (FEAT-396).
 
 Critical constraint: this module owns the ``pytector``/``torch`` import
-boundary. ``pytector`` is detected via ``importlib.util.find_spec`` and,
-if available, the process-wide shared detector
-(``parrot.bots.abstract._get_shared_injection_detector``) is fetched —
-lazily, only inside ``__init__``, and only when THIS guardrail is actually
-instantiated (i.e. only when a bot registers ``"prompt_injection"``, via
-the explicit ``guardrails=[...]`` kwarg or the legacy
-``injection_detection`` flag). Neither this module nor
+boundary — entirely. ``pytector`` is detected via
+``importlib.util.find_spec`` and, if available, the process-wide shared
+detector singleton below is used — lazily, only inside ``__init__``, and
+only when THIS guardrail is actually instantiated (i.e. only when a bot
+registers ``"prompt_injection"``, via the explicit ``guardrails=[...]``
+kwarg or the legacy ``injection_detection`` flag). Neither this module nor
 ``parrot.bots.guardrails`` import pytector/torch at module import time.
+
+FEAT-396 (TASK-2028): the singleton used to live in
+``parrot.bots.abstract`` (loaded unconditionally whenever pytector was
+installed, regardless of ``injection_detection``) — it has been moved
+here in full, so the pytector import boundary has exactly one owner.
 """
 import importlib.util
 import logging
+import threading
 from typing import Any, ClassVar
 
 from parrot.security.prompt_injection import (
@@ -35,14 +40,43 @@ from ..base import (
 
 logger = logging.getLogger(__name__)
 
-# Module-level name so tests can `unittest.mock.patch(
-# "parrot.bots.guardrails.builtin.prompt_injection._get_shared_injection_detector")`
-# without triggering the real (heavy) singleton load. This import is safe at
-# module scope here: by the time anything imports this module, it is because
-# a guardrail is actually being built from inside `AbstractBot.__init__`
-# (via the lazy registry factory), at which point `parrot.bots.abstract` is
-# already fully loaded in `sys.modules` — no circular-import execution.
-from parrot.bots.abstract import _get_shared_injection_detector
+# Process-wide singleton for the pytector prompt-injection detector.
+#
+# Constructing ``pytector.PromptInjectionDetector(model_name_or_url="deberta")``
+# loads a deBERTa model (transformers + torch, and pulls in TensorFlow). Doing
+# that once per guardrail/bot is wasteful — N bots meant N full model loads,
+# N copies of the weights in memory, and N sets of native worker threads
+# that leak at shutdown. The detector is stateless for detection
+# (``detect_injection`` only tokenizes the input and runs a read-only
+# forward pass), so a single shared instance is safe to reuse across every
+# bot in the process.
+_SHARED_INJECTION_DETECTOR = None
+_SHARED_INJECTION_DETECTOR_LOCK = threading.Lock()
+
+
+def _get_shared_injection_detector():
+    """Return the process-wide pytector detector, loading it lazily once.
+
+    The heavy model is loaded on first call (typically the first
+    `PromptInjectionGuardrail`'s ``__init__``) and reused thereafter.
+    Thread-safe via a module lock so concurrent bot construction can never
+    trigger two parallel model loads.
+
+    Returns:
+        A shared ``pytector.PromptInjectionDetector`` instance.
+    """
+    global _SHARED_INJECTION_DETECTOR
+    if _SHARED_INJECTION_DETECTOR is None:
+        with _SHARED_INJECTION_DETECTOR_LOCK:
+            if _SHARED_INJECTION_DETECTOR is None:
+                from pytector import (
+                    PromptInjectionDetector as _PytectorDetector,  # pylint: disable=E0611
+                )
+                _SHARED_INJECTION_DETECTOR = _PytectorDetector(
+                    model_name_or_url="deberta",
+                    enable_keyword_blocking=True,
+                )
+    return _SHARED_INJECTION_DETECTOR
 
 
 class PromptInjectionGuardrail(Guardrail):
@@ -181,7 +215,15 @@ class PromptInjectionGuardrail(Guardrail):
         max_severity = max((t["level"] for t in threats), default=ThreatLevel.LOW)
 
         if self.block_on_threat and max_severity in (ThreatLevel.CRITICAL, ThreatLevel.HIGH):
-            return GuardrailResult(action=GuardrailAction.BLOCK, reason="prompt_injection_detected")
+            # `report` on a BLOCK result is non-content (just a count) — the
+            # pipeline surfaces it via `PipelineOutcome.flag_reports` so
+            # seam code (bots/base.py `ask()`) can reconstruct the legacy
+            # `metadata={'threats_detected': N}` shape (FEAT-396 TASK-2028).
+            return GuardrailResult(
+                action=GuardrailAction.BLOCK,
+                reason="prompt_injection_detected",
+                report={"threats_detected": len(threats)},
+            )
 
         wrapped = self._wrap_flagged_input(sanitized, threats)
         return GuardrailResult(action=GuardrailAction.TRANSFORM, content=wrapped)

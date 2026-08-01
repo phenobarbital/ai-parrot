@@ -177,6 +177,12 @@ class GuardrailPipeline:
             if result.action == GuardrailAction.BLOCK:
                 blocked = True
                 reason = result.reason
+                # A blocking guardrail may still attach a non-content report
+                # (e.g. a threat count) — surfaced the same way a FLAG's
+                # report would be, so seam code can reconstruct compat
+                # metadata (FEAT-396 TASK-2028) without leaking content.
+                if result.report:
+                    flag_reports[guardrail.name] = result.report
                 break
             elif result.action == GuardrailAction.TRANSFORM:
                 if result.content is not None:

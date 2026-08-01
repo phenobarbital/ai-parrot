@@ -117,6 +117,15 @@ class WebSearchAgent(BasicAgent):
         )
 
     def _setup_competitor_pipeline(self):
+        # FEAT-396 (TASK-2028): no wiring change needed here. `AbstractBot.
+        # __init__` unconditionally registers a `LegacyPipelineGuardrail`
+        # into the INPUT `GuardrailPipeline` that resolves `self.
+        # _prompt_pipeline` *dynamically* (via a getter closure) on every
+        # check() — including pipelines created/populated after __init__
+        # returns, which is exactly what happens here (this method runs
+        # from WebSearchAgent.__init__, after super().__init__()). So this
+        # PromptPipeline keeps applying through the unified INPUT pipeline
+        # unchanged.
         if not self._prompt_pipeline:
             self._prompt_pipeline = PromptPipeline()
         self._prompt_pipeline.add(PromptMiddleware(

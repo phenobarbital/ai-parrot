@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 import os
 import re
 import uuid
-import threading
 import contextlib
 from contextlib import asynccontextmanager
 from string import Template
@@ -59,46 +58,13 @@ from ..utils.helpers import RequestContext, _current_ctx
 from ..utils.helpers import current_context  # noqa: F401  # re-exported for downstream callers
 from ..models.outputs import OutputMode
 from ..outputs import OutputFormatter
-import importlib.util
-PYTECTOR_ENABLED = importlib.util.find_spec("pytector") is not None
-
-# Process-wide singleton for the pytector prompt-injection detector.
-#
-# Constructing ``pytector.PromptInjectionDetector(model_name_or_url="deberta")``
-# loads a deBERTa model (transformers + torch, and pulls in TensorFlow). Doing
-# that once per bot is wasteful — N bots meant N full model loads, N copies of
-# the weights in memory, and N sets of native worker threads that leak at
-# shutdown. The detector is stateless for detection (``detect_injection`` only
-# tokenizes the input and runs a read-only forward pass), so a single shared
-# instance is safe to reuse across every bot in the process.
-_SHARED_INJECTION_DETECTOR = None
-_SHARED_INJECTION_DETECTOR_LOCK = threading.Lock()
-
-
-def _get_shared_injection_detector():
-    """Return the process-wide pytector detector, loading it lazily once.
-
-    The heavy model is loaded on first call (typically the first bot's
-    ``__init__``) and reused thereafter. Thread-safe via a module lock so
-    concurrent bot construction can never trigger two parallel model loads.
-
-    Returns:
-        A shared ``pytector.PromptInjectionDetector`` instance.
-    """
-    global _SHARED_INJECTION_DETECTOR
-    if _SHARED_INJECTION_DETECTOR is None:
-        with _SHARED_INJECTION_DETECTOR_LOCK:
-            if _SHARED_INJECTION_DETECTOR is None:
-                from pytector import PromptInjectionDetector  # pylint: disable=E0611
-                _SHARED_INJECTION_DETECTOR = PromptInjectionDetector(
-                    model_name_or_url="deberta",
-                    enable_keyword_blocking=True,
-                )
-    return _SHARED_INJECTION_DETECTOR
+# FEAT-396 (TASK-2028): PYTECTOR_ENABLED / _get_shared_injection_detector()
+# moved to parrot.bots.guardrails.builtin.prompt_injection — the pytector/
+# torch import boundary now lives entirely in PromptInjectionGuardrail,
+# loaded only when that guardrail is actually registered for a bot.
 from ..mcp import MCPEnabledMixin
 from ..security import (
     SecurityEventLogger,
-    ThreatLevel,
     PromptInjectionException
 )
 from .stores import LocalKBMixin
@@ -150,9 +116,10 @@ from .dynamic_values import dynamic_values
 from .middleware import PromptPipeline
 from .prompts.builder import PromptBuilder
 # FEAT-396: Unified guardrails infrastructure
-from .guardrails.base import Guardrail, GuardrailStage
+from .guardrails.base import Guardrail, GuardrailContext, GuardrailStage
+from .guardrails.builtin.legacy_pipeline import LegacyPipelineGuardrail
 from .guardrails.config import build_pipelines_from_config
-from .guardrails.pipeline import GuardrailPipeline
+from .guardrails.pipeline import GuardrailPipeline, PipelineOutcome
 # FEAT-176: Lifecycle Events System
 # FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
 # imported here via the parrot.core.events.lifecycle re-export facade.
@@ -674,26 +641,15 @@ class AbstractBot(
         self.block_on_threat = block_on_threat
         self.injection_detection = injection_detection
         self.injection_probability_threshold = injection_probability_threshold
-        # Local helper used to strip framework-injected XML (e.g.
-        # <user_context>…</user_context> from TelegramAgentWrapper) before
-        # text is handed to any detector. Kept separate from the main
-        # detector because pytector has a different class/API.
-        from ..security.prompt_injection import (
-            PromptInjectionDetector as _ParrotPromptInjectionDetector,
-        )
-        self._framework_sanitizer = _ParrotPromptInjectionDetector(
-            logger=self.logger,
-        )
-        if PYTECTOR_ENABLED:
-            # Reuse the process-wide detector instead of loading the deBERTa
-            # model once per bot. The detector is stateless for detection, so
-            # sharing it saves memory and avoids leaking a fresh set of native
-            # worker threads for every bot instance.
-            self._injection_detector = _get_shared_injection_detector()
-        else:
-            self._injection_detector = _ParrotPromptInjectionDetector(
-                logger=self.logger,
-            )
+        # FEAT-396 (TASK-2028): the eager pytector/framework-sanitizer
+        # detector loading that used to live here (self._framework_sanitizer,
+        # self._injection_detector — loaded unconditionally whenever pytector
+        # was installed, regardless of injection_detection) is gone. That
+        # entire flow, including the pytector import boundary, now lives in
+        # PromptInjectionGuardrail (parrot/bots/guardrails/builtin/
+        # prompt_injection.py), constructed lazily below ONLY when
+        # `injection_detection`/`guardrails=["prompt_injection"]` actually
+        # register it — see `_get_shared_injection_detector` there.
         self._security_logger = SecurityEventLogger(
             db_pool=getattr(self, 'db_pool', None),
             logger=self.logger
@@ -702,10 +658,8 @@ class AbstractBot(
         # FEAT-396: Unified guardrails infrastructure. Build one
         # GuardrailPipeline per stage from the `guardrails` kwarg plus the
         # legacy security flags above (mapped to equivalent registrations
-        # here; the flags themselves are left untouched for the existing
-        # `_sanitize_question`/redaction code paths to keep reading until
-        # those seams are migrated onto these pipelines). Registry
-        # validation happens eagerly, right here, not on first use.
+        # here). Registry validation happens eagerly, right here, not on
+        # first use.
         self._guardrail_pipelines: Dict[GuardrailStage, GuardrailPipeline] = build_pipelines_from_config(
             guardrails=guardrails,
             legacy_flags={
@@ -715,6 +669,16 @@ class AbstractBot(
                 "injection_probability_threshold": self.injection_probability_threshold,
                 "enable_redaction": self.enable_redaction,
             },
+        )
+        # FEAT-396 (TASK-2028): always register the legacy PromptPipeline
+        # compat guardrail — unconditionally, even while self._prompt_pipeline
+        # is still None — because it resolves the pipeline *dynamically* at
+        # check() time, not at registration time. Both existing registration
+        # sites (bots/search.py's competitor pipeline, skills/mixin.py's
+        # skill-trigger middleware) populate self._prompt_pipeline AFTER
+        # __init__ returns, so a one-time snapshot here would miss them.
+        self._guardrail_pipelines[GuardrailStage.INPUT].add(
+            LegacyPipelineGuardrail(lambda: self._prompt_pipeline)
         )
 
         # FEAT-176: Emit ToolManagerReadyEvent now that the registry is live.
@@ -1863,6 +1827,55 @@ class AbstractBot(
             self.logger.error(f"Error listing conversations for user {user_id}: {e}")
             return []
 
+    async def _run_input_pipeline(
+        self,
+        question: str,
+        user_id: str,
+        session_id: str,
+        method: str,
+        _trusted_source: bool = False,
+    ) -> PipelineOutcome:
+        """Run the unified INPUT guardrail pipeline (FEAT-396).
+
+        Shared by `_sanitize_question` (thin compat delegate, below) and
+        `BaseBot`'s ``invoke``/``ask``/``ask_stream`` seams. Combines
+        prompt-injection detection/mitigation (``PromptInjectionGuardrail``,
+        when registered) and any legacy `PromptPipeline` middleware
+        (``LegacyPipelineGuardrail``, always registered — see `__init__`).
+
+        Callers MUST bind the returned outcome's content to a
+        ``prompt_for_llm``-style variable ONLY — never to the canonical
+        ``question`` — so any transform/wrap never leaks into events,
+        conversation memory, vector retrieval, or downstream agents.
+
+        Args:
+            question: The canonical, untransformed user input.
+            user_id: User identifier (for context/logging).
+            session_id: Session identifier (for context/logging).
+            method: The calling entrypoint name (``"invoke"``, ``"ask"``,
+                ``"ask_stream"``) — carried on the guardrail context.
+            _trusted_source: Skips all INPUT guardrails when True
+                (internal agent-to-agent calls).
+
+        Returns:
+            The `PipelineOutcome`. When ``outcome.blocked`` is True, the
+            caller must short-circuit with a canned security-block response
+            instead of using ``outcome.content`` (which is ``None``).
+        """
+        ctx = GuardrailContext(
+            stage=GuardrailStage.INPUT,
+            agent_name=self.name,
+            user_id=user_id,
+            session_id=session_id,
+            method=method,
+            extras={
+                'trusted_source': _trusted_source,
+                'chatbot_id': str(self.chatbot_id),
+                'context': {'method': method},
+            },
+        )
+        return await self._guardrail_pipelines[GuardrailStage.INPUT].run(question, ctx)
+
     async def _sanitize_question(
         self,
         question: str,
@@ -1874,107 +1887,62 @@ class AbstractBot(
         """
         Sanitize user question to prevent prompt injection.
 
-        This is the central protection point for all user input.
+        .. deprecated:: FEAT-396
+            This is now a thin compat delegate to the INPUT
+            `GuardrailPipeline` (kept for external callers/subclasses).
+            ``BaseBot.invoke``/``ask``/``ask_stream`` call
+            `_run_input_pipeline` directly instead. New code should use
+            ``self._guardrail_pipelines[GuardrailStage.INPUT]`` or the
+            ``guardrails=[...]`` bot kwarg.
 
         Args:
             question: The user's question/input
             user_id: User identifier
             session_id: Session identifier
-            context: Additional context for logging
+            context: Additional context; only ``context.get('method')`` is
+                forwarded (matching legacy call sites' ``{'method': ...}``).
             _trusted_source: If True, skip injection checks (internal agent-to-agent calls).
 
         Returns:
-            Sanitized question
+            Sanitized question (the INPUT pipeline's transformed content).
 
         Raises:
-            PromptInjectionException: If block_on_threat=True and critical threat detected
+            PromptInjectionException: If the INPUT pipeline blocks the input.
         """
-        if _trusted_source:
-            return question
-        if not self.strict_mode or not self.injection_detection:
-            # Permissive mode or detection disabled for this bot.
-            return question
-
-        # Detect threats. Start by assuming the input is safe so that if
-        # nothing trips a detector, we pass the ORIGINAL input through.
-        sanitized_question = question
-        threats = []
-
-        # Scan a version stripped of framework-injected metadata (e.g.
-        # <user_context>…</user_context> added by TelegramAgentWrapper).
-        # pytector — being a holistic ML classifier — flags our own XML
-        # wrappers as role impersonation, so we must hide them from it.
-        # The fallback regex detector also benefits: it never sees the
-        # framework tags, so it can't false-positive on them either.
-        scan_text = self._framework_sanitizer.strip_framework_patterns(
-            question
+        warnings.warn(
+            "AbstractBot._sanitize_question is deprecated; the INPUT "
+            "GuardrailPipeline (self._guardrail_pipelines[GuardrailStage.INPUT]) "
+            "now owns this flow.",
+            DeprecationWarning,
+            stacklevel=2,
         )
-
-        if PYTECTOR_ENABLED:
-            is_injection, probability = self._injection_detector.detect_injection(
-                scan_text
-            )
-            if is_injection and probability > self.injection_probability_threshold:
-                # pytector is a holistic classifier — no substring to redact.
-                # We leave the original text intact and let the block logic
-                # below decide what to do with it.
-                preview = (scan_text or "")[:120]
-                threats = [{
-                    'type': 'prompt_injection',
-                    'level': ThreatLevel.CRITICAL,
-                    'description': 'High probability prompt injection detected',
-                    'probability': probability,
-                    'pattern': 'pytector-model',
-                    'matched_text': preview,
-                }]
-        else:
-            # Regex detector already pre-strips framework patterns in
-            # detect_threats(); calling sanitize() with the original
-            # ``question`` preserves the framework tags on the way back.
-            sanitized_question, threats = self._injection_detector.sanitize(
-                question,
-                strict=True
-            )
-
-        if threats:
-            # Log the security event
-            await self._security_logger.log_injection_attempt(
-                user_id=user_id or "anonymous",
-                session_id=session_id or "unknown",
-                chatbot_id=str(self.chatbot_id),
-                threats=threats,
+        method = (context or {}).get('method', '')
+        outcome = await self._run_input_pipeline(
+            question=question,
+            user_id=user_id,
+            session_id=session_id,
+            method=method,
+            _trusted_source=_trusted_source,
+        )
+        if outcome.blocked:
+            raise PromptInjectionException(
+                outcome.reason or "Request blocked due to detected security threat",
+                threats=[],
                 original_input=question,
-                sanitized_input=sanitized_question,
-                metadata={
-                    'bot_name': self.name,
-                    'context': context or {}
-                }
             )
-
-            # Check if we should block the request
-            max_severity = max((t['level'] for t in threats), default=ThreatLevel.LOW)
-
-            if self.block_on_threat and max_severity in [ThreatLevel.CRITICAL, ThreatLevel.HIGH]:
-                raise PromptInjectionException(
-                    "Request blocked due to detected security threat",
-                    threats=threats,
-                    original_input=question
-                )
-            # Not blocking: wrap the prompt in XML tags so the LLM knows the
-            # content is untrusted. This preserves the user's actual intent
-            # while telling the model to treat any meta-instructions inside
-            # as data, not commands.
-            sanitized_question = self._wrap_flagged_input(
-                sanitized_question, threats
-            )
-
-        return sanitized_question
+        return outcome.content
 
     @staticmethod
     def _wrap_flagged_input(
         text: str, threats: List[Dict[str, Any]]
     ) -> str:
         """Wrap a flagged prompt in XML tags that mark it as untrusted.
+
+        .. deprecated:: FEAT-396
+            Ported verbatim into ``PromptInjectionGuardrail._wrap_flagged_input``
+            (`bots/guardrails/builtin/prompt_injection.py`), which now owns
+            this wrapping as part of its TRANSFORM verdict. Kept here for
+            any external caller/subclass still invoking it directly.
 
         The tags are picked up naturally by instruction-following LLMs — they
         will extract the literal request (ticket IDs, search terms) but

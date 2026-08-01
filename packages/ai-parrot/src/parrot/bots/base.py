@@ -20,7 +20,6 @@ from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
 from ..utils.helpers import RequestContext, _current_ctx
-from ..security import PromptInjectionException
 from ..security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1612)
 from .prompts import (
     OUTPUT_SYSTEM_PROMPT
@@ -618,35 +617,39 @@ class BaseBot(AbstractBot):
             turn_id = str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
 
-            # SECURITY: Sanitize question. The wrap is for the LLM call ONLY —
-            # do NOT rebind ``question`` here, otherwise the security wrapper
+            # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
+            # (prompt-injection detection + legacy PromptPipeline
+            # transforms). The wrap/transform is for the LLM call ONLY — do
+            # NOT rebind ``question`` here, otherwise the security wrapper
             # leaks into events, conversation memory and downstream agents.
-            try:
-                prompt_for_llm = await self._sanitize_question(
-                    question=question,
-                    user_id=user_id,
-                    session_id=session_id,
-                    context={'method': 'invoke'},
-                    _trusted_source=_trusted_source,
-                )
-            except PromptInjectionException:
+            _input_outcome = await self._run_input_pipeline(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                method='invoke',
+                _trusted_source=_trusted_source,
+            )
+            if _input_outcome.blocked:
+                # NOTE (FEAT-396 TASK-2028): `AIMessage(content=..., metadata=...)`
+                # is not a valid construction — `content` is a read/write
+                # *property* backed by `output`, not a Pydantic field, and
+                # `input`/`output`/`model`/`provider`/`usage` are all
+                # required with no defaults. This exact call (verbatim from
+                # the pre-migration code) would have raised a
+                # `pydantic.ValidationError` the first time a threat was
+                # ever actually blocked here — apparently never exercised by
+                # an existing test. Fixed using the same minimal-AIMessage
+                # pattern already established at `bots/base.py:1807` (ask_stream's
+                # defensive-fallback AIMessage).
                 return AIMessage(
-                    content="Your request could not be processed due to security concerns.",
+                    input=question,
+                    output="Your request could not be processed due to security concerns.",
+                    model='',
+                    provider='',
+                    usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
                     metadata={'error': 'security_block'}
                 )
-
-            # Apply prompt pipeline (also LLM-call-only; preserves the canonical
-            # ``question`` for events/memory).
-            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-                prompt_for_llm = await self._prompt_pipeline.apply(
-                    prompt_for_llm,
-                    context={
-                        'agent_name': self.name,
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'method': 'ask',
-                    }
-                )
+            prompt_for_llm = _input_outcome.content
 
             # Update status and trigger start event
             self.status = AgentStatus.WORKING
@@ -990,39 +993,41 @@ class BaseBot(AbstractBot):
             turn_id = str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
 
-            # Security: sanitize the user's question. The wrap is for the LLM
-            # call ONLY — keep ``question`` clean so events, conversation memory,
-            # vector retrieval and downstream agents see the canonical input.
-            try:
-                prompt_for_llm = await self._sanitize_question(
-                    question=question,
-                    user_id=user_id,
-                    session_id=session_id,
-                    context={'method': 'ask'},
-                    _trusted_source=_trusted_source,
-                )
-            except PromptInjectionException as e:
-                # Return error response instead of crashing
+            # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
+            # (prompt-injection detection + legacy PromptPipeline
+            # transforms). The wrap/transform is for the LLM call ONLY —
+            # keep ``question`` clean so events, conversation memory, vector
+            # retrieval and downstream agents see the canonical input.
+            _input_outcome = await self._run_input_pipeline(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                method='ask',
+                _trusted_source=_trusted_source,
+            )
+            if _input_outcome.blocked:
+                # Same canned shape as the legacy PromptInjectionException
+                # catch, including `threats_detected` — now sourced from the
+                # blocking guardrail's report (see PromptInjectionGuardrail).
+                # NOTE (FEAT-396 TASK-2028): see the `invoke()` seam above for
+                # why this uses `input=`/`output=`/`model=`/`provider=`/
+                # `usage=` instead of the invalid `content=` kwarg the
+                # pre-migration code used here.
+                _threats_detected = _input_outcome.flag_reports.get(
+                    'prompt_injection', {}
+                ).get('threats_detected', 0)
                 return AIMessage(
-                    content="Your request could not be processed due to security concerns. Please rephrase your question.",
+                    input=question,
+                    output="Your request could not be processed due to security concerns. Please rephrase your question.",
+                    model='',
+                    provider='',
+                    usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
                     metadata={
                         'error': 'security_block',
-                        'threats_detected': len(e.threats)
+                        'threats_detected': _threats_detected
                     }
                 )
-
-            # Apply prompt pipeline (LLM-call-only; canonical ``question`` stays
-            # untouched).
-            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-                prompt_for_llm = await self._prompt_pipeline.apply(
-                    prompt_for_llm,
-                    context={
-                        'agent_name': self.name,
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'method': 'ask',
-                    }
-                )
+            prompt_for_llm = _input_outcome.content
 
             # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
             _trace_ctx = trace_context or TraceContext.new_root()
@@ -1636,33 +1641,24 @@ class BaseBot(AbstractBot):
                 source_name=self.name,
             ))
 
-            try:
-                # The wrap is for the LLM call ONLY; keep ``question`` clean.
-                prompt_for_llm = await self._sanitize_question(
-                    question=question,
-                    user_id=user_id,
-                    session_id=session_id,
-                    context={'method': 'ask_stream'},
-                    _trusted_source=_trusted_source,
-                )
-            except PromptInjectionException:
+            # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
+            # (prompt-injection detection + legacy PromptPipeline
+            # transforms). The wrap/transform is for the LLM call ONLY;
+            # keep ``question`` clean.
+            _input_outcome = await self._run_input_pipeline(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                method='ask_stream',
+                _trusted_source=_trusted_source,
+            )
+            if _input_outcome.blocked:
                 yield (
                     "Your request could not be processed due to security concerns. "
                     "Please rephrase your question."
                 )
                 return
-
-            # Apply prompt pipeline (LLM-call-only; ``question`` stays untouched).
-            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-                prompt_for_llm = await self._prompt_pipeline.apply(
-                    prompt_for_llm,
-                    context={
-                        'agent_name': self.name,
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'method': 'ask',
-                    }
-                )
+            prompt_for_llm = _input_outcome.content
 
             default_max_tokens = self._llm_kwargs.get('max_tokens', None)
             max_tokens = kwargs.get('max_tokens', default_max_tokens)
