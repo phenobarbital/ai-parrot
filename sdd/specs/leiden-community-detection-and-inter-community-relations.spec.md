@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-401
 **Date**: 2026-08-01
 **Author**: Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x (GraphIndex is pre-production; no compat guarantees)
 
 ---
