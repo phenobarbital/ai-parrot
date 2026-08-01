@@ -180,7 +180,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -190,8 +190,8 @@
       "parallelism_notes": "Modifies flow.py (register/unregister hookup) — keep sequential with TASK-2053; TASK-2055 may run in parallel with this one (disjoint files except the optional recovery-service registration, coordinated via completion notes).",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2054-flow-recovery-service.md"
+      "completed_at": "2026-08-01T01:30:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2054-flow-recovery-service.md"
     },
     {
       "id": "TASK-2055",
