@@ -14,7 +14,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only parrot/models/ — no overlap with events or clients tasks.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2031-usage-model-primitives.md"
+      "completed_at": "2026-08-01T00:32:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2031-usage-model-primitives.md"
     },
     {
       "id": "TASK-2032",
