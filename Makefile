@@ -6,7 +6,7 @@
 		generate-registry check-registry \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
-		install-supertonic docker-tool-worker
+		install-supertonic docker-tool-worker docker-integrations docker-dev
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -682,6 +682,22 @@ docker-tool-worker:
 	@echo "Building parrot-tools tool-worker image..."
 	@docker build -f docker/tool-worker/Dockerfile $(TOOL_WORKER_BUILD_ARGS) -t parrot-tools:latest .
 	@echo "✅ parrot-tools:latest built (worker for DockerToolExecutor / K8sToolExecutor)"
+
+# Build the standalone messaging-bot integrations image (Telegram/Slack/
+# MSTeams/WhatsApp/...), driven by env/integrations_bots.yaml.
+#   make docker-integrations INTEGRATIONS_BUILD_ARGS='--build-arg INTEGRATIONS_EXTRAS=telegram,matrix'
+docker-integrations:
+	@echo "Building parrot-integrations image..."
+	@docker build -f docker/integrations/Dockerfile $(INTEGRATIONS_BUILD_ARGS) -t parrot-integrations:latest .
+	@echo "✅ parrot-integrations:latest built (mount env/ at runtime: -v \$$(pwd)/env:/app/env)"
+
+# Build the isolated agent/workflow/dev_loop sandbox (ai-parrot installed
+# normally via `uv pip install`, no monorepo build-context dependency).
+#   make docker-dev DEV_BUILD_ARGS='--build-arg PARROT_EXTRAS=all'
+docker-dev:
+	@echo "Building parrot-dev image..."
+	@docker build -f docker/dev/Dockerfile $(DEV_BUILD_ARGS) -t parrot-dev:latest docker/dev
+	@echo "✅ parrot-dev:latest built (run: docker run -it -v \$$(pwd):/workspace parrot-dev:latest)"
 
 # Docker targets for WhatsApp Bridge
 docker-whatsapp-bridge:
