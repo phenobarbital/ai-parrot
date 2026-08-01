@@ -73,7 +73,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -81,8 +81,8 @@
       "parallelism_notes": "Touches models.py/store.py/search.py only; no overlap with TASK-2069's new files. NOT parallel with TASK-2073 (both modify store.py and models.py).",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2072-archive-category-ranking-exclusion.md"
+      "completed_at": "2026-08-01T23:33:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2072-archive-category-ranking-exclusion.md"
     },
     {
       "id": "TASK-2073",
