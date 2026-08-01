@@ -151,10 +151,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added `ormsgpack>=1.5` to `packages/ai-parrot/pyproject.toml`
+(installed into the shared venv). Implemented `serializer.py` with
+`FlowStateSerializer`: a type registry (`register()`, pre-registers
+`AIMessage`), `encode`/`encode_with_meta`/`decode` via ormsgpack with a
+`default=` safety-net hook, recursive pre-processing so registered
+Pydantic models round-trip as `{"__type__": tag, "data": model_dump(mode="json")}`,
+unregistered objects (including unregistered Pydantic models) degrade to
+`{"__type__": "lossy", "__repr__": repr(obj)}` with the `lossy` flag set
+and a DEBUG log, and `Exception`/`BaseException` instances always encode
+as structured `{"type", "message", "repr"}` dicts via the new
+`encode_error()` static helper. Unknown type tags on decode are never
+dynamically imported — the raw envelope is returned. Re-exported
+`FlowStateSerializer` from `checkpoint/__init__.py`. Added 8 tests in
+`test_serializer.py` (registered round-trip, unregistered Pydantic +
+arbitrary-object lossy degradation, structured exception encoding,
+`encode_error()` helper, nested-structure round-trip, custom
+`register()`, unknown-tag decode safety). All 8 pass; `ruff check` clean.
 
 **Deviations from spec**: none

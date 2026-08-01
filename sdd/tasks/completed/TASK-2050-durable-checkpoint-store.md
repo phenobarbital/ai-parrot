@@ -146,10 +146,70 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Implemented `store/durable.py` (`DurableCheckpointStore`),
+parametrized by `driver="sqlite"|"postgres"|"mongodb"`, one
+`flow_checkpoints` table/collection keyed `(flow_id, checkpoint_id)` with
+columns `flow_id, checkpoint_id, parent_checkpoint_id, status, flow_name,
+created_at, lossy, payload` (payload = ormsgpack bytes from
+`FlowStateSerializer`, the self-contained source of truth — the other
+columns are indexed metadata for cheap `list_flows(status=...)`
+filtering without decoding every payload). No TTL/expiry anywhere.
+Upsert via `ON CONFLICT (flow_id, checkpoint_id) DO UPDATE` (sqlite/pg)
+and `update_one(..., upsert=True)` (mongo) — verified no duplicates on
+re-`put()`. Lease methods raise `NotImplementedError("lease requires the
+redis store")` per the task's explicit instruction (durable stores are
+not the lease authority).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Investigation beyond the listed pattern files (worth flagging)**: the
+task pointed at `PostgresResultStorage`/`DocumentDbResultStorage` as
+pattern references, but empirical testing against throwaway
+sqlite/postgres/mongo containers (`docker run ... :7-alpine` /
+`postgres:16-alpine` / `mongo:7`) revealed the installed asyncdb
+version's per-driver read-method signatures do NOT match what
+`PostgresResultStorage` itself calls:
+- sqlite: `execute()` binds named `:param` kwargs directly;
+  `fetchrow()`/`fetch_one()` only accept a positional list via the
+  literal `parameters=` kwarg (`?` placeholders) — passing named kwargs
+  to them raises `TypeError` inside aiosqlite; `fetch_all()` wraps
+  arbitrary kwargs into a dict passed as `parameters=` (named `:param`
+  again, different wrapping than `fetch_one`).
+- postgres: the `pg` driver's own `fetch(number=1)`/`fetchrow()` are
+  cursor-only (NO `sentence` argument) in the installed version —
+  calling them the way `PostgresResultStorage.list()`/`.get()` do
+  (`conn.fetch(sql, *params)`) raises `TypeError: pg.fetch() takes from
+  1 to 2 positional arguments but N were given`. Used `fetch_one`/
+  `fetch_all` (aliased `fetchone`/`fetchall`) instead — confirmed
+  correct via a real container.
+- mongodb: `AsyncDB("mongodb", ...)` fails — the actual module is named
+  `asyncdb.drivers.mongo`, so the correct call is `AsyncDB("mongo",
+  ...)`. Also, passing only `dsn=` is silently discarded by the driver's
+  internal `_construct_dsn()` unless a `params` dict (host/port/
+  database/...) is also supplied — parsed the DSN into that dict in
+  `_ensure()`. `execute(collection, operation, *args, **kwargs)`
+  dispatches to the underlying Motor collection method and returns
+  `(result, error)`; `query()` supports `sort=`/`limit=` and returns
+  `[docs, error]` (list, not tuple, but unpacks the same).
 
-**Deviations from spec**: none
+All of the above is documented in the module docstring so the next
+reader doesn't have to re-derive it. Confirmed correct end-to-end by
+running the full contract suite against real throwaway containers for
+all three drivers (not just sqlite): 10/10 pass (put/get/history/
+list_flows-by-status/upsert-no-duplicates on each of sqlite, postgres,
+mongodb). `store/__init__.py` and the top-level `checkpoint/__init__.py`
+re-export `DurableCheckpointStore` directly (not lazy) — safe because
+`durable.py` only imports the `AsyncDB` factory at module level; the
+heavy driver modules (motor/pymongo/bson etc.) are imported lazily by
+`AsyncDB()` itself only when a store instance actually connects.
+
+Added `test_durable_store.py`: 6 sqlite tests always run (file-backed,
+no external service — the mandated acceptance-criteria baseline), plus
+4 postgres/mongo tests gated by a socket-based `_service_available()`
+skip guard (verified: cleanly skip with no service reachable; all pass
+against throwaway containers). `ruff check` clean.
+
+**Deviations from spec**: none (the driver-signature workarounds are
+implementation necessities to satisfy the store contract correctly
+through the currently-installed asyncdb version, not changes to the
+spec's storage model, key layout, or semantics).

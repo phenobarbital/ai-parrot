@@ -138,10 +138,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Implemented `store/base.py` (`CheckpointStore(ABC)` with all 9
+abstract methods from spec §2: `put/latest/get/history/list_flows/
+delete_flow/acquire_lease/renew_lease/release_lease/close`) and
+`store/factory.py` (`get_checkpoint_store()` — instance > arg > env
+`FLOW_CHECKPOINT_STORE` > default `"redis"`; lazy `_import_class()` so
+missing drivers only fail when selected; durable names `sqlite`/
+`postgres`/`mongodb` all resolve to the future `DurableCheckpointStore`
+with a `driver=` kwarg). Added the 6 `FLOW_CHECKPOINT_*` env vars to
+`parrot/conf.py` mirroring the `CREW_RESULT_STORAGE*` style. `store/
+__init__.py` re-exports `CheckpointStore`/`get_checkpoint_store` without
+importing the not-yet-existing redis/durable modules (kept the
+sub-package importable without Redis/DB drivers). Top-level `checkpoint/
+__init__.py` re-exports both. Added 8 tests in `test_store_factory.py`
+(ABC non-instantiable, instance passthrough, arg/env/default resolution
+via a monkeypatched `_import_class`, durable driver kwarg, unknown-name
+ValueError, conf.py defaults). Also fixed pre-existing ruff import-sort/
+`datetime.UTC` findings in `test_checkpoint_model.py` (TASK-2046 test
+file) while touching the checkpoint test directory. All 22 tests in
+`tests/flows/checkpoint/` pass; `ruff check` clean.
 
 **Deviations from spec**: none

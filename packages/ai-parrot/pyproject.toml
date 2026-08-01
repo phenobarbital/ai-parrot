@@ -73,6 +73,9 @@ dependencies = [
     "navigator-api[uvloop,locale,google]>=3.1.2",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.11.6",
+    # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
+    # native Pydantic/datetime/UUID serialization; never pickle.
+    "ormsgpack>=1.5",
     # HTTP / networking
     "rich>=13.0",
     # requests is otherwise transitive; pin to the 2.33 series — the intersection
