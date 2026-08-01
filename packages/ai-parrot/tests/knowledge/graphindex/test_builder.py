@@ -1,22 +1,19 @@
 """Unit tests for parrot.knowledge.graphindex.builder."""
 
 import asyncio
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from parrot.knowledge.graphindex.builder import GraphIndexBuilder
 from parrot.knowledge.graphindex.schema import (
     BuildResult,
     IngestResult,
     NodeKind,
-    Provenance,
     SourceConfig,
-    UniversalEdge,
     UniversalNode,
 )
 from parrot.knowledge.ontology.schema import MergedOntology, TenantContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -297,3 +294,79 @@ class TestGraphIndexBuilder:
         ctx = make_ctx("my-tenant")
         result = await builder.ingest_document("doc://x.pdf", ctx)
         assert result.tenant_id == "my-tenant"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-401 — community_algorithm param
+# ---------------------------------------------------------------------------
+
+
+class TestCommunityAlgorithmParam:
+    def test_default_is_leiden(self, tmp_path):
+        """community_algorithm defaults to 'leiden' (FEAT-401 default)."""
+        builder = make_builder(tmp_path=tmp_path)
+        assert builder.community_algorithm == "leiden"
+
+    def test_accepts_louvain_override(self, tmp_path):
+        builder = GraphIndexBuilder(
+            persistence=make_persistence(),
+            embedder=make_embedder(),
+            output_dir=tmp_path,
+            community_algorithm="louvain",
+        )
+        assert builder.community_algorithm == "louvain"
+
+    @pytest.mark.asyncio
+    async def test_forwarded_to_detect_communities(self, tmp_path):
+        """Stage 4.5 must forward community_algorithm as
+        detect_communities(algorithm=...)."""
+        builder = GraphIndexBuilder(
+            persistence=make_persistence(),
+            embedder=make_embedder(),
+            output_dir=tmp_path,
+            detect_communities_enabled=True,
+            community_algorithm="louvain",
+        )
+        sources = SourceConfig(tenant_id="t")
+        ctx = make_ctx("t")
+        with patch(
+            "parrot.knowledge.graphindex.builder.detect_communities",
+        ) as mock_detect:
+            mock_detect.return_value = MagicMock(
+                communities=[], modularity=0.0, node_to_community={},
+            )
+            await builder.build(sources, ctx)
+        assert mock_detect.call_args.kwargs["algorithm"] == "louvain"
+
+    @pytest.mark.asyncio
+    async def test_inter_community_computed_when_communities_enabled(self, tmp_path):
+        """Stage 6 must call compute_inter_community_graph() when a
+        CommunitiesResult is available, and set analytics.inter_community."""
+        builder = GraphIndexBuilder(
+            persistence=make_persistence(),
+            embedder=make_embedder(),
+            output_dir=tmp_path,
+            detect_communities_enabled=True,
+        )
+        sources = SourceConfig(tenant_id="t")
+        ctx = make_ctx("t")
+        with patch(
+            "parrot.knowledge.graphindex.builder.compute_inter_community_graph",
+        ) as mock_compute:
+            mock_compute.return_value = MagicMock()
+            await builder.build(sources, ctx)
+        assert builder.last_community_result is not None
+        mock_compute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_inter_community_not_computed_when_communities_disabled(self, tmp_path):
+        """No CommunitiesResult → compute_inter_community_graph() is never called."""
+        builder = make_builder(tmp_path=tmp_path)  # detect_communities_enabled defaults False
+        sources = SourceConfig(tenant_id="t")
+        ctx = make_ctx("t")
+        with patch(
+            "parrot.knowledge.graphindex.builder.compute_inter_community_graph",
+        ) as mock_compute:
+            await builder.build(sources, ctx)
+        assert builder.last_community_result is None
+        mock_compute.assert_not_called()
