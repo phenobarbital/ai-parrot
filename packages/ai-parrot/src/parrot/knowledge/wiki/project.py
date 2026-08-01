@@ -186,9 +186,20 @@ class WikiProjectConfig(BaseModel):
         return self.storage_path(root) / "wiki.db"
 
     def is_built(self, root: Path) -> bool:
-        """Whether the retrieval plane exists on disk for this repo."""
+        """Whether the retrieval plane exists for this repo.
+
+        ``sqlite``/``memory`` are on-disk backends, so this is a cheap
+        local file/directory probe. ``arangodb`` is server-hosted — there
+        is no local artifact to check, and probing the server here would
+        turn a synchronous config check into a network round-trip. The
+        real "is it built" signal for ``arangodb`` is deferred to the
+        store's own (idempotent) ``initialize()`` connection, which
+        creates the database/collections/view on first use if missing.
+        """
         if self.backend == "sqlite":
             return self.db_path(root).exists()
+        if self.backend == "arangodb":
+            return True
         return (self.storage_path(root) / "pages").exists()
 
 
