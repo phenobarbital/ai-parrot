@@ -22,7 +22,7 @@
       "parallelism_notes": "Foundation task — all other tasks depend on the algorithm or its models",
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
-      "completed_at": "2026-08-01T20:30:11+00:00",
+      "completed_at": "2026-08-01T17:44:05+00:00",
       "file": "sdd/tasks/completed/TASK-2064-leiden-algorithm-integration.md",
       "verification": "verified"
     },
@@ -43,7 +43,7 @@
       "parallelism_notes": "Depends on CommunitiesResult.algorithm field added by TASK-2064",
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
-      "completed_at": "2026-08-01T20:30:11+00:00",
+      "completed_at": "2026-08-01T17:49:00+00:00",
       "file": "sdd/tasks/completed/TASK-2065-inter-community-relations.md",
       "verification": "verified"
     },
@@ -65,7 +65,7 @@
       "parallelism_notes": "Needs both the algorithm (TASK-2064) and the inter-community model (TASK-2065)",
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
-      "completed_at": "2026-08-01T20:30:11+00:00",
+      "completed_at": "2026-08-01T18:02:17+00:00",
       "file": "sdd/tasks/completed/TASK-2066-builder-analytics-integration.md",
       "verification": "verified"
     },
@@ -87,7 +87,7 @@
       "parallelism_notes": "Needs inter-community model (TASK-2065) and analytics integration (TASK-2066)",
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
-      "completed_at": "2026-08-01T20:30:11+00:00",
+      "completed_at": "2026-08-01T18:12:23+00:00",
       "file": "sdd/tasks/completed/TASK-2067-html-export-enhancement.md",
       "verification": "verified"
     },
@@ -108,7 +108,7 @@
       "parallelism_notes": "Only needs the InterCommunityGraph model — can run in parallel with TASK-2066 and TASK-2067",
       "assigned_to": null,
       "started_at": "2026-08-01T17:23:51+00:00",
-      "completed_at": "2026-08-01T20:30:11+00:00",
+      "completed_at": "2026-08-01T18:23:57+00:00",
       "file": "sdd/tasks/completed/TASK-2068-optional-deps-cli-docs.md",
       "verification": "verified"
     }

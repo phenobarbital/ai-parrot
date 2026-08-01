@@ -22,16 +22,20 @@ import hashlib
 import logging
 import os
 from pathlib import Path
-from typing import Optional, Type
 
 import pathspec
 
 from parrot.knowledge.graphindex.analytics import compute_analytics, generate_report
 from parrot.knowledge.graphindex.assemble import GraphAssembler
+from parrot.knowledge.graphindex.communities import (
+    CommunitiesResult,
+    detect_communities,
+)
 from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
 from parrot.knowledge.graphindex.extractors.code import CodeExtractor
 from parrot.knowledge.graphindex.extractors.loader import LoaderExtractor
 from parrot.knowledge.graphindex.extractors.skill import SkillExtractor
+from parrot.knowledge.graphindex.inter_community import compute_inter_community_graph
 from parrot.knowledge.graphindex.persist import GraphIndexPersistence
 from parrot.knowledge.graphindex.resolve import ResolutionConfig, resolve_cross_domain
 from parrot.knowledge.graphindex.schema import (
@@ -41,10 +45,6 @@ from parrot.knowledge.graphindex.schema import (
     SourceConfig,
     UniversalEdge,
     UniversalNode,
-)
-from parrot.knowledge.graphindex.communities import (
-    CommunitiesResult,
-    detect_communities,
 )
 from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
 from parrot.knowledge.ontology.schema import TenantContext
@@ -83,14 +83,21 @@ class GraphIndexBuilder:
             FEAT-192 toolkit, the LLM-Wiki orchestrator) read this
             attribute when they need to score node relevance with
             tenant-specific weights instead of library defaults.
-        detect_communities_enabled: When True, run FEAT-191 Louvain
-            community detection between resolve and persist; the
+        detect_communities_enabled: When True, run community detection
+            (FEAT-191 Louvain, or FEAT-401 Leiden — see
+            ``community_algorithm``) between resolve and persist; the
             partition is stored on ``self.last_community_result``
             and ``community_id`` is written into every node's
             ``domain_tags`` so it round-trips through persistence.
             Default False — opt-in.
-        community_resolution: Louvain γ resolution parameter
-            (>1.0 finds smaller/tighter communities).
+        community_resolution: Resolution parameter (Louvain γ / Leiden
+            ``resolution_parameter``); >1.0 finds smaller/tighter
+            communities.
+        community_algorithm: Which community detection algorithm to
+            run — ``"leiden"`` (default, FEAT-401) or ``"louvain"``.
+            Forwarded to ``detect_communities(algorithm=...)``; Leiden
+            silently falls back to Louvain with a logged warning when
+            ``leidenalg``/``python-igraph`` are not installed.
         code_extractor_class: The ``CodeExtractor`` subclass to use for
             Python source files (FEAT-240). Defaults to ``CodeExtractor``.
             Pass ``OdooCodeExtractor`` to enable Odoo model extraction.
@@ -106,14 +113,15 @@ class GraphIndexBuilder:
         self,
         persistence: GraphIndexPersistence,
         embedder: GraphIndexEmbedder,
-        output_dir: Optional[Path] = None,
-        ignore_file: Optional[Path] = None,
-        resolution_config: Optional[ResolutionConfig] = None,
-        pageindex_toolkit: Optional[PageIndexToolkit] = None,
-        signal_config: Optional[SignalRelevanceConfig] = None,
+        output_dir: Path | None = None,
+        ignore_file: Path | None = None,
+        resolution_config: ResolutionConfig | None = None,
+        pageindex_toolkit: PageIndexToolkit | None = None,
+        signal_config: SignalRelevanceConfig | None = None,
         detect_communities_enabled: bool = False,
         community_resolution: float = 1.0,
-        code_extractor_class: Type = CodeExtractor,
+        community_algorithm: str = "leiden",
+        code_extractor_class: type = CodeExtractor,
         export_html_enabled: bool = False,
     ) -> None:
         self.persistence = persistence
@@ -125,10 +133,11 @@ class GraphIndexBuilder:
         self.signal_config = signal_config
         self.detect_communities_enabled = detect_communities_enabled
         self.community_resolution = community_resolution
+        self.community_algorithm = community_algorithm
         self.export_html_enabled = export_html_enabled
-        self.last_community_result: Optional[CommunitiesResult] = None
+        self.last_community_result: CommunitiesResult | None = None
         self.logger = logging.getLogger(__name__)
-        self._ignore_spec: Optional[pathspec.PathSpec] = self._load_ignore(ignore_file)
+        self._ignore_spec: pathspec.PathSpec | None = self._load_ignore(ignore_file)
 
     # ------------------------------------------------------------------
     # Public interface
@@ -202,9 +211,10 @@ class GraphIndexBuilder:
             errors.append(f"Resolution failed: {exc}")
             inferred_edges = []
 
-        # Stage 4.5: Louvain community detection (FEAT-191, opt-in).
-        # Runs between resolve and persist so the community_id rides
-        # along on UniversalNode.domain_tags to ArangoDB.
+        # Stage 4.5: community detection (FEAT-191 Louvain, FEAT-401
+        # Leiden default; opt-in). Runs between resolve and persist so
+        # the community_id rides along on UniversalNode.domain_tags to
+        # ArangoDB.
         if self.detect_communities_enabled:
             try:
                 self.last_community_result = detect_communities(
@@ -214,6 +224,7 @@ class GraphIndexBuilder:
                     signal_config=self.signal_config,
                     embedder=self.embedder if self.signal_config else None,
                     write_back_to_nodes=True,
+                    algorithm=self.community_algorithm,
                 )
                 logger.info(
                     "Stage 4.5 complete: %d communities, modularity=%.4f",
@@ -234,12 +245,19 @@ class GraphIndexBuilder:
             persist_result = {"nodes_persisted": 0, "edges_persisted": 0}
 
         # Stage 6: Analytics + Report
-        report_path: Optional[Path] = None
+        report_path: Path | None = None
         analytics = None
         try:
             analytics = compute_analytics(assembler.graph, all_nodes, all_edges)
-            # Attach FEAT-191 partition so the report includes communities.
+            # Attach FEAT-191/FEAT-401 partition so the report includes communities.
             analytics.communities = self.last_community_result
+            # FEAT-401: compute the inter-community meta-graph — needs both
+            # the graph and the CommunitiesResult, so it happens here
+            # rather than inside compute_analytics().
+            if self.last_community_result is not None:
+                analytics.inter_community = compute_inter_community_graph(
+                    assembler.graph, self.last_community_result,
+                )
             if self.output_dir is not None:
                 report_path = generate_report(
                     analytics, self.output_dir, tenant_id=ctx.tenant_id
@@ -257,7 +275,7 @@ class GraphIndexBuilder:
             try:
                 # Deferred import: projection imports from schema (which imports
                 # from analytics), creating a cycle if imported at module level.
-                from parrot.knowledge.graphindex.projection import (  # noqa: PLC0415
+                from parrot.knowledge.graphindex.projection import (
                     project_graph_sidecars,
                 )
 
@@ -280,13 +298,13 @@ class GraphIndexBuilder:
                 errors.append(f"Projection failed: {exc}")
 
         # Stage 6.6: Interactive HTML map — emit graph.html + graph.json.
-        graph_html_path: Optional[Path] = None
-        graph_json_path: Optional[Path] = None
+        graph_html_path: Path | None = None
+        graph_json_path: Path | None = None
         if self.export_html_enabled and self.output_dir is not None:
             try:
                 # Deferred import: export_html is optional and keeps the
                 # builder importable when its (light) deps are absent.
-                from parrot.knowledge.graphindex.export_html import (  # noqa: PLC0415
+                from parrot.knowledge.graphindex.export_html import (
                     export_graph,
                 )
 
@@ -295,6 +313,7 @@ class GraphIndexBuilder:
                     self.output_dir,
                     communities=self.last_community_result,
                     analytics=analytics,
+                    inter_community=getattr(analytics, "inter_community", None),
                 )
                 logger.info(
                     "Stage 6.6 complete: interactive map written to %s",
@@ -402,7 +421,9 @@ class GraphIndexBuilder:
         # Build an in-memory assembler from the persisted graph state.
         # For now, generate an empty analytics result (full reload from ArangoDB
         # is planned for a future task — this satisfies the explicit call contract).
-        from parrot.knowledge.graphindex.analytics import AnalyticsResult  # noqa: PLC0415
+        from parrot.knowledge.graphindex.analytics import (
+            AnalyticsResult,
+        )
 
         analytics = AnalyticsResult()
         report_path = generate_report(analytics, self.output_dir, tenant_id=ctx.tenant_id)
@@ -413,7 +434,7 @@ class GraphIndexBuilder:
     # Private helpers — extraction
     # ------------------------------------------------------------------
 
-    def _load_ignore(self, ignore_file: Optional[Path]) -> Optional[pathspec.PathSpec]:
+    def _load_ignore(self, ignore_file: Path | None) -> pathspec.PathSpec | None:
         """Load ``.graphindexignore`` patterns from a file.
 
         Args:

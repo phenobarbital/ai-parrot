@@ -312,10 +312,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Implemented `_to_igraph()` (rustworkx → igraph, mirrors
+`_to_undirected_networkx`), `_run_leiden()` helper (lazy `leidenalg`
+import, `RBConfigurationVertexPartition`, falls back to `None` on
+`ImportError` with a logged warning naming the missing package),
+`algorithm` param on `detect_communities()` (default `"leiden"`,
+`"louvain"` unchanged/backward-compatible), `CommunitiesResult.algorithm`
+field (default `"louvain"`), `HierarchicalCommunitiesResult` model, and
+`detect_hierarchical_communities()` (fixed default resolutions
+`[0.25, 0.5, 1.0, 2.0, 4.0]`, short-circuits to `[1.0]` for graphs with
+<20 nodes unless resolutions are explicit). Added 16 new tests
+(`TestLeidenAlgorithm`, `TestHierarchicalCommunities`) plus new
+`_build_hierarchical_graph()` / `_build_tiny_graph()` test fixtures
+following the existing `_build_two_cliques()` helper pattern (no pytest
+fixtures named in the task's illustrative Test Specification exist in
+this repo's `conftest.py` — followed the codebase's actual helper-function
+convention instead). Installed `leidenalg`/`python-igraph` into the shared
+`.venv` to exercise the real Leiden path in tests (adding them to
+`pyproject.toml[leiden]` extra is TASK-2068's scope, not touched here).
+Pinned `algorithm="louvain"` explicitly on 2 pre-existing tests whose
+names claim Louvain-specific behaviour, since the default flipped to
+`"leiden"`. Ran `ruff check --fix` on both files; fixed 2 new PERF102
+occurrences the new `_to_igraph()` inherited from mirroring
+`_to_undirected_networkx`'s pre-existing pattern. `ruff check` is clean
+except 2 pre-existing `B017` findings in `TestPydanticModels` (confirmed
+via `git stash` to predate this task — out of scope). All 51 relevant
+tests pass; 2 pre-existing `TestBuilderIntegration` failures
+(`ModuleNotFoundError: parrot.utils.types`) also confirmed pre-existing
+via `git stash` — a known worktree/compiled-extension environment issue
+unrelated to this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

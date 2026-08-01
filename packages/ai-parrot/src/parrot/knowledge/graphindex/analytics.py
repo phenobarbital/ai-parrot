@@ -14,7 +14,6 @@ import logging
 import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import rustworkx
 from pydantic import BaseModel, Field, field_serializer
@@ -33,6 +32,14 @@ try:
     from parrot.knowledge.graphindex.communities import CommunitiesResult
 except ImportError:  # pragma: no cover — communities ships with FEAT-191
     CommunitiesResult = None  # type: ignore[assignment]
+
+# FEAT-401 — optional, lazy-typed; the field is `Optional` so analytics
+# stays usable even when the inter-community meta-graph isn't computed
+# (the builder is responsible for populating it — see builder.py Stage 6).
+try:
+    from parrot.knowledge.graphindex.inter_community import InterCommunityGraph
+except ImportError:  # pragma: no cover — inter_community ships with FEAT-401
+    InterCommunityGraph = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -164,20 +171,28 @@ class AnalyticsResult:
             ``target_id``, ``confidence``, ``source_kind``, ``target_kind``.
         suggested_questions: Generated question strings derived from
             templates.
-        communities: Optional FEAT-191 Louvain partition result. When
-            set, ``generate_report`` renders an additional
-            ``## Communities`` section.
+        communities: Optional FEAT-191/FEAT-401 community partition
+            result (Leiden or Louvain). When set, ``generate_report``
+            renders an additional ``## Communities`` section.
         knowledge_gaps: Optional FEAT-215 knowledge gap detection result.
             When set, ``generate_report`` renders an additional
             ``## Knowledge Gaps`` section.
+        inter_community: Optional FEAT-401 inter-community meta-graph
+            (community-to-community relations). Populated by the
+            builder after community detection — ``compute_analytics``
+            does not compute it itself since it needs the
+            ``CommunitiesResult`` in addition to the graph. When set
+            and non-empty, ``generate_report`` renders an additional
+            ``## Inter-Community Relations`` section.
     """
 
     god_nodes: list[dict] = field(default_factory=list)
     surprising_connections: list[dict] = field(default_factory=list)
     suggested_questions: list[str] = field(default_factory=list)
-    communities: Optional["CommunitiesResult"] = None
-    knowledge_gaps: Optional[KnowledgeGaps] = None
-    dismissed: Optional[DismissedInsights] = None
+    communities: CommunitiesResult | None = None
+    knowledge_gaps: KnowledgeGaps | None = None
+    dismissed: DismissedInsights | None = None
+    inter_community: InterCommunityGraph | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -287,8 +302,8 @@ def _rank_surprising_connections(
     edges: list[UniversalEdge],
     nodes: list[UniversalNode],
     top_k: int,
-    graph: Optional[rustworkx.PyDiGraph] = None,
-    communities_result: Optional["CommunitiesResult"] = None,
+    graph: rustworkx.PyDiGraph | None = None,
+    communities_result: CommunitiesResult | None = None,
 ) -> list[dict]:
     """Rank inferred cross-domain ``mentions`` edges by composite surprise score.
 
@@ -319,7 +334,7 @@ def _rank_surprising_connections(
 
     # Build degree map for peripheral-hub scoring.
     degrees: dict[str, int] = {}
-    degree_threshold: Optional[float] = None
+    degree_threshold: float | None = None
     if graph is not None and graph.num_nodes() > 0:
         # Build node_id → graph index for degree lookup.
         nid_to_idx: dict[str, int] = {}
@@ -490,7 +505,7 @@ def find_isolated_nodes(
     graph: rustworkx.PyDiGraph,
     nodes: list[UniversalNode],
     max_degree: int = 1,
-    exclude_kinds: Optional[set[NodeKind]] = None,
+    exclude_kinds: set[NodeKind] | None = None,
 ) -> list[dict]:
     """Find nodes with few connections (potential knowledge gaps).
 
@@ -553,7 +568,7 @@ def find_isolated_nodes(
 
 
 def find_sparse_communities(
-    communities_result: Optional["CommunitiesResult"],
+    communities_result: CommunitiesResult | None,
     min_size: int = 3,
     max_cohesion: float = 0.15,
 ) -> list[dict]:
@@ -599,7 +614,7 @@ def find_sparse_communities(
 def find_bridge_nodes(
     graph: rustworkx.PyDiGraph,
     nodes: list[UniversalNode],
-    communities_result: Optional["CommunitiesResult"],
+    communities_result: CommunitiesResult | None,
     min_communities: int = 3,
 ) -> list[dict]:
     """Find nodes that bridge multiple distinct communities.
@@ -755,7 +770,7 @@ def list_unreviewed_insights(analytics: AnalyticsResult) -> list[dict]:
 def generate_report(
     analytics: AnalyticsResult,
     output_dir: Path,
-    llm_polish: bool = False,  # noqa: FBT001 — stubbed for v1.5
+    llm_polish: bool = False,
     tenant_id: str = "default",
 ) -> Path:
     """Generate ``GRAPH_REPORT.md`` from analytics results.
@@ -776,7 +791,9 @@ def generate_report(
         Path to the written report file.
     """
     # Deferred to avoid a circular import: projection → schema → analytics.
-    from parrot.knowledge.graphindex.projection import project_report_frontmatter  # noqa: PLC0415
+    from parrot.knowledge.graphindex.projection import (
+        project_report_frontmatter,
+    )
 
     if llm_polish:
         logger.info("llm_polish=True is not yet implemented; using deterministic template.")
@@ -868,6 +885,34 @@ def _render_report(analytics: AnalyticsResult) -> str:
             lines.append(
                 f"| {rank} | `{comm.community_id}` | {comm.size} "
                 f"| {comm.centroid_node_id} | {comm.cohesion:.4f} | {top} |"
+            )
+        lines.append("")
+
+    # --- Inter-Community Relations (FEAT-401, only when present and non-empty) ---
+    if analytics.inter_community is not None and analytics.inter_community.relations:
+        ic = analytics.inter_community
+        lines.append("## Inter-Community Relations")
+        lines.append("")
+        lines.append(
+            f"**Density**: {ic.density:.2%} "
+            f"({ic.connected_pairs}/{ic.total_possible_pairs} pairs connected)"
+        )
+        lines.append("")
+        lines.append(
+            "| Source | Target | Edges (→) | Edges (←) "
+            "| Weight (→) | Weight (←) | Coupling |"
+        )
+        lines.append(
+            "|--------|--------|-----------|-----------"
+            "|------------|------------|----------|"
+        )
+        for rel in ic.relations:
+            src = rel.source_label or rel.source_community_id
+            tgt = rel.target_label or rel.target_community_id
+            lines.append(
+                f"| {src} | {tgt} | {rel.directed_edge_count} "
+                f"| {rel.reverse_edge_count} | {rel.total_weight:.2f} "
+                f"| {rel.reverse_weight:.2f} | {rel.coupling_ratio:.4f} |"
             )
         lines.append("")
 

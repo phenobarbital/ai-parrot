@@ -9,11 +9,10 @@ from __future__ import annotations
 import json
 
 import pytest
-
+from parrot.knowledge.graphindex import export_html as EH
 from parrot.knowledge.graphindex.analytics import compute_analytics
 from parrot.knowledge.graphindex.assemble import GraphAssembler
 from parrot.knowledge.graphindex.communities import detect_communities
-from parrot.knowledge.graphindex import export_html as EH
 from parrot.knowledge.graphindex.export_html import (
     GraphExportPayload,
     build_export_payload,
@@ -21,6 +20,10 @@ from parrot.knowledge.graphindex.export_html import (
     export_graph,
     write_graph_html,
     write_graph_json,
+)
+from parrot.knowledge.graphindex.inter_community import (
+    InterCommunityGraph,
+    InterCommunityRelation,
 )
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
@@ -266,3 +269,128 @@ class TestExportGraph:
         _, j2 = export_graph(asm.graph, tmp_path / "b", communities=comm,
                              analytics=ana, echarts_js=FAKE_ECHARTS)
         assert j1.read_text() == j2.read_text()
+
+
+# ---------------------------------------------------------------------------
+# FEAT-401 — Inter-community relations export
+# ---------------------------------------------------------------------------
+
+
+def _sample_inter_community_graph() -> InterCommunityGraph:
+    return InterCommunityGraph(
+        relations=[
+            InterCommunityRelation(
+                source_community_id="cid_a", target_community_id="cid_b",
+                source_label="Payments", target_label="Shipping",
+                directed_edge_count=1, reverse_edge_count=0,
+                total_weight=1.0, reverse_weight=0.0, coupling_ratio=0.1111,
+            ),
+        ],
+        community_count=2, connected_pairs=1, total_possible_pairs=1, density=1.0,
+    )
+
+
+class TestBuildExportPayloadInterCommunity:
+    def test_fields_default_empty(self, graph_bundle):
+        asm, *_ = graph_bundle
+        payload = build_export_payload(asm.graph)
+        assert payload.inter_community_relations == []
+        assert payload.inter_community_density is None
+
+    def test_fields_populated_when_passed(self, graph_bundle):
+        asm, *_ = graph_bundle
+        rels = [{"source_community_id": "a", "target_community_id": "b"}]
+        payload = build_export_payload(
+            asm.graph, inter_community_relations=rels, inter_community_density=0.5,
+        )
+        assert payload.inter_community_relations == rels
+        assert payload.inter_community_density == 0.5
+
+
+class TestInterCommunityExport:
+    def test_export_json_inter_community(self, graph_bundle, tmp_path):
+        """graph.json payload includes inter-community relations."""
+        asm, _nodes, _edges, comm, _ana = graph_bundle
+        ic = _sample_inter_community_graph()
+        _, json_path = export_graph(
+            asm.graph, tmp_path, communities=comm, inter_community=ic,
+            echarts_js=FAKE_ECHARTS,
+        )
+        data = json.loads(json_path.read_text())
+        assert "inter_community_relations" in data
+        assert len(data["inter_community_relations"]) == 1
+        rel = data["inter_community_relations"][0]
+        assert rel["source_label"] == "Payments"
+        assert rel["target_label"] == "Shipping"
+        assert data["inter_community_density"] == pytest.approx(1.0)
+
+    def test_export_json_no_inter_community(self, graph_bundle, tmp_path):
+        """graph.json has empty array + null density with no inter-community data."""
+        asm, _nodes, _edges, comm, _ana = graph_bundle
+        _, json_path = export_graph(
+            asm.graph, tmp_path, communities=comm, echarts_js=FAKE_ECHARTS,
+        )
+        data = json.loads(json_path.read_text())
+        assert data.get("inter_community_relations", []) == []
+        assert data.get("inter_community_density") is None
+
+    def test_export_html_has_table_panel(self, graph_bundle, tmp_path):
+        """graph.html contains the inter-community table panel markup."""
+        asm, _nodes, _edges, comm, _ana = graph_bundle
+        ic = _sample_inter_community_graph()
+        html_path, _ = export_graph(
+            asm.graph, tmp_path, communities=comm, inter_community=ic,
+            echarts_js=FAKE_ECHARTS,
+        )
+        html = html_path.read_text()
+        assert "interCommunityPanel" in html
+        assert "<table" in html
+        # Columns from the acceptance criteria.
+        assert "Community A" in html
+        assert "Community B" in html
+        assert "Coupling" in html
+
+    def test_export_html_panel_hidden_markup_when_no_data(self, graph_bundle, tmp_path):
+        """The panel shell always renders but starts hidden — JS only
+        reveals it (display:block) when GRAPH.inter_community_relations
+        is non-empty."""
+        asm, _nodes, _edges, comm, _ana = graph_bundle
+        html_path, _ = export_graph(
+            asm.graph, tmp_path, communities=comm, echarts_js=FAKE_ECHARTS,
+        )
+        html = html_path.read_text()
+        assert 'id="interCommunityPanel" style="display:none"' in html
+
+    def test_export_graph_accepts_duck_typed_inter_community(self, graph_bundle, tmp_path):
+        """export_graph() must adapt inter_community via getattr duck
+        typing (not require the InterCommunityGraph class itself)."""
+        from types import SimpleNamespace
+
+        asm, _nodes, _edges, comm, _ana = graph_bundle
+        duck = SimpleNamespace(
+            density=0.42,
+            relations=[
+                SimpleNamespace(
+                    source_community_id="x", target_community_id="y",
+                    source_label="X", target_label="Y",
+                    directed_edge_count=2, reverse_edge_count=1,
+                    total_weight=2.0, reverse_weight=1.0, coupling_ratio=0.3,
+                ),
+            ],
+        )
+        _, json_path = export_graph(
+            asm.graph, tmp_path, communities=comm, inter_community=duck,
+            echarts_js=FAKE_ECHARTS,
+        )
+        data = json.loads(json_path.read_text())
+        assert data["inter_community_density"] == pytest.approx(0.42)
+        assert data["inter_community_relations"][0]["source_label"] == "X"
+
+    def test_no_regression_writes_both_artifacts(self, graph_bundle, tmp_path):
+        """Existing (pre-FEAT-401) call signature still works unchanged."""
+        asm, _nodes, _edges, comm, ana = graph_bundle
+        html_path, json_path = export_graph(
+            asm.graph, tmp_path, communities=comm, analytics=ana,
+            echarts_js=FAKE_ECHARTS,
+        )
+        assert html_path.exists() and json_path.exists()
