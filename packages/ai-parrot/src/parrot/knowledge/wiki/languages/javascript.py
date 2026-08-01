@@ -334,16 +334,17 @@ def _aliases_from_tsconfig(data: Any, config_rel: str) -> list[tuple[str, str]]:
     for pattern, targets in paths.items():
         if not isinstance(pattern, str):
             continue
-        target = None
-        if isinstance(targets, list) and targets:
-            target = targets[0]
-        elif isinstance(targets, str):
-            target = targets
-        if not isinstance(target, str):
-            continue
-        pair = _as_prefix_pair(pattern, target, base_dir)
-        if pair is not None:
-            pairs.append(pair)
+        # A `paths` entry may list several fallback targets. Keep them all,
+        # in declared order — `resolve_import` tries each matching prefix
+        # until one lands on a real file, so a target that expands to
+        # nothing simply falls through to the next.
+        candidates = targets if isinstance(targets, list) else [targets]
+        for target in candidates:
+            if not isinstance(target, str):
+                continue
+            pair = _as_prefix_pair(pattern, target, base_dir)
+            if pair is not None:
+                pairs.append(pair)
     return pairs
 
 
@@ -388,12 +389,15 @@ def _discover_aliases(file_set: frozenset[str]) -> tuple[tuple[str, str], ...]:
     ``.svelte-kit/tsconfig.json``, and the committed ``tsconfig.json``
     merely extends it — so a fresh clone declares no alias anywhere.
 
-    *Known limitation*: ``$lib/`` is a single global prefix, so a
-    monorepo with several ``svelte.config.js`` files gets one convention
-    mapping, resolved against whichever config sorts first — not
-    necessarily the one at the repository root. Explicit declarations
-    (steps 1 and 2) always win over the convention, so a monorepo that
-    declares its aliases is unaffected.
+    *Known limitation — the alias map is flat and repository-global.*
+    Prefixes are deduplicated across the whole scan, so when two
+    sub-projects declare the **same** prefix (``"@/*"`` pointing at each
+    app's own ``src/``, a common monorepo shape) the config that sorts
+    first wins for both, and the other app's imports resolve to the wrong
+    files with no diagnostic. The same applies to the step-3 convention:
+    several ``svelte.config.js`` files still yield one ``$lib/`` mapping.
+    Declaring aliases explicitly does **not** avoid this — only
+    per-subtree scoping would, which this implementation does not do.
 
     Args:
         file_set: Every scanned repository path. ``build_reference_index``
@@ -415,7 +419,13 @@ def _discover_aliases(file_set: frozenset[str]) -> tuple[tuple[str, str], ...]:
         path = (scan_root / rel) if scan_root is not None else Path(rel)
         try:
             return path.read_text(encoding="utf-8")
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
+            # ValueError covers UnicodeDecodeError: a config file saved as
+            # UTF-16/Latin-1, or with a stray invalid byte, must degrade
+            # this one alias source — never abort the scan. Alias discovery
+            # runs for every JS/TS repository, and repo_scan calls
+            # build_reference_index unguarded, so a leak here kills the
+            # whole build. Same breadth as the php.py precedent (php.py:362).
             logger.debug("Could not read %s: %s", rel, exc)
             return None
 
@@ -451,12 +461,18 @@ def _discover_aliases(file_set: frozenset[str]) -> tuple[tuple[str, str], ...]:
         target = f"{config_dir}/src/lib/" if config_dir else "src/lib/"
         pairs.append(("$lib/", target))
 
-    deduped: dict[str, str] = {}
-    for prefix, target in pairs:
-        deduped.setdefault(prefix, target)
-    return tuple(
-        sorted(deduped.items(), key=lambda pair: len(pair[0]), reverse=True)
-    )
+    # Deduplicate whole pairs, not prefixes: one prefix may legitimately
+    # have several targets (a `paths` entry with fallbacks, or an explicit
+    # declaration plus the step-3 convention), and `resolve_import` tries
+    # each in turn. `sorted` is stable, so equal-length prefixes keep
+    # discovery order — explicit declarations stay ahead of the convention.
+    seen: set[tuple[str, str]] = set()
+    ordered: list[tuple[str, str]] = []
+    for pair in pairs:
+        if pair not in seen:
+            seen.add(pair)
+            ordered.append(pair)
+    return tuple(sorted(ordered, key=lambda pair: len(pair[0]), reverse=True))
 
 
 def _normalize_posix(path: PurePosixPath) -> str:
