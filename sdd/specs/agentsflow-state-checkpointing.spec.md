@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-399
 **Date**: 2026-08-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/agentsflow-state-checkpointing.brainstorm.md` (Option A)
 
