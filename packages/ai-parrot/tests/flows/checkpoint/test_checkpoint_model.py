@@ -3,11 +3,9 @@
 Validates FlowCheckpoint and its embedded models round-trip correctly,
 including the embedded FlowDefinition graph snapshot.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from parrot.bots.flows.core.checkpoint import (
     CheckpointNotFoundError,
     ContextSnapshot,
@@ -17,7 +15,12 @@ from parrot.bots.flows.core.checkpoint import (
     MemoryRefs,
     NodeStateSnapshot,
 )
-from parrot.bots.flows.flow.definition import EdgeDefinition, FlowDefinition, NodeDefinition
+from parrot.bots.flows.flow.definition import (
+    EdgeDefinition,
+    FlowDefinition,
+    NodeDefinition,
+)
+from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -54,7 +57,7 @@ def test_flow_checkpoint_model_roundtrip(linear_flow_definition, context_snapsho
         flow_id="f1",
         flow_name="demo",
         checkpoint_id=1,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
         status="running",
         definition=linear_flow_definition,
         context=context_snapshot,
@@ -76,7 +79,7 @@ def test_status_literal_rejects_unknown(linear_flow_definition, context_snapshot
             flow_id="f1",
             flow_name="demo",
             checkpoint_id=1,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             status="paused",  # not a valid Literal value
             definition=linear_flow_definition,
             context=context_snapshot,

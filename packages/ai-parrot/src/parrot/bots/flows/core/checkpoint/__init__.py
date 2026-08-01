@@ -16,9 +16,11 @@ from .model import (
     NodeStateSnapshot,
 )
 from .serializer import FlowStateSerializer
+from .store import CheckpointStore, get_checkpoint_store
 
 __all__ = [
     "CheckpointNotFoundError",
+    "CheckpointStore",
     "ContextSnapshot",
     "FlowCheckpoint",
     "FlowLockedError",
@@ -26,4 +28,5 @@ __all__ = [
     "FlowStateSerializer",
     "MemoryRefs",
     "NodeStateSnapshot",
+    "get_checkpoint_store",
 ]
