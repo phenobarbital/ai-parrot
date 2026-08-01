@@ -255,10 +255,58 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Added `community_algorithm: str = "leiden"` to
+`GraphIndexBuilder.__init__()`, stored as `self.community_algorithm`,
+forwarded as `detect_communities(..., algorithm=self.community_algorithm)`
+in Stage 4.5. Added `inter_community: Optional["InterCommunityGraph"] = None`
+field to `AnalyticsResult` (with a lazy try/except import mirroring the
+existing `CommunitiesResult` pattern, so `analytics.py` stays importable
+without FEAT-401's `inter_community.py` — though that module has no
+optional deps itself, only Leiden does). In `builder.py` Stage 6, right
+after `analytics.communities = self.last_community_result`, added a call
+to `compute_inter_community_graph(assembler.graph, self.last_community_result)`
+storing the result on `analytics.inter_community` (guarded by
+`is not None`, matching the Implementation Notes' directive that this
+computation belongs in the builder, not `compute_analytics()`, since it
+needs both the graph and the partition). Added a new
+`## Inter-Community Relations` section to `_render_report()` (guarded on
+`inter_community is not None and .relations` non-empty, positioned after
+`## Communities` and before `## Knowledge Gaps`), rendering density and a
+markdown table (source/target label, directed/reverse edge counts,
+directed/reverse weights, coupling ratio).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Added 7 new tests to `test_analytics.py` (`TestInterCommunityIntegration`)
+covering: default-None field, field population, report section rendering
+(labels + coupling ratio + density), section omission when `None` or
+empty, and a full `generate_report()` file-write round trip. Added 5 new
+tests to `test_builder.py` (`TestCommunityAlgorithmParam`) covering:
+default `"leiden"`, `"louvain"` override, forwarding to
+`detect_communities(algorithm=...)` (verified via mock), and
+`compute_inter_community_graph()` being called/not-called depending on
+`detect_communities_enabled`.
 
-**Deviations from spec**: none | describe if any
+Environment note: this worktree is missing several compiled Cython
+extensions under `parrot.utils.*` (`.so` build artifacts are gitignored,
+not checked into git) — `test_builder.py` could not even be *collected*
+here without them, confirmed pre-existing via `git stash` (same failure
+on the unmodified file). Temporarily copied the missing `.so` files from
+the main repo checkout into the worktree (gitignored, not committed) to
+unblock local verification; also discovered — and worked around locally
+with `pytest --import-mode=importlib` — a separate pre-existing pytest
+module-name collision between this worktree's and the main repo's
+identically-pathed `test_builder.py` (default "prepend" import mode
+computes the same dotted module name for both, silently reusing whichever
+copy pytest already had cached). Both issues are pre-existing repo/tooling
+gaps, not introduced by this task, and are out of scope to fix here. With
+those two local workarounds, ALL touched test files pass in full:
+`test_analytics.py` (73), `test_communities.py` (53 — including the 2
+`TestBuilderIntegration` tests that failed before due to the same missing
+`.so`), `test_inter_community.py` (13), `test_builder.py` (21). `ruff
+check` on all 4 touched files shows only pre-existing findings (BLE001
+blind-exception on the pipeline's existing per-stage try/except pattern,
+plus 3 pre-existing F841 unused-variable fixtures in `test_analytics.py`)
+— all confirmed via `git stash` to predate this task.
+
+**Deviations from spec**: none.
