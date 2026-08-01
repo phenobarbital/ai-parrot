@@ -7,13 +7,14 @@ to an LLM-judge hallucination check. Detection only: this package never
 mutates, masks, or blocks a response.
 
 See ``sdd/specs/deterministic-groundedness-scoring.spec.md`` for the full
-design. This package currently exposes Module 1 (atom extraction and
-normalization) and Module 2 (evidence index, scorer, policy/report
-models); the bot-seam wiring (Module 3, ``GroundednessGuardrail``) lands
-in a later task.
+design. This package exposes Module 1 (atom extraction and normalization),
+Module 2 (evidence index, scorer, policy/report models), and Module 3
+(``GroundednessGuardrail`` — the FLAG-only OUTPUT-pipeline plugin that
+wires the scorer into the unified guardrails infrastructure, FEAT-396).
 """
 from .evidence import EvidenceIndex
 from .extractors import extract_atoms
+from .guardrail import GroundednessGuardrail
 from .models import Atom, AtomKind
 from .policy import AtomVerdict, GroundednessPolicy, GroundednessReport
 from .scorer import GroundednessScorer
@@ -23,6 +24,7 @@ __all__ = [
     "AtomKind",
     "AtomVerdict",
     "EvidenceIndex",
+    "GroundednessGuardrail",
     "GroundednessPolicy",
     "GroundednessReport",
     "GroundednessScorer",

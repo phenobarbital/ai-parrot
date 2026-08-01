@@ -686,6 +686,32 @@ class AbstractBot(
         self._guardrail_pipelines[GuardrailStage.INPUT].add(
             LegacyPipelineGuardrail(lambda: self._prompt_pipeline)
         )
+        # FEAT-398: Deterministic groundedness scoring, OPT-IN per agent via
+        # `enable_groundedness=True` (mirrors `enable_redaction`'s convention
+        # above). Registered as a FLAG-only OUTPUT-stage `GroundednessGuardrail`
+        # — it never transforms/blocks, so response text stays byte-identical
+        # regardless of this flag (spec §5 scoring-only invariant). Deferred,
+        # function-local import: `parrot.security.groundedness` sits outside
+        # `parrot.bots` and importing `.guardrail` pulls in
+        # `parrot.bots.guardrails`, which (via `parrot.bots.__init__`) would
+        # re-enter this very module if imported at module level — importing
+        # here, well after `parrot.bots.abstract` has finished loading,
+        # avoids that cycle entirely.
+        self.enable_groundedness: bool = bool(kwargs.pop('enable_groundedness', False))
+        _groundedness_policy_kwarg = kwargs.pop('groundedness_policy', None)
+        self.groundedness_policy: Optional[Any] = None
+        if self.enable_groundedness:
+            from parrot.security.groundedness.guardrail import GroundednessGuardrail
+            from parrot.security.groundedness.policy import GroundednessPolicy
+            if isinstance(_groundedness_policy_kwarg, GroundednessPolicy):
+                self.groundedness_policy = _groundedness_policy_kwarg
+            elif isinstance(_groundedness_policy_kwarg, dict):
+                self.groundedness_policy = GroundednessPolicy(**_groundedness_policy_kwarg)
+            else:
+                self.groundedness_policy = GroundednessPolicy()
+            self._guardrail_pipelines[GuardrailStage.OUTPUT].add(
+                GroundednessGuardrail(policy=self.groundedness_policy)
+            )
         # FEAT-396 (TASK-2029): registered StreamingGuardrail adapters for
         # ask_stream's OUTPUT_STREAM chunk loop. Empty by default — no
         # built-in guardrail implements `StreamingGuardrail` yet (see
@@ -1931,7 +1957,14 @@ class AbstractBot(
             user_id=str(response.user_id) if response.user_id is not None else None,
             session_id=response.session_id,
             method=method,
-            extras={'chatbot_id': str(self.chatbot_id)},
+            # FEAT-398: carries the outgoing `AIMessage` itself (not just
+            # `chatbot_id`) so an OUTPUT-stage observer guardrail — e.g.
+            # `GroundednessGuardrail` — can read `.tool_calls` (the turn's
+            # evidence) and `.input` (the original user prompt) without a
+            # new `GuardrailContext` field. `content` (passed to `run()`
+            # below) is still the sole value any guardrail may TRANSFORM;
+            # `ai_message` here is read-only context.
+            extras={'chatbot_id': str(self.chatbot_id), 'ai_message': response},
         )
         outcome = await pipeline.run(response.output, ctx)
 
