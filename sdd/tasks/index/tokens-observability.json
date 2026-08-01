@@ -112,7 +112,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Touches only clients/google/client.py + its own test file. Largest behavioral change (fixes first-response usage bug).",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2036-gemini-loop-accumulation.md"
+      "completed_at": "2026-08-01T00:59:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2036-gemini-loop-accumulation.md"
     },
     {
       "id": "TASK-2037",
