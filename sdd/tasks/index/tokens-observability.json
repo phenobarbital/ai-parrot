@@ -50,7 +50,7 @@
       "feature_id": "FEAT-397",
       "feature": "tokens-observability",
       "spec": "sdd/specs/tokens-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Modifies clients/base.py which all client tasks build on; must land before TASK-2034…2038.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:17:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2033-emit-round-helper.md"
+      "completed_at": "2026-08-01T00:36:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2033-emit-round-helper.md"
     },
     {
       "id": "TASK-2034",
