@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-01T00:00:00Z",
-  "completed_at": "2026-08-01T01:49:32+00:00",
+  "completed_at": "2026-08-01T10:32:32+00:00",
   "tasks": [
     {
       "id": "TASK-2046",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T00:27:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2046-checkpoint-model-and-errors.md"
+      "file": "sdd/tasks/completed/TASK-2046-checkpoint-model-and-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2047",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T00:30:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2047-flow-state-serializer.md"
+      "file": "sdd/tasks/completed/TASK-2047-flow-state-serializer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2048",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T00:33:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2048-checkpoint-store-abc-factory-config.md"
+      "file": "sdd/tasks/completed/TASK-2048-checkpoint-store-abc-factory-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2049",
@@ -85,7 +88,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T00:38:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2049-redis-checkpoint-store.md"
+      "file": "sdd/tasks/completed/TASK-2049-redis-checkpoint-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2050",
@@ -107,7 +111,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T00:48:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2050-durable-checkpoint-store.md"
+      "file": "sdd/tasks/completed/TASK-2050-durable-checkpoint-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2051",
@@ -130,7 +135,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T00:53:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2051-flow-checkpointer.md"
+      "file": "sdd/tasks/completed/TASK-2051-flow-checkpointer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2052",
@@ -150,7 +156,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T01:07:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2052-flow-definition-export.md"
+      "file": "sdd/tasks/completed/TASK-2052-flow-definition-export.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2053",
@@ -171,7 +178,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T01:27:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2053-agentsflow-suspend-resume.md"
+      "file": "sdd/tasks/completed/TASK-2053-agentsflow-suspend-resume.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2054",
@@ -191,7 +199,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T01:30:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2054-flow-recovery-service.md"
+      "file": "sdd/tasks/completed/TASK-2054-flow-recovery-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2055",
@@ -211,7 +220,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T01:45:01+00:00",
-      "file": "sdd/tasks/completed/TASK-2055-http-checkpoint-handlers.md"
+      "file": "sdd/tasks/completed/TASK-2055-http-checkpoint-handlers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2056",
@@ -233,7 +243,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
       "completed_at": "2026-08-01T01:49:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2056-docs-and-example.md"
+      "file": "sdd/tasks/completed/TASK-2056-docs-and-example.md",
+      "verification": "verified"
     }
   ]
 }

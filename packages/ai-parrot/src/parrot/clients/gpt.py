@@ -857,6 +857,29 @@ class OpenAIClient(AbstractClient):
         _used_fallback = False
         _original_model = model_str
 
+        # FEAT-397: per-round token usage accumulation across the tool loop.
+        def _lc_gpt_extract_usage(response_obj):
+            """Build (per-round CompletionUsage, JSON-safe raw usage dict) from
+            a gpt.py SDK response's ``.usage``. Both call paths (Responses API
+            and Chat Completions) expose ``.usage`` the same way."""
+            usage_obj = getattr(response_obj, "usage", None)
+            if not usage_obj:
+                return None, None
+            per_round = CompletionUsage.from_openai(usage_obj)
+            raw = None
+            if hasattr(usage_obj, "model_dump"):
+                try:
+                    raw = usage_obj.model_dump()
+                except Exception:  # pylint: disable=broad-except
+                    raw = None
+            elif isinstance(usage_obj, dict):
+                raw = usage_obj
+            return per_round, raw
+
+        _lc_round_number_gpt = 1
+        _lc_accumulated_usage_gpt: "Optional[CompletionUsage]" = None
+        _lc_round_t0_gpt = _lc_time_gpt.perf_counter()
+
         try:
             if use_responses:
                 if output_config:
@@ -885,10 +908,17 @@ class OpenAIClient(AbstractClient):
             else:
                 raise
 
+        # FEAT-397: round 1 is the initial (pre-loop) call above.
+        _lc_round_duration_gpt = (_lc_time_gpt.perf_counter() - _lc_round_t0_gpt) * 1000
+        _lc_round_usage_gpt, _lc_round_raw_usage_gpt = _lc_gpt_extract_usage(response)
+        if _lc_round_usage_gpt is not None:
+            _lc_accumulated_usage_gpt = _lc_round_usage_gpt
+
         result = response.choices[0].message
 
         # ---------- Tool loop (works for both paths) ----------
         while getattr(result, "tool_calls", None):
+            _lc_round_tool_names_gpt = []
             messages.append(
                 {
                     "role": "assistant",
@@ -968,6 +998,7 @@ class OpenAIClient(AbstractClient):
                         )
 
                     all_tool_calls.append(tc)
+                    _lc_round_tool_names_gpt.append(tool_name)
 
                 except Exception as e:
                     all_tool_calls.append(
@@ -977,6 +1008,7 @@ class OpenAIClient(AbstractClient):
                             arguments={"_error": f"malformed tool args: {e}"},
                         )
                     )
+                    _lc_round_tool_names_gpt.append(tool_name)
                     messages.append(
                         {
                             "role": "tool",
@@ -991,7 +1023,21 @@ class OpenAIClient(AbstractClient):
                 args["tools"] = self._prepare_tools(filter_names=list(active_tool_names))
                 # Note: We keep tool_choice='auto'
 
+            # FEAT-397: emit ClientRoundEvent for the round whose tool calls
+            # were just executed above.
+            self._emit_round_event(
+                _lc_tc_gpt,
+                client_name="openai",
+                model=model_str,
+                round_number=_lc_round_number_gpt,
+                usage=_lc_round_usage_gpt,
+                raw_usage=_lc_round_raw_usage_gpt,
+                tool_calls=_lc_round_tool_names_gpt,
+                duration_ms=_lc_round_duration_gpt,
+            )
+
             # continue via the same routed API
+            _lc_round_t0_gpt = _lc_time_gpt.perf_counter()
             if use_responses:
                 if output_config:
                     args["response_format"] = resp_format
@@ -1000,6 +1046,17 @@ class OpenAIClient(AbstractClient):
                 if output_config:
                     args["response_format"] = resp_format
                 response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
+
+            # FEAT-397: accumulate this new round's usage
+            _lc_round_number_gpt += 1
+            _lc_round_duration_gpt = (_lc_time_gpt.perf_counter() - _lc_round_t0_gpt) * 1000
+            _lc_round_usage_gpt, _lc_round_raw_usage_gpt = _lc_gpt_extract_usage(response)
+            if _lc_round_usage_gpt is not None:
+                _lc_accumulated_usage_gpt = (
+                    _lc_round_usage_gpt
+                    if _lc_accumulated_usage_gpt is None
+                    else _lc_accumulated_usage_gpt + _lc_round_usage_gpt
+                )
 
             result = response.choices[0].message
 
@@ -1046,6 +1103,15 @@ class OpenAIClient(AbstractClient):
             turn_id=turn_id,
             structured_output=structured_payload,
         )
+
+        # FEAT-397: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round calls (no tool use), the
+        # accumulated total equals the last (only) round's usage, so this
+        # is a no-op for existing single-round behavior.
+        if _lc_accumulated_usage_gpt is not None:
+            if _lc_round_number_gpt > 1:
+                _lc_accumulated_usage_gpt.extra_usage["rounds"] = _lc_round_number_gpt
+            ai_message.usage = _lc_accumulated_usage_gpt
 
         ai_message.tool_calls = all_tool_calls
         if _used_fallback:

@@ -59,6 +59,12 @@ class CompletionUsage(BaseModel):
       ``usage.prompt_tokens``).
     - **Serialization** (``model_dump`` / ``model_dump_json``) includes both
       vocabularies via computed fields.
+
+    Multi-round accumulation: clients that loop over multiple LLM calls in
+    a single ``ask()`` invocation (tool-use rounds) accumulate per-round
+    usage via :meth:`__add__` and store the resulting round count under
+    ``extra_usage["rounds"]`` (set by the caller, not by ``__add__``
+    itself — see FEAT-397).
     """
 
     # populate_by_name keeps the Python attribute names usable as kwargs even
@@ -262,4 +268,45 @@ class CompletionUsage(BaseModel):
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
             extra_usage=extra,
+        )
+
+    def __add__(self, other: Any) -> "CompletionUsage":
+        """Field-wise sum for multi-round tool-use accumulation.
+
+        Args:
+            other: Another :class:`CompletionUsage` instance to add.
+
+        Returns:
+            A NEW :class:`CompletionUsage` instance; neither operand is
+            mutated.
+
+        Semantics:
+            - ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens``:
+              plain integer sum.
+            - Timing fields (``completion_time``, ``prompt_time``,
+              ``queue_time``, ``total_time``): summed when either side is
+              set (they represent cumulative time spent across rounds);
+              ``None + None`` stays ``None``; ``None + x`` returns ``x``.
+            - ``estimated_cost``: same None-aware sum as the timing fields.
+            - ``extra_usage``: shallow merge; the right-hand operand wins
+              on key conflicts.
+        """
+        if not isinstance(other, CompletionUsage):
+            return NotImplemented
+
+        def _add_optional(a: Optional[float], b: Optional[float]) -> Optional[float]:
+            if a is None and b is None:
+                return None
+            return (a or 0) + (b or 0)
+
+        return CompletionUsage(
+            prompt_tokens=self.prompt_tokens + other.prompt_tokens,
+            completion_tokens=self.completion_tokens + other.completion_tokens,
+            total_tokens=self.total_tokens + other.total_tokens,
+            completion_time=_add_optional(self.completion_time, other.completion_time),
+            prompt_time=_add_optional(self.prompt_time, other.prompt_time),
+            queue_time=_add_optional(self.queue_time, other.queue_time),
+            total_time=_add_optional(self.total_time, other.total_time),
+            estimated_cost=_add_optional(self.estimated_cost, other.estimated_cost),
+            extra_usage={**self.extra_usage, **other.extra_usage},
         )

@@ -8,8 +8,17 @@ PHP import can never resolve into a JS/TS (or any other language's)
 file page.
 """
 
+from pathlib import Path
+
 from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.repo_scan import file_concept_id, scan_repository
+
+
+def _write(root: Path, rel: str, content: str) -> None:
+    """Write a fixture file, creating parent directories as needed."""
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 def test_scan_repository_polyglot_fixture(polyglot_repo):
@@ -81,3 +90,56 @@ def test_stats_languages_block():
     assert "javascript" in languages
     assert "rust" in languages
     assert set(languages.values()) <= {"ast", "tree-sitter", "heuristic"}
+
+
+def test_polyglot_svelte_alongside_python(tmp_path):
+    """`.svelte` and `.py` in one scan: both outlined, no cross-talk.
+
+    FEAT-396 / TASK-2023. Guards the registry boundary — claiming
+    `.svelte` for the JS scanner must not let a Svelte import resolve
+    into a Python page, nor vice versa.
+    """
+    _write(
+        tmp_path, "svelte.config.js", "export default { kit: {} }\n"
+    )
+    _write(
+        tmp_path,
+        "src/app.py",
+        '"""Application entrypoint."""\n\n\ndef main() -> None:\n'
+        '    """Run the app."""\n',
+    )
+    _write(tmp_path, "src/lib/util.ts", "export function helper() {}\n")
+    _write(
+        tmp_path,
+        "src/lib/Widget.svelte",
+        '<script lang="ts">\n'
+        "  import { helper } from '$lib/util'\n"
+        "  export function render(): string { return 'x' }\n"
+        "</script>\n"
+        "<div>hi</div>\n",
+    )
+
+    scan = scan_repository(tmp_path, use_git=False)
+    by_path = {fs.rel_path: fs for fs in scan.files}
+
+    # Both languages present, each routed to its own scanner.
+    assert by_path["src/app.py"].language == "python"
+    assert by_path["src/lib/Widget.svelte"].language == "javascript"
+
+    # Both got a real outline — the component is no longer a shallow page.
+    assert "## API outline" in by_path["src/app.py"].record.body
+    assert "## API outline" in by_path["src/lib/Widget.svelte"].record.body
+    assert "render" in by_path["src/lib/Widget.svelte"].record.body
+
+    # The alias edge exists...
+    edges = set(scan.import_edges)
+    assert (
+        file_concept_id("src/lib/Widget.svelte"),
+        file_concept_id("src/lib/util.ts"),
+        "references",
+    ) in edges
+
+    # ...and no Svelte-sourced edge ever lands on a Python page.
+    for src, dst, _rel in edges:
+        if src == file_concept_id("src/lib/Widget.svelte"):
+            assert dst != file_concept_id("src/app.py")

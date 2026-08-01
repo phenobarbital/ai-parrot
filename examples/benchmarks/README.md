@@ -1,3 +1,48 @@
+# AI-Parrot Benchmarks
+
+Three related benchmarks live in this directory:
+
+| Script | What it measures | Needs credentials |
+|--------|------------------|-------------------|
+| `perf_eval.py` | Plain `Chatbot.ask()` latency/memory/tokens across LLM providers | yes (per provider) |
+| `tool_perf_eval.py` | **Tool-calling** agents: AI-Parrot `Agent` vs **LangChain** head-to-head under identical conditions | yes (per provider) |
+| `run_benchmark.py` | Hermetic `parrot.eval` harness demo (FEAT-217) — no LLM at all | no |
+
+## Tool-calling benchmark (`tool_perf_eval.py`)
+
+Continues `perf_eval.py` into the tool-use phase: three deterministic
+in-memory tools (`get_weather`, `calculator`, `get_stock_price`) are exposed
+to BOTH frameworks from the **same Python functions** (same names, docstrings
+and schemas), with the same system prompt, tasks, and models. Each task has
+an expected value, so the tables report accuracy alongside latency, memory,
+token usage and tool-call counts, plus a final head-to-head delta table.
+
+LangChain is optional and benchmark-only (ai-parrot does NOT depend on it):
+
+```bash
+source .venv/bin/activate
+uv pip install langchain langchain-anthropic langchain-google-genai langchain-groq
+
+python examples/benchmarks/tool_perf_eval.py                     # both frameworks
+python examples/benchmarks/tool_perf_eval.py --frameworks parrot # parrot only
+python examples/benchmarks/tool_perf_eval.py --models haiku,groq --iterations 1
+python examples/benchmarks/tool_perf_eval.py --with-guardrails   # keep parrot's injection guard ON
+```
+
+Fairness notes:
+
+- Parrot's per-call **prompt-injection detection** (production guard with no
+  LangChain equivalent) is disabled by default; `--with-guardrails` restores
+  parrot's production posture (no longer like-for-like).
+- **Token caveat**: LangChain sums usage across every LLM round-trip of the
+  tool loop; parrot's `AIMessage.usage` currently reports only the *final*
+  round of the client's internal tool loop, so token columns are directly
+  comparable only on single-tool-call tasks.
+- To add more models, extend the `MODELS` triple list; xai / NVIDIA rows are
+  pre-wired in comments (need `langchain-xai` / `langchain-nvidia-ai-endpoints`).
+
+---
+
 # Generic Agent Evaluation Benchmark (FEAT-217)
 
 A runnable, **hermetic** example of the `parrot.eval` harness: it benchmarks a

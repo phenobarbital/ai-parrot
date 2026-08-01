@@ -30,6 +30,43 @@ def _write(root: Path, rel: str, content: str) -> None:
 
 
 @pytest.fixture
+def restore_scan_root():
+    """Restore the module-level scan root after a test sets it.
+
+    ``set_scan_root`` mutates process-global state, so a test that points
+    it at its own ``tmp_path`` would otherwise leak that path into every
+    test collected after it.
+    """
+    from parrot.knowledge.wiki.languages import get_scan_root, set_scan_root
+
+    previous = get_scan_root()
+    yield set_scan_root
+    set_scan_root(previous)
+
+
+@pytest.fixture
+def svelte_repo(tmp_path: Path) -> Path:
+    """Minimal SvelteKit-shaped repo whose alias is declared only by convention.
+
+    No ``paths`` entry anywhere and no ``.svelte-kit/`` directory — the
+    state of a fresh clone, where ``$lib`` resolves purely by SvelteKit
+    convention (FEAT-396 spec, §2 "Alias discovery order", step 3).
+    """
+    _write(tmp_path, "svelte.config.js", "export default { kit: {} }\n")
+    _write(tmp_path, "src/lib/util.ts", "export function helper(a: string) {}\n")
+    _write(
+        tmp_path,
+        "src/lib/Widget.svelte",
+        '<script lang="ts">\n'
+        "  import { helper } from '$lib/util'\n"
+        "  export const label = 'x'\n"
+        "</script>\n"
+        "<div>{label}</div>\n",
+    )
+    return tmp_path
+
+
+@pytest.fixture
 def polyglot_repo(tmp_path: Path) -> Path:
     """Tiny repo with one file per supported language plus HTML.
 
