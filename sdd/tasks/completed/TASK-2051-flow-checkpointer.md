@@ -55,6 +55,7 @@ build the snapshot inside the checkpointer from public FlowContext fields).
 |---|---|---|
 | `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/checkpointer.py` | CREATE | FlowCheckpointer |
 | `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/__init__.py` | MODIFY | Re-export |
+| `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/serializer.py` | MODIFY | Codebase-contract correction (added during this task, see note below): expose the per-value JSON-safe transform (`to_safe_with_meta()`/`from_safe()`) that TASK-2047 only used internally, so `ContextSnapshot.results`/`.responses` can hold tag-enveloped-but-still-`dict[str, Any]` values (spec model.py comment: "serialized via FlowStateSerializer") instead of opaque encode() bytes. Pure refactor — `encode_with_meta()`/`decode()` now delegate to the new methods; no behavior change, all 14 existing TASK-2047 tests still pass unchanged. |
 | `packages/ai-parrot/tests/flows/checkpoint/test_checkpointer.py` | CREATE | Unit tests (fake store) |
 
 ---
@@ -171,10 +172,63 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-01
+**Notes**: Implemented `checkpointer.py` (`FlowCheckpointer`):
+- `make_listener(ctx)` returns a SYNC `(event, node_id, info) -> None`
+  callback filtered to `node_completed`/`node_failed` (verified event
+  names against `flow.py:322-338`'s docstring). It stays sync
+  deliberately: `_notify_node_event()` only auto-schedules a task when a
+  listener *returns* a coroutine (`asyncio.iscoroutine(outcome)`) — this
+  checkpointer instead owns its own `_pending_tasks` set so `aclose()`
+  can await every write, matching the `PersistenceMixin` discipline
+  exactly rather than relying on flow.py's fire-and-forget wrapper (whose
+  tasks are never exposed back to any caller).
+- `_build_checkpoint()` assembles `ContextSnapshot` from the public
+  `FlowContext` fields only (never `agent_registry`/`synthesis_client`/
+  `trace_context`); monotonic `checkpoint_id` + `parent_checkpoint_id`
+  chain tracked on the instance, continuable via `starting_checkpoint_id`
+  for the eventual resume path (TASK-2053).
+- Write-through (`durable=True`) puts to both stores; each store write
+  is wrapped in its own try/except — a durable-store failure never
+  blocks/skips the ephemeral write or vice versa.
+- `dump()` copies the ephemeral store's retained `history()` to the
+  durable store, then writes one more `status="suspended"` checkpoint to
+  both stores.
+- Lease: `acquire_lease()` raises `FlowLockedError` on conflict and
+  starts a heartbeat task renewing every `ttl/3`; `release_lease()`
+  cancels the heartbeat and releases; both are idempotent/no-op-safe.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Codebase Contract correction (flagged, not silent)**: this task's own
+contract didn't need it, but the spec's model.py comment for
+`ContextSnapshot.results` ("serialized via FlowStateSerializer") and
+TASK-2047's original intent required a per-value JSON-safe transform
+that TASK-2047 had only as a private `_encode_value` helper. Rather than
+reach into `FlowStateSerializer`'s internals from another module, added
+two small public methods to `serializer.py`
+(`to_safe_with_meta()`/`from_safe()`) — a pure refactor: `encode_with_meta()`
+now delegates to `to_safe_with_meta()` + `packb()`, no behavior change.
+Updated this task's own Codebase Contract table first (see the `serializer.py`
+row above) before making the change, per the anti-hallucination protocol.
+All 14 pre-existing TASK-2047 serializer tests still pass unchanged, plus
+the new checkpointer tests. Verified: `ContextSnapshot.results` now holds
+tag-enveloped-but-JSON-safe dict values (e.g. `{"answer": 42}` passes
+through untouched; a registered/unregistered model would tag-envelope)
+rather than opaque encode() bytes — confirmed in
+`test_checkpointer_results_only_vs_include_responses`.
 
-**Deviations from spec**: none
+Added `test_checkpointer.py` with a `FakeCheckpointStore` (in-memory,
+records puts, dict-based lease) — 10 tests: node-completion writes with
+parent chain, non-checkpoint events ignored, write-failure isolation
+(caplog warning, no raise), results-only vs include_responses, write-through
+to both stores, `dump()` suspends + copies history, `dump()` without a
+durable store raises `ValueError`, lease acquire/conflict/release
+lifecycle, heartbeat actually renews (observed via the fake store's lease
+dict after `ttl/3` sleep), and memory_refs round-trip onto the
+checkpoint. Full `tests/flows/checkpoint/` suite: 38 passed, 9 skipped
+(Redis/pg/mongo integration tests requiring live services, unaffected by
+this task). `ruff check` clean.
+
+**Deviations from spec**: none (the serializer.py addition is a
+capability the spec's own data model implied but TASK-2047 didn't
+expose publicly — documented above, not a functional deviation).

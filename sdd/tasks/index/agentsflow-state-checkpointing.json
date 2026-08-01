@@ -116,7 +116,7 @@
       "feature_id": "FEAT-399",
       "feature": "agentsflow-state-checkpointing",
       "spec": "sdd/specs/agentsflow-state-checkpointing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -129,8 +129,8 @@
       "parallelism_notes": "Consumes serializer + store contract; testable with a fake store (Redis not required).",
       "assigned_to": null,
       "started_at": "2026-08-01T00:15:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2051-flow-checkpointer.md"
+      "completed_at": "2026-08-01T00:53:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2051-flow-checkpointer.md"
     },
     {
       "id": "TASK-2052",
