@@ -28,6 +28,8 @@ from parrot.core.events.lifecycle.events.client import (
     # FEAT-181: Prompt Caching Lifecycle Events
     PromptCacheAppliedEvent,
     PromptCacheSkippedEvent,
+    # FEAT-397: Per-Round Token Usage Observability
+    ClientRoundEvent,
 )
 from parrot.core.events.lifecycle.events.tool import (
     BeforeToolCallEvent,
@@ -62,6 +64,8 @@ __all__ = [
     # FEAT-181: Prompt caching domain
     "PromptCacheAppliedEvent",
     "PromptCacheSkippedEvent",
+    # FEAT-397: Per-round token usage observability
+    "ClientRoundEvent",
     # Tool domain
     "BeforeToolCallEvent",
     "AfterToolCallEvent",
