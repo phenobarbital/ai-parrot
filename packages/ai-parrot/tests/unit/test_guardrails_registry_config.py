@@ -87,9 +87,13 @@ class TestRegistry:
         with pytest.raises(NotImplementedError):
             build_guardrails(["pseudonymize"])
 
-    def test_reserved_groundedness_raises(self):
-        with pytest.raises(NotImplementedError):
-            build_guardrails(["groundedness"])
+    def test_groundedness_builds(self):
+        """FEAT-398 (TASK-2043) unreserved "groundedness" once its
+        GroundednessGuardrail engine landed — it now builds like any other
+        named built-in instead of raising NotImplementedError."""
+        built = build_guardrails(["groundedness"])
+        assert len(built) == 1
+        assert built[0].name == "groundedness"
 
     def test_build_from_dict(self):
         received = {}
