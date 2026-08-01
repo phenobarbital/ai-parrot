@@ -33,6 +33,10 @@ class WikiPageCategory(str, Enum):
         OVERVIEW: Broad overview spanning multiple related topics.
         SYNTHESIS: LLM-synthesised insight across several sources.
         ANSWER: Direct answer to a query, filed as a wiki page.
+        ARCHIVE: Supervised-ingestion archive category (FEAT-402) —
+            content that was triaged and routed to the wiki as a page
+            but excluded from default query ranking (retrievable only
+            via an explicit category filter).
     """
 
     SUMMARY = "summary"
@@ -42,6 +46,7 @@ class WikiPageCategory(str, Enum):
     OVERVIEW = "overview"
     SYNTHESIS = "synthesis"
     ANSWER = "answer"
+    ARCHIVE = "archive"
 
 
 class WikiConfig(BaseModel):
@@ -69,6 +74,10 @@ class WikiConfig(BaseModel):
             ``"memory"`` (in-memory indexes + OKF markdown bundle
             directory — no SQLite dependency), or ``"arangodb"``
             (server-hosted, shared retrieval plane).
+        charter_path: Optional path to a supervised-ingestion editorial
+            charter YAML file (FEAT-402, see
+            ``parrot.knowledge.wiki.charter.load_charter``). ``None``
+            when this wiki does not use supervised ingestion.
     """
 
     wiki_name: str = Field(..., description="Unique wiki name / identifier")
@@ -108,6 +117,14 @@ class WikiConfig(BaseModel):
             "OKF markdown bundle under {storage_dir}/pages/), or "
             "'arangodb' (server-hosted, shared retrieval plane). "
             "Explicit selection only — no auto-fallback."
+        ),
+    )
+    charter_path: Optional[Path] = Field(
+        default=None,
+        description=(
+            "Path to a supervised-ingestion editorial charter YAML file "
+            "(FEAT-402). None when this wiki does not use supervised "
+            "ingestion (`wikitoolkit ingest`)."
         ),
     )
 

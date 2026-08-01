@@ -14,8 +14,8 @@ class TestWikiPageCategory:
     """Tests for the WikiPageCategory enum."""
 
     def test_all_categories_exist(self):
-        """WikiPageCategory must define exactly 7 members."""
-        assert len(WikiPageCategory) == 7
+        """WikiPageCategory must define exactly 8 members (FEAT-402 adds ARCHIVE)."""
+        assert len(WikiPageCategory) == 8
 
     def test_expected_values(self):
         """All expected string values are present."""
@@ -28,12 +28,17 @@ class TestWikiPageCategory:
             "overview",
             "synthesis",
             "answer",
+            "archive",
         }
 
     def test_is_string_enum(self):
         """WikiPageCategory values compare equal to plain strings."""
         assert WikiPageCategory.SUMMARY == "summary"
         assert WikiPageCategory.ANSWER == "answer"
+
+    def test_archive_category_value(self):
+        """FEAT-402: WikiPageCategory.ARCHIVE == 'archive'."""
+        assert WikiPageCategory.ARCHIVE == "archive"
 
 
 class TestWikiConfig:
@@ -43,7 +48,7 @@ class TestWikiConfig:
         """Default search_weights and page_categories are correct."""
         config = WikiConfig(wiki_name="test", storage_dir=tmp_path)
         assert config.search_weights == {"pageindex": 0.6, "graphindex": 0.4}
-        assert len(config.page_categories) == 7
+        assert len(config.page_categories) == 8  # FEAT-402 adds ARCHIVE
 
     def test_all_page_categories_included(self, tmp_path):
         """Default page_categories includes all WikiPageCategory members."""
@@ -85,6 +90,19 @@ class TestWikiConfig:
         assert config.source_dir is None
         assert config.lightweight_model is None
         assert config.model is None
+
+    def test_charter_path_defaults_none(self, tmp_path):
+        """FEAT-402: WikiConfig.charter_path defaults to None."""
+        config = WikiConfig(wiki_name="test", storage_dir=tmp_path)
+        assert config.charter_path is None
+
+    def test_charter_path_accepts_explicit_path(self, tmp_path):
+        """FEAT-402: WikiConfig.charter_path accepts an explicit Path."""
+        charter_path = tmp_path / "charter.yaml"
+        config = WikiConfig(
+            wiki_name="test", storage_dir=tmp_path, charter_path=charter_path
+        )
+        assert config.charter_path == charter_path
 
 
 class TestSourceManifestEntry:

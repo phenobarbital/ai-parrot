@@ -996,7 +996,11 @@ class SQLiteWikiStore(BaseWikiStore):
             query: Free-form natural-language query (sanitised before
                 reaching FTS5 — no operator injection).
             category: Optional exact category pre-filter (deterministic
-                gate applied before ranking).
+                gate applied before ranking). When ``None`` (the
+                default), ``"archive"``-category pages are excluded from
+                the results (FEAT-402 — supervised-ingestion archive
+                pages are opt-in only, retrievable via
+                ``category="archive"``).
             limit: Maximum results.
 
         Returns:
@@ -1016,6 +1020,12 @@ class SQLiteWikiStore(BaseWikiStore):
         if category is not None:
             sql += " AND p.category = ?"
             params += (category,)
+        else:
+            # FEAT-402: default ranking excludes the archive category.
+            # `category` is an open string in this machine plane (see
+            # module docstring) — no enum import needed here.
+            sql += " AND (p.category IS NULL OR p.category != ?)"
+            params += ("archive",)
         sql += " ORDER BY bm25(pages_fts) LIMIT ?"
         params += (limit,)
         async with self._connect() as conn:
