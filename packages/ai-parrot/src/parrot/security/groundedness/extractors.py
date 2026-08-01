@@ -27,8 +27,8 @@ DEFAULT_MIN_NUMBER_DIGITS = 4
 # Extraction patterns (applied to the NFKC-normalized text)
 # ---------------------------------------------------------------------------
 
-_MONEY_RE = re.compile(r"[$€£¥₹]\d[\d,]*(?:\.\d+)?[kKmMbB]?")
-_PERCENT_RE = re.compile(r"\d[\d,]*(?:\.\d+)?%")
+_MONEY_RE = re.compile(r"-?[$€£¥₹]\d[\d,]*(?:\.\d+)?[kKmMbB]?")
+_PERCENT_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?%")
 
 _MONTH_NAMES_PATTERN = (
     r"(?:January|February|March|April|May|June|July|August|September|"
@@ -38,7 +38,7 @@ _MONTH_NAMES_PATTERN = (
 _DATE_ISO_RE = re.compile(r"\d{4}-\d{1,2}-\d{1,2}")
 _DATE_SLASH_RE = re.compile(r"\d{1,2}/\d{1,2}/\d{4}")
 _DATE_MONTHNAME_RE = re.compile(
-    rf"{_MONTH_NAMES_PATTERN}\.?\s+\d{{1,2}},?\s+\d{{4}}"
+    rf"{_MONTH_NAMES_PATTERN}\.?\s+\d{{1,2}},?\s+\d{{4}}", re.IGNORECASE,
 )
 # Claim priority within Date: ISO, then slash, then month-name.
 _DATE_PATTERNS: tuple[re.Pattern, ...] = (
@@ -53,8 +53,13 @@ _IDENTIFIER_PATTERNS: tuple[re.Pattern, ...] = (
     _EMAIL_RE, _URL_RE, _TICKET_CODE_RE,
 )
 
-_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+#: Bare numbers also accept a magnitude suffix (like money) so an
+#: unprefixed abbreviated figure ("2.5M downloads") is not silently
+#: dropped; such literals are exempt from the min_number_digits floor
+#: below (see extract_atoms) since they are inherently non-noise.
+_NUMBER_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?[kKmMbB]?")
 _DIGIT_ONLY_RE = re.compile(r"\d")
+_MAGNITUDE_SUFFIX_CHARS = ("k", "m", "b")
 
 
 def _spans_overlap(a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -77,7 +82,9 @@ def extract_atoms(
     money, percent, date, identifier, then number — so a value like
     ``$1,243,500`` yields exactly one ``money`` atom, never a money atom
     plus a bare-number atom. An NFKC Unicode pre-pass is applied first so
-    fullwidth digits/currency signs are recognized.
+    fullwidth digits/currency signs are recognized. Money/percent/number
+    literals accept an optional leading ``-`` sign so a sign flip
+    ("+15.3%" vs "-15.3%") is preserved rather than silently discarded.
 
     Args:
         text: The source text to extract atoms from (an agent answer or
@@ -97,7 +104,7 @@ def extract_atoms(
     for match in _MONEY_RE.finditer(normalized_text):
         raw = match.group(0)
         try:
-            normalized = normalize_number(raw)
+            normalized: str | float = normalize_number(raw)
         except ValueError:
             logger.debug("Skipping unparsable money literal: %r", raw)
             continue
@@ -158,13 +165,17 @@ def extract_atoms(
             claimed_spans.append(span)
 
     # 5. Number — bare numerics not already claimed, above the noise floor.
+    #    Magnitude-suffixed literals ("2.5M", "3.2B") are exempt from the
+    #    floor: they are inherently non-noise regardless of raw digit
+    #    count, matching money's identical suffix handling.
     for match in _NUMBER_RE.finditer(normalized_text):
         span = (match.start(), match.end())
         if _overlaps_any(span, claimed_spans):
             continue
         raw = match.group(0)
+        has_magnitude_suffix = raw[-1].lower() in _MAGNITUDE_SUFFIX_CHARS
         digit_count = len(_DIGIT_ONLY_RE.findall(raw))
-        if digit_count < min_number_digits:
+        if not has_magnitude_suffix and digit_count < min_number_digits:
             continue
         try:
             normalized = normalize_number(raw)

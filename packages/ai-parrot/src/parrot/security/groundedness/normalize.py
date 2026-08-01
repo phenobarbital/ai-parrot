@@ -57,13 +57,13 @@ def nfkc_normalize(text: str) -> str:
 def normalize_number(raw: str) -> float:
     """Normalize a numeric/money/percent literal to a canonical float.
 
-    Strips currency symbols, percent signs, and thousand separators, then
-    resolves a trailing magnitude suffix (``k``/``M``/``B``,
-    case-insensitive).
+    Strips currency symbols, percent signs, and thousand separators,
+    resolves a leading sign, then resolves a trailing magnitude suffix
+    (``k``/``M``/``B``, case-insensitive).
 
     Args:
         raw: The raw numeric literal as it appeared in text, e.g.
-            ``"$1.24M"``, ``"1,234,500"``, or ``"15.3%"``.
+            ``"$1.24M"``, ``"1,234,500"``, ``"15.3%"``, or ``"-15.3%"``.
 
     Returns:
         The canonical float value, e.g. ``"$1.24M"`` -> ``1_240_000.0``.
@@ -76,6 +76,11 @@ def normalize_number(raw: str) -> float:
     text = _CURRENCY_AND_PERCENT_RE.sub("", text)
     text = text.strip()
 
+    sign = 1.0
+    if text.startswith(("-", "+")):
+        sign = -1.0 if text[0] == "-" else 1.0
+        text = text[1:]
+
     multiplier = 1.0
     if text and text[-1].lower() in _MAGNITUDE_SUFFIXES:
         multiplier = _MAGNITUDE_SUFFIXES[text[-1].lower()]
@@ -84,7 +89,7 @@ def normalize_number(raw: str) -> float:
     if not text:
         raise ValueError(f"Cannot normalize empty numeric literal: {raw!r}")
 
-    return float(text) * multiplier
+    return sign * float(text) * multiplier
 
 
 def count_significant_digits(raw: str) -> int:
@@ -93,9 +98,13 @@ def count_significant_digits(raw: str) -> int:
     Backs the precision-aware tolerance rule (spec §2): a number with a
     magnitude suffix (``1.24M``) is a *rounded* statement with few
     significant digits, while a fully written number (``1,234,500``) is
-    an *exact* statement whose digit count equals its length. Thousand
-    separators, currency symbols, and the percent sign do not count; the
-    magnitude suffix character itself does not count.
+    an *exact* statement whose digit count equals its length (trailing
+    zeros in a fully written integer count as significant, per the
+    spec's own worked example). Thousand separators, a leading sign,
+    currency symbols, and the percent sign do not count; the magnitude
+    suffix character itself does not count. Leading zeros before the
+    first non-zero digit are never significant (standard sig-fig
+    convention) — e.g. ``"0.005"`` has 1 significant digit, not 4.
 
     Args:
         raw: The raw numeric literal, e.g. ``"$1.24M"`` or
@@ -108,8 +117,16 @@ def count_significant_digits(raw: str) -> int:
     text = text.replace(",", "")
     text = _CURRENCY_AND_PERCENT_RE.sub("", text)
     text = text.strip()
+    if text.startswith(("-", "+")):
+        text = text[1:]
     if text and text[-1].lower() in _MAGNITUDE_SUFFIXES:
         text = text[:-1]
+
+    first_significant = re.search(r"[1-9]", text)
+    if first_significant is None:
+        # Degenerate all-zero literal (e.g. "0", "0.00").
+        return len(_DIGIT_RE.findall(text))
+    text = text[first_significant.start():]
     return len(_DIGIT_RE.findall(text))
 
 
@@ -131,23 +148,25 @@ def normalize_date(raw: str) -> str:
     """
     text = nfkc_normalize(raw).strip()
 
-    match = _ISO_DATE_RE.match(text)
-    if match:
-        year, month, day = (int(group) for group in match.groups())
-        return date(year, month, day).isoformat()
+    iso_match = _ISO_DATE_RE.match(text)
+    if iso_match:
+        iso_year, iso_month, iso_day = (int(group) for group in iso_match.groups())
+        return date(iso_year, iso_month, iso_day).isoformat()
 
-    match = _SLASH_DATE_RE.match(text)
-    if match:
-        month, day, year = (int(group) for group in match.groups())
-        return date(year, month, day).isoformat()
+    slash_match = _SLASH_DATE_RE.match(text)
+    if slash_match:
+        slash_month, slash_day, slash_year = (
+            int(group) for group in slash_match.groups()
+        )
+        return date(slash_year, slash_month, slash_day).isoformat()
 
-    match = _MONTH_NAME_DATE_RE.match(text)
-    if match:
-        month_name, day, year = match.groups()
-        month = _MONTH_NAMES.get(month_name.lower())
-        if month is None:
+    name_match = _MONTH_NAME_DATE_RE.match(text)
+    if name_match:
+        month_name, name_day, name_year = name_match.groups()
+        month_number = _MONTH_NAMES.get(month_name.lower())
+        if month_number is None:
             raise ValueError(f"Unrecognized month name: {month_name!r}")
-        return date(int(year), month, int(day)).isoformat()
+        return date(int(name_year), month_number, int(name_day)).isoformat()
 
     raise ValueError(f"Cannot normalize date literal: {raw!r}")
 

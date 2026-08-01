@@ -17,8 +17,9 @@ from .policy import GroundednessPolicy
 
 logger = logging.getLogger(__name__)
 
-#: Atom kinds pooled into the flat numeric evidence list (spec §2/§3: "a
-#: numeric list for tolerance checks" — deliberately not per-kind).
+#: Atom kinds compared via numeric (tolerance/contradicted-band) matching,
+#: each kept in its own list — a money claim is only ever matched against
+#: money evidence, never against a same-valued percent or bare number.
 _NUMERIC_KINDS = frozenset({AtomKind.MONEY, AtomKind.PERCENT, AtomKind.NUMBER})
 
 
@@ -28,8 +29,12 @@ class EvidenceIndex:
     Attributes:
         by_kind: Exact-match sets of normalized atom values, keyed by
             :class:`AtomKind`.
-        numeric_values: Flat ``(normalized_value, raw)`` pairs for every
-            money/percent/number atom found in evidence.
+        numeric_by_kind: Per-kind ``(normalized_value, raw)`` pairs for
+            money/percent/number atoms found in evidence, used by the
+            scorer's precision-aware tolerance and contradicted-band
+            checks. Kept separate per :class:`AtomKind` so a money claim
+            is never matched against percent/number evidence that
+            happens to share the same numeric value.
         tool_call_count: Number of tool calls the index was built from.
             ``0`` means the turn had no tool results — the scorer's
             ``no_evidence`` case.
@@ -39,7 +44,9 @@ class EvidenceIndex:
 
     def __init__(self) -> None:
         self.by_kind: dict[AtomKind, set] = {kind: set() for kind in AtomKind}
-        self.numeric_values: list[tuple[float, str]] = []
+        self.numeric_by_kind: dict[AtomKind, list[tuple[float, str]]] = {
+            kind: [] for kind in _NUMERIC_KINDS
+        }
         self.tool_call_count: int = 0
         self.evidence_truncated: bool = False
 
@@ -111,4 +118,6 @@ class EvidenceIndex:
         """Record *atom* in the exact-match set and (if numeric) the list."""
         self.by_kind[atom.kind].add(atom.normalized)
         if atom.kind in _NUMERIC_KINDS:
-            self.numeric_values.append((float(atom.normalized), atom.raw))
+            self.numeric_by_kind[atom.kind].append(
+                (float(atom.normalized), atom.raw)
+            )

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import time
+from typing import Literal
 
 from .evidence import EvidenceIndex
 from .extractors import extract_atoms
@@ -22,6 +23,9 @@ from .policy import AtomVerdict, GroundednessPolicy, GroundednessReport
 
 #: Atom kinds compared via numeric matching (exact -> tolerance -> band).
 _NUMERIC_KINDS = frozenset({AtomKind.MONEY, AtomKind.PERCENT, AtomKind.NUMBER})
+
+#: Verdict literal shared with `AtomVerdict.verdict` (policy.py).
+_Verdict = Literal["supported", "contradicted", "unsupported"]
 
 
 def _numeric_tolerance(value: float, sig_digits: int) -> float:
@@ -133,7 +137,7 @@ class GroundednessScorer:
 
     def _classify(
         self, atom: Atom, evidence: EvidenceIndex,
-    ) -> tuple[str, str | None]:
+    ) -> tuple[_Verdict, str | None]:
         """Classify a single answer atom against *evidence*.
 
         Returns:
@@ -148,18 +152,24 @@ class GroundednessScorer:
 
     def _classify_numeric(
         self, atom: Atom, evidence: EvidenceIndex,
-    ) -> tuple[str, str | None]:
-        """Classify a numeric (money/percent/number) atom against evidence."""
-        if not evidence.numeric_values:
+    ) -> tuple[_Verdict, str | None]:
+        """Classify a numeric (money/percent/number) atom against evidence.
+
+        Only compared against evidence of the *same* atom kind — a money
+        claim is never "supported" by a same-valued percent or bare
+        number in the evidence (see :class:`EvidenceIndex.numeric_by_kind`).
+        """
+        candidates = evidence.numeric_by_kind.get(atom.kind, [])
+        if not candidates:
             return "unsupported", None
 
         value = float(atom.normalized)
-        best_value: float | None = None
-        best_raw: str | None = None
-        best_diff: float | None = None
-        for ev_value, ev_raw in evidence.numeric_values:
+        best_value: float = candidates[0][0]
+        best_raw: str | None = candidates[0][1]
+        best_diff: float = abs(value - best_value)
+        for ev_value, ev_raw in candidates[1:]:
             diff = abs(value - ev_value)
-            if best_diff is None or diff < best_diff:
+            if diff < best_diff:
                 best_value, best_raw, best_diff = ev_value, ev_raw, diff
 
         if best_diff == 0:
