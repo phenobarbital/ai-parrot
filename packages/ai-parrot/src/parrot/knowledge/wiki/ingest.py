@@ -36,8 +36,8 @@ from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.models import WikiConfig
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
     WikiPageRecord,
-    WikiStore,
     estimate_tokens,
 )
 
@@ -92,7 +92,7 @@ class WikiIngestOrchestrator:
         graphindex_toolkit: Any,
         source_manager: SourceCollectionManager,
         bookkeeper: WikiBookkeeper,
-        store: Optional[WikiStore] = None,
+        store: Optional[BaseWikiStore] = None,
         sync_graph: bool = False,
     ) -> None:
         """Initialise the orchestrator with all dependencies.
@@ -102,8 +102,8 @@ class WikiIngestOrchestrator:
             graphindex_toolkit: A ``GraphIndexToolkit`` instance.
             source_manager: :class:`SourceCollectionManager` for the wiki.
             bookkeeper: :class:`WikiBookkeeper` for log/index management.
-            store: :class:`WikiStore` retrieval plane.  When ``None``,
-                store sync is skipped (legacy behaviour).
+            store: :class:`BaseWikiStore` retrieval plane.  When
+                ``None``, store sync is skipped (legacy behaviour).
             sync_graph: When ``True``, additionally mirror a
                 ``wiki_page`` node into GraphIndex (off by default —
                 the WikiStore is the retrieval plane).
