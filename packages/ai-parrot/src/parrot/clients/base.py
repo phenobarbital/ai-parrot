@@ -495,10 +495,16 @@ $backstory
         """Emit ``ClientRoundEvent`` for a single tool-execution round.
 
         Fire-and-forget (``emit_nowait`` + ``forward_to_global``), mirroring
-        :meth:`_emit_before_call`. Short-circuits via
-        ``self.events.has_subscribers(ClientRoundEvent)`` before constructing
-        the event, so there is zero overhead on the hot path when nobody
-        listens.
+        :meth:`_emit_before_call`. Short-circuits before constructing the
+        event so there is zero overhead on the hot path when nobody listens
+        — checking BOTH the client's own (isolated, ``forward_to_global=
+        False``) registry AND the current global registry. Client registries
+        normally have no direct subscribers in production (real consumers
+        like ``MetricsSubscriber`` register on the global registry, reached
+        via the explicit ``forward_to_global()`` bridge below); checking
+        only ``self.events`` would silently never emit ``ClientRoundEvent``
+        outside of tests that subscribe directly on a client instance
+        (FEAT-397 TASK-2040 integration testing surfaced this).
 
         Args:
             tc: The ``TraceContext`` returned by :meth:`_emit_before_call`.
@@ -518,7 +524,13 @@ $backstory
                 SDK call.
         """
         if not self.events.has_subscribers(ClientRoundEvent):
-            return
+            # FEAT-397 (TASK-2040 fix): client registries never carry direct
+            # subscribers in production — fall back to checking the current
+            # global registry before giving up, so MetricsSubscriber (or any
+            # other global observer) actually receives round events.
+            from navigator_eventbus.lifecycle.global_registry import get_global_registry
+            if not get_global_registry().has_subscribers(ClientRoundEvent):
+                return
 
         event = ClientRoundEvent(
             trace_context=tc,
