@@ -409,7 +409,12 @@ bedrock = [
 # factory/client_type key (parrot.clients.factory.SUPPORTED_CLIENTS,
 # BedrockConverseClient.client_type), which is unrelated and unchanged.
 bedrock-native = [
-    "aioboto3>=13.0.0",
+    # >=15.1.0 pulls aiobotocore 2.24.0 -> botocore >=1.39.9, the first line
+    # with Bedrock API key (bearer token, env var AWS_BEARER_TOKEN_BEDROCK)
+    # support — verified by inspecting botocore 1.38.0 (no support) vs
+    # 1.39.0 (has it). BedrockConverseBase's aws_bearer_token fallback
+    # silently no-ops on older botocore instead of erroring.
+    "aioboto3>=15.1.0",
 ]
 
 claude-agent = [
