@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-403
 **Date**: 2026-08-03
 **Author**: Jesus Lara / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.x
 
 ---
