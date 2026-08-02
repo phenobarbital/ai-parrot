@@ -1,0 +1,50 @@
+{
+  "feat_id": "FEAT-400",
+  "title": "ArangoDB as Configurable Backend for LLM Wiki (WikiToolkit)",
+  "type": "feature",
+  "base_branch": "dev",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary": "ArangoDB as configurable backend for LLM Wiki (WikiToolkit)"
+  },
+  "phase": "proposal_drafted",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 35,
+    "grep_calls": 8,
+    "git_calls": 0,
+    "depth_reached": 1,
+    "wall_seconds": 240
+  },
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete", "approved_by_user": true },
+    "research": { "status": "complete", "agents": 4, "truncated": false },
+    "synthesis": { "status": "complete" },
+    "review_gate": { "status": "complete", "approved_by_user": true },
+    "qa": {
+      "status": "complete",
+      "questions_total": 2,
+      "questions_answered": 2,
+      "resolved": {
+        "U1": "Configurable — dedicated wiki_{wiki_name} database by default, allow sharing via arango_database",
+        "U2": "ArangoDB collection (wiki_sources) in the same database"
+      }
+    },
+    "output": {
+      "status": "complete",
+      "proposal_path": "sdd/proposals/wikitoolkit-arangodb-backend.proposal.md"
+    }
+  },
+  "started_at": "2026-08-01T12:00:00Z",
+  "updated_at": "2026-08-01T12:45:00Z"
+}

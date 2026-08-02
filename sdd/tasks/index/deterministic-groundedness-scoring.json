@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-01T03:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-01T17:05:57+00:00",
   "tasks": [
     {
       "id": "TASK-2041",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "All FEAT-398 tasks form a strict dependency chain (M1→M2→M3→tests→benchmarks); no parallelism possible within this feature.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:18:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2041-groundedness-extractors.md"
+      "completed_at": "2026-08-01T00:27:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2041-groundedness-extractors.md"
     },
     {
       "id": "TASK-2042",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-2041 (extractors/models). Strict chain.",
       "assigned_to": null,
       "started_at": "2026-08-01T00:18:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2042-groundedness-scorer.md"
+      "completed_at": "2026-08-01T00:33:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2042-groundedness-scorer.md"
     },
     {
       "id": "TASK-2043",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,9 +61,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-2042 (scorer). Also blocked on FEAT-396 (guardrails-infrastructure) landing first.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2043-groundedness-guardrail-plugin.md"
+      "started_at": "2026-08-01T10:41:03+00:00",
+      "completed_at": "2026-08-01T10:48:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2043-groundedness-guardrail-plugin.md"
     },
     {
       "id": "TASK-2044",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,9 +81,9 @@
       "parallel": false,
       "parallelism_notes": "Tests exercise the full pipeline (M1+M2+M3); must run after all modules implemented.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2044-groundedness-tests.md"
+      "started_at": "2026-08-01T10:48:32+00:00",
+      "completed_at": "2026-08-01T16:57:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2044-groundedness-tests.md"
     },
     {
       "id": "TASK-2045",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-398",
       "feature": "deterministic-groundedness-scoring",
       "spec": "sdd/specs/deterministic-groundedness-scoring.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Benchmarks need the full scorer pipeline; docs written last.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2045-groundedness-benchmarks-docs.md"
+      "completed_at": "2026-08-01T17:05:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2045-groundedness-benchmarks-docs.md"
     }
   ]
 }

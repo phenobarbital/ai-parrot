@@ -1,34 +1,35 @@
-"""Unit + integration tests for parrot.knowledge.graphindex.communities (FEAT-191)."""
+"""Unit + integration tests for parrot.knowledge.graphindex.communities
+
+FEAT-191 (Louvain) + FEAT-401 (Leiden, hierarchical communities).
+"""
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Optional
-from unittest.mock import MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
 import networkx as nx
 import pytest
 import rustworkx
-
 from parrot.knowledge.graphindex.communities import (
-    Community,
     CommunitiesResult,
+    Community,
+    HierarchicalCommunitiesResult,
     _centroid_for_community,
     _community_modularity_contribution,
     _order_members,
     _stable_community_id,
+    _to_igraph,
     _to_undirected_networkx,
-    _total_edge_weight,
     cohesion_for_community,
     detect_communities,
+    detect_hierarchical_communities,
 )
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
     NodeKind,
-    UniversalEdge,
     UniversalNode,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -73,6 +74,60 @@ def _build_two_cliques() -> tuple[rustworkx.PyDiGraph, list[UniversalNode]]:
                            {"kind": EdgeKind.REFERENCES.value})
     # Bridge.
     g.add_edge(idxs["A0"], idxs["B0"], {"kind": EdgeKind.REFERENCES.value})
+    return g, nodes
+
+
+def _build_hierarchical_graph() -> tuple[rustworkx.PyDiGraph, list[UniversalNode]]:
+    """Two super-communities (X, Y), each containing two 3-node
+    sub-communities. Sub-communities are dense triangles; sub-communities
+    in the same super-community share several bridge edges (tight
+    coupling); the two supers share a single bridge edge (loose
+    coupling) — so low resolution merges into 2 communities, high
+    resolution splits into 4."""
+    g = rustworkx.PyDiGraph()
+    nodes: list[UniversalNode] = []
+    idxs: dict[str, int] = {}
+    subs = {
+        "X1": ["a", "b", "c"],
+        "X2": ["d", "e", "f"],
+        "Y1": ["g", "h", "i"],
+        "Y2": ["j", "k", "l"],
+    }
+    for sub, members in subs.items():
+        for m in members:
+            n = _node(m, source_uri=f"{sub}.md")
+            nodes.append(n)
+            idxs[m] = _add(g, n)
+    # Dense triangle within each sub-community.
+    for members in subs.values():
+        for i in range(len(members)):
+            for j in range(i + 1, len(members)):
+                g.add_edge(idxs[members[i]], idxs[members[j]],
+                           {"kind": EdgeKind.REFERENCES.value})
+    # Tight coupling between subs of the same super-community.
+    for a, b in [("a", "d"), ("b", "e"), ("c", "f")]:
+        g.add_edge(idxs[a], idxs[b], {"kind": EdgeKind.REFERENCES.value})
+    for a, b in [("g", "j"), ("h", "k"), ("i", "l")]:
+        g.add_edge(idxs[a], idxs[b], {"kind": EdgeKind.REFERENCES.value})
+    # Loose coupling between the two super-communities.
+    g.add_edge(idxs["a"], idxs["g"], {"kind": EdgeKind.REFERENCES.value})
+    return g, nodes
+
+
+def _build_tiny_graph() -> tuple[rustworkx.PyDiGraph, list[UniversalNode]]:
+    """A 5-node clique — well under the 20-node hierarchical threshold."""
+    g = rustworkx.PyDiGraph()
+    nodes: list[UniversalNode] = []
+    idxs: dict[str, int] = {}
+    members = [f"t{i}" for i in range(5)]
+    for m in members:
+        n = _node(m)
+        nodes.append(n)
+        idxs[m] = _add(g, n)
+    for i in range(len(members)):
+        for j in range(i + 1, len(members)):
+            g.add_edge(idxs[members[i]], idxs[members[j]],
+                       {"kind": EdgeKind.REFERENCES.value})
     return g, nodes
 
 
@@ -306,6 +361,24 @@ class TestDetectCommunities:
         assert result.node_to_community == {}
         assert result.modularity == 0.0
 
+    @pytest.mark.parametrize("algorithm", ["louvain", "leiden"])
+    def test_edgeless_graph_does_not_raise(self, algorithm):
+        """Nodes with NO edges at all (every node isolated) must not
+        crash — nx.community.modularity() divides by deg_sum**2
+        internally and raises ZeroDivisionError when there is zero
+        total edge weight. Reachable in practice via a narrow
+        wikitoolkit --graph-kinds selection with no cross-page edges."""
+        g = rustworkx.PyDiGraph()
+        nodes = [_node("a"), _node("b")]
+        for n in nodes:
+            _add(g, n)
+        result = detect_communities(g, nodes, algorithm=algorithm,
+                                     write_back_to_nodes=False)
+        assert result.modularity == 0.0
+        assert len(result.communities) == 2
+        assert all(c.size == 1 for c in result.communities)
+        assert all(c.cohesion == 0.0 for c in result.communities)
+
     def test_weighted_flag_reflects_signal_config(self):
         g, nodes = _build_two_cliques()
         from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
@@ -363,7 +436,8 @@ class TestBuilderIntegration:
 class TestAnalyticsReport:
     def test_render_with_communities_section(self, tmp_path):
         from parrot.knowledge.graphindex.analytics import (
-            AnalyticsResult, _render_report,
+            AnalyticsResult,
+            _render_report,
         )
         g, nodes = _build_two_cliques()
         comm_result = detect_communities(g, nodes, write_back_to_nodes=False)
@@ -376,11 +450,188 @@ class TestAnalyticsReport:
 
     def test_render_without_communities_no_section(self):
         from parrot.knowledge.graphindex.analytics import (
-            AnalyticsResult, _render_report,
+            AnalyticsResult,
+            _render_report,
         )
         analytics = AnalyticsResult()
         report = _render_report(analytics)
         assert "## Communities" not in report
+
+
+# ---------------------------------------------------------------------------
+# FEAT-401 — Leiden algorithm integration
+# ---------------------------------------------------------------------------
+
+
+class TestLeidenAlgorithm:
+    def test_detect_communities_leiden(self):
+        """Leiden produces well-connected communities on two cliques."""
+        pytest.importorskip("leidenalg")
+        g, nodes = _build_two_cliques()
+        result = detect_communities(g, nodes, algorithm="leiden",
+                                     write_back_to_nodes=False)
+        assert result.algorithm == "leiden"
+        assert len(result.communities) >= 2
+        # Every community must be internally connected — verify by
+        # checking each community's induced subgraph has no isolated
+        # sub-components.
+        nx_graph = _to_undirected_networkx(g, nodes)
+        for community in result.communities:
+            induced = nx_graph.subgraph(community.member_node_ids)
+            if induced.number_of_nodes() > 1:
+                assert nx.is_connected(induced)
+
+    def test_detect_communities_leiden_fallback(self):
+        """Falls back to Louvain when leidenalg is not importable."""
+        g, nodes = _build_two_cliques()
+        with patch.dict(sys.modules, {"leidenalg": None}):
+            result = detect_communities(g, nodes, algorithm="leiden",
+                                         write_back_to_nodes=False)
+        assert result.algorithm == "louvain"
+        assert len(result.communities) == 2
+
+    def test_detect_communities_leiden_fallback_logs_warning(self, caplog):
+        """The fallback path logs a warning naming the missing package."""
+        g, nodes = _build_two_cliques()
+        with patch.dict(sys.modules, {"leidenalg": None}), caplog.at_level(logging.WARNING):
+            detect_communities(g, nodes, algorithm="leiden",
+                                write_back_to_nodes=False)
+        assert any("leidenalg" in rec.message for rec in caplog.records)
+
+    def test_detect_communities_louvain_explicit(self):
+        """algorithm='louvain' always uses the existing networkx path."""
+        g, nodes = _build_two_cliques()
+        result = detect_communities(g, nodes, algorithm="louvain",
+                                     write_back_to_nodes=False)
+        assert result.algorithm == "louvain"
+        assert len(result.communities) == 2
+
+    def test_algorithm_field_defaults_to_louvain(self):
+        """CommunitiesResult.algorithm defaults to 'louvain' for direct
+        construction (backward compatibility, e.g. persisted/cached
+        results built before FEAT-401)."""
+        r = CommunitiesResult(
+            modularity=0.5, resolution=1.0, seed=42,
+            weighted=False, communities=[], node_to_community={},
+        )
+        assert r.algorithm == "louvain"
+
+    def test_algorithm_field_roundtrip(self):
+        """CommunitiesResult.algorithm survives serialization."""
+        g, nodes = _build_two_cliques()
+        result = detect_communities(g, nodes, algorithm="louvain",
+                                     write_back_to_nodes=False)
+        dumped = result.model_dump()
+        restored = CommunitiesResult(**dumped)
+        assert restored.algorithm == result.algorithm == "louvain"
+
+    def test_to_igraph_conversion(self):
+        """rustworkx → igraph preserves node count, edge count, weights."""
+        pytest.importorskip("igraph")
+        g, nodes = _build_two_cliques()
+        ig_graph, vertex_node_ids = _to_igraph(g, nodes)
+        assert ig_graph.vcount() == len(nodes)
+        assert set(vertex_node_ids) == {n.node_id for n in nodes}
+        # 2 x C(5,2) intra-clique edges + 1 bridge edge = 21.
+        assert ig_graph.ecount() == 21
+        assert all(w == 1.0 for w in ig_graph.es["weight"])
+
+    def test_to_igraph_isolated_nodes_included(self):
+        pytest.importorskip("igraph")
+        g = rustworkx.PyDiGraph()
+        nodes = [_node("alone")]
+        _add(g, nodes[0])
+        ig_graph, vertex_node_ids = _to_igraph(g, nodes)
+        assert ig_graph.vcount() == 1
+        assert vertex_node_ids == ["alone"]
+
+    def test_leiden_weighted_edges(self):
+        """Signal-weighted edges are forwarded to Leiden correctly."""
+        pytest.importorskip("leidenalg")
+        pytest.importorskip("parrot.knowledge.graphindex.signals")
+        from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
+
+        g, nodes = _build_two_cliques()
+        cfg = SignalRelevanceConfig()
+        result = detect_communities(
+            g, nodes, algorithm="leiden", signal_config=cfg,
+            write_back_to_nodes=False,
+        )
+        assert result.algorithm == "leiden"
+        assert result.weighted is True
+        assert len(result.communities) >= 2
+
+
+# ---------------------------------------------------------------------------
+# FEAT-401 — Hierarchical / multi-resolution communities
+# ---------------------------------------------------------------------------
+
+
+class TestHierarchicalCommunities:
+    def test_hierarchical_basic(self):
+        """Multi-resolution sweep returns one partition per resolution."""
+        g, nodes = _build_hierarchical_graph()
+        result = detect_hierarchical_communities(
+            g, nodes, resolutions=[0.5, 1.0, 2.0],
+        )
+        assert isinstance(result, HierarchicalCommunitiesResult)
+        assert len(result.levels) == 3
+        assert result.resolutions == [0.5, 1.0, 2.0]
+        for level in result.levels:
+            assert isinstance(level, CommunitiesResult)
+
+    def test_hierarchical_sorts_resolutions(self):
+        g, nodes = _build_hierarchical_graph()
+        result = detect_hierarchical_communities(
+            g, nodes, resolutions=[2.0, 0.5, 1.0],
+        )
+        assert result.resolutions == [0.5, 1.0, 2.0]
+
+    def test_hierarchical_nesting(self):
+        """Lower resolution produces fewer (larger) communities than a
+        higher resolution on the same nested topology."""
+        g, nodes = _build_hierarchical_graph()
+        result = detect_hierarchical_communities(g, nodes, resolutions=[0.5, 2.0])
+        assert len(result.levels[0].communities) <= len(result.levels[1].communities)
+
+    def test_hierarchical_tiny_graph_shortcircuit(self):
+        """Graphs with <20 nodes short-circuit to a single resolution
+        of [1.0] when no explicit resolutions are supplied."""
+        g, nodes = _build_tiny_graph()
+        result = detect_hierarchical_communities(g, nodes)
+        assert result.resolutions == [1.0]
+        assert len(result.levels) == 1
+
+    def test_hierarchical_explicit_resolutions_not_shortcircuited(self):
+        """Explicit resolutions are honoured even for tiny graphs."""
+        g, nodes = _build_tiny_graph()
+        result = detect_hierarchical_communities(g, nodes, resolutions=[0.5, 1.0])
+        assert result.resolutions == [0.5, 1.0]
+        assert len(result.levels) == 2
+
+    def test_hierarchical_default_resolutions_for_large_graph(self):
+        g, nodes = _build_hierarchical_graph()
+        # _build_hierarchical_graph has 12 nodes (<20) — pad with
+        # isolates to exercise the >=20 default-resolutions branch.
+        extra_nodes = [_node(f"iso{i}") for i in range(10)]
+        for n in extra_nodes:
+            g.add_node({
+                "node_id": n.node_id, "kind": n.kind.value,
+                "title": n.title, "source_uri": n.source_uri,
+                "domain_tags": dict(n.domain_tags),
+            })
+        all_nodes = nodes + extra_nodes
+        result = detect_hierarchical_communities(g, all_nodes)
+        assert result.resolutions == [0.25, 0.5, 1.0, 2.0, 4.0]
+        assert len(result.levels) == 5
+
+    def test_hierarchical_never_mutates_nodes(self):
+        """write_back_to_nodes=False under the hood — no domain_tags
+        mutation regardless of resolution count."""
+        g, nodes = _build_hierarchical_graph()
+        detect_hierarchical_communities(g, nodes, resolutions=[0.5, 1.0, 2.0])
+        for n in nodes:
+            assert "community_id" not in n.domain_tags
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +660,8 @@ class TestPersistRoundTrip:
 class TestIntegration:
     def test_louvain_on_two_cliques(self):
         g, nodes = _build_two_cliques()
-        result = detect_communities(g, nodes, write_back_to_nodes=False)
+        result = detect_communities(g, nodes, algorithm="louvain",
+                                     write_back_to_nodes=False)
         assert len(result.communities) == 2
         for c in result.communities:
             assert c.cohesion >= 0.9
@@ -447,7 +699,8 @@ class TestIntegration:
 
         cfg = SignalRelevanceConfig()
         result = detect_communities(
-            g, all_nodes, signal_config=cfg, write_back_to_nodes=False,
+            g, all_nodes, algorithm="louvain", signal_config=cfg,
+            write_back_to_nodes=False,
         )
         # We expect 2 communities, one per source.
         community_of = result.node_to_community

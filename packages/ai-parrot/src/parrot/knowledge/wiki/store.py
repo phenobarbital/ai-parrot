@@ -1198,6 +1198,7 @@ def create_wiki_store(
     storage_dir: str | Path,
     wiki_name: str = "",
     backend: str = "sqlite",
+    **kwargs: Any,
 ) -> BaseWikiStore:
     """Instantiate the configured wiki retrieval-plane backend.
 
@@ -1207,10 +1208,19 @@ def create_wiki_store(
     Args:
         storage_dir: Wiki storage root.  ``sqlite`` uses
             ``{storage_dir}/wiki.db``; ``memory`` uses the OKF bundle
-            directory ``{storage_dir}/pages/``.
+            directory ``{storage_dir}/pages/``.  Unused by ``arangodb``
+            (server-hosted — no local directory).
         wiki_name: Wiki name recorded by the backend.
-        backend: ``"sqlite"`` (single-file SQLite plane) or
-            ``"memory"`` (in-memory indexes + OKF markdown directory).
+        backend: ``"sqlite"`` (single-file SQLite plane), ``"memory"``
+            (in-memory indexes + OKF markdown directory), or
+            ``"arangodb"`` (server-hosted, shared retrieval plane).
+        **kwargs: Backend-specific extras. For ``"arangodb"``:
+            ``arango_params`` (connection params dict for
+            ``AsyncDB("arangodb", ...)`` — see
+            :func:`parrot.knowledge.wiki.project.resolve_arango_params`),
+            ``database`` (target database name, defaults to
+            ``wiki_{wiki_name}``), and ``text_analyzer`` (ArangoSearch
+            text analyzer, defaults to ``"text_en"``).
 
     Returns:
         A :class:`BaseWikiStore` implementation.
@@ -1227,6 +1237,18 @@ def create_wiki_store(
         from parrot.knowledge.wiki.file_store import InMemoryWikiStore
 
         return InMemoryWikiStore(storage_dir / "pages", wiki_name=wiki_name)
+    if backend == "arangodb":
+        # Imported lazily — arango_store imports asyncdb, an optional
+        # dependency not needed by the sqlite/memory paths.
+        from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+
+        return ArangoDBWikiStore(
+            arango_params=kwargs.get("arango_params", {}),
+            database=kwargs.get("database", ""),
+            wiki_name=wiki_name,
+            text_analyzer=kwargs.get("text_analyzer", "text_en"),
+        )
     raise ValueError(
-        f"Unknown wiki storage backend {backend!r} — expected 'sqlite' or 'memory'"
+        f"Unknown wiki storage backend {backend!r} — expected 'sqlite',"
+        " 'memory', or 'arangodb'"
     )

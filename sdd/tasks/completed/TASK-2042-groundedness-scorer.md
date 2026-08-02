@@ -274,10 +274,108 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-01
+**Notes**: Implemented `policy.py` (`GroundednessPolicy`, `AtomVerdict`,
+`GroundednessReport`), `evidence.py` (`EvidenceIndex.from_tool_calls`),
+and `scorer.py` (`GroundednessScorer.score`) exactly as scoped, and
+updated `__init__.py` exports. `EvidenceIndex` recursively walks
+dict/list `ToolCall.result` payloads, extracting atoms via TASK-2041's
+`extract_atoms()` into per-kind exact-match sets plus a combined
+money/percent/number `numeric_values` list (per spec's own wording: "a
+numeric list for tolerance checks", not per-kind); `max_evidence_bytes`
+is enforced as a running byte budget across the whole result set, short-
+circuiting further traversal and setting `evidence_truncated` once
+exceeded; `include_user_prompt_as_evidence` folds the prompt in last.
+`GroundednessScorer._classify_numeric` implements the precision-aware
+tolerance as `0.5 * 10**(magnitude(value) - sig_digits + 1)` — derived
+directly from `count_significant_digits()` (TASK-2041) and the value's
+own order of magnitude, which reproduces both worked examples in the
+spec's Implementation Notes exactly (`$1.24M` → ±5000; `$1,234,500` →
+±0.5) without re-deriving decimal-place counts separately. Falls back to
+the `contradicted_band` (relative delta ≤ 0.15 of the nearest evidence
+value) when outside tolerance, else `unsupported`. `tool_call_count == 0`
+short-circuits to `no_evidence=True, score=1.0` before any atom
+extraction runs. Design note: `GroundednessReport.duration_ms` is
+declared `Field(exclude=True)` — still a normal attribute
+(`report.duration_ms` reads the real `time.perf_counter()` measurement
+for telemetry/Module 3), but excluded from `model_dump()`/
+`model_dump_json()` by default so this task's own `test_determinism`
+(100x `model_dump_json()` byte-identical) is actually satisfiable;
+without this, wall-clock timing jitter would make the JSON dump
+non-deterministic by construction, contradicting the spec's own
+determinism acceptance criterion. `ruff check` passes with zero errors.
+Manually verified all 11 acceptance-criteria scenarios from this task
+(EvidenceIndex build, `max_evidence_bytes` truncation, faithful/
+transposed/invented/no-content/no-evidence/rounded/full-precision-exact
+scoring, 100-run determinism) via an ad-hoc script — all passed. Formal
+`tests/unit/security/test_groundedness_scorer.py` is out of scope here
+per this task's explicit "NOT in scope" note; it is TASK-2044's
+responsibility.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none beyond the `duration_ms` exclusion
+rationale above, which resolves an internal tension in this task's own
+acceptance criteria (byte-identical determinism vs. a wall-clock timing
+field) in favor of the explicitly-stated determinism requirement.
 
-**Deviations from spec**: none | describe if any
+**Post-completion addendum (2026-08-01)**: ran an adversarial
+`code-reviewer` agent (neutral brief: diff + acceptance criteria only,
+cross-checked against an independent `codex exec` read-only review) on
+the TASK-2041+2042 diff before pushing. It found real, reproducible
+🟠 Important correctness gaps, empirically verified, in the numeric-
+matching core — significant given this feature's whole purpose is
+catching corrupted/fabricated figures:
+
+1. `EvidenceIndex.numeric_values` pooled MONEY/PERCENT/NUMBER evidence
+   into one flat list with no kind check, so e.g. a fabricated `$45`
+   claim scored `supported` against unrelated evidence `"45%"` (same
+   float, wrong unit). **Fixed**: split into per-kind
+   `numeric_by_kind: dict[AtomKind, list[...]]`; `_classify_numeric`
+   now only compares same-kind evidence.
+2. Money/percent/number regexes had no leading-sign support — `"-15.3%"`
+   silently normalized to `+15.3`. **Fixed**: `-?` prefix added to all
+   three extraction patterns and `normalize_number()`.
+3. `count_significant_digits()` counted leading zeros before the first
+   non-zero digit as significant (`"0.005"` → 4, not 1 per standard
+   sig-fig convention), collapsing the precision-aware tolerance for
+   sub-1 values to near float-exact equality. **Fixed**: leading zeros
+   before the first `[1-9]` are now excluded from the count.
+4. Bare (no `$`) magnitude-suffixed numbers (`"2.5M downloads"`) were
+   silently dropped rather than extracted — `_NUMBER_RE` had no suffix
+   support and the 3-digit mantissa fell under the noise floor.
+   **Fixed**: `_NUMBER_RE` gained the same `[kKmMbB]?` suffix as money,
+   exempted from `min_number_digits` (matching money's existing
+   no-floor suffix handling).
+5. `_DATE_MONTHNAME_RE` was missing `re.IGNORECASE` while
+   `normalize_date()`'s own month lookup is case-insensitive, so
+   `"january 2, 2026"` silently lost its DATE identity. **Fixed**:
+   flag added.
+6. `mypy packages/ai-parrot/src/parrot/security/groundedness/` reported
+   real errors (Optional-narrowing at the numeric-match division,
+   variable-name reuse across incompatible types in `normalize_date`/
+   `extract_atoms`, a bare-`str` vs `Literal` verdict type) — the
+   original implementation had only been checked with `ruff`, not
+   `mypy`, despite the project's "strict type hints" convention.
+   **Fixed**: package is now `mypy`-clean (pre-existing errors remain
+   in unrelated files elsewhere in the repo, not touched by this
+   feature).
+
+Also flagged (not fixed, per the 🟡 Suggestion/💡 Nitpick triage rule —
+noted here for the PR reviewer, no action taken): freeform alphanumeric
+identifiers can leak embedded digits as spurious NUMBER atoms;
+`max_evidence_bytes` truncation drops a whole oversized leaf string
+rather than a fitting prefix; user-prompt evidence is still folded in
+after tool-call truncation already occurred; `_URL_RE` doesn't exclude
+trailing sentence punctuation; `EvidenceIndex.by_kind` uses an
+unparameterized `set` type hint. The `GroundednessReport.duration_ms
+Field(exclude=True)` design (see above) was reviewed and judged a
+defensible, disclosed trade-off rather than a bug, but the reviewer
+recommends the spec owner bless it explicitly for Module 3's telemetry
+path (TASK-2043) rather than let it stand as an implementation-only
+decision.
+
+All six fixes committed in
+`fix(deterministic-groundedness-scoring): address code-review findings
+on TASK-2041/2042`; every original acceptance-criteria scenario from
+both tasks re-verified passing with no regressions, plus a new
+regression check per fix.
