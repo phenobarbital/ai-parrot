@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-01T23:01:35+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-02T00:04:36+00:00",
   "tasks": [
     {
       "id": "TASK-2069",
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Final wiring + integration tests; depends transitively on all tasks. cli.py is a hot file — rebase on dev before starting.",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2075-cli-ingest-command.md"
+      "completed_at": "2026-08-02T00:04:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2075-cli-ingest-command.md"
     }
   ]
 }

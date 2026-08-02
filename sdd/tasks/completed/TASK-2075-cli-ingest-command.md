@@ -171,10 +171,99 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, autonomous)
+**Date**: 2026-08-02
+**Notes**: Added `wikitoolkit ingest <folder>` to `wiki/cli.py` as one
+additive section (helper functions + the command), inserted between
+`ground` and the `claude-hook` command, matching the file's own
+established grouping/lazy-import conventions (every new heavy import —
+charter/review/triage/ingest/bookkeeper/PageIndexToolkit/LLMFactory — is
+local to the command function or a helper, exactly like `ground`/
+`remember`). Re-anchored the Codebase Contract against the current file
+(still exactly 2062 lines pre-edit, confirming no drift since the spec's
+`ad6365242` verification) before touching anything. `wikitoolkit build`
+verified unaffected by direct regression test
+(`test_build_unaffected`: identical `store.stats()` across two runs, and
+no page ever carries `WikiPageCategory.ARCHIVE`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Implemented all four modes: `--dry-run` (triage → `ManifestWriter`,
+decisions null, nothing ingested, rich summary table), `--review`
+(`ManifestReader` → apply via `WikiIngestOrchestrator.ingest(triage=...)`,
+idempotent by construction since TASK-2074's `replace_source_slice`
+path), `--interactive` (triage completes first, THEN a synchronous
+`questionary.select` loop — verified no async work runs during
+prompting, then the async apply pipeline), `--auto` (thresholds decide,
+`stratified_sample` flags the audit subset per `charter.calibration`
+fractions, prints an `agreement_rate()` follow-up note). Mode flags are
+mutually exclusive (`click.UsageError` on 0 or >1 selected). `--extract`
+is off by default and documented as EXPERIMENTAL in its help text;
+off means triage claims are stripped from the written manifest (the
+router still uses them internally for novelty scoring — only the
+manifest *representation* is affected, matching v1's document-level
+admission non-goal). Every triaged document logs a `TRIAGE` bookkeeper
+line; `ADMIT`/`ARCHIVE`/`DISCARD` come from TASK-2074's orchestrator
+wiring. `ManifestRunHeader` carries `charter.fingerprint`/`.version` +
+`novelty_scorer.backend` on every run. Human decisions (interactive
+overrides, and manifest rows read back with `decision_source="human"`
+in `--review`) append to `charter.examples_file` via `append_example`
+when one is configured.
 
-**Deviations from spec**: none
+All acceptance-criteria tests pass: `test_cli_ingest_dry_run`,
+`test_cli_ingest_review_apply` (+ idempotent re-run), `test_cli_ingest_auto_audit_flags`,
+`test_cli_ingest_mode_flags_exclusive`, plus extras (missing-charter/
+missing-model errors, `--extract` claim-stripping, interactive
+prompt-before-apply ordering) — 8 new tests in `test_cli.py`, all 42
+tests in the file green. `test_supervised_ingest_end_to_end` and
+`test_build_unaffected` added to `test_integration.py` per the Test
+Specification (6/6 green). Full `tests/knowledge/wiki/` suite: 755
+passed, 2 skipped (pre-existing/unrelated), `test_arango_integration.py`
+deselected (live-DB-only, pre-existing convention). `ruff check` clean
+on every new line in all three files (verified line-by-line against
+`git diff` — the pre-existing top-of-file `test_integration.py` I001 and
+two unused-import F401s, and cli.py's handful of pre-existing SIM/UP/ISC
+findings elsewhere in the 2062-line original file, are untouched by this
+diff).
+
+**Deviations from spec / resolved contract gaps** (all additive, all
+documented here per the mandatory anti-hallucination process — none
+change any class/method signature fixed elsewhere in the spec):
+
+1. **`WikiConfig` (models.py, carries `charter_path`) is never
+   constructed anywhere in the pre-existing `cli.py`** — every other
+   command operates on `WikiProjectConfig` (`.parrot/wiki.json`) plus raw
+   store/sources objects, bypassing `WikiIngestOrchestrator.ingest()`
+   entirely (`build`'s `_ingest_files` is a wholly separate, deterministic
+   pipeline; confirmed zero `WikiConfig(` construction hits pre-edit).
+   Resolved by constructing a `WikiConfig` inline inside the new `ingest`
+   command from `WikiProjectConfig` fields + the resolved `--charter`
+   path, exactly where TASK-2074's `orch.ingest(..., wiki_config)` needs
+   one.
+2. **No client/model-selection infrastructure exists anywhere in
+   `cli.py`** (zero `PageIndexToolkit`/`PageIndexLLMAdapter`/LLM-client
+   construction pre-edit — `build`/`upsert` are LLM-free, `remember`/
+   `note`/`link` author pages directly). Added `--lightweight-model`/
+   `--model` flags (falling back to `$WIKI_LIGHTWEIGHT_MODEL`/
+   `$WIKI_MODEL`) and a `_build_triage_adapters` seam using the existing,
+   general-purpose `parrot.clients.factory.LLMFactory.create("provider:model")`
+   — not a new construct, an existing factory this task's spec did not
+   name explicitly but the codebase already provides for exactly this
+   "provider:model" string format (matches `WikiConfig.lightweight_model`/
+   `.model`'s documented format).
+3. **`WikiProjectConfig` has no `charter_path`/model fields** (verified
+   its full field list; not in this task's file-modify list either).
+   `--charter` resolution therefore falls back to a project-relative
+   convention (`<root>/.parrot/charter.yaml`) rather than a persisted
+   config field, with a clear `ClickException` when neither is found.
+4. **`--audit-rate`** (float, default 0.1) was added because
+   `CalibrationPolicy` (TASK-2069, as shipped) has no overall
+   audit-sample-rate field — `stratified_sample`'s `sample_size` param
+   (TASK-2070's own documented gap resolution) has to come from
+   somewhere at the CLI layer; this closes that chain.
+5. **`_DESTINATION_TO_SOURCES_COLUMN`, `heavy_adapter`, `charter_version`
+   param, size/suffix-cap router params** — all pre-resolved by
+   TASK-2071/2073/2074's own Completion Notes; this task consumes them
+   as documented, no new gaps introduced there.
+
+All five are additive CLI surface (new flags / a new inline config
+construction / an existing factory reused), never a substitution of any
+fixed class name or method signature named in the spec.
