@@ -156,10 +156,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, autonomous)
+**Date**: 2026-08-02
+**Notes**: Implemented `DimensionScores`, `Claim`, `TriageOutput` (no
+composite field — verified via `test_triage_output_has_no_composite_field`),
+`ManifestRunHeader`, `ManifestDocEntry` (both with an explicit `kind`
+discriminator per the task's order-tolerance requirement),
+`ManifestWriter`/`ManifestReader` (line-numbered `ManifestParseError` on
+malformed JSON, duplicate/missing header, unknown `kind`, or invalid
+`decision`), `stratified_sample()` (near-threshold stratum ranked by
+distance to the nearest admit/reject boundary, uniform stratum via seeded
+`random.Random`; mutates `audit_sample`/`audit_stratum` in place, returns
+`None`), `agreement_rate()` (fraction of decided entries where
+`decision == proposed_action`, `None` when nothing decided — matches the
+task's literal wording, no `audit_sample` filter), and
+`propose_gray_zone_widening()` (returns a brand-new `Thresholds` instance,
+never mutates its input; respects `calibration.autotune == "off"`). All 19
+unit tests pass (`pytest tests/knowledge/wiki/test_review.py -v`); `ruff
+check` clean. Import verified: `from parrot.knowledge.wiki.review import
+ManifestWriter, ManifestReader, agreement_rate`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+One design decision not fully pinned by the spec: `stratified_sample`'s
+public signature required an explicit `sample_size: int` parameter (spec's
+`New Public Interfaces` shows `stratified_sample(entries, near_fraction=0.6,
+uniform_fraction=0.4, ...)` with an elided `...`, and `CalibrationPolicy`
+from TASK-2069 has no overall audit-rate field to derive it from). Chose to
+require the caller (CLI, TASK-2075) to pass `sample_size` explicitly rather
+than inventing a `CalibrationPolicy.audit_rate` field not specified by
+either TASK-2069 or the spec's Data Models.
 
-**Deviations from spec**: none
+**Deviations from spec**: none (see design-decision note above for one
+resolved ambiguity in an elided signature, not a deviation from any stated
+field or behavior).

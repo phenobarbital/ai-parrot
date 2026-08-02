@@ -1,10 +1,10 @@
-"""Unit tests for WikiCombinedSearch (TASK-1631)."""
+"""Unit tests for WikiCombinedSearch (TASK-1631; archive exclusion TASK-2072/FEAT-402)."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from parrot.knowledge.wiki.search import WikiCombinedSearch
-from parrot.knowledge.wiki.models import WikiSearchResult
+from parrot.knowledge.wiki.models import WikiPageCategory, WikiSearchResult
 
 
 @pytest.fixture
@@ -192,3 +192,109 @@ class TestWikiCombinedSearch:
         cs = WikiCombinedSearch(pi, gi)
         results = await cs.search("test", mode="combined", top_k=3)
         assert len(results) <= 3
+
+
+class StubWikiStore:
+    """Minimal store-backed stub for WikiCombinedSearch archive-exclusion tests.
+
+    Mirrors ``SQLiteWikiStore.search_fts``'s real archive-exclusion
+    contract (category=None -> archive excluded; category="archive" ->
+    archive-only) so these tests exercise ``WikiCombinedSearch``'s own
+    merge/opt-in logic, independent of the SQL implementation (which has
+    its own coverage in test_store.py).
+    """
+
+    def __init__(self, pages: list[dict]) -> None:
+        self._pages = pages
+
+    async def search_fts(self, query, category=None, limit=10):
+        rows = self._pages
+        if category is not None:
+            rows = [r for r in rows if r.get("category") == category]
+        else:
+            rows = [r for r in rows if r.get("category") != "archive"]
+        return rows[:limit]
+
+    async def search_vector(self, embedding, limit=10):
+        # No category filtering at all — mirrors the real
+        # SQLiteWikiStore.search_vector contract (FEAT-402 archive
+        # exclusion for the vector leg is WikiCombinedSearch's job).
+        return self._pages[:limit]
+
+
+@pytest.fixture
+def stub_wiki_store():
+    return StubWikiStore(
+        pages=[
+            {
+                "concept_id": "p1",
+                "title": "Public Page",
+                "category": "summary",
+                "summary": "public",
+                "score": 0.9,
+            },
+            {
+                "concept_id": "a1",
+                "title": "Archived Page",
+                "category": "archive",
+                "summary": "archived",
+                "score": 0.8,
+            },
+        ]
+    )
+
+
+async def _stub_embedder(query):
+    return [0.1, 0.2, 0.3]
+
+
+class TestArchiveExclusion:
+    """FEAT-402 (TASK-2072): archive category excluded from default ranking."""
+
+    @pytest.mark.asyncio
+    async def test_search_excludes_archive_by_default(self, stub_wiki_store):
+        """Store-backed lexical search excludes archive pages by default."""
+        cs = WikiCombinedSearch(None, None, store=stub_wiki_store)
+        results = await cs.search("query", mode="combined", top_k=10)
+
+        node_ids = {r.node_id for r in results}
+        assert "a1" not in node_ids
+        assert "p1" in node_ids
+        assert all(r.category != WikiPageCategory.ARCHIVE for r in results)
+
+    @pytest.mark.asyncio
+    async def test_search_explicit_archive_filter_returns_archived(self, stub_wiki_store):
+        """include_archived=True includes archive pages alongside everything else."""
+        cs = WikiCombinedSearch(None, None, store=stub_wiki_store)
+        results = await cs.search(
+            "query", mode="combined", top_k=10, include_archived=True
+        )
+
+        node_ids = {r.node_id for r in results}
+        assert "a1" in node_ids
+        assert "p1" in node_ids
+
+    @pytest.mark.asyncio
+    async def test_vector_leg_excludes_archive_by_default(self, stub_wiki_store):
+        """The vector leg (no store-level category filter) is post-filtered."""
+        cs = WikiCombinedSearch(
+            None, None, store=stub_wiki_store, embedder=_stub_embedder
+        )
+        results = await cs.search("query", mode="vector", top_k=10)
+
+        node_ids = {r.node_id for r in results}
+        assert "a1" not in node_ids
+        assert "p1" in node_ids
+
+    @pytest.mark.asyncio
+    async def test_vector_leg_includes_archive_when_opted_in(self, stub_wiki_store):
+        """include_archived=True skips the vector-leg post-filter too."""
+        cs = WikiCombinedSearch(
+            None, None, store=stub_wiki_store, embedder=_stub_embedder
+        )
+        results = await cs.search(
+            "query", mode="vector", top_k=10, include_archived=True
+        )
+
+        node_ids = {r.node_id for r in results}
+        assert "a1" in node_ids
