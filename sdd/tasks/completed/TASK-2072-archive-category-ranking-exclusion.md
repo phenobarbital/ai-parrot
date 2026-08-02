@@ -158,10 +158,58 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, autonomous)
+**Date**: 2026-08-02
+**Notes**: Added `WikiPageCategory.ARCHIVE = "archive"` (8th value) and
+`WikiConfig.charter_path: Optional[Path] = None` to models.py.
+`SQLiteWikiStore.search_fts` now excludes `category="archive"` rows when
+`category` is not explicitly given (`AND (p.category IS NULL OR
+p.category != 'archive')`, using the plain-string convention already
+established in store.py's "no enum ceremony in the machine plane"
+design), while an explicit `category="archive"` still returns them
+unchanged. `WikiCombinedSearch.search`/`_search_store` gained an
+`include_archived: bool = False` parameter: the lexical leg issues a
+supplemental `category="archive"` query and merges it in when
+`include_archived=True` (since `search_fts`'s single filter can express
+"default" or "exactly this category" but not "no filter at all"); the
+vector leg (which has no category filter at the store layer at all) is
+post-filtered by `WikiSearchResult.category` in `WikiCombinedSearch`
+itself, skipped when `include_archived=True`. Updated
+`test_all_categories_exist`/`test_expected_values`/`test_defaults` in
+test_models.py to account for the new 8th enum value (these were the
+only *existing* tests that needed updating; all other pre-existing
+search/store/model tests pass unchanged). Added
+`test_archive_category_value`, `test_charter_path_defaults_none`,
+`test_charter_path_accepts_explicit_path` (test_models.py) and a new
+`TestArchiveExclusion` class in test_search.py (4 tests: lexical-leg
+default exclusion, explicit opt-in inclusion, vector-leg default
+exclusion, vector-leg opt-in) using a `StubWikiStore` that mirrors the
+real `search_fts` archive-exclusion contract without depending on SQLite.
+All 114 tests across test_search.py/test_store.py/test_models.py pass
+(`pytest tests/knowledge/wiki/test_search.py tests/knowledge/wiki/
+test_store.py tests/knowledge/wiki/test_models.py -v`); also re-ran
+test_arango_store.py/test_file_store.py (54 tests) to confirm no
+cross-backend regression.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**ArangoDB parity note** (per the task's Codebase Contract "Does NOT
+Exist" section): `arango_store.py:524-561`'s `search_fts` was checked —
+it has the SAME pre-FEAT-402 gap (no default archive exclusion; a plain
+`FILTER doc.category == @category` only applied when `category` is
+explicitly given). `arango_store.py` is **not** in this task's Files to
+Create/Modify list, so it was intentionally left unmodified per file
+fidelity — flagging this as a follow-up gap for whichever task/feature
+next touches the ArangoDB backend, rather than expanding this task's
+scope.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in class/field names or exclusion
+behavior. One judgment call on the "ruff check clean" acceptance
+criterion: `models.py`/`store.py`/`search.py` carry substantial
+pre-existing `ruff` findings (mostly `UP045` "use `X | None`" on
+`Optional[...]` annotations already used pervasively throughout these
+files, plus unrelated `SIM117` nested-`with` hits elsewhere in
+store.py). Verified via `git diff` isolation that none of these
+pre-existing findings sit on lines this task added or modified, and the
+one new `Optional[Path]` field (`charter_path`) matches the file's own
+established convention (5 other `Optional[...]` fields already present).
+Per the "no scope creep" rule, pre-existing lint debt across these hot,
+shared files was left untouched rather than auto-fixed wholesale.
