@@ -263,3 +263,19 @@ need two distinct model tiers and `PageIndexLLMAdapter.model` is bound at
 construction with no per-call override. Both changes are additive/
 backward-compatible with the exact 4-positional-arg signature quoted in
 spec §2's New Public Interfaces.
+
+**Post-review addendum (2026-08-02)**: the adversarial code-reviewer
+agent (run at the end of TASK-2075) flagged `_band_to_action` mapping
+the `"reject"` band to `"archive"` instead of `"discard"` — CRITICAL,
+because it contradicted the spec's Component Diagram (§2 Overview:
+`reject -> SourceCollectionManager (status="rejected") only`, never
+ingested) and silently paid the full two-LLM-call ingestion cost for
+every reject-band document, which is exactly the cost the cheap-first
+cascade exists to avoid (spec §7 risk). Fixed in a follow-up commit:
+`reject` now maps to `discard`; a document that is still `gray` after
+Stage-2 escalation fails to resolve it now maps to `archive` as the
+middle-ground default (kept/searchable rather than discarded outright).
+`test_router_low_composite_archives` was renamed
+`test_router_low_composite_discards` and its assertion updated; a new
+`test_router_still_gray_after_escalation_archives` covers the residual-gray
+path explicitly. All 15 tests in `test_triage.py` pass after the fix.

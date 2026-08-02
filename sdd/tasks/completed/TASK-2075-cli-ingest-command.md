@@ -267,3 +267,34 @@ change any class/method signature fixed elsewhere in the spec):
 All five are additive CLI surface (new flags / a new inline config
 construction / an existing factory reused), never a substitution of any
 fixed class name or method signature named in the spec.
+
+**Post-review addendum (2026-08-02)**: the adversarial code-reviewer
+agent flagged an IMPORTANT cross-provider bug — `PageIndexToolkit`
+builds its own internal lightweight-tier adapter as
+`PageIndexLLMAdapter(client=<heavy adapter's client>, model=lightweight_model)`
+(`pageindex/toolkit.py:88-108`), so when `--lightweight-model` and
+`--model` point at different providers, the original code passed the
+light model id string paired with the heavy provider's client — a
+misrouted/garbage-response failure mode for every `TwoStepIngester`
+Step-1 call during actual page generation. Fixed: `_build_triage_adapters`
+now also returns a `same_provider` flag; `PageIndexToolkit` only receives
+`lightweight_model=` when both tiers share a provider, otherwise it falls
+back to the heavy adapter for its own internal steps (safe degradation,
+not a correctness bug — the triage router's own light/heavy split is
+unaffected either way). Two new regression tests added:
+`test_same_provider_passes_lightweight_model_through` and
+`test_cross_provider_models_drop_lightweight_model` in
+`TestSupervisedIngestCrossProviderModels` (test_cli.py). Also fixed the
+CRITICAL finding in TASK-2071 (`_band_to_action` reject->archive should
+be reject->discard) which required updating this task's own
+`test_supervised_ingest_end_to_end` fixture (the "archive" scenario now
+uses a persistently-gray-band document instead of a reject-band one, to
+still exercise the archive code path correctly). Full
+`tests/knowledge/wiki/` suite after both fixes: 758 passed, 2 skipped,
+`test_arango_integration.py` deselected (unchanged, pre-existing).
+SUGGESTION/NITPICK findings from the review (O(N·M) duplicate scan in
+`triage.py`'s `_heuristic_reject`, dot-directory filtering scope in
+`_discover_documents`, double grounding calls on gray-zone re-scoring,
+missing `charter_path=` on `--review`'s `wiki_config`) were left as noted
+follow-ups per the reviewer's own severity classification — not fixed in
+this pass.
