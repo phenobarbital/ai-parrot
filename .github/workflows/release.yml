@@ -307,9 +307,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # maturin-action builds inside a manylinux container, producing
-      # PyPI-compatible manylinux_*_x86_64 wheel tags automatically.
-      # abi3-py311 in Cargo.toml means one wheel covers cp311+.
+      - name: Pre-create dist dir
+        run: mkdir -p dist
+
+      # maturin-action runs inside a manylinux container (as root).
+      # Pre-creating dist/ ensures the runner user owns it so the
+      # subsequent sdist step can write to it without permission errors.
       - name: Build wheel (manylinux)
         uses: PyO3/maturin-action@v1
         with:
