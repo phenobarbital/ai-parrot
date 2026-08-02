@@ -19,6 +19,26 @@ Orchestrates the full pipeline for a single source document:
 All operations are async.  On partial failure the error is logged but
 no corrupt state is left: the registry is only updated after all steps
 succeed.
+
+FEAT-402 (TASK-2074): ``ingest()`` accepts an optional supervised-triage
+context (``triage: Optional[ManifestDocEntry]``). With ``triage=None``
+(the default), behavior is byte-identical to pre-FEAT-402 — this is the
+path `wikitoolkit build`/`upsert` use today. When a triage decision is
+given:
+
+- Its ``briefing`` is forwarded as the PageIndex ``hint`` (the slot this
+  method used to drop at the ``insert_content`` call site) so triage
+  work is reused, not repeated.
+- ``"discard"`` short-circuits the whole pipeline — no PageIndex call,
+  no WikiStore sync, no GraphIndex mirror; only the source manifest
+  (``status="rejected"``) and bookkeeper ``DISCARD`` line are written.
+- ``"archive"`` creates pages exactly like ``"admit"``, except every
+  page's category is forced to ``WikiPageCategory.ARCHIVE``.
+- Decision fields (destination, decision_source, charter version,
+  composite score) are persisted via
+  ``SourceCollectionManager.record_decision`` (TASK-2073) instead of
+  ``mark_ingested``, and the bookkeeper line is tagged ``ADMIT``/
+  ``ARCHIVE`` instead of ``INGEST``.
 """
 
 from __future__ import annotations
@@ -28,18 +48,36 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
-from parrot.knowledge.wiki.models import WikiConfig
-from parrot.knowledge.wiki.sources import SourceCollectionManager
+from parrot.knowledge.wiki.models import WikiConfig, WikiPageCategory
+from parrot.knowledge.wiki.review import ManifestDocEntry
+from parrot.knowledge.wiki.sources import (
+    SourceCollectionManager,
+    format_decision_log_details,
+)
 from parrot.knowledge.wiki.store import (
     BaseWikiStore,
     WikiPageRecord,
     estimate_tokens,
 )
+
+#: Maps a ManifestDocEntry's proposed_action/decision vocabulary
+#: ("admit"|"archive"|"discard", spec §2 Data Models) onto the
+#: `sources.destination` column vocabulary documented by TASK-2073
+#: ("wiki"|"archive"|"discard", mirroring Charter.destinations). Both
+#: describe the same three outcomes; "admit" (a triage verdict) and
+#: "wiki" (a routing destination) are synonyms for "becomes a wiki page
+#: in the main graph" — this map reconciles the two vocabularies at the
+#: one seam where they meet.
+_DESTINATION_TO_SOURCES_COLUMN: dict[str, str] = {
+    "admit": "wiki",
+    "archive": "archive",
+    "discard": "discard",
+}
 
 
 class IngestReport(BaseModel):
@@ -124,10 +162,14 @@ class WikiIngestOrchestrator:
         self,
         source_path: str,
         wiki_config: WikiConfig,
+        *,
+        triage: Optional[ManifestDocEntry] = None,
+        charter_version: Optional[str] = None,
     ) -> IngestReport:
         """Run the full ingest pipeline for a single source file.
 
-        Pipeline steps:
+        Pipeline steps (``triage=None``, the default — legacy path,
+        byte-identical to pre-FEAT-402 behavior):
         1. Register / check the source in the manifest.
         2. Skip (return early) if already ingested and not stale.
         3. Load source content from disk.
@@ -137,9 +179,42 @@ class WikiIngestOrchestrator:
         7. Update manifest with pages generated + new hash/mtime.
         8. Append to log.md.
 
+        When ``triage`` is given (FEAT-402, TASK-2074), the effective
+        destination is ``triage.decision`` if set, else
+        ``triage.proposed_action``:
+
+        - ``"discard"`` short-circuits everything above — no PageIndex
+          call, no WikiStore sync, no GraphIndex mirror. Only the source
+          manifest (``status="rejected"``) and a bookkeeper ``DISCARD``
+          line are written (spec §2: rejected docs are recorded but
+          never ingested).
+        - ``"admit"``/``"archive"`` run the same pipeline as the legacy
+          path, except: (a) the staleness skip (step 2) is bypassed —
+          triage-driven re-application (e.g. re-running ``--review``)
+          must always re-persist the (possibly human-edited) decision
+          fields even when file content is unchanged; (b) ``triage.
+          briefing`` is forwarded as the PageIndex ``hint``; (c)
+          ``"archive"`` forces every created page's category to
+          ``WikiPageCategory.ARCHIVE``; (d) decision fields are
+          persisted via ``SourceCollectionManager.record_decision``
+          (TASK-2073) instead of ``mark_ingested``, and the bookkeeper
+          line is tagged ``ADMIT``/``ARCHIVE`` instead of ``INGEST``.
+          ``replace_source_slice`` (step 4) still guarantees re-applying
+          the same source replaces its pages rather than duplicating
+          them.
+
         Args:
             source_path: Absolute or relative path to the source file.
             wiki_config: Configuration for the target wiki instance.
+            triage: Optional supervised-ingestion triage decision
+                (FEAT-402). ``None`` preserves the exact legacy
+                behavior used by `wikitoolkit build`/`upsert`.
+            charter_version: Editorial charter version the triage
+                decision was made against, for audit persistence
+                (``ManifestDocEntry`` itself does not carry this — it is
+                only recorded once per manifest run header — so the
+                caller that has the run header passes it here). Ignored
+                when ``triage`` is ``None``.
 
         Returns:
             An :class:`IngestReport` describing what was created/updated.
@@ -148,13 +223,27 @@ class WikiIngestOrchestrator:
         source_path_obj = Path(source_path).resolve()
         source_uri = str(source_path_obj)
 
+        effective_destination: Optional[Literal["admit", "archive", "discard"]] = None
+        if triage is not None:
+            effective_destination = triage.decision or triage.proposed_action
+
+        # FEAT-402: "discard" never creates pages — short-circuit the
+        # entire pipeline and just record the rejection.
+        if effective_destination == "discard":
+            return await self._record_discard(
+                source_path_obj, source_uri, wiki_config, triage, charter_version, t0
+            )
+
         # Step 1 — register or check staleness
         # Use public find_by_uri and wrap sync I/O in asyncio.to_thread so the
         # event loop is not blocked by hash computation or manifest writes.
+        # FEAT-402: the staleness skip only applies to the legacy
+        # (triage=None) path — a triage-driven re-application must
+        # always re-persist decision fields, even on unchanged content.
         existing_id = await asyncio.to_thread(
             self._sources.find_by_uri, source_uri
         )
-        if existing_id:
+        if existing_id and triage is None:
             source_id = existing_id
             entry = await asyncio.to_thread(self._sources.get_source, source_id)
             is_stale = await asyncio.to_thread(
@@ -198,8 +287,18 @@ class WikiIngestOrchestrator:
         pages_updated = 0
         page_ids: list[str] = []
 
+        # FEAT-402: forward the triage briefing as the ingester hint (the
+        # slot this call used to drop), and force the ARCHIVE category on
+        # every page when the effective destination is "archive".
+        hint = triage.briefing if triage is not None else None
+        category_override = (
+            WikiPageCategory.ARCHIVE.value
+            if effective_destination == "archive"
+            else None
+        )
+
         try:
-            pi_result = await self._create_wiki_pages(content, tree_name)
+            pi_result = await self._create_wiki_pages(content, tree_name, hint=hint)
             # PageIndexToolkit.insert_content() contract:
             # {"tree_name", "new_node_ids", "title", "summary"}
             inserted_ids = pi_result.get("new_node_ids") or []
@@ -222,6 +321,7 @@ class WikiIngestOrchestrator:
                     fallback_summary=str(
                         pi_result.get("summary") or content[:500]
                     ),
+                    category_override=category_override,
                 )
                 edges = [
                     (r.concept_id, source_id, "summarizes") for r in records
@@ -258,27 +358,63 @@ class WikiIngestOrchestrator:
                     exc,
                 )
 
-        # Step 5 — update manifest (blocking I/O offloaded to thread)
-        try:
-            await asyncio.to_thread(
-                self._sources.mark_ingested,
-                source_id,
-                pages_generated=page_ids,
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("Manifest update failed: %s", exc)
+        # Step 5 — update manifest (blocking I/O offloaded to thread).
+        # FEAT-402: when a triage decision is present, persist it (and
+        # the pages it produced) via record_decision instead of
+        # mark_ingested, so destination/decision_source/charter_version/
+        # composite_score are recorded (TASK-2073).
+        if triage is not None:
+            try:
+                decision_entry = await asyncio.to_thread(
+                    self._sources.record_decision,
+                    source_path_obj,
+                    destination=_DESTINATION_TO_SOURCES_COLUMN.get(
+                        effective_destination, effective_destination
+                    ),
+                    decision_source=triage.decision_source,
+                    charter_version=charter_version,
+                    composite_score=triage.composite,
+                    pages_generated=page_ids,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Manifest update failed: %s", exc)
+                decision_entry = None
+        else:
+            try:
+                await asyncio.to_thread(
+                    self._sources.mark_ingested,
+                    source_id,
+                    pages_generated=page_ids,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Manifest update failed: %s", exc)
+            decision_entry = None
 
-        # Step 6 — bookkeeping (file append offloaded to thread)
+        # Step 6 — bookkeeping (file append offloaded to thread).
+        # FEAT-402: triage-driven ingests are tagged ADMIT/ARCHIVE (per
+        # effective_destination) with the shared decision-details
+        # formatter, instead of the legacy INGEST tag.
         wiki_dir = wiki_config.storage_dir
         try:
-            await asyncio.to_thread(
-                self._bookkeeper.log_operation,
-                wiki_dir,
-                "INGEST",
-                f"source: {source_path_obj.name}, "
-                f"pages_created: {pages_created}, "
-                f"graph_nodes: {graph_nodes_created}",
-            )
+            if triage is not None:
+                operation = "ARCHIVE" if effective_destination == "archive" else "ADMIT"
+                details = (
+                    format_decision_log_details(decision_entry)
+                    if decision_entry is not None
+                    else f"source: {source_path_obj.name}, pages_created: {pages_created}"
+                )
+                await asyncio.to_thread(
+                    self._bookkeeper.log_operation, wiki_dir, operation, details
+                )
+            else:
+                await asyncio.to_thread(
+                    self._bookkeeper.log_operation,
+                    wiki_dir,
+                    "INGEST",
+                    f"source: {source_path_obj.name}, "
+                    f"pages_created: {pages_created}, "
+                    f"graph_nodes: {graph_nodes_created}",
+                )
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Bookkeeping failed: %s", exc)
 
@@ -296,6 +432,68 @@ class WikiIngestOrchestrator:
             pages_created=pages_created,
             pages_updated=pages_updated,
             graph_nodes_created=graph_nodes_created,
+            duration_ms=duration_ms,
+            status="ok",
+        )
+
+    async def _record_discard(
+        self,
+        source_path_obj: Path,
+        source_uri: str,
+        wiki_config: WikiConfig,
+        triage: ManifestDocEntry,
+        charter_version: Optional[str],
+        t0: float,
+    ) -> IngestReport:
+        """Record a "discard" triage decision without creating any pages.
+
+        Spec §2: rejected docs are recorded in the source manifest with
+        ``status="rejected"`` and are NEVER ingested — no PageIndex call,
+        no WikiStore sync, no GraphIndex mirror.
+
+        Args:
+            source_path_obj: Resolved absolute path to the source file.
+            source_uri: String form of ``source_path_obj``.
+            wiki_config: Configuration for the target wiki instance.
+            triage: The triage decision (``decision``/``proposed_action``
+                resolved to ``"discard"`` by the caller).
+            charter_version: Editorial charter version, if known.
+            t0: Monotonic start time from ``time.monotonic()``.
+
+        Returns:
+            An :class:`IngestReport` with zero pages/nodes created.
+        """
+        decision_entry = await asyncio.to_thread(
+            self._sources.record_decision,
+            source_path_obj,
+            destination="discard",
+            decision_source=triage.decision_source,
+            charter_version=charter_version,
+            composite_score=triage.composite,
+            pages_generated=[],
+        )
+
+        wiki_dir = wiki_config.storage_dir
+        try:
+            await asyncio.to_thread(
+                self._bookkeeper.log_operation,
+                wiki_dir,
+                "DISCARD",
+                format_decision_log_details(decision_entry),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Bookkeeping failed: %s", exc)
+
+        duration_ms = (time.monotonic() - t0) * 1000
+        self.logger.info(
+            "Discarded %s per triage decision (%.1f ms)", source_uri, duration_ms
+        )
+        return IngestReport(
+            source_id=decision_entry.source_id,
+            source_uri=source_uri,
+            pages_created=0,
+            pages_updated=0,
+            graph_nodes_created=0,
             duration_ms=duration_ms,
             status="ok",
         )
@@ -326,21 +524,25 @@ class WikiIngestOrchestrator:
         self,
         content: str,
         tree_name: str,
+        hint: Optional[str] = None,
     ) -> dict[str, Any]:
         """Insert content into the PageIndex tree via TwoStepIngester.
 
-        Calls ``PageIndexToolkit.insert_content(tree_name, content)`` which
-        internally runs TwoStepIngester (Step 1 CoT analysis, Step 2 markdown
-        generation) and splices the result into the tree.
+        Calls ``PageIndexToolkit.insert_content(tree_name, content, hint=hint)``
+        which internally runs TwoStepIngester (Step 1 CoT analysis, Step 2
+        markdown generation) and splices the result into the tree.
 
         Args:
             content: Raw source text content.
             tree_name: Target PageIndex tree name (wiki name).
+            hint: Optional triage briefing (FEAT-402), interpolated into
+                both TwoStepIngester prompts. ``None`` preserves legacy
+                behavior.
 
         Returns:
             Result dict from ``PageIndexToolkit.insert_content()``.
         """
-        result = await self._pi.insert_content(tree_name, content)
+        result = await self._pi.insert_content(tree_name, content, hint=hint)
         return result if isinstance(result, dict) else {}
 
     async def _build_page_records(
@@ -350,6 +552,7 @@ class WikiIngestOrchestrator:
         source_id: str,
         fallback_title: str = "",
         fallback_summary: str = "",
+        category_override: Optional[str] = None,
     ) -> list[WikiPageRecord]:
         """Build :class:`WikiPageRecord` rows for freshly inserted nodes.
 
@@ -366,6 +569,11 @@ class WikiIngestOrchestrator:
             source_id: Source these pages were derived from.
             fallback_title: Title used when a node cannot be resolved.
             fallback_summary: Summary used when a node cannot be resolved.
+            category_override: When given (FEAT-402 — the
+                ``"archive"`` destination), forces every record's
+                ``category`` to this value regardless of what the
+                PageIndex tree reports. ``None`` preserves legacy
+                category resolution.
 
         Returns:
             One record per node id.
@@ -395,29 +603,35 @@ class WikiIngestOrchestrator:
                 node = self._find_node(tree, nid)
 
             if node is None:
-                records.append(
-                    WikiPageRecord(
-                        concept_id=nid,
-                        node_id=nid,
-                        title=fallback_title or nid,
-                        summary=fallback_summary,
-                        source_id=source_id,
-                        token_count=estimate_tokens(fallback_summary),
-                    )
+                record_kwargs: dict[str, Any] = dict(
+                    concept_id=nid,
+                    node_id=nid,
+                    title=fallback_title or nid,
+                    summary=fallback_summary,
+                    source_id=source_id,
+                    token_count=estimate_tokens(fallback_summary),
                 )
+                if category_override is not None:
+                    record_kwargs["category"] = category_override
+                records.append(WikiPageRecord(**record_kwargs))
                 continue
 
             concept_id = str(node.get("concept_id") or nid)
             body = self._load_body(loader, concept_id, nid)
             summary = str(node.get("summary") or fallback_summary)
+            category = (
+                category_override
+                if category_override is not None
+                else str(
+                    node.get("category") or node.get("type") or "concept"
+                ).lower()
+            )
             records.append(
                 WikiPageRecord(
                     concept_id=concept_id,
                     node_id=nid,
                     title=str(node.get("title") or fallback_title or nid),
-                    category=str(
-                        node.get("category") or node.get("type") or "concept"
-                    ).lower(),
+                    category=category,
                     summary=summary,
                     body=body,
                     source_id=source_id,

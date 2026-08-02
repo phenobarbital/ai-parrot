@@ -56,14 +56,24 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 
 CREATE TABLE IF NOT EXISTS sources (
-    source_id       TEXT PRIMARY KEY,
-    source_uri      TEXT NOT NULL UNIQUE,
-    file_hash       TEXT NOT NULL,
-    mtime           REAL NOT NULL,
-    ingested_at     TEXT NOT NULL,
-    pages_generated TEXT NOT NULL DEFAULT '[]',
-    status          TEXT NOT NULL DEFAULT 'ingested'
+    source_id        TEXT PRIMARY KEY,
+    source_uri       TEXT NOT NULL UNIQUE,
+    file_hash        TEXT NOT NULL,
+    mtime            REAL NOT NULL,
+    ingested_at      TEXT NOT NULL,
+    pages_generated  TEXT NOT NULL DEFAULT '[]',
+    status           TEXT NOT NULL DEFAULT 'ingested',
+    destination      TEXT,
+    decision_source  TEXT,
+    charter_version  TEXT,
+    composite_score  REAL
 );
+-- destination/decision_source/charter_version/composite_score (FEAT-402,
+-- TASK-2073): supervised-ingestion triage decision provenance. All four
+-- are nullable/defaulted (NULL) so this CREATE TABLE IF NOT EXISTS is a
+-- no-op on already-existing pre-FEAT-402 databases — those get the same
+-- four columns via the idempotent ALTER TABLE migration in
+-- SourceCollectionManager._migrate_sources_columns (sources.py).
 
 CREATE TABLE IF NOT EXISTS pages (
     concept_id  TEXT PRIMARY KEY,
@@ -996,7 +1006,11 @@ class SQLiteWikiStore(BaseWikiStore):
             query: Free-form natural-language query (sanitised before
                 reaching FTS5 — no operator injection).
             category: Optional exact category pre-filter (deterministic
-                gate applied before ranking).
+                gate applied before ranking). When ``None`` (the
+                default), ``"archive"``-category pages are excluded from
+                the results (FEAT-402 — supervised-ingestion archive
+                pages are opt-in only, retrievable via
+                ``category="archive"``).
             limit: Maximum results.
 
         Returns:
@@ -1016,6 +1030,12 @@ class SQLiteWikiStore(BaseWikiStore):
         if category is not None:
             sql += " AND p.category = ?"
             params += (category,)
+        else:
+            # FEAT-402: default ranking excludes the archive category.
+            # `category` is an open string in this machine plane (see
+            # module docstring) — no enum import needed here.
+            sql += " AND (p.category IS NULL OR p.category != ?)"
+            params += ("archive",)
         sql += " ORDER BY bm25(pages_fts) LIMIT ?"
         params += (limit,)
         async with self._connect() as conn:

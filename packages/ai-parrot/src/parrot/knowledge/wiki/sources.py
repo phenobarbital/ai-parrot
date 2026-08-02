@@ -43,6 +43,16 @@ from parrot.knowledge.wiki.models import SourceManifestEntry
 #: consumers of this module never pull in ``asyncdb``.
 _ARANGO_SOURCES_COLLECTION = "wiki_sources"
 
+#: FEAT-402 (TASK-2073) additive columns on the `sources` table:
+#: name -> SQL type. All nullable so pre-FEAT-402 databases keep
+#: opening cleanly; see ``_migrate_sources_columns``.
+_SOURCES_DECISION_COLUMNS: dict[str, str] = {
+    "destination": "TEXT",
+    "decision_source": "TEXT",
+    "charter_version": "TEXT",
+    "composite_score": "REAL",
+}
+
 
 class SourceCollectionManager:
     """Manages the raw-source collection for a single wiki instance.
@@ -147,6 +157,7 @@ class SourceCollectionManager:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             with self._connect() as conn:
                 conn.executescript(WIKI_SCHEMA_SQL)
+            self._migrate_sources_columns()
             self._migrate_json_manifest()
         elif backend == "arangodb":
             pass  # validated above; connection resolved lazily at first use
@@ -318,6 +329,102 @@ class SourceCollectionManager:
             self._upsert(entry)
         return entry
 
+    def record_decision(
+        self,
+        path: Path,
+        *,
+        destination: str,
+        decision_source: Optional[str] = None,
+        charter_version: Optional[str] = None,
+        composite_score: Optional[float] = None,
+        pages_generated: Optional[list[str]] = None,
+        status: Optional[str] = None,
+    ) -> SourceManifestEntry:
+        """Register or update a source with its supervised-ingestion decision.
+
+        Sibling to :meth:`mark_ingested` (FEAT-402, TASK-2073): handles
+        ALL three triage destinations, including ``"discard"`` — a
+        rejected document may never have been registered via
+        :meth:`add_source` at all (the triage router evaluates raw
+        scanned files, not already-tracked sources), so this method
+        creates a new entry when the URI isn't tracked yet rather than
+        requiring one to already exist. Per spec §2: rejected docs are
+        recorded with ``status="rejected"`` and are never ingested (no
+        pages).
+
+        Args:
+            path: Path to the source document.
+            destination: Triage destination — ``"wiki"``, ``"archive"``,
+                or ``"discard"``.
+            decision_source: Who/what made the decision — ``"heuristic"``,
+                ``"model"``, ``"human"``, or ``"auto"``.
+            charter_version: Editorial charter version the decision was
+                made against (audit/reproducibility).
+            composite_score: The weighted composite triage score.
+            pages_generated: Wiki page IDs produced, if any. Left as the
+                existing value (or empty) when not given — rejected /
+                archived-without-pages documents pass ``None`` or ``[]``.
+            status: Lifecycle status override. Defaults to ``"rejected"``
+                when ``destination == "discard"``, else ``"ingested"``.
+
+        Returns:
+            The created or updated :class:`SourceManifestEntry`.
+        """
+        # Resolve to an absolute path, matching add_source's convention,
+        # so find_by_uri correctly matches sources already tracked via
+        # add_source (and dedupes consistently for future lookups).
+        path = Path(path).resolve()
+        source_uri = str(path)
+        existing_id = self.find_by_uri(source_uri)
+        existing = self.get_source(existing_id) if existing_id else None
+
+        if path.exists():
+            file_hash = self._compute_hash(path)
+            mtime = path.stat().st_mtime
+        else:
+            file_hash = existing.file_hash if existing else ""
+            mtime = existing.mtime if existing else 0.0
+
+        resolved_status = status or (
+            "rejected" if destination == "discard" else "ingested"
+        )
+
+        entry = SourceManifestEntry(
+            source_id=(
+                existing.source_id
+                if existing
+                else self._generate_source_id(source_uri)
+            ),
+            source_uri=source_uri,
+            file_hash=file_hash,
+            mtime=mtime,
+            ingested_at=(
+                existing.ingested_at
+                if existing
+                else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            ),
+            pages_generated=(
+                pages_generated
+                if pages_generated is not None
+                else (existing.pages_generated if existing else [])
+            ),
+            status=resolved_status,
+            destination=destination,
+            decision_source=decision_source,
+            charter_version=charter_version,
+            composite_score=composite_score,
+        )
+        self._upsert(entry)
+        self.logger.debug(
+            "Recorded triage decision: source_uri=%s destination=%s"
+            " decision_source=%s status=%s",
+            source_uri,
+            destination,
+            decision_source,
+            resolved_status,
+        )
+        return entry
+
     def remove_source(self, source_id: str) -> bool:
         """Remove a source from the sources table.
 
@@ -389,12 +496,17 @@ class SourceCollectionManager:
             conn.execute(
                 "INSERT INTO sources"
                 " (source_id, source_uri, file_hash, mtime, ingested_at,"
-                "  pages_generated, status)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "  pages_generated, status, destination, decision_source,"
+                "  charter_version, composite_score)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(source_id) DO UPDATE SET"
                 "  source_uri=excluded.source_uri, file_hash=excluded.file_hash,"
                 "  mtime=excluded.mtime, ingested_at=excluded.ingested_at,"
-                "  pages_generated=excluded.pages_generated, status=excluded.status",
+                "  pages_generated=excluded.pages_generated, status=excluded.status,"
+                "  destination=excluded.destination,"
+                "  decision_source=excluded.decision_source,"
+                "  charter_version=excluded.charter_version,"
+                "  composite_score=excluded.composite_score",
                 (
                     entry.source_id,
                     entry.source_uri,
@@ -403,8 +515,33 @@ class SourceCollectionManager:
                     entry.ingested_at,
                     json.dumps(entry.pages_generated),
                     entry.status,
+                    entry.destination,
+                    entry.decision_source,
+                    entry.charter_version,
+                    entry.composite_score,
                 ),
             )
+
+    @staticmethod
+    def _optional_column(row: sqlite3.Row, name: str) -> Any:
+        """Read an optional ``sources`` column, tolerating rows from a
+        pre-FEAT-402 schema where the column does not exist yet.
+
+        ``SourceCollectionManager.__init__`` always runs the additive
+        column migration before any query, but this stays defensive in
+        case a row is ever read via a connection that bypassed that path.
+
+        Args:
+            row: The ``sqlite3.Row`` to read from.
+            name: The column name to look up.
+
+        Returns:
+            The column value, or ``None`` if the column is absent.
+        """
+        try:
+            return row[name]
+        except (IndexError, KeyError):
+            return None
 
     @staticmethod
     def _row_to_entry(row: sqlite3.Row) -> SourceManifestEntry:
@@ -421,6 +558,16 @@ class SourceCollectionManager:
             ingested_at=row["ingested_at"],
             pages_generated=pages,
             status=row["status"],
+            destination=SourceCollectionManager._optional_column(row, "destination"),
+            decision_source=SourceCollectionManager._optional_column(
+                row, "decision_source"
+            ),
+            charter_version=SourceCollectionManager._optional_column(
+                row, "charter_version"
+            ),
+            composite_score=SourceCollectionManager._optional_column(
+                row, "composite_score"
+            ),
         )
 
     def _compute_hash(self, path: Path) -> str:
@@ -654,6 +801,28 @@ class SourceCollectionManager:
         )
         return rows[0] if rows else None
 
+    def _migrate_sources_columns(self) -> None:
+        """Additively add the FEAT-402 decision columns to ``sources``.
+
+        Idempotent — guarded on ``PRAGMA table_info(sources)`` — and
+        additive only, never rewriting or dropping existing rows/columns,
+        so pre-FEAT-402 databases keep opening cleanly. Follows the
+        :meth:`_migrate_json_manifest` compatibility precedent (existing
+        data is never touched; only missing structure is added).
+        """
+        with self._connect() as conn:
+            existing = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(sources)").fetchall()
+            }
+            for name, col_type in _SOURCES_DECISION_COLUMNS.items():
+                if name in existing:
+                    continue
+                conn.execute(f"ALTER TABLE sources ADD COLUMN {name} {col_type}")
+                self.logger.debug(
+                    "Migrated sources table: added column %s (%s)", name, col_type
+                )
+
     def _migrate_json_manifest(self) -> None:
         """One-time migration of a legacy ``.manifest.json`` into SQLite.
 
@@ -744,3 +913,36 @@ class SourceCollectionManager:
             len(data),
             self.manifest_path,
         )
+
+
+def format_decision_log_details(entry: SourceManifestEntry) -> str:
+    """Format a WikiBookkeeper log line for a supervised-ingestion decision.
+
+    FEAT-402 (TASK-2073): pairs with :meth:`SourceCollectionManager.
+    record_decision`. Callers pass the formatted string as the
+    ``details`` argument to ``WikiBookkeeper.log_operation(wiki_dir,
+    operation, details)``, choosing ``operation`` from
+    ``"TRIAGE"``/``"ADMIT"``/``"ARCHIVE"``/``"DISCARD"`` — free-string
+    tags, no enum (see ``bookkeeper.py`` module docstring). This helper
+    only formats the details line; it does not call ``log_operation``
+    itself, since the caller (TASK-2074's orchestrator wiring) owns the
+    ``wiki_dir`` and ``WikiBookkeeper`` instance.
+
+    Args:
+        entry: The source manifest entry with the recorded decision
+            (typically the return value of ``record_decision``).
+
+    Returns:
+        A single-line, human-readable details string: source URI,
+        composite score, decision source, and charter version.
+    """
+    composite = (
+        f"{entry.composite_score:.4f}"
+        if entry.composite_score is not None
+        else "n/a"
+    )
+    return (
+        f"source: {entry.source_uri}, composite: {composite}, "
+        f"decision_source: {entry.decision_source or 'n/a'}, "
+        f"charter_version: {entry.charter_version or 'n/a'}"
+    )

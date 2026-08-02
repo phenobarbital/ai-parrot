@@ -122,6 +122,36 @@ class WikiConfig(BaseModel):                             # line 47
 - ~~`GroundingEvaluator.score_novelty`~~ — grounding grounds a single claim; novelty math (1 − mean groundedness) is YOUR code.
 - ~~`TriageOutput.composite`~~ — the LLM never emits a composite; computed in Python (spec §5).
 
+### Contract corrections (re-verified against TASK-2069/2070 as SHIPPED, not the design sketch)
+
+- **`CharterScope` (charter.py, TASK-2069 as implemented) has ONLY
+  `include`/`exclude` rule lists (`id` + `description`) — NO
+  `size_cap_bytes` / `allowed_suffixes` fields.** This task's file scope
+  is `triage.py` + `test_triage.py` only, so `charter.py` is NOT modified
+  here. Stage-0 size/suffix caps are therefore `IngestTriageRouter`
+  constructor parameters (`max_size_bytes`, `allowed_suffixes`) with
+  sensible defaults, not read from `charter.scope`. Documented as a
+  resolved contract gap, not a deviation from the fixed class name/method
+  signature.
+- **`IngestTriageRouter.__init__(charter, adapter, sources, novelty_scorer)`
+  as literally listed only carries ONE `PageIndexLLMAdapter`, but Stage 1
+  (lightweight) and Stage 2 (heavy) need two different model tiers, and
+  `PageIndexLLMAdapter.model` is bound at construction with no per-call
+  override.** Resolved by adding one ADDITIONAL keyword-only optional
+  parameter, `heavy_adapter: Optional[PageIndexLLMAdapter] = None`
+  (defaults to reusing `adapter` for both tiers when not given). The
+  four positional parameters and their order are unchanged — this is
+  purely additive, not a substitution of the fixed signature.
+- **Claim cap for novelty scoring** (spec §7 risk: "cap claims scored per
+  doc, charter-configurable, default 3") — same gap as above (no charter
+  field for it); implemented as `NoveltyScorer(..., max_claims: int = 3)`.
+- **`NoveltyScorer.backend`**: added as a plain attribute
+  (`"grounding"` if a `GroundingEvaluator` was injected, else
+  `"search-proxy"`), computed once at construction (not per-call), so the
+  CLI (TASK-2075) can read it directly when building
+  `ManifestRunHeader.novelty_backend` without needing a document to
+  triage first.
+
 ---
 
 ## Implementation Notes
@@ -190,10 +220,62 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, autonomous)
+**Date**: 2026-08-02
+**Notes**: Implemented `IngestTriageRouter` and `NoveltyScorer` exactly per
+the fixed class names in spec §2. Stage 0 (free heuristics: size cap,
+suffix allowlist, duplicate content via `find_by_uri` for "unchanged
+since last ingest" + a `list_sources()` scan for cross-URI duplicate
+content) short-circuits with zero adapter calls, verified by
+`test_router_heuristic_duplicate/_oversized/_disallowed_suffix`. Stage 1
+calls `adapter.ask_structured(..., TriageOutput)`, then `NoveltyScorer`
+overwrites the LLM's self-assessed novelty with a grounding-backed (or
+search-proxy) value BEFORE the composite is computed in Python from
+`charter.weights` — verified numerically in
+`test_router_composite_in_code`. `sensitive=True` forces `discard` while
+still reporting the true composite for auditability
+(`test_router_sensitive_forces_discard`). Stage 2 (heavy tier) is called
+ONLY when Stage 1 lands in the gray band, verified via call-count
+assertions on independent stub adapters in
+`TestGrayZoneEscalation`. `NoveltyScorer` grounds each (capped) claim via
+`GroundingEvaluator.ground_claim`, `novelty = 1 - mean(groundedness)`,
+mutating `Claim.grounded` in place; falls back to a
+`WikiCombinedSearch.search` top-k similarity proxy with a logged warning
+when no `GroundingEvaluator` is injected, exposing `.backend` as a plain
+attribute fixed at construction time. All 13 unit tests pass
+(`pytest tests/knowledge/wiki/test_triage.py -v`); `ruff check` clean.
+Import verified: `from parrot.knowledge.wiki.triage import
+IngestTriageRouter, NoveltyScorer`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none in class/method names or the documented
+cascade behavior. Two ADDITIVE contract corrections were required and are
+recorded in this file's "Contract corrections" section above (added before
+implementation, per the mandatory anti-hallucination check): (1) Stage-0
+size/suffix caps are `IngestTriageRouter` constructor parameters
+(`max_size_bytes`, `allowed_suffixes`), not `charter.scope` fields, since
+`CharterScope` as shipped by TASK-2069 only has include/exclude rule
+lists; (2) an optional keyword-only `heavy_adapter` constructor parameter
+(defaulting to reusing `adapter` for both tiers) was added because the
+spec's literal 4-positional-arg constructor
+(`charter, adapter, sources, novelty_scorer`) carries only one
+`PageIndexLLMAdapter`, but Stage 1 (lightweight) and Stage 2 (heavy)
+need two distinct model tiers and `PageIndexLLMAdapter.model` is bound at
+construction with no per-call override. Both changes are additive/
+backward-compatible with the exact 4-positional-arg signature quoted in
+spec §2's New Public Interfaces.
 
-**Deviations from spec**: none
+**Post-review addendum (2026-08-02)**: the adversarial code-reviewer
+agent (run at the end of TASK-2075) flagged `_band_to_action` mapping
+the `"reject"` band to `"archive"` instead of `"discard"` — CRITICAL,
+because it contradicted the spec's Component Diagram (§2 Overview:
+`reject -> SourceCollectionManager (status="rejected") only`, never
+ingested) and silently paid the full two-LLM-call ingestion cost for
+every reject-band document, which is exactly the cost the cheap-first
+cascade exists to avoid (spec §7 risk). Fixed in a follow-up commit:
+`reject` now maps to `discard`; a document that is still `gray` after
+Stage-2 escalation fails to resolve it now maps to `archive` as the
+middle-ground default (kept/searchable rather than discarded outright).
+`test_router_low_composite_archives` was renamed
+`test_router_low_composite_discards` and its assertion updated; a new
+`test_router_still_gray_after_escalation_archives` covers the residual-gray
+path explicitly. All 15 tests in `test_triage.py` pass after the fix.

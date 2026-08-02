@@ -131,3 +131,33 @@ class TestWikiBookkeeper:
         )
         content = (tmp_path / "log.md").read_text()
         assert "2026-01-01T00:00:00Z" in content
+
+    def test_bookkeeper_triage_tags(self, tmp_path: Path):
+        """FEAT-402 (TASK-2073): TRIAGE/ADMIT/ARCHIVE/DISCARD are free-string
+        operation tags — log_operation accepts them with no schema change,
+        and they round-trip through read_log."""
+        from parrot.knowledge.wiki.sources import format_decision_log_details
+        from parrot.knowledge.wiki.models import SourceManifestEntry
+
+        bk = WikiBookkeeper()
+        entry = SourceManifestEntry(
+            source_id="src-1",
+            source_uri="/docs/report.md",
+            file_hash="a" * 40,
+            mtime=1.0,
+            ingested_at="2026-08-02T00:00:00Z",
+            destination="wiki",
+            decision_source="model",
+            charter_version="1",
+            composite_score=0.81,
+        )
+        details = format_decision_log_details(entry)
+
+        for tag in ("TRIAGE", "ADMIT", "ARCHIVE", "DISCARD"):
+            bk.log_operation(tmp_path, tag, details)
+
+        log_content = bk.read_log(tmp_path, last_n=10)
+        for tag in ("TRIAGE", "ADMIT", "ARCHIVE", "DISCARD"):
+            assert f"[{tag}]" in log_content
+        assert "/docs/report.md" in log_content
+        assert "decision_source: model" in log_content

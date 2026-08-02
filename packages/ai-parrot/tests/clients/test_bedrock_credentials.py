@@ -58,3 +58,65 @@ class TestAwsIdResolution:
         c = BedrockConverseClient(aws_id="alt")
         assert c._aws_access_key == "ALT-K"
         assert c._aws_secret_key == "ALT-S"
+
+
+class TestNoGenericConfFallback:
+    """Regression coverage: the conf-wide ``AWS_ACCESS_KEY``/``AWS_SECRET_KEY``/
+    ``AWS_SESSION_TOKEN`` fallback was removed from ``BedrockConverseBase``.
+    Without an explicit kwarg or a resolvable ``aws_id`` profile, static
+    credentials must stay unbound (``None``) rather than silently picking up
+    whatever generic AWS account is configured for unrelated services."""
+
+    def test_no_aws_id_no_static_credentials(self, monkeypatch):
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_CREDENTIALS", {})
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_NOVA_API_KEY", None)
+        c = BedrockConverseClient()
+        assert c._aws_access_key is None
+        assert c._aws_secret_key is None
+        assert c._aws_bearer_token is None
+
+
+class TestBearerTokenResolution:
+    """Regression coverage for the Bedrock API key (bearer token) fallback
+    added alongside the generic-conf-fallback removal above."""
+
+    def test_bearer_token_from_conf_when_no_static_key(self, monkeypatch):
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_CREDENTIALS", {})
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_NOVA_API_KEY", "ABSK-CONF")
+        c = BedrockConverseClient()
+        assert c._aws_access_key is None
+        assert c._aws_bearer_token == "ABSK-CONF"
+
+    def test_explicit_bearer_token_kwarg_takes_priority(self, monkeypatch):
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_CREDENTIALS", {})
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_NOVA_API_KEY", "ABSK-CONF")
+        c = BedrockConverseClient(aws_bearer_token="ABSK-EXPLICIT")
+        assert c._aws_bearer_token == "ABSK-EXPLICIT"
+
+    def test_bearer_token_from_profile(self, monkeypatch):
+        monkeypatch.setattr(
+            "parrot.clients.bedrock.AWS_CREDENTIALS",
+            {"nova": {"aws_bearer_token": "ABSK-PROFILE"}},
+        )
+        c = BedrockConverseClient(aws_id="nova")
+        assert c._aws_access_key is None
+        assert c._aws_bearer_token == "ABSK-PROFILE"
+
+    def test_static_key_takes_priority_over_bearer_token(self, monkeypatch, patched_profiles):
+        """A caller/profile providing a static keypair is assumed to want it —
+        the bearer-token fallback is only consulted when no access key resolves."""
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_NOVA_API_KEY", "ABSK-CONF")
+        c = BedrockConverseClient(aws_id="monitoring")
+        assert c._aws_access_key == "MON-K"
+        assert c._aws_bearer_token is None
+
+    @pytest.mark.asyncio
+    async def test_get_client_exports_bearer_token_env_var(self, monkeypatch):
+        import os
+
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_CREDENTIALS", {})
+        monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        c = BedrockConverseClient(aws_bearer_token="ABSK-EXPORTED")
+        await c.get_client()
+        assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "ABSK-EXPORTED"
+        del os.environ["AWS_BEARER_TOKEN_BEDROCK"]

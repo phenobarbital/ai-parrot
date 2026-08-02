@@ -486,6 +486,10 @@ AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get(
 AWS_SESSION_TOKEN = config.get("AWS_SESSION_TOKEN", fallback=None)
 ANTHROPIC_AWS_WORKSPACE_ID = config.get("ANTHROPIC_AWS_WORKSPACE_ID", fallback=None)
 BEDROCK_AWS_REGION = config.get("BEDROCK_AWS_REGION", fallback=None)
+# Bedrock API key (bearer token, prefix "ABSK...") for NovaClient/
+# BedrockConverseBase — a dedicated, scoped alternative to the generic
+# AWS_ACCESS_KEY/AWS_SECRET_KEY IAM keypair (see BedrockConverseBase.__init__).
+AWS_NOVA_API_KEY = config.get("AWS_NOVA_API_KEY", fallback=None)
 
 # Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
 # AWS_SECRET_KEY so that the conversations/artifacts backend can run against a

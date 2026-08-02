@@ -427,3 +427,455 @@ class TestChangedFilesFromGit:
         changed = _changed_files_from_git(tmp_path)
         assert "feature.py" in changed
         assert changed.count("feature.py") == 1  # deduped across parents
+
+
+# ---------------------------------------------------------------------------
+# Supervised ingestion (FEAT-402, TASK-2075) — `wikitoolkit ingest`
+# ---------------------------------------------------------------------------
+
+_CHARTER_YAML = """
+version: "1"
+scope:
+  include:
+    - id: decisions
+      description: Technical or business decisions with their rationale.
+  exclude:
+    - id: social
+      description: Small talk, purely social content.
+weights:
+  density: 0.40
+  novelty: 0.35
+  durability: 0.25
+thresholds:
+  admit: 0.75
+  reject: 0.35
+destinations:
+  - wiki
+  - archive
+  - discard
+calibration:
+  near_fraction: 0.6
+  uniform_fraction: 0.4
+  min_agreement: 0.9
+  on_low_agreement: widen_gray_zone
+  gray_zone_step: 0.05
+  autotune: propose
+examples: []
+examples_file: null
+amendments: []
+"""
+
+
+class _FakeTriageAdapter:
+    """Stub PageIndexLLMAdapter for triage — returns a canned TriageOutput."""
+
+    def __init__(self, density=0.9, novelty=0.9, durability=0.9, sensitive=False):
+        from parrot.knowledge.wiki.review import DimensionScores, TriageOutput
+
+        self.output = TriageOutput(
+            briefing="A dense, durable document with a clear decision.",
+            scores=DimensionScores(
+                density=density, novelty=novelty, durability=durability
+            ),
+            claims=[],
+            sensitive=sensitive,
+        )
+        self.calls = 0
+
+    async def ask_structured(self, prompt, output_type, temperature=0.0, system_prompt=None):
+        self.calls += 1
+        return self.output
+
+
+class _FakeNoveltyScorer:
+    """Stub NoveltyScorer — fixed novelty, no grounding/search dependency."""
+
+    def __init__(self, novelty=0.9, backend="search-proxy"):
+        self.novelty = novelty
+        self.backend = backend
+
+    async def score(self, claims, text):
+        return self.novelty, self.backend
+
+
+class _FakePageIndexToolkit:
+    """Stub PageIndexToolkit — no LLM, no real tree storage."""
+
+    def __init__(self, adapter, storage_dir, lightweight_model=None, **kwargs):
+        self._counter = 0
+
+    async def insert_content(self, tree_name, content, parent_node_id=None, hint=None):
+        self._counter += 1
+        node_id = f"node-{self._counter:04d}"
+        return {
+            "tree_name": tree_name,
+            "new_node_ids": [node_id],
+            "title": "Stub Doc",
+            "summary": content[:80],
+        }
+
+    async def get_tree(self, tree_name):
+        return {}
+
+
+@pytest.fixture
+def charter_file(repo: Path) -> Path:
+    charter_dir = repo / ".parrot"
+    charter_dir.mkdir(parents=True, exist_ok=True)
+    charter_path = charter_dir / "charter.yaml"
+    charter_path.write_text(_CHARTER_YAML, encoding="utf-8")
+    return charter_path
+
+
+@pytest.fixture
+def docs_folder(tmp_path: Path) -> Path:
+    folder = tmp_path / "corpus"
+    folder.mkdir()
+    (folder / "decision.md").write_text(
+        "# Migration decision\n\nWe decided to migrate the graph store.",
+        encoding="utf-8",
+    )
+    return folder
+
+
+@pytest.fixture
+def stub_ingest_wiring(monkeypatch):
+    """Patch out every LLM-touching seam in the `ingest` command:
+    triage adapters, novelty scorer, and PageIndexToolkit itself."""
+    light = _FakeTriageAdapter()
+    heavy = _FakeTriageAdapter()
+
+    def _fake_build_adapters(lightweight_model, model):
+        return light, heavy, "fake-light-model", True
+
+    def _fake_build_novelty_scorer(root, config, store):
+        return _FakeNoveltyScorer()
+
+    monkeypatch.setattr(cli_module, "_build_triage_adapters", _fake_build_adapters)
+    monkeypatch.setattr(cli_module, "_build_novelty_scorer", _fake_build_novelty_scorer)
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.toolkit.PageIndexToolkit", _FakePageIndexToolkit
+    )
+    monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "stub:light")
+    monkeypatch.setenv("WIKI_MODEL", "stub:heavy")
+    return light, heavy
+
+
+class TestSupervisedIngestModes:
+    """FEAT-402 (TASK-2075): mode-flag handling for `wikitoolkit ingest`."""
+
+    def test_cli_ingest_mode_flags_exclusive(self, runner, repo, docs_folder):
+        # No mode flag at all.
+        result = runner.invoke(
+            wiki, ["ingest", str(docs_folder), "--path", str(repo)]
+        )
+        assert result.exit_code != 0
+        assert "mode" in result.output.lower()
+
+        # Two mode flags at once.
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--dry-run",
+                "--auto",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+
+    def test_cli_ingest_missing_charter_errors(
+        self, runner, repo, docs_folder, stub_ingest_wiring
+    ):
+        result = runner.invoke(
+            wiki, ["ingest", str(docs_folder), "--path", str(repo), "--dry-run"]
+        )
+        assert result.exit_code != 0
+        assert "charter" in result.output.lower()
+
+    def test_cli_ingest_missing_model_errors(self, runner, repo, docs_folder):
+        result = runner.invoke(
+            wiki, ["ingest", str(docs_folder), "--path", str(repo), "--dry-run"]
+        )
+        assert result.exit_code != 0
+        assert "model" in result.output.lower()
+
+
+class TestSupervisedIngestCrossProviderModels:
+    """Code-review fix: PageIndexToolkit builds its own internal light
+    adapter by pairing the HEAVY adapter's client with the light model id
+    string — so mixing providers between --lightweight-model and --model
+    must NOT leak the light model id through to it (that would send one
+    provider's client a foreign model id)."""
+
+    def _invoke_with_spy(self, runner, repo, docs_folder, charter_file, monkeypatch, same_provider):
+        captured = {}
+
+        class _SpyToolkit(_FakePageIndexToolkit):
+            def __init__(self, adapter, storage_dir, lightweight_model=None, **kwargs):
+                captured["lightweight_model"] = lightweight_model
+                super().__init__(
+                    adapter, storage_dir, lightweight_model=lightweight_model, **kwargs
+                )
+
+        def _fake_build_adapters(lightweight_model, model):
+            return (
+                _FakeTriageAdapter(),
+                _FakeTriageAdapter(),
+                "light-model-id",
+                same_provider,
+            )
+
+        monkeypatch.setattr(cli_module, "_build_triage_adapters", _fake_build_adapters)
+        monkeypatch.setattr(
+            cli_module, "_build_novelty_scorer", lambda root, config, store: _FakeNoveltyScorer()
+        )
+        monkeypatch.setattr(
+            "parrot.knowledge.pageindex.toolkit.PageIndexToolkit", _SpyToolkit
+        )
+        monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "groq:llama")
+        monkeypatch.setenv("WIKI_MODEL", "groq:llama-big" if same_provider else "anthropic:claude")
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        return captured
+
+    def test_same_provider_passes_lightweight_model_through(
+        self, runner, repo, docs_folder, charter_file, monkeypatch
+    ):
+        captured = self._invoke_with_spy(
+            runner, repo, docs_folder, charter_file, monkeypatch, same_provider=True
+        )
+        assert captured["lightweight_model"] == "light-model-id"
+
+    def test_cross_provider_models_drop_lightweight_model(
+        self, runner, repo, docs_folder, charter_file, monkeypatch
+    ):
+        captured = self._invoke_with_spy(
+            runner, repo, docs_folder, charter_file, monkeypatch, same_provider=False
+        )
+        assert captured["lightweight_model"] is None
+
+
+class TestSupervisedIngestDryRun:
+    def test_cli_ingest_dry_run(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring
+    ):
+        """--dry-run emits a manifest with null decisions and ingests nothing."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        assert manifest_path.exists()
+        header, entries = ManifestReader(manifest_path).read()
+        assert header.mode == "dry-run"
+        assert header.charter_version == "1"
+        assert len(entries) == 1
+        assert entries[0].decision is None  # nothing decided yet
+
+        # Nothing was ingested: no pages created.
+        from parrot.knowledge.wiki.project import load_project_config
+
+        config = load_project_config(repo)
+        store_dir = config.storage_path(repo)
+        assert not (store_dir / "pageindex").exists() or not any(
+            (store_dir / "pageindex").iterdir()
+        )
+
+    def test_cli_ingest_dry_run_claims_stripped_without_extract(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring
+    ):
+        """--extract is off by default: claims are stripped from the manifest."""
+        from parrot.knowledge.wiki.review import Claim, ManifestReader
+
+        light, _heavy = stub_ingest_wiring
+        light.output.claims = [Claim(text="A claim.")]
+
+        runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        _header, entries = ManifestReader(manifest_path).read()
+        assert entries[0].claims == []
+
+
+class TestSupervisedIngestReview:
+    def test_cli_ingest_review_apply(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring
+    ):
+        """--review applies edited decisions; re-run is idempotent."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        dry = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert dry.exit_code == 0, dry.output
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+
+        # Simulate a human hand-editing the manifest: fill in `decision`.
+        lines = manifest_path.read_text(encoding="utf-8").splitlines()
+        edited = [lines[0]]
+        for line in lines[1:]:
+            row = json.loads(line)
+            row["decision"] = row["proposed_action"]
+            row["decision_source"] = "human"
+            edited.append(json.dumps(row))
+        manifest_path.write_text("\n".join(edited) + "\n", encoding="utf-8")
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--review",
+                str(manifest_path),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Applied 1 decision" in result.output
+
+        # Re-running --review on the same manifest is idempotent (no error,
+        # no duplicate pages — WikiIngestOrchestrator.replace_source_slice
+        # guarantees this at the store layer, verified in test_ingest.py).
+        result2 = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--review",
+                str(manifest_path),
+            ],
+        )
+        assert result2.exit_code == 0, result2.output
+
+        _header, entries = ManifestReader(manifest_path).read()
+        assert entries[0].decision == entries[0].proposed_action
+
+
+class TestSupervisedIngestAuto:
+    def test_cli_ingest_auto_audit_flags(
+        self, runner, repo, charter_file, stub_ingest_wiring
+    ):
+        """--auto flags a stratified audit sample per charter fractions."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        folder = repo.parent / "auto_corpus"
+        folder.mkdir()
+        for i in range(10):
+            (folder / f"doc{i}.md").write_text(
+                f"# Doc {i}\n\nSome durable decision content number {i}.",
+                encoding="utf-8",
+            )
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--auto",
+                "--audit-rate",
+                "0.5",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Audit sample" in result.output
+
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        header, entries = ManifestReader(manifest_path).read()
+        assert header.mode == "auto"
+        assert all(e.decision == e.proposed_action for e in entries)
+        audited = [e for e in entries if e.audit_sample]
+        assert len(audited) == 5  # 50% of 10
+
+
+class TestSupervisedIngestInteractive:
+    def test_cli_ingest_interactive_prompts_before_apply(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring, monkeypatch
+    ):
+        """--interactive prompts complete before any apply-pipeline work."""
+        prompt_order = []
+
+        class _FakeSelect:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def ask(self):
+                prompt_order.append("prompted")
+                return "admit"
+
+        monkeypatch.setattr("questionary.select", lambda *a, **k: _FakeSelect())
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--interactive",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert prompt_order == ["prompted"]
+
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        _header, entries = ManifestReader(manifest_path).read()
+        assert entries[0].decision == "admit"
+        assert entries[0].decision_source == "human"

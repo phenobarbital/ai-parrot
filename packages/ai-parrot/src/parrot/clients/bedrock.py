@@ -32,6 +32,7 @@ See ``sdd/specs/bedrock-client-llm.spec.md`` and
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -40,11 +41,9 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from .base import AbstractClient
 from ..conf import (
     AWS_CREDENTIALS,
-    AWS_ACCESS_KEY,
-    AWS_SECRET_KEY,
-    AWS_SESSION_TOKEN,
     AWS_REGION_NAME,
     BEDROCK_AWS_REGION,
+    AWS_NOVA_API_KEY,
 )
 from ..exceptions import InvokeError
 from ..models.basic import CompletionUsage, ToolCall
@@ -83,6 +82,7 @@ class BedrockConverseBase(AbstractClient):
         aws_access_key: Optional[str] = None,
         aws_secret_key: Optional[str] = None,
         aws_session_token: Optional[str] = None,
+        aws_bearer_token: Optional[str] = None,
         **kwargs
     ):
         """Initialise a Bedrock Converse API client.
@@ -92,8 +92,8 @@ class BedrockConverseBase(AbstractClient):
                 ``novaclient-amazon-aws`` §1/§2.2). Resolution: kwarg →
                 named profile in ``parrot.conf::AWS_CREDENTIALS`` (falls
                 back to the ``'default'`` profile when the named profile is
-                missing) → explicit ``aws_access_key``/``aws_secret_key`` →
-                env constants → SDK credential chain.
+                missing). No ``aws_id`` means no profile lookup at all — see
+                ``aws_access_key``/``aws_bearer_token`` for what happens next.
             region: AWS region for the Bedrock Runtime endpoint. Resolution
                 order: explicit kwarg → ``AWS_CREDENTIALS`` profile
                 ``region_name`` → ``BEDROCK_AWS_REGION`` →
@@ -112,11 +112,26 @@ class BedrockConverseBase(AbstractClient):
                 client (adaptive retry mode).
             read_timeout: Socket read timeout (seconds) for the botocore
                 client.
-            aws_access_key: AWS access key ID. Resolution: kwarg →
-                ``AWS_ACCESS_KEY`` → SDK credential chain.
+            aws_access_key: AWS access key ID. Resolution: kwarg → the
+                ``aws_id`` profile's ``aws_key``/``aws_access_key_id``. No
+                generic conf-wide fallback (removed — it silently picked up
+                whatever AWS account was configured for unrelated services,
+                e.g. S3, which may lack Bedrock permissions entirely).
             aws_secret_key: AWS secret access key. Same resolution order.
             aws_session_token: Optional STS session token. Same resolution
                 order.
+            aws_bearer_token: Bedrock API key (bearer token, ``"ABSK..."``
+                prefix) — an alternative to the access/secret keypair.
+                Resolution: kwarg → the ``aws_id`` profile's
+                ``aws_bearer_token`` → ``AWS_NOVA_API_KEY`` (conf). Only
+                consulted when no static access key resolves above (a
+                caller providing both is assumed to want the access/secret
+                keypair). When resolved, :meth:`get_client` exports it as
+                ``AWS_BEARER_TOKEN_BEDROCK`` for botocore's own bearer-auth
+                support (``botocore>=1.36``) to pick up — leave every
+                resolution step ``None`` to instead rely on
+                ``AWS_BEARER_TOKEN_BEDROCK`` already set in the process
+                environment (the SDK's own default).
             **kwargs: Forwarded to
                 :class:`~parrot.clients.base.AbstractClient`.
         """
@@ -129,8 +144,19 @@ class BedrockConverseBase(AbstractClient):
         # attributes unbound entirely when the named profile was missing.
         # This canonical resolver always binds the four attributes, in the
         # priority order from spec §1 Goals: explicit kwargs → ``aws_id``
-        # profile (fallback to 'default') → env constants → SDK chain
-        # (attributes may end up ``None``, but are never unbound).
+        # profile (fallback to 'default') → SDK chain (attributes may end
+        # up ``None``, but are never unbound).
+        #
+        # Code-review fix (post-FEAT-315): the conf-wide ``AWS_ACCESS_KEY``/
+        # ``AWS_SECRET_KEY``/``AWS_SESSION_TOKEN`` fallback was removed —
+        # it made every no-``aws_id`` client silently authenticate as
+        # whatever IAM identity happens to be configured for unrelated
+        # services, which may (as observed) be denied Bedrock access
+        # entirely. Static keys now require an explicit kwarg or a named
+        # ``aws_id`` profile; failing both, we try a Bedrock API key
+        # (bearer token) instead of a static keypair, and only fall through
+        # to the plain SDK credential chain (env vars, shared credentials
+        # file, SSO, ...) if that is unset too.
         credentials: Dict[str, Any] = {}
         if self._aws_id:
             credentials = AWS_CREDENTIALS.get(self._aws_id) or {}
@@ -140,19 +166,23 @@ class BedrockConverseBase(AbstractClient):
             aws_access_key
             or credentials.get('aws_key')
             or credentials.get('aws_access_key_id')
-            or AWS_ACCESS_KEY
         )
         self._aws_secret_key = (
             aws_secret_key
             or credentials.get('aws_secret')
             or credentials.get('aws_secret_access_key')
-            or AWS_SECRET_KEY
         )
         self._aws_session_token = (
             aws_session_token
             or credentials.get('aws_session_token')
-            or AWS_SESSION_TOKEN
         )
+        self._aws_bearer_token = None
+        if not self._aws_access_key:
+            self._aws_bearer_token = (
+                aws_bearer_token
+                or credentials.get('aws_bearer_token')
+                or AWS_NOVA_API_KEY
+            )
         self._region = (
             region
             or credentials.get('region_name')
@@ -216,6 +246,15 @@ class BedrockConverseBase(AbstractClient):
             client_kwargs["aws_secret_access_key"] = self._aws_secret_key
             if self._aws_session_token:
                 client_kwargs["aws_session_token"] = self._aws_session_token
+        elif self._aws_bearer_token:
+            # botocore >= 1.36 reads bearer tokens from the environment only
+            # (``AWS_BEARER_TOKEN_<SIGNING_NAME>`` — no constructor kwarg
+            # exists); exporting it here is the only supported hand-off.
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = self._aws_bearer_token
+        # else: no static keys or bearer token resolved from parrot config —
+        # fall through to botocore's own default credential chain (env vars,
+        # AWS_BEARER_TOKEN_BEDROCK if already exported, shared credentials
+        # file, SSO, instance role, ...).
 
         client_ctx = session.client("bedrock-runtime", **client_kwargs)
         return await client_ctx.__aenter__()

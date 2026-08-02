@@ -177,10 +177,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, autonomous)
+**Date**: 2026-08-02
+**Notes**: Added `destination TEXT`, `decision_source TEXT`,
+`charter_version TEXT`, `composite_score REAL` (all nullable) to the
+`sources` DDL in `store.py:58-73`, so brand-new databases get them
+immediately. For pre-FEAT-402 databases, added
+`SourceCollectionManager._migrate_sources_columns()` (idempotent,
+guarded on `PRAGMA table_info(sources)`, additive-only `ALTER TABLE`)
+called from `__init__` right after the schema script executes, following
+the `_migrate_json_manifest` precedent for tone/placement.
+`SourceManifestEntry` (models.py) gained the four matching optional
+fields. `_upsert`'s INSERT/ON CONFLICT and a new `_row_to_entry`
+`_optional_column` helper (defensive read tolerating pre-migration rows)
+now read/write all four. Added `SourceCollectionManager.record_decision`
+as a NEW sibling method to `mark_ingested` (left completely untouched —
+zero risk to its existing `wiki/ingest.py`/`wiki/cli.py::_ingest_files`
+call sites, verified via grep): `record_decision` handles all three
+triage destinations (`wiki`/`archive`/`discard`), creating a new entry
+when the source was never registered via `add_source` (the normal case
+for a rejected document, per spec §2 "recorded with status='rejected'
+and never ingested") or updating the existing entry in place otherwise.
+`format_decision_log_details(entry)` (module-level function in
+`sources.py`) formats the `WikiBookkeeper.log_operation` details line
+(source uri, composite, decision_source, charter_version); verified
+`TRIAGE`/`ADMIT`/`ARCHIVE`/`DISCARD` are accepted as free-string tags
+with zero schema change and round-trip through `read_log`
+(`test_bookkeeper_triage_tags`). All 52 tests in
+test_sources.py/test_bookkeeper.py pass, plus a full
+`tests/knowledge/wiki/` regression run (736 passed, 2 skipped,
+arango_integration.py deselected as live-DB-only) confirms no
+regressions from the shared schema/`__init__` changes.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**ArangoDB parity note** (per the task's explicit "do not block on it"):
+`_async_upsert`/`_doc_to_entry` (the ArangoDB async path) were NOT
+modified — they silently drop the four new fields today. This is the
+same class of documented, intentionally out-of-scope gap flagged for
+ArangoDB in TASK-2072 (archive category exclusion); `arango_store.py`
+and the Arango branches of `sources.py` are not in this task's Files to
+Create/Modify list.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in schema/field names or migration
+behavior. Same judgment call as TASK-2072 on the "ruff check clean"
+acceptance criterion: `models.py`/`store.py`/`sources.py` carry
+substantial pre-existing `ruff` findings (`UP045` "use `X | None`" on
+`Optional[...]`, already used pervasively; unrelated `SIM117`/`UP017`
+elsewhere). Verified via line-by-line comparison that every new line
+this task added matches an already-established pattern in the same file
+(e.g. `record_decision`'s `Optional[str]` params mirror `mark_ingested`'s
+own signature style; the new `datetime.now(timezone.utc)` call mirrors
+`add_source`'s identical pre-existing line) — no new deviation, no new
+category of finding. Pre-existing lint debt was left untouched per the
+no-scope-creep rule.
