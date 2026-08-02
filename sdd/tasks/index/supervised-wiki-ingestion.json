@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-01T23:01:35+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-02T00:30:21+00:00",
   "tasks": [
     {
       "id": "TASK-2069",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Pure new files (charter.py + test_charter.py); shares no files or imports with any other task.",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2069-charter-model-loader.md"
+      "completed_at": "2026-08-02T00:30:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2069-charter-model-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2070",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Imports Charter/Thresholds/CalibrationPolicy from TASK-2069's charter.py.",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2070-review-manifest-layer.md"
+      "completed_at": "2026-08-02T00:30:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2070-review-manifest-layer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2071",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +65,9 @@
       "parallelism_notes": "Imports charter (2069) and review models (2070).",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2071-ingest-triage-router.md"
+      "completed_at": "2026-08-02T00:30:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2071-ingest-triage-router.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2072",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -81,8 +84,9 @@
       "parallelism_notes": "Touches models.py/store.py/search.py only; no overlap with TASK-2069's new files. NOT parallel with TASK-2073 (both modify store.py and models.py).",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2072-archive-category-ranking-exclusion.md"
+      "completed_at": "2026-08-02T00:30:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2072-archive-category-ranking-exclusion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2073",
@@ -91,7 +95,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -101,8 +105,9 @@
       "parallelism_notes": "Depends on manifest entry fields (2070); modifies store.py/models.py which TASK-2072 also touches — run after 2072 or rebase carefully.",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2073-sources-migration-bookkeeper.md"
+      "completed_at": "2026-08-02T00:30:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2073-sources-migration-bookkeeper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2074",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "Integrates triage output, ARCHIVE category, and decision persistence — needs all three predecessors.",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2074-orchestrator-triage-wiring.md"
+      "completed_at": "2026-08-02T00:30:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2074-orchestrator-triage-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2075",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-402",
       "feature": "supervised-wiki-ingestion",
       "spec": "sdd/specs/supervised-wiki-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -143,8 +149,9 @@
       "parallelism_notes": "Final wiring + integration tests; depends transitively on all tasks. cli.py is a hot file — rebase on dev before starting.",
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2075-cli-ingest-command.md"
+      "completed_at": "2026-08-02T00:30:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2075-cli-ingest-command.md",
+      "verification": "verified"
     }
   ]
 }
