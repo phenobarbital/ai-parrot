@@ -480,8 +480,15 @@ class _FakeTriageAdapter:
                 sensitive=False,
             ),
             "ARCHIVE_MARKER": TriageOutput(
-                briefing="Low-value smalltalk, near-zero density.",
-                scores=DimensionScores(density=0.1, novelty=0.5, durability=0.1),
+                briefing="Middling content — density and durability neither"
+                " clearly admits nor clearly rejects it.",
+                # With novelty fixed at 0.1 by the scorer below, this lands
+                # in the gray band [0.35, 0.75) and STAYS there after
+                # Stage-2 escalation (same canned output both stages) —
+                # _band_to_action's residual-gray policy maps that to
+                # "archive" (kept, searchable, human-reviewable — not
+                # discarded outright).
+                scores=DimensionScores(density=0.5, novelty=0.5, durability=0.5),
                 sensitive=False,
             ),
             "SENSITIVE_MARKER": TriageOutput(
@@ -546,9 +553,9 @@ class TestSupervisedIngestionEndToEnd:
             "# Decision\n\nADMIT_MARKER: migrated the graph store to ArangoDB.",
             encoding="utf-8",
         )
-        archive_doc = corpus_dir / "smalltalk.md"
+        archive_doc = corpus_dir / "borderline.md"
         archive_doc.write_text(
-            "# Friday chat\n\nARCHIVE_MARKER: just chatting about the weekend.",
+            "# Borderline note\n\nARCHIVE_MARKER: some context, unclear lasting value.",
             encoding="utf-8",
         )
         sensitive_doc = corpus_dir / "hr.md"
@@ -693,10 +700,10 @@ class TestSupervisedIngestionEndToEnd:
         # --- Assert: archive page excluded from default ranking, but
         # retrievable via the explicit include_archived opt-in ---
         combined = WikiCombinedSearch(None, None, store=store)
-        default_results = await combined.search("chatting", mode="lexical", top_k=10)
+        default_results = await combined.search("borderline", mode="lexical", top_k=10)
         assert all(r.node_id != archive_page_id for r in default_results)
         archived_results = await combined.search(
-            "chatting", mode="lexical", top_k=10, include_archived=True
+            "borderline", mode="lexical", top_k=10, include_archived=True
         )
         assert any(r.node_id == archive_page_id for r in archived_results)
 

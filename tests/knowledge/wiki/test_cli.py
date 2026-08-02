@@ -546,7 +546,7 @@ def stub_ingest_wiring(monkeypatch):
     heavy = _FakeTriageAdapter()
 
     def _fake_build_adapters(lightweight_model, model):
-        return light, heavy, "fake-light-model"
+        return light, heavy, "fake-light-model", True
 
     def _fake_build_novelty_scorer(root, config, store):
         return _FakeNoveltyScorer()
@@ -602,6 +602,73 @@ class TestSupervisedIngestModes:
         )
         assert result.exit_code != 0
         assert "model" in result.output.lower()
+
+
+class TestSupervisedIngestCrossProviderModels:
+    """Code-review fix: PageIndexToolkit builds its own internal light
+    adapter by pairing the HEAVY adapter's client with the light model id
+    string — so mixing providers between --lightweight-model and --model
+    must NOT leak the light model id through to it (that would send one
+    provider's client a foreign model id)."""
+
+    def _invoke_with_spy(self, runner, repo, docs_folder, charter_file, monkeypatch, same_provider):
+        captured = {}
+
+        class _SpyToolkit(_FakePageIndexToolkit):
+            def __init__(self, adapter, storage_dir, lightweight_model=None, **kwargs):
+                captured["lightweight_model"] = lightweight_model
+                super().__init__(
+                    adapter, storage_dir, lightweight_model=lightweight_model, **kwargs
+                )
+
+        def _fake_build_adapters(lightweight_model, model):
+            return (
+                _FakeTriageAdapter(),
+                _FakeTriageAdapter(),
+                "light-model-id",
+                same_provider,
+            )
+
+        monkeypatch.setattr(cli_module, "_build_triage_adapters", _fake_build_adapters)
+        monkeypatch.setattr(
+            cli_module, "_build_novelty_scorer", lambda root, config, store: _FakeNoveltyScorer()
+        )
+        monkeypatch.setattr(
+            "parrot.knowledge.pageindex.toolkit.PageIndexToolkit", _SpyToolkit
+        )
+        monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "groq:llama")
+        monkeypatch.setenv("WIKI_MODEL", "groq:llama-big" if same_provider else "anthropic:claude")
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        return captured
+
+    def test_same_provider_passes_lightweight_model_through(
+        self, runner, repo, docs_folder, charter_file, monkeypatch
+    ):
+        captured = self._invoke_with_spy(
+            runner, repo, docs_folder, charter_file, monkeypatch, same_provider=True
+        )
+        assert captured["lightweight_model"] == "light-model-id"
+
+    def test_cross_provider_models_drop_lightweight_model(
+        self, runner, repo, docs_folder, charter_file, monkeypatch
+    ):
+        captured = self._invoke_with_spy(
+            runner, repo, docs_folder, charter_file, monkeypatch, same_provider=False
+        )
+        assert captured["lightweight_model"] is None
 
 
 class TestSupervisedIngestDryRun:

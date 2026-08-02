@@ -456,15 +456,28 @@ class IngestTriageRouter:
     ) -> Literal["admit", "archive", "discard"]:
         """Map a threshold band to a manifest proposed_action.
 
-        ``"admit"`` maps directly. ``"reject"`` (and any residual
-        ``"gray"`` left after Stage-2 escalation still failed to resolve
-        it) maps to ``"archive"`` — rejecting is not deleting; only an
-        explicit ``sensitive=true`` flag (handled earlier in
-        :meth:`triage`) forces ``"discard"``.
+        Per the spec's Component Diagram (§2 Overview):
+        ``admit -> WikiIngestOrchestrator.ingest(triage=...)``,
+        ``archive -> orchestrator ingest with category=ARCHIVE``,
+        ``reject -> SourceCollectionManager (status="rejected") only``
+        (never ingested). So ``"admit"`` maps directly, ``"reject"`` maps
+        to ``"discard"`` (fixed post-review: an earlier version of this
+        method mapped reject to "archive", which silently paid the full
+        two-LLM-call ingestion cost the cheap-first cascade exists to
+        avoid, and contradicted this exact diagram — see spec §7 risk
+        "double-LLM-cost on large corpora"). Any residual ``"gray"`` left
+        after Stage-2 escalation still failed to resolve it maps to
+        ``"archive"`` as a middle-ground default — genuinely uncertain
+        content is kept (searchable, human-reviewable) rather than
+        discarded outright. An explicit ``sensitive=true`` flag (handled
+        earlier in :meth:`triage`, before this method is ever called)
+        always forces ``"discard"`` regardless of band.
         """
         if band == "admit":
             return "admit"
-        return "archive"
+        if band == "reject":
+            return "discard"
+        return "archive"  # residual "gray" after Stage-2 escalation
 
     def _build_entry(
         self,

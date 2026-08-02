@@ -168,8 +168,12 @@ class TestCompositeAndRouting:
         assert adapter.calls == 1
 
     @pytest.mark.asyncio
-    async def test_router_low_composite_archives(self, charter):
-        """A low composite (below reject) routes to archive, not admit."""
+    async def test_router_low_composite_discards(self, charter):
+        """A low composite (below reject) routes to discard, not admit.
+
+        Per the spec's Component Diagram (§2 Overview): reject band ->
+        SourceCollectionManager (status="rejected") only, never ingested.
+        """
         output = _triage_output(density=0.0, novelty=0.0, durability=0.0)
         adapter = FakeAdapter(responses=[output])
         novelty_scorer = FakeNoveltyScorer(novelty=0.0)
@@ -178,7 +182,7 @@ class TestCompositeAndRouting:
         entry = await router.triage(Path("docs/b.md"), "content")
 
         assert entry.composite == pytest.approx(0.0)
-        assert entry.proposed_action == "archive"
+        assert entry.proposed_action == "discard"
 
 
 class TestSensitive:
@@ -228,6 +232,32 @@ class TestGrayZoneEscalation:
         assert entry.composite == pytest.approx(0.825)
 
     @pytest.mark.asyncio
+    async def test_router_still_gray_after_escalation_archives(self, charter):
+        """A document that stays in the gray band even after Stage-2
+        escalation defaults to archive — kept and searchable, not
+        silently discarded, per _band_to_action's residual-gray policy."""
+        stage1_output = _triage_output(density=0.5, novelty=0.2, durability=0.5)
+        # Stage 2 escalation barely moves the score — still gray.
+        stage2_output = _triage_output(density=0.5, novelty=0.2, durability=0.55)
+
+        adapter = FakeAdapter(responses=[stage1_output])
+        heavy_adapter = FakeAdapter(responses=[stage2_output])
+        novelty_scorer = FakeNoveltyScorer(novelty=0.5)
+
+        router = IngestTriageRouter(
+            charter,
+            adapter,
+            FakeSources(),
+            novelty_scorer,
+            heavy_adapter=heavy_adapter,
+        )
+        entry = await router.triage(Path("docs/still_gray.md"), "content")
+
+        assert heavy_adapter.calls == 1
+        assert 0.35 <= entry.composite < 0.75  # still in the gray band
+        assert entry.proposed_action == "archive"
+
+    @pytest.mark.asyncio
     async def test_router_admit_band_skips_heavy_tier(self, charter):
         """A clearly-admit Stage-1 composite never calls the heavy tier."""
         output = _triage_output(density=1.0, novelty=0.5, durability=1.0)
@@ -259,7 +289,7 @@ class TestGrayZoneEscalation:
 
         assert adapter.calls == 1
         assert heavy_adapter.calls == 0
-        assert entry.proposed_action == "archive"
+        assert entry.proposed_action == "discard"
 
     @pytest.mark.asyncio
     async def test_router_defaults_heavy_adapter_to_adapter(self, charter):

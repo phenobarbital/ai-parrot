@@ -2097,7 +2097,7 @@ def _resolve_model_id(cli_value: str | None, env_name: str) -> str:
 
 def _build_triage_adapters(
     lightweight_model: str, model: str
-) -> tuple[Any, Any, str]:
+) -> tuple[Any, Any, str, bool]:
     """Construct the lightweight/heavy ``PageIndexLLMAdapter`` pair.
 
     A narrow, deliberately monkeypatchable seam: tests replace this
@@ -2110,20 +2110,27 @@ def _build_triage_adapters(
             for real page-content generation (``PageIndexToolkit``).
 
     Returns:
-        ``(lightweight_adapter, heavy_adapter, lightweight_model_id)``.
+        ``(lightweight_adapter, heavy_adapter, lightweight_model_id,
+        same_provider)``. ``same_provider`` is ``True`` when both specs
+        resolve to the same provider — see the ``ingest`` command for why
+        this matters: ``PageIndexToolkit`` builds its own internal
+        lightweight adapter by pairing the *heavy* adapter's client with
+        the lightweight model id, so mixing providers there would send
+        one provider's client a model id meant for a different provider.
     """
     from parrot.clients.factory import LLMFactory
     from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 
-    _, light_model_id = LLMFactory.parse_llm_string(lightweight_model)
-    _, heavy_model_id = LLMFactory.parse_llm_string(model)
+    light_provider, light_model_id = LLMFactory.parse_llm_string(lightweight_model)
+    heavy_provider, heavy_model_id = LLMFactory.parse_llm_string(model)
     light_client = LLMFactory.create(lightweight_model)
     heavy_client = (
         light_client if model == lightweight_model else LLMFactory.create(model)
     )
     light_adapter = PageIndexLLMAdapter(light_client, model=light_model_id)
     heavy_adapter = PageIndexLLMAdapter(heavy_client, model=heavy_model_id)
-    return light_adapter, heavy_adapter, light_model_id
+    same_provider = light_provider == heavy_provider
+    return light_adapter, heavy_adapter, light_model_id, same_provider
 
 
 def _build_novelty_scorer(
@@ -2357,14 +2364,34 @@ def ingest(
         lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL"
     )
     model = _resolve_model_id(model_opt, "WIKI_MODEL")
-    light_adapter, heavy_adapter, light_model_id = _build_triage_adapters(
-        lightweight_model, model
+    light_adapter, heavy_adapter, light_model_id, same_provider = (
+        _build_triage_adapters(lightweight_model, model)
     )
     pageindex_dir = wiki_dir / "pageindex"
     pageindex_dir.mkdir(parents=True, exist_ok=True)
+    # PageIndexToolkit builds its OWN internal lightweight adapter as
+    # PageIndexLLMAdapter(client=heavy_adapter.client, model=lightweight_model)
+    # (packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py) — i.e.
+    # it always reuses the HEAVY adapter's client. When --lightweight-model
+    # and --model point at different providers, passing light_model_id
+    # there would send a foreign model id to the heavy provider's client.
+    # Only pass it through when both tiers share a provider; otherwise
+    # PageIndexToolkit falls back to using the heavy adapter for both of
+    # its own internal steps (safe, just not dual-tier for page generation
+    # — the triage router's own light/heavy split above is unaffected).
     pi_toolkit = PageIndexToolkit(
-        heavy_adapter, storage_dir=pageindex_dir, lightweight_model=light_model_id
+        heavy_adapter,
+        storage_dir=pageindex_dir,
+        lightweight_model=light_model_id if same_provider else None,
     )
+    if not same_provider:
+        _cli_logger.info(
+            "Stage-1/Stage-2 triage models use different providers "
+            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
+            "model for its own internal page-generation steps too.",
+            lightweight_model,
+            model,
+        )
     orch = WikiIngestOrchestrator(
         pi_toolkit,
         None,
