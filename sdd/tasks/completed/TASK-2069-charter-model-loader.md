@@ -153,10 +153,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, autonomous)
+**Date**: 2026-08-02
+**Notes**: Implemented `Charter`, `CharterScope`/`CharterScopeRule`,
+`Thresholds` (with `route()`), `CalibrationPolicy`, `TriageExample`,
+`Amendment`, `load_charter()`, and `append_example()` exactly per spec §2
+Data Models. Weights validator mirrors `WikiConfig.validate_search_weights`
+(models.py:114-140) and additionally enforces the exact dimension-name set
+`{density, novelty, durability}`. `examples_file` is documented as
+appendable JSONL. Fingerprint is a sha256 of the raw YAML bytes, computed
+in `load_charter` and assigned post-validation (not a YAML input field).
+Example charter YAML (admit=0.75/reject=0.35) lives only inside the test
+fixture, per the instruction that these values are illustrative and must
+never be hardcoded in `charter.py`. All 7 unit tests pass
+(`pytest tests/knowledge/wiki/test_charter.py -v`); `ruff check` clean
+after autofix (quote-removal/`X | None` style only); import verified via
+`from parrot.knowledge.wiki.charter import Charter, load_charter`.
 
 **Deviations from spec**: none

@@ -248,3 +248,208 @@ class TestJsonBackend:
     def test_unknown_backend_rejected(self, sources_dir: Path):
         with pytest.raises(ValueError, match="Unknown sources backend"):
             SourceCollectionManager(sources_dir, backend="parquet")
+
+
+class TestDecisionColumnsMigration:
+    """FEAT-402 (TASK-2073): additive `sources` migration for decision columns."""
+
+    def test_sources_migration_old_db(self, tmp_path: Path):
+        """A pre-FEAT-402 (7-column) sources table opens cleanly and gains
+        the new decision columns with safe (NULL) defaults; existing rows
+        are preserved unchanged."""
+        import sqlite3
+
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        db_path = sources_dir.parent / "wiki.db"
+
+        # Manually create an OLD 7-column sources table (pre-FEAT-402 DDL)
+        # with one pre-existing row, simulating a database created before
+        # this migration existed.
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            """
+            CREATE TABLE sources (
+                source_id       TEXT PRIMARY KEY,
+                source_uri      TEXT NOT NULL UNIQUE,
+                file_hash       TEXT NOT NULL,
+                mtime           REAL NOT NULL,
+                ingested_at     TEXT NOT NULL,
+                pages_generated TEXT NOT NULL DEFAULT '[]',
+                status          TEXT NOT NULL DEFAULT 'ingested'
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO sources VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "src-old000001",
+                "/docs/legacy.md",
+                "deadbeef" * 5,
+                1.0,
+                "2025-01-01T00:00:00Z",
+                "[]",
+                "ingested",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        # Opening a manager against this pre-existing DB must not raise,
+        # and must additively migrate the schema (new columns only).
+        mgr = SourceCollectionManager(sources_dir, db_path=db_path)
+
+        raw_conn = sqlite3.connect(str(db_path))
+        columns = {row[1] for row in raw_conn.execute("PRAGMA table_info(sources)")}
+        raw_conn.close()
+        assert {
+            "destination",
+            "decision_source",
+            "charter_version",
+            "composite_score",
+        } <= columns
+
+        entry = mgr.get_source("src-old000001")
+        assert entry is not None
+        assert entry.status == "ingested"  # pre-existing row untouched
+        assert entry.destination is None
+        assert entry.decision_source is None
+        assert entry.charter_version is None
+        assert entry.composite_score is None
+
+    def test_sources_migration_idempotent(self, tmp_path: Path):
+        """Opening the same DB twice does not error or duplicate columns."""
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        SourceCollectionManager(sources_dir)
+        # Second open must not raise (idempotent ALTER TABLE guard).
+        SourceCollectionManager(sources_dir)
+
+    def test_new_db_has_decision_columns_from_ddl(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        """A brand-new database already has the decision columns via the DDL."""
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.add_source(sample_source)
+        assert entry.destination is None
+        assert entry.decision_source is None
+        assert entry.charter_version is None
+        assert entry.composite_score is None
+
+
+class TestRecordDecision:
+    """FEAT-402 (TASK-2073): SourceCollectionManager.record_decision."""
+
+    def test_sources_persist_decision(self, sources_dir: Path, sample_source: Path):
+        """destination/decision_source/charter_version/composite persist
+        and round-trip through SourceManifestEntry."""
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.record_decision(
+            sample_source,
+            destination="wiki",
+            decision_source="model",
+            charter_version="1",
+            composite_score=0.82,
+            pages_generated=["page-1"],
+        )
+        assert entry.destination == "wiki"
+        assert entry.decision_source == "model"
+        assert entry.charter_version == "1"
+        assert entry.composite_score == pytest.approx(0.82)
+        assert entry.status == "ingested"
+        assert entry.pages_generated == ["page-1"]
+
+        fetched = mgr.get_source(entry.source_id)
+        assert fetched is not None
+        assert fetched.destination == "wiki"
+        assert fetched.decision_source == "model"
+        assert fetched.charter_version == "1"
+        assert fetched.composite_score == pytest.approx(0.82)
+
+    def test_sources_rejected_no_pages(self, sources_dir: Path, sample_source: Path):
+        """A discard decision is recorded with status='rejected' and no pages."""
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.record_decision(
+            sample_source,
+            destination="discard",
+            decision_source="heuristic",
+        )
+        assert entry.status == "rejected"
+        assert entry.pages_generated == []
+        assert entry.destination == "discard"
+
+        fetched = mgr.get_source(entry.source_id)
+        assert fetched is not None
+        assert fetched.status == "rejected"
+        assert fetched.pages_generated == []
+
+    def test_record_decision_creates_untracked_source(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        """record_decision works even when the source was never add_source'd
+        — the typical case for a rejected document (spec §2)."""
+        mgr = SourceCollectionManager(sources_dir)
+        assert mgr.list_sources() == []
+
+        entry = mgr.record_decision(
+            sample_source, destination="archive", decision_source="auto"
+        )
+        assert entry is not None
+        assert len(mgr.list_sources()) == 1
+
+    def test_record_decision_updates_existing_source(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        """record_decision updates an already-tracked source in place
+        rather than creating a duplicate row."""
+        mgr = SourceCollectionManager(sources_dir)
+        added = mgr.add_source(sample_source)
+
+        updated = mgr.record_decision(
+            sample_source,
+            destination="wiki",
+            decision_source="model",
+            pages_generated=["p1"],
+        )
+        assert updated.source_id == added.source_id
+        assert len(mgr.list_sources()) == 1
+
+    def test_record_decision_archive_defaults_to_ingested_status(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        """An 'archive' destination defaults to status='ingested' (it does
+        become a wiki page, just excluded from default ranking)."""
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.record_decision(sample_source, destination="archive")
+        assert entry.status == "ingested"
+
+
+class TestFormatDecisionLogDetails:
+    """FEAT-402 (TASK-2073): format_decision_log_details bookkeeper helper."""
+
+    def test_format_includes_key_fields(self, sources_dir: Path, sample_source: Path):
+        from parrot.knowledge.wiki.sources import format_decision_log_details
+
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.record_decision(
+            sample_source,
+            destination="wiki",
+            decision_source="model",
+            charter_version="2",
+            composite_score=0.913,
+        )
+        details = format_decision_log_details(entry)
+        assert entry.source_uri in details
+        assert "0.9130" in details
+        assert "decision_source: model" in details
+        assert "charter_version: 2" in details
+
+    def test_format_handles_missing_composite(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        from parrot.knowledge.wiki.sources import format_decision_log_details
+
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.record_decision(sample_source, destination="discard")
+        details = format_decision_log_details(entry)
+        assert "composite: n/a" in details

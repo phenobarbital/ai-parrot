@@ -28,7 +28,8 @@ import asyncio
 import json
 import logging
 import subprocess
-from datetime import UTC
+from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -41,6 +42,7 @@ from parrot.knowledge.wiki.context import (
 )
 from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
+    PARROT_DIR,
     WikiConfigError,
     WikiProjectConfig,
     find_project_root,
@@ -2008,6 +2010,568 @@ def ground(
         click.echo(f"Contradictions: {', '.join(data['contradictions'])}")
     for needed in data.get("required_evidence", []):
         click.echo(f"Required: {needed}")
+
+
+# --------------------------------------------------------------------------
+# Supervised ingestion (FEAT-402) — charter-driven triage + HITL manifest
+# review. Alongside (not inside) `build`: the deterministic, offline,
+# no-LLM `build`/`_ingest_files` path above is untouched (spec §1
+# Non-Goals). ALL triage/manifest/router logic lives in charter.py /
+# review.py / triage.py / ingest.py — this section only wires those
+# modules together and handles CLI argument parsing (hot-file discipline).
+# --------------------------------------------------------------------------
+
+
+def _discover_documents(folder: Path) -> list[Path]:
+    """List regular files under ``folder`` for supervised triage.
+
+    Deliberately NOT the language-aware ``repo_scan`` scanner — that
+    scanner's deterministic, offline, no-LLM contract is load-bearing for
+    the git post-commit hook and is never touched by this feature (spec
+    §1 Non-Goals). This is a flat, deterministic walk suited to arbitrary
+    document corpora (meeting notes, summaries, etc), not source code.
+
+    Args:
+        folder: Root folder to scan.
+
+    Returns:
+        Sorted list of file paths; dotfiles and dot-directories are
+        skipped (e.g. ``.git/``, ``.parrot/``).
+    """
+    return sorted(
+        p
+        for p in folder.rglob("*")
+        if p.is_file() and not any(part.startswith(".") for part in p.parts)
+    )
+
+
+def _resolve_charter_path(root: Path, charter_opt: str | None) -> Path:
+    """Resolve the charter YAML path: ``--charter``, else the project default.
+
+    Args:
+        root: Repository root.
+        charter_opt: The raw ``--charter`` CLI value, or ``None``.
+
+    Returns:
+        The resolved charter file path.
+
+    Raises:
+        click.ClickException: If neither an explicit path nor the
+            default ``<root>/.parrot/charter.yaml`` exists.
+    """
+    if charter_opt:
+        path = Path(charter_opt)
+        if not path.exists():
+            raise click.ClickException(f"No charter found at {path}.")
+        return path
+    default_path = root / PARROT_DIR / "charter.yaml"
+    if default_path.exists():
+        return default_path
+    raise click.ClickException(
+        "No editorial charter found. Pass --charter <path>, or place one "
+        f"at {default_path}."
+    )
+
+
+def _resolve_model_id(cli_value: str | None, env_name: str) -> str:
+    """Resolve a model spec from a CLI flag, else an env var, else error.
+
+    Args:
+        cli_value: The raw CLI flag value, or ``None``.
+        env_name: Environment variable name to fall back to.
+
+    Returns:
+        A ``"provider:model"`` (or ``"provider"``) spec string.
+
+    Raises:
+        click.ClickException: If neither is set.
+    """
+    value = cli_value or _env_setting(env_name)
+    if not value:
+        raise click.ClickException(
+            f"No model configured — pass the flag or set ${env_name} "
+            "(format: 'provider:model', e.g. 'groq:llama-3.3-70b-versatile')."
+        )
+    return value
+
+
+def _build_triage_adapters(
+    lightweight_model: str, model: str
+) -> tuple[Any, Any, str, bool]:
+    """Construct the lightweight/heavy ``PageIndexLLMAdapter`` pair.
+
+    A narrow, deliberately monkeypatchable seam: tests replace this
+    function wholesale to inject stub adapters instead of constructing
+    real LLM clients (``LLMFactory.create``).
+
+    Args:
+        lightweight_model: Stage-1 triage model spec.
+        model: Stage-2 (gray-zone escalation) model spec, also reused
+            for real page-content generation (``PageIndexToolkit``).
+
+    Returns:
+        ``(lightweight_adapter, heavy_adapter, lightweight_model_id,
+        same_provider)``. ``same_provider`` is ``True`` when both specs
+        resolve to the same provider — see the ``ingest`` command for why
+        this matters: ``PageIndexToolkit`` builds its own internal
+        lightweight adapter by pairing the *heavy* adapter's client with
+        the lightweight model id, so mixing providers there would send
+        one provider's client a model id meant for a different provider.
+    """
+    from parrot.clients.factory import LLMFactory
+    from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+
+    light_provider, light_model_id = LLMFactory.parse_llm_string(lightweight_model)
+    heavy_provider, heavy_model_id = LLMFactory.parse_llm_string(model)
+    light_client = LLMFactory.create(lightweight_model)
+    heavy_client = (
+        light_client if model == lightweight_model else LLMFactory.create(model)
+    )
+    light_adapter = PageIndexLLMAdapter(light_client, model=light_model_id)
+    heavy_adapter = PageIndexLLMAdapter(heavy_client, model=heavy_model_id)
+    same_provider = light_provider == heavy_provider
+    return light_adapter, heavy_adapter, light_model_id, same_provider
+
+
+def _build_novelty_scorer(
+    root: Path, config: WikiProjectConfig, store: BaseWikiStore
+) -> Any:
+    """Construct a NoveltyScorer: grounding-backed when the graph DB
+    exists (mirrors the ``ground`` command's wiring above), else a
+    ``WikiCombinedSearch`` similarity-proxy fallback.
+
+    Args:
+        root: Repository root.
+        config: The project's ``WikiProjectConfig``.
+        store: The open retrieval-plane store, used by the search-proxy
+            fallback.
+
+    Returns:
+        A configured ``NoveltyScorer``.
+    """
+    from parrot.knowledge.wiki.search import WikiCombinedSearch
+    from parrot.knowledge.wiki.triage import NoveltyScorer
+
+    graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
+    if not graph_db.exists():
+        return NoveltyScorer(
+            grounding_evaluator=None,
+            search=WikiCombinedSearch(None, None, store=store),
+        )
+
+    try:
+        from parrot.knowledge.graphindex.assemble import GraphAssembler
+        from parrot.knowledge.graphindex.factory import (
+            HashingGraphEmbedder,
+            make_stub_tenant_context,
+        )
+        from parrot.knowledge.graphindex.grounding import GroundingEvaluator
+        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+        from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
+    except ImportError:
+        return NoveltyScorer(
+            grounding_evaluator=None,
+            search=WikiCombinedSearch(None, None, store=store),
+        )
+
+    async def _build_evaluator() -> Any:
+        persistence = SQLitePersistence(config.graph_path(root))
+        ctx = make_stub_tenant_context(config.wiki_name)
+        nodes, edges = await persistence.load_graph(ctx)
+        assembler = GraphAssembler(tenant_id=config.wiki_name)
+        for node in nodes:
+            assembler.add_node(node)
+        for edge in edges:
+            assembler.add_edge(edge)
+        embedder = HashingGraphEmbedder()
+        if nodes:
+            await embedder.embed_nodes(nodes)
+        retriever = GraphExpandedRetriever(
+            graph=assembler.graph, nodes=nodes, embedder=embedder
+        )
+        return GroundingEvaluator(retriever)
+
+    evaluator = _run(_build_evaluator())
+    return NoveltyScorer(grounding_evaluator=evaluator)
+
+
+def _print_triage_summary(entries: list[Any]) -> None:
+    """Print a rich admit/archive/discard summary table."""
+    from rich.console import Console
+    from rich.table import Table
+
+    counts = Counter(e.proposed_action for e in entries)
+    table = Table(title="Supervised Ingestion — Triage Summary")
+    table.add_column("Proposed action", style="bold")
+    table.add_column("Count", justify="right", style="cyan")
+    for action in ("admit", "archive", "discard"):
+        table.add_row(action, str(counts.get(action, 0)))
+    Console().print(table)
+
+
+@wiki.command()
+@click.argument(
+    "folder", type=click.Path(exists=True, file_okay=False, path_type=Path)
+)
+@path_option
+@click.option(
+    "--charter",
+    "charter_opt",
+    default=None,
+    help="Path to the editorial charter YAML "
+    "(default: <repo>/.parrot/charter.yaml).",
+)
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Triage all docs, emit a manifest, ingest nothing.",
+)
+@click.option(
+    "--review",
+    "review_opt",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Apply human-edited decisions from a manifest.jsonl.",
+)
+@click.option(
+    "--interactive",
+    "interactive_flag",
+    is_flag=True,
+    help="Prompt per-document before applying (questionary).",
+)
+@click.option(
+    "--auto",
+    "auto_flag",
+    is_flag=True,
+    help="Charter thresholds decide automatically; flags a stratified audit sample.",
+)
+@click.option(
+    "--extract",
+    "extract_flag",
+    is_flag=True,
+    help="EXPERIMENTAL: include extracted claims in the manifest. Off by"
+    " default — v1 admission is document-level.",
+)
+@click.option(
+    "--lightweight-model",
+    "lightweight_model_opt",
+    default=None,
+    help="Stage-1 triage model ('provider:model'). Falls back to $WIKI_LIGHTWEIGHT_MODEL.",
+)
+@click.option(
+    "--model",
+    "model_opt",
+    default=None,
+    help="Stage-2 escalation / page-generation model ('provider:model')."
+    " Falls back to $WIKI_MODEL.",
+)
+@click.option(
+    "--audit-rate",
+    "audit_rate",
+    default=0.1,
+    show_default=True,
+    help="Fraction of --auto decisions flagged for stratified audit review.",
+)
+@click.option(
+    "--manifest",
+    "manifest_opt",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Manifest output path (default: <storage_dir>/ingest-manifest.jsonl).",
+)
+def ingest(
+    folder: Path,
+    path_: str | None,
+    charter_opt: str | None,
+    dry_run: bool,
+    review_opt: Path | None,
+    interactive_flag: bool,
+    auto_flag: bool,
+    extract_flag: bool,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    audit_rate: float,
+    manifest_opt: Path | None,
+) -> None:
+    """Supervised (charter-driven) ingestion of a document corpus.
+
+    Unlike ``build`` (deterministic, offline, no-LLM), ``ingest`` triages
+    each document in FOLDER against an editorial charter before it
+    becomes a wiki page: free heuristics reject duplicates/oversized
+    files, a lightweight model scores the rest, and only gray-zone
+    documents escalate to a heavier model. Exactly one mode is required.
+
+    \b
+    --dry-run      Triage everything, write a manifest, ingest nothing.
+    --review PATH  Apply decisions from a hand-edited manifest.
+    --interactive  Prompt per-document (before any async work starts).
+    --auto         Thresholds decide; flags a stratified audit sample.
+    """
+    from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+    from parrot.knowledge.wiki.charter import (
+        TriageExample,
+        append_example,
+        load_charter,
+    )
+    from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator
+    from parrot.knowledge.wiki.models import WikiConfig
+    from parrot.knowledge.wiki.review import (
+        ManifestReader,
+        ManifestRunHeader,
+        ManifestWriter,
+        stratified_sample,
+    )
+    from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+    modes_selected = sum(
+        [dry_run, review_opt is not None, interactive_flag, auto_flag]
+    )
+    if modes_selected == 0:
+        raise click.UsageError(
+            "Pick exactly one mode: --dry-run, --review, --interactive, or --auto."
+        )
+    if modes_selected > 1:
+        raise click.UsageError(
+            "--dry-run / --review / --interactive / --auto are mutually exclusive."
+        )
+    mode = (
+        "dry-run"
+        if dry_run
+        else "review"
+        if review_opt is not None
+        else "interactive"
+        if interactive_flag
+        else "auto"
+    )
+
+    root, config = _resolve_project(path_)
+    store = _open_store(root, config)
+    sources = _open_sources(root, config, store=store)
+    bookkeeper = WikiBookkeeper()
+    wiki_dir = config.storage_path(root)
+    manifest_path = manifest_opt or (wiki_dir / "ingest-manifest.jsonl")
+
+    def _log_triage(entry: Any) -> None:
+        details = (
+            f"source: {entry.source_uri}, composite: {entry.composite:.4f}, "
+            f"proposed_action: {entry.proposed_action}"
+        )
+        bookkeeper.log_operation(wiki_dir, "TRIAGE", details)
+
+    lightweight_model = _resolve_model_id(
+        lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL"
+    )
+    model = _resolve_model_id(model_opt, "WIKI_MODEL")
+    light_adapter, heavy_adapter, light_model_id, same_provider = (
+        _build_triage_adapters(lightweight_model, model)
+    )
+    pageindex_dir = wiki_dir / "pageindex"
+    pageindex_dir.mkdir(parents=True, exist_ok=True)
+    # PageIndexToolkit builds its OWN internal lightweight adapter as
+    # PageIndexLLMAdapter(client=heavy_adapter.client, model=lightweight_model)
+    # (packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py) — i.e.
+    # it always reuses the HEAVY adapter's client. When --lightweight-model
+    # and --model point at different providers, passing light_model_id
+    # there would send a foreign model id to the heavy provider's client.
+    # Only pass it through when both tiers share a provider; otherwise
+    # PageIndexToolkit falls back to using the heavy adapter for both of
+    # its own internal steps (safe, just not dual-tier for page generation
+    # — the triage router's own light/heavy split above is unaffected).
+    pi_toolkit = PageIndexToolkit(
+        heavy_adapter,
+        storage_dir=pageindex_dir,
+        lightweight_model=light_model_id if same_provider else None,
+    )
+    if not same_provider:
+        _cli_logger.info(
+            "Stage-1/Stage-2 triage models use different providers "
+            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
+            "model for its own internal page-generation steps too.",
+            lightweight_model,
+            model,
+        )
+    orch = WikiIngestOrchestrator(
+        pi_toolkit,
+        None,
+        sources,
+        bookkeeper,
+        store=store,
+        sync_graph=config.sync_graph,
+    )
+
+    async def _triage_all(paths: list[Path], router: Any) -> list[Any]:
+        entries = []
+        for doc_path in paths:
+            content = await asyncio.to_thread(
+                doc_path.read_text, encoding="utf-8", errors="ignore"
+            )
+            entry = await router.triage(doc_path, content)
+            if not extract_flag:
+                entry.claims = []
+            entries.append(entry)
+            await asyncio.to_thread(_log_triage, entry)
+        return entries
+
+    async def _apply_all(
+        entries: list[Any], wiki_config: WikiConfig, charter_version: str | None
+    ) -> None:
+        for entry in entries:
+            if entry.decision is None:
+                continue
+            await orch.ingest(
+                entry.source_uri,
+                wiki_config,
+                triage=entry,
+                charter_version=charter_version,
+            )
+
+    # ---- --review: apply pre-computed decisions, no re-triage ----------
+    if mode == "review":
+        header, entries = ManifestReader(review_opt).read()
+        applied = [e for e in entries if e.decision is not None]
+
+        charter_for_examples = None
+        try:
+            charter_for_examples = load_charter(_resolve_charter_path(root, charter_opt))
+        except click.ClickException:
+            charter_for_examples = None
+        if charter_for_examples is not None and charter_for_examples.examples_file:
+            for entry in applied:
+                if entry.decision_source == "human":
+                    append_example(
+                        charter_for_examples,
+                        TriageExample(
+                            summary=entry.briefing,
+                            why=f"human decision: {entry.decision}",
+                            destination=entry.decision,
+                        ),
+                    )
+
+        wiki_config = WikiConfig(
+            wiki_name=config.wiki_name,
+            storage_dir=wiki_dir,
+            sync_graph=config.sync_graph,
+            storage_backend=config.backend,
+        )
+        _run(_apply_all(applied, wiki_config, header.charter_version))
+        click.echo(f"Applied {len(applied)} decision(s) from {review_opt}.")
+        return
+
+    # ---- --dry-run / --interactive / --auto: triage first --------------
+    charter_path = _resolve_charter_path(root, charter_opt)
+    charter = load_charter(charter_path)
+    novelty_scorer = _build_novelty_scorer(root, config, store)
+    router = IngestTriageRouter(
+        charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter
+    )
+    wiki_config = WikiConfig(
+        wiki_name=config.wiki_name,
+        storage_dir=wiki_dir,
+        charter_path=charter_path,
+        sync_graph=config.sync_graph,
+        storage_backend=config.backend,
+    )
+    paths = _discover_documents(folder)
+    entries = _run(_triage_all(paths, router))
+
+    if mode == "dry-run":
+        header = ManifestRunHeader(
+            charter_sha256=charter.fingerprint,
+            charter_version=charter.version,
+            mode="dry-run",
+            novelty_backend=novelty_scorer.backend,
+            counts=dict(Counter(e.proposed_action for e in entries)),
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        ManifestWriter(manifest_path).write(header, entries)
+        click.echo(f"Triaged {len(entries)} document(s). Manifest: {manifest_path}")
+        _print_triage_summary(entries)
+        return
+
+    if mode == "interactive":
+        # ALL prompting happens here — synchronous, blocking, BEFORE the
+        # async apply pipeline below starts (questionary is blocking;
+        # spec §7 risk: never call it inside async code).
+        import questionary
+
+        for entry in entries:
+            click.echo(f"\n{entry.source_uri}")
+            click.echo(f"  briefing: {entry.briefing}")
+            click.echo(
+                f"  scores: density={entry.scores.density:.2f} "
+                f"novelty={entry.scores.novelty:.2f} "
+                f"durability={entry.scores.durability:.2f}"
+            )
+            click.echo(
+                f"  composite: {entry.composite:.4f}  proposed: {entry.proposed_action}"
+            )
+            choice = questionary.select(
+                "Decision:",
+                choices=["admit", "archive", "discard"],
+                default=entry.proposed_action,
+            ).ask()
+            entry.decision = choice or entry.proposed_action
+            entry.decision_source = "human"
+            if entry.decision != entry.proposed_action and charter.examples_file:
+                append_example(
+                    charter,
+                    TriageExample(
+                        summary=entry.briefing,
+                        why=f"human override: {entry.decision}",
+                        destination=entry.decision,
+                    ),
+                )
+
+        header = ManifestRunHeader(
+            charter_sha256=charter.fingerprint,
+            charter_version=charter.version,
+            mode="interactive",
+            novelty_backend=novelty_scorer.backend,
+            counts=dict(Counter(e.decision for e in entries)),
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        ManifestWriter(manifest_path).write(header, entries)
+        _run(_apply_all(entries, wiki_config, charter.version))
+        click.echo(
+            f"Applied {len(entries)} interactive decision(s). Manifest: {manifest_path}"
+        )
+        return
+
+    # ---- --auto ----------------------------------------------------------
+    for entry in entries:
+        entry.decision = entry.proposed_action
+        entry.decision_source = "auto"
+    sample_size = max(1, round(len(entries) * audit_rate)) if entries else 0
+    if sample_size:
+        stratified_sample(
+            entries,
+            charter.thresholds,
+            sample_size,
+            near_fraction=charter.calibration.near_fraction,
+            uniform_fraction=charter.calibration.uniform_fraction,
+        )
+    header = ManifestRunHeader(
+        charter_sha256=charter.fingerprint,
+        charter_version=charter.version,
+        mode="auto",
+        novelty_backend=novelty_scorer.backend,
+        counts=dict(Counter(e.decision for e in entries)),
+        created_at=datetime.now(UTC).isoformat(),
+    )
+    ManifestWriter(manifest_path).write(header, entries)
+    _run(_apply_all(entries, wiki_config, charter.version))
+    audited = [e for e in entries if e.audit_sample]
+    click.echo(
+        f"Applied {len(entries)} auto decision(s). Audit sample: "
+        f"{len(audited)} flagged for human review ({audit_rate:.0%} of batch)."
+        f" Manifest: {manifest_path}"
+    )
+    click.echo(
+        "agreement_rate(): computable once the audit sample's `decision` "
+        f"fields are filled in via a follow-up `--review` pass over {manifest_path}."
+    )
 
 
 @wiki.command(name="claude-hook", hidden=True)
