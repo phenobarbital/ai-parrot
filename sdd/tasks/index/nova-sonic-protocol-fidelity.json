@@ -130,7 +130,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -138,8 +138,8 @@
       "parallelism_notes": "Independent logically (new usageEvent branch, no shared state) but edits the same audio.py receive loop, so it cannot run in a separate worktree without conflicting. Carries the feature's only unverified frame shape - see spec section 8 question 1.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2106-usage-event-accounting.md"
+      "completed_at": "2026-08-03T20:27:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2106-usage-event-accounting.md"
     },
     {
       "id": "TASK-2107",
