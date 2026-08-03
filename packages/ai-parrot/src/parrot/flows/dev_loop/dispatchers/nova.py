@@ -397,23 +397,34 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
 
 
 def _has_nova_credentials() -> bool:
-    """Best-effort, local, synchronous check for Nova/Bedrock credentials.
+    """Best-effort, local, synchronous check for a Nova/Bedrock opt-in.
 
-    Deliberately conservative: only recognizes the two credential paths
-    this feature documents — the ``AWS_NOVA_API_KEY`` bearer token, or an
-    explicit ``AWS_ACCESS_KEY``/``AWS_SECRET_KEY`` keypair. It does NOT
-    probe the full boto3 SDK credential chain (shared credentials file,
-    SSO, instance role) — that cannot be checked without attempting a real
-    call. A deployment relying purely on instance-role credentials should
-    set ``AWS_NOVA_API_KEY`` too (even a placeholder its own IAM policy
-    still honours) to opt into mechanical-seat enrichment; otherwise it
-    degrades to the deterministic template every time, which is the
-    correct, byte-identical, pre-FEAT-405 fallback in that case.
+    Deliberately conservative: recognizes only the ``AWS_NOVA_API_KEY``
+    bearer token, a credential this feature itself introduces and that is
+    never consumed for any purpose other than Nova/Bedrock. It does NOT
+    treat the conf-wide ``AWS_ACCESS_KEY``/``AWS_SECRET_KEY`` keypair as
+    sufficient, and it does NOT probe the full boto3 SDK credential chain
+    (shared credentials file, SSO, instance role) — that cannot be checked
+    without attempting a real call.
+
+    This mirrors a precedent already established in
+    ``BedrockConverseBase.__init__`` (``clients/bedrock.py``, "Code-review
+    fix (post-FEAT-315)"): falling back to the generic, multi-purpose
+    ``AWS_ACCESS_KEY``/``AWS_SECRET_KEY`` conf values made unrelated
+    features (e.g. the existing Bedrock-hosted Claude client, S3 access)
+    silently opt a deployment into new Bedrock traffic it never asked for.
+    A deployment that wants mechanical-seat enrichment via the SigV4
+    keypair path must configure a named ``aws_id`` credentials profile
+    explicitly (or set ``AWS_NOVA_API_KEY``, even a placeholder its own
+    IAM policy still honours) — otherwise this degrades to the
+    deterministic template every time, which is the correct,
+    byte-identical, pre-FEAT-405 fallback ([R3]: "a run that configures no
+    Nova settings behaves identically to pre-feature").
 
     Returns:
         ``True`` when a real network attempt looks worthwhile.
     """
-    return bool(conf.AWS_NOVA_API_KEY or (conf.AWS_ACCESS_KEY and conf.AWS_SECRET_KEY))
+    return bool(conf.AWS_NOVA_API_KEY)
 
 
 async def summarize_pr_changes(
@@ -459,8 +470,8 @@ async def summarize_pr_changes(
     )
     if not _has_nova_credentials():
         log.debug(
-            "PR summary enrichment skipped — no Nova/Bedrock credential "
-            "configured (AWS_NOVA_API_KEY or AWS_ACCESS_KEY/AWS_SECRET_KEY)."
+            "PR summary enrichment skipped — no Nova/Bedrock opt-in "
+            "configured (AWS_NOVA_API_KEY)."
         )
         return ""
     try:

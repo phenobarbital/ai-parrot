@@ -328,7 +328,20 @@ class TestSummarizePrChanges:
 class TestCredentialShortCircuit:
     """Code-review fix: no credential configured -> no network attempt at
     all (not even a NovaClient() construction), not just an eventual
-    fallback after a real connection/DNS attempt."""
+    fallback after a real connection/DNS attempt.
+
+    Adversarial-review fix (post-implementation): the short-circuit must
+    recognize *only* the Nova-specific ``AWS_NOVA_API_KEY`` opt-in, never
+    the conf-wide ``AWS_ACCESS_KEY``/``AWS_SECRET_KEY`` keypair. Those two
+    conf values are shared by unrelated, pre-existing features (the
+    Bedrock-hosted Claude client, generic AWS interfaces) — treating their
+    mere presence as "the operator wants Nova mechanical enrichment" would
+    silently start real Bedrock network calls for any deployment that
+    already has them set for something else, breaking the "configures no
+    Nova settings behaves identically to pre-feature" acceptance
+    criterion. This mirrors the identical fix already made in
+    ``BedrockConverseBase.__init__`` (``clients/bedrock.py``,
+    "Code-review fix (post-FEAT-315)")."""
 
     async def test_no_credentials_skips_without_constructing_client(self, monkeypatch):
         from parrot import conf
@@ -363,15 +376,25 @@ class TestCredentialShortCircuit:
         result = await summarize_pr_changes("some context")
         assert result == "- ok"
 
-    async def test_access_secret_keypair_alone_is_sufficient(self, monkeypatch):
+    async def test_access_secret_keypair_alone_is_not_sufficient(self, monkeypatch):
+        """A pre-existing generic AWS keypair (set for an unrelated feature,
+        e.g. the Bedrock-hosted Claude client or S3 access) must NOT, on its
+        own, opt a deployment into Nova mechanical-seat network calls."""
         from parrot import conf
 
         monkeypatch.setattr(conf, "AWS_NOVA_API_KEY", None)
         monkeypatch.setattr(conf, "AWS_ACCESS_KEY", "AKIA...")
         monkeypatch.setattr(conf, "AWS_SECRET_KEY", "secret")
-        fake_ask = AsyncMock(return_value=type("M", (), {"output": "- ok"})())
-        fake_client = type("C", (), {"ask": fake_ask})()
-        _patch_nova_client(monkeypatch, lambda: fake_client)
+
+        client_constructed = False
+
+        def _spy_client():
+            nonlocal client_constructed
+            client_constructed = True
+            raise AssertionError("NovaClient must not be constructed at all")
+
+        _patch_nova_client(monkeypatch, _spy_client)
 
         result = await summarize_pr_changes("some context")
-        assert result == "- ok"
+        assert result == ""
+        assert client_constructed is False
