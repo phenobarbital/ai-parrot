@@ -287,11 +287,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Created `usage_report.py` with `AgentUsage`/`UsageReport` (frozen,
+`_Frozen` convention), `build_usage_report(snapshot, run_id, *, shared=None)`,
+and `render_usage_markdown(report)`. Wired `runner.py._persist_run_bundle` to
+also build/write `{run_id}.usage.json` (own try/except — independent of the
+bundle.json/report.md write) and splice `render_usage_markdown(...)` into
+`render_markdown(bundle, usage_markdown="")` (new optional 2nd param,
+default `""` = byte-identical to pre-feature output — [R3]-style regression
+guard, tested). Reused `run_bundle._sum_optional_int` for the totals row
+(one-directional import: `usage_report -> run_bundle`, never the reverse —
+`render_markdown` accepts a pre-rendered markdown STRING rather than
+importing `usage_report.py`, to avoid a circular import). 16 new unit tests
+in `test_usage_report.py`, all pass; ran `test_run_bundle.py`/
+`test_run_bundle_export.py` (28 total) and the full `tests/flows/dev_loop/`
+suite (952 passed, same 2 pre-existing unrelated failures verified via `git
+stash -u`, identical to all prior TASK-2086-2089 checks). No new mypy
+errors (`runner.py` baseline 13 error-lines, unchanged after). `ruff
+check`: `usage_report.py`/`test_usage_report.py` are brand-new files, so
+autofixed to modern typing (`dict`/`list`/`X | None`) with no established
+local convention to preserve; `run_bundle.py` gained 0 new findings,
+`runner.py` gained 1 (matching the established pre-existing-style pattern
+on my own new lines, per the same policy as TASK-2086/2088/2089).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Seat identity**: how `AgentUsage.seat` is derived (spec §8 open question).
+**Seat identity**: **Resolved as `seat = node_id`** (node-granular, NOT
+per-pool-worker granular as the spec's `AgentUsage.seat` docstring example
+("dev-agent-1", "dev-agent-2") suggested). Investigated `agent_pool.py`
+first as instructed: it DOES have a `worker_id` scheme
+(`f"development.w{i}"`), but empirically verified — via
+`DispatchQueued(node_id="development.w1", ...)` in a test — that
+`session_state.NodeId` is a **closed `Literal`** of the 12 fixed flow nodes,
+and every dispatch/node-lifecycle session-state action (`NodeStarted`,
+`DispatchQueued`, `DispatchStarted`, `DispatchCompleted`, ...) is typed to
+it. A `DevAgentPool` worker's dispatch events (`node_id="development.w1"`)
+therefore FAIL Pydantic validation inside
+`dispatchers/_shared.py::_apply_to_session_host`'s dual-publish shim — which
+catches and swallows the exception at DEBUG level by design ("the shim
+must never break a dispatch") — so per-worker dispatch telemetry never
+reaches `Snapshot.state.nodes` at all today. `Snapshot` can therefore only
+support the same node-level granularity `NodeReport` already uses. For
+`model` (which `DispatchState` has no field for at all — only
+`WorkerSummary`, on `shared["development_output"]`, records
+`agent`/`model` per worker), added a best-effort `shared` parameter: when
+*exactly one* `WorkerSummary.worker_id` starts with `f"{node_id}."` (the
+common pool-size-1 case), that worker's model is shown; a genuinely
+multi-worker pool leaves the node's model blank (`—`) rather than
+guessing which worker it reflects (tested explicitly, both branches).
+Documented exhaustively in both `AgentUsage`'s and
+`build_usage_report`'s docstrings, flagging true per-worker granularity as
+a follow-up requiring `NodeId` to widen (or a separate per-worker
+session-state channel) — out of this task's scope.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) `_format_tokens` (`run_bundle.py:365`) —
+which the Codebase Contract claimed returns `"—"` for unreported values —
+actually returns `"n/a"` (verified against the real source). Since the
+Acceptance Criteria and Test Specification both require the literal `—`
+(em dash) character, `usage_report.py` defines its own `_fmt_value`/
+`_fmt_agent_tokens` helpers using `—` rather than reusing `_format_tokens`
+verbatim; `run_bundle.py`'s own node-level table is unchanged (still
+`"n/a"`). (2) `render_markdown`'s signature gained an optional
+`usage_markdown: str = ""` 2nd parameter (not in the Codebase Contract) —
+required to splice the usage section in without a circular import; default
+preserves the exact 1-arg call shape everywhere else in the codebase. (3)
+`runner.py` was modified despite not being in the task's Files table —
+`build_usage_report`/`render_usage_markdown` needed an actual persistence
+call site, and `_persist_run_bundle` (TASK-1929) is the ONLY place
+`bundle.json`/`report.md` are written (`run_bundle.py` is explicitly "pure:
+no filesystem" per its own module docstring) — mirrors the same class of
+gap TASK-2088 hit with `dev_loop/__init__.py`.
