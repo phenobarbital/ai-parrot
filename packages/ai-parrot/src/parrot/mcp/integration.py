@@ -207,6 +207,12 @@ class MCPToolProxy(AbstractTool):
         """
         # Extract context if provided
         context: Optional['ReadonlyContext'] = kwargs.pop('_readonly_context', None)
+        # Strip injected context keys (user_id, session_id, etc.) that the
+        # base client merges from _tool_context — MCP servers only accept
+        # the parameters declared in their input schema.
+        schema_props = (self.input_schema.get('properties') or {}).keys()
+        if schema_props:
+            kwargs = {k: v for k, v in kwargs.items() if k in schema_props}
         try:
             if await self._should_require_confirmation(kwargs):
                 self.logger.info(
