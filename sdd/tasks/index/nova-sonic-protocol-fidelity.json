@@ -148,7 +148,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -156,8 +156,8 @@
       "parallelism_notes": "Independent logically (only touches stream_voice()'s finally block) but edits the same audio.py file as TASK-2101..2106.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2107-graceful-session-shutdown.md"
+      "completed_at": "2026-08-03T20:31:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2107-graceful-session-shutdown.md"
     },
     {
       "id": "TASK-2108",
