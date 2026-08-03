@@ -113,7 +113,7 @@
       "feature_id": "FEAT-405",
       "feature": "novaclient-dev-loop",
       "spec": "sdd/specs/novaclient-dev-loop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "The convergence point: edits models/base.py, agent_builder.py, catalog.py and conf.py, all shared registration surfaces. Must follow both dispatchers.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:53:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2088-nova-backend-wiring.md"
+      "completed_at": "2026-08-03T02:38:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2088-nova-backend-wiring.md"
     },
     {
       "id": "TASK-2089",
