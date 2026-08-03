@@ -284,10 +284,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Added `MCP_JSON_ENTRY` constant to `assets.py` and a short
+paragraph to `CLAUDE_MD_SECTION` pointing agents at the native
+`wiki_query`/`wiki_page`/etc. MCP tools when present. Added
+`_install_mcp_json()`/`_uninstall_mcp_json()` to `installer.py`, wired
+`_install_mcp_json` between `_install_permissions` and
+`_install_slash_command` in `install_claude_integration` (per the task's
+Existing Installer Structure note), and `_uninstall_mcp_json` before the
+slash-command removal in `uninstall_claude_integration`. Added an
+`"mcp_json"` key to `integration_status()`. All 9 unit tests pass
+(6 from the task's Test Specification + 3 extra: stale-entry update,
+empty-file removal, no-op-when-absent); `ruff check` clean on all 3
+files (installer.py's 9 pre-existing lint findings are unchanged from
+before this task — verified against the unmodified main repo — none of
+them are on lines this task touched). No pre-existing test suite in this
+repo exercises the installer module at all, so there was no regression
+surface beyond these new tests.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `_uninstall_mcp_json` returns `str | None`
+(`None` when there is nothing to report) instead of always returning a
+message string as the task's illustrative snippet shows. Every OTHER
+uninstall step in this module (`CLAUDE.md`, settings hooks/permissions,
+slash command, git hook) only appends to the `actions` list when
+something was actually removed — matching that, always-appending a
+".mcp.json — not present" line would silently break the function's
+existing "nothing to remove — integration not installed" summary
+whenever `.mcp.json` was the only unmanaged artifact. This is a
+consistency fix with the established local convention, not a design
+change; the observable JSON file behavior is identical to the task's
+snippet.

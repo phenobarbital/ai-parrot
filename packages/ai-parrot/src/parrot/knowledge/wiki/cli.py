@@ -695,6 +695,20 @@ def wiki() -> None:
 
 
 @wiki.command()
+def mcp() -> None:
+    """Start wikitoolkit as a local MCP stdio server (FEAT-403).
+
+    Exposes the six wiki tools (wiki_query, wiki_page, wiki_related,
+    wiki_remember, wiki_note, wiki_status) as native MCP tools, giving
+    them equal standing with Grep/Read at tool-selection time. Must be
+    run inside a repository with a built wiki (`wikitoolkit build`).
+    """
+    from parrot.knowledge.wiki.mcp_server import main as mcp_main
+
+    mcp_main()
+
+
+@wiki.command()
 @path_option
 @click.option("--name", default=None, help="Wiki name (default: repo directory name).")
 @click.option(

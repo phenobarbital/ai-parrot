@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-404 — Bedrock/Nova Per-Round Token Usage Observability
 **Spec**: `sdd/specs/bedrock-per-round-token.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

@@ -8,7 +8,7 @@ from aiohttp import web
 import aiohttp
 
 from parrot.mcp.config import MCPServerConfig
-from parrot.mcp.transports.base import MCPServerBase
+from parrot.mcp.transports.base import RemoteMCPServerBase
 from parrot.mcp.oauth_server import OAuthRoutesMixin
 from parrot.mcp.client import (
     MCPClientConfig,
@@ -19,7 +19,7 @@ from parrot.mcp.client import (
     raise_for_jsonrpc_error,
 )
 
-class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
+class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
     """MCP server using HTTP transport."""
 
     def __init__(self, config: MCPServerConfig, parent_app: Optional[web.Application] = None):

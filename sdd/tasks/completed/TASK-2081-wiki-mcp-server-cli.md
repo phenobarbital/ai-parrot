@@ -193,10 +193,60 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Created `create_wiki_mcp_server(root)` + `main()` in
+`parrot/knowledge/wiki/mcp_server.py`, and a `wiki.command() def mcp()`
+in `cli.py` that lazily imports and calls `main()` — exactly the task's
+snippets, with one substantive correction (see Deviations) plus two
+defensive fixes discovered via manual smoke-testing, both scoped entirely
+to this new file:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+1. **Storage path bug in the task's own snippet**: `create_wiki_store`
+   expects `storage_dir` to already be the plane directory
+   (`.parrot/wiki`), not a bare `root / ".parrot"` — confirmed against
+   `cli.py:_open_store`, the codebase's own established pattern for every
+   other command. Used `config.storage_path(root)` instead.
+2. **cwd-capture bug**: importing `parrot.mcp.*` triggers a pre-existing,
+   already-there-before-this-feature side effect where `parrot.mcp`'s
+   package `__init__` pulls in navconfig-based settings that `chdir()` to
+   the installed package's app root (verified against the *unmodified*
+   main repo — `import parrot.mcp` alone reproduces it). Since this task's
+   own `main()` calls `Path.cwd()` *after* importing `StdioMCPServer`, the
+   "not in a repo" check was silently defeated (it would resolve to
+   whatever repo the `ai-parrot` package itself lives in). Fixed by (a)
+   capturing `os.getcwd()` as the first statement in the module, before
+   any `parrot.mcp.*` import, and (b) deferring the `parrot.mcp.*` imports
+   into `create_wiki_mcp_server()`'s function body (lazy) instead of
+   module level, so the "not built" / "not in repo" exit paths never
+   trigger the chdir at all.
+3. **stdout-pollution bug**: the same transitively-imported settings init
+   also (a) attaches its own root-logger handler pointed at stdout
+   (`logging.basicConfig()`'s no-op guard doesn't undo an `addHandler()`
+   done elsewhere) and (b) does a bare `print()` of `"USE SSL::  False"`
+   with no logging involved at all. Fixed with `_ensure_stderr_logging()`
+   (strips + replaces root handlers, called before AND after the lazy
+   import) plus `contextlib.redirect_stdout(sys.stderr)` wrapped
+   specifically around the `parrot.mcp.*` import line — verified via
+   subprocess capture that stdout is now byte-for-byte JSON-RPC only in
+   both the success and error-exit paths (acceptance criterion "No output
+   on stdout except JSON-RPC responses").
 
-**Deviations from spec**: none | describe if any
+Verified end-to-end against a real seeded SQLite wiki store: `initialize`,
+`tools/list` (6 tools), `tools/call` (`wiki_query`, `wiki_status`) all
+correct over actual subprocess stdin/stdout pipes; `wikitoolkit mcp` CLI
+command registers correctly (`wiki.commands` includes `'mcp'`); exits 1
+with a clear stderr message and empty stdout when not in a repo. Both
+integration tests pass; `ruff check` clean on all 3 files; no regressions
+in the pre-existing `test_cli.py` suite (9/9 pass) or the broader
+`tests/mcp/` + `tests/knowledge/wiki/test_wiki_tools.py` suite (28/28
+pass).
+
+**Deviations from spec**: `storage_dir=config.storage_path(root)` instead
+of the task's literal `root / ".parrot"` (bug fix, matches established
+codebase convention — see above). The cwd-capture and stdout/logging
+defensive fixes are additions beyond the task's illustrative snippets,
+required to actually satisfy the task's own stated acceptance criteria
+("Exits with error if not in a git repo", "No output on stdout except
+JSON-RPC responses") — the pre-existing `parrot.mcp` side effects would
+otherwise silently break both.

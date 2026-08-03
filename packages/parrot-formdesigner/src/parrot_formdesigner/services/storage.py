@@ -11,7 +11,7 @@ the same storage instance can serve many tenants
 
 Table columns:
 - id: UUID primary key
-- form_uid: VARCHAR(36) — immutable UUID identity (FEAT-389). Primary
+- form_uid: UUID — immutable UUID identity (FEAT-389/FEAT-393). Primary
   uniqueness key for this table, together with ``version``.
 - form_id: VARCHAR — mutable, human-readable slug. Kept for display/search
   and slug-based lookups via :meth:`PostgresFormStorage.load_by_slug`.
@@ -156,7 +156,7 @@ class PostgresFormStorage(FormStorage):
         return f"""
         CREATE TABLE IF NOT EXISTS {qt} (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            form_uid VARCHAR(36) NOT NULL,
+            form_uid UUID NOT NULL,
             form_id VARCHAR(255) NOT NULL,
             version VARCHAR(50) NOT NULL DEFAULT '1.0',
             schema_json JSONB NOT NULL,
@@ -338,8 +338,7 @@ class PostgresFormStorage(FormStorage):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 self._upsert_sql(effective_tenant),
-                # TASK-2008: form_uid column is VARCHAR(36) until migrated.
-                str(form.form_uid),
+                form.form_uid,
                 form.form_id,
                 version,
                 schema_json,
@@ -378,8 +377,7 @@ class PostgresFormStorage(FormStorage):
             FormSchema if found, None otherwise.
         """
         self._require_pool()
-        # TASK-2008: form_uid column is VARCHAR(36) until migrated.
-        form_uid_param = str(form_uid)
+        form_uid_param = form_uid
         async with self._pool.acquire() as conn:
             if version is not None:
                 row = await conn.fetchrow(
@@ -496,8 +494,7 @@ class PostgresFormStorage(FormStorage):
         """
         self._require_pool()
         async with self._pool.acquire() as conn:
-            # TASK-2008: form_uid column is VARCHAR(36) until migrated.
-            result = await conn.execute(self._delete_sql(tenant), str(form_uid))
+            result = await conn.execute(self._delete_sql(tenant), form_uid)
 
         try:
             count = int(result.split()[-1])
