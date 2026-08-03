@@ -193,10 +193,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Exported `BedrockMantleClient` from `parrot/clients/nova/__init__.py`
+(added to `__all__`, kept isort-sorted per ruff RUF022). Added
+`_lazy_bedrock_mantle()` to `factory.py` following the `_lazy_nova`
+pattern, and registered `"bedrock-mantle"` / `"mantle"` in
+`SUPPORTED_CLIENTS` adjacent to the other Bedrock-family entries with a
+`# FEAT-407` comment. Verified via inline script: both keys resolve to
+`BedrockMantleClient`, `LLMFactory.create("bedrock-mantle:openai.gpt-oss-120b")`
+and the `"mantle"` alias both return a configured instance with the model
+set, and existing `"nova"`/`"openai"`/`"bedrock-converse"` keys still
+resolve correctly. `ruff check` clean on both touched files (pre-existing
+unrelated lint debt in `factory.py` — Dict/Tuple/Optional style, TRY004 —
+left untouched, out of scope for this task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
