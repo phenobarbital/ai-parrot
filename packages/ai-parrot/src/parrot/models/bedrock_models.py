@@ -183,7 +183,19 @@ def translate(public_id: str, region_prefix: str | None = None) -> str:
     """
     # 1. Pass-through: already a Bedrock ID, ARN, or native vendor namespace.
     if _is_bedrock_id(public_id):
-        if region_prefix and public_id not in REQUIRES_REGION_PREFIX:
+        # An id that already carries a region/global prefix (or is a full
+        # ARN) is already fully resolved — a redundant region_prefix arg
+        # is harmless, not a mistake, so it must NOT warn (code-review fix:
+        # this branch previously warned even for a model's own verified
+        # default id, e.g. NovaAdversarialReviewProfile's
+        # "us.anthropic.claude-opus-5", spamming a false-positive on every
+        # call). Only warn for a genuinely never-prefix id (vendor
+        # namespaces, or a bare "anthropic."/"amazon." id with no prefix
+        # applied) that isn't in the allowlist.
+        already_resolved = public_id.startswith("arn:") or any(
+            public_id.startswith(prefix) for prefix in _REGION_PREFIXES
+        )
+        if region_prefix and not already_resolved and public_id not in REQUIRES_REGION_PREFIX:
             logger.warning(
                 "bedrock_models.translate: region_prefix=%r requested for "
                 "%r, which is not in REQUIRES_REGION_PREFIX — the model is "

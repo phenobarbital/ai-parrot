@@ -26,6 +26,7 @@ from parrot.flows.dev_loop.catalog import (
     default_judge_panel_payload,
     effective_default_model,
     get_backend,
+    resolve_adversarial_backend,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     "default_judge_panel_payload",
     "effective_default_model",
     "get_backend",
+    "resolve_adversarial_backend",
 ]

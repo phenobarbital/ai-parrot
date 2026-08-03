@@ -95,6 +95,28 @@ class TestPrefixPolicy:
         assert result == "minimax.minimax-m2.5"
         assert any("prefix" in r.message.lower() for r in caplog.records)
 
+    @pytest.mark.parametrize(
+        "already_prefixed_id",
+        [
+            "us.anthropic.claude-opus-5",
+            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "global.anthropic.claude-fable-5",
+        ],
+    )
+    def test_explicit_prefix_on_already_prefixed_id_does_not_warn(
+        self, already_prefixed_id, caplog
+    ):
+        """Code-review fix: a model's OWN verified default id (already
+        region-prefixed, e.g. NovaAdversarialReviewProfile/
+        NovaMechanicalProfile's defaults) must not spam a false-positive
+        'ignoring the prefix' warning just because a caller (e.g.
+        NovaClient's own region_prefix="us" default) also happens to pass
+        region_prefix="us" redundantly — the id is already fully resolved."""
+        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+            result = translate(already_prefixed_id, region_prefix="us")
+        assert result == already_prefixed_id
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
 
 class TestPassThrough:
     """Recognised region prefixes and vendor namespaces."""

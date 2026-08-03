@@ -396,6 +396,26 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
 # ---------------------------------------------------------------------------
 
 
+def _has_nova_credentials() -> bool:
+    """Best-effort, local, synchronous check for Nova/Bedrock credentials.
+
+    Deliberately conservative: only recognizes the two credential paths
+    this feature documents — the ``AWS_NOVA_API_KEY`` bearer token, or an
+    explicit ``AWS_ACCESS_KEY``/``AWS_SECRET_KEY`` keypair. It does NOT
+    probe the full boto3 SDK credential chain (shared credentials file,
+    SSO, instance role) — that cannot be checked without attempting a real
+    call. A deployment relying purely on instance-role credentials should
+    set ``AWS_NOVA_API_KEY`` too (even a placeholder its own IAM policy
+    still honours) to opt into mechanical-seat enrichment; otherwise it
+    degrades to the deterministic template every time, which is the
+    correct, byte-identical, pre-FEAT-405 fallback in that case.
+
+    Returns:
+        ``True`` when a real network attempt looks worthwhile.
+    """
+    return bool(conf.AWS_NOVA_API_KEY or (conf.AWS_ACCESS_KEY and conf.AWS_SECRET_KEY))
+
+
 async def summarize_pr_changes(
     context: str,
     *,
@@ -407,7 +427,11 @@ async def summarize_pr_changes(
     Issues exactly one no-tools ``NovaClient.ask()`` call on Claude Haiku
     4.5. Never raises — the caller (``_build_body_async`` on the handoff
     nodes) falls back to the deterministic template alone when this
-    returns an empty string.
+    returns an empty string. Short-circuits (no network attempt at all)
+    when no Nova/Bedrock credential is configured (code-review fix: a
+    fully unconfigured deployment must not pay a real connection/DNS
+    attempt — up to ``timeout_seconds`` — on every single PR; see
+    :func:`_has_nova_credentials`).
 
     Args:
         context: The deterministic PR body text already assembled by the
@@ -423,10 +447,22 @@ async def summarize_pr_changes(
     Returns:
         The summary text (no heading — the caller supplies
         ``## Summary of changes``), or ``""`` on any exception, timeout,
-        or empty model response.
+        missing credentials, or empty model response.
     """
     log = logger or logging.getLogger(__name__)
-    resolved_profile = profile or NovaMechanicalProfile()
+    # code-review fix: DEV_LOOP_NOVA_MECHANICAL_MODEL was declared in
+    # conf.py but never actually consumed anywhere — wire it into the
+    # default profile here (an explicit `profile=` still wins, matching
+    # every other config-vs-explicit-override precedent in this feature).
+    resolved_profile = profile or NovaMechanicalProfile(
+        model=conf.DEV_LOOP_NOVA_MECHANICAL_MODEL
+    )
+    if not _has_nova_credentials():
+        log.debug(
+            "PR summary enrichment skipped — no Nova/Bedrock credential "
+            "configured (AWS_NOVA_API_KEY or AWS_ACCESS_KEY/AWS_SECRET_KEY)."
+        )
+        return ""
     try:
         client = NovaClient()
         async with asyncio.timeout(resolved_profile.timeout_seconds):

@@ -250,7 +250,21 @@ class TestUntouched:
 
 
 class TestSummarizePrChanges:
-    """Direct tests of the mechanical-seat helper itself."""
+    """Direct tests of the mechanical-seat helper itself.
+
+    All tests except ``TestCredentialShortCircuit`` explicitly configure a
+    Nova credential — regardless of what a developer's local ``.env``
+    happens to have set — so the mocked-``NovaClient`` path is
+    deterministically exercised (code-review fix: ``summarize_pr_changes``
+    now short-circuits before ever constructing a client when no
+    credential is configured).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _configure_nova_credential(self, monkeypatch):
+        from parrot import conf
+
+        monkeypatch.setattr(conf, "AWS_NOVA_API_KEY", "ABSK-test-key")
 
     async def test_ask_called_without_tools(self, monkeypatch):
         fake_ask = AsyncMock(
@@ -262,6 +276,22 @@ class TestSummarizePrChanges:
         assert result == "- a bullet"
         kwargs = fake_ask.await_args.kwargs
         assert kwargs.get("use_tools") is False
+
+    async def test_default_profile_uses_configured_mechanical_model(self, monkeypatch):
+        """Code-review fix: DEV_LOOP_NOVA_MECHANICAL_MODEL must actually be
+        consumed by the default profile, not just declared in conf.py."""
+        from parrot import conf
+
+        monkeypatch.setattr(
+            conf, "DEV_LOOP_NOVA_MECHANICAL_MODEL", "us.anthropic.claude-haiku-9000"
+        )
+        fake_ask = AsyncMock(return_value=type("M", (), {"output": "- ok"})())
+        fake_client = type("C", (), {"ask": fake_ask})()
+        _patch_nova_client(monkeypatch, lambda: fake_client)
+
+        await summarize_pr_changes("some context")
+
+        assert fake_ask.await_args.kwargs.get("model") == "us.anthropic.claude-haiku-9000"
 
     async def test_client_exception_returns_empty_string(self, monkeypatch, caplog):
         def _raise():
@@ -293,3 +323,55 @@ class TestSummarizePrChanges:
         _patch_nova_client(monkeypatch, lambda: fake_client)
         result = await summarize_pr_changes("some context")
         assert result == ""
+
+
+class TestCredentialShortCircuit:
+    """Code-review fix: no credential configured -> no network attempt at
+    all (not even a NovaClient() construction), not just an eventual
+    fallback after a real connection/DNS attempt."""
+
+    async def test_no_credentials_skips_without_constructing_client(self, monkeypatch):
+        from parrot import conf
+
+        monkeypatch.setattr(conf, "AWS_NOVA_API_KEY", None)
+        monkeypatch.setattr(conf, "AWS_ACCESS_KEY", None)
+        monkeypatch.setattr(conf, "AWS_SECRET_KEY", None)
+
+        client_constructed = False
+
+        def _spy_client():
+            nonlocal client_constructed
+            client_constructed = True
+            raise AssertionError("NovaClient must not be constructed at all")
+
+        _patch_nova_client(monkeypatch, _spy_client)
+
+        result = await summarize_pr_changes("some context")
+        assert result == ""
+        assert client_constructed is False
+
+    async def test_bedrock_api_key_alone_is_sufficient(self, monkeypatch):
+        from parrot import conf
+
+        monkeypatch.setattr(conf, "AWS_NOVA_API_KEY", "ABSK-test-key")
+        monkeypatch.setattr(conf, "AWS_ACCESS_KEY", None)
+        monkeypatch.setattr(conf, "AWS_SECRET_KEY", None)
+        fake_ask = AsyncMock(return_value=type("M", (), {"output": "- ok"})())
+        fake_client = type("C", (), {"ask": fake_ask})()
+        _patch_nova_client(monkeypatch, lambda: fake_client)
+
+        result = await summarize_pr_changes("some context")
+        assert result == "- ok"
+
+    async def test_access_secret_keypair_alone_is_sufficient(self, monkeypatch):
+        from parrot import conf
+
+        monkeypatch.setattr(conf, "AWS_NOVA_API_KEY", None)
+        monkeypatch.setattr(conf, "AWS_ACCESS_KEY", "AKIA...")
+        monkeypatch.setattr(conf, "AWS_SECRET_KEY", "secret")
+        fake_ask = AsyncMock(return_value=type("M", (), {"output": "- ok"})())
+        fake_client = type("C", (), {"ask": fake_ask})()
+        _patch_nova_client(monkeypatch, lambda: fake_client)
+
+        result = await summarize_pr_changes("some context")
+        assert result == "- ok"
