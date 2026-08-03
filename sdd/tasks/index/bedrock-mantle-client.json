@@ -52,7 +52,7 @@
       "feature_id": "FEAT-407",
       "feature": "bedrock-mantle-client",
       "spec": "sdd/specs/bedrock-mantle-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Tests the package export and factory keys delivered by TASK-2097/2098 — strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-08-03T11:33:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2099-tests-and-docs.md"
+      "completed_at": "2026-08-03T11:41:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2099-tests-and-docs.md"
     }
   ]
 }
