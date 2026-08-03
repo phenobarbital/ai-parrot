@@ -110,7 +110,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -120,8 +120,8 @@
       "parallelism_notes": "Unreachable in production until TASK-2104 declares toolConfiguration. Uses the _TurnState pending-tool fields declared by TASK-2102 and edits the same receive loop. Also updates test_nova.py::test_stream_voice_tool_use.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2105-tool-result-envelope.md"
+      "completed_at": "2026-08-03T20:24:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2105-tool-result-envelope.md"
     },
     {
       "id": "TASK-2106",
