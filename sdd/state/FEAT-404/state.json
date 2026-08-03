@@ -15,7 +15,7 @@
   },
   "mode": "auto",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -72,7 +72,7 @@
       "started_at": "2026-08-03T00:28:00Z",
       "completed_at": "2026-08-03T00:30:00Z",
       "proposal_path": "sdd/proposals/bedrock-per-round-token.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "aedab44abb8222bd07eec2a08b29636aa6f01ba1",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization and mechanism are high-confidence and the implementation is a verified single-site replication of an established four-part pattern with no architectural fork to explore."
     }
