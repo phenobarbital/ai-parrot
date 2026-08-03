@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-408
 **Date**: 2026-08-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.25.31
 
 ---
