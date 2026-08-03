@@ -29,6 +29,7 @@ from typing import Any, Dict, Optional, Union
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.dev_loop.dispatchers.nova import summarize_pr_changes
 from parrot.flows.dev_loop.models import (
     BugBrief,
     DevelopmentOutput,
@@ -143,7 +144,7 @@ class DeploymentHandoffNode(DevLoopNode):
 
         # 2. Open PR with retry-once.
         title = self._build_title(brief, research)
-        body = self._build_body(research, dev_out, qa_report)
+        body = await self._build_body_async(research, dev_out, qa_report)
         pr_url: Optional[str] = None
         last_error: Optional[str] = None
         for attempt in range(2):
@@ -469,6 +470,34 @@ class DeploymentHandoffNode(DevLoopNode):
     # ------------------------------------------------------------------
     # Internal — copy
     # ------------------------------------------------------------------
+
+    async def _build_body_async(
+        self,
+        research: ResearchOutput,
+        dev_out: Optional[DevelopmentOutput],
+        qa_report: Optional[QAReport],
+    ) -> str:
+        """``_build_body()`` plus an optional Haiku "Summary of changes"
+        section (FEAT-405 Module 8, [R2] "enrich, never replace").
+
+        The deterministic template is always computed first and is the
+        exact fallback: any enrichment failure, timeout, or empty
+        response returns it byte-identical to the pre-FEAT-405 output.
+        Belt-and-suspenders: ``summarize_pr_changes`` itself never raises,
+        but this call site also swallows — PR creation must never break
+        because of the mechanical seat.
+        """
+        body = self._build_body(research, dev_out, qa_report)
+        try:
+            summary = await summarize_pr_changes(body, logger=self.logger)
+        except Exception:  # noqa: BLE001 - enrichment must never break handoff
+            self.logger.warning(
+                "PR summary enrichment failed; using template only.", exc_info=True
+            )
+            summary = ""
+        if not summary:
+            return body
+        return f"{body}\n\n## Summary of changes\n\n{summary}\n"
 
     @staticmethod
     def _build_title(brief: BugBrief, research: ResearchOutput) -> str:

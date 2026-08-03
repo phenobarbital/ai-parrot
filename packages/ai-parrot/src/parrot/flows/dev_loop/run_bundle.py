@@ -368,7 +368,7 @@ def _format_tokens(input_tokens: Optional[int], output_tokens: Optional[int]) ->
     return f"{input_tokens or 0} in / {output_tokens or 0} out"
 
 
-def render_markdown(bundle: RunBundle) -> str:
+def render_markdown(bundle: RunBundle, usage_markdown: str = "") -> str:
     """Render *bundle* as the human-readable markdown closing report.
 
     Omits empty sections (e.g. no gates were opened, no code-review
@@ -376,6 +376,15 @@ def render_markdown(bundle: RunBundle) -> str:
 
     Args:
         bundle: The assembled :class:`RunBundle`.
+        usage_markdown: FEAT-405 Module 7 — an optional, already-rendered
+            per-agent usage section (from
+            :func:`~parrot.flows.dev_loop.usage_report.render_usage_markdown`),
+            spliced in verbatim after the agents table. Passed as a
+            pre-rendered string rather than importing
+            :mod:`~parrot.flows.dev_loop.usage_report` here — that module
+            imports helpers from this one, and this keeps the dependency
+            one-directional. Empty string (default) omits the section
+            entirely — byte-identical to pre-FEAT-405 output.
 
     Returns:
         The complete markdown document.
@@ -415,6 +424,11 @@ def render_markdown(bundle: RunBundle) -> str:
                 f"| {_format_tokens(n.input_tokens, n.output_tokens)} "
                 f"| {_format_cost(n.total_cost_usd)} |"
             )
+        lines.append("")
+
+    # -- per-agent usage (FEAT-405 Module 7) --
+    if usage_markdown:
+        lines.append(usage_markdown.rstrip("\n"))
         lines.append("")
 
     # -- gate audit --

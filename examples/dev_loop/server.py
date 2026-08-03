@@ -268,6 +268,75 @@ def _build_codex_adversarial_reviewer(codex_dispatcher: CodexCodeDispatcher) -> 
     )
 
 
+def _build_nova_adversarial_reviewer() -> object:
+    """Build the ``nova-adversarial`` reviewer (FEAT-405 Module 5).
+
+    Mirrors :func:`_build_codex_adversarial_reviewer`'s scope-misconfiguration
+    guards (fail loudly at startup rather than let a foreseeable
+    misconfiguration degrade to a silent unreviewed pass), but needs no
+    underlying CLI dispatcher — ``NovaAdversarialReviewDispatcher`` drives
+    ``NovaClient.ask()`` directly.
+
+    Returns:
+        The registered ``nova-adversarial`` reviewer.
+
+    Raises:
+        RuntimeError: Same conditions as
+            :func:`_build_codex_adversarial_reviewer`.
+    """
+    scope = conf.DEV_LOOP_ADVERSARIAL_SCOPE.strip().lower()
+    if scope == "commit":
+        raise RuntimeError(
+            "DEV_LOOP_ADVERSARIAL_SCOPE='commit' is not supported by this "
+            "server's static reviewer wiring — a commit SHA is inherently "
+            "per-run, not a persistent setting. Use 'uncommitted' (default) "
+            "or 'base' with DEV_LOOP_ADVERSARIAL_BASE_REF set, or drive "
+            "'commit' scope via a programmatic "
+            "NovaAdversarialReviewDispatcher(review_scope='commit', "
+            "review_commit=<sha>) construction outside this bootstrap."
+        )
+    if scope == "base" and not conf.DEV_LOOP_ADVERSARIAL_BASE_REF:
+        raise RuntimeError(
+            "DEV_LOOP_ADVERSARIAL_SCOPE='base' requires "
+            "DEV_LOOP_ADVERSARIAL_BASE_REF to be set (e.g. 'dev' or "
+            "'origin/main') — otherwise every adversarial review would "
+            "silently degrade to an unreviewed pass."
+        )
+    return CodeReviewDispatcherFactory.create(
+        "nova-adversarial",
+        model=conf.DEV_LOOP_NOVA_REVIEW_MODEL,
+        review_scope=conf.DEV_LOOP_ADVERSARIAL_SCOPE,
+        review_base=conf.DEV_LOOP_ADVERSARIAL_BASE_REF if scope == "base" else "",
+    )
+
+
+def _build_adversarial_reviewer(
+    codex_dispatcher: CodexCodeDispatcher,
+) -> tuple[object, str]:
+    """Build the adversarial reviewer for whichever backend is configured.
+
+    FEAT-405 Module 5: ``DEV_LOOP_ADVERSARIAL_BACKEND`` (resolved via
+    :func:`llm_catalog.resolve_adversarial_backend`) selects ``codex``
+    (default — [R3]: unset config is byte-identical to before FEAT-405) or
+    ``nova``. Renamed/generalized from the FEAT-375 codex-only adversarial
+    builder to make the backend selectable, per spec §5 "The adversarial
+    reviewer is selectable over {codex, nova}".
+
+    Args:
+        codex_dispatcher: The (possibly shared) ``CodexCodeDispatcher`` —
+            only actually used when the resolved backend is ``codex``.
+
+    Returns:
+        A ``(reviewer, agent_key)`` pair; ``agent_key`` is the
+        ``CodeReviewDispatcherFactory`` registration name of whichever
+        reviewer was actually built (``"codex-adversarial"`` or
+        ``"nova-adversarial"``).
+    """
+    if llm_catalog.resolve_adversarial_backend() == "nova":
+        return _build_nova_adversarial_reviewer(), "nova-adversarial"
+    return _build_codex_adversarial_reviewer(codex_dispatcher), "codex-adversarial"
+
+
 def _ensure_adversarial_judge(judges: list[JudgeSpec]) -> list[JudgeSpec]:
     """Guarantee a Codex seat in a feature-mode judge panel.
 
@@ -397,12 +466,18 @@ def _resolve_codereview_dispatcher(
 
     **Adversarial review is not optional in this server.** Of the five
     registered reviewers only ``codex-adversarial`` and ``parallel``
-    involve the Codex ``sdd-secondopinion`` seat; the three single-agent
-    reviewers (``claude-code``/``codex``/``gemini``) do not. Rather than
-    reject those three — which would make the common default
+    involve an adversarial seat; the three single-agent reviewers
+    (``claude-code``/``codex``/``gemini``) do not. Rather than reject
+    those three — which would make the common default
     (``DEV_LOOP_CODEREVIEW_AGENT=claude-code``) un-runnable — this
     function *upgrades* them: the configured agent stays the write-enabled
     primary, and a ``parallel`` reviewer pairs it with the adversary.
+
+    FEAT-405 Module 5: the adversary itself is now backend-selectable
+    (``DEV_LOOP_ADVERSARIAL_BACKEND`` — ``codex`` default or ``nova``, via
+    :func:`_build_adversarial_reviewer`); the ``DEV_LOOP_CODEREVIEW_AGENT``
+    mode string ``"codex-adversarial"`` still selects "advisory-only mode"
+    regardless of which backend serves it (unchanged surface, [R3]).
 
     Args:
         dispatcher: The shared ``ClaudeCodeDispatcher``.
@@ -418,19 +493,19 @@ def _resolve_codereview_dispatcher(
     Raises:
         RuntimeError: If ``DEV_LOOP_CODEREVIEW_AGENT`` is unknown, or the
             adversarial scope is misconfigured (see
-            :func:`_build_codex_adversarial_reviewer`).
+            :func:`_build_adversarial_reviewer`).
     """
     configured = conf.config.get(
         "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
     ).strip().lower()
 
-    adversary = _build_codex_adversarial_reviewer(
+    adversary, adversary_key = _build_adversarial_reviewer(
         _codex_dispatcher_for(development_dispatcher, redis_url)
     )
 
     if configured == "codex-adversarial":
         # Advisory-only review: already adversarial, nothing to upgrade.
-        return adversary, "codex-adversarial"
+        return adversary, adversary_key
 
     primary_agent = "claude-code" if configured == "parallel" else configured
     primary = _build_primary_reviewer(
@@ -442,11 +517,11 @@ def _resolve_codereview_dispatcher(
     if configured != "parallel":
         logger.warning(
             "DEV_LOOP_CODEREVIEW_AGENT=%r has no adversarial perspective — "
-            "upgrading to the 'parallel' reviewer (primary=%s + "
-            "codex-adversarial). Adversarial review is not optional in this "
-            "server.",
+            "upgrading to the 'parallel' reviewer (primary=%s + %s). "
+            "Adversarial review is not optional in this server.",
             configured,
             primary_agent,
+            adversary_key,
         )
     return (
         CodeReviewDispatcherFactory.create(

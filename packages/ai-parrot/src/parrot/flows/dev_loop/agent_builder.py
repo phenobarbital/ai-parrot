@@ -51,6 +51,8 @@ from parrot.flows.dev_loop import (
     LLMCodeDispatchProfile,
     MoonshotCodeDispatcher,
     MoonshotCodeDispatchProfile,
+    NovaCodeDispatcher,
+    NovaCodeDispatchProfile,
     ZaiCodeDispatcher,
     ZaiCodeDispatchProfile,
 )
@@ -204,6 +206,14 @@ def build_dispatcher(
         dispatcher = GoogleCodingDispatcher(**common)
         profile = GoogleCodingDispatchProfile(
             model=spec.model or config_getter("DEV_LOOP_GOOGLE_CODING_MODEL", "auto")
+        )
+        return dispatcher, profile
+
+    if spec.agent == "nova":
+        dispatcher = NovaCodeDispatcher(**common)
+        profile = NovaCodeDispatchProfile(
+            model=spec.model
+            or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5")
         )
         return dispatcher, profile
 

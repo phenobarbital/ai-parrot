@@ -311,10 +311,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: In `LLMCodeDispatcher._dispatch_loop`, wrapped the turn loop in
+`tc = self._safe_emit_before_call(client, ...)` / `try: ... finally: await
+self._safe_emit_after_call(client, tc, ...)`, calling
+`self._safe_emit_round_event(client, tc, ..., round_number=turn_index + 1,
+...)` immediately after each `_chat_completion` call (before any content/
+tool-call handling), using the turn's own `duration_ms` and
+`self._extract_usage(response)` (new static helper extracting
+`CompletionUsage.from_openai(response.usage)` + a JSON-safe `raw_usage`
+dict, returning `(None, None)` when the response has no `usage`, never
+raising). Added three `_safe_emit_*` guarded wrapper methods (existence/
+`callable()` checks only, mirroring `_chat_completion`'s own guard) so a
+client lacking the emitter trio degrades to a silent no-op rather than
+breaking dispatch. Applies to every `LLMCodeDispatcher` subclass
+automatically (moonshot/zai/grok/nova) since none of them override
+`_dispatch_loop` — satisfies [R8] "all backends from day one" without
+touching those files. No accumulation anywhere (verified via
+`test_source_contains_no_summing`, which greps the diff for
+`total_usage`/`_accumulated_usage`). 10 new unit tests in
+`test_dispatch_round_events.py`, using a real `AbstractClient` subclass
+(mirroring `test_client_lifecycle.py`'s `_StubClient` pattern) so the
+genuine FEAT-397 emitter trio + `has_subscribers` short-circuit are
+exercised, not a hand-rolled fake — all pass. Ran
+`test_dispatcher.py`/`test_dispatch_telemetry.py`/`test_llm_code_dispatcher.py`/
+`test_grok_code_dispatcher.py`/`test_zai_code_dispatcher.py` (53 passed) and
+the full `tests/flows/dev_loop/` suite (936 passed, same 2 pre-existing
+unrelated failures verified via `git stash -u`, identical to
+TASK-2086/2087/2088). `ruff check`: fixed my own new lines' import-order and
+one quoted-annotation finding; the remaining 8 new UP006/UP045/UP035
+findings on my other new lines match `llm.py`'s own established
+(un-migrated) typing-style convention throughout the rest of this hot file
+— not touched, per the spec's explicit "keep the diff minimal" instruction
+for this file. No new mypy errors.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

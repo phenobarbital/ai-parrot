@@ -276,10 +276,45 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Added `NovaAdversarialReviewDispatcher` to `dispatchers/nova.py`,
+registered `@CodeReviewDispatcherFactory.register("nova-adversarial")`,
+`agent_name = "nova-adversarial"`, `advisory = True`. `__init__` takes only
+optional kwargs (no `dispatcher=` — there is no underlying
+`DevLoopCodeDispatcher` to wrap) and builds its own `NovaClient()` (or
+accepts an injected `client=` for tests). `review()` does NOT call
+`super().review()` (no dispatcher to delegate to); it drives
+`_collect_diff()` (an `asyncio.create_subprocess_exec("git", "diff"/"show",
+...)` helper keyed on `review_scope`, truncated via `_truncate_diff` at
+`max_diff_chars` with an explicit marker) + `_build_prompt()`, then one
+`NovaClient.ask(..., use_tools=False, structured_output=CodeReviewVerdict)`
+call — no `tools` kwarg passed at all. Reproduces the ABC's
+degrade-on-infra-error contract locally (any exception — diff collection,
+the Bedrock call, or a non-`CodeReviewVerdict` structured-output result —
+degrades to a passing verdict with a nit finding). Post-dispatch hardening
+mirrors `CodexAdversarialReviewDispatcher`: `files_modified` forced to `[]`,
+every finding tagged `AdversarialFinding(source="nova-adversarial")` unless
+already an `AdversarialFinding`. Added `conf.DEV_LOOP_NOVA_REVIEW_MODEL`
+(fallback `"us.anthropic.claude-opus-5"`). Exported from
+`dispatchers/__init__.py`. 12 new unit tests in `test_nova_adversarial.py`
+(own design — the task's own Test Specification scaffold used `...`
+placeholders and omitted the mocking needed to make `TestHardington`/
+`TestDegradeOnError` meaningfully assert without live AWS calls; my tests
+cover every acceptance-criteria bullet with explicit mocks of `_client.ask`).
+All pass; ran the full `tests/flows/dev_loop/` suite (912 passed, 6 skipped)
+— the 2 failures present are pre-existing and reproduce identically on `git
+stash -u` (verified before/after): `test_lazy_import.py::test_models_module_is_pure`
+(order-dependent, passes in isolation) and
+`test_qa_codereview.py::test_review_brief_carries_deterministic_qa_results`
+(fails identically without this task's changes). No new mypy errors beyond
+the pre-existing `LLMCodeDispatcher` override pattern already noted in
+TASK-2086. Verified the `code_review.py` <-> `dispatchers/nova.py` import
+does NOT create a circular-import failure: traced the actual import order
+(`code_review.py`'s own `from ...dispatchers import (Google/Claude/Codex/
+Gemini)Dispatcher` line resolves before `dispatchers/__init__.py` reaches
+the `nova` import), then empirically confirmed with `python -c "import
+parrot.flows.dev_loop.code_review"` / `dispatchers` / `dev_loop` — all
+three exit 0.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

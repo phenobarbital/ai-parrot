@@ -241,10 +241,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Created `dev_loop/models/nova.py` with `NovaCodeDispatchProfile`
+(subclasses `LLMCodeDispatchProfile`, `_sync_llm_with_model` validator mirroring
+`MoonshotCodeDispatchProfile`, default `model="minimax.minimax-m2.5"`,
+`llm="nova:minimax.minimax-m2.5"`), `NovaAdversarialReviewProfile` (fresh
+`BaseModel`, default `model="us.anthropic.claude-opus-5"`, no tool fields),
+and `NovaMechanicalProfile` (fresh `BaseModel`, default
+`model="us.anthropic.claude-haiku-4-5-20251001-v1:0"`). Exported all three
+from `models/__init__.py` (import + `__all__`). 18 unit tests in
+`test_nova_profiles.py`, all pass; `ruff check` clean; no new mypy errors.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
