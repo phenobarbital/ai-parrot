@@ -340,6 +340,31 @@ class NovaAudio:
     # Voice streaming
     # ------------------------------------------------------------------
 
+    def _build_prompt_start(self, prompt_name: str, voice_id: str) -> Dict[str, Any]:
+        """Build the promptStart event frame for a voice turn.
+
+        Args:
+            prompt_name: Per-turn prompt identifier.
+            voice_id: Resolved Nova Sonic synthesis voice.
+
+        Returns:
+            The complete ``promptStart`` event frame.
+        """
+        return {"event": {"promptStart": {
+            "promptName": prompt_name,
+            "textOutputConfiguration": {"mediaType": "text/plain"},
+            "audioOutputConfiguration": {
+                "mediaType": "audio/lpcm",
+                "sampleRateHertz": self.OUTPUT_SAMPLE_RATE_HZ,
+                "sampleSizeBits": 16,
+                "channelCount": 1,
+                "voiceId": voice_id,
+                "encoding": "base64",
+                "audioType": "SPEECH",
+            },
+            "toolUseOutputConfiguration": {"mediaType": "application/json"},
+        }}}
+
     async def stream_voice(
         self,
         audio_iterator: AsyncIterator[bytes],
@@ -409,22 +434,15 @@ class NovaAudio:
         await self._send_event(stream, {"event": {"sessionStart": {
             "inferenceConfiguration": {"maxTokens": 1024, "topP": 0.9, "temperature": 0.7}
         }}})
-        await self._send_event(stream, {"event": {"promptStart": {
-            "promptName": prompt_name,
-            "textOutputConfiguration": {"mediaType": "text/plain"},
-            "audioOutputConfiguration": {
-                "mediaType": "audio/lpcm",
-                "sampleRateHertz": self.OUTPUT_SAMPLE_RATE_HZ,
-                "sampleSizeBits": 16,
-                "channelCount": 1,
-                "voiceId": resolved_voice_id,
-                "encoding": "base64",
-            },
-        }}})
+        await self._send_event(
+            stream, self._build_prompt_start(prompt_name, resolved_voice_id)
+        )
         if system_prompt:
             await self._send_event(stream, {"event": {"contentStart": {
                 "promptName": prompt_name, "contentName": f"{content_name}-sys",
                 "type": "TEXT", "role": "SYSTEM",
+                "interactive": False,
+                "textInputConfiguration": {"mediaType": "text/plain"},
             }}})
             await self._send_event(stream, {"event": {"textInput": {
                 "promptName": prompt_name, "contentName": f"{content_name}-sys",
@@ -437,12 +455,14 @@ class NovaAudio:
         await self._send_event(stream, {"event": {"contentStart": {
             "promptName": prompt_name, "contentName": content_name,
             "type": "AUDIO", "role": "USER",
+            "interactive": True,
             "audioInputConfiguration": {
                 "mediaType": "audio/lpcm",
                 "sampleRateHertz": self.INPUT_SAMPLE_RATE_HZ,
                 "sampleSizeBits": 16,
                 "channelCount": 1,
                 "encoding": "base64",
+                "audioType": "SPEECH",
             },
         }}})
 
