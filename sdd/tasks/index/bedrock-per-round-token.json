@@ -32,7 +32,7 @@
       "feature_id": "FEAT-404",
       "feature": "bedrock-per-round-token",
       "spec": "sdd/specs/bedrock-per-round-token.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Same file as TASK-2094 (clients/bedrock.py) and mirrors its post-change ask() as the reference implementation; must follow it.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:54:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2095-bedrock-resume-lifecycle-span.md"
+      "completed_at": "2026-08-03T02:01:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2095-bedrock-resume-lifecycle-span.md"
     },
     {
       "id": "TASK-2096",

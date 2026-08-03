@@ -202,10 +202,26 @@ pytest packages/ai-parrot/tests/unit/clients/ -v
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Re-verified `resume()`'s line numbers post-TASK-2094 shift (now
+at `bedrock.py:1072`). Added the full call-level lifecycle span
+(`_emit_before_call` after `tool_specs` prep / `_emit_after_call` before
+return, mirroring `ask()`'s 659-667/852-861) plus the same four-part
+per-round idiom as TASK-2094 applied to the `resume()` loop (no fallback
+branch, per spec — none added). `AIMessageFactory.from_bedrock`'s return is
+now captured into a local `ai_message`, its `.usage` overridden with the
+accumulated total, `extra_usage["rounds"]` stamped only when > 1, and
+`_emit_after_call` awaited before returning. Documented the deliberate U2
+asymmetry (Bedrock/Nova `resume()` now has telemetry the five reference
+clients' `resume()` lacks) directly in the docstring. Preserved the
+FEAT-302 copy-not-alias of `state["messages"]` untouched. Full unit suite
+green: `pytest packages/ai-parrot/tests/unit/clients/ -v` plus the Bedrock
+client suites (`test_bedrock_integration.py`, `test_bedrock_converse.py`
+— including `test_resume` and `test_resume_does_not_mutate_caller_state`,
+`test_bedrock_advanced.py`, `test_bedrock_errors.py`) — 90 passed. Nova
+suites (`test_nova.py`, `test_nova_client.py`, `test_factory_nova.py`,
+including `test_resume_inherited_is_functional_not_notimplemented`) — 36
+passed, 1 skipped (live-call test, pre-existing skip).
 
 **Deviations from spec**: none
