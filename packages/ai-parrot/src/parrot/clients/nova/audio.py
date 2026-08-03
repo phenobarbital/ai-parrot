@@ -217,6 +217,31 @@ def _parse_tool_arguments(raw: Any) -> Dict[str, Any]:
     return parsed
 
 
+# Candidate key spellings, most-likely first. The Pre-Alpha samples do not
+# document usageEvent's schema (spec §8 Q1), so probe rather than assume.
+_USAGE_INPUT_KEYS = ("inputTokens", "promptTokens", "input_tokens")
+_USAGE_OUTPUT_KEYS = ("outputTokens", "completionTokens", "output_tokens")
+_USAGE_TOTAL_KEYS = ("totalTokens", "total_tokens")
+
+
+def _first_int(source: Dict[str, Any], keys: tuple) -> Optional[int]:
+    """Return the first key present in *source* whose value is an int.
+
+    Args:
+        source: The (possibly flattened) usageEvent frame.
+        keys: Candidate key spellings to probe, most-likely first.
+
+    Returns:
+        The first matching value coerced to ``int``, or ``None`` when no
+        candidate key is present with a numeric value.
+    """
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, (int, float)):
+            return int(value)
+    return None
+
+
 class NovaAudio:
     """Bidirectional voice-streaming mixin (Nova Sonic / Nova 2 Sonic).
 
@@ -730,6 +755,30 @@ class NovaAudio:
                         turn_id=turn_id,
                         user_id=user_id,
                     )
+
+                usage_event = event.get("usageEvent")
+                if usage_event:
+                    # Nova may nest the counts under a "details"/"totals"
+                    # sub-object; flatten one level so both shapes work.
+                    flat = {**usage_event}
+                    for nested_key in ("details", "totals", "usage"):
+                        nested = usage_event.get(nested_key)
+                        if isinstance(nested, dict):
+                            flat.update(nested)
+                    if (value := _first_int(flat, _USAGE_INPUT_KEYS)) is not None:
+                        usage.prompt_tokens = value
+                    if (value := _first_int(flat, _USAGE_OUTPUT_KEYS)) is not None:
+                        usage.completion_tokens = value
+                    total = _first_int(flat, _USAGE_TOTAL_KEYS)
+                    usage.total_tokens = (
+                        total if total is not None
+                        else usage.prompt_tokens + usage.completion_tokens
+                    )
+                    # Keep the raw frame so the shape can be inspected from a
+                    # real session (spec §8 Q1).
+                    usage.extra["usage_event"] = usage_event
+                    self.logger.debug("Nova Sonic usageEvent: %s", usage_event)
+                    continue
 
                 tool_use = event.get("toolUse")
                 if tool_use:
