@@ -134,7 +134,7 @@
       "feature_id": "FEAT-405",
       "feature": "novaclient-dev-loop",
       "spec": "sdd/specs/novaclient-dev-loop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -142,8 +142,8 @@
       "parallelism_notes": "Fully independent of the Nova work — touches only dispatchers/llm.py, which no other task modifies. This plus TASK-2090/2091 form the one genuinely detachable chain if a second worktree is ever wanted.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:53:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2089-dispatcher-round-events.md"
+      "completed_at": "2026-08-03T02:48:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2089-dispatcher-round-events.md"
     },
     {
       "id": "TASK-2090",
