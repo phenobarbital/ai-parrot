@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-404 — Bedrock/Nova Per-Round Token Usage Observability
 **Spec**: `sdd/specs/bedrock-per-round-token.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2094, TASK-2095
@@ -216,10 +216,35 @@ at minimum the 11 unit tests named there.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Created
+`packages/ai-parrot/tests/unit/clients/test_bedrock_multiround_usage.py`
+mirroring `test_claude_multiround_usage.py`'s structure, mocking the
+`_sdk_create` seam with Converse-shaped dicts (`_tool_round`/`_final_round`
+helpers). 14 tests total (11 required by spec §4 plus 3 supplementary:
+a combined fallback+tool-round attribution case, a resume() single-round
+no-op, and an explicit BedrockConverseClient `client_name` assertion
+alongside the Nova one). Covers `ask()`: multiround accumulation, per-round
+events (1-indexed, tool names, token fields), rounds-stamp-only-when->1,
+summed cache counters (asserted with distinct per-round values — 10/20/30
+sum vs. 30 last-round-wins — so a right-hand-wins regression cannot pass),
+single-round no-op, no-usage-round None fields, fallback retry attribution
+(both bare and combined with a subsequent tool round), and no-subscriber
+short-circuit (implicit — no subscribers are registered and the loop
+still completes without error). Covers `resume()`: lifecycle span
+(`BeforeClientCallEvent`/`AfterClientCallEvent`), multiround accumulation +
+events + rounds stamp + summed cache counters, and single-round no-op.
+Nova inheritance test asserts `client_name == "nova"` through the same
+mocked loop via `NovaClient()`; a parallel test pins
+`"bedrock-converse"` for `BedrockConverseClient`. All 14 new tests pass;
+full `pytest packages/ai-parrot/tests/unit/clients/ -v` green (58 passed,
+44 pre-existing + 14 new). `ruff check` on the new test file passes clean
+(nested `with patch.object(...)` blocks combined into single `with ... , ...:`
+statements per SIM117 to keep the new file lint-clean, since — unlike
+`bedrock.py` — this is a from-scratch file with no pre-existing style debt
+to match).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — the 3 extra tests are additive coverage
+beyond the spec's minimum 11 and were not substitutions for anything
+listed.
