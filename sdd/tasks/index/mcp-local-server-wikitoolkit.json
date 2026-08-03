@@ -22,9 +22,8 @@
       "parallelism_notes": "Foundation task — all subsequent tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": "2026-08-03T11:16:57+00:00",
-      "file": "sdd/tasks/completed/TASK-2076-mcp-adapter-extraction.md",
-      "verification": "verified"
+      "completed_at": "2026-08-02T23:58:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2076-mcp-adapter-extraction.md"
     },
     {
       "id": "TASK-2077",

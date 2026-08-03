@@ -262,6 +262,73 @@ def _install_permissions(root: Path) -> list[str]:
     return actions
 
 
+def _install_mcp_json(root: Path) -> str:
+    """Write/refresh the wikitoolkit entry in the project's .mcp.json.
+
+    ``.mcp.json`` lives at the project root (NOT inside ``.claude/``) and
+    may already carry entries for other MCP servers — only the
+    ``wikitoolkit`` key is ever touched here.
+    """
+    path = root / ".mcp.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+    else:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = data["mcpServers"] = {}
+    if servers.get("wikitoolkit") == assets.MCP_JSON_ENTRY:
+        return ".mcp.json — wikitoolkit entry already current"
+
+    action = (
+        ".mcp.json — wikitoolkit entry updated"
+        if "wikitoolkit" in servers
+        else ".mcp.json — wikitoolkit entry added"
+    )
+    servers["wikitoolkit"] = assets.MCP_JSON_ENTRY
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return action
+
+
+def _uninstall_mcp_json(root: Path) -> str | None:
+    """Remove the wikitoolkit entry from .mcp.json.
+
+    Preserves any other MCP server entries; removes the file entirely
+    only when it becomes empty. Returns ``None`` (nothing to report) when
+    the file is absent or already carries no wikitoolkit entry — mirrors
+    every other uninstall step in this module, which only appends to
+    ``actions`` when something was actually removed.
+    """
+    path = root / ".mcp.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ".mcp.json — could not parse, skipping"
+    if not isinstance(data, dict):
+        return None
+
+    servers = data.get("mcpServers", {})
+    if not isinstance(servers, dict) or "wikitoolkit" not in servers:
+        return None
+
+    del servers["wikitoolkit"]
+    if not servers:
+        data.pop("mcpServers", None)
+    if not data:
+        path.unlink()
+        return ".mcp.json — removed (was empty)"
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return ".mcp.json — wikitoolkit entry removed"
+
+
 def _install_slash_command(root: Path) -> str:
     """Write the /parrotwiki slash command file."""
     path = root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
@@ -423,6 +490,7 @@ def install_claude_integration(
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
     actions.extend(_install_permissions(root))
+    actions.append(_install_mcp_json(root))
     actions.append(_install_slash_command(root))
     if git_hook:
         actions.append(_install_git_hook(root))
@@ -533,6 +601,10 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                     "permissions removed"
                 )
 
+    mcp_json_action = _uninstall_mcp_json(root)
+    if mcp_json_action:
+        actions.append(mcp_json_action)
+
     command_path = root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
     if command_path.exists():
         command_path.unlink()
@@ -617,6 +689,16 @@ def integration_status(root: Path) -> dict[str, Any]:
         in git_hook_file.read_text(encoding="utf-8")
     )
 
+    mcp_json_path = root / ".mcp.json"
+    mcp_json_installed = False
+    if mcp_json_path.exists():
+        try:
+            mcp_data = json.loads(mcp_json_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            mcp_data = None
+        if isinstance(mcp_data, dict):
+            mcp_json_installed = "wikitoolkit" in mcp_data.get("mcpServers", {})
+
     return {
         "root": str(root),
         "config": config_path(root).exists(),
@@ -628,4 +710,5 @@ def integration_status(root: Path) -> dict[str, Any]:
             root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
         ).exists(),
         "git_post_commit_hook": git_hook_installed,
+        "mcp_json": mcp_json_installed,
     }

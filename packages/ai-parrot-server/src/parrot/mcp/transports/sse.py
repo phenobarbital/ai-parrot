@@ -8,7 +8,7 @@ from aiohttp import web
 import aiohttp
 from aiohttp_sse_client import client as sse_client
 from parrot.mcp.config import MCPServerConfig
-from parrot.mcp.transports.base import MCPServerBase
+from parrot.mcp.transports.base import RemoteMCPServerBase
 from parrot.mcp.oauth_server import OAuthRoutesMixin
 from parrot.mcp.client import MCPClientConfig, MCPConnectionError
 from parrot.mcp.transports.http import HttpMCPSession
@@ -17,7 +17,7 @@ from parrot.mcp.transports.http import HttpMCPSession
 logging.getLogger("aiohttp_sse_client.client").setLevel(logging.WARNING)
 
 
-class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
+class SseMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
     """MCP server using SSE transport compatible with ChatGPT and OpenAI MCP clients."""
 
     def __init__(self, config: MCPServerConfig, parent_app: Optional[web.Application] = None):

@@ -286,7 +286,7 @@ def simple_tool():
 
 ## 5. Acceptance Criteria
 
-- [ ] `MCPToolAdapter` and `MCPResource` importable from `parrot.mcp.adapter` (core)
+- [ ] `MCPToolAdapter` importable from `parrot.mcp.adapter` and `MCPResource` importable from `parrot.mcp.resources` (both core; also re-exported from `parrot.mcp`)
 - [ ] `MCPServerBase`, `LocalServerConfig` importable from `parrot.mcp.server_base`
 - [ ] `LocalMCPServerBase`, `StdioMCPServer` importable from `parrot.mcp.local_server`
 - [ ] `StdioMCPServer` handles JSON-RPC initialize, tools/list, tools/call correctly
