@@ -70,7 +70,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Barge-in is observed on the textOutput frame, so it edits the same branch TASK-2102 restructures. Also updates test_nova.py::test_stream_voice_barge_in.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2103-barge-in-detection.md"
+      "completed_at": "2026-08-03T20:17:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2103-barge-in-detection.md"
     },
     {
       "id": "TASK-2104",
