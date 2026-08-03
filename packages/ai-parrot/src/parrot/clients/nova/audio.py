@@ -408,6 +408,33 @@ class NovaAudio:
     # Voice streaming
     # ------------------------------------------------------------------
 
+    def _build_tool_configuration(self) -> Optional[Dict[str, Any]]:
+        """Build Nova Sonic's toolConfiguration from the client's tools.
+
+        Returns:
+            ``{"tools": [{"toolSpec": {...}}, ...]}``, or None when the client
+            has no registered tools — in which case the caller must omit the
+            ``toolConfiguration`` key from ``promptStart`` entirely rather than
+            sending an empty list.
+        """
+        manager = getattr(self, "tool_manager", None)
+        if manager is None:
+            return None
+        specs = []
+        for tool in manager.all_tools():
+            try:
+                schema = tool.get_schema()
+            except Exception:            # a broken tool must not kill the turn
+                self.logger.warning("Skipping tool with unreadable schema: %r", tool)
+                continue
+            specs.append({"toolSpec": {
+                "name": schema.get("name", getattr(tool, "name", "unknown")),
+                "description": schema.get("description",
+                                          getattr(tool, "description", "")),
+                "inputSchema": {"json": schema.get("parameters", {})},
+            }})
+        return {"tools": specs} if specs else None
+
     def _build_prompt_start(self, prompt_name: str, voice_id: str) -> Dict[str, Any]:
         """Build the promptStart event frame for a voice turn.
 
@@ -418,7 +445,7 @@ class NovaAudio:
         Returns:
             The complete ``promptStart`` event frame.
         """
-        return {"event": {"promptStart": {
+        prompt_start: Dict[str, Any] = {
             "promptName": prompt_name,
             "textOutputConfiguration": {"mediaType": "text/plain"},
             "audioOutputConfiguration": {
@@ -431,7 +458,11 @@ class NovaAudio:
                 "audioType": "SPEECH",
             },
             "toolUseOutputConfiguration": {"mediaType": "application/json"},
-        }}}
+        }
+        tool_configuration = self._build_tool_configuration()
+        if tool_configuration is not None:
+            prompt_start["toolConfiguration"] = tool_configuration
+        return {"event": {"promptStart": prompt_start}}
 
     async def stream_voice(
         self,
