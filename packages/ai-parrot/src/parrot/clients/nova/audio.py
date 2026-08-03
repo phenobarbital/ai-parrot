@@ -441,6 +441,29 @@ class NovaAudio:
         with contextlib.suppress(Exception):
             await stream.close()
 
+    async def _end_session(self, stream: Any, prompt_name: str) -> None:
+        """Tell Nova Sonic the prompt and session are finished.
+
+        Sends ``promptEnd`` then ``sessionEnd`` so the service can settle the
+        turn before the transport closes. Best-effort: called from
+        :meth:`stream_voice`'s ``finally``, where the stream may already be
+        half-closed by the service, and where raising would mask the real
+        error.
+
+        Args:
+            stream: The handle returned by :meth:`_open_stream`.
+            prompt_name: The turn's prompt identifier.
+        """
+        try:
+            await self._send_event(
+                stream, {"event": {"promptEnd": {"promptName": prompt_name}}}
+            )
+            await self._send_event(stream, {"event": {"sessionEnd": {}}})
+        except Exception as exc:      # noqa: BLE001 — must never escape finally
+            self.logger.debug(
+                "Nova Sonic session shutdown frames not delivered: %s", exc
+            )
+
     # ------------------------------------------------------------------
     # Guardrails (calls the inherited BedrockConverseBase method directly —
     # no _get_text_client delegate, per FEAT-315)
@@ -872,6 +895,9 @@ class NovaAudio:
             sender_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await sender_task
+            # Tell Nova the prompt/session are over before the transport
+            # closes — best-effort, must never mask the turn's own error.
+            await self._end_session(stream, prompt_name)
             # One stream_voice() call == one turn, so the stream opened above
             # must be released here or every turn leaks its connection.
             await self._close_stream(stream)
