@@ -210,8 +210,14 @@ class TestStreamVoice:
 
     @pytest.mark.asyncio
     async def test_stream_voice_tool_use(self, nova_client):
+        """FEAT-408: execution happens on contentEnd(type="TOOL"), not on the
+        toolUse frame itself — Nova's toolUse.content is a JSON string, and
+        the result is sent as a three-frame contentStart/toolResult/contentEnd
+        envelope keyed by contentName, not toolUseId."""
         events = [
-            {"toolUse": {"toolUseId": "tu_1", "toolName": "get_weather", "content": {"city": "NYC"}}},
+            {"toolUse": {"toolUseId": "tu_1", "toolName": "get_weather",
+                        "content": '{"city": "NYC"}'}},
+            {"contentEnd": {"type": "TOOL"}},
             {"completionEnd": {}},
         ]
 
@@ -242,10 +248,13 @@ class TestStreamVoice:
         assert tool_call_responses[0].tool_calls[0].name == "get_weather"
         assert tool_call_responses[0].tool_calls[0].result == "Sunny, 25C"
         assert tool_call_responses[1].is_complete
-        # A toolResult event must have been sent back to the stream.
+        # A toolResult event must have been sent back to the stream, as part
+        # of the three-frame contentStart/toolResult/contentEnd envelope —
+        # keyed by contentName, not toolUseId (the inversion FEAT-408 fixes).
         tool_result_events = [e for e in sent_events if "toolResult" in e.get("event", {})]
         assert len(tool_result_events) == 1
-        assert tool_result_events[0]["event"]["toolResult"]["toolUseId"] == "tu_1"
+        assert "toolUseId" not in tool_result_events[0]["event"]["toolResult"]
+        assert "contentName" in tool_result_events[0]["event"]["toolResult"]
 
     @pytest.mark.asyncio
     async def test_stream_voice_barge_in(self, nova_client):

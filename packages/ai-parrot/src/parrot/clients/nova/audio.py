@@ -190,6 +190,33 @@ def _is_interruption_payload(content: str) -> bool:
     return bool(isinstance(parsed, dict) and parsed.get("interrupted"))
 
 
+def _parse_tool_arguments(raw: Any) -> Dict[str, Any]:
+    """Parse a toolUse content payload into kwargs for ``_execute_tool()``.
+
+    Nova sends this as a JSON string. Raises ``ValueError`` for anything that
+    does not decode to a JSON object, so the caller can report a tool error
+    instead of crashing the turn.
+
+    Args:
+        raw: The stashed ``toolUse.content`` payload.
+
+    Returns:
+        The parsed keyword-argument dict.
+
+    Raises:
+        ValueError: When *raw* is not valid JSON, or decodes to something
+            other than a JSON object.
+    """
+    if isinstance(raw, dict):
+        return raw                       # tolerate an already-parsed payload
+    parsed = json.loads(raw or "{}")     # ValueError on malformed input
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"tool arguments must be a JSON object, got {type(parsed).__name__}"
+        )
+    return parsed
+
+
 class NovaAudio:
     """Bidirectional voice-streaming mixin (Nova Sonic / Nova 2 Sonic).
 
@@ -464,6 +491,47 @@ class NovaAudio:
             prompt_start["toolConfiguration"] = tool_configuration
         return {"event": {"promptStart": prompt_start}}
 
+    async def _send_tool_result(
+        self, stream: Any, prompt_name: str, tool_use_id: str, result: Any
+    ) -> None:
+        """Send a tool result as the three-frame sequence Nova requires.
+
+        ``contentStart(TOOL)`` -> ``toolResult`` -> ``contentEnd``.
+        ``toolUseId`` is carried on the contentStart's
+        ``toolResultInputConfiguration``; the ``toolResult`` frame itself is
+        keyed by ``contentName``, not ``toolUseId``.
+
+        Args:
+            stream: The handle returned by :meth:`_open_stream`.
+            prompt_name: The turn's prompt identifier.
+            tool_use_id: The ``toolUseId`` from the originating ``toolUse``
+                frame.
+            result: The tool's return value (or error string).
+        """
+        content_name = str(uuid.uuid4())
+        await self._send_event(stream, {"event": {"contentStart": {
+            "promptName": prompt_name,
+            "contentName": content_name,
+            "interactive": False,
+            "type": "TOOL",
+            "role": "TOOL",
+            "toolResultInputConfiguration": {
+                "toolUseId": tool_use_id,
+                "type": "TEXT",
+                "textInputConfiguration": {"mediaType": "text/plain"},
+            },
+        }}})
+        content = result if isinstance(result, str) else json.dumps(result)
+        await self._send_event(stream, {"event": {"toolResult": {
+            "promptName": prompt_name,
+            "contentName": content_name,
+            "content": content,
+        }}})
+        await self._send_event(stream, {"event": {"contentEnd": {
+            "promptName": prompt_name,
+            "contentName": content_name,
+        }}})
+
     async def stream_voice(
         self,
         audio_iterator: AsyncIterator[bytes],
@@ -665,37 +733,56 @@ class NovaAudio:
 
                 tool_use = event.get("toolUse")
                 if tool_use:
-                    tool_name = tool_use.get("toolName")
-                    tool_input = tool_use.get("content", {})
+                    # Gap 2: Nova executes the tool call on contentEnd(TOOL),
+                    # not on toolUse — stash it, do NOT execute here.
                     tool_use_id = tool_use.get("toolUseId", str(uuid.uuid4()))
+                    turn_state.pending_tool = LiveToolCall(
+                        id=tool_use_id,
+                        name=tool_use.get("toolName"),
+                        arguments={},
+                    )
+                    turn_state.pending_tool_raw_input = tool_use.get("content")
+                    continue
 
-                    tc = LiveToolCall(id=tool_use_id, name=tool_name, arguments=tool_input)
+                content_end = event.get("contentEnd")
+                if content_end and content_end.get("type") == "TOOL":
+                    pending = turn_state.pending_tool
+                    if pending is None:
+                        # No stashed call for this contentEnd(TOOL) — ignore
+                        # rather than raise.
+                        continue
+
                     start = time.monotonic()
                     try:
-                        result = await self._execute_tool(tool_name, tool_input)
-                        tc.result = result
+                        args = _parse_tool_arguments(turn_state.pending_tool_raw_input)
+                        result = await self._execute_tool(pending.name, args)
+                        pending.arguments = args
+                        pending.result = result
                     except Exception as exc:
-                        tc.error = str(exc)
+                        pending.error = str(exc)
                         result = str(exc)
-                    tc.execution_time_ms = (time.monotonic() - start) * 1000
-                    tool_calls_list.append(tc)
-                    usage.tool_calls_executed += 1
-                    usage.tool_execution_time_ms += tc.execution_time_ms
+                    pending.execution_time_ms = (time.monotonic() - start) * 1000
 
-                    await self._send_event(stream, {"event": {"toolResult": {
-                        "promptName": prompt_name,
-                        "toolUseId": tool_use_id,
-                        "content": str(result),
-                    }}})
+                    tool_calls_list.append(pending)
+                    usage.tool_calls_executed += 1
+                    usage.tool_execution_time_ms += pending.execution_time_ms
+
+                    await self._send_tool_result(
+                        stream, prompt_name, pending.id, result
+                    )
 
                     yield LiveVoiceResponse(
                         text="",
-                        tool_calls=[tc],
+                        tool_calls=[pending],
                         is_complete=False,
                         session_id=session_id,
                         turn_id=turn_id,
                         user_id=user_id,
                     )
+
+                    turn_state.pending_tool = None
+                    turn_state.pending_tool_raw_input = None
+                    continue
 
                 if "completionEnd" in event or event.get("stopReason") == "END_TURN":
                     turn_metadata.ended_at = None
