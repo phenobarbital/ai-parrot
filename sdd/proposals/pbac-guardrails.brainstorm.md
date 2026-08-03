@@ -291,27 +291,37 @@ defense-in-depth, not waste.
    `ctx.extras` = `{"tool_name", "arguments", "permission_context"}`;
    `ctx.user_id` / `ctx.session_id` / `ctx.agent_name` from the calling bot.
    Empty pipelines short-circuit with zero overhead (existing behavior).
-3. **Guardrail**: `PBACToolCallGuardrail` (registered as `"pbac"`, lazy
-   factory) builds an `EvalContext` from the `PermissionContext`/session plus
-   an `Environment` snapshot (timestamp, weekday, channel), asks the shared
+3. **Guardrail**: `PBACToolCallGuardrail` (registered under the `"pbac"` name;
+   the concrete instance is constructed by **bot wiring** with the shared
+   evaluator — `PBACToolCallGuardrail(evaluator=...)` passed as an instance in
+   `guardrails=[...]`, since the registry's kwargs-only factory cannot carry the
+   evaluator; resolved Q7) builds an `EvalContext` from the
+   `PermissionContext`/session plus an `Environment` snapshot (server local
+   clock + navigator's global `BUSINESS_HOURS_*`/`BUSINESS_DAYS` config;
+   per-policy timezone deferred — resolved Q2), asks the shared
    `PolicyEvaluator.check_access()` for `resource_type=TOOL,
    resource_name=<tool_name>`, and maps ALLOW→`PASS`,
-   DENY→`BLOCK(reason="policy:<name>", report={structured denial})`.
+   DENY→`BLOCK(reason="policy:<PolicyResponse.rule>", report={structured
+   denial})`. `PolicyResponse.response` supplies the operator-authored
+   human-readable denial message.
 4. **Denial translation**: a BLOCK outcome becomes
    `ToolResult(success=False, status="forbidden", error=<human-readable policy
    reason>)` — the LLM receives it as the tool's result and explains it; the
    agent loop continues normally.
 5. **Fail mode**: guardrail default `on_error="fail_closed"` (engine
-   exception ⇒ BLOCK `policy_engine_unavailable`). A per-policy annotation can
-   downgrade specific tools/rules to fail-open; when the PBAC engine was never
+   exception ⇒ BLOCK `policy_engine_unavailable`). The per-policy downgrade is
+   an `enforcement: fail_open` extra key in the policy YAML — verified to land
+   in `policy.attributes`, and the guardrail locates the deciding policy via
+   `PolicyResponse.rule` (resolved Q3). When the PBAC engine was never
    initialized (`setup_pbac()` returned `(None, None, None)`), the guardrail is
    simply not registered — existing fail-open bootstrap semantics preserved.
 6. **UserInfoService**: new service owning the curated employee profile
    (`EmployeeProfile` Pydantic model: `user_id`, `username`, `display_name`,
    `email`, `job_code`, `title`, `department_code`, `groups`, `programs`,
-   `manager_id`, `worker_type`). Loads from `auth.vw_users` via asyncdb,
-   TTL-cached per user. Consumed by (a) `EvalContext`/attribute construction
-   for PBAC and (b) `UserinfoTool`.
+   `worker_type`, and `manager` as a nested `{user_id, display_name, email}`
+   object resolved with one extra `auth.vw_users` lookup — resolved Q6).
+   Loads from `auth.vw_users` via asyncdb, TTL-cached per user. Consumed by
+   (a) `EvalContext`/attribute construction for PBAC and (b) `UserinfoTool`.
 7. **UserinfoTool**: an `AbstractTool` (`userinfo`) returning the profile as
    JSON for the **current session user only** (identity comes from the
    session/`PermissionContext`, never from an LLM-supplied argument). Activated
@@ -334,8 +344,9 @@ defense-in-depth, not waste.
 - **Parallel tool calls**: each call is evaluated independently; one denial
   never aborts sibling calls.
 - **Clock/timezone**: business-hours conditions are evaluated by
-  navigator-auth's `Environment`; the timezone source (server vs. policy-declared)
-  is Open Question Q2.
+  navigator-auth's `Environment` using the server's local clock and navigator's
+  global `BUSINESS_HOURS_*`/`BUSINESS_DAYS` config (resolved Q2); per-policy
+  timezone is deferred to a follow-up.
 - **Profile row missing** (user not in `auth.vw_users`): UserinfoTool returns a
   structured "profile unavailable" result (not an exception); PBAC attribute
   enrichment degrades to session-only attributes.
@@ -504,6 +515,23 @@ class UserInfo(AbstractKnowledgeBase):     # always_active=True, priority=10
     #        groups, programs FROM auth.vw_users  (lines 116-124)
 # From user.py:27 — TTLCache(max_size=500, default_ttl=600) usage pattern
 
+# From navigator_auth (installed, >0.20.9) — verified via inspect on 2026-08-03:
+# navigator_auth.abac.policies.environment.Environment (pydantic BaseModel):
+#   fields: time, timestamp, dow/day_of_week, hour, minute, date, day_segment,
+#           is_business_hours, is_weekend, timezone (str, default "UTC", informational)
+#   - timestamp default = datetime.now() (SERVER LOCAL clock, naive)
+#   - is_business_hours computed from module config: BUSINESS_HOURS_START (default
+#     "08:00"), BUSINESS_HOURS_END ("18:00"), BUSINESS_DAYS ("1,2,3,4,5")
+#   - accepts explicit timestamp/hour/minute at construction (v2 tz-injection path)
+# navigator_auth.abac.policies.abstract.AbstractPolicy.__init__:
+#   (..., context: Optional[dict], environment: Optional[Environment],
+#    priority: int, enforcing: bool, scopes: Optional[list], **kwargs)
+#   - unknown kwargs stored in self.attributes  → carries `enforcement: fail_open`
+# navigator_auth.abac.policies.PolicyResponse (ClassDict):
+#   effect: PolicyEffect; response: str; rule: str; actions: list[str]
+#   - `rule` names the deciding policy (fail-mode lookup key)
+#   - `response` is the operator-authored message (the explainable DENY text)
+
 # From packages/ai-parrot/src/parrot/auth/context.py:38
 @dataclass(frozen=True)
 class UserContext:
@@ -569,9 +597,9 @@ from navigator_auth.abac.policies.environment import Environment  # used at agen
 ## Open Questions
 
 - [x] Q1: Does the DENY reach the user directly or via the LLM? — *Owner: Jesus*: Via the LLM — BLOCK is translated to `ToolResult(status="forbidden", error=<reason>)` so the agent verbalizes the denial; the agent loop continues.
-- [ ] Q2: Timezone source for business-hours `Environment` conditions — server clock, policy-declared tz, or user-profile tz? Needs confirmation of what navigator-auth's `Environment` supports today. — *Owner: Jesus*
-- [ ] Q3: Exact syntax for the per-policy fail-mode annotation (e.g. `enforcement: fail_open` key in policy YAML) — does navigator-auth's `ResourcePolicy` schema allow custom keys, or does this live in a parrot-side sidecar config? — *Owner: Jesus*
-- [ ] Q4: Should `PBACPermissionResolver` (Layer 2) stay active alongside the TOOL_CALL guardrail (double evaluation, defense-in-depth) or be bypassed when the guardrail already evaluated the same call? Proposal: keep both; shared evaluator + 30s cache makes cost negligible. — *Owner: Jesus*
-- [ ] Q5: Adopt Option C's add-on — rendering policy availability windows into tool descriptions at listing time (per-request, user-relative) — in this feature or as a follow-up? — *Owner: Jesus*
-- [ ] Q6: `UserinfoTool` field set final review: is `manager_id` (an internal id) useful to the LLM, or should the service resolve it to the manager's display name? — *Owner: Jesus*
-- [ ] Q7: How is the shared `PolicyEvaluator` handed to guardrail construction? (`build_pipelines_from_config` builds from names/dicts; the `"pbac"` factory needs the evaluator instance — likely a `Guardrail` instance passed in bot wiring, or an app-context lookup.) — *Owner: dev at spec time*
+- [x] Q2: Timezone source for business-hours `Environment` conditions — server clock, policy-declared tz, or user-profile tz? — *Owner: Jesus*: v1 uses what exists today — server local clock (`Environment` defaults to `datetime.now()`) plus navigator's global config (`BUSINESS_HOURS_START/END`, `BUSINESS_DAYS`; defaults 08:00–18:00 Mon–Fri). `Environment.timezone` is informational only. Per-policy timezone support is deferred (verified: `Environment` accepts explicit `timestamp`/`hour`/`minute`, so a v2 can inject tz-adjusted time without touching navigator-auth).
+- [x] Q3: Exact syntax for the per-policy fail-mode annotation — *Owner: Jesus*: `enforcement: fail_open` as an extra key in the policy YAML. Verified: `AbstractPolicy.__init__` stores unknown kwargs in `policy.attributes`, and `PolicyResponse.rule` names the deciding policy, so the guardrail resolves the matched policy and reads `attributes.get("enforcement")`. Single source of truth, zero navigator-auth changes.
+- [x] Q4: Keep `PBACPermissionResolver` (Layer 2) active alongside the TOOL_CALL guardrail? — *Owner: Jesus*: Keep both (defense-in-depth). The resolver covers invocation paths that bypass `ToolManager` (direct `AbstractTool.execute()`); shared evaluator + 30s decision cache makes the double evaluation negligible.
+- [x] Q5: Option C's add-on (policy availability windows rendered into tool descriptions)? — *Owner: Jesus*: Separate follow-up feature — keeps this feature scoped to enforcement + UserinfoTool; the add-on's per-request schema mutation and caching concerns deserve their own brainstorm.
+- [x] Q6: `manager_id` raw vs resolved in `UserinfoTool`? — *Owner: Jesus*: Both — `EmployeeProfile.manager` becomes a nested object `{user_id, display_name, email}` (one extra lookup in `auth.vw_users`): the name answers "who is my manager?" directly, the id enables chaining into other tools (org chart, escalations).
+- [x] Q7: How is the shared `PolicyEvaluator` handed to guardrail construction? — *Owner: Jesus*: Bot wiring passes a constructed instance — the wiring layer (which already stamps pipelines and can reach `app['abac']`/the `setup_pbac()` result) builds `PBACToolCallGuardrail(evaluator=...)` and passes it as an instance entry in `guardrails=[...]`. The `"pbac"` name in bot config is resolved by the wiring, not by the registry's kwargs-only factory. Explicit, testable, no global state.
