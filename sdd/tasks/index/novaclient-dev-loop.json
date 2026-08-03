@@ -52,7 +52,7 @@
       "feature_id": "FEAT-405",
       "feature": "novaclient-dev-loop",
       "spec": "sdd/specs/novaclient-dev-loop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Shares models/nova.py with TASK-2084 and dispatchers/nova.py with TASK-2086. Must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:53:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2085-per-model-output-clamping.md"
+      "completed_at": "2026-08-03T02:08:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2085-per-model-output-clamping.md"
     },
     {
       "id": "TASK-2086",

@@ -231,10 +231,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Added `MODEL_MAX_OUTPUT_TOKENS` (minimax.minimax-m2.5→8192,
+moonshotai.kimi-k2.5→16384, zai.glm-5→131072, anthropic.claude-opus-5→131072)
+and `effective_max_tokens(model, requested, logger)` to `models/nova.py`
+(`dispatchers/nova.py` did not exist yet — TASK-2086 has not landed — so per
+the task's ordering note the helper lives entirely in `models/nova.py` for
+TASK-2086 to call). Clamps, never raises; silent on the happy path; unknown
+models pass through unclamped. `LLMCodeDispatchProfile.max_tokens` `le=32768`
+bound left untouched. 8 new unit tests in `test_nova_clamping.py`, all pass
+(26 total across the two Nova test files); `ruff check` clean; no new mypy
+errors.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
