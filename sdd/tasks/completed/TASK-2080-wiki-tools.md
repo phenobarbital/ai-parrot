@@ -255,10 +255,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Created six `AbstractTool` subclasses (`WikiQueryTool`,
+`WikiPageTool`, `WikiRelatedTool`, `WikiRememberTool`, `WikiNoteTool`,
+`WikiStatusTool`) plus their Pydantic `args_schema` input models
+(verbatim from the spec's Data Models section) and the
+`create_wiki_tools(store, root, config)` factory in
+`parrot/knowledge/wiki/tools.py`. Each tool passes `name`/`description`
+explicitly to `super().__init__()` (not relying on `__doc__` fallback —
+`AbstractTool.__init__` overwrites `self.description` with
+`description or self.__class__.__doc__ or ...`, so the class attribute
+alone would be silently discarded; also added matching docstrings for
+readability). `wiki_query` calls `store.search_fts()` then
+`pack_results()`, returning `packed.text` (a plain string, matching the
+test's `isinstance(result, str)` assertion). `wiki_remember` mirrors
+`cli.py:remember`'s deterministic `mem-<sha1>` id scheme (title+category
+hash) and optionally calls `store.add_edges()` when `link_page_id` is
+given. `wiki_note` replicates the read-modify-write pattern from
+`cli.py:1741-1790` verbatim (no `store.add_note()` exists). Both use a
+simplified `asserted_by="agent:mcp"` instead of the CLI's full
+`_authoring_identity()` resolution, per the task's explicit simplification
+note. All 10 unit tests pass (6 from the task's Test Specification +
+4 extra for not-found/error paths); `ruff check` clean on both files.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in substance — `super().__init__(name=...,
+description=...)` (explicit kwargs) is used instead of the bare
+`super().__init__()` shown in the task's illustrative snippet, to avoid
+the constructor's docstring-fallback overwriting the class-level
+`description`; this is a correctness fix, not a design change.
