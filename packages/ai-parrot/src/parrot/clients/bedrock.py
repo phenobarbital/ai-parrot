@@ -627,7 +627,12 @@ class BedrockConverseBase(AbstractClient):
                 metrics arrive via ``cacheReadInputTokens`` /
                 ``cacheWriteInputTokens`` in ``CompletionUsage.extra_usage``
                 (already surfaced by ``CompletionUsage.from_bedrock()``,
-                TASK-1742).
+                TASK-1742). For multi-round tool-use calls, these two
+                counters are the **sum across all rounds** (FEAT-404, U1) —
+                not the last round's values — because
+                ``CompletionUsage.__add__`` shallow-merges ``extra_usage``
+                right-hand-wins and would otherwise silently drop earlier
+                rounds' cache accounting.
             guardrail_id: Per-call guardrail identifier override. Falls back
                 to the identifier passed to ``__init__``.
             guardrail_version: Per-call guardrail version override. Falls
@@ -735,7 +740,15 @@ class BedrockConverseBase(AbstractClient):
         result: Dict[str, Any] = {}
         content_blocks: List[Dict[str, Any]] = []
 
+        # FEAT-404: per-round token usage accumulation across the tool loop
+        # (mirrors the FEAT-397 idiom in AnthropicClient.ask()).
+        _lc_round_number = 0
+        _lc_accumulated_usage: Optional[CompletionUsage] = None
+
         while True:
+            # FEAT-404: time this round's SDK call (including a fallback
+            # retry, if any) for the round event's duration_ms.
+            _lc_round_t0 = time.perf_counter()
             try:
                 result = await self._sdk_create(payload)
             except Exception as e:
@@ -749,12 +762,48 @@ class BedrockConverseBase(AbstractClient):
                     result = await self._sdk_create(payload)
                 else:
                     raise
+            _lc_round_number += 1
+            _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
+
+            # FEAT-404: build this round's usage and accumulate. Rounds
+            # where the provider reported no usage are skipped (accumulator
+            # untouched); the round event still fires with usage=None.
+            _lc_round_raw_usage = result.get("usage") or None
+            if _lc_round_raw_usage:
+                _lc_round_usage = CompletionUsage.from_bedrock(_lc_round_raw_usage)
+                if _lc_accumulated_usage is None:
+                    _lc_accumulated_usage = _lc_round_usage
+                else:
+                    # __add__ shallow-merges extra_usage right-hand-wins, so
+                    # capture the pre-add cache counters before they are
+                    # overwritten by this round's values (spec §2, U1).
+                    _lc_prev_cache_read = (
+                        _lc_accumulated_usage.extra_usage.get("cacheReadInputTokens", 0) or 0
+                    )
+                    _lc_prev_cache_write = (
+                        _lc_accumulated_usage.extra_usage.get("cacheWriteInputTokens", 0) or 0
+                    )
+                    _lc_accumulated_usage = _lc_accumulated_usage + _lc_round_usage
+                    # Re-sum the two cache counters explicitly so multi-round
+                    # totals honour the ask() docstring (spec §2, U1) instead
+                    # of reporting only the last round's cache accounting.
+                    _lc_accumulated_usage.extra_usage["cacheReadInputTokens"] = (
+                        _lc_prev_cache_read
+                        + (_lc_round_usage.extra_usage.get("cacheReadInputTokens", 0) or 0)
+                    )
+                    _lc_accumulated_usage.extra_usage["cacheWriteInputTokens"] = (
+                        _lc_prev_cache_write
+                        + (_lc_round_usage.extra_usage.get("cacheWriteInputTokens", 0) or 0)
+                    )
+            else:
+                _lc_round_usage = None
 
             message = result.get("output", {}).get("message", {})
             content_blocks = message.get("content", [])
 
             if result.get("stopReason") == "tool_use":
                 tool_result_blocks = []
+                _lc_round_tool_names: List[str] = []
 
                 for block in content_blocks:
                     if "toolUse" not in block:
@@ -798,6 +847,20 @@ class BedrockConverseBase(AbstractClient):
                         })
 
                     all_tool_calls.append(tc)
+                    _lc_round_tool_names.append(tool_name)
+
+                # FEAT-404: emit ClientRoundEvent after tool execution for
+                # this round (mirrors AnthropicClient.ask(), claude.py:640-650).
+                self._emit_round_event(
+                    _lc_tc,
+                    client_name=self.client_name,
+                    model=resolved_model,
+                    round_number=_lc_round_number,
+                    usage=_lc_round_usage,
+                    raw_usage=_lc_round_raw_usage,
+                    tool_calls=_lc_round_tool_names,
+                    duration_ms=_lc_round_duration_ms,
+                )
 
                 # Preserve the assistant turn verbatim (reasoningContent
                 # blocks, with their signature, travel through unmodified —
@@ -848,6 +911,15 @@ class BedrockConverseBase(AbstractClient):
             ai_message.metadata['used_fallback_model'] = True
             ai_message.metadata['original_model'] = resolved_model
             ai_message.metadata['fallback_model'] = self._fallback_model
+
+        # FEAT-404: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round calls (no tool use), the
+        # accumulated total equals the last (only) round's usage, so this
+        # is a strict no-op for existing single-round behavior.
+        if _lc_accumulated_usage is not None:
+            if _lc_round_number > 1:
+                _lc_accumulated_usage.extra_usage["rounds"] = _lc_round_number
+            ai_message.usage = _lc_accumulated_usage
 
         _lc_usage = ai_message.usage
         await self._emit_after_call(
