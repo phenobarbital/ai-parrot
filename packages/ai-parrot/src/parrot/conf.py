@@ -1104,6 +1104,26 @@ DEV_LOOP_WIKI_PAGE_INGEST: bool = config.getboolean(
     "DEV_LOOP_WIKI_PAGE_INGEST", fallback=False
 )
 
+# FEAT-405: Nova (AWS Bedrock) dev-loop backend. The dev-seat coding loop
+# (``NovaCodeDispatcher``) reaches MiniMax/Kimi/GLM models over the
+# OpenAI-compatible ``bedrock-mantle`` endpoint rather than through
+# ``NovaClient``/Converse (which exposes no chat-completion shape) — see
+# spec ``novaclient-dev-loop`` §2 Component Diagram. Authentication reuses
+# the existing ``AWS_NOVA_API_KEY`` Bedrock API key (bearer token) — the
+# same physical credential ``BedrockConverseBase`` uses for the Converse
+# seats, not a duplicate secret.
+# Explicit override for the full bedrock-mantle base URL. Empty (default)
+# derives it as ``https://bedrock-mantle.{DEV_LOOP_NOVA_MANTLE_REGION}.api.aws/v1``.
+DEV_LOOP_NOVA_MANTLE_BASE_URL: str = config.get(
+    "DEV_LOOP_NOVA_MANTLE_BASE_URL", fallback=""
+)
+# Region used to derive the default bedrock-mantle base URL above. Falls
+# back to the same region BedrockConverseBase/NovaClient use.
+DEV_LOOP_NOVA_MANTLE_REGION: str = config.get(
+    "DEV_LOOP_NOVA_MANTLE_REGION",
+    fallback=BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1",
+)
+
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
 # ---------------------------------------------------------------------------
