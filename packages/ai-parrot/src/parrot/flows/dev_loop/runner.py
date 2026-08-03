@@ -54,7 +54,11 @@ from parrot.flows.dev_loop.models import (
     WorkBrief,
 )
 from parrot.flows.dev_loop.run_bundle import build_run_bundle, render_markdown
-from parrot.flows.dev_loop.usage_report import build_usage_report, render_usage_markdown
+from parrot.flows.dev_loop.usage_report import (
+    build_usage_report,
+    render_usage_html,
+    render_usage_markdown,
+)
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
     ActionOrigin,
@@ -562,9 +566,11 @@ class DevLoopRunner:
     ) -> None:
         """Persist the run bundle + markdown closing report (FEAT-378 TASK-1929).
 
-        Mirrors :meth:`_persist_terminal_snapshot`: two files under
+        Mirrors :meth:`_persist_terminal_snapshot`: files under
         ``conf.OUTPUT_DIR/dev_loop_runs/`` — ``{run_id}.bundle.json`` and
-        ``{run_id}.report.md``. Independent of the terminal-snapshot
+        ``{run_id}.report.md``, plus ``{run_id}.usage.json`` /
+        ``{run_id}.usage.html`` (FEAT-405 Module 7, folded into
+        ``report.md`` too). Independent of the terminal-snapshot
         export (one failing must not skip the other); failures are
         logged and swallowed — bundle export must NEVER break or delay
         run teardown.
@@ -588,6 +594,7 @@ class DevLoopRunner:
             bundle_path = out_dir / f"{host.state.run_id}.bundle.json"
             report_path = out_dir / f"{host.state.run_id}.report.md"
             usage_path = out_dir / f"{host.state.run_id}.usage.json"
+            usage_html_path = out_dir / f"{host.state.run_id}.usage.html"
             bundle_path.write_text(bundle.model_dump_json(indent=2))
             # FEAT-405 Module 7: per-agent usage — same snapshot/shared the
             # bundle above reads. Independent of the bundle write above (a
@@ -599,6 +606,7 @@ class DevLoopRunner:
                     host.snapshot(), host.state.run_id, shared=shared
                 )
                 usage_path.write_text(usage_report.model_dump_json(indent=2))
+                usage_html_path.write_text(render_usage_html(usage_report))
                 usage_markdown = render_usage_markdown(usage_report)
             except Exception:  # noqa: BLE001 - usage export must not break bundle export
                 self.logger.warning(

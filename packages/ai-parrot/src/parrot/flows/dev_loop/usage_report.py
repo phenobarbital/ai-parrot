@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
+from html import escape
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -248,9 +249,111 @@ def render_usage_markdown(report: UsageReport) -> str:
     return "\n".join(lines)
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Renderer — self-contained HTML (FEAT-405 Module 7b)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _fmt_value_html(value: Any | None) -> str:
+    """Render *value* escaped, or ``—`` when unreported. Never fabricates ``0``."""
+    return "—" if value is None else escape(str(value))
+
+
+def _fmt_agent_tokens_html(agent: AgentUsage) -> str:
+    """Render one agent's token cell, escaped — ``—`` when neither is reported."""
+    if agent.input_tokens is None and agent.output_tokens is None:
+        return "—"
+    input_part = escape(str(agent.input_tokens)) if agent.input_tokens is not None else "—"
+    output_part = escape(str(agent.output_tokens)) if agent.output_tokens is not None else "—"
+    return f"{input_part} in / {output_part} out"
+
+
+def _html_row(agent: AgentUsage) -> str:
+    """One ``<tr>`` for *agent* — same column set as ``render_usage_markdown``
+    (Seat, Node, Backend, Model, Rounds, Tokens, Duration). Every
+    interpolated value is HTML-escaped — model ids and seat names reach
+    this page as data, not trusted markup.
+    """
+    duration = (
+        f"{agent.duration_seconds:.1f}s" if agent.duration_seconds is not None else "—"
+    )
+    return (
+        "<tr>"
+        f"<td>{escape(agent.seat)}</td>"
+        f"<td>{escape(agent.node_id)}</td>"
+        f"<td>{escape(agent.backend) if agent.backend else '—'}</td>"
+        f"<td>{escape(agent.model) if agent.model else '—'}</td>"
+        f"<td>{_fmt_value_html(agent.rounds)}</td>"
+        f"<td>{_fmt_agent_tokens_html(agent)}</td>"
+        f"<td>{escape(duration)}</td>"
+        "</tr>"
+    )
+
+
+def render_usage_html(report: UsageReport) -> str:
+    """Render *report* as a fully self-contained HTML usage report.
+
+    The page inlines all styling and references no external asset (no
+    ``<link>``/``<script src>``, no ``@import``, no CDN) — it can be
+    opened from disk or attached to a PR comment without breaking. Column
+    set and the ``—``-for-unreported convention match
+    :func:`render_usage_markdown` exactly, and no pricing/cost figure
+    appears anywhere (spec Non-Goal).
+
+    Args:
+        report: The assembled :class:`UsageReport`.
+
+    Returns:
+        A complete ``<!doctype html>`` … ``</html>`` document.
+    """
+    rows = "\n".join(_html_row(agent) for agent in report.agents)
+    body_table: str
+    if not report.agents:
+        body_table = "<p>No agent usage reported for this run.</p>"
+    else:
+        body_table = (
+            "<table>"
+            "<thead><tr>"
+            "<th>Seat</th><th>Node</th><th>Backend</th><th>Model</th>"
+            "<th>Rounds</th><th>Tokens</th><th>Duration</th>"
+            "</tr></thead>"
+            f"<tbody>{rows}</tbody>"
+            "</table>"
+        )
+
+    totals = (
+        "<p><strong>Totals</strong> — "
+        f"rounds: {_fmt_value_html(report.total_rounds)}, "
+        f"input tokens: {_fmt_value_html(report.total_input_tokens)}, "
+        f"output tokens: {_fmt_value_html(report.total_output_tokens)}</p>"
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dev-loop usage — {escape(report.run_id)}</title>
+<style>
+body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }}
+h1 {{ font-size: 1.4rem; }}
+table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
+th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
+th {{ background: #f0f0f0; }}
+tbody tr:nth-child(even) {{ background: #fafafa; }}
+</style>
+</head>
+<body>
+<h1>Dev-loop usage — {escape(report.run_id)}</h1>
+{body_table}
+{totals}
+</body>
+</html>"""
+
+
 __all__ = [
     "AgentUsage",
     "UsageReport",
     "build_usage_report",
+    "render_usage_html",
     "render_usage_markdown",
 ]
