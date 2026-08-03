@@ -52,7 +52,7 @@
       "feature_id": "FEAT-403",
       "feature": "mcp-local-server-wikitoolkit",
       "spec": "sdd/specs/mcp-local-server-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Depends on MCPServerBase (TASK-2077) — must be sequential",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2078-local-stdio-server.md"
+      "completed_at": "2026-08-03T00:32:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2078-local-stdio-server.md"
     },
     {
       "id": "TASK-2079",
