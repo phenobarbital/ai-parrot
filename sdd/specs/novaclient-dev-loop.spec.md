@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-405
 **Date**: 2026-08-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/novaclient-dev-loop.brainstorm.md`
 
@@ -765,3 +765,4 @@ git worktree add -b feat-405-novaclient-dev-loop \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-03 | Jesus Lara | Initial draft from `novaclient-dev-loop.brainstorm.md` (Option A; 8 brainstorm questions resolved, Q5 resolved during spec) |
+| 0.2 | 2026-08-03 | Jesus Lara | Status → approved; ready for `/sdd-task` |
