@@ -74,8 +74,9 @@ telemetry gap so the resulting model mix can actually be measured.
 ## Constraints & Requirements
 
 Established across discovery rounds 0–3, plus a correction pass (**[R4]**) after
-the AWS model cards were read and an explicit scope cut (**[R5]**). Decisions
-marked **[R*]** are user-confirmed, not inferred.
+the AWS model cards were read, an explicit scope cut (**[R5]**), and a design
+refinement on prefix handling (**[R6]**). Decisions marked **[R*]** are
+user-confirmed, not inferred.
 
 - **[R0]** `type: feature`, `base_branch: dev`. Never bases on `main`.
 - **[R3]** **Fully opt-in.** Nothing changes for an operator who does not select
@@ -110,9 +111,13 @@ marked **[R*]** are user-confirmed, not inferred.
   `nova` backend simply does not attempt it. A Claude model in the *development*
   seat is served by the existing `claude-code` backend (Claude Code Agent), not
   by Nova. This is a design rule, not a limitation to work around.
-- **[R4]** **`region_prefix` gets no default.** Prefixes are declared
-  explicitly, per-model, only for models that require one; `global.` joins
-  `us.`/`eu.`/`au.` as a recognised prefix.
+- **[R6]** **A requires-prefix map decides prefixing, not the client.**
+  `NovaClient.__init__`'s `region_prefix="us"` default **stays** — no signature
+  change, no migration for existing users. Instead the translator applies a
+  prefix only to models listed in a `REQUIRES_REGION_PREFIX` map, using the
+  caller's value when given and the map's declared default otherwise. Models
+  absent from the map are never prefixed, however `region_prefix` is set.
+  `global.` joins `us.`/`eu.`/`au.` as a recognised prefix.
 - **[R5]** **FEAT-397 coverage for `NovaClient` is a separate spec.** Bedrock
   per-round accumulation is an external dependency of this feature, not a
   deliverable of it.
@@ -164,9 +169,11 @@ Four consequences that shape the design:
    id. But `NovaClient.__init__` defaults `region_prefix="us"`
    (`clients/nova/client.py:72`), which would produce the invalid
    `us.minimax.minimax-m2.5`. **The default that makes Nova 2 Lite work breaks
-   MiniMax.** **[R4] Resolution: `region_prefix` loses its default entirely**;
-   each model declares the prefix it needs (if any), so nothing is inherited
-   silently.
+   MiniMax.** **[R6] Resolution: invert the rule rather than drop the default.**
+   A `REQUIRES_REGION_PREFIX` map in the translator becomes the allowlist —
+   only mapped models are prefixed — so `region_prefix` can keep its `"us"`
+   default without ever leaking onto a model that forbids one, and no existing
+   `NovaClient` caller has to change.
 
 4. **`bedrock_models.py`'s translator is wrong for this generation on three
    counts**: `_REGION_PREFIXES = ("us.", "eu.", "apac.")`
@@ -469,16 +476,30 @@ vendor namespaces; add the verified map entries, noting that Claude Opus 5 and
 Fable 5 carry **no** `-vN:0` suffix, breaking the existing
 `anthropic.<id>-vN:0` convention.
 
-**[R4] `region_prefix` loses its default.** Today `NovaClient.__init__` sets
-`region_prefix: Optional[str] = "us"` (`clients/nova/client.py:72`) because
-Nova 2 Lite and Premier require a geo prefix — but that default silently
-applies to every model the client touches, and would emit the invalid
-`us.minimax.minimax-m2.5`. The default is removed, and the requirement moves to
-where it is actually known: each model entry declares the prefix it needs, so a
-model that requires one never depends on the caller guessing, and a model that
-forbids one can never inherit it. Removing a default is a behaviour change for
-direct `NovaClient` users who relied on it — Nova 2 Lite/Premier callers must
-now pass `region_prefix` explicitly, which the migration note must call out.
+**[R6] A `REQUIRES_REGION_PREFIX` map, not a change to the client.** Today
+`NovaClient.__init__` sets `region_prefix: Optional[str] = "us"`
+(`clients/nova/client.py:72`) because Nova 2 Lite and Premier require a geo
+prefix — but that default silently applies to every model the client touches
+and would emit the invalid `us.minimax.minimax-m2.5`.
+
+The resolution keeps the client untouched and moves the decision into the
+translator, where the per-model facts already live. A `REQUIRES_REGION_PREFIX`
+map declares which models need a prefix and what to fall back to:
+
+- **Model in the map** → apply the caller's `region_prefix` when supplied,
+  otherwise the map's declared default. Nova 2 Lite/Premier and the Anthropic
+  models behave exactly as they do today.
+- **Model not in the map** (MiniMax M2.5, GLM-5) → never prefixed, regardless
+  of `region_prefix`. The `us.minimax.…` failure becomes unreachable by
+  construction rather than by remembering to pass `None`.
+
+Two properties make this preferable to removing the default: **no existing
+`NovaClient` caller changes**, and the residual failure mode is the safer one.
+Dropping the default risked *withholding* a prefix a model needs; the map risks
+only *omitting* one for a model nobody has mapped yet — which surfaces as a
+loud `AccessDeniedException` naming the model, not a silent misroute. To close
+even that gap, an explicit `region_prefix` passed for an unmapped model should
+log a warning rather than be discarded silently.
 
 **Module 2 — `dev_loop/models/nova.py`.** `NovaCodeDispatchProfile` (extending
 `LLMCodeDispatchProfile`, `models/llm.py:10`, following
@@ -579,14 +600,16 @@ config falls back to today's exact output.
 ### Edge Cases & Error Handling
 
 - **Invalid prefix on a prefix-less model.** `us.minimax.minimax-m2.5` is not a
-  valid id. With no client-level default [R4] the prefix can no longer be
-  inherited by accident, but a caller passing one explicitly must still be
-  rejected or ignored per-model, pinned by a unit test.
-- **Missing prefix on a prefix-requiring model.** The mirror risk introduced by
-  removing the default: Nova 2 Lite, Nova Premier and Claude Opus 5 need a geo
-  or global prefix, and now nothing supplies one implicitly. Each such model
-  must declare its requirement and fail with a clear message naming the needed
-  prefix, rather than passing a bare id to Bedrock.
+  valid id. Under [R6] an unmapped model is never prefixed, so this is
+  unreachable by construction — but a caller passing `region_prefix` explicitly
+  for such a model must be **warned, not silently ignored**, and both halves
+  pinned by unit tests.
+- **A prefix-requiring model missing from the map.** The residual risk under
+  [R6]: a newly added model that needs a geo/global prefix but has no map entry
+  is called with a bare id and fails with `AccessDeniedException`. Preferred to
+  a silent misroute, but the error must name the model and suggest the map
+  entry, and adding a model to the catalog should require declaring its prefix
+  policy.
 - **Round data unavailable.** Until the separate FEAT-397 continuation lands
   [R5], Bedrock-backed seats report no per-round usage; the report must render
   "—" and stay correct, not degrade into zeros or a crash.
@@ -645,7 +668,7 @@ config falls back to today's exact output.
 | `parrot/flows/dev_loop/nodes/deployment_handoff.py:479` | extends | same |
 | `parrot/flows/dev_loop/run_bundle.py` | extends | per-agent section from `UsageReport` |
 | `parrot/models/bedrock_models.py:29,37` | modifies | add `au.`/`global.` prefixes, vendor namespaces, new ids, per-model prefix declarations |
-| `parrot/clients/nova/client.py:72` | **modifies (behaviour change)** | `region_prefix` default `"us"` removed [R4]; Nova 2 Lite/Premier callers must pass it explicitly |
+| `parrot/clients/nova/client.py:72` | **unchanged** [R6] | `region_prefix="us"` default stays; prefixing is decided by the translator's `REQUIRES_REGION_PREFIX` map, so no caller migration |
 | `parrot/clients/bedrock.py` (round usage) | **external dependency** | FEAT-397 continuation for `NovaClient` ships as a separate spec [R5]; this feature must degrade cleanly without it |
 | `parrot/conf.py:1048` | extends | new `DEV_LOOP_NOVA_*` keys; `DEV_LOOP_ADVERSARIAL_BACKEND` |
 | `parrot/flows/dev_loop/models/__init__.py`, `dispatchers/__init__.py` | extends | export the new symbols |
@@ -827,7 +850,7 @@ from parrot.models.bedrock_models import PUBLIC_TO_BEDROCK, translate
 - ~~`PUBLIC_TO_BEDROCK["claude-opus-5"]`~~ / ~~`["claude-fable-5"]`~~ / ~~`["minimax-m2.5"]`~~ / ~~`["kimi-k2.5"]`~~ — absent; `bedrock_models.py:65` explicitly says "Bedrock IDs TBD"
 - ~~Usage collection in `LLMCodeDispatcher`~~ — its tool loop (`llm.py:190`) never reads token counts and never calls `_emit_round_event`; within the dev-loop only `ClaudeCodeDispatcher._extract_result_usage` (claude.py:625) reports any. **But do NOT write a summing loop here** [R4] — accumulation belongs to FEAT-397's client-layer primitives
 - ~~Round accumulation in `BedrockConverseBase` / `NovaClient`~~ — not implemented; `BedrockClient` is an explicit FEAT-397 non-goal. Shipping as a **separate spec** [R5] — do not implement it in this feature
-- ~~A `region_prefix` default after this feature~~ — `clients/nova/client.py:72` currently defaults to `"us"`; [R4] removes it, so post-feature code must never assume a prefix is applied implicitly
+- ~~`REQUIRES_REGION_PREFIX`~~ — no such map exists in `parrot/models/bedrock_models.py`; [R6] introduces it. Note `NovaClient.region_prefix` **keeps** its `"us"` default — do NOT remove it; prefixing is decided by the map, not the client
 - ~~An LLM in the PR-creation path~~ — `_build_title`/`_build_body` are pure string templates (`feature_handoff.py:507,511`; `deployment_handoff.py:474,479`)
 - ~~`ResearchNode` accepting a generic dispatcher~~ — it is typed `dispatcher: ClaudeCodeDispatcher` (`nodes/research.py:142`) and hardcodes `ClaudeCodeDispatchProfile(subagent="sdd-research")` (line 283)
 - ~~A `nova` entry in `catalog.BACKENDS`~~ — the tuple starts at `catalog.py:88` with no Bedrock backend
