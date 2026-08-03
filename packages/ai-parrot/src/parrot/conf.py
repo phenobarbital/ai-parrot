@@ -490,6 +490,13 @@ BEDROCK_AWS_REGION = config.get("BEDROCK_AWS_REGION", fallback=None)
 # BedrockConverseBase — a dedicated, scoped alternative to the generic
 # AWS_ACCESS_KEY/AWS_SECRET_KEY IAM keypair (see BedrockConverseBase.__init__).
 AWS_NOVA_API_KEY = config.get("AWS_NOVA_API_KEY", fallback=None)
+# FEAT-407: Amazon Bedrock Mantle (OpenAI-compatible API) settings.
+# BEDROCK_MANTLE_API_KEY — dedicated bearer key for BedrockMantleClient;
+#   falls back to AWS_NOVA_API_KEY above when unset (see mantle.py).
+# BEDROCK_MANTLE_BASE_URL — explicit override for the Mantle endpoint;
+#   when unset, the base URL is constructed from the resolved region.
+BEDROCK_MANTLE_API_KEY = config.get("BEDROCK_MANTLE_API_KEY", fallback=None)
+BEDROCK_MANTLE_BASE_URL = config.get("BEDROCK_MANTLE_BASE_URL", fallback=None)
 
 # Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
 # AWS_SECRET_KEY so that the conversations/artifacts backend can run against a
