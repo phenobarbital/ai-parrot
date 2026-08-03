@@ -42,6 +42,7 @@ from parrot.flows.dev_loop.models import (
     CodeReviewVerdict,
     NovaAdversarialReviewProfile,
     NovaCodeDispatchProfile,
+    NovaMechanicalProfile,
 )
 from parrot.flows.dev_loop.models.nova import effective_max_tokens
 from parrot.flows.dev_loop.session_state import SessionHost
@@ -382,3 +383,67 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             f"Diff:\n{diff_text}\n\n"
             "Return your verdict as the requested structured output."
         )
+
+
+# ---------------------------------------------------------------------------
+# Mechanical seat (FEAT-405 Module 8) — Haiku PR-body enrichment.
+#
+# NOT a third dispatcher: a small, stateless helper the handoff nodes call
+# directly. "Enrich, never replace" ([R2]): the deterministic template
+# stays the skeleton *and* the fallback; this contributes only a short
+# "Summary of changes" section, and NEVER raises — any failure, timeout, or
+# absent config must fall back silently to the template alone.
+# ---------------------------------------------------------------------------
+
+
+async def summarize_pr_changes(
+    context: str,
+    *,
+    profile: Optional[NovaMechanicalProfile] = None,
+    logger: Optional[logging.Logger] = None,
+) -> str:
+    """Return a short "Summary of changes" markdown block, or ``""`` on any failure.
+
+    Issues exactly one no-tools ``NovaClient.ask()`` call on Claude Haiku
+    4.5. Never raises — the caller (``_build_body_async`` on the handoff
+    nodes) falls back to the deterministic template alone when this
+    returns an empty string.
+
+    Args:
+        context: The deterministic PR body text already assembled by the
+            node's own ``_build_body`` (files changed, QA evidence,
+            synthesis) — the mechanical seat summarizes already-known
+            structured facts into prose; it is not given raw git access.
+        profile: The mechanical-seat profile (model, ``max_tokens``,
+            ``timeout_seconds``). Defaults to
+            :class:`NovaMechanicalProfile`'s own defaults when omitted.
+        logger: Logger used to warn on failure. Defaults to this module's
+            logger.
+
+    Returns:
+        The summary text (no heading — the caller supplies
+        ``## Summary of changes``), or ``""`` on any exception, timeout,
+        or empty model response.
+    """
+    log = logger or logging.getLogger(__name__)
+    resolved_profile = profile or NovaMechanicalProfile()
+    try:
+        client = NovaClient()
+        async with asyncio.timeout(resolved_profile.timeout_seconds):
+            ai_message = await client.ask(
+                "Summarize the following pull-request description in 2-4 "
+                "concise bullet points highlighting what changed. Output "
+                "markdown bullets only — no heading, no preamble, no "
+                "code fences.\n\n"
+                f"{context}",
+                model=resolved_profile.model,
+                max_tokens=resolved_profile.max_tokens,
+                use_tools=False,
+            )
+        summary = str(ai_message.output or "").strip()
+        return summary
+    except Exception:  # noqa: BLE001 - enrichment must never break handoff
+        log.warning(
+            "PR summary enrichment failed; using template only.", exc_info=True
+        )
+        return ""
