@@ -30,7 +30,7 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
-from parrot.flows.dev_loop.dispatcher import (
+from parrot.flows.dev_loop.dispatchers import (
     DevLoopCodeDispatcher,
     DispatchExecutionError,
     DispatchOutputValidationError,

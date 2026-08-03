@@ -11,7 +11,7 @@ spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
 
 from parrot.flows.dev_loop.commands import register_command_routes
 from parrot.flows.dev_loop.config import parse_repo_specs
-from parrot.flows.dev_loop.dispatcher import (
+from parrot.flows.dev_loop.dispatchers import (
     GoogleCodingDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,

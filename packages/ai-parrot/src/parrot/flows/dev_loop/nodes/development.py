@@ -31,7 +31,7 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.agent_pool import DevAgentPool, WaveResult, aggregate_outputs
-from parrot.flows.dev_loop.dispatcher import DevLoopCodeDispatcher
+from parrot.flows.dev_loop.dispatchers import DevLoopCodeDispatcher
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     DevAgentPoolConfig,

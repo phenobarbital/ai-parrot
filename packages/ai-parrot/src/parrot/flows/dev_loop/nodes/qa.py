@@ -33,7 +33,7 @@ from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     ClaudeCodeReviewDispatcher,
 )
-from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,

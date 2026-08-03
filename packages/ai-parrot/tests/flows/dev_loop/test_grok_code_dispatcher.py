@@ -83,7 +83,7 @@ class _FakeGrokClient:
 @pytest.fixture(autouse=True)
 def _patch_worktree_base(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.llm.conf.WORKTREE_BASE_PATH",
         str(tmp_path),
     )
     return tmp_path
@@ -279,7 +279,7 @@ def test_grok_client_factory_forwards_model_args(monkeypatch):
         return MagicMock()
 
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+        "parrot.flows.dev_loop.dispatchers.grok.LLMFactory.create",
         _fake_create,
     )
 
