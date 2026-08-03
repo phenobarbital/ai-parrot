@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "FEAT-397 already defines and ships the per-round usage contract for five clients; this is a known, well-scoped extension of an existing pattern to two AWS clients that were an explicit non-goal. Research must pin down the exact contract, the reference implementation to copy, and the Bedrock/Nova call sites that need it.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Read the FEAT-397 spec to extract the exact per-round observability contract that Bedrock/Nova must satisfy",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "sdd/specs/tokens-observability.spec.md"}
+    },
+    {
+      "id": "Q002",
+      "intent": "Read AbstractClient._emit_round_event and ClientRoundEvent to learn the primitives Bedrock/Nova must reuse",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/base.py"}
+    },
+    {
+      "id": "Q003",
+      "intent": "Read AIMessage.usage / total_usage() and CompletionUsage to learn the accumulation target and extra_usage['rounds'] convention",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/models/responses.py"}
+    },
+    {
+      "id": "Q004",
+      "intent": "Read BedrockClient / BedrockConverseBase ask() and its tool loop to locate exactly where per-round usage must be accumulated and emitted",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/bedrock.py"}
+    },
+    {
+      "id": "Q005",
+      "intent": "Read NovaClient to determine whether it inherits BedrockConverseBase's tool loop or drives its own",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/nova/client.py"}
+    },
+    {
+      "id": "Q006",
+      "intent": "Find the reference FEAT-397 implementation in an already-migrated client (Anthropic) to copy the accumulation + emission pattern verbatim",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "_emit_round_event", "path": "packages/ai-parrot/src/parrot"}
+    },
+    {
+      "id": "Q007",
+      "intent": "Locate how Bedrock/Nova currently parse Converse API usage (inputTokens/outputTokens/totalTokens) so accumulation reuses existing extraction",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "inputTokens|outputTokens|totalTokens|cacheRead", "path": "packages/ai-parrot/src/parrot/clients"}
+    },
+    {
+      "id": "Q008",
+      "intent": "Read the reference client's ask() tool loop end-to-end as the implementation template",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/claude.py"}
+    },
+    {
+      "id": "Q009",
+      "intent": "Find FEAT-397 tests to learn the test contract new Bedrock/Nova tests must mirror",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "total_usage|ClientRoundEvent|extra_usage", "path": "packages/ai-parrot/tests"}
+    },
+    {
+      "id": "Q010",
+      "intent": "Identify downstream consumers of ClientRoundEvent (recorders, metrics subscribers) to confirm no consumer-side change is needed",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "ClientRoundEvent", "path": "packages/ai-parrot/src/parrot"}
+    },
+    {
+      "id": "Q011",
+      "intent": "Check the Nova audio/streaming path for a separate usage surface that per-round observability would also need to cover",
+      "type": "read",
+      "priority": 3,
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/nova/audio.py"}
+    },
+    {
+      "id": "Q012",
+      "intent": "Review recent commit activity on bedrock.py and nova/ to detect in-flight work that could conflict",
+      "type": "git_log",
+      "priority": 3,
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/bedrock.py packages/ai-parrot/src/parrot/clients/nova/", "since": "3 months ago"}
+    },
+    {
+      "id": "Q013",
+      "intent": "Locate the three other FEAT-397 holdout clients (ClaudeAgentClient, TransformersClient, GeminiLiveClient) to assess whether they belong in this feature's scope",
+      "type": "glob",
+      "priority": 2,
+      "params": {"pattern": "packages/ai-parrot/src/parrot/clients/**/*.py"},
+      "note": "Added at the Phase-1 gate on user request (widened scope)."
+    },
+    {
+      "id": "Q014",
+      "intent": "Inspect ClaudeAgentClient and TransformersClient tool loops to judge whether the FEAT-397 pattern applies unchanged or needs a different treatment",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "class ClaudeAgentClient|class TransformersClient|class GeminiLiveClient", "path": "packages/ai-parrot/src/parrot/clients"},
+      "note": "Added at the Phase-1 gate on user request (widened scope)."
+    },
+    {
+      "id": "Q015",
+      "intent": "Determine whether LLMCodeDispatcher (which bypasses ask() entirely) needs the same primitives, since the wiki flags it as a separate per-round blind spot",
+      "type": "read",
+      "priority": 3,
+      "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/llm.py"},
+      "note": "Added at the Phase-1 gate on user request (widened scope)."
+    }
+  ],
+  "expected_findings": [
+    "The precise FEAT-397 per-round contract: accumulate CompletionUsage across rounds, emit ClientRoundEvent per round, set accumulated total on AIMessage.usage, record round count in usage.extra_usage['rounds'].",
+    "Whether BedrockClient and NovaClient share one tool loop (BedrockConverseBase) so a single change covers both, or need two separate changes.",
+    "The exact insertion points in the Bedrock/Nova tool loops.",
+    "Whether ClaudeAgentClient / TransformersClient / GeminiLiveClient should be in or out of scope.",
+    "Whether the Nova streaming/voice path has a usage surface FEAT-397 does not model."
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["FEAT-397", "BedrockClient", "NovaClient", "OpenAIClient", "GoogleGenAIClient", "AnthropicClient", "GroqClient"],
+      "verbs": ["include", "implement", "extend"],
+      "polarity": "neutral"
+    },
+    "estimated_budget_use": {"files_read": 7, "grep_calls": 4, "git_calls": 1}
+  }
+}

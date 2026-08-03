@@ -1,0 +1,338 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-404",
+  "mode": "enrichment",
+  "summary_oneline": "Instrument BedrockConverseBase.ask() with FEAT-397's per-round usage accumulation and ClientRoundEvent emission — one change that covers BedrockConverseClient and NovaClient, which inherits the loop verbatim.",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/bedrock.py",
+      "symbol": "BedrockConverseBase.ask",
+      "lines": "578-862",
+      "role": "The single tool loop to instrument; already has _emit_before_call/_lc_tc (659) and _lc_t0 (667) in place",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/bedrock.py",
+      "symbol": "BedrockConverseBase.ask (while True tool loop)",
+      "lines": "738-810",
+      "role": "Where round counting, per-round CompletionUsage accumulation and per-round tool-name capture must be added; emission point is the end of the stopReason=='tool_use' branch at 800-807",
+      "evidence": ["F004", "F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/bedrock.py",
+      "symbol": "AIMessageFactory.from_bedrock call site",
+      "lines": "836-845",
+      "role": "Point after which the accumulated total overwrites ai_message.usage and extra_usage['rounds'] is stamped",
+      "evidence": ["F004", "F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/nova/client.py",
+      "symbol": "NovaClient",
+      "lines": "30",
+      "role": "Subclass of BedrockConverseBase that inherits ask() with no reimplementation — receives the fix for free",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/bedrock.py",
+      "symbol": "BedrockConverseClient",
+      "lines": "1217-1229",
+      "role": "Thin BedrockConverseBase subclass — also receives the fix for free",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/base.py",
+      "symbol": "AbstractClient._emit_round_event",
+      "lines": "488-562",
+      "role": "Provider-agnostic emission primitive, already inherited by BedrockConverseBase — no change required",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/basic.py",
+      "symbol": "CompletionUsage.from_bedrock",
+      "lines": "147-168",
+      "role": "Existing Converse usage parser to reuse for each round's CompletionUsage",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/basic.py",
+      "symbol": "CompletionUsage.__add__",
+      "lines": "273-293",
+      "role": "The accumulator; its shallow extra_usage merge is the source of the Bedrock cache-token hazard",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/claude.py",
+      "symbol": "AnthropicClient.ask",
+      "lines": "533-722",
+      "role": "Reference implementation to copy verbatim (init / accumulate / emit / stamp)",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/subscribers/metrics.py",
+      "symbol": "MetricsSubscriber._on_client_round",
+      "lines": "184, 253",
+      "role": "Sole runtime consumer of ClientRoundEvent; provider-agnostic, needs no change",
+      "evidence": ["F007"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/bedrock.py",
+      "symbol": "BedrockConverseBase.resume",
+      "lines": "1000-1128",
+      "role": "Second, structurally identical tool loop (while True at 1063) — IN SCOPE per U2, but carries no lifecycle span today, so it needs _emit_before_call/_emit_after_call established before round events can attach",
+      "evidence": ["F006", "F010"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/bedrock.py",
+      "symbol": "BedrockConverseBase.ask_stream",
+      "lines": "864-989",
+      "role": "Streaming path with a single terminal usage payload; per-round streaming is a standing FEAT-397 non-goal",
+      "evidence": ["F006", "F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/gemma4.py",
+      "symbol": "Gemma4Client tool loop",
+      "lines": "533-546",
+      "role": "Nearest adjacent holdout — already accumulates manually, lacks only emission",
+      "evidence": ["F008"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/llm.py",
+      "symbol": "LLMCodeDispatcher",
+      "lines": "190-191, 369-377",
+      "role": "Drives its own turn loop via _chat_completion, bypassing ask() — a separate per-round blind spot for all clients",
+      "evidence": ["F008"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "statement": "NovaClient inherits ask()/ask_stream()/invoke()/resume() from BedrockConverseBase with no reimplementation",
+      "evidence": ["F004"],
+      "implication": "The change must be made on BedrockConverseBase, not on NovaClient or BedrockConverseClient; a Nova-specific implementation would be duplicate code and would drift"
+    },
+    {
+      "statement": "_emit_round_event is defined on AbstractClient and short-circuits when neither the client-local nor the global registry has ClientRoundEvent subscribers",
+      "evidence": ["F002"],
+      "implication": "No base-class or event-schema change is needed, and instrumentation is zero-cost when observability is off"
+    },
+    {
+      "statement": "The five migrated clients emit ClientRoundEvent only inside the tool-use branch, so the final non-tool round produces no round event",
+      "evidence": ["F003"],
+      "implication": "Bedrock must follow the same placement or its round counts will not be comparable with the other five clients in the same metrics"
+    },
+    {
+      "statement": "CompletionUsage.__add__ shallow-merges extra_usage with right-hand-wins, while from_bedrock stores cacheReadInputTokens/cacheWriteInputTokens there as first-class numbers",
+      "evidence": ["F005"],
+      "implication": "Naive accumulation yields last-round-only cache counters on a multi-round call, contradicting ask()'s own docstring promise at bedrock.py:628-629"
+    },
+    {
+      "statement": "extra_usage['rounds'] is set by the caller after the loop and only when round_number > 1",
+      "evidence": ["F003", "F005"],
+      "implication": "Single-round Bedrock calls must remain byte-identical in behavior to today — the change must be a no-op for the non-tool path"
+    },
+    {
+      "statement": "FEAT-397 established a one-file-per-client unit test convention (tests/unit/clients/test_<client>_multiround_usage.py) plus a single non-parametrized end-to-end test built around AnthropicClient",
+      "evidence": ["F007"],
+      "implication": "A Bedrock test is a new file mirroring the convention, and the e2e test mocks a different SDK seam (_sdk_create, not _backend.build_client)"
+    },
+    {
+      "statement": "MetricsSubscriber._on_client_round is the only runtime ClientRoundEvent consumer and is provider-agnostic",
+      "evidence": ["F007"],
+      "implication": "No downstream/observability change is in scope; Bedrock rounds will flow into parrot.client.round.token.usage and parrot.client.rounds automatically"
+    },
+    {
+      "statement": "AnthropicClient.resume() carries no FEAT-397 instrumentation, and per-round ask_stream() is an explicit FEAT-397 non-goal for every client",
+      "evidence": ["F006", "F001"],
+      "implication": "Instrumenting Bedrock's resume()/ask_stream() would put Bedrock ahead of the reference clients and create a new asymmetry; parity argues for ask() only"
+    },
+    {
+      "statement": "bedrock.py and nova/ have had no tool-loop refactor in 4 months; recent commits are credential and model-ID fixes",
+      "evidence": ["F009"],
+      "implication": "Low conflict risk; the BedrockConverseBase extraction (TASK-1806) is precisely what makes the single-change approach viable"
+    }
+  ],
+
+  "investigation": null,
+
+  "enrichment": {
+    "new": [
+      "packages/ai-parrot/tests/unit/clients/test_bedrock_multiround_usage.py — per-client multiround unit test mirroring test_claude_multiround_usage.py, asserting accumulation, round events, extra_usage['rounds'] and summed cache counters, over BOTH ask() and resume()",
+      "A NovaClient-specific test asserting the inherited path emits under client_name='nova' (the only Nova-specific surface, since the loop is shared)",
+      "Optionally a Bedrock end-to-end case in tests/integration/observability/ mocking _sdk_create instead of _backend.build_client"
+    ],
+    "modified": [
+      "packages/ai-parrot/src/parrot/clients/bedrock.py — BedrockConverseBase.ask(): accumulator init before the loop (738), per-round timing + CompletionUsage.from_bedrock accumulation after each _sdk_create (740), per-round tool-name list inside the block loop (759-800), _emit_round_event at the end of the tool_use branch (800-807), accumulated-total override + extra_usage['rounds'] after AIMessageFactory.from_bedrock (836-845)",
+      "packages/ai-parrot/src/parrot/clients/bedrock.py — BedrockConverseBase.resume(): establish the call-level lifecycle span it currently lacks entirely (F010), then apply the same four-part instrumentation to its tool loop at 1063-1077 (U2 resolved: in scope). Strictly larger than the ask() change; decompose as its own task.",
+      "packages/ai-parrot/src/parrot/clients/bedrock.py — explicit summing of cacheReadInputTokens/cacheWriteInputTokens across rounds inside both loops, compensating for __add__'s right-hand-wins extra_usage merge (U1 resolved: fix locally, not in __add__)",
+      "packages/ai-parrot/src/parrot/clients/bedrock.py — ask() docstring at 628-629, to state the multi-round semantics of the cache counters now that they are summed"
+    ],
+    "untouched": [
+      "packages/ai-parrot/src/parrot/clients/base.py — _emit_round_event already provider-agnostic and inherited",
+      "packages/ai-parrot/src/parrot/models/basic.py — CompletionUsage.__add__ and from_bedrock stay as-is (U1 resolved: no cross-client blast radius)",
+      "packages/ai-parrot/src/parrot/observability/subscribers/metrics.py — consumer is provider-agnostic",
+      "packages/ai-parrot/src/parrot/clients/nova/client.py — receives the fix by inheritance; no code change",
+      "packages/ai-parrot/src/parrot/clients/nova/audio.py — voice path, no Converse tool loop",
+      "BedrockConverseBase.ask_stream() — per-round streaming remains a standing FEAT-397 non-goal for every client",
+      "Gemma4Client — follow-up (U3 resolved: out of scope)",
+      "ClaudeAgentClient, TransformersClient, GeminiLiveClient — each needs its own design decision (F008)",
+      "LLMCodeDispatcher — orthogonal blind spot, separate feature"
+    ],
+    "patterns_to_follow": [
+      "AnthropicClient.ask() four-part pattern: init accumulator (claude.py:533-535), accumulate per round (557-572), emit inside the tool_use branch (640-650), stamp the accumulated total after building the AIMessage (715-722) — evidence F003",
+      "Reuse CompletionUsage.from_bedrock (basic.py:147) and CompletionUsage.__add__ rather than hand-summing fields, unlike Gemma4Client's manual sum — evidence F005, F008",
+      "Round events fire with token fields None when the provider reported no usage for that round (base.py:544-546) — evidence F002, F001"
+    ],
+    "integration_risks": [
+      "Cache-token semantics: multi-round Bedrock calls would report last-round-only cacheRead/cacheWriteInputTokens under the current __add__ merge, silently contradicting the ask() docstring — evidence F005",
+      "Changing CompletionUsage.__add__ to sum numeric extra_usage keys would alter accumulated usage for all five already-migrated clients — cross-client blast radius, evidence F005",
+      "Bedrock's fallback path (_should_use_fallback at bedrock.py:742-749) issues a SECOND _sdk_create within the same iteration; round timing and usage must be attributed to the successful call, mirroring how claude.py handles its own fallback retry — evidence F003, F004",
+      "resume() IS in scope (U2), so Bedrock/Nova will report rounds that AnthropicClient.resume() does not — a deliberate, accepted asymmetry in the opposite direction that must be documented so it is not later 'fixed' by removal — evidence F006",
+      "resume() has NO lifecycle instrumentation whatsoever — no _emit_before_call, no _lc_tc, no _lc_t0, no _emit_after_call (they appear only in ask()). Per-round emission there first requires establishing a call-level span, so the resume() work is a strictly LARGER task than the ask() work and must be decomposed separately — evidence F010"
+    ]
+  },
+
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "NovaClient inherits ask() from BedrockConverseBase, so instrumenting the base class covers BedrockConverseClient and NovaClient in one change",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "reasoning": "Read directly: class NovaClient(BedrockConverseBase, ...) at nova/client.py:30, whose 121 lines define only __init__ and class attributes; the docstring states text methods are inherited with no reimplementation."
+    },
+    {
+      "id": "C2",
+      "statement": "BedrockConverseBase.ask() contains exactly one uninstrumented tool loop at bedrock.py:738-810 with the emission point at the end of the stopReason=='tool_use' branch",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "reasoning": "Read the loop end-to-end; structure matches AnthropicClient's one-for-one."
+    },
+    {
+      "id": "C3",
+      "statement": "No change is required in base.py, metrics.py, or the ClientRoundEvent schema",
+      "evidence": ["F002", "F007"],
+      "confidence": "high",
+      "reasoning": "_emit_round_event takes only provider-neutral arguments and is defined on AbstractClient, which BedrockConverseBase subclasses; MetricsSubscriber._on_client_round consumes the event without provider branching."
+    },
+    {
+      "id": "C4",
+      "statement": "The FEAT-397 pattern is a stable four-part idiom replicated identically across five clients",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "grep for _emit_round_event returns exactly five call sites plus the definition; grep for extra_usage['rounds'] returns the matching five stamp sites."
+    },
+    {
+      "id": "C5",
+      "statement": "CompletionUsage.from_bedrock already parses Converse usage and is reusable per round without new parsing code",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "Read the classmethod; it is already called from BedrockConverseBase.invoke at bedrock.py:1208."
+    },
+    {
+      "id": "C6",
+      "statement": "Accumulating Bedrock rounds with CompletionUsage.__add__ leaves cacheRead/cacheWriteInputTokens at the last round's values instead of the sum",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "__add__'s own docstring specifies shallow extra_usage merge with right-hand-wins, and from_bedrock places both counters in extra_usage; the two facts compose directly."
+    },
+    {
+      "id": "C7",
+      "statement": "Parity with the reference clients argues for scoping this to ask() and excluding resume() and ask_stream()",
+      "evidence": ["F006", "F001"],
+      "confidence": "medium",
+      "reasoning": "The precedent is verified (AnthropicClient.resume has no instrumentation; ask_stream per-round is a written non-goal), but whether parity or completeness is the right objective for Bedrock is a product judgment the codebase cannot settle."
+    },
+    {
+      "id": "C8",
+      "statement": "Bedrock's in-loop fallback retry issues a second _sdk_create in the same iteration, requiring care in round timing and usage attribution",
+      "evidence": ["F004", "F003"],
+      "confidence": "medium",
+      "reasoning": "The fallback branch is read directly at bedrock.py:742-749, but the correct attribution semantics are inferred from how claude.py structures its analogous retry rather than stated anywhere."
+    },
+    {
+      "id": "C9",
+      "statement": "Gemma4Client is the cheapest adjacent holdout — it already accumulates and lacks only event emission",
+      "evidence": ["F008", "F001"],
+      "confidence": "medium",
+      "reasoning": "Its manual per-field sum is read at gemma4.py:542-546 and the FEAT-397 spec states the same, but the loop was surveyed by grep rather than read end-to-end."
+    },
+    {
+      "id": "C10",
+      "statement": "ClaudeAgentClient, TransformersClient and GeminiLiveClient each require a materially different design and do not belong in this feature",
+      "evidence": ["F008"],
+      "confidence": "medium",
+      "reasoning": "Each was surveyed by targeted grep showing no client-side tool loop (ClaudeAgentClient, TransformersClient) or a separate usage type (GeminiLiveClient's LiveCompletionUsage), but none was read end-to-end."
+    },
+    {
+      "id": "C11",
+      "statement": "Instrumenting the Bedrock tool loop carries low merge-conflict risk",
+      "evidence": ["F009"],
+      "confidence": "medium",
+      "reasoning": "Four months of history shows no tool-loop refactor, but git history cannot reveal uncommitted or unpushed work elsewhere."
+    },
+    {
+      "id": "C13",
+      "statement": "BedrockConverseBase.resume(), invoke() and ask_stream() have no lifecycle instrumentation at all; _emit_before_call/_lc_tc/_lc_t0 appear only in ask()",
+      "evidence": ["F010"],
+      "confidence": "high",
+      "reasoning": "Exhaustive grep of the three symbols across bedrock.py returns matches only at 659/667/854/857, all inside ask() (578-862)."
+    },
+    {
+      "id": "C12",
+      "statement": "The LLMCodeDispatcher blind spot is orthogonal to this feature and will persist for Bedrock even after it ships",
+      "evidence": ["F008"],
+      "confidence": "medium",
+      "reasoning": "The dispatcher's own turn loop calling client._chat_completion is read at dispatchers/llm.py:190 and 369-377, so it demonstrably bypasses ask(); the scoping conclusion is inference."
+    }
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "For a multi-round Bedrock call, should cacheReadInputTokens/cacheWriteInputTokens be summed across rounds, or is last-round-wins acceptable?",
+      "blocks_claims": ["C6"],
+      "plausible_answers": [
+        "Sum them explicitly in the Bedrock loop after __add__ — correct totals, zero blast radius on other clients",
+        "Accept last-round-wins and document the limitation in the ask() docstring — smallest change",
+        "Teach CompletionUsage.__add__ to sum numeric extra_usage keys — most principled but changes accumulated usage for all five migrated clients"
+      ],
+      "ask_user": true,
+      "user_answer": "Sum them explicitly in the Bedrock loop after __add__. CompletionUsage.__add__ and models/basic.py stay UNTOUCHED — no cross-client blast radius."
+    },
+    {
+      "id": "U2",
+      "question": "Should this feature stop at ask() for parity with the five reference clients, or also instrument BedrockConverseBase.resume()?",
+      "blocks_claims": ["C7"],
+      "plausible_answers": [
+        "ask() only — matches AnthropicClient exactly; record resume() as a carried-forward non-goal",
+        "ask() + resume() — Bedrock's resume() is a real tool loop and under-reporting rounds after a human-interaction suspend is a genuine observability hole"
+      ],
+      "ask_user": true,
+      "user_answer": "ask() + resume(). Both tool loops are instrumented. This deliberately puts Bedrock/Nova AHEAD of the five reference clients, whose resume() remains uninstrumented — the asymmetry is accepted, and closing it for the other clients is a follow-up."
+    },
+    {
+      "id": "U3",
+      "question": "Should Gemma4Client be folded into this feature, given it already accumulates and needs only the emission call sites?",
+      "blocks_claims": ["C9"],
+      "plausible_answers": [
+        "No — keep FEAT-404 strictly Bedrock + Nova as requested; file Gemma4 separately",
+        "Yes — it is a few lines and closes three of the five FEAT-397 holdouts in one feature"
+      ],
+      "ask_user": true,
+      "user_answer": "No. FEAT-404 stays strictly Bedrock + Nova. Gemma4Client is filed as a follow-up alongside ClaudeAgentClient, TransformersClient and GeminiLiveClient."
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization and mechanism are high-confidence and the implementation is a verified single-site replication of an established four-part pattern with no architectural fork to explore; the three open questions are scope and semantics decisions a spec can record as resolved, which is cheaper than a brainstorm."
+  },
+
+  "overall_confidence": "medium",
+
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008", "F009"],
+    "findings_unused": [],
+    "notes": "Research completed well inside budget (12 files read, 9 greps, 1 git call against 40/25/10). The wiki's default store resolves to a stale docs/parrot/wiki.db and errors; --store .parrot/wiki works and was used throughout. Scope was widened at the Phase-1 gate on user request to survey the four other FEAT-397 holdout clients, which produced F008 and unknown U3. overall_confidence is bounded to medium by the median claim confidence (6 high / 6 medium), NOT by weak localization: every localization claim (C1-C5) is high-confidence and directly read. The medium claims are all peripheral scope judgments (C7-C12), which is why sdd-spec is still the right next command."
+  }
+}
