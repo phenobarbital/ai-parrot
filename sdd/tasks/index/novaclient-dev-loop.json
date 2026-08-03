@@ -93,7 +93,7 @@
       "feature_id": "FEAT-405",
       "feature": "novaclient-dev-loop",
       "spec": "sdd/specs/novaclient-dev-loop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Adds a second class to dispatchers/nova.py (created by TASK-2086) and edits dispatchers/__init__.py. Sequential with TASK-2086.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:53:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2087-nova-adversarial-reviewer.md"
+      "completed_at": "2026-08-03T02:26:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2087-nova-adversarial-reviewer.md"
     },
     {
       "id": "TASK-2088",
