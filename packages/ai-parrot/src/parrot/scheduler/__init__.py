@@ -20,16 +20,12 @@ _SERVER_CLASSES = {
 
 def __getattr__(name: str):
     if name in _SERVER_CLASSES:
+        from parrot._imports import load_satellite_attr
+
         module_path, cls_name = _SERVER_CLASSES[name]
-        try:
-            import importlib
-            mod = importlib.import_module(module_path)
-            return getattr(mod, cls_name)
-        except ImportError as e:
-            raise ImportError(
-                f"{name!r} requires the ai-parrot-server package with the scheduler extra. "
-                f"Install it with: pip install ai-parrot-server[scheduler]"
-            ) from e
+        return load_satellite_attr(
+            name, module_path, install="ai-parrot-server[scheduler]", attr=cls_name
+        )
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

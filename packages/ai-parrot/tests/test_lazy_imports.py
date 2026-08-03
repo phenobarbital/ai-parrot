@@ -6,6 +6,8 @@ Tests cover:
 - Custom package_name parameter
 - Submodule imports
 - Error message formatting
+- load_satellite_attr() discriminating an absent satellite from an installed
+  one whose own import failed (version skew / missing optional dependency)
 """
 
 import builtins
@@ -19,6 +21,7 @@ import pytest
 from parrot._imports import (
     _ensure_torchcodec_optional,
     lazy_import,
+    load_satellite_attr,
     require_extra,
 )
 
@@ -294,7 +297,9 @@ class TestLazyImportIntegration:
         for module_name, package_name, extra in extras_and_packages:
             def blocking_import_module(name, *args, blocked=module_name, orig=original_import_module, **kwargs):
                 if name.split(".")[0] == blocked:
-                    raise ImportError(f"No module named '{name}'")
+                    # Mirror CPython: a missing module is a ModuleNotFoundError
+                    # carrying `.name` — lazy_import discriminates on both.
+                    raise ModuleNotFoundError(f"No module named '{blocked}'", name=blocked)
                 return orig(name, *args, **kwargs)
 
             with patch("parrot._imports.importlib.import_module", side_effect=blocking_import_module):
@@ -314,7 +319,8 @@ class TestLazyImportIntegration:
 
         def block_submod(name, *args, **kwargs):
             if name == "fake_top.submod":
-                raise ImportError(f"No module named '{name}'")
+                # CPython reports the missing *ancestor*, not the submodule.
+                raise ModuleNotFoundError("No module named 'fake_top'", name="fake_top")
             return original_import_module(name, *args, **kwargs)
 
         with patch("parrot._imports.importlib.import_module", side_effect=block_submod):
@@ -331,9 +337,10 @@ class TestLazyImportIntegration:
         call_order = []
 
         def tracking_import_module(name, *args, **kwargs):
-            call_order.append(name.split(".")[0])
-            if name.split(".")[0] in ("missing_a", "missing_b", "missing_c"):
-                raise ImportError(f"No module named '{name}'")
+            top = name.split(".")[0]
+            call_order.append(top)
+            if top in ("missing_a", "missing_b", "missing_c"):
+                raise ModuleNotFoundError(f"No module named '{top}'", name=top)
             return original_import_module(name, *args, **kwargs)
 
         with patch("parrot._imports.importlib.import_module", side_effect=tracking_import_module):
@@ -344,3 +351,141 @@ class TestLazyImportIntegration:
         # missing_b and missing_c should NOT have been tried
         assert "missing_b" not in call_order
         assert "missing_c" not in call_order
+
+
+class TestLoadSatelliteAttr:
+    """Tests for load_satellite_attr() — satellite resolution without masking.
+
+    The core namespace stubs (``parrot.manager``, ``parrot.a2a``, ...) resolve
+    their public API from a sibling distribution. Only a genuinely absent
+    satellite may be reported as "install the package"; every other
+    ``ImportError`` must survive verbatim, because masking it is what turned a
+    version skew between ``ai-parrot`` and ``ai-parrot-server`` into a
+    misleading "install ai-parrot-server" for an already-installed package.
+    """
+
+    @staticmethod
+    def _raising(exc):
+        """Build an import_module side effect that always raises ``exc``."""
+        def _side_effect(name, *args, **kwargs):
+            raise exc
+        return _side_effect
+
+    def test_absent_satellite_reports_install_hint(self):
+        """A missing satellite module produces the actionable install hint."""
+        exc = ModuleNotFoundError(
+            "No module named 'parrot.manager.manager'", name="parrot.manager.manager"
+        )
+        with patch("parrot._imports.importlib.import_module", side_effect=self._raising(exc)):
+            with pytest.raises(ImportError, match=r"pip install ai-parrot-server") as info:
+                load_satellite_attr(
+                    "BotManager", "parrot.manager.manager", install="ai-parrot-server"
+                )
+        assert "BotManager" in str(info.value)
+        assert info.value.__cause__ is exc
+
+    def test_absent_ancestor_package_reports_install_hint(self):
+        """A missing ancestor package also means the satellite is not installed."""
+        exc = ModuleNotFoundError("No module named 'parrot.manager'", name="parrot.manager")
+        with patch("parrot._imports.importlib.import_module", side_effect=self._raising(exc)):
+            with pytest.raises(ImportError, match=r"pip install ai-parrot-server"):
+                load_satellite_attr(
+                    "BotManager", "parrot.manager.manager", install="ai-parrot-server"
+                )
+
+    def test_version_skew_reraises_original_error(self):
+        """A missing symbol in a core module is re-raised untouched.
+
+        Regression test for the reported failure: ai-parrot-server shipped a
+        handler importing ``build_principal_context`` from a core module that
+        an older installed ``ai-parrot`` did not define.
+        """
+        exc = ImportError(
+            "cannot import name 'build_principal_context' from "
+            "'parrot.auth.permission' (/x/parrot/auth/permission.py)",
+            name="parrot.auth.permission",
+        )
+        with patch("parrot._imports.importlib.import_module", side_effect=self._raising(exc)):
+            with pytest.raises(ImportError) as info:
+                load_satellite_attr(
+                    "BotManager", "parrot.manager.manager", install="ai-parrot-server"
+                )
+        assert info.value is exc
+        assert "build_principal_context" in str(info.value)
+        assert "pip install" not in str(info.value)
+
+    def test_reraised_error_carries_diagnostic_note(self):
+        """The re-raised error is annotated instead of replaced."""
+        exc = ImportError("cannot import name 'X' from 'parrot.auth.permission'")
+        with patch("parrot._imports.importlib.import_module", side_effect=self._raising(exc)):
+            with pytest.raises(ImportError) as info:
+                load_satellite_attr(
+                    "BotManager", "parrot.manager.manager", install="ai-parrot-server"
+                )
+        notes = " ".join(getattr(info.value, "__notes__", []))
+        assert "NOT a missing install" in notes
+        assert "parrot.manager.manager" in notes
+
+    def test_missing_optional_dependency_reraises_original_error(self):
+        """A third-party dep missing inside an installed satellite is not masked."""
+        exc = ModuleNotFoundError("No module named 'apscheduler'", name="apscheduler")
+        with patch("parrot._imports.importlib.import_module", side_effect=self._raising(exc)):
+            with pytest.raises(ModuleNotFoundError) as info:
+                load_satellite_attr(
+                    "AgentSchedulerManager",
+                    "parrot.scheduler.manager",
+                    install="ai-parrot-server[scheduler]",
+                )
+        assert info.value is exc
+        assert "apscheduler" in str(info.value)
+
+    def test_resolves_attribute_from_installed_module(self):
+        """The happy path returns the attribute itself."""
+        import json
+
+        resolved = load_satellite_attr("dumps", "json", install="ai-parrot-server")
+        assert resolved is json.dumps
+
+    def test_attr_overrides_public_name(self):
+        """``attr`` resolves a differently-named attribute in the target module."""
+        import json
+
+        resolved = load_satellite_attr(
+            "PublicName", "json", install="ai-parrot-server", attr="loads"
+        )
+        assert resolved is json.loads
+
+    def test_absent_attribute_raises_attribute_error(self):
+        """A clean import with no such attribute is an AttributeError, not ImportError."""
+        with pytest.raises(AttributeError, match=r"has no attribute 'NopeNotHere'"):
+            load_satellite_attr("NopeNotHere", "json", install="ai-parrot-server")
+
+
+class TestLazyImportDoesNotMaskBrokenModules:
+    """lazy_import must not report an installed-but-broken module as missing."""
+
+    def test_broken_installed_module_reraises_original_error(self):
+        """An error raised from *inside* the module survives verbatim."""
+        exc = ImportError("libavdevice.so: cannot open shared object file")
+
+        def _side_effect(name, *args, **kwargs):
+            raise exc
+
+        with patch("parrot._imports.importlib.import_module", side_effect=_side_effect):
+            with pytest.raises(ImportError) as info:
+                lazy_import("pydub", extra="audio")
+        assert info.value is exc
+        assert "not installed" not in str(info.value)
+        notes = " ".join(getattr(info.value, "__notes__", []))
+        assert "NOT a missing install" in notes
+
+    def test_genuinely_missing_module_still_reports_install_hint(self):
+        """The real missing-install path is unchanged."""
+        exc = ModuleNotFoundError("No module named 'pydub'", name="pydub")
+
+        def _side_effect(name, *args, **kwargs):
+            raise exc
+
+        with patch("parrot._imports.importlib.import_module", side_effect=_side_effect):
+            with pytest.raises(ImportError, match=r"pip install ai-parrot\[audio\]"):
+                lazy_import("pydub", extra="audio")
