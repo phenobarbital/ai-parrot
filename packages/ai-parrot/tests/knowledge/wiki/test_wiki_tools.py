@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from parrot.knowledge.wiki.tools import (
@@ -104,6 +104,19 @@ class TestWikiRememberTool:
         result = await tool._execute(fact="Important finding")
         assert result.success is True
 
+    @pytest.mark.asyncio
+    async def test_remember_survives_bookkeeper_failure(self, mock_store, tmp_path):
+        # A store write that already succeeded must not be reported as a
+        # tool failure just because the audit-log append itself failed.
+        tool = WikiRememberTool(mock_store, storage_dir=tmp_path)
+        with patch(
+            "parrot.knowledge.wiki.tools.WikiBookkeeper.log_operation",
+            side_effect=OSError("disk full"),
+        ):
+            result = await tool._execute(fact="Important finding")
+        assert result.success is True
+        mock_store.upsert_pages.assert_called_once()
+
 
 class TestWikiNoteTool:
     @pytest.mark.asyncio
@@ -129,6 +142,17 @@ class TestWikiNoteTool:
         log_path = tmp_path / "log.md"
         assert log_path.exists()
         assert "[NOTE]" in log_path.read_text()
+
+    @pytest.mark.asyncio
+    async def test_note_survives_bookkeeper_failure(self, mock_store, tmp_path):
+        tool = WikiNoteTool(mock_store, storage_dir=tmp_path)
+        with patch(
+            "parrot.knowledge.wiki.tools.WikiBookkeeper.log_operation",
+            side_effect=OSError("disk full"),
+        ):
+            result = await tool._execute(page_id="page-1", text="A note")
+        assert result.success is True
+        mock_store.upsert_pages.assert_called_once()
 
 
 class TestWikiStatusTool:

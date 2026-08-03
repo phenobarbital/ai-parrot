@@ -172,12 +172,21 @@ class WikiRememberTool(AbstractTool):
             linked = True
 
         if self._storage_dir is not None:
-            WikiBookkeeper().log_operation(
-                self._storage_dir,
-                "REMEMBER",
-                f"page_id: {page_id}, title: {resolved_title!r}, "
-                f"category: {category}, by: agent:mcp",
-            )
+            # The store write above already succeeded — a failure logging
+            # to the audit trail must not turn a successful remember into
+            # a reported tool error (this call is otherwise unguarded, same
+            # as cli.py's remember command).
+            try:
+                WikiBookkeeper().log_operation(
+                    self._storage_dir,
+                    "REMEMBER",
+                    f"page_id: {page_id}, title: {resolved_title!r}, "
+                    f"category: {category}, by: agent:mcp",
+                )
+            except OSError as exc:
+                self.logger.warning(
+                    "Failed to log REMEMBER to wiki audit trail: %s", exc
+                )
 
         return ToolResult(result={
             "page_id": page_id,
@@ -229,11 +238,18 @@ class WikiNoteTool(AbstractTool):
         ])
 
         if self._storage_dir is not None:
-            WikiBookkeeper().log_operation(
-                self._storage_dir,
-                "NOTE",
-                f"page_id: {page['concept_id']}, by: agent:mcp",
-            )
+            # Same rationale as WikiRememberTool — an audit-log failure
+            # must not mask the note that was already saved successfully.
+            try:
+                WikiBookkeeper().log_operation(
+                    self._storage_dir,
+                    "NOTE",
+                    f"page_id: {page['concept_id']}, by: agent:mcp",
+                )
+            except OSError as exc:
+                self.logger.warning(
+                    "Failed to log NOTE to wiki audit trail: %s", exc
+                )
 
         return ToolResult(result={"page_id": page["concept_id"], "status": "noted"})
 

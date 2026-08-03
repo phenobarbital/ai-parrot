@@ -39,11 +39,13 @@ class StdioMCPServer(LocalMCPServerBase):
         """Start the stdio MCP server."""
         self.logger.info("Starting stdio MCP server with %s tools...", len(self.tools))
         self._running = True
+        loop = asyncio.get_running_loop()
 
         while self._running:
             try:
-                # Read line from stdin
-                line = sys.stdin.readline()
+                # sys.stdin.readline() is blocking — run it off the event
+                # loop (matches parrot.mcp.local_server.StdioMCPServer).
+                line = await loop.run_in_executor(None, sys.stdin.readline)
                 if not line:
                     break
 
