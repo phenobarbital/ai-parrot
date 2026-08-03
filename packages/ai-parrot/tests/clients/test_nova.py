@@ -249,9 +249,12 @@ class TestStreamVoice:
 
     @pytest.mark.asyncio
     async def test_stream_voice_barge_in(self, nova_client):
+        """FEAT-408: barge-in is signalled by an ``{"interrupted": true}``
+        payload inside textOutput content — not a top-level "interruption"
+        key or stopReason (neither appears in any AWS Nova Sonic sample)."""
         events = [
             {"textOutput": {"content": "partial answer"}},
-            {"interruption": True},
+            {"textOutput": {"content": '{"interrupted":true}'}},
         ]
 
         async def fake_events():

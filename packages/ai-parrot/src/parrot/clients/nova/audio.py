@@ -164,6 +164,32 @@ def _parse_generation_stage(additional_model_fields: Any) -> Optional[str]:
         return None
 
 
+def _is_interruption_payload(content: str) -> bool:
+    """Return whether a textOutput content payload signals barge-in.
+
+    Nova signals interruption by sending an ``{"interrupted": true}`` object
+    as the text content. Parse it rather than matching the sample's exact
+    whitespace (``nova_sonic_tool_use.py:632`` uses
+    ``'{ "interrupted" : true }'``, but the spacing is incidental), falling
+    back to a whitespace-insensitive substring test for payloads that fail
+    to parse as JSON.
+
+    Args:
+        content: The raw ``textOutput.content`` string.
+
+    Returns:
+        ``True`` when the payload signals an interruption.
+    """
+    if not content:
+        return False
+    try:
+        parsed = json.loads(content)
+    except ValueError:
+        compact = "".join(content.split())
+        return '"interrupted":true' in compact
+    return bool(isinstance(parsed, dict) and parsed.get("interrupted"))
+
+
 class NovaAudio:
     """Bidirectional voice-streaming mixin (Nova Sonic / Nova 2 Sonic).
 
@@ -532,22 +558,6 @@ class NovaAudio:
                     )
                     break
 
-                # Barge-in / interruption.
-                if "interruption" in event or event.get("stopReason") == "INTERRUPTED":
-                    turn_metadata.was_interrupted = True
-                    yield LiveVoiceResponse(
-                        text=accumulated_text,
-                        is_complete=True,
-                        is_interrupted=True,
-                        usage=usage,
-                        turn_metadata=turn_metadata,
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        user_id=user_id,
-                    )
-                    accumulated_text = ""
-                    continue
-
                 content_start = event.get("contentStart")
                 if content_start:
                     turn_state.role = content_start.get("role")
@@ -559,6 +569,26 @@ class NovaAudio:
                 text_output = event.get("textOutput")
                 if text_output:
                     chunk_text = text_output.get("content", "")
+
+                    # Barge-in / interruption — Nova signals this as an
+                    # {"interrupted": true} payload inside textOutput content,
+                    # not via a top-level "interruption" key or stopReason
+                    # (neither appears in any AWS Nova Sonic sample).
+                    if _is_interruption_payload(chunk_text):
+                        turn_metadata.was_interrupted = True
+                        yield LiveVoiceResponse(
+                            text=accumulated_text,
+                            is_complete=True,
+                            is_interrupted=True,
+                            usage=usage,
+                            turn_metadata=turn_metadata,
+                            session_id=session_id,
+                            turn_id=turn_id,
+                            user_id=user_id,
+                        )
+                        accumulated_text = ""
+                        continue
+
                     role = turn_state.role
                     stage = turn_state.generation_stage
                     # Missing stage must EMIT, not suppress (spec §7) — only an
