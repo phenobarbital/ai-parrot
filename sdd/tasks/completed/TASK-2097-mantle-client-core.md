@@ -230,10 +230,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Added `BEDROCK_MANTLE_API_KEY` / `BEDROCK_MANTLE_BASE_URL` conf
+vars in `parrot/conf.py` right after `AWS_NOVA_API_KEY`. Created
+`BedrockMantleClient(OpenAIClient)` in `parrot/clients/nova/mantle.py`
+implementing the region-aware base-URL resolution and API-key resolution
+orders from spec §2, with the `fallback_model` setdefault guard applied
+before `super().__init__()` and `self.api_key` re-set after (mirroring
+`NvidiaClient`). No OpenAI machinery overridden. Verified via inline
+script (base_url construction, explicit overrides, fallback_model
+survival, no `ask`/`ask_stream`/`invoke`/`_chat_completion` overrides, no
+`aioboto3`/`botocore` references) and `ruff check` (clean).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Note: importing this repo inside a git worktree resolves `parrot` to the
+editable-install location (main repo `packages/ai-parrot/src`), not the
+worktree's own copy — `PYTHONPATH` must be prepended with the worktree's
+`packages/ai-parrot/src` when running ad hoc verification/tests here.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

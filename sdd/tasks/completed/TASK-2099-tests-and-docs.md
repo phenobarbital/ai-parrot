@@ -232,11 +232,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Created `packages/ai-parrot/tests/clients/test_bedrock_mantle.py`
+covering every spec §4 row (default/region/explicit/conf-var base-URL
+resolution, full API-key resolution order including the "real
+OPENAI_API_KEY not silently used" guard, `_fallback_model` survival,
+`get_client()` shape, factory creation for both `"bedrock-mantle"` and the
+`"mantle"` alias, and a mocked `ask()` round trip via
+`patch("parrot.clients.gpt.OpenAIClient._chat_completion", ...)` — mirrors
+`test_nvidia_client.py`'s mocked-response pattern) plus the skip-gated
+`test_live_mantle_ask` (opt-in via `RUN_MANTLE_LIVE_TEST`, mirroring
+`test_nova.py::test_nova_ask_live`). Added `docs/clients/bedrock-mantle.md`
+(config table, resolution orders, direct + factory usage examples,
+defaults, out-of-scope list) — `docs/clients/` already existed so no new
+index needed. `pytest packages/ai-parrot/tests/clients/test_bedrock_mantle.py -v`:
+10 passed, 1 skipped. Full `pytest packages/ai-parrot/tests/clients/ -v`:
+175 passed, 2 skipped — no regressions. `ruff check` clean except one
+pre-existing-convention `BLE001` (blind `except Exception` in the
+live-test skip guard), which is the exact pattern already used in
+`test_nova.py::test_nova_ask_live` — left as-is for consistency.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**`parse()` verification result**: (accepted | rejected — follow-up needed | not verifiable)
+**`parse()` verification result**: not verifiable — no live Bedrock
+Mantle API key was available in this environment, so the skip-gated
+`test_live_mantle_ask` could not be exercised. The mocked
+`test_ask_delegates_to_openai_machinery` test only proves the inherited
+non-`parse()` `_chat_completion`/`create()` path is untouched; it does
+not exercise `chat.completions.parse()` at all (spec §7 gotcha notes
+`_chat_completion` uses `create()`, and `OpenAIClient` does not appear to
+route through `parse()` for plain `ask()` calls in this codebase, based
+on the same `_chat_completion` mocking seam used by `NvidiaClient`'s and
+`OpenRouterClient`'s tests). This open question (spec §8) remains
+unresolved and should be verified empirically once a live Mantle key is
+available — flagging as a follow-up rather than guessing.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — the `_chat_completion`-level mock was
+chosen over reimplementing `AsyncOpenAI` internals, matching the existing
+`test_nvidia_client.py`/`test_openrouter_client.py` convention referenced
+in this task's Codebase Contract.
