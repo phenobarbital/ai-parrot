@@ -20,6 +20,8 @@ guard, and output validation unchanged.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel
@@ -27,9 +29,20 @@ from pydantic import BaseModel
 from parrot import conf
 from parrot.clients.factory import LLMFactory
 from parrot.clients.gpt import OpenAIClient
+from parrot.clients.nova import NovaClient
+from parrot.flows.dev_loop.code_review import (
+    AbstractCodeReviewDispatcher,
+    CodeReviewDispatcherFactory,
+)
 from parrot.flows.dev_loop.dispatchers._shared import DispatchExecutionError, T
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
-from parrot.flows.dev_loop.models import NovaCodeDispatchProfile
+from parrot.flows.dev_loop.models import (
+    AdversarialFinding,
+    CodeReviewFinding,
+    CodeReviewVerdict,
+    NovaAdversarialReviewProfile,
+    NovaCodeDispatchProfile,
+)
 from parrot.flows.dev_loop.models.nova import effective_max_tokens
 from parrot.flows.dev_loop.session_state import SessionHost
 
@@ -204,4 +217,168 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
             node_id=node_id,
             cwd=cwd,
             session_host=session_host,
+        )
+
+
+@CodeReviewDispatcherFactory.register("nova-adversarial")
+class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
+    """Read-only adversarial second-opinion reviewer on Claude Opus 5.
+
+    Read-only BY CONSTRUCTION: no tools are ever passed to the model. The
+    diff, acceptance criteria and review question go directly in the
+    prompt; the model returns the verdict as structured output over a
+    single :meth:`NovaClient.ask` call (Converse — Anthropic models on
+    Bedrock have no Chat Completions, so unlike the dev seat this reviewer
+    does NOT use bedrock-mantle). Findings are advisory and must be triaged
+    (CONFIRM/REJECT/ESCALATE) by the primary worker downstream, mirroring
+    ``CodexAdversarialReviewDispatcher`` (``code_review.py:266-337``).
+
+    Unlike every other review dispatcher, there is no underlying
+    ``DevLoopCodeDispatcher`` to delegate to — :meth:`review` drives
+    ``NovaClient.ask()`` directly and reproduces
+    ``AbstractCodeReviewDispatcher.review()``'s degrade-on-infra-error
+    contract locally (an outage degrades to a *passing* verdict with a
+    nit-level finding — a known, intentionally inherited property, not a
+    bug).
+    """
+
+    agent_name = "nova-adversarial"
+    advisory = True
+
+    def __init__(
+        self,
+        *,
+        model: Optional[str] = None,
+        review_scope: str = "uncommitted",
+        review_base: str = "",
+        review_commit: str = "",
+        max_diff_chars: Optional[int] = None,
+        client: Optional[NovaClient] = None,
+    ) -> None:
+        self._model = model or conf.DEV_LOOP_NOVA_REVIEW_MODEL
+        self._review_scope = review_scope
+        self._review_base = review_base
+        self._review_commit = review_commit
+        self._max_diff_chars = max_diff_chars
+        self._client = client or NovaClient()
+        self.logger = logging.getLogger(__name__)
+
+    def build_review_profile(self) -> NovaAdversarialReviewProfile:
+        kwargs: Dict[str, Any] = {
+            "model": self._model,
+            "review_scope": self._review_scope,
+            "review_base": self._review_base,
+            "review_commit": self._review_commit,
+        }
+        if self._max_diff_chars is not None:
+            kwargs["max_diff_chars"] = self._max_diff_chars
+        return NovaAdversarialReviewProfile(**kwargs)
+
+    async def review(
+        self,
+        *,
+        brief: BaseModel,
+        run_id: str,
+        node_id: str,
+        cwd: str,
+        session_host: Optional[SessionHost] = None,
+        round: str = "",
+    ) -> CodeReviewVerdict:
+        """Run the advisory review directly against ``NovaClient.ask()``.
+
+        No tools are passed (``use_tools=False`` explicit, no ``tools``
+        kwarg). Any exception — diff collection, the Bedrock call itself,
+        or a structured-output parse failure — degrades to a passing
+        verdict with a nit-level finding, reproducing
+        ``AbstractCodeReviewDispatcher.review()``'s contract (this class
+        cannot call ``super().review()`` — there is no underlying
+        dispatcher to delegate to).
+        """
+        try:
+            profile = self.build_review_profile()
+            diff_text = await self._collect_diff(cwd, profile)
+            prompt = self._build_prompt(brief, diff_text)
+            ai_message = await self._client.ask(
+                prompt,
+                model=profile.model,
+                max_tokens=profile.max_tokens,
+                use_tools=False,
+                structured_output=CodeReviewVerdict,
+            )
+            verdict = ai_message.structured_output
+            if not isinstance(verdict, CodeReviewVerdict):
+                raise ValueError(
+                    "nova-adversarial reviewer did not return a valid "
+                    f"CodeReviewVerdict (got {type(verdict).__name__})"
+                )
+        except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error, mirrors code_review.py:145-157
+            self.logger.warning(
+                "%s code-review dispatch failed: %s", self.agent_name, exc
+            )
+            return CodeReviewVerdict(
+                passed=True,
+                findings=[
+                    CodeReviewFinding(
+                        message=f"code-review could not run: {exc}",
+                        severity="nit",
+                    )
+                ],
+            )
+
+        tagged_findings = [
+            finding
+            if isinstance(finding, AdversarialFinding)
+            else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            for finding in verdict.findings
+        ]
+        return verdict.model_copy(update={"files_modified": [], "findings": tagged_findings})
+
+    async def _collect_diff(
+        self, cwd: str, profile: NovaAdversarialReviewProfile
+    ) -> str:
+        """Compute the review diff for ``profile.review_scope``, truncated
+        deterministically at ``profile.max_diff_chars``.
+        """
+        if profile.review_scope == "commit":
+            argv = ["git", "show", "--patch", "--no-color", profile.review_commit]
+        elif profile.review_scope == "base":
+            argv = ["git", "diff", "--no-color", f"{profile.review_base}...HEAD"]
+        else:  # "uncommitted" (default)
+            argv = ["git", "diff", "--no-color", "HEAD"]
+
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_b, stderr_b = await process.communicate()
+        if process.returncode != 0:
+            raise DispatchExecutionError(
+                f"git diff failed (exit {process.returncode}): "
+                f"{stderr_b.decode('utf-8', errors='replace')[:2000]}"
+            )
+        diff_text = stdout_b.decode("utf-8", errors="replace")
+        return self._truncate_diff(diff_text, profile.max_diff_chars)
+
+    @staticmethod
+    def _truncate_diff(diff_text: str, max_diff_chars: int) -> str:
+        """Deterministically truncate ``diff_text``, never silently."""
+        if len(diff_text) <= max_diff_chars:
+            return diff_text
+        return (
+            diff_text[:max_diff_chars]
+            + f"\n\n[... diff truncated at {max_diff_chars} characters ...]"
+        )
+
+    @staticmethod
+    def _build_prompt(brief: BaseModel, diff_text: str) -> str:
+        return (
+            "You are an adversarial code reviewer. Review the diff below "
+            "against the acceptance criteria in the brief. Report every "
+            "genuine issue as a finding. You have NO tools and cannot "
+            "modify any files — this is a read-only review.\n\n"
+            f"Brief:\n{brief.model_dump_json()}\n\n"
+            f"Diff:\n{diff_text}\n\n"
+            "Return your verdict as the requested structured output."
         )

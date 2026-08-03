@@ -26,7 +26,10 @@ from parrot.flows.dev_loop.dispatchers.google_coding import GoogleCodingDispatch
 from parrot.flows.dev_loop.dispatchers.grok import GrokCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.moonshot import MoonshotCodeDispatcher
-from parrot.flows.dev_loop.dispatchers.nova import NovaCodeDispatcher
+from parrot.flows.dev_loop.dispatchers.nova import (
+    NovaAdversarialReviewDispatcher,
+    NovaCodeDispatcher,
+)
 from parrot.flows.dev_loop.dispatchers.zai import ZaiCodeDispatcher
 
 __all__ = [
@@ -37,6 +40,7 @@ __all__ = [
     "LLMCodeDispatcher",
     "GrokCodeDispatcher",
     "MoonshotCodeDispatcher",
+    "NovaAdversarialReviewDispatcher",
     "NovaCodeDispatcher",
     "ZaiCodeDispatcher",
     "DevLoopCodeDispatcher",

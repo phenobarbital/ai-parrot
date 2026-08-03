@@ -1123,6 +1123,12 @@ DEV_LOOP_NOVA_MANTLE_REGION: str = config.get(
     "DEV_LOOP_NOVA_MANTLE_REGION",
     fallback=BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1",
 )
+# Model used by the read-only nova-adversarial reviewer's single Converse
+# call (``NovaAdversarialReviewDispatcher``). Mirrors
+# ``DEV_LOOP_ADVERSARIAL_MODEL`` (the codex-adversarial equivalent, :1048).
+DEV_LOOP_NOVA_REVIEW_MODEL: str = config.get(
+    "DEV_LOOP_NOVA_REVIEW_MODEL", fallback="us.anthropic.claude-opus-5"
+)
 
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)
