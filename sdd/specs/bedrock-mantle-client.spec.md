@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-407
 **Date**: 2026-08-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.25.x
 
 ---
@@ -155,6 +155,7 @@ class BedrockMantleClient(OpenAIClient):
     client_type: str = "bedrock-mantle"
     client_name: str = "bedrock-mantle"
     _default_model: str = "openai.gpt-oss-120b"
+    _fallback_model: str = "google.gemma-4-26b-a4b"
 
     def __init__(
         self,
@@ -212,6 +213,7 @@ class BedrockMantleClient(OpenAIClient):
 | `test_explicit_base_url_wins` | Module 1 | `base_url=` kwarg overrides region/conf construction |
 | `test_api_key_resolution_order` | Module 1 | kwarg → `BEDROCK_MANTLE_API_KEY` → `AWS_NOVA_API_KEY`; survives `super().__init__` (re-set guard) |
 | `test_default_model` | Module 1 | `_default_model == "openai.gpt-oss-120b"`; `client_type == "bedrock-mantle"` |
+| `test_fallback_model_survives_init` | Module 1 | Constructed instance has `_fallback_model == "google.gemma-4-26b-a4b"` (not shadowed to `None` by `AbstractClient.__init__` — see §7 gotcha) |
 | `test_get_client_uses_base_url` | Module 1 | `get_client()` returns `AsyncOpenAI` configured with resolved key + base_url |
 | `test_factory_creates_mantle_client` | Module 2 | `LLMFactory.create("bedrock-mantle:openai.gpt-oss-120b")` returns `BedrockMantleClient` with model set; `"mantle"` alias too |
 | `test_ask_delegates_to_openai_machinery` | Module 3 | Mocked chat-completion round trip returns `AIMessage` (inherited path untouched) |
@@ -413,6 +415,14 @@ AWS_NOVA_API_KEY = config.get("AWS_NOVA_API_KEY", fallback=None)          # line
 - **Regional availability**: Mantle is not in every region; a wrong
   region yields DNS/connection errors, not auth errors. Docstring must
   state the region resolution order so misconfiguration is debuggable.
+- **`_fallback_model` shadowing**: `AbstractClient.__init__` does
+  `self._fallback_model = kwargs.get('fallback_model', None)`, which
+  shadows the class attribute with `None` unless the kwarg is passed —
+  the exact bug worked around in `BedrockConverseBase`
+  (`bedrock.py:199-209`). `BedrockMantleClient.__init__` MUST do
+  `kwargs.setdefault("fallback_model", "google.gemma-4-26b-a4b")`
+  before `super().__init__` so the capacity-error fallback actually
+  fires; an explicit caller-provided `fallback_model=` still wins.
 - **Key precedence with OPENAI_API_KEY**: `OpenAIClient.__init__` falls
   back to `config.get("OPENAI_API_KEY")` only when `api_key` is falsy —
   since the subclass resolves the key *before* calling super, a
@@ -434,18 +444,18 @@ No new packages. No liteLLM, no aioboto3 in this module.
 
 > Questions that must be resolved before or during implementation.
 
-- [ ] Confirm `_default_model` choice — proposed `openai.gpt-oss-120b`
-      (the model in the user-provided example). — *Owner: Jesus Lara*
+- [x] Confirm `_default_model` choice — *Resolved by Jesus Lara
+      (2026-08-03)*: `openai.gpt-oss-120b`.
 - [ ] Does Mantle accept the OpenAI SDK `parse()` structured-output
       path, or does it need the `NvidiaClient`-style `_chat_completion`
       override? Decide empirically during Module 1. — *Owner: implementer*
 - [ ] Should a `BedrockMantleModel` enum/catalog be added later once the
       Mantle model list stabilizes? Deferred out of v1 (§1 Non-Goals).
       — *Owner: Jesus Lara*
-- [ ] `_fallback_model` for capacity errors — inherit OpenAI's
-      `gpt-5-nano` is wrong for Mantle; likely set to a small Mantle
-      model (e.g. a Nova or gpt-oss variant) or `None`. Decide during
-      Module 1. — *Owner: implementer*
+- [x] `_fallback_model` for capacity errors — *Resolved by Jesus Lara
+      (2026-08-03)*: `google.gemma-4-26b-a4b`. Must be applied via the
+      `kwargs.setdefault("fallback_model", ...)` guard (§7 gotcha) so it
+      is not shadowed by `AbstractClient.__init__`.
 
 ---
 
@@ -466,3 +476,4 @@ No new packages. No liteLLM, no aioboto3 in this module.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-03 | Jesus Lara | Initial draft |
+| 0.2 | 2026-08-03 | Jesus Lara | Resolved default (`openai.gpt-oss-120b`) + fallback (`google.gemma-4-26b-a4b`) models; approved |
