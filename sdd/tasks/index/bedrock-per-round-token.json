@@ -14,14 +14,14 @@
       "feature_id": "FEAT-404",
       "feature": "bedrock-per-round-token",
       "spec": "sdd/specs/bedrock-per-round-token.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Edits clients/bedrock.py ask(); TASK-2095 edits resume() in the same file and copies the idiom established here — sequential by design (per-spec isolation).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-03T01:54:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2094-bedrock-ask-round-instrumentation.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-404",
       "feature": "bedrock-per-round-token",
       "spec": "sdd/specs/bedrock-per-round-token.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2094"],
+      "depends_on": [
+        "TASK-2094"
+      ],
       "parallel": false,
       "parallelism_notes": "Same file as TASK-2094 (clients/bedrock.py) and mirrors its post-change ask() as the reference implementation; must follow it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-03T01:54:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2095-bedrock-resume-lifecycle-span.md"
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-404",
       "feature": "bedrock-per-round-token",
       "spec": "sdd/specs/bedrock-per-round-token.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2094", "TASK-2095"],
+      "depends_on": [
+        "TASK-2094",
+        "TASK-2095"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests exercise both instrumented methods; requires TASK-2094 and TASK-2095 complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-03T01:54:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2096-bedrock-multiround-usage-tests.md"
     }
