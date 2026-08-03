@@ -51,6 +51,7 @@ import contextlib
 import json
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
@@ -120,6 +121,47 @@ def _resolve_voice_client_class() -> type:
         "likely renamed it again — add the new name to "
         "_VOICE_CLIENT_CLASS_NAMES."
     )
+
+
+@dataclass
+class _TurnState:
+    """Receive-side state carried across frames within one Nova Sonic turn.
+
+    Nova reports the speaker and generation stage on ``contentStart``, not on
+    the ``textOutput`` frames they govern, so this must persist between
+    frames. Kept as a local inside :meth:`NovaAudio.stream_voice` — never on
+    ``self``, since ``NovaAudio`` is a shared mixin that may serve concurrent
+    sessions.
+    """
+    role: Optional[str] = None
+    generation_stage: Optional[str] = None
+    pending_tool: Optional[LiveToolCall] = None
+    pending_tool_raw_input: Optional[str] = None
+
+
+def _parse_generation_stage(additional_model_fields: Any) -> Optional[str]:
+    """Extract ``generationStage`` from a contentStart's additionalModelFields.
+
+    Nova sends this as a JSON *string*. Returns None when absent or malformed
+    — callers treat None as "no stage reported" and emit the text (spec §7:
+    a missing stage must never suppress assistant text).
+
+    Args:
+        additional_model_fields: The raw ``additionalModelFields`` value from
+            a ``contentStart`` frame (expected to be a JSON string).
+
+    Returns:
+        The parsed ``generationStage`` value, or ``None`` when absent or the
+        value does not parse as a JSON object.
+    """
+    if not additional_model_fields:
+        return None
+    try:
+        if isinstance(additional_model_fields, str):
+            additional_model_fields = json.loads(additional_model_fields)
+        return additional_model_fields.get("generationStage")
+    except (ValueError, AttributeError):
+        return None
 
 
 class NovaAudio:
@@ -422,6 +464,7 @@ class NovaAudio:
         usage = LiveCompletionUsage()
         accumulated_text = ""
         tool_calls_list: List[LiveToolCall] = []
+        turn_state = _TurnState()
 
         self.logger.info(
             "Starting Nova Sonic voice session %s, turn %s (model=%s)",
@@ -505,17 +548,37 @@ class NovaAudio:
                     accumulated_text = ""
                     continue
 
+                content_start = event.get("contentStart")
+                if content_start:
+                    turn_state.role = content_start.get("role")
+                    turn_state.generation_stage = _parse_generation_stage(
+                        content_start.get("additionalModelFields")
+                    )
+                    continue
+
                 text_output = event.get("textOutput")
                 if text_output:
                     chunk_text = text_output.get("content", "")
-                    accumulated_text += chunk_text
-                    yield LiveVoiceResponse(
-                        text=chunk_text,
-                        is_complete=False,
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        user_id=user_id,
+                    role = turn_state.role
+                    stage = turn_state.generation_stage
+                    # Missing stage must EMIT, not suppress (spec §7) — only an
+                    # explicitly non-SPECULATIVE stage suppresses assistant text.
+                    suppressed = (
+                        role == "ASSISTANT"
+                        and stage is not None
+                        and stage != "SPECULATIVE"
                     )
+                    if not suppressed:
+                        if role == "ASSISTANT":
+                            accumulated_text += chunk_text
+                        yield LiveVoiceResponse(
+                            text=chunk_text,
+                            role=role,
+                            is_complete=False,
+                            session_id=session_id,
+                            turn_id=turn_id,
+                            user_id=user_id,
+                        )
 
                 audio_output = event.get("audioOutput")
                 if audio_output:
