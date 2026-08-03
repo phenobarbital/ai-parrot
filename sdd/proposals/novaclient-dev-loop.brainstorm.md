@@ -883,20 +883,19 @@ from parrot.models.bedrock_models import PUBLIC_TO_BEDROCK, translate
 
 ## Open Questions
 
-- [ ] **Q1 — The split is reported committed, but not on this branch.** The
-      user states the `dev_loop` reorganisation was already committed. On
-      `dev` at `fb6739084`, verification does not find it:
-      `git ls-files .../dev_loop/models/ .../dev_loop/dispatchers/` returns
-      **nothing**; `git status` shows both directories as `??` (untracked, not
-      ignored) with `models.py` and `dispatcher.py` staged as **deleted**; and
-      `git log --all -- '.../dev_loop/models/*'` finds **no commit on any ref**
-      that adds them. The likely explanations are a commit made in a different
-      worktree/clone, or one not yet pushed to this checkout. Until it is
-      present on `base_branch`, a worktree cut from `dev` HEAD contains none of
-      the modules this feature extends and `/sdd-start` fails immediately.
-      Resolve before `/sdd-spec`: confirm where the commit lives, or commit the
-      split here (and remove the `models_new/`, `dispatchers_new/`, `*.bak`
-      strays). — *Owner: Jesus Lara*
+- [x] **Q1 — Is the `dev_loop` split present on `base_branch`?** —
+      *Owner: Jesus Lara*: **Resolved.** The split landed as
+      `refactor: split dev_loop models.py and dispatcher.py into per-client
+      packages`, was destroyed by a concurrent `git reset --hard origin/dev`,
+      and was recovered via reflog + cherry-pick. It is now on `dev` as
+      `a50567f39` and **pushed to `origin/dev`** — 20 files tracked under
+      `dev_loop/models/` + `dev_loop/dispatchers/`, monolithic `models.py` /
+      `dispatcher.py` gone, `models_new/` / `dispatchers_new/` / `*.bak` strays
+      removed, imports verified. A worktree cut from `dev` HEAD now contains
+      every module this feature extends.
+      **Standing hazard:** concurrent SDD id-reservation runs reset this branch
+      to `origin`, which discards *committed* local work. Push immediately
+      after committing while this feature is in flight.
 - [x] **Q2 — Transport decision.** — *Owner: Jesus Lara*: **Resolved as Option A
       [R4].** Anthropic models on Bedrock do not support Chat Completions, so
       Nova will not use that path for them at all; anyone needing Claude in the
