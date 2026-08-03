@@ -4,9 +4,14 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
-from parrot.knowledge.wiki.project import load_project_config, save_project_config
+from parrot.knowledge.wiki.project import (
+    WikiProjectConfig,
+    load_project_config,
+    save_project_config,
+)
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
 
 # The worktree's own package sources must shadow whatever `parrot` is
@@ -112,3 +117,56 @@ class TestWikiMCPServerIntegration:
         assert "not inside a git repository" in result.stderr
         # stdout must be reserved for the JSON-RPC channel — nothing else.
         assert result.stdout == ""
+
+
+class TestCreateWikiMcpServerArangoBackend:
+    """create_wiki_mcp_server() must wire arangodb connection params —
+    mirrors cli.py's _open_store() — instead of only working for the
+    sqlite/memory backends' simpler create_wiki_store() call shape."""
+
+    def test_arangodb_backend_passes_connection_params(self, tmp_path, monkeypatch):
+        from parrot.knowledge.wiki import mcp_server as mcp_server_module
+
+        config = WikiProjectConfig(wiki_name="test-arango", backend="arangodb")
+        save_project_config(tmp_path, config)
+
+        captured: dict = {}
+
+        def fake_create_wiki_store(storage_dir, wiki_name="", backend="sqlite", **kwargs):
+            captured["storage_dir"] = storage_dir
+            captured["wiki_name"] = wiki_name
+            captured["backend"] = backend
+            captured["kwargs"] = kwargs
+            return MagicMock()
+
+        monkeypatch.setattr(mcp_server_module, "create_wiki_store", fake_create_wiki_store)
+        server = mcp_server_module.create_wiki_mcp_server(tmp_path)
+
+        assert captured["backend"] == "arangodb"
+        assert captured["wiki_name"] == "test-arango"
+        assert "arango_params" in captured["kwargs"]
+        assert captured["kwargs"]["arango_params"]["host"]
+        assert captured["kwargs"]["database"] == (config.arango_database or "")
+        assert captured["kwargs"]["text_analyzer"] == config.arango_text_analyzer
+        assert server is not None
+
+    def test_sqlite_backend_unaffected_by_arango_branch(self, tmp_path, monkeypatch):
+        """Guard against the arangodb fix regressing the default backend."""
+        from parrot.knowledge.wiki import mcp_server as mcp_server_module
+
+        config = WikiProjectConfig(wiki_name="test-sqlite", backend="sqlite")
+        save_project_config(tmp_path, config)
+
+        captured: dict = {}
+
+        def fake_create_wiki_store(storage_dir, wiki_name="", backend="sqlite", **kwargs):
+            captured["backend"] = backend
+            captured["kwargs"] = kwargs
+            return MagicMock()
+
+        monkeypatch.setattr(mcp_server_module, "create_wiki_store", fake_create_wiki_store)
+        mcp_server_module.create_wiki_mcp_server(tmp_path)
+
+        assert captured["backend"] == "sqlite"
+        assert captured["kwargs"] == {}
+        assert config.storage_path(tmp_path).is_dir()
