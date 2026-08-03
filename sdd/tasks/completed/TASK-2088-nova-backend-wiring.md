@@ -298,10 +298,47 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Added `"nova"` to `DevAgentBackend` (`models/base.py`). Added a
+`nova` branch to `build_dispatcher` (`agent_builder.py`, before the
+`raise ValueError`), mirroring the moonshot branch:
+`NovaCodeDispatcher(**common)` + `NovaCodeDispatchProfile(model=spec.model
+or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5"))`.
+Added a `nova` `BackendInfo` row to `catalog.BACKENDS`
+(`roles=("development", "adversarial")`, `transport="api"`, the 6 curated
+Bedrock model ids). Converted the adversarial selector: `ADVERSARIAL_BACKEND`
+constant kept as the literal `"codex"` (existing importers unaffected);
+added `resolve_adversarial_backend(config_getter=None)`, validated against
+`{"codex", "nova"}`, raising `ValueError` naming both options on an invalid
+value; `catalog_payload()`'s two use sites (`:294`/`:296` in the original
+contract) now call `resolve_adversarial_backend(config_getter)` instead of
+referencing the bare constant. Added
+`conf.DEV_LOOP_ADVERSARIAL_BACKEND` (fallback `"codex"`),
+`conf.DEV_LOOP_NOVA_MECHANICAL_MODEL` (for TASK-2092, not yet consumed).
+14 new unit tests in `test_nova_wiring.py`, all pass; ran
+`test_catalog.py`/`test_agent_builder.py`/full `tests/flows/dev_loop/`
+(926 passed, same 2 pre-existing unrelated failures as TASK-2086/2087,
+verified identical via `git stash -u`). No new mypy error category (the
+`nova` branch shows the exact same pre-existing `**dict[str, object]`
+Liskov-style finding every other `build_dispatcher` branch already has).
+`ruff check`: 2 new pre-existing-style (UP006 `Tuple`) findings on my own
+new lines in `catalog.py`, matching the file's established (unfixed)
+convention throughout — not touched, per the "insert only" instruction and
+consistency with TASK-2086/2087's identical finding.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's Codebase Contract and "Files to
+Create/Modify" table did not list `packages/ai-parrot/src/parrot/flows/
+dev_loop/__init__.py`, but `agent_builder.py` imports `NovaCodeDispatcher`/
+`NovaCodeDispatchProfile` via the *package* re-export
+(`from parrot.flows.dev_loop import (...)`), not the `dispatchers`/`models`
+submodules directly (per an explicit comment in `agent_builder.py`
+explaining this is required so dispatcher class identities stay aligned
+across every consumer, e.g. for `isinstance` checks under
+`test_lazy_import.py`'s module-reload tests). Without adding both names to
+`dev_loop/__init__.py`'s imports/`__all__`, `agent_builder.py` would raise
+`ImportError`. Added them, mirroring the existing Moonshot/Zai entries
+exactly. Verified with `python -c "import parrot.flows.dev_loop.code_review"`
+/ `"import parrot.flows.dev_loop.dispatchers"` / `"import
+parrot.flows.dev_loop"` (all exit 0) that this does not introduce a
+circular-import regression.

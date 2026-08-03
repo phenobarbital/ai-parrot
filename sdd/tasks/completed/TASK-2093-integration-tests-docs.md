@@ -230,11 +230,91 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Created `test_nova_integration.py` with the four spec §4
+integration tests plus the [R7] research-node guard and an offline-CI
+guard — 7 tests total, all pass in 0.33s (fully offline; mocked at the
+transport boundary: the OpenAI-compatible client behind `bedrock-mantle`
+for the dev seat via `dispatcher._client_factory`, `NovaClient.ask` for
+the adversarial seat). `test_nova_dev_seat_end_to_end` builds a real
+`NovaCodeDispatcher`/`NovaCodeDispatchProfile` pair via `build_dispatcher`
+and runs the actual tool loop to a validated `DevelopmentOutput`.
+`test_nova_adversarial_gate_end_to_end` drives the real
+`NovaAdversarialReviewDispatcher.review()` and asserts `files_modified ==
+[]`, every finding tagged `source="nova-adversarial"`, and `use_tools=False`
+with no `tools` kwarg at all. `test_usage_report_written_at_run_end` builds
+a real `Snapshot` via the reducer chain, writes `usage.json`/`usage.html`
+to a tmp dir, and round-trips. `test_defaults_unchanged_without_nova`
+asserts `catalog_payload()["adversarial_backend"] == "codex"` and that the
+`claude-code` dev seat is unaffected. `test_research_node_untouched` greps
+the source for both verified lines PLUS asserts `"nova"` does not appear
+in the file at all (stronger than the literal spec ask). Verified this
+last claim independently via `git diff dev...HEAD --stat -- .../
+nodes/research.py` — empty diff, confirming zero touches across all 11
+tasks. Created `docs/dev_loop/nova-backend.md` (new directory — none of
+`docs/dev_loop/`/`docs/features/`/`docs/migration/` fit as-is; this
+mirrors the `docs/orchestration/` precedent for a distinct flows
+subsystem) covering: the three seats + curated model ids table, the two
+credential paths (SigV4 vs `AWS_NOVA_API_KEY` bearer), all 6
+`DEV_LOOP_NOVA_*`/`DEV_LOOP_ADVERSARIAL_BACKEND` keys in a table, PR
+enrichment's enrich-never-replace contract, the per-agent usage report
+(including the node-vs-worker-granularity known limitation from TASK-2090),
+and the FEAT-404 soft-dependency caveat explicitly. Ran the full FEAT-405
+test surface together (13 files, 162 tests) — all pass — plus the entire
+`tests/flows/dev_loop/` suite (983 passed, same 2 pre-existing unrelated
+failures verified via `git stash -u` throughout every prior task in this
+feature: `test_lazy_import.py::test_models_module_is_pure` and
+`test_qa_codereview.py::test_review_brief_carries_deterministic_qa_results`).
+`ruff check`/mypy clean on the new test file (0 findings on either).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Spec §5 walkthrough**: list any acceptance criterion not satisfied and why.
+**Spec §5 walkthrough** (every bullet, against the actually-shipped code):
+1. Unit tests pass — ✅ (162 FEAT-405 tests + full suite).
+2. Integration tests pass — ✅ (this task, 7 tests).
+3. `ruff check`/mypy clean on changed files — ✅ with one caveat, noted
+   consistently since TASK-2086: pre-existing UP006/UP035/UP045/UP037
+   typing-modernization findings on the SAME lines every sibling function
+   in the touched hot files (`llm.py`, `catalog.py`, `agent_builder.py`,
+   `runner.py`, `feature_handoff.py`, `deployment_handoff.py`) already
+   carries — verified via before/after counts at every task boundary, 0
+   new findings beyond that established local-convention pattern. Every
+   brand-new file (`usage_report.py`, `nova.py`'s new symbols, all new
+   test files) is fully modern-typed and 100% clean.
+4. `translate("minimax.minimax-m2.5", region_prefix="us")` unreachable
+   leak — ✅ (TASK-2083, `test_unmapped_model_never_prefixed`).
+5. `au.`/`global.` prefixes + vendor namespaces — ✅ (TASK-2083).
+6. `NovaClient.__init__`'s `region_prefix="us"` unchanged — ✅ (never
+   touched by any of the 11 tasks — verified again here).
+7. `DevAgentBackend` has `"nova"`; `build_dispatcher` pair — ✅ (TASK-2088).
+8. Adversarial selectable over `{codex, nova}`, defaults `codex` — ✅
+   (TASK-2088, `resolve_adversarial_backend`).
+9. No tools passed, `files_modified == []` always — ✅ (TASK-2087, and
+   re-verified end-to-end here).
+10. `max_tokens` clamped with warning, never rejected — ✅ (TASK-2085).
+11. One `ClientRoundEvent` per turn for every backend, no summing — ✅
+    (TASK-2089, `test_source_contains_no_summing` greps the diff).
+12. `usage.json`/markdown/`usage.html` from one `UsageReport`; `—` never
+    `0` — ✅ (TASK-2090/2091).
+13. `usage.html` self-contained — ✅ (TASK-2091, no external ref of any
+    kind, verified with a hostile model id).
+14. `nodes/research.py` unmodified — ✅ (verified via empty `git diff`
+    above, not just the AC's literal grep).
+15. PR body falls back to exact template on any failure — ✅ (TASK-2092,
+    including the belt-and-suspenders call-site guard).
+16. Run configuring nothing behaves identically — ✅ (TASK-2093,
+    `test_defaults_unchanged_without_nova` + `test_claude_code_dev_seat_
+    unaffected`).
+17. Docs updated — ✅ (this task).
 
-**Deviations from spec**: none | describe if any
+Every acceptance criterion in spec §5 is satisfied.
+
+**Deviations from spec**: (1) Created `docs/dev_loop/nova-backend.md` — the
+task's own instruction said "check the actual `docs/` layout first"
+precisely because no pre-existing `docs/dev_loop/` directory exists;
+created it fresh as the most natural home (see Notes above). (2) Did NOT
+modify `.agent/CONTEXT.md` — the task's instruction was explicitly
+conditional ("one line noting the `nova` dev-loop backend, **if the file
+lists backends**"); verified it does not list any dev-loop backend roster
+anywhere (grepped for `claude-code`/`codex`/backend mentions — none
+describe the dev_loop package's backend set), so the condition is not met
+and no edit was made, per the task's own explicit conditionality.

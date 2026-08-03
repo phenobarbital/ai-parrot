@@ -240,10 +240,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Added `au.`/`global.` to `_REGION_PREFIXES`; added `_VENDOR_NAMESPACES`
+("minimax.", "zai.", "moonshotai.") to `_is_bedrock_id()` pass-through detection;
+added `PUBLIC_TO_BEDROCK["claude-opus-5"]`/`["claude-fable-5"]` with no `-vN:0`
+suffix; introduced `REQUIRES_REGION_PREFIX` allowlist (`claude-opus-5`→`us`,
+`claude-fable-5`→`global`, `claude-haiku-4-5`→`us`). `translate()` now: (1)
+pass-through ids warn (not silently drop) an explicit `region_prefix` that
+isn't in the allowlist; (2) an explicit `region_prefix` on a MAPPED model
+still applies unconditionally (preserves 100% backward compat with existing
+Nova/Claude tests, e.g. `nova-canvas` + `region_prefix="us"` still prefixes);
+(3) when no explicit prefix is given, the allowlist default applies — models
+absent from it are NEVER auto-prefixed (closes the day-one MiniMax bug).
+`NovaClient.__init__`'s `region_prefix="us"` default is unchanged. All 43
+tests pass (`pytest packages/ai-parrot/tests/models/ packages/ai-parrot/tests/test_bedrock_models.py -v`),
+`ruff check` clean, no new mypy errors in the changed file.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's own "Test Specification" scaffold
+contained a self-contradiction — `test_mapped_model_falls_back_to_map_default`
+expects `translate("claude-opus-5")` (no args) to include the default `us.`
+prefix, while `test_opus5_has_no_version_suffix` expects
+`translate("claude-opus-5", region_prefix=None)` (the same call, since the
+default arg value is `None`) to equal `"anthropic.claude-opus-5"` with NO
+prefix. Both cannot hold simultaneously. Resolved in favor of the
+Acceptance Criteria text ("A mapped model uses the caller's prefix when
+given, the map default otherwise"): the no-suffix assertion was rewritten as
+`test_opus5_bedrock_id_has_no_version_suffix` / `test_fable5_bedrock_id_has_no_version_suffix`,
+checking `PUBLIC_TO_BEDROCK` directly instead of round-tripping through
+`translate()` with no prefix, and a new `test_opus5_default_prefix_applied`
+was added to lock in the "map default otherwise" behavior explicitly.

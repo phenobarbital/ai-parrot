@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional, Union
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.dev_loop.dispatchers.nova import summarize_pr_changes
 from parrot.flows.dev_loop.models import (
     DevelopmentOutput,
     FeedbackDecision,
@@ -164,7 +165,9 @@ class FeatureHandoffNode(DevLoopNode):
 
         # 2. Open draft PR with retry-once (mirrors DeploymentHandoffNode).
         title = self._build_title(planner)
-        body = self._build_body(planner, development, synthesis, qa_report, accept_notes)
+        body = await self._build_body_async(
+            planner, development, synthesis, qa_report, accept_notes
+        )
         pr_url: Optional[str] = None
         last_error: Optional[str] = None
         for attempt in range(2):
@@ -502,6 +505,36 @@ class FeatureHandoffNode(DevLoopNode):
     # ------------------------------------------------------------------
     # Internal — PR copy
     # ------------------------------------------------------------------
+
+    async def _build_body_async(
+        self,
+        planner: PlannerOutput,
+        development: Optional[DevelopmentOutput],
+        synthesis: Optional[SynthesisReport],
+        qa_report: Optional[QAReport],
+        accept_notes: str,
+    ) -> str:
+        """``_build_body()`` plus an optional Haiku "Summary of changes"
+        section (FEAT-405 Module 8, [R2] "enrich, never replace").
+
+        The deterministic template is always computed first and is the
+        exact fallback: any enrichment failure, timeout, or empty
+        response returns it byte-identical to the pre-FEAT-405 output.
+        Belt-and-suspenders: ``summarize_pr_changes`` itself never raises,
+        but this call site also swallows — PR creation must never break
+        because of the mechanical seat.
+        """
+        body = self._build_body(planner, development, synthesis, qa_report, accept_notes)
+        try:
+            summary = await summarize_pr_changes(body, logger=self.logger)
+        except Exception:  # noqa: BLE001 - enrichment must never break handoff
+            self.logger.warning(
+                "PR summary enrichment failed; using template only.", exc_info=True
+            )
+            summary = ""
+        if not summary:
+            return body
+        return f"{body}\n\n## Summary of changes\n\n{summary}\n"
 
     @staticmethod
     def _build_title(planner: PlannerOutput) -> str:

@@ -75,6 +75,11 @@ from parrot.flows.dev_loop.models.google_coding import (
 from parrot.flows.dev_loop.models.grok import GrokCodeDispatchProfile
 from parrot.flows.dev_loop.models.llm import LLMCodeDispatchProfile
 from parrot.flows.dev_loop.models.moonshot import MoonshotCodeDispatchProfile
+from parrot.flows.dev_loop.models.nova import (
+    NovaAdversarialReviewProfile,
+    NovaCodeDispatchProfile,
+    NovaMechanicalProfile,
+)
 from parrot.flows.dev_loop.models.zai import ZaiCodeDispatchProfile
 
 __all__ = [
@@ -109,6 +114,9 @@ __all__ = [
     "LogSource",
     "ManualCriterion",
     "MoonshotCodeDispatchProfile",
+    "NovaAdversarialReviewProfile",
+    "NovaCodeDispatchProfile",
+    "NovaMechanicalProfile",
     "PerspectiveSynthesis",
     "PlannerOutput",
     "QAReport",

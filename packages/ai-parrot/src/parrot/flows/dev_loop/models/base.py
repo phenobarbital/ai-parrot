@@ -381,7 +381,7 @@ class ResearchOutput(BaseModel):
 # ─────────────────────────────────────────────────────────────────────
 
 DevAgentBackend = Literal[
-    "claude-code", "codex", "gemini", "nvidia", "grok", "zai", "moonshot", "google_coding"
+    "claude-code", "codex", "gemini", "nvidia", "grok", "zai", "moonshot", "google_coding", "nova"
 ]
 
 

@@ -257,10 +257,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Created `dispatchers/nova.py` with `NovaCodeDispatcher(LLMCodeDispatcher)`.
+`__init__` injects `client_factory=self._create_mantle_client`, which builds a
+plain `OpenAIClient` (existing `clients/gpt.py` base class — same precedent
+`NvidiaClient` uses) bound to the bedrock-mantle base URL, instead of routing
+through `LLMFactory`/`NovaClient` (Converse-only, no chat-completion shape).
+`_completion_args` applies TASK-2085's `effective_max_tokens` clamp and never
+emits `extra_body`/`chat_template_kwargs`. `_chat_completion` delegates to
+`super()` (explicit override per the declared two-hook shape; no request-shape
+change needed since routing happens at client construction).
+`_resolve_bedrock_api_key`/`_resolve_mantle_base_url` raise
+`DispatchExecutionError` naming the missing config key
+(`AWS_NOVA_API_KEY`/`DEV_LOOP_NOVA_MANTLE_BASE_URL`/`DEV_LOOP_NOVA_MANTLE_REGION`).
+Added `DEV_LOOP_NOVA_MANTLE_BASE_URL` and `DEV_LOOP_NOVA_MANTLE_REGION` to
+`conf.py`, reusing the existing `AWS_NOVA_API_KEY` Bedrock API key rather than
+inventing a duplicate secret (same physical credential `BedrockConverseBase`
+already uses). Exported `NovaCodeDispatcher` from `dispatchers/__init__.py`.
+10 unit tests in `test_nova_dispatcher.py`, all pass; ran the wider
+`test_dispatcher.py`/`test_agent_builder.py` suites too (79 total, no
+regressions). No new mypy errors beyond the pre-existing Liskov-override
+pattern also present in `moonshot.py` (profile/`_completion_args`/`dispatch`
+narrowing — verified identical in both files).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `ruff check` on `nova.py` reports 15 pre-existing-style
+findings (UP006/UP035/UP045 — `Dict`/`List`/`Optional`/`Type` vs. modern
+`dict`/`list`/`X | None`). Not fixed: this matches the established local
+convention verified across the whole `dispatchers/` package — `llm.py` (the
+class being extended) has 51 identical findings, `moonshot.py` (the pattern
+this task was told to copy) has 12. Converting only the new file to modern
+typing would diverge from the file's own copied precedent and the spec's
+explicit note that `dispatchers/llm.py` is "hot and actively churning — keep
+the diff minimal." No new lint category was introduced beyond this
+pre-existing debt (verified via `git stash` diff before/after).
