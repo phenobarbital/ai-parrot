@@ -16,7 +16,7 @@ reuse_feature_id: FEAT-404
 **Feature ID**: FEAT-404
 **Date**: 2026-08-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: current dev cycle
 **Proposal**: `sdd/proposals/bedrock-per-round-token.proposal.md` (mode: enrichment)
 **Research audit**: `sdd/state/FEAT-404/` (findings F001–F010)
@@ -559,3 +559,4 @@ class CompletionUsage:
 |---|---|---|---|
 | 0.1 | 2026-08-03 | Jesus Lara (via /sdd-spec) | Initial draft from FEAT-404 proposal |
 | 0.2 | 2026-08-03 | Jesus Lara | U4 (resume span design) user-confirmed — all questions resolved |
+| 0.3 | 2026-08-03 | Jesus Lara | Status → approved |
