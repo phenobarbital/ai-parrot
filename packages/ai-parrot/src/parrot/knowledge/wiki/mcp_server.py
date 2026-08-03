@@ -85,12 +85,26 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     # NOTE: storage_dir is config.storage_path(root) (".parrot/wiki" by
     # default, or wherever wiki.json points it), NOT a bare "root/.parrot"
     # — matching how `wikitoolkit build`/`query`/etc. resolve the plane
-    # (see cli.py:_open_store).
-    store = create_wiki_store(
-        storage_dir=config.storage_path(root),
-        wiki_name=config.wiki_name,
-        backend=config.backend,
-    )
+    # (see cli.py:_open_store). The arangodb backend additionally needs
+    # connection params/database/analyzer — mirrored from _open_store()
+    # so `wikitoolkit mcp` works against the same backends the CLI does.
+    storage = config.storage_path(root)
+    if config.backend == "arangodb":
+        from parrot.knowledge.wiki.project import resolve_arango_params
+
+        store = create_wiki_store(
+            storage,
+            wiki_name=config.wiki_name,
+            backend="arangodb",
+            arango_params=resolve_arango_params(config),
+            database=config.arango_database or "",
+            text_analyzer=config.arango_text_analyzer,
+        )
+    else:
+        storage.mkdir(parents=True, exist_ok=True)
+        store = create_wiki_store(
+            storage, wiki_name=config.wiki_name, backend=config.backend
+        )
     tools = create_wiki_tools(store, root=root, config=config)
     server = StdioMCPServer(LocalServerConfig(
         name="wikitoolkit",

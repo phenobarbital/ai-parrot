@@ -280,7 +280,9 @@ def _install_mcp_json(root: Path) -> str:
     if not isinstance(data, dict):
         data = {}
 
-    servers = data.setdefault("mcpServers", {})
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = data["mcpServers"] = {}
     if servers.get("wikitoolkit") == assets.MCP_JSON_ENTRY:
         return ".mcp.json — wikitoolkit entry already current"
 

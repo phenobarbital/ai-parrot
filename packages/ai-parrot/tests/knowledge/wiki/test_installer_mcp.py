@@ -51,6 +51,14 @@ class TestMCPJsonInstall:
         data = json.loads(mcp_json.read_text())
         assert data["mcpServers"]["wikitoolkit"]["command"] == "wikitoolkit"
 
+    def test_install_recovers_from_malformed_mcp_servers(self, repo_root):
+        # "mcpServers" is not a dict — must not crash, just reset it.
+        mcp_json = repo_root / ".mcp.json"
+        mcp_json.write_text(json.dumps({"mcpServers": ["not", "a", "dict"]}))
+        install_claude_integration(repo_root)
+        data = json.loads(mcp_json.read_text())
+        assert "wikitoolkit" in data["mcpServers"]
+
 
 class TestMCPJsonUninstall:
     def test_uninstall_removes_entry(self, repo_root):

@@ -9,14 +9,14 @@ via a Bash-invoked CLI.
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, Field
 
+from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
-from parrot.tools.abstract import AbstractTool
+from parrot.tools.abstract import AbstractTool, ToolResult
 
 
 class WikiQueryInput(BaseModel):
@@ -87,11 +87,14 @@ class WikiPageTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, page_id: str) -> dict[str, Any] | str:
+    async def _execute(self, page_id: str) -> ToolResult:
         page = await self._store.get_page(page_id, include_body=True)
         if page is None:
-            return f"Page not found: {page_id}"
-        return page
+            return ToolResult(
+                success=False, status="error", result=None,
+                error=f"Page not found: {page_id}",
+            )
+        return ToolResult(result=page)
 
 
 class WikiRelatedTool(AbstractTool):
@@ -109,8 +112,11 @@ class WikiRelatedTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, page_id: str) -> list[dict[str, Any]]:
-        return await self._store.neighbors(page_id)
+    async def _execute(self, page_id: str) -> ToolResult:
+        neighbors = await self._store.neighbors(page_id)
+        # Wrapped under a key (not a bare list) so the adapter's JSON
+        # encoding path (dict → json.dumps) applies to this result too.
+        return ToolResult(result={"neighbors": neighbors})
 
 
 class WikiRememberTool(AbstractTool):
@@ -124,9 +130,10 @@ class WikiRememberTool(AbstractTool):
     )
     args_schema = WikiRememberInput
 
-    def __init__(self, store: BaseWikiStore):
+    def __init__(self, store: BaseWikiStore, storage_dir: Path | None = None):
         super().__init__(name=self.name, description=self.description)
         self._store = store
+        self._storage_dir = storage_dir
 
     async def _execute(
         self,
@@ -135,7 +142,7 @@ class WikiRememberTool(AbstractTool):
         title: str | None = None,
         link_page_id: str | None = None,
         rel: str | None = "references",
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         # Deterministic id from title+category (mirrors cli.py:remember —
         # re-remembering the same thing updates rather than duplicates).
         resolved_title = (title or fact.strip().splitlines()[0][:80]).strip()
@@ -164,12 +171,20 @@ class WikiRememberTool(AbstractTool):
             )
             linked = True
 
-        return {
+        if self._storage_dir is not None:
+            WikiBookkeeper().log_operation(
+                self._storage_dir,
+                "REMEMBER",
+                f"page_id: {page_id}, title: {resolved_title!r}, "
+                f"category: {category}, by: agent:mcp",
+            )
+
+        return ToolResult(result={
             "page_id": page_id,
             "title": resolved_title,
             "category": category,
             "linked": linked,
-        }
+        })
 
 
 class WikiNoteTool(AbstractTool):
@@ -179,16 +194,20 @@ class WikiNoteTool(AbstractTool):
     description = "Append a dated note to an existing wiki page."
     args_schema = WikiNoteInput
 
-    def __init__(self, store: BaseWikiStore):
+    def __init__(self, store: BaseWikiStore, storage_dir: Path | None = None):
         super().__init__(name=self.name, description=self.description)
         self._store = store
+        self._storage_dir = storage_dir
 
-    async def _execute(self, page_id: str, text: str) -> dict[str, Any]:
+    async def _execute(self, page_id: str, text: str) -> ToolResult:
         # Read-modify-write pattern (mirrors cli.py:1741-1790) — there is
         # no store.add_note(); notes are appended to the body in-process.
         page = await self._store.get_page(page_id, include_body=True)
         if page is None:
-            return {"status": "error", "error": f"Page not found: {page_id}"}
+            return ToolResult(
+                success=False, status="error", result=None,
+                error=f"Page not found: {page_id}",
+            )
 
         stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
         body = str(page.get("body") or "")
@@ -208,7 +227,15 @@ class WikiNoteTool(AbstractTool):
                 asserted_by="agent:mcp",
             )
         ])
-        return {"page_id": page["concept_id"], "status": "noted"}
+
+        if self._storage_dir is not None:
+            WikiBookkeeper().log_operation(
+                self._storage_dir,
+                "NOTE",
+                f"page_id: {page['concept_id']}, by: agent:mcp",
+            )
+
+        return ToolResult(result={"page_id": page["concept_id"], "status": "noted"})
 
 
 class WikiStatusTool(AbstractTool):
@@ -222,8 +249,9 @@ class WikiStatusTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self) -> dict[str, Any]:
-        return await self._store.stats()
+    async def _execute(self) -> ToolResult:
+        stats = await self._store.stats()
+        return ToolResult(result=stats)
 
 
 def create_wiki_tools(
@@ -235,18 +263,24 @@ def create_wiki_tools(
 
     Args:
         store: Wiki retrieval-plane backend the tools call directly.
-        root: Reserved for future project-relative behavior (unused).
-        config: Reserved for future project-config-driven behavior (unused).
+        root: Wiki project root. When given together with ``config``,
+            ``wiki_remember``/``wiki_note`` also append an entry to the
+            wiki's ``log.md`` audit trail (via `WikiBookkeeper`), matching
+            the equivalent CLI commands (`cli.py:remember`/`note`).
+        config: Wiki project config — see ``root``.
 
     Returns:
         The six `AbstractTool` instances: wiki_query, wiki_page,
         wiki_related, wiki_remember, wiki_note, wiki_status.
     """
+    storage_dir = (
+        config.storage_path(root) if root is not None and config is not None else None
+    )
     return [
         WikiQueryTool(store),
         WikiPageTool(store),
         WikiRelatedTool(store),
-        WikiRememberTool(store),
-        WikiNoteTool(store),
+        WikiRememberTool(store, storage_dir=storage_dir),
+        WikiNoteTool(store, storage_dir=storage_dir),
         WikiStatusTool(store),
     ]
