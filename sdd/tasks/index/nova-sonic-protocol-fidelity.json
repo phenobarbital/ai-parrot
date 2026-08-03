@@ -166,7 +166,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -179,8 +179,8 @@
       "parallelism_notes": "Shares no code files with the audio.py tasks (touches only examples/ and docs/), but is gated by four of them because it documents their delivered behaviour rather than intentions. Note examples/**/*.py is gitignored - see the task file.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2108-docs-and-example-role-rendering.md"
+      "completed_at": "2026-08-03T22:30:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2108-docs-and-example-role-rendering.md"
     }
   ]
 }
