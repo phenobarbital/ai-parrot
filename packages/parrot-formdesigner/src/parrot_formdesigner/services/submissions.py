@@ -184,7 +184,7 @@ class FormSubmissionStorage:
         CREATE TABLE IF NOT EXISTS {qt} (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             submission_id VARCHAR(255) NOT NULL UNIQUE,
-            form_uid VARCHAR(36),
+            form_uid UUID,
             form_id VARCHAR(255) NOT NULL,
             form_version VARCHAR(50) NOT NULL,
             data JSONB NOT NULL,
@@ -234,7 +234,7 @@ class FormSubmissionStorage:
         schema = self._resolve_schema(tenant)
         return f"""
         ALTER TABLE {qt}
-            ADD COLUMN IF NOT EXISTS form_uid VARCHAR(36),
+            ADD COLUMN IF NOT EXISTS form_uid UUID,
             ADD COLUMN IF NOT EXISTS user_id VARCHAR(255),
             ADD COLUMN IF NOT EXISTS username VARCHAR(255),
             ADD COLUMN IF NOT EXISTS org_id INTEGER,
@@ -318,8 +318,7 @@ class FormSubmissionStorage:
             await conn.execute(
                 self._insert_sql(effective_tenant),
                 submission.submission_id,
-                # TASK-2008: form_uid column is VARCHAR(36) until migrated.
-                str(submission.form_uid),
+                submission.form_uid,
                 submission.form_id,
                 submission.form_version,
                 json.dumps(submission.data),
