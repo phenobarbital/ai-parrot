@@ -80,7 +80,7 @@ def test_create_table_sql_includes_form_uid_column_and_constraints() -> None:
     """DDL adds form_uid NOT NULL plus both UNIQUE constraints."""
     storage, _ = _make_storage()
     sql = storage._create_table_sql(None)
-    assert "form_uid VARCHAR(36) NOT NULL" in sql
+    assert "form_uid UUID NOT NULL" in sql
     assert "UNIQUE(form_uid, version)" in sql
     assert "UNIQUE(tenant, form_id, version)" in sql
 
@@ -121,9 +121,14 @@ async def test_save_passes_form_uid_as_first_param() -> None:
     await storage.save(form)
 
     _, args = conn.executed[0]
-    # TASK-2008: form_uid column is VARCHAR(36) until migrated — the storage
-    # boundary binds the canonical UUID string, not the uuid.UUID object.
-    assert args[0] == uid
+    # The column is native UUID (004_form_uid_uuid_type.sql), so the storage
+    # boundary binds a uuid.UUID — asyncpg rejects a str for a uuid parameter
+    # with "'str' object has no attribute 'bytes'". Asserting the TYPE, not
+    # just equality, is the point: `UUID(x) == str(x)` is False in Python, but
+    # a test comparing against `uuid.UUID(uid)` alone would still pass if the
+    # code went back to binding a string in some other shape.
+    assert args[0] == uuid.UUID(uid)
+    assert isinstance(args[0], uuid.UUID)
     assert args[1] == "my-form"
 
 
@@ -144,7 +149,9 @@ async def test_save_and_load_by_form_uid() -> None:
 
     sql, load_args = conn.fetchrow_calls[0]
     assert "form_uid" in sql
-    assert load_args[0] == uid
+    # Bound as a uuid.UUID, not its string form — the column is native UUID.
+    assert load_args[0] == uuid.UUID(uid)
+    assert isinstance(load_args[0], uuid.UUID)
 
 
 @pytest.mark.asyncio
@@ -160,7 +167,8 @@ async def test_load_with_version_queries_form_uid_and_version() -> None:
     assert loaded is not None
     sql, args = conn.fetchrow_calls[0]
     assert "form_uid" in sql and "version" in sql
-    assert args == (uid, "2.0")
+    assert args == (uuid.UUID(uid), "2.0")
+    assert isinstance(args[0], uuid.UUID)
 
 
 # ---------------------------------------------------------------------------
@@ -218,13 +226,19 @@ async def test_delete_by_form_uid() -> None:
     """delete() queries and deletes by form_uid, returning True on success."""
     conn = _Conn(execute_result="DELETE 1")
     storage, _ = _make_storage(conn)
+    uid = uuid.uuid4()
 
-    result = await storage.delete("test-uid-004")
+    result = await storage.delete(uid)
 
     assert result is True
     sql, args = conn.executed[0]
     assert "form_uid" in sql
-    assert args[0] == "test-uid-004"
+    # This used to pass the literal string "test-uid-004" — which is not even
+    # a UUID — and passed only because `delete()` called `str()` on it and the
+    # fake connection type-checks nothing. Against the real native-UUID column
+    # that binding raises. The signature says uuid.UUID; the test now honours it.
+    assert args[0] == uid
+    assert isinstance(args[0], uuid.UUID)
 
 
 @pytest.mark.asyncio

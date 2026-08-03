@@ -671,10 +671,12 @@ class FormAPIHandler:
                 fuid = row.get("form_uid")
                 if not fuid:
                     continue
-                # storage.list_forms() returns form_uid as a raw string (the
-                # DB column is still VARCHAR(36) until TASK-2008) — normalize
-                # to uuid.UUID so lookups against the in-memory descriptors
-                # (keyed by FormSchema.form_uid, now uuid.UUID) actually match.
+                # Descriptors are keyed by FormSchema.form_uid (uuid.UUID), so
+                # the row's form_uid must be one too. Since the column is now
+                # native UUID, asyncpg already hands back a uuid.UUID and this
+                # branch is inert — kept as belt-and-braces for a deployment
+                # that has not yet applied 004_form_uid_uuid_type.sql, where
+                # the column is still VARCHAR(36) and rows come back as str.
                 if isinstance(fuid, str):
                     try:
                         fuid = _uuid.UUID(fuid)
