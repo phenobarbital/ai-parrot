@@ -214,10 +214,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Created `LocalMCPServerBase(MCPServerBase)` (adds a stderr log
+handler so stdout stays clean for the JSON-RPC channel) and
+`StdioMCPServer(LocalMCPServerBase)` in `parrot/mcp/local_server.py`,
+modeled closely on the server's `transports/stdio.py:16-100` but using
+`loop.run_in_executor` for the blocking `sys.stdin.readline()` call (per
+task notes) instead of a bare blocking call. Updated core's
+`parrot/mcp/__init__.py` to export `MCPToolAdapter`, `MCPResource` (fixed
+the task's typo — it lives in `.resources`, not `.adapter`, per TASK-2076),
+`MCPServerBase`, `LocalServerConfig`, `LocalMCPServerBase`, `StdioMCPServer`.
+All 7 new + 9 prior unit tests pass (16 total in `tests/mcp/`); `ruff
+check` clean on `local_server.py`. `__init__.py` has 3 pre-existing lint
+findings (unsorted imports/`__all__`) that predate this task and are out
+of scope.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `MCPResource` import corrected to come from
+`.resources` instead of `.adapter` as literally written in the task's
+`__init__.py` update snippet — `.adapter` only ever exported
+`MCPToolAdapter` (see TASK-2076); this is a contract fix, not a design
+change.

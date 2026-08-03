@@ -204,10 +204,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Renamed `MCPServerBase` → `RemoteMCPServerBase` in `transports/base.py`,
+now inheriting `parrot.mcp.server_base.MCPServerBase` (core). `__init__`
+converts the full `MCPServerConfig` to `LocalServerConfig` for the core
+super-call, then overrides `self.config` back to the full config — exactly
+the pattern given in the task's Implementation Notes. `register_tool` now
+applies `allowed_tools`/`blocked_tools` filtering then delegates to
+`super().register_tool()`; `register_tools`, `handle_initialize`,
+`handle_tools_list`, `handle_tools_call` are no longer redefined here (both
+inherited from core, byte-identical behavior). `handle_resources_*`,
+`_init_authentication`, all `_authenticate_*` helpers, `register_resource`
+moved verbatim. Added `MCPServerBase = RemoteMCPServerBase` module-level
+alias for backward compat. Reparented `StdioMCPServer` to
+`LocalMCPServerBase`, accepting either `MCPServerConfig` or
+`LocalServerConfig` (converts internally, preserves `self.config` as
+whatever was passed in) — `start()`/`_handle_request()` bodies untouched.
+Reparented `HttpMCPServer`, `SseMCPServer`, `UnixMCPServer`, `QuicMCPServer`,
+`WebSocketMCPServer` to `RemoteMCPServerBase` (import + class declaration
+only — verified via `ruff check` that each file's lint-error count is
+unchanged from before my edit, so no new issues introduced by the rename).
+`OAuthRoutesMixin` doesn't reference `MCPServerBase` by name (relies on
+`self.` attributes only) — no changes needed there.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+Verified (no server-side MCP test suite exists in this repo to run — grep
+confirms zero `test_*.py` files reference these transport classes anywhere
+in the tree, so I did manual smoke verification instead): full hierarchy
+assertions from the task's Test Specification (`issubclass(RemoteMCPServerBase,
+CoreBase)`, `MCPServerBase is RemoteMCPServerBase`, `issubclass(StdioMCPServer,
+LocalMCPServerBase)`, plus all 5 remote transports inheriting
+`RemoteMCPServerBase`); `create_stdio_mcp_server()` end-to-end
+(initialize/tools-list/tools-call round trip); `allowed_tools`/
+`blocked_tools` filtering on a `RemoteMCPServerBase` subclass. `ruff check`
+clean on `base.py` (fully rewritten, so fixed all lint incl. two
+pre-existing-pattern `# noqa: BLE001` on blind excepts, matching repo
+convention). No test file was created — the task's file table lists only
+the 7 transport files as MODIFY targets; no test file is listed, so per
+file-fidelity rules I did not add one.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — file scope, class names, and behavior
+match the task's contract exactly.

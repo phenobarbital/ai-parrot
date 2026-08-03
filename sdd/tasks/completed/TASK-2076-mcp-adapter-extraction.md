@@ -212,10 +212,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: `MCPToolAdapter` and `MCPResource` moved verbatim to
+`packages/ai-parrot/src/parrot/mcp/{adapter,resources}.py`. Server files
+replaced with re-export shims. Added `# noqa: BLE001` on the two
+intentional blind-except blocks in the adapter (matches existing repo
+convention, e.g. `parrot/auth/oauth2_routes.py`) to satisfy the task's
+lint acceptance criterion — behavior unchanged from the original file.
+Ran `ruff check --fix` for import sorting/typing-syntax modernization
+(`Dict`→`dict`, `Optional[X]`→`X | None`) on the new core files only;
+content is otherwise a verbatim move. Verified existing consumers
+(`transports/base.py`, `transports/stdio.py`) still import fine through
+the shim. All 4 unit tests pass; `ruff check` clean on all 4
+create/modify files.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — content matches the task's Codebase
+Contract exactly; only cosmetic lint fixes applied to the new core copies.
