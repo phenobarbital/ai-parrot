@@ -190,10 +190,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Created `LocalServerConfig` dataclass and `MCPServerBase(ABC)` in
+`packages/ai-parrot/src/parrot/mcp/server_base.py`, extracting only the
+universal part of the server's `MCPServerBase` (registration + JSON-RPC
+handlers). Deliberately dropped `allowed_tools`/`blocked_tools` filtering,
+`self.resources`, and all auth wiring per the task's contract — those stay
+in the server's future `RemoteMCPServerBase` (TASK-2079). All 5 unit tests
+pass; `ruff check` clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
