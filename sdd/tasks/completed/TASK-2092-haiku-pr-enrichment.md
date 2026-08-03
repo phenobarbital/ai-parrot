@@ -236,10 +236,65 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Added `summarize_pr_changes(context, *, profile=None, logger=None)`
+to `dispatchers/nova.py` — one no-tools `NovaClient.ask()` call bounded by
+`asyncio.timeout(profile.timeout_seconds)`, wrapped in try/except that
+never raises (returns `""` on any exception/timeout/empty response,
+logging a warning). `context` is the already-assembled deterministic body
+text (not a raw git diff — the mechanical seat summarizes already-known
+structured facts into prose, no new git access). Added `_build_body_async`
+to both `FeatureHandoffNode` and `DeploymentHandoffNode`: computes the
+existing sync `_build_body()` first (untouched, still the exact fallback),
+calls `summarize_pr_changes(body, logger=self.logger)` inside a
+belt-and-suspenders try/except at the call site too, and appends a
+`## Summary of changes` section only when non-empty. Changed the `process()`
+call sites to `await self._build_body_async(...)` instead of the sync call.
+`_build_title`/`_create_pr`/the `gh`/REST paths are untouched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Bug found and fixed during implementation (test isolation)**: adding the
+autouse `_stub_pr_summary_enrichment` fixture (to keep every pre-existing
+handoff test network-free — see Deviations) surfaced a real, previously
+latent bug in this test suite's `monkeypatch.setattr("dotted.string.path",
+...)` usage: `test_lazy_import.py` deletes and re-imports every
+`parrot.flows.dev_loop.*` module inside its own test bodies, then restores
+the `sys.modules` DICT entries — but monkeypatch's dotted-string resolution
+walks **parent-package attribute chains**
+(`getattr(parrot.flows.dev_loop.nodes, "feature_handoff")`), which that
+surgery can desynchronize from `sys.modules`, silently patching an orphaned
+module object instead of the live one. Verified empirically (see the
+`id()`/`is`-comparison diagnostics run during implementation): after
+`test_lazy_import.py` runs, `monkeypatch.setattr("parrot.flows.dev_loop.
+nodes.feature_handoff.summarize_pr_changes", stub)` silently no-ops, and
+every following test in the suite attempted a REAL `NovaClient()`/`ask()`
+call (correctly falling back, but only after ~0.6s of real
+connection/DNS-failure overhead per test — 13 tests → ~8s added). Fixed by
+resolving every target module via `sys.modules[...]` directly (immune to
+the attribute-chain desync) in both the new autouse fixture and every
+`monkeypatch.setattr` call in `test_pr_enrichment.py` itself. This is a
+pre-existing footgun in this test suite unrelated to FEAT-405's own logic
+— it was only ever latent because no prior autouse fixture patched a
+`nodes.*` module attribute globally before this task. 13 new unit tests in
+`test_pr_enrichment.py`, all pass (5.4s, dominated by one deliberate 5s
+timeout test); ran `test_feature_handoff.py`/`test_deployment_handoff.py`
+(18 total, timing back to 0.38s from a transient 7.89s regression before
+the fix) and the full `tests/flows/dev_loop/` suite (976 passed, same 2
+pre-existing unrelated failures verified via `git stash -u`). `ruff check`/
+mypy: 0 new findings beyond the pre-existing UP0xx typing-style pattern on
+my own new lines (verified via before/after counts on all 3 changed source
+files); mypy error counts unchanged (45 vs 45 combined).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Added a new autouse fixture
+(`_stub_pr_summary_enrichment`) to `tests/flows/dev_loop/conftest.py` — not
+in the task's file list, but required: without it, every pre-existing
+handoff-node test in the suite silently attempts a real Bedrock network
+call (see the bug write-up above), which is both slow and a real-I/O risk
+inside unit tests. (2) `_build_body_async` also wraps the
+`summarize_pr_changes` call in its own try/except (belt-and-suspenders) —
+the task's "Pattern to Follow" snippet only showed the try/except *inside*
+`summarize_changes`, but the literal Test Specification's
+`test_llm_exception_falls_back`/`test_timeout_falls_back` require the
+handoff body to stay byte-identical even if the mock itself raises
+(bypassing the helper's own internal guard) — added for robustness given
+"PR creation must never break" is repeated throughout the task.
