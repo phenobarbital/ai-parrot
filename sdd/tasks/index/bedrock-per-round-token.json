@@ -52,7 +52,7 @@
       "feature_id": "FEAT-404",
       "feature": "bedrock-per-round-token",
       "spec": "sdd/specs/bedrock-per-round-token.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Tests exercise both instrumented methods; requires TASK-2094 and TASK-2095 complete.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:54:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2096-bedrock-multiround-usage-tests.md"
+      "completed_at": "2026-08-03T02:05:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2096-bedrock-multiround-usage-tests.md"
     }
   ]
 }
