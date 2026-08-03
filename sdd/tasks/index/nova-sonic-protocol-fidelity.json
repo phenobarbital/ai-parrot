@@ -90,7 +90,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Adds toolConfiguration into the _build_prompt_start() seam that TASK-2101 extracts, in the shared audio.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2104-tool-configuration.md"
+      "completed_at": "2026-08-03T20:20:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2104-tool-configuration.md"
     },
     {
       "id": "TASK-2105",
