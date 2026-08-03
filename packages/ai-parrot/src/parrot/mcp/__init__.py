@@ -2,6 +2,14 @@
 from pkgutil import extend_path
 __path__ = extend_path(__path__, __name__)
 
+# FEAT-403: local MCP server hierarchy (tool adapter, resources, JSON-RPC
+# server base, and the stdio transport) — zero external deps, always
+# available in core.
+from .adapter import MCPToolAdapter
+from .resources import MCPResource
+from .server_base import MCPServerBase, LocalServerConfig
+from .local_server import LocalMCPServerBase, StdioMCPServer
+
 # Consumer-side imports (stay in core, always available)
 from .integration import (
     MCPEnabledMixin,
@@ -65,6 +73,13 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    # FEAT-403: local MCP server hierarchy
+    "MCPToolAdapter",
+    "MCPResource",
+    "MCPServerBase",
+    "LocalServerConfig",
+    "LocalMCPServerBase",
+    "StdioMCPServer",
     "MCPEnabledMixin",
     "MCPServerConfig",
     "MCPClient",
