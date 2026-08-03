@@ -142,6 +142,29 @@ class TestBedrockMantleClient:
         assert c4.api_key == "nova-key"
         assert c4.api_key != "SHOULD-NOT-BE-USED"
 
+    def test_base_headers_not_leaked_when_no_key_resolves(self, monkeypatch):
+        """Code-review regression test (FEAT-407): when no Mantle/Nova/
+        explicit key resolves, OpenAIClient.__init__ falls back to
+        config.get("OPENAI_API_KEY") for BOTH self.api_key and
+        self.base_headers before the re-set guard runs. The guard fixes
+        self.api_key, but base_headers must also be rebuilt — otherwise
+        AbstractClient.__aenter__ (use_session=True) would send a real
+        OPENAI_API_KEY as a bearer token to the Bedrock Mantle host."""
+        monkeypatch.setattr(
+            "parrot.clients.nova.mantle.BEDROCK_MANTLE_API_KEY", None, raising=False
+        )
+        monkeypatch.setattr(
+            "parrot.clients.nova.mantle.AWS_NOVA_API_KEY", None, raising=False
+        )
+        monkeypatch.setattr(
+            "parrot.clients.gpt.config.get",
+            lambda key, *a, **kw: "SHOULD-NOT-LEAK" if key == "OPENAI_API_KEY" else None,
+        )
+        c = BedrockMantleClient(region="us-east-1")
+        assert c.api_key is None
+        assert c.base_headers["Authorization"] == "Bearer None"
+        assert "SHOULD-NOT-LEAK" not in c.base_headers["Authorization"]
+
     @pytest.mark.asyncio
     async def test_get_client_uses_base_url(self, mantle_client):
         from openai import AsyncOpenAI

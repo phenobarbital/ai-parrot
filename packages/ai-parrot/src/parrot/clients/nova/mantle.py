@@ -112,3 +112,17 @@ class BedrockMantleClient(OpenAIClient):
         # mirrors the guard used by NvidiaClient (nvidia.py:84) and
         # OpenRouterClient (openrouter.py:75).
         self.api_key = resolved_key
+        # Code-review fix (FEAT-407): OpenAIClient.__init__ builds
+        # self.base_headers from the api_key it received *before* the
+        # re-set above runs. When no Mantle/Nova/explicit key resolves,
+        # OpenAIClient falls back to config.get("OPENAI_API_KEY") for
+        # both self.api_key and self.base_headers — the re-set above
+        # corrects self.api_key (used by get_client()/AsyncOpenAI), but
+        # left base_headers stale with a real OPENAI_API_KEY bearer
+        # token, which AbstractClient.__aenter__ sends verbatim to the
+        # Bedrock Mantle host when use_session=True. Rebuild it here so
+        # both attributes stay in sync with the resolved Mantle key.
+        self.base_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
