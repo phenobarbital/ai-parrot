@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
-from parrot.flows.dev_loop.dispatcher import (
+from parrot.flows.dev_loop.dispatchers import (
     GoogleCodingDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,

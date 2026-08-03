@@ -527,7 +527,7 @@ class ClaudeAgentClient(AbstractClient):
         ``ToolResultBlock``), plus ``UserMessage``, ``SystemMessage``,
         and the terminal ``ResultMessage``. Callers that need to
         inspect message structure (e.g.
-        :class:`parrot.flows.dev_loop.dispatcher.ClaudeCodeDispatcher`,
+        :class:`parrot.flows.dev_loop.dispatchers.ClaudeCodeDispatcher`,
         which publishes per-event Redis envelopes and parses the final
         JSON payload) consume this generator without buffering.
 

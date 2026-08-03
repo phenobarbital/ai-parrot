@@ -32,7 +32,7 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.clients.factory import LLMFactory
-from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 from parrot.flows.dev_loop.models import (

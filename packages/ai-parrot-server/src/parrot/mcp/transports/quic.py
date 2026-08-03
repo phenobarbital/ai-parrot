@@ -57,7 +57,7 @@ from aioquic.quic.events import (
     StreamDataReceived,
 )
 from aioquic.tls import SessionTicket
-from .base import MCPServerBase
+from .base import RemoteMCPServerBase
 from ..config import MCPServerConfig
 
 # Optional: faster serialization
@@ -483,11 +483,11 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
             self.logger.debug("Failed to handle datagram: %s", e)
 
 
-class QuicMCPServer(MCPServerBase):
+class QuicMCPServer(RemoteMCPServerBase):
     """
     QUIC/HTTP3 MCP Server with WebTransport support.
-    
-    Inherits behavior from MCPServerBase and adds QUIC transport layer.
+
+    Inherits behavior from RemoteMCPServerBase and adds QUIC transport layer.
     
     Example:
         >>> from parrot.mcp.server import MCPServerConfig
@@ -523,40 +523,15 @@ class QuicMCPServer(MCPServerBase):
         self._session_tickets: Dict[bytes, SessionTicket] = {}
         # Connected clients tracking
         self._connected_clients: Set[str] = set()
-    
-    async def handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle tools/call request."""
-        tool_name = params.get("name")
-        arguments = params.get("arguments", {})
-        
-        self.logger.info("Calling tool: %s", tool_name)
-        
-        if tool_name not in self.tools:
-            raise RuntimeError(f"Tool not found: {tool_name}")
-        
-        tool = self.tools[tool_name]
-        
-        try:
-            # Execute tool
-            if hasattr(tool, '_execute'):
-                result = await tool._execute(**arguments)
-            elif hasattr(tool, 'execute'):
-                result = await tool.execute(**arguments)
-            else:
-                result = await tool(**arguments)
-            
-            return {
-                "content": [{"type": "text", "text": str(result)}],
-                "isError": False
-            }
-            
-        except Exception as e:
-            self.logger.error("Tool execution failed: %s", e)
-            return {
-                "content": [{"type": "text", "text": f"Error: {e}"}],
-                "isError": True
-            }
-    
+
+    # handle_tools_call is inherited from RemoteMCPServerBase → core
+    # MCPServerBase (FEAT-403). A QUIC-specific override used to live here
+    # but called `tool.execute(**arguments)` against `self.tools[tool_name]`,
+    # which is an `MCPToolAdapter` whose real `execute()` takes a single
+    # positional `arguments: dict` — not `**kwargs` — so it TypeError'd for
+    # any tool call. Removed in favor of the tested, correct inherited
+    # handler (`adapter.execute(arguments)`).
+
     # =========================================================================
     # QUIC Server Lifecycle (abstract method implementation)
     # =========================================================================

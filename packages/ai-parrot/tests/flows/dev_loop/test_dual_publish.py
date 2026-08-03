@@ -2,7 +2,7 @@
 
 Covers both shim sites:
 - ``FlowEventPublisher.__call__`` (flow.py) — node lifecycle events.
-- The four dispatcher ``_publish_event`` definitions (dispatcher.py), which
+- The dispatcher ``_publish_event`` definitions (dispatchers/*.py), which
   all fold through the ONE shared module-level ``_apply_to_session_host``
   helper via the ``_SESSION_HOST_CTX`` contextvar bound by ``dispatch()``.
 
@@ -26,7 +26,7 @@ from parrot.flows.dev_loop import (
     DispatchExecutionError,
     ResearchOutput,
 )
-from parrot.flows.dev_loop.dispatcher import _apply_to_session_host, _SESSION_HOST_CTX
+from parrot.flows.dev_loop.dispatchers._shared import _apply_to_session_host, _SESSION_HOST_CTX
 from parrot.flows.dev_loop.flow import FlowEventPublisher
 from parrot.flows.dev_loop.models import DispatchEvent
 from parrot.flows.dev_loop.session_state import SessionHost, session_channel
@@ -219,7 +219,7 @@ def _research_payload() -> str:
 @pytest.fixture(autouse=True)
 def _patch_worktree_base(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH", str(tmp_path)
+        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH", str(tmp_path)
     )
     return tmp_path
 
@@ -246,7 +246,7 @@ async def _run_dispatch(dispatcher, monkeypatch, tmp_path, *, session_host=None)
     ]
     fake_client = _FakeClient(messages)
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+        "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
         lambda *a, **kw: fake_client,
     )
     brief = ResearchOutput(
@@ -350,7 +350,7 @@ async def test_dispatch_session_host_ctx_isolated_across_concurrent_dispatches(m
         # NOTE: LLMFactory.create is monkeypatched once, shared across both
         # concurrent calls — fine, it just returns a fresh fake client here.
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: fake_client,
         )
         brief = ResearchOutput(

@@ -43,6 +43,16 @@ PERMISSION_RULES: tuple[str, ...] = (
 #: Filename of the slash command (under .claude/commands/).
 SLASH_COMMAND_FILENAME = "parrotwiki.md"
 
+#: .mcp.json entry for the wikitoolkit MCP stdio server (FEAT-403). Claude
+#: Code starts this automatically, exposing the six wiki tools natively —
+#: equal standing with Grep/Read at tool-selection time — instead of
+#: relying solely on the PreToolUse nudge hook to redirect to the CLI.
+MCP_JSON_ENTRY: dict = {
+    "command": "wikitoolkit",
+    "args": ["mcp"],
+    "env": {},
+}
+
 # --------------------------------------------------------------------------
 # CLAUDE.md managed section
 # --------------------------------------------------------------------------
@@ -66,6 +76,13 @@ search (`grep`/`rg`/`find`/`cat` via Bash):
 - `wikitoolkit status` — plane statistics and staleness.
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
+
+These same operations are also exposed as native MCP tools —
+`wiki_query`, `wiki_page`, `wiki_related`, `wiki_remember`, `wiki_note`,
+`wiki_status` — via the `wikitoolkit` MCP stdio server registered in
+this repo's `.mcp.json` (FEAT-403). If they appear in your tool list,
+prefer calling them directly; they have equal standing with Grep/Read
+at tool-selection time instead of competing via a Bash-invoked CLI.
 
 **Query discipline** (avoids the two most common ways the wiki
 "fails" — which are usually caller error, not missing coverage):

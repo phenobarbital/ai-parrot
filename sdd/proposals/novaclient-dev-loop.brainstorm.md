@@ -1,0 +1,979 @@
+---
+# SDD flow type and base branch (FEAT-145).
+# - type: feature  (default)  → base_branch: dev (or any non-main branch)
+# - type: hotfix              → base_branch MUST be: main
+type: feature
+base_branch: dev
+---
+
+# Brainstorm: Nova (AWS Bedrock) Dispatcher & Per-Agent Usage Report
+
+**Date**: 2026-08-03
+**Author**: Jesus Lara
+**Status**: exploration
+**Recommended Option**: Option A
+
+---
+
+## Problem Statement
+
+The dev-loop flow (`parrot/flows/dev_loop/`) materialises every agent seat —
+development pool workers, QA judges, the adversarial reviewer, the planner —
+through `build_dispatcher` (`agent_builder.py:100`), which today knows exactly
+eight backends: `claude-code`, `codex`, `gemini`, `nvidia`, `grok`, `zai`,
+`moonshot`, `google_coding` (`models/base.py:383`). Every one of them reaches
+its model over a **vendor-direct** path: a CLI on `$PATH` (Claude Code, Codex,
+Gemini) or a vendor API key (Nvidia, Z.ai, Moonshot, xAI).
+
+That creates three concrete pain points:
+
+1. **No AWS-governed path.** Teams that consume LLMs through AWS Bedrock — one
+   IAM boundary, one bill, one data-residency story, no per-vendor API keys —
+   cannot run the dev-loop at all. `NovaClient` (`clients/nova/client.py:30`)
+   already exists and is already registered in `LLMFactory`
+   (`clients/factory.py:96`), but **nothing in `dev_loop/` references it**
+   (verified: zero `nova` matches across the package).
+
+2. **Cost concentration on the wrong seats.** The write-the-code seat is the
+   highest-volume consumer of tokens in the loop, yet it defaults to the same
+   frontier-tier models used for review. Bedrock now carries agent-native,
+   token-efficient models (MiniMax M2.5, GLM-5, Kimi) that are a better fit for
+   mechanical code production, while reserving Claude Opus 5 for the seat where
+   judgement actually pays — adversarial review. There is currently no way to
+   express that split within one provider.
+
+3. **Per-agent usage is invisible in the dev-loop, even though the platform
+   now measures it.** FEAT-397 (`sdd/specs/tokens-observability.spec.md`) solved
+   per-round accumulation at the **client** layer: `ask()`'s tool loop sums
+   `CompletionUsage` across rounds, emits a `ClientRoundEvent` per round
+   (`core/events/lifecycle/events/client.py:177`), and exposes
+   `AIMessage.total_usage()` (`models/responses.py:281`) plus a round count at
+   `usage.extra_usage["rounds"]`. **The dev-loop consumes none of it.**
+   `run_bundle.py` renders a per-node table (`run_bundle.py:61-67`) fed solely by
+   `ClaudeCodeDispatcher._extract_result_usage` (`dispatchers/claude.py:625`),
+   reading the Claude Agent SDK's `ResultMessage.usage`. Every other backend
+   reports `None`, for two distinct reasons worth separating:
+   - **Coverage**: FEAT-397's non-goals name `BedrockClient` as a follow-up, so
+     the Bedrock/Nova client does not accumulate rounds yet.
+   - **Bypass**: `LLMCodeDispatcher` never calls `ask()`. It drives
+     `client._chat_completion(...)` in its own loop (`dispatchers/llm.py:190`),
+     so the accumulation FEAT-397 added *inside* `ask()` does not reach the
+     dev-loop's dispatch path at all.
+
+   You therefore cannot answer "which agent spent what?" for exactly the
+   backends whose cost you most want to compare.
+
+The opportunity: add a **single `nova` backend** that reaches Claude Opus 5,
+Claude Haiku 4.5, MiniMax M2.5 and friends through one AWS credential, wire it
+into the seats where each model earns its keep, and close the usage-telemetry
+gap so the resulting model mix can actually be measured. (The research seat
+stays on Claude Code — see [R7].)
+
+---
+
+## Constraints & Requirements
+
+Established across discovery rounds 0–3, plus a correction pass (**[R4]**) after
+the AWS model cards were read, an explicit scope cut (**[R5]**), a design
+refinement on prefix handling (**[R6]**), and a final resolution round dropping
+the research seat (**[R7]**) and widening usage coverage (**[R8]**). Decisions
+marked **[R*]** are user-confirmed, not inferred.
+
+- **[R0]** `type: feature`, `base_branch: dev`. Never bases on `main`.
+- **[R3]** **Fully opt-in.** Nothing changes for an operator who does not select
+  `nova`. `claude-code` remains the development default; `codex` remains the
+  adversarial default. This is a pure addition.
+- **[R7]** **The research seat is OUT OF SCOPE — dropped entirely.** The Round 1
+  plan to make `ResearchNode` pluggable is discarded. `ResearchNode` stays
+  hard-wired to `ClaudeCodeDispatcher` + `ClaudeCodeDispatchProfile(
+  subagent="sdd-research")` and keeps using the `/sdd-spec` and `/sdd-task`
+  slash commands. No Nova research seat, no dispatcher-type widening, no
+  changes to `nodes/research.py`.
+- **[R1]** **Adversarial reviewer is read-only by construction**: no tools, the
+  diff and criteria go in the prompt, the model returns the verdict JSON. Read-
+  only-ness must not depend on enforcement code being correct.
+- **[R3]** The adversarial seat becomes **selectable** over `{codex, nova}`;
+  `codex` stays the shipped default.
+- **[R2]** **PR-creation seat enriches, never replaces.** The deterministic
+  `_build_title`/`_build_body` templates remain the skeleton *and* the fallback;
+  Haiku 4.5 contributes only a "Summary of changes" section.
+- **[R2]** **One `nova` backend id**; the model string selects the family.
+  Per-seat defaults live in config keys with the stated models as fallbacks.
+- **[R1/R2]** **Usage report**: a `UsageReport` Pydantic model is the single
+  source of truth; emit `usage.json` and render **both** markdown (into the
+  existing bundle) and a standalone HTML artifact from it. A "round" is one
+  model call in a tool loop. **No dollar-cost estimation** — no price table to
+  maintain or get wrong.
+- **[R4]** **Per-round accumulation is FEAT-397's job, not this feature's.**
+  Round accounting already exists at the **client** layer
+  (`sdd/specs/tokens-observability.spec.md`). This feature **consumes** those
+  primitives — it must NOT add a summing loop inside any dev-loop dispatcher.
+  What it may add is FEAT-397 coverage for the Bedrock client, which that spec
+  lists as an explicit follow-up.
+- **[R4]** **Anthropic models are never driven over Bedrock Chat Completions.**
+  Since Bedrock does not offer Chat Completions for the Anthropic family, the
+  `nova` backend simply does not attempt it. A Claude model in the *development*
+  seat is served by the existing `claude-code` backend (Claude Code Agent), not
+  by Nova. This is a design rule, not a limitation to work around.
+- **[R6]** **A requires-prefix map decides prefixing, not the client.**
+  `NovaClient.__init__`'s `region_prefix="us"` default **stays** — no signature
+  change, no migration for existing users. Instead the translator applies a
+  prefix only to models listed in a `REQUIRES_REGION_PREFIX` map, using the
+  caller's value when given and the map's declared default otherwise. Models
+  absent from the map are never prefixed, however `region_prefix` is set.
+  `global.` joins `us.`/`eu.`/`au.` as a recognised prefix.
+- **[R5]** **FEAT-397 coverage for `NovaClient` is a separate spec.** Bedrock
+  per-round accumulation is an external dependency of this feature, not a
+  deliverable of it.
+- **[R8]** **The dispatcher round-event fix covers every backend from day one.**
+  Emitting `ClientRoundEvent` from `LLMCodeDispatcher`'s loop is
+  backend-independent; nvidia, zai, moonshot, grok and the nova dev seat are
+  all covered in the same change, not nova-first.
+- **[R1]** Bedrock model IDs are **pinned from verified AWS documentation**, not
+  guessed. (See "Verified AWS Facts" — the user-supplied IDs were cross-checked
+  against the AWS model cards, and two of them needed correction.)
+- **[R3]** The spec **assumes** the `dev_loop/models/` + `dev_loop/dispatchers/`
+  split is already committed to `dev`. See Open Questions Q1 — this is currently
+  **not true** and is a hard precondition.
+- No new vendor SDK dependencies beyond what Bedrock access already requires.
+- Async throughout; Google-style docstrings; Pydantic v2 models; `self.logger`.
+
+---
+
+## Verified AWS Facts
+
+Fetched from the AWS Bedrock user guide during this brainstorm. **These override
+assumption** — three of them invalidate the codebase's current handling.
+
+| Model | Bedrock model ID | Geo inference IDs | Global ID | Context | Max output | Converse | OpenAI Chat Completions |
+|---|---|---|---|---|---|---|---|
+| Claude Opus 5 | `anthropic.claude-opus-5` | `us.` / `eu.` / `au.` | `global.anthropic.claude-opus-5` | 1M | 128K | ✅ | ❌ **not supported** |
+| MiniMax M2.5 | `minimax.minimax-m2.5` | **Not supported** | **Not supported** | 196K | **8K** | ✅ | ✅ (via `bedrock-mantle`) |
+| Z.ai GLM-5 | `zai.glm-5` | **Not supported** | **Not supported** | 200K | 128K | ✅ | ✅ (via `bedrock-mantle`) |
+| Claude Haiku 4.5 | `anthropic.claude-haiku-4-5-20251001-v1:0` | `us.` (user-supplied) | — | — | — | ✅ | ❌ (Anthropic family) |
+| Kimi K2.5 | `moonshotai.kimi-k2.5` | **Not supported** | **Not supported** | 256K | **16K** | ✅ | ✅ (via `bedrock-mantle`) |
+| Claude Fable 5 | `anthropic.claude-fable-5` | — | `global.anthropic.claude-fable-5` (user-supplied) | — | — | — | ❌ (Anthropic family) |
+
+Four consequences that shape the design:
+
+1. **`bedrock-mantle` is an OpenAI-compatible endpoint.**
+   `https://bedrock-mantle.{region}.api.aws/v1` accepts standard
+   `chat.completions.create(model="minimax.minimax-m2.5", ...)` with the Bedrock
+   API key as the bearer token. AWS explicitly recommends it ("Whenever
+   possible, we recommend you use the `bedrock-mantle` endpoint"). This means
+   MiniMax/GLM-5 need **no Converse↔OpenAI translation at all**.
+
+2. **Anthropic models on Bedrock do NOT expose Chat Completions.** Claude Opus 5
+   supports Converse, Invoke, and the Anthropic Messages API (`bedrock-mantle`
+   serves it at `/anthropic/v1/messages`, not `/v1`). **[R4] The design does not
+   try to work around this**: Nova never drives an Anthropic model over Chat
+   Completions. The OpenAI-compatible endpoint is used only for the coding
+   models (MiniMax, GLM-5); Anthropic seats use Converse `ask()`; and a
+   tool-using Claude *development* worker is served by the existing
+   `claude-code` backend instead.
+
+3. **MiniMax/GLM-5 reject inference-profile prefixes.** Geo and Global inference
+   IDs are "Not supported" — the bare `minimax.minimax-m2.5` is the only valid
+   id. But `NovaClient.__init__` defaults `region_prefix="us"`
+   (`clients/nova/client.py:72`), which would produce the invalid
+   `us.minimax.minimax-m2.5`. **The default that makes Nova 2 Lite work breaks
+   MiniMax.** **[R6] Resolution: invert the rule rather than drop the default.**
+   A `REQUIRES_REGION_PREFIX` map in the translator becomes the allowlist —
+   only mapped models are prefixed — so `region_prefix` can keep its `"us"`
+   default without ever leaking onto a model that forbids one, and no existing
+   `NovaClient` caller has to change.
+
+4. **`bedrock_models.py`'s translator is wrong for this generation on three
+   counts**: `_REGION_PREFIXES = ("us.", "eu.", "apac.")`
+   (`models/bedrock_models.py:29`) omits the real `au.` and `global.` prefixes
+   (**[R4]** `global.` must be recognised); the pass-through detector recognises
+   only `anthropic.`/`amazon.` and so treats `minimax.`/`zai.`/`moonshotai.` as
+   untranslatable (warn-and-passthrough); and the `anthropic.<id>-vN:0`
+   convention the map is built on **does not hold for Claude Opus 5**, whose id
+   carries no date or version suffix.
+
+---
+
+## Options Explored
+
+The options differ on **one axis: how a Bedrock model is driven from a dev-loop
+seat.** The usage-report module is common to all four and is described under
+"Feature Description".
+
+### Option A: Transport-split — match each seat to the API that already fits it
+
+Recognise that the three Nova seats have *different* interaction shapes, and
+give each the transport AWS already provides for it, rather than forcing one
+uniform mechanism:
+
+- **Adversarial reviewer (Claude Opus 5) — no tools [R1].** A single
+  `ask()` call. `BedrockConverseBase.ask()` (`clients/bedrock.py:578`) already
+  does exactly this, and `use_tools` defaults off. No tool loop, no adapter, no
+  translation. Read-only holds because the model is never handed a tool.
+- **Mechanical/PR seat (Claude Haiku 4.5) — no tools [R2].** Same shape: one
+  `ask()` producing a summary paragraph. Same zero-adapter path.
+- **Development seat (MiniMax M2.5) — needs the tool loop.** Point an
+  OpenAI-compatible client at the `bedrock-mantle` base URL and reuse
+  `LLMCodeDispatcher` (`dispatchers/llm.py:39`) essentially unchanged — its
+  loop already speaks OpenAI `tools` / `tool_calls`, which is precisely what
+  `bedrock-mantle` serves for MiniMax.
+
+The Converse↔OpenAI adapter is deliberately **not built**, because after this
+split no seat needs it.
+
+✅ **Pros:**
+- **No translation layer exists to be wrong.** The two hardest-looking seats
+  (adversarial, mechanical) turn out to need no tool plumbing whatsoever, and
+  the one that does gets a natively OpenAI-shaped endpoint.
+- Smallest new surface: profiles + a thin dispatcher per shape, no client-class
+  surgery on `BedrockConverseBase` (shared with `BedrockConverseClient`).
+- Directly follows AWS's own recommendation to prefer `bedrock-mantle`.
+- Reuses `LLMCodeDispatcher`'s cwd-safety guard, Redis event streaming, output
+  validation and `SessionHost` shim for free on the dev seat.
+- The `base_url`-override pattern is already proven in this codebase —
+  `ZaiClient` takes `base_url` with a `ZAI_BASE_URL` config override
+  (`clients/zai.py:35,45`).
+
+❌ **Cons:**
+- **Two transports inside one `nova` backend** — a reviewer reading the code
+  must understand why the adversarial seat goes through Converse and the dev
+  seat through `bedrock-mantle`. Needs a clear module docstring.
+- A Claude model cannot hold the *development* seat via `nova` (tool loop +
+  Anthropic ⇒ Converse `toolConfig`, which this option never builds).
+  **[R4] accepted as a design rule**: that need is served by the existing
+  `claude-code` backend (Claude Code Agent), so `nova` never has to.
+- `bedrock-mantle` auth is a Bedrock API key (bearer), a different credential
+  path from the `aws_id`/SigV4 resolution `BedrockConverseBase` uses — two
+  credential stories to document.
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `aioboto3` | Bedrock Runtime (Converse) — adversarial + mechanical seats | Already a dependency via `BedrockConverseBase` |
+| `openai` (async) | `bedrock-mantle` OpenAI-compatible endpoint — dev seat | Already used by nvidia/zai/moonshot clients |
+| `pydantic` v2 | `NovaCodeDispatchProfile`, `UsageReport` | Already core |
+
+🔗 **Existing Code to Reuse:**
+- `parrot/clients/bedrock.py:578` — `BedrockConverseBase.ask()`, the no-tools path for both review seats
+- `parrot/clients/nova/client.py:30` — `NovaClient`, already `LLMFactory`-registered
+- `parrot/flows/dev_loop/dispatchers/llm.py:39` — `LLMCodeDispatcher`, the dev seat's whole loop
+- `parrot/flows/dev_loop/dispatchers/moonshot.py:18` — the exact "subclass `LLMCodeDispatcher`, override the two completion hooks" pattern to copy
+- `parrot/clients/zai.py:35` — the configurable-`base_url` precedent
+- `parrot/flows/dev_loop/code_review.py:164` — `CodeReviewDispatcherFactory.register` decorator
+
+---
+
+### Option B: Client-side Converse↔OpenAI adapter on `BedrockConverseBase`
+
+Add an OpenAI-shaped `_chat_completion(model, messages, use_tools, tools, ...)`
+to `BedrockConverseBase` (or to `NovaClient`) that translates OpenAI tool
+schemas into Converse `toolSpec` on the way in and Converse `toolUse` blocks
+into OpenAI `tool_calls` on the way out. Every dev-loop dispatcher then drives
+Bedrock through the single uniform path it already knows, and
+`NovaCodeDispatcher` becomes a near-empty subclass of `LLMCodeDispatcher`.
+
+*This was the Round 2 selection, made before the AWS facts above were gathered.*
+
+✅ **Pros:**
+- **One uniform mechanism** for every seat and every model family — no
+  "why does this seat use a different transport" question.
+- **Any Bedrock model can hold any seat**, including a Claude model in the
+  development seat with full tool use. Strictly more capable than Option A.
+- The adapter is reusable beyond the dev-loop: any future consumer of
+  `BedrockConverseClient` gets OpenAI-shaped access for free.
+- Only one credential story (SigV4 / `aws_id`), no Bedrock API key.
+- `_prepare_tools` already converts registered tools to Bedrock `toolSpec` via
+  `ToolSchemaAdapter` with `ToolFormat.BEDROCK` (`clients/bedrock.py:413`) —
+  roughly half the inbound translation already exists.
+
+❌ **Cons:**
+- **Touches a foundational class with a wide blast radius.** `BedrockConverseBase`
+  is shared with `BedrockConverseClient`; CLAUDE.md's ban on casually modifying
+  `abstract_client.py` reflects the same instinct one tier down.
+- The translation layer becomes **the** correctness risk: tool-call id
+  round-tripping, multi-block content, `stopReason: tool_use` handling,
+  streaming, and per-family quirks all have to be right, and get exercised on
+  every single dev-loop turn.
+- Builds a Converse tool-loop adapter that **the chosen seat configuration never
+  needs** — under [R1]/[R2] the only tool-using Nova seat is MiniMax, which
+  already speaks OpenAI natively.
+- More code to test than Option A for the same shipped capability.
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `aioboto3` | Bedrock Runtime Converse | Already a dependency |
+| `pydantic` v2 | Profiles + usage models | Already core |
+
+🔗 **Existing Code to Reuse:**
+- `parrot/clients/bedrock.py:413` — `_prepare_tools()` → `ToolFormat.BEDROCK`, the inbound half
+- `parrot/clients/bedrock.py:724-731` — existing `payload["toolConfig"]` injection
+- `parrot/flows/dev_loop/dispatchers/llm.py:369` — `_chat_completion`, the hook the adapter satisfies
+
+---
+
+### Option C: Bedrock-native tool loop inside `NovaCodeDispatcher`
+
+Leave every client class untouched and write a Converse-native agent loop in
+`dispatchers/nova.py`, borrowing only the shared helpers from
+`dispatchers/_shared.py:82-119`.
+
+✅ **Pros:**
+- Zero impedance mismatch — the loop speaks Converse end to end, so `toolUse`,
+  `toolResult`, and `stopReason` are handled in their native shapes.
+- No changes to `BedrockConverseBase`; blast radius confined to one new module.
+- Full freedom to exploit Bedrock-only features (prompt caching checkpoints —
+  Opus 5 supports 4 per request with 5-minute/1-hour TTL — guardrails, service
+  tiers) without contorting them through an OpenAI shape.
+
+❌ **Cons:**
+- **Duplicates `LLMCodeDispatcher` wholesale**: the turn loop, cwd-safety guard,
+  Redis event publishing, output validation, and the `SessionHost` context
+  shim are ~900 lines that would be reimplemented and would then drift. The
+  `_shared.py` docstring already records how actively this area churns.
+- Highest long-term maintenance cost of the four for the least reuse.
+- Every future dev-loop dispatcher improvement has to be ported by hand.
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `aioboto3` | Bedrock Runtime Converse | Already a dependency |
+
+🔗 **Existing Code to Reuse:**
+- `parrot/flows/dev_loop/dispatchers/_shared.py:82-119` — exceptions, `DevLoopCodeDispatcher` protocol, `SessionHost` shim
+- `parrot/clients/bedrock.py:413` — `_prepare_tools()`
+
+---
+
+### Option D (unconventional): Configuration-only Nova — profiles, no new dispatcher
+
+Ship **no new dispatcher class at all**. Observe that `LLMCodeDispatcher` is
+already model-agnostic and that its client is produced by an injected
+`client_factory` (the Moonshot dispatcher passes
+`lambda model, **kw: LLMFactory.create(model, **kw)`,
+`dispatchers/moonshot.py:44`). So `dev_loop/models/nova.py` contains only
+`NovaCodeDispatchProfile` (+ the review/mechanical profiles), and
+`build_dispatcher`'s `nova` branch instantiates the plain `LLMCodeDispatcher`
+pointed at a `bedrock-mantle` base URL — exactly as the `nvidia` branch already
+does (`agent_builder.py:159`). `dev_loop/dispatchers/nova.py` exists only to
+hold the two no-tools review/mechanical dispatchers.
+
+✅ **Pros:**
+- **Smallest possible diff** — one config-carrying profile module plus a
+  `build_dispatcher` branch that mirrors an existing one line for line.
+- Nothing to drift: the dev seat inherits every future `LLMCodeDispatcher` fix
+  automatically, because it *is* an `LLMCodeDispatcher`.
+- Fastest path to measuring whether MiniMax M2.5 is actually good at this repo's
+  code before investing in bespoke machinery.
+
+❌ **Cons:**
+- **No place to put per-family quirks.** Moonshot and Z.ai each needed a
+  dispatcher subclass precisely because their models rejected standard sampling
+  args or needed thinking-flag injection; MiniMax's 8K output cap and any
+  reasoning-flag handling would have nowhere natural to live.
+- Violates the user's explicit instruction to create `dev_loop/dispatchers/nova.py`
+  as a real dispatcher module — it would exist, but hold only the review seats.
+- Likely a way-station: the first MiniMax quirk forces a promotion to Option A.
+
+📊 **Effort:** Low
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `openai` (async) | `bedrock-mantle` endpoint | Already used by the nvidia/zai/moonshot clients |
+
+🔗 **Existing Code to Reuse:**
+- `parrot/flows/dev_loop/agent_builder.py:159` — the `nvidia` branch, copied verbatim with a different base URL
+- `parrot/flows/dev_loop/dispatchers/moonshot.py:44` — the `client_factory` injection pattern
+
+---
+
+## Recommendation
+
+**Option A** is recommended.
+
+The decisive finding is that **the seat configuration the user asked for does
+not actually require a Converse tool loop.** [R1] makes the adversarial reviewer
+no-tools, and [R2] makes the PR seat a summary-paragraph generator — both are
+single `ask()` calls that `BedrockConverseBase.ask()` (`clients/bedrock.py:578`)
+already serves. The only tool-using Nova seat is the MiniMax development worker,
+and MiniMax is one of the models AWS exposes over the **OpenAI-compatible
+`bedrock-mantle` endpoint**. So the hardest piece of Option B — a bidirectional
+Converse↔OpenAI tool-call translator — would be built to serve **zero** seats in
+the shipped configuration.
+
+What Option A trades away — a Claude model cannot hold the *development* seat
+via `nova` — **[R4] is resolved as a deliberate boundary rather than a gap**:
+Bedrock does not offer Chat Completions for Anthropic models, so Nova simply
+does not go there, and a tool-using Claude worker is served by the existing
+`claude-code` backend. That removes the only reason to build Option B's adapter,
+and with it Option B itself. (Should the boundary ever need to move, Option A
+does not block it: the profiles and the `nova` catalog entry stay unchanged if
+the transport under the dev seat is swapped later.)
+
+Option A over Option D because MiniMax's verified **8K max-output cap** is
+already a per-family quirk needing a home: `LLMCodeDispatchProfile.max_tokens`
+is bounded `le=32768` (`models/llm.py:24`), so a naive profile can request more
+than the model can return. That is precisely the class of constraint the
+Moonshot and Z.ai dispatcher subclasses exist to encode, and it argues for a
+real `NovaCodeDispatcher` from day one rather than after the first failure.
+
+Option A over Option C because duplicating ~900 lines of actively-churning
+dispatcher logic to gain Converse-native handling that only one seat would use
+is a poor trade; `_shared.py`'s own docstring documents how much this area moves.
+
+Note on provenance: Round 2 originally selected Option B (the client-side
+adapter), before the AWS model cards were read. Presented with the two facts
+those cards contain — `bedrock-mantle` serves the coding models over OpenAI
+Chat Completions, and Anthropic models have no Chat Completions on Bedrock at
+all — **the user confirmed Option A [R4]**, with "if someone needs Claude for
+the development seat, use the Claude Code Agent instead" as the standing rule.
+Option B is retained above as a record of the alternative considered, not as a
+live candidate.
+
+---
+
+## Feature Description
+
+### User-Facing Behavior
+
+An operator with AWS Bedrock access can run the entire dev-loop without a single
+vendor API key or coding CLI installed:
+
+```
+DEV_LOOP_DEV_AGENTS='[{"agent":"nova","model":"minimax.minimax-m2.5","count":2}]'
+DEV_LOOP_ADVERSARIAL_BACKEND=nova
+DEV_LOOP_NOVA_REVIEW_MODEL=us.anthropic.claude-opus-5
+DEV_LOOP_NOVA_MECHANICAL_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0
+```
+
+(No research-seat key: `ResearchNode` remains Claude Code only [R7].)
+
+Setting none of these changes nothing [R3]: `claude-code` still develops,
+`codex` still reviews adversarially, Claude Code still researches.
+
+In the console UI, `nova` appears as one more backend in the picker, offering
+the curated Bedrock model list and — like every other backend — accepting a
+free-text model id. The adversarial picker, previously a fixed single-value
+display driven by `ADVERSARIAL_BACKEND` (`catalog.py:48,294`), becomes a real
+two-option select.
+
+At the end of every run — Nova or not — two new artifacts land beside the
+existing bundle:
+
+- `usage.json` — the `UsageReport` envelope, machine-readable.
+- `usage.html` — a standalone, self-contained report: one row per agent seat
+  with backend, model, rounds, input/output/cache tokens and wall-clock, a
+  per-node timeline, and run totals.
+
+The existing markdown bundle gains a per-agent section rendered from the same
+envelope, so the three views can never disagree.
+
+### Internal Behavior
+
+**Module 1 — Bedrock model-ID translation and explicit prefixes.**
+`models/bedrock_models.py` learns this model generation: add `au.` and
+`global.` to `_REGION_PREFIXES` (currently `("us.", "eu.", "apac.")`, line 29)
+[R4]; teach the pass-through detector the `minimax.`, `zai.`, and `moonshotai.`
+vendor namespaces; add the verified map entries, noting that Claude Opus 5 and
+Fable 5 carry **no** `-vN:0` suffix, breaking the existing
+`anthropic.<id>-vN:0` convention.
+
+**[R6] A `REQUIRES_REGION_PREFIX` map, not a change to the client.** Today
+`NovaClient.__init__` sets `region_prefix: Optional[str] = "us"`
+(`clients/nova/client.py:72`) because Nova 2 Lite and Premier require a geo
+prefix — but that default silently applies to every model the client touches
+and would emit the invalid `us.minimax.minimax-m2.5`.
+
+The resolution keeps the client untouched and moves the decision into the
+translator, where the per-model facts already live. A `REQUIRES_REGION_PREFIX`
+map declares which models need a prefix and what to fall back to:
+
+- **Model in the map** → apply the caller's `region_prefix` when supplied,
+  otherwise the map's declared default. Nova 2 Lite/Premier and the Anthropic
+  models behave exactly as they do today.
+- **Model not in the map** (MiniMax M2.5, GLM-5) → never prefixed, regardless
+  of `region_prefix`. The `us.minimax.…` failure becomes unreachable by
+  construction rather than by remembering to pass `None`.
+
+Two properties make this preferable to removing the default: **no existing
+`NovaClient` caller changes**, and the residual failure mode is the safer one.
+Dropping the default risked *withholding* a prefix a model needs; the map risks
+only *omitting* one for a model nobody has mapped yet — which surfaces as a
+loud `AccessDeniedException` naming the model, not a silent misroute. To close
+even that gap, an explicit `region_prefix` passed for an unmapped model should
+log a warning rather than be discarded silently.
+
+**Module 2 — `dev_loop/models/nova.py`.** `NovaCodeDispatchProfile` (extending
+`LLMCodeDispatchProfile`, `models/llm.py:10`, following
+`MoonshotCodeDispatchProfile`, `models/moonshot.py:10`) with a `max_tokens`
+bound that respects the target model's real ceiling — 8192 for MiniMax M2.5.
+Plus `NovaAdversarialReviewProfile` (no tools, read-only by construction) and
+`NovaMechanicalProfile` (no tools, short output).
+
+**Module 3 — `dev_loop/dispatchers/nova.py`.** `NovaCodeDispatcher` extends
+`LLMCodeDispatcher` and overrides the two completion hooks
+(`_completion_args`, `dispatchers/llm.py:347`, and `_chat_completion`, line 369)
+to route through the `bedrock-mantle` client — the same two-hook override shape
+`MoonshotCodeDispatcher` uses (`dispatchers/moonshot.py:47,82`). Alongside it,
+`NovaAdversarialReviewDispatcher` — registered via
+`@CodeReviewDispatcherFactory.register("nova-adversarial")`
+(`code_review.py:170`), `advisory = True`, mirroring
+`CodexAdversarialReviewDispatcher` (`code_review.py:266`) including its
+belt-and-braces `files_modified = []` override — issues one `ask()` with the
+diff in the prompt and no tools.
+
+**Module 4 — Wiring.** Add `"nova"` to the `DevAgentBackend` Literal
+(`models/base.py:383`) and a branch to `build_dispatcher` before the
+`raise ValueError` at `agent_builder.py:210`; add a `BackendInfo` row to
+`catalog.py:88`; turn `ADVERSARIAL_BACKEND` from a constant into a
+config-resolved choice over `{codex, nova}` defaulting to `codex` [R3], updating
+both use sites (`catalog.py:294,296`).
+
+**Module 5 — REMOVED. [R7]** The research seat is out of scope. `ResearchNode`
+is not touched: it keeps `dispatcher: ClaudeCodeDispatcher`
+(`nodes/research.py:142`), keeps building
+`ClaudeCodeDispatchProfile(subagent="sdd-research")` (line 283), and keeps
+driving `/sdd-spec` + `/sdd-task` through the Claude Code Agent. Rationale: a
+Bedrock API seat cannot invoke slash commands, so a "pluggable" research seat
+would have shipped a nova option that could not actually do the job — the
+generalization buys nothing until there is a second backend that can. Revisit
+only if a non-CLI path to SDD scaffolding appears.
+
+**Module 6 — Usage capture: consume FEAT-397, do not reinvent it. [R4]**
+
+Round accumulation is **already solved at the client layer** by FEAT-397
+(`sdd/specs/tokens-observability.spec.md`, approved): each client's `ask()`
+tool loop sums `CompletionUsage` per round, calls `_emit_round_event`
+(`clients/base.py:488`) to publish a `ClientRoundEvent`
+(`core/events/lifecycle/events/client.py:177`), sets the **accumulated** total
+on `AIMessage.usage`, exposes `AIMessage.total_usage()`
+(`models/responses.py:281`), and records the round count at
+`usage.extra_usage["rounds"]`. Anthropic, OpenAI, Gemini, Groq and Grok are
+done (e.g. `clients/claude.py:566,641,715`).
+
+**This feature therefore adds no summing loop to any dispatcher.** Two gaps
+remain in the chain; only one belongs to this feature:
+
+- **Gap A — Bedrock client coverage — OUT OF SCOPE [R5].** FEAT-397's non-goals
+  list `BedrockClient` among the follow-up clients, and `BedrockConverseBase`
+  indeed has no round accumulation or `_emit_round_event` call today. The user
+  is dispatching a **separate spec** continuing FEAT-397 for `NovaClient`. This
+  feature therefore treats Bedrock round accumulation as an **external
+  dependency**, not a deliverable: it must degrade cleanly (rounds and tokens
+  render as "—") while that spec is outstanding, and require no rework once it
+  lands, since the values arrive through the same `AIMessage.usage` /
+  `extra_usage["rounds"]` contract either way.
+- **Gap B — the dispatcher bypass — IN SCOPE.** `LLMCodeDispatcher` does not
+  call `ask()`; it drives `client._chat_completion(...)` directly in its own
+  turn loop (`dispatchers/llm.py:190`), so FEAT-397's in-`ask()` accumulation
+  never runs for the dev-loop dispatch path — independently of which client
+  sits underneath. **[R8] covers every backend from day one**, not just nova:
+  the loop is shared by nvidia, zai, moonshot, grok and the new nova dev seat,
+  and the fix is identical for all of them.
+
+  **Q6 investigated — no extraction needed.** `_emit_round_event` is an
+  instance method on `AbstractClient` (`clients/base.py:488`) whose only
+  dependencies are `self.events` / `get_global_registry()` and a
+  `TraceContext` obtained from `_emit_before_call` (`clients/base.py:431`).
+  Nothing ties it to `ask()`. `LLMCodeDispatcher._dispatch_loop` already holds
+  the client instance, so it can drive the same three calls the clients use:
+
+  1. before the loop — `tc = client._emit_before_call(client_name=…,
+     model=…, has_tools=True)` → returns the `TraceContext`
+  2. per turn — `client._emit_round_event(tc, client_name=…, model=…,
+     round_number=i + 1, usage=…, raw_usage=…, tool_calls=…, duration_ms=…)`
+  3. after the loop — `await client._emit_after_call(tc, …)` (this one is
+     async; the other two are sync)
+
+  Two things to carry into the spec. First, the dispatcher must **extract**
+  each turn's `CompletionUsage` from its own `_chat_completion` response,
+  since it is not going through `ask()` — but it still performs no
+  accumulation: each event carries one round, and summing stays downstream in
+  the consumer, honouring [R4]. Second, these are underscore-private methods;
+  a dispatcher calling them reaches into client internals. That is the same
+  intimacy the dispatcher already has with `client._chat_completion`
+  (`dispatchers/llm.py:369-384`), so it is consistent rather than novel — but
+  it should be a deliberate, documented choice, and `has_subscribers` already
+  short-circuits so there is no cost when nobody is listening.
+
+The dev-loop side is then purely a consumer: `dispatch.completed` carries the
+already-accumulated totals (the same path `session_state.py:1259-1278` uses to
+populate `DispatchState`, `session_state.py:202-208`, and `NodeReport`,
+`run_bundle.py:61-67`), and the report reads `rounds` rather than counting
+turns itself.
+
+> Note: the saved wiki lesson `mem-db9c4515cb6e` ("usage does not aggregate
+> across the tool loop") predates FEAT-397 and is **superseded** for the five
+> covered clients. It still describes the Bedrock client accurately — which is
+> precisely what the separate FEAT-397 continuation will fix.
+
+**Module 7 — `UsageReport` + renderers.** A `UsageReport` Pydantic model keyed
+by agent seat (backend, model, rounds, input/output/cache tokens, duration),
+serialised to `usage.json`, rendered to markdown inside the existing bundle
+(reusing `_format_tokens`, `run_bundle.py:365`) and to a self-contained HTML
+artifact. No cost estimation [R2].
+
+**Module 8 — Haiku PR enrichment.** In `feature_handoff.py` and
+`deployment_handoff.py`, the deterministic `_build_body`
+(`feature_handoff.py:511`, `deployment_handoff.py:479`) stays authoritative;
+when the mechanical seat is configured, a Haiku `ask()` contributes one
+"Summary of changes" section spliced in [R2]. Any failure, timeout, or absent
+config falls back to today's exact output.
+
+### Edge Cases & Error Handling
+
+- **Invalid prefix on a prefix-less model.** `us.minimax.minimax-m2.5` is not a
+  valid id. Under [R6] an unmapped model is never prefixed, so this is
+  unreachable by construction — but a caller passing `region_prefix` explicitly
+  for such a model must be **warned, not silently ignored**, and both halves
+  pinned by unit tests.
+- **A prefix-requiring model missing from the map.** The residual risk under
+  [R6]: a newly added model that needs a geo/global prefix but has no map entry
+  is called with a bare id and fails with `AccessDeniedException`. Preferred to
+  a silent misroute, but the error must name the model and suggest the map
+  entry, and adding a model to the catalog should require declaring its prefix
+  policy.
+- **Round data unavailable.** Until the separate FEAT-397 continuation lands
+  [R5], Bedrock-backed seats report no per-round usage; the report must render
+  "—" and stay correct, not degrade into zeros or a crash.
+- **Per-model output caps.** Verified ceilings differ sharply: MiniMax M2.5
+  **8K**, Kimi K2.5 **16K**, GLM-5 **128K**, Claude Opus 5 **128K** — while
+  `LLMCodeDispatchProfile.max_tokens` allows up to 32768 (`models/llm.py:24`).
+  A profile exceeding its model's ceiling must be clamped (and warned) rather
+  than rejected by Bedrock mid-run. This is a per-model table, not one
+  constant (Q5).
+- **Model not enabled in the account/region.** Bedrock returns
+  `AccessDeniedException`; surface it as a `DispatchExecutionError` naming the
+  model and region, not a bare stack trace.
+- **Region mismatch.** Claude Opus 5 has **no in-region access in us-west-2 or
+  us-east-2** — only via a geo/global profile. An operator on us-west-2 with
+  `region_prefix=None` gets a confusing failure; detect and explain it.
+- **Unknown / future ids.** Every id in the curated list is now verified (Q4),
+  but an operator may type any model into the free-text picker. An id absent
+  from the map must warn-and-passthrough, never hard-fail the run.
+- **Usage absent.** Any dispatcher that cannot report tokens yields `None`, and
+  the renderers must show "—", never a fabricated `0` — `RunTotals` already
+  documents this rule (`run_bundle.py:120-123`); the new report must honour it.
+- **Adversarial degrade path.** `AbstractCodeReviewDispatcher.review()`
+  degrades an infra error to a *passing* verdict with a nit-level finding
+  (`code_review.py:145-157`). A Bedrock outage would therefore silently pass the
+  adversarial gate — inherited behaviour, but worth an explicit test.
+- **Truncated diff.** Opus 5's 1M context is generous, but a very large diff must
+  be truncated deterministically with an explicit marker rather than silently.
+
+---
+
+## Capabilities
+
+### New Capabilities
+- `nova-dev-loop-backend`: a `nova` backend for the dev-loop reaching Bedrock-hosted models (Claude Opus 5 / Haiku 4.5 / Fable 5, MiniMax M2.5, GLM-5, Kimi) through one AWS credential.
+- `nova-adversarial-review`: a read-only, no-tools adversarial reviewer on Claude Opus 5, selectable against the incumbent `codex`.
+- `dev-loop-usage-report`: per-agent token/round accounting emitted as `usage.json` plus markdown and HTML renderings.
+- `bedrock-model-id-translation-2026`: correct prefix and vendor-namespace handling for the 2026 Bedrock model generation.
+
+### Modified Capabilities
+- `new-codereviewers` (`sdd/specs/new-codereviewers.spec.md`) — the adversarial seat stops being codex-only.
+- `novaclient-amazon-aws` (`sdd/specs/novaclient-amazon-aws.spec.md`) — `NovaClient` gains non-Nova Bedrock model coverage and per-model prefix handling.
+
+---
+
+## Impact & Integration
+
+| Affected Component | Impact Type | Notes |
+|---|---|---|
+| `parrot/flows/dev_loop/models/nova.py` | **new** | `NovaCodeDispatchProfile` + review/mechanical profiles |
+| `parrot/flows/dev_loop/dispatchers/nova.py` | **new** | `NovaCodeDispatcher` + `NovaAdversarialReviewDispatcher` |
+| `parrot/flows/dev_loop/usage_report.py` | **new** | `UsageReport` model + markdown/HTML renderers (no such module today) |
+| `parrot/flows/dev_loop/models/base.py:383` | modifies | `DevAgentBackend` Literal gains `"nova"` (also used at line 847) |
+| `parrot/flows/dev_loop/agent_builder.py:100-210` | extends | new `nova` branch before the `raise ValueError` |
+| `parrot/flows/dev_loop/catalog.py:48,88,294` | modifies | `ADVERSARIAL_BACKEND` const → config-resolved choice; new `BackendInfo` row |
+| `parrot/flows/dev_loop/code_review.py:164` | extends | register `nova-adversarial` |
+| `parrot/flows/dev_loop/dispatchers/llm.py:190` | modifies | emit `ClientRoundEvent` per turn via the existing `_emit_round_event` (`clients/base.py:488`) — **no summing here** [R4] |
+| `parrot/flows/dev_loop/nodes/research.py` | **untouched** [R7] | research seat stays Claude Code + slash commands |
+| `parrot/flows/dev_loop/nodes/feature_handoff.py:511` | extends | optional Haiku summary section |
+| `parrot/flows/dev_loop/nodes/deployment_handoff.py:479` | extends | same |
+| `parrot/flows/dev_loop/run_bundle.py` | extends | per-agent section from `UsageReport` |
+| `parrot/models/bedrock_models.py:29,37` | modifies | add `au.`/`global.` prefixes, vendor namespaces, new ids, per-model prefix declarations |
+| `parrot/clients/nova/client.py:72` | **unchanged** [R6] | `region_prefix="us"` default stays; prefixing is decided by the translator's `REQUIRES_REGION_PREFIX` map, so no caller migration |
+| `parrot/clients/bedrock.py` (round usage) | **external dependency** | FEAT-397 continuation for `NovaClient` ships as a separate spec [R5]; this feature must degrade cleanly without it |
+| `parrot/conf.py:1048` | extends | new `DEV_LOOP_NOVA_*` keys; `DEV_LOOP_ADVERSARIAL_BACKEND` |
+| `parrot/flows/dev_loop/models/__init__.py`, `dispatchers/__init__.py` | extends | export the new symbols |
+| `packages/ai-parrot/tests/flows/dev_loop/` | extends | new tests alongside `test_dispatcher.py`, `test_dispatch_telemetry.py` |
+
+**Breaking changes:** none intended [R3] — every default is preserved.
+**New runtime dependency:** AWS credentials with Bedrock model access; a Bedrock
+API key additionally, if Option A's `bedrock-mantle` path is adopted.
+
+---
+
+## Code Context
+
+### User-Provided Code
+
+```text
+# Source: user-provided (Bedrock model IDs, this conversation)
+us.anthropic.claude-opus-5
+us.anthropic.claude-haiku-4-5-20251001-v1:0
+us.anthropic.claude-fable-5          # superseded → global.anthropic.claude-fable-5
+minimax.minimax-m2.5
+moonshotai.kimi-k2.5
+
+# Source: user-provided (correction, this conversation)
+global.anthropic.claude-fable-5      # the usable Fable 5 id
+
+# Source: user-provided (AWS documentation references)
+https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-zai-glm-5.html
+https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-minimax-minimax-m2-5.html
+https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-moonshot-ai-kimi-k2-5.html
+```
+
+Cross-check against the AWS model cards (see "Verified AWS Facts"):
+`us.anthropic.claude-opus-5` ✅ confirmed as the US geo inference id (base id
+`anthropic.claude-opus-5`). `minimax.minimax-m2.5` ✅ confirmed — and confirmed
+to accept **no** prefix. `moonshotai.kimi-k2.5` ✅ confirmed from the corrected
+card URL (`model-card-moonshot-ai-kimi-k2-5`, hyphenated vendor segment —
+`moonshotai` in the id but `moonshot-ai` in the doc path), likewise **no**
+prefix, 256K context / 16K max output. Claude Fable 5 ✅ **corrected**: the
+usable id is `global.anthropic.claude-fable-5` (global inference), **not** the
+originally supplied `us.anthropic.claude-fable-5`. `zai.glm-5` is a bonus id
+discovered from the supplied documentation link.
+
+### Verified Codebase References
+
+#### Classes & Signatures
+
+```python
+# From parrot/clients/nova/client.py:30
+class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
+    client_type: str = "nova"                     # line 62
+    client_name: str = "nova"                     # line 63
+    _default_model: str = "nova-2-lite"           # line 64
+    _fallback_model: str = "nova-lite"            # line 65
+
+    def __init__(                                  # line 67
+        self,
+        aws_id: Optional[str] = None,
+        region: Optional[str] = None,
+        profile: Optional[str] = None,
+        region_prefix: Optional[str] = "us",       # line 72 — leaks onto MiniMax
+        guardrail_id: Optional[str] = None,
+        guardrail_version: Optional[str] = None,
+        voice_id: str = "matthew",
+        aws_access_key: Optional[str] = None,
+        aws_secret_key: Optional[str] = None,
+        aws_session_token: Optional[str] = None,
+        **kwargs,
+    ): ...
+
+# From parrot/clients/bedrock.py
+class BedrockConverseBase:
+    def _prepare_tools(self, filter_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:  # line 413
+        ...  # → ToolSchemaAdapter with ToolFormat.BEDROCK
+    async def ask(self, ..., tools=None, use_tools=None, ...):  # line 578; tools line 589, use_tools line 590
+        ...  # line 724-731: payload["toolConfig"] = {"tools": tool_specs}
+
+# From parrot/flows/dev_loop/dispatchers/_shared.py
+T = TypeVar("T", bound=BaseModel)                  # line 21
+class DispatchExecutionError(Exception): ...        # line 82
+class DispatchOutputValidationError(Exception):     # line 91
+    def __init__(self, message: str, *, raw_payload: str = "") -> None: ...  # line 100
+class DevLoopCodeDispatcher(Protocol):              # line 105
+    async def dispatch(                             # line 108
+        self, *, brief: BaseModel, profile: BaseModel, output_model: Type[T],
+        run_id: str, node_id: str, cwd: str,
+        session_host: Optional[SessionHost] = None,
+    ) -> T: ...
+
+# From parrot/flows/dev_loop/dispatchers/llm.py
+class LLMCodeDispatcher:                            # line 39
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, session_host=None): ...  # line 65
+    async def _dispatch_loop(self, *, brief, profile, output_model, run_id, node_id, stream_key, cwd): ...   # line 172
+        # line 190: for turn_index in range(profile.max_turns):   ← usage must accumulate HERE
+    def _completion_args(self, profile, tools) -> Dict[str, Any]: ...  # line 347
+    async def _chat_completion(self, *, client, model, messages, args) -> Any: ...  # line 369
+        # requires client._chat_completion(model=..., messages=..., use_tools=True, **args)
+
+# From parrot/flows/dev_loop/models/llm.py:10
+class LLMCodeDispatchProfile(BaseModel):
+    subagent: Literal["sdd-worker"] = "sdd-worker"                    # line 18
+    llm: str = "nvidia:moonshotai/kimi-k2-instruct-0905"              # line 19
+    max_turns: int = Field(default=24, ge=1, le=100)                  # line 23
+    max_tokens: int = Field(default=4096, ge=256, le=32768)           # line 24 — > MiniMax's 8K cap
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)           # line 25
+
+# From parrot/flows/dev_loop/models/moonshot.py:10 — the pattern to copy
+class MoonshotCodeDispatchProfile(LLMCodeDispatchProfile):
+    model: str = Field(default="kimi-k3")                             # line 21
+    llm: str = "moonshot:kimi-k3"                                     # line 25
+    @model_validator(mode="after")
+    def _sync_llm_with_model(self) -> "MoonshotCodeDispatchProfile": ...  # line 43
+
+# From parrot/flows/dev_loop/dispatchers/moonshot.py:18 — the two-hook override shape
+class MoonshotCodeDispatcher(LLMCodeDispatcher):
+    def _completion_args(self, profile, tools) -> Dict[str, Any]: ...  # line 47
+    async def _chat_completion(self, *, client, model, messages, args) -> Any: ...  # line 82
+    # ctor injects: client_factory=lambda model, **kw: LLMFactory.create(model, **kw)  # line 44
+
+# From parrot/flows/dev_loop/code_review.py
+class AbstractCodeReviewDispatcher(ABC):            # line 85
+    agent_name: str                                  # line 99
+    advisory: bool = False                           # line 100
+    async def review(self, *, brief, run_id, node_id, cwd, session_host=None, round="") -> CodeReviewVerdict: ...  # line 106
+    @abstractmethod
+    def build_review_profile(self) -> BaseModel: ...  # line 159
+class CodeReviewDispatcherFactory:                   # line 164
+    @classmethod
+    def register(cls, name: str): ...                # line 170
+    @classmethod
+    def create(cls, name: str, **kwargs) -> AbstractCodeReviewDispatcher: ...  # line 180
+
+@CodeReviewDispatcherFactory.register("codex-adversarial")   # line 266 — the model to mirror
+class CodexAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):  # line 267
+    agent_name = "codex-adversarial"                 # line 277
+    advisory = True                                  # line 278
+    # line 290: self._model = model or conf.DEV_LOOP_ADVERSARIAL_MODEL
+    # line 337: returns verdict.model_copy(update={"files_modified": [], ...})
+
+# From parrot/flows/dev_loop/run_bundle.py
+class NodeReport(_Frozen):                           # line 48
+    input_tokens: Optional[int] = None               # line 61
+    output_tokens: Optional[int] = None              # line 62
+    cache_creation_input_tokens: Optional[int] = None  # line 63
+    cache_read_input_tokens: Optional[int] = None    # line 64
+    total_cost_usd: Optional[float] = None           # line 65
+    num_turns: Optional[int] = None                  # line 66
+class RunTotals(_Frozen): ...                        # line 120 — "must not render fake zeros"
+class RunBundle(_Frozen): ...                        # line 137
+def _format_tokens(input_tokens, output_tokens) -> str: ...  # line 365
+```
+
+#### Verified Imports
+
+```python
+# Confirmed to resolve:
+from parrot.clients.nova import NovaClient                       # clients/nova/__init__.py
+from parrot.clients.factory import LLMFactory                    # "nova": _lazy_nova at factory.py:96
+from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
+from parrot.flows.dev_loop.dispatchers._shared import DispatchExecutionError, T, DevLoopCodeDispatcher
+from parrot.flows.dev_loop.models.llm import LLMCodeDispatchProfile
+from parrot.flows.dev_loop.models import DevAgentBackend, DevAgentSpec   # models/__init__.py:29,93
+from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory, AbstractCodeReviewDispatcher
+from parrot.models.bedrock_models import PUBLIC_TO_BEDROCK, translate
+```
+
+#### Key Attributes & Constants
+
+- `DevAgentBackend` → `Literal["claude-code","codex","gemini","nvidia","grok","zai","moonshot","google_coding"]` (`models/base.py:383`) — **no `nova`**; also referenced at line 847
+- `JUDGE_BACKENDS` → `("claude-code","codex","gemini","google_coding")` (`catalog.py:42`)
+- `ADVERSARIAL_BACKEND` → `"codex"` (`catalog.py:48`; consumed at 294 and 296)
+- `PRIMARY_REVIEW_BACKENDS` → `("claude-code","codex","gemini","google_coding")` (`catalog.py:52`)
+- `_REGION_PREFIXES` → `("us.", "eu.", "apac.")` (`models/bedrock_models.py:29`) — missing the real `au.` and `global.`
+- `conf.DEV_LOOP_ADVERSARIAL_MODEL` → `str`, fallback `"gpt-5.5"` (`conf.py:1048`)
+- `conf.DEV_LOOP_ADVERSARIAL_SCOPE` → fallback `"uncommitted"` (`conf.py:1053`); `DEV_LOOP_ADVERSARIAL_BASE_REF` (`conf.py:1076`)
+- `ZaiClient.base_url` → configurable, `ZAI_BASE_URL` override (`clients/zai.py:35,45`) — the precedent for a `bedrock-mantle` base URL
+- `build_dispatcher` branch line numbers: claude-code 138, codex 145, gemini 152, nvidia 159, grok 175, zai 182, moonshot 193, google_coding 203, `raise ValueError` 210 (`agent_builder.py`)
+- Existing tests to extend: `packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py`, `test_dispatch_telemetry.py`, `test_codex_dispatcher.py`, `test_gemini_dispatcher.py`
+
+### Does NOT Exist (Anti-Hallucination)
+
+- ~~`parrot.flows.dev_loop.dispatchers.nova`~~ / ~~`NovaCodeDispatcher`~~ — this feature creates them
+- ~~`parrot.flows.dev_loop.models.nova`~~ / ~~`NovaCodeDispatchProfile`~~ — this feature creates them
+- ~~`parrot.flows.dev_loop.usage_report`~~ — no usage-report module exists (verified: no `usage*` file in the package)
+- ~~`"nova"` in `DevAgentBackend`~~ — the Literal has exactly 8 values, none of them `nova`
+- ~~`BedrockConverseBase._chat_completion(...)`~~ — **does not exist**; the class exposes `ask()`/`ask_stream()`/`invoke()`/`resume()` in Converse shape. `LLMCodeDispatcher._chat_completion` (llm.py:369) would raise `DispatchExecutionError("... does not expose chat completion")` against it today.
+- ~~`PUBLIC_TO_BEDROCK["claude-opus-5"]`~~ / ~~`["claude-fable-5"]`~~ / ~~`["minimax-m2.5"]`~~ / ~~`["kimi-k2.5"]`~~ — absent; `bedrock_models.py:65` explicitly says "Bedrock IDs TBD"
+- ~~Usage collection in `LLMCodeDispatcher`~~ — its tool loop (`llm.py:190`) never reads token counts and never calls `_emit_round_event`; within the dev-loop only `ClaudeCodeDispatcher._extract_result_usage` (claude.py:625) reports any. **But do NOT write a summing loop here** [R4] — accumulation belongs to FEAT-397's client-layer primitives
+- ~~Round accumulation in `BedrockConverseBase` / `NovaClient`~~ — not implemented; `BedrockClient` is an explicit FEAT-397 non-goal. Shipping as a **separate spec** [R5] — do not implement it in this feature
+- ~~`REQUIRES_REGION_PREFIX`~~ — no such map exists in `parrot/models/bedrock_models.py`; [R6] introduces it. Note `NovaClient.region_prefix` **keeps** its `"us"` default — do NOT remove it; prefixing is decided by the map, not the client
+- ~~An LLM in the PR-creation path~~ — `_build_title`/`_build_body` are pure string templates (`feature_handoff.py:507,511`; `deployment_handoff.py:474,479`)
+- ~~`ResearchNode` accepting a generic dispatcher~~ — it is typed `dispatcher: ClaudeCodeDispatcher` (`nodes/research.py:142`) and hardcodes `ClaudeCodeDispatchProfile(subagent="sdd-research")` (line 283). **[R7] Leave it that way** — do NOT widen the type; the research seat is out of scope
+- ~~A `nova` entry in `catalog.BACKENDS`~~ — the tuple starts at `catalog.py:88` with no Bedrock backend
+- ~~Chat Completions for Anthropic models on Bedrock~~ — the Opus 5 model card marks it **not supported**; only Converse / Invoke / Messages
+- ~~Geo or global inference profiles for MiniMax M2.5 or GLM-5~~ — both cards say "Not supported" for each
+
+---
+
+## Parallelism Assessment
+
+- **Internal parallelism**: Genuinely high. Three clusters barely touch:
+  (a) the Bedrock translator + Nova profiles/dispatchers,
+  (b) the usage-capture + `UsageReport` + renderers,
+  (c) the Haiku PR enrichment.
+  Cluster (b) is valuable on its own and does not depend on Nova existing.
+- **Cross-feature independence**: Moderate risk. `catalog.py`, `agent_builder.py`,
+  `models/base.py` and `code_review.py` are the same files touched by the
+  in-flight `new-codereviewers` work, and `dispatchers/llm.py` is described by
+  its own sibling module as "hot, actively-churning". `models/bedrock_models.py`
+  and `clients/nova/client.py` overlap `novaclient-amazon-aws`.
+- **Recommended isolation**: `per-spec`
+- **Rationale**: Although the three clusters are internally parallel, they
+  converge on the same handful of shared registration points
+  (`DevAgentBackend`, `build_dispatcher`, `catalog.BACKENDS`,
+  `dispatchers/__init__.py`). Splitting them across worktrees would buy modest
+  wall-clock and cost repeated three-way merges in the most contended files in
+  the package. Sequential tasks in one worktree is the better trade.
+
+---
+
+## Open Questions
+
+- [x] **Q1 — Is the `dev_loop` split present on `base_branch`?** —
+      *Owner: Jesus Lara*: **Resolved.** The split landed as
+      `refactor: split dev_loop models.py and dispatcher.py into per-client
+      packages`, was destroyed by a concurrent `git reset --hard origin/dev`,
+      and was recovered via reflog + cherry-pick. It is now on `dev` as
+      `a50567f39` and **pushed to `origin/dev`** — 20 files tracked under
+      `dev_loop/models/` + `dev_loop/dispatchers/`, monolithic `models.py` /
+      `dispatcher.py` gone, `models_new/` / `dispatchers_new/` / `*.bak` strays
+      removed, imports verified. A worktree cut from `dev` HEAD now contains
+      every module this feature extends.
+      **Standing hazard:** concurrent SDD id-reservation runs reset this branch
+      to `origin`, which discards *committed* local work. Push immediately
+      after committing while this feature is in flight.
+- [x] **Q2 — Transport decision.** — *Owner: Jesus Lara*: **Resolved as Option A
+      [R4].** Anthropic models on Bedrock do not support Chat Completions, so
+      Nova will not use that path for them at all; anyone needing Claude in the
+      development seat uses the Claude Code Agent (`claude-code`) backend
+      instead. The Converse↔OpenAI adapter (Option B) is therefore not built.
+- [x] **Q3 — Nova research seat.** — *Owner: Jesus Lara*: **Discarded [R7].**
+      The research seat stays on the Claude Code Agent with `/sdd-spec` and
+      `/sdd-task`. `ResearchNode` is not modified and no pluggable-dispatcher
+      generalization ships in this feature.
+- [x] **Q4 — Model id verification.** — *Owner: Jesus Lara*: **Resolved.**
+      Kimi K2.5 confirmed from the corrected card URL
+      (`model-card-moonshot-ai-kimi-k2-5`): `moonshotai.kimi-k2.5`, 256K
+      context, 16K max output, Converse + Chat Completions, **no** geo/global
+      prefix. Claude Fable 5 corrected to **`global.anthropic.claude-fable-5`**
+      (global inference), superseding the earlier `us.` form. "Claude Opus 5.8"
+      is dropped — no id was ever supplied and no model card exists.
+- [ ] **Q5 — Per-model output caps: clamp or reject?** Verified ceilings vary
+      per model (MiniMax M2.5 8K, Kimi K2.5 16K, GLM-5 and Opus 5 128K) while
+      `LLMCodeDispatchProfile.max_tokens` allows up to 32768
+      (`models/llm.py:24`). Clamp with a warning, or reject the profile at
+      construction? **The only question still open.** — *Owner: Jesus Lara*
+- [x] **Q6 — Is `_emit_round_event` reusable from a dispatcher?** —
+      *Owner: Jesus Lara*: **Investigated — yes, no extraction needed.** It is
+      an `AbstractClient` instance method (`clients/base.py:488`) depending only
+      on `self.events` / `get_global_registry()` plus a `TraceContext` from
+      `_emit_before_call` (`clients/base.py:431`); nothing couples it to
+      `ask()`. `LLMCodeDispatcher._dispatch_loop` already holds the client, so
+      it drives `_emit_before_call` → per-turn `_emit_round_event` → `await
+      _emit_after_call`. Caveats recorded in Module 6: the dispatcher must
+      extract each turn's `CompletionUsage` itself (no accumulation — one event
+      per round), and these are underscore-private methods, the same intimacy
+      the dispatcher already has with `client._chat_completion`.
+- [x] **Q7 — Coverage of non-Nova backends.** — *Owner: Jesus Lara*:
+      **All backends from day one [R8].** The `ClientRoundEvent` emission in
+      `LLMCodeDispatcher`'s loop is backend-independent and ships covering
+      nvidia, zai, moonshot, grok and the nova dev seat together.
+- [x] **Q8 — Bedrock per-round usage coverage.** — *Owner: Jesus Lara*:
+      **Out of scope [R5].** A separate spec continues FEAT-397 for
+      `NovaClient`. This feature must degrade cleanly without it (rounds/tokens
+      render as "—") and require no rework once it lands.

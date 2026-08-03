@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from parrot.flows.dev_loop.dispatcher import CodexCodeDispatcher
+from parrot.flows.dev_loop.dispatchers.codex import CodexCodeDispatcher
 from parrot.flows.dev_loop.models import (
     CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,

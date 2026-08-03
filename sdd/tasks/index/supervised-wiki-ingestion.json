@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
       "completed_at": "2026-08-01T23:16:51+00:00",
-      "file": "sdd/tasks/completed/TASK-2069-charter-model-loader.md"
+      "file": "sdd/tasks/completed/TASK-2069-charter-model-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2070",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
       "completed_at": "2026-08-01T23:20:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2070-review-manifest-layer.md"
+      "file": "sdd/tasks/completed/TASK-2070-review-manifest-layer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2071",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
       "completed_at": "2026-08-01T23:27:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2071-ingest-triage-router.md"
+      "file": "sdd/tasks/completed/TASK-2071-ingest-triage-router.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2072",
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
       "completed_at": "2026-08-01T23:33:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2072-archive-category-ranking-exclusion.md"
+      "file": "sdd/tasks/completed/TASK-2072-archive-category-ranking-exclusion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2073",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
       "completed_at": "2026-08-01T23:42:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2073-sources-migration-bookkeeper.md"
+      "file": "sdd/tasks/completed/TASK-2073-sources-migration-bookkeeper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2074",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
       "completed_at": "2026-08-01T23:48:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2074-orchestrator-triage-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2074-orchestrator-triage-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2075",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-08-01T23:12:15+00:00",
       "completed_at": "2026-08-02T00:04:36+00:00",
-      "file": "sdd/tasks/completed/TASK-2075-cli-ingest-command.md"
+      "file": "sdd/tasks/completed/TASK-2075-cli-ingest-command.md",
+      "verification": "verified"
     }
   ]
 }

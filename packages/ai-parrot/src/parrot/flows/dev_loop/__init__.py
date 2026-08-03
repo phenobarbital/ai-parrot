@@ -11,7 +11,7 @@ spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
 
 from parrot.flows.dev_loop.commands import register_command_routes
 from parrot.flows.dev_loop.config import parse_repo_specs
-from parrot.flows.dev_loop.dispatcher import (
+from parrot.flows.dev_loop.dispatchers import (
     GoogleCodingDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
@@ -19,6 +19,7 @@ from parrot.flows.dev_loop.dispatcher import (
     LLMCodeDispatcher,
     GrokCodeDispatcher,
     MoonshotCodeDispatcher,
+    NovaCodeDispatcher,
     ZaiCodeDispatcher,
     DevLoopCodeDispatcher,
     DispatchExecutionError,
@@ -49,6 +50,7 @@ from parrot.flows.dev_loop.models import (
     LLMCodeDispatchProfile,
     GrokCodeDispatchProfile,
     MoonshotCodeDispatchProfile,
+    NovaCodeDispatchProfile,
     PerspectiveSynthesis,
     TriageBrief,
     TriageReport,
@@ -108,6 +110,8 @@ __all__ = [
     "GrokCodeDispatchProfile",
     "MoonshotCodeDispatcher",
     "MoonshotCodeDispatchProfile",
+    "NovaCodeDispatcher",
+    "NovaCodeDispatchProfile",
     "ZaiCodeDispatcher",
     "ZaiCodeDispatchProfile",
     "CriterionResult",

@@ -32,7 +32,7 @@ from typing import Any, Callable, Dict, Optional
 from parrot import conf
 from parrot.bots.flows import AgentsFlow
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
-from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
 from parrot.flows.dev_loop.session_state import (
