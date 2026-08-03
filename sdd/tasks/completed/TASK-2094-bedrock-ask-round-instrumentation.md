@@ -214,10 +214,26 @@ pytest packages/ai-parrot/tests/clients/test_bedrock_integration.py -v
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-03
+**Notes**: Implemented the four-part FEAT-397 idiom in `BedrockConverseBase.ask()`
+(`packages/ai-parrot/src/parrot/clients/bedrock.py`): accumulator init before
+the `while True` loop, per-round timing spanning the fallback retry, usage
+accumulation via `CompletionUsage.from_bedrock` + `__add__` with an explicit
+local re-sum of `cacheReadInputTokens`/`cacheWriteInputTokens` (capturing the
+pre-add accumulator values before `__add__`'s right-hand-wins shallow merge
+overwrites them), `_emit_round_event` at the end of the `tool_use` branch,
+and the post-factory stamp of the accumulated `ai_message.usage` +
+`extra_usage["rounds"]` (only when > 1). Updated the `ask()` docstring's
+cache-counter note to describe the multi-round sum semantics. Full unit
+suite green: `pytest packages/ai-parrot/tests/unit/clients/ -v` (44 passed)
+and the existing Bedrock client suites (`test_bedrock_integration.py`,
+`test_bedrock_converse.py`, `test_bedrock_advanced.py`,
+`test_bedrock_errors.py` — 46 passed), including the pre-existing
+`test_multi_round_tool_loop` and `test_ask_tool_use_loop` regression tests.
+`ruff check` on the file surfaces only pre-existing, file-wide legacy-typing
+findings (`Optional`/`List`/`Dict` style, `BLE001`, import sort) unrelated to
+this change — the new code follows the same established convention as the
+surrounding method bodies and the task's own Codebase Contract.
 
 **Deviations from spec**: none
