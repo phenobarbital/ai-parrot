@@ -1129,6 +1129,22 @@ DEV_LOOP_NOVA_MANTLE_REGION: str = config.get(
 DEV_LOOP_NOVA_REVIEW_MODEL: str = config.get(
     "DEV_LOOP_NOVA_REVIEW_MODEL", fallback="us.anthropic.claude-opus-5"
 )
+# Model used by the mechanical (PR-summary) seat (TASK-2092's Haiku
+# enrichment). Not yet consumed — declared here so every DEV_LOOP_NOVA_*
+# key lands in one place (Module 5).
+DEV_LOOP_NOVA_MECHANICAL_MODEL: str = config.get(
+    "DEV_LOOP_NOVA_MECHANICAL_MODEL",
+    fallback="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+)
+# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]): choice over
+# {"codex", "nova"}, defaulting to "codex" — unconfigured deployments see
+# byte-identical behaviour to pre-FEAT-405. Resolved through
+# ``catalog.resolve_adversarial_backend()`` (validates the value and
+# raises naming the valid options); this constant exists for discoverability
+# alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above (:1048,1053,1076).
+DEV_LOOP_ADVERSARIAL_BACKEND: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_BACKEND", fallback="codex"
+)
 
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)

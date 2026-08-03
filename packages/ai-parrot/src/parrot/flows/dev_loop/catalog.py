@@ -41,11 +41,54 @@ from parrot import conf
 # ``code_review.py`` ("supported: claude-code, codex, gemini").
 JUDGE_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_coding")
 
-# The adversarial (read-only, ``sdd-secondopinion``-profiled) seat is
-# Codex-only: ``CodexAdversarialReviewDispatcher`` is the sole reviewer
-# built on that subagent, and ``ClaudeCodeDispatchProfile.subagent`` does
-# not admit "sdd-secondopinion".
+# The adversarial seat's static, no-behaviour-change default (FEAT-405
+# [R3]): unset config resolves here. ``CodexAdversarialReviewDispatcher``
+# was originally the sole reviewer built on the read-only
+# ``sdd-secondopinion`` subagent profile (``ClaudeCodeDispatchProfile.
+# subagent`` does not admit it); FEAT-405 adds a second option —
+# ``NovaAdversarialReviewDispatcher``, read-only by construction (no tools
+# passed at all, rather than a sandboxed CLI profile). The module-level
+# constant is kept (or existing importers of the bare string break); use
+# :func:`resolve_adversarial_backend` to get the deployment's actual
+# choice.
 ADVERSARIAL_BACKEND: str = "codex"
+
+# Valid values for the config-resolved adversarial backend selector
+# (FEAT-405 Module 5). Deliberately NOT the full ``DevAgentBackend`` set —
+# only backends with a registered "<backend>-adversarial" review
+# dispatcher qualify.
+_ADVERSARIAL_BACKEND_CHOICES: Tuple[str, ...] = ("codex", "nova")
+
+
+def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) -> str:
+    """Return the deployment's configured adversarial backend.
+
+    Resolves ``DEV_LOOP_ADVERSARIAL_BACKEND`` through config, defaulting to
+    :data:`ADVERSARIAL_BACKEND` (``"codex"``) when unset — [R3]: an
+    operator who configures nothing sees byte-identical behaviour to
+    pre-FEAT-405.
+
+    Args:
+        config_getter: ``(key, fallback) -> Any``; defaults to
+            ``conf.config.get``.
+
+    Returns:
+        ``"codex"`` or ``"nova"``.
+
+    Raises:
+        ValueError: If the configured value is neither ``"codex"`` nor
+            ``"nova"`` — names the valid options.
+    """
+    getter = config_getter or (lambda key, fallback="": conf.config.get(key, fallback=fallback))
+    value = str(
+        getter("DEV_LOOP_ADVERSARIAL_BACKEND", ADVERSARIAL_BACKEND) or ADVERSARIAL_BACKEND
+    )
+    if value not in _ADVERSARIAL_BACKEND_CHOICES:
+        raise ValueError(
+            f"Invalid DEV_LOOP_ADVERSARIAL_BACKEND={value!r}; must be one "
+            f"of {_ADVERSARIAL_BACKEND_CHOICES} (codex, nova)."
+        )
+    return value
 
 # Non-judge review dispatchers registered in ``CodeReviewDispatcherFactory``
 # that can serve as the *primary* reviewer of a bug-mode run.
@@ -178,6 +221,26 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         requires="Moonshot credentials",
         roles=("development",),
     ),
+    BackendInfo(
+        id="nova",
+        label="Nova (AWS Bedrock)",
+        transport="api",
+        model_env="DEV_LOOP_NOVA_CODE_MODEL",
+        default_model="minimax.minimax-m2.5",
+        models=(
+            "minimax.minimax-m2.5",
+            "moonshotai.kimi-k2.5",
+            "zai.glm-5",
+            "us.anthropic.claude-opus-5",
+            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "global.anthropic.claude-fable-5",
+        ),
+        requires="AWS credentials with Bedrock model access (+ Bedrock API key for bedrock-mantle)",
+        roles=("development", "adversarial"),
+        notes="Dev seat routes MiniMax/Kimi/GLM via bedrock-mantle; the "
+              "adversarial seat is a read-only, no-tools Claude Opus 5 "
+              "Converse call — select via DEV_LOOP_ADVERSARIAL_BACKEND.",
+    ),
 )
 
 _BY_ID: Dict[str, BackendInfo] = {b.id: b for b in BACKENDS}
@@ -285,15 +348,16 @@ def catalog_payload(config_getter: Optional[ConfigGetter] = None) -> Dict[str, A
         A JSON-serialisable dict with the backend catalog, the role →
         backend mapping, and the resolved review/judge defaults.
     """
+    resolved_adversarial_backend = resolve_adversarial_backend(config_getter)
     return {
         "backends": [_backend_payload(b, config_getter) for b in BACKENDS],
         "roles": {
             "development": [b.id for b in backends_for_role("development")],
             "judge": [b.id for b in backends_for_role("judge")],
             "primary_review": [b.id for b in backends_for_role("primary_review")],
-            "adversarial": [ADVERSARIAL_BACKEND],
+            "adversarial": [resolved_adversarial_backend],
         },
-        "adversarial_backend": ADVERSARIAL_BACKEND,
+        "adversarial_backend": resolved_adversarial_backend,
         "adversarial_model": conf.DEV_LOOP_ADVERSARIAL_MODEL,
         "default_judge_panel": default_judge_panel_payload(config_getter),
     }
@@ -310,4 +374,5 @@ __all__ = [
     "default_judge_panel_payload",
     "effective_default_model",
     "get_backend",
+    "resolve_adversarial_backend",
 ]
