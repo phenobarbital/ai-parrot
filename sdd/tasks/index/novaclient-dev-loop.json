@@ -14,7 +14,7 @@
       "feature_id": "FEAT-405",
       "feature": "novaclient-dev-loop",
       "spec": "sdd/specs/novaclient-dev-loop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only parrot/models/bedrock_models.py, which no other task in this feature modifies. Genuinely isolatable, though per-spec isolation runs it sequentially.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:53:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2083-bedrock-model-id-translation.md"
+      "completed_at": "2026-08-03T02:00:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2083-bedrock-model-id-translation.md"
     },
     {
       "id": "TASK-2084",
