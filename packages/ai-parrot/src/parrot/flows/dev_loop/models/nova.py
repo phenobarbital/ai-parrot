@@ -16,11 +16,57 @@ Three seats, three shapes:
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from parrot.flows.dev_loop.models.llm import LLMCodeDispatchProfile
+
+# Verified per-model output-token ceilings (AWS Bedrock model cards,
+# 2026-08-03, FEAT-405 Module 4). Models absent from this map are passed
+# through unclamped by ``effective_max_tokens()`` — "unknown" is not
+# treated as "wrong".
+MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "minimax.minimax-m2.5": 8_192,
+    "moonshotai.kimi-k2.5": 16_384,
+    "zai.glm-5": 131_072,
+    "anthropic.claude-opus-5": 131_072,
+}
+
+
+def effective_max_tokens(
+    model: str, requested: int, logger: logging.Logger
+) -> int:
+    """Clamp ``requested`` to ``model``'s verified output ceiling.
+
+    Clamps — never raises (spec Q5): a profile requesting more tokens than
+    a model can return must still run, at the model's actual ceiling,
+    rather than fail mid-dispatch against Bedrock.
+
+    Args:
+        model: The bare Bedrock model id (no ``nova:`` provider prefix, no
+            geo/global inference-profile prefix).
+        requested: The profile's requested ``max_tokens``.
+        logger: Logger used to warn when a clamp takes effect. Silent on
+            the happy path (requested within the ceiling, or the model is
+            absent from :data:`MODEL_MAX_OUTPUT_TOKENS`).
+
+    Returns:
+        ``requested`` unchanged when it fits (or the model is unmapped);
+        otherwise the model's ceiling.
+    """
+    ceiling = MODEL_MAX_OUTPUT_TOKENS.get(model)
+    if ceiling is None or requested <= ceiling:
+        return requested
+    logger.warning(
+        "Model %s caps output at %d tokens; clamping requested %d to %d.",
+        model,
+        ceiling,
+        requested,
+        ceiling,
+    )
+    return ceiling
 
 
 class NovaCodeDispatchProfile(LLMCodeDispatchProfile):
