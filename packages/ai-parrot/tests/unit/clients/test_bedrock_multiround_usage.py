@@ -318,6 +318,43 @@ class TestBedrockResumeMultiroundUsage:
         assert round_events[0].tool_calls == ("search",)
 
     @pytest.mark.asyncio
+    async def test_resume_sums_cache_tokens_across_3plus_rounds(self) -> None:
+        """resume() cache-counter summation over 3+ rounds (code-review
+        follow-up: the 2-round test above cannot distinguish correct
+        carry-forward summation from a bug that only manifests on the
+        3rd+ accumulation step, mirroring ask()'s dedicated 3-round
+        cache-sum test)."""
+        responses = [
+            _tool_round("tu_1", {
+                "inputTokens": 10, "outputTokens": 5,
+                "cacheReadInputTokens": 1, "cacheWriteInputTokens": 1,
+            }, "step_one"),
+            _tool_round("tu_2", {
+                "inputTokens": 20, "outputTokens": 10,
+                "cacheReadInputTokens": 2, "cacheWriteInputTokens": 2,
+            }, "step_two"),
+            _final_round({
+                "inputTokens": 30, "outputTokens": 15,
+                "cacheReadInputTokens": 3, "cacheWriteInputTokens": 3,
+            }),
+        ]
+        client = BedrockConverseClient(model="claude-sonnet-4-5")
+
+        state = {
+            "messages": [{"role": "user", "content": [{"text": "What's the weather?"}]}],
+            "tool_call_id": "tu_0",
+        }
+        with patch.object(client, "_sdk_create", side_effect=responses), \
+            patch.object(client, "_execute_tool", return_value="ok"):
+            msg = await client.resume("session-1", "go", state)
+
+        assert msg.usage.extra_usage["rounds"] == 3
+        # Sum across all 3 rounds (1+2+3), not last-round-wins (which
+        # would be 3/3).
+        assert msg.usage.extra_usage["cacheReadInputTokens"] == 6
+        assert msg.usage.extra_usage["cacheWriteInputTokens"] == 6
+
+    @pytest.mark.asyncio
     async def test_resume_single_round_is_noop(self) -> None:
         """resume() with an immediate non-tool stop: no round event, no
         rounds key — matching ask()'s single-round no-op."""
