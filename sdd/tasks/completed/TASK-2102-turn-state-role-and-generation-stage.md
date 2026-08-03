@@ -339,10 +339,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Added module-private `_TurnState` dataclass (role,
+generation_stage, plus the two pending-tool slots reserved for TASK-2105) and
+`_parse_generation_stage()` helper next to the other module-private helpers
+above `NovaAudio`. Added `from dataclasses import dataclass` (not previously
+imported). Instantiated `turn_state = _TurnState()` as a per-turn local
+(never on `self`). In the receive loop: added a `contentStart` branch before
+`textOutput` that records `role`/`generation_stage` and `continue`s;
+rewrote the `textOutput` branch to attribute `role` on the yielded
+`LiveVoiceResponse`, suppress ASSISTANT text only when
+`generation_stage is not None and generation_stage != "SPECULATIVE"`
+(missing stage still emits), and accumulate into `accumulated_text` only
+when `role == "ASSISTANT"`. Left the `completionEnd` branch's `text=""`
+unchanged — it is not one of the lines the spec's Gap Sites table lists
+under gap 5 (`nova/audio.py:398, 461, 476, 485, 491` in the pre-task
+numbering), and the acceptance criterion ("terminal frame's text contains
+assistant text only") already holds trivially for an empty string; changing
+it would be scope creep beyond this task's Scope section. Barge-in
+(currently the pre-existing `"interruption" in event` check) intentionally
+left untouched for TASK-2103. Created `test_nova_turn_state.py` with all 7
+tests from the Test Specification (with the same `sys.modules` SDK-stub
+addition as TASK-2101, for the same "passes on 3.11 and 3.13" reason).
+Regression: 133 passed/3 skipped (`-k "nova or bedrock"`, up from 126, +7
+new tests), 108 passed/1 skipped (`voice/`), 0 regressions. New ruff
+findings are all `UP045` (5 new, same pre-existing style category — the new
+`Optional[str]`/`Optional[LiveToolCall]` fields on `_TurnState` and the new
+helper's `Optional[str]` return, matching the task's required
+`Optional[str]` idiom); `BLE001` count unchanged (2, pre-existing,
+unrelated to this task's lines).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (see Notes on `completionEnd` being
+intentionally out of scope).

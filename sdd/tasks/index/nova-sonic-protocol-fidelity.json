@@ -50,7 +50,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Sets LiveVoiceResponse.role created by TASK-2100, and restructures the audio.py receive loop that TASK-2103 and TASK-2105 then extend.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2102-turn-state-role-and-generation-stage.md"
+      "completed_at": "2026-08-03T20:14:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2102-turn-state-role-and-generation-stage.md"
     },
     {
       "id": "TASK-2103",
