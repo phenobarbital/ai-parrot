@@ -548,8 +548,8 @@ class CompletionUsage:
       local `TraceContext.new_root()`?** — *Resolved in this spec*: **full
       lifecycle span** (`_emit_before_call` → rounds → `_emit_after_call`).
       Consistent with U2's completeness choice; avoids orphan round events
-      with no parent call span; small extra diff. Flagged for review — if
-      you prefer the narrower option (b), only Module 2 changes.
+      with no parent call span; small extra diff. **User-confirmed
+      2026-08-03** — no open questions remain.
 
 ---
 
@@ -558,3 +558,4 @@ class CompletionUsage:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-03 | Jesus Lara (via /sdd-spec) | Initial draft from FEAT-404 proposal |
+| 0.2 | 2026-08-03 | Jesus Lara | U4 (resume span design) user-confirmed — all questions resolved |
