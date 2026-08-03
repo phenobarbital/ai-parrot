@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "wikitoolkit": {
+      "command": "wikitoolkit",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}
