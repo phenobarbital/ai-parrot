@@ -405,6 +405,13 @@ search (`grep`/`rg`/`find`/`cat` via Bash):
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
 
+These same operations are also exposed as native MCP tools —
+`wiki_query`, `wiki_page`, `wiki_related`, `wiki_remember`, `wiki_note`,
+`wiki_status` — via the `wikitoolkit` MCP stdio server registered in
+this repo's `.mcp.json` (FEAT-403). If they appear in your tool list,
+prefer calling them directly; they have equal standing with Grep/Read
+at tool-selection time instead of competing via a Bash-invoked CLI.
+
 **Query discipline** (avoids the two most common ways the wiki
 "fails" — which are usually caller error, not missing coverage):
 
