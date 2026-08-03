@@ -34,6 +34,7 @@ from parrot.flows.dev_loop.dispatchers._shared import (
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchEvent, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.models.basic import CompletionUsage
 
 
 class LLMCodeDispatcher:
@@ -187,74 +188,54 @@ class LLMCodeDispatcher:
         tools = self._tool_schemas(output_model)
         args = self._completion_args(profile, tools)
 
-        for turn_index in range(profile.max_turns):
-            response = await self._chat_completion(
-                client=client,
-                model=model,
-                messages=messages,
-                args=args,
-            )
-            message = self._response_message(response)
-            content = self._message_content(message)
-            tool_calls = self._message_tool_calls(message)
-
-            if content:
-                await self._publish_event(
-                    stream_key,
-                    kind="dispatch.message",
-                    run_id=run_id,
-                    node_id=node_id,
-                    payload={"turn": turn_index, "text": content[:4000]},
+        # FEAT-405 Module 6: drive the same FEAT-397 emitter trio every
+        # client's own ask() loop uses. This loop never calls ask(), so
+        # without this, per-round usage/telemetry never reaches the
+        # dev-loop dispatch path for ANY backend (nvidia/zai/moonshot/grok/
+        # nova all report None tokens otherwise). Underscore-private
+        # methods — a deliberate, documented choice at the same level of
+        # intimacy this loop already has with client._chat_completion
+        # below. NO accumulation here: one event per round; summing is
+        # FEAT-397's client-layer job, not this loop's (see spec §1
+        # Non-Goals — a summing loop here is forbidden).
+        tc = self._safe_emit_before_call(client, model=model, has_tools=bool(tools))
+        loop_t0 = time.perf_counter()
+        try:
+            for turn_index in range(profile.max_turns):
+                round_t0 = time.perf_counter()
+                response = await self._chat_completion(
+                    client=client,
+                    model=model,
+                    messages=messages,
+                    args=args,
+                )
+                round_duration_ms = (time.perf_counter() - round_t0) * 1000
+                message = self._response_message(response)
+                content = self._message_content(message)
+                tool_calls = self._message_tool_calls(message)
+                usage, raw_usage = self._extract_usage(response)
+                self._safe_emit_round_event(
+                    client,
+                    tc,
+                    model=model,
+                    round_number=turn_index + 1,
+                    usage=usage,
+                    raw_usage=raw_usage,
+                    tool_calls=[self._tool_call_name(call) for call in tool_calls],
+                    duration_ms=round_duration_ms,
                 )
 
-            if not tool_calls:
-                result = self._validate_text_output(content, output_model)
-                await self._publish_event(
-                    stream_key,
-                    kind="dispatch.completed",
-                    run_id=run_id,
-                    node_id=node_id,
-                    payload={"output_model": output_model.__name__},
-                )
-                return result
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": [self._tool_call_to_openai_dict(call) for call in tool_calls],
-                }
-            )
-
-            for call in tool_calls:
-                tool_call_id = self._tool_call_id(call)
-                tool_name = self._tool_call_name(call)
-                tool_args = self._tool_call_arguments(call)
-                await self._publish_event(
-                    stream_key,
-                    kind="dispatch.tool_use",
-                    run_id=run_id,
-                    node_id=node_id,
-                    payload={
-                        "tool_call_id": tool_call_id,
-                        "tool_name": tool_name,
-                        "arguments": tool_args,
-                    },
-                )
-
-                if tool_name == "final_output":
-                    result = self._validate_final_tool(tool_args, output_model)
+                if content:
                     await self._publish_event(
                         stream_key,
-                        kind="dispatch.tool_result",
+                        kind="dispatch.message",
                         run_id=run_id,
                         node_id=node_id,
-                        payload={
-                            "tool_call_id": tool_call_id,
-                            "tool_name": tool_name,
-                            "result": {"ok": True},
-                        },
+                        payload={"turn": turn_index, "text": content[:4000]},
                     )
+
+                if not tool_calls:
+                    result = self._validate_text_output(content, output_model)
                     await self._publish_event(
                         stream_key,
                         kind="dispatch.completed",
@@ -264,33 +245,83 @@ class LLMCodeDispatcher:
                     )
                     return result
 
-                tool_result = await self._run_tool(
-                    tool_name=tool_name,
-                    tool_args=tool_args,
-                    cwd=cwd,
-                    profile=profile,
-                )
-                await self._publish_event(
-                    stream_key,
-                    kind="dispatch.tool_result",
-                    run_id=run_id,
-                    node_id=node_id,
-                    payload={
-                        "tool_call_id": tool_call_id,
-                        "tool_name": tool_name,
-                        "result": tool_result,
-                    },
-                )
                 messages.append(
                     {
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "name": tool_name,
-                        "content": json.dumps(tool_result, ensure_ascii=False),
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": [self._tool_call_to_openai_dict(call) for call in tool_calls],
                     }
                 )
 
-        raise DispatchExecutionError(f"LLM code dispatch exceeded max_turns={profile.max_turns}")
+                for call in tool_calls:
+                    tool_call_id = self._tool_call_id(call)
+                    tool_name = self._tool_call_name(call)
+                    tool_args = self._tool_call_arguments(call)
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.tool_use",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "tool_call_id": tool_call_id,
+                            "tool_name": tool_name,
+                            "arguments": tool_args,
+                        },
+                    )
+
+                    if tool_name == "final_output":
+                        result = self._validate_final_tool(tool_args, output_model)
+                        await self._publish_event(
+                            stream_key,
+                            kind="dispatch.tool_result",
+                            run_id=run_id,
+                            node_id=node_id,
+                            payload={
+                                "tool_call_id": tool_call_id,
+                                "tool_name": tool_name,
+                                "result": {"ok": True},
+                            },
+                        )
+                        await self._publish_event(
+                            stream_key,
+                            kind="dispatch.completed",
+                            run_id=run_id,
+                            node_id=node_id,
+                            payload={"output_model": output_model.__name__},
+                        )
+                        return result
+
+                    tool_result = await self._run_tool(
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        cwd=cwd,
+                        profile=profile,
+                    )
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.tool_result",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "tool_call_id": tool_call_id,
+                            "tool_name": tool_name,
+                            "result": tool_result,
+                        },
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "name": tool_name,
+                            "content": json.dumps(tool_result, ensure_ascii=False),
+                        }
+                    )
+
+            raise DispatchExecutionError(f"LLM code dispatch exceeded max_turns={profile.max_turns}")
+        finally:
+            await self._safe_emit_after_call(
+                client, tc, model=model, duration_ms=(time.perf_counter() - loop_t0) * 1000
+            )
 
     def _create_client(self, profile: LLMCodeDispatchProfile) -> Any:
         model_args = {
@@ -383,6 +414,112 @@ class LLMCodeDispatcher:
             use_tools=True,
             **args,
         )
+
+    # ------------------------------------------------------------------
+    # FEAT-405 Module 6: per-round telemetry — the FEAT-397 emitter trio,
+    # driven from this loop instead of a client's ask(). Every "_safe_"
+    # method here tolerates a client that lacks the emitter methods (a
+    # test double, a non-AbstractClient) — dispatch must keep working
+    # either way, in the same spirit as the `_chat_completion` guard
+    # above. NO accumulation anywhere in this file — one event per round.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _client_display_name(client: Any) -> str:
+        """Best-effort provider identifier for the emitted events."""
+        return str(getattr(client, "client_name", None) or getattr(client, "client_type", None) or "unknown")
+
+    def _safe_emit_before_call(self, client: Any, *, model: str, has_tools: bool) -> Any:
+        """Call ``client._emit_before_call`` if the client exposes it.
+
+        Returns the ``TraceContext`` it returns, or ``None`` when the
+        client has no emitter methods — every other ``_safe_emit_*``
+        method below treats ``None`` as "nothing to do".
+        """
+        method = getattr(client, "_emit_before_call", None)
+        if not callable(method):
+            return None
+        return method(
+            client_name=self._client_display_name(client),
+            model=model,
+            has_tools=has_tools,
+        )
+
+    def _safe_emit_round_event(
+        self,
+        client: Any,
+        tc: Any,
+        *,
+        model: str,
+        round_number: int,
+        usage: Optional[CompletionUsage],
+        raw_usage: Optional[Dict[str, Any]],
+        tool_calls: List[str],
+        duration_ms: float,
+    ) -> None:
+        """Call ``client._emit_round_event`` for one turn of the loop.
+
+        ``round_number`` is 1-indexed. ``usage``/``raw_usage`` may be
+        ``None`` — legal per the trio's own contract. No-op when ``tc`` is
+        ``None`` (client had no emitter methods) or the client lacks
+        ``_emit_round_event`` specifically.
+        """
+        if tc is None:
+            return
+        method = getattr(client, "_emit_round_event", None)
+        if not callable(method):
+            return
+        method(
+            tc,
+            client_name=self._client_display_name(client),
+            model=model,
+            round_number=round_number,
+            usage=usage,
+            raw_usage=raw_usage,
+            tool_calls=tool_calls,
+            duration_ms=duration_ms,
+        )
+
+    async def _safe_emit_after_call(self, client: Any, tc: Any, *, model: str, duration_ms: float) -> None:
+        """Call ``client._emit_after_call`` once, at the end of the dispatch."""
+        if tc is None:
+            return
+        method = getattr(client, "_emit_after_call", None)
+        if not callable(method):
+            return
+        await method(
+            tc,
+            client_name=self._client_display_name(client),
+            model=model,
+            duration_ms=duration_ms,
+        )
+
+    @staticmethod
+    def _extract_usage(response: Any) -> tuple[Optional[CompletionUsage], Optional[Dict[str, Any]]]:
+        """Extract this turn's usage from an OpenAI-shaped completion response.
+
+        Defensive: providers differ in whether/how they report usage on
+        each turn. Returns ``(None, None)`` when absent — legal per
+        ``_emit_round_event``'s contract, never raises.
+        """
+        usage_obj = getattr(response, "usage", None)
+        if usage_obj is None:
+            return None, None
+        if hasattr(usage_obj, "model_dump"):
+            raw_usage: Dict[str, Any] = usage_obj.model_dump()
+        elif isinstance(usage_obj, dict):
+            raw_usage = dict(usage_obj)
+        else:
+            raw_usage = {
+                "prompt_tokens": getattr(usage_obj, "prompt_tokens", None),
+                "completion_tokens": getattr(usage_obj, "completion_tokens", None),
+                "total_tokens": getattr(usage_obj, "total_tokens", None),
+            }
+        try:
+            usage = CompletionUsage.from_openai(usage_obj)
+        except Exception:  # noqa: BLE001 - usage extraction must never break dispatch
+            usage = None
+        return usage, raw_usage
 
     def _tool_schemas(self, output_model: Type[BaseModel]) -> List[Dict[str, Any]]:
         return [
