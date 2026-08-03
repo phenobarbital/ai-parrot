@@ -137,7 +137,7 @@
       "feature_id": "FEAT-403",
       "feature": "mcp-local-server-wikitoolkit",
       "spec": "sdd/specs/mcp-local-server-wikitoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -147,8 +147,8 @@
       "parallelism_notes": "Final task — needs MCP server CLI to exist first",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2082-installer-integration.md"
+      "completed_at": "2026-08-03T01:56:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2082-installer-integration.md"
     }
   ]
 }
