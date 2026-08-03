@@ -50,3 +50,22 @@ class TestToolConfiguration:
         client.tool_manager = None
         frame = client._build_prompt_start("p", "matthew")
         assert "toolConfiguration" not in frame["event"]["promptStart"]
+
+    def test_tool_definition_from_plain_tool_decorator_is_included(self):
+        """Regression guard (code review): a plain @tool-decorated function —
+        CLAUDE.md's canonical example — is converted by
+        ToolManager.register_tool() into a ToolDefinition, which has no
+        get_schema() method. _build_tool_configuration() must fall back to
+        ToolDefinition's name/description/input_schema instead of silently
+        dropping the tool (which would leave toolConfiguration undeclared and
+        make toolUse unreachable — the exact bug this feature fixes one
+        layer up)."""
+        client = NovaClient(model="nova-2-sonic", region="us-east-1")
+        client.tool_manager.register_tool(get_weather)
+
+        config = client._build_tool_configuration()
+        assert config is not None
+        spec = config["tools"][0]["toolSpec"]
+        assert spec["name"] == "get_weather"
+        assert spec["description"].startswith("Get the current weather")
+        assert "json" in spec["inputSchema"]

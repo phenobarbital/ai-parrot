@@ -120,3 +120,29 @@ class TestToolResultEnvelope:
                       if c.get("type") == "TOOL"][0]
         result = _frames(sent, "toolResult")[0]
         assert result["contentName"] == tool_start["contentName"]
+
+    @pytest.mark.asyncio
+    async def test_non_json_serializable_result_does_not_abort_turn(self):
+        """Regression guard (code review): a tool can legitimately return a
+        non-JSON-serializable object (e.g. a DataFrame). json.dumps() on it
+        must not escape _send_tool_result() and abort the whole turn."""
+        class NotJsonSerializable:
+            def __str__(self):
+                return "not-json-serializable-repr"
+
+        execute = AsyncMock(return_value=NotJsonSerializable())
+        out, sent, _ = await _run([TOOL_USE, TOOL_END, END], execute=execute)
+        assert out[-1].is_complete is True
+        result = _frames(sent, "toolResult")[0]
+        assert result["content"] == "not-json-serializable-repr"
+
+    @pytest.mark.asyncio
+    async def test_arguments_recorded_even_when_execution_fails(self):
+        """Regression guard (code review): LiveToolCall.arguments must
+        reflect what was actually attempted even when _execute_tool() itself
+        raises — not just on the success path."""
+        execute = AsyncMock(side_effect=RuntimeError("tool blew up"))
+        out, _, _ = await _run([TOOL_USE, TOOL_END, END], execute=execute)
+        errored = [tc for r in out for tc in r.tool_calls if tc.error]
+        assert errored, "expected a LiveToolCall with an error set"
+        assert errored[0].arguments == {"location": "Miami"}

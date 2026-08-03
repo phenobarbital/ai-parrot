@@ -498,15 +498,35 @@ class NovaAudio:
         specs = []
         for tool in manager.all_tools():
             try:
-                schema = tool.get_schema()
+                # AbstractTool instances (the @tool decorator, toolkits) expose
+                # get_schema(); plain ToolDefinition entries (registered via
+                # ToolManager.register_tool() without an AbstractTool wrapper)
+                # do not and instead carry name/description/input_schema
+                # directly — mirrors LiveToolAdapter._tool_to_declaration()'s
+                # verified branching (clients/live.py).
+                if hasattr(tool, "get_schema"):
+                    schema = tool.get_schema()
+                    name = schema.get("name", getattr(tool, "name", "unknown"))
+                    description = schema.get(
+                        "description", getattr(tool, "description", "")
+                    )
+                    parameters = schema.get("parameters", {})
+                elif hasattr(tool, "input_schema"):
+                    name = getattr(tool, "name", "unknown")
+                    description = getattr(tool, "description", "")
+                    parameters = tool.input_schema
+                else:
+                    self.logger.warning(
+                        "Skipping tool with unrecognized shape: %r", tool
+                    )
+                    continue
             except Exception:            # a broken tool must not kill the turn
                 self.logger.warning("Skipping tool with unreadable schema: %r", tool)
                 continue
             specs.append({"toolSpec": {
-                "name": schema.get("name", getattr(tool, "name", "unknown")),
-                "description": schema.get("description",
-                                          getattr(tool, "description", "")),
-                "inputSchema": {"json": schema.get("parameters", {})},
+                "name": name,
+                "description": description,
+                "inputSchema": {"json": parameters},
             }})
         return {"tools": specs} if specs else None
 
@@ -569,7 +589,16 @@ class NovaAudio:
                 "textInputConfiguration": {"mediaType": "text/plain"},
             },
         }}})
-        content = result if isinstance(result, str) else json.dumps(result)
+        if isinstance(result, str):
+            content = result
+        else:
+            try:
+                content = json.dumps(result)
+            except TypeError:
+                # A tool may legitimately return a non-JSON-serializable
+                # object (e.g. a DataFrame); falling back to str() keeps this
+                # one tool call's result-reporting from aborting the turn.
+                content = str(result)
         await self._send_event(stream, {"event": {"toolResult": {
             "promptName": prompt_name,
             "contentName": content_name,
@@ -827,8 +856,11 @@ class NovaAudio:
                     start = time.monotonic()
                     try:
                         args = _parse_tool_arguments(turn_state.pending_tool_raw_input)
-                        result = await self._execute_tool(pending.name, args)
+                        # Record what was actually attempted before executing,
+                        # so a LiveToolCall.arguments reflects the real
+                        # arguments even if _execute_tool() itself raises.
                         pending.arguments = args
+                        result = await self._execute_tool(pending.name, args)
                         pending.result = result
                     except Exception as exc:
                         pending.error = str(exc)
