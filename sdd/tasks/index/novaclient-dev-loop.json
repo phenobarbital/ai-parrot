@@ -32,7 +32,7 @@
       "feature_id": "FEAT-405",
       "feature": "novaclient-dev-loop",
       "spec": "sdd/specs/novaclient-dev-loop.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Creates models/nova.py and edits models/__init__.py; TASK-2085 later edits models/nova.py. Depends on TASK-2083 for the verified model ids its defaults reference.",
       "assigned_to": null,
       "started_at": "2026-08-03T01:53:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2084-nova-dispatch-profiles.md"
+      "completed_at": "2026-08-03T02:06:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2084-nova-dispatch-profiles.md"
     },
     {
       "id": "TASK-2085",
