@@ -8,10 +8,10 @@ from typing import Dict, Any, Optional, Callable
 from pathlib import Path
 
 from parrot.mcp.config import MCPServerConfig
-from parrot.mcp.transports.base import MCPServerBase
+from parrot.mcp.transports.base import RemoteMCPServerBase
 from parrot.mcp.client import MCPClientConfig, MCPConnectionError
 
-class UnixMCPServer(MCPServerBase):
+class UnixMCPServer(RemoteMCPServerBase):
     """MCP server using Unix socket transport."""
 
     def __init__(self, config: MCPServerConfig):

@@ -1,32 +1,45 @@
-from abc import ABC, abstractmethod
-import logging
 import time
-from typing import Dict, List, Optional, Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 from aiohttp import web
-
-from parrot.tools.abstract import AbstractTool
-from parrot.mcp.config import MCPServerConfig, AuthMethod
-from parrot.mcp.adapter import MCPToolAdapter
-from parrot.mcp.oauth_server import OAuthAuthorizationServer, APIKeyStore, ExternalOAuthValidator
+from parrot.mcp.config import AuthMethod, MCPServerConfig
+from parrot.mcp.oauth_server import (
+    APIKeyStore,
+    ExternalOAuthValidator,
+    OAuthAuthorizationServer,
+)
 from parrot.mcp.resources import MCPResource
+from parrot.mcp.server_base import LocalServerConfig
+from parrot.mcp.server_base import MCPServerBase as _CoreMCPServerBase
+from parrot.tools.abstract import AbstractTool
 
-class MCPServerBase(ABC):
-    """Base class for MCP servers."""
+
+class RemoteMCPServerBase(_CoreMCPServerBase):
+    """Base class for remote (network) MCP servers.
+
+    Inherits tool registration and JSON-RPC handlers from core's
+    ``MCPServerBase`` (FEAT-403) and adds the remote-only concerns:
+    authentication, resources, and aiohttp-backed request handling.
+    """
 
     def __init__(self, config: MCPServerConfig):
+        # Core base only knows about LocalServerConfig — convert, then
+        # override self.config with the full server-side config below.
+        super().__init__(LocalServerConfig(
+            name=config.name,
+            version=config.version,
+            description=config.description,
+            log_level=config.log_level,
+        ))
         self.config = config
-        self.tools: Dict[str, MCPToolAdapter] = {}
-        self.resources: Dict[str, MCPResource] = {}
-        self.resource_handlers: Dict[str, Callable[[str], Awaitable[str | bytes]]] = {}
-        
-        self.logger = logging.getLogger(f"MCPServer.{config.name}")
-        log_level = getattr(logging, config.log_level.upper(), logging.WARNING)
-        self.logger.setLevel(log_level)
+        self.resources: dict[str, MCPResource] = {}
+        self.resource_handlers: dict[str, Callable[[str], Awaitable[str | bytes]]] = {}
 
         # Authentication components
-        self.oauth_server: Optional[OAuthAuthorizationServer] = None
-        self.api_key_store: Optional[APIKeyStore] = None
-        self.external_oauth: Optional[ExternalOAuthValidator] = None
+        self.oauth_server: OAuthAuthorizationServer | None = None
+        self.api_key_store: APIKeyStore | None = None
+        self.external_oauth: ExternalOAuthValidator | None = None
 
         # Initialize authentication based on method
         self._init_authentication()
@@ -34,13 +47,13 @@ class MCPServerBase(ABC):
     # ... (rest of simple init methods) ...
 
     def register_resource(
-        self, 
-        resource: MCPResource, 
+        self,
+        resource: MCPResource,
         read_handler: Callable[[str], Awaitable[str | bytes]]
     ):
         """
         Register a resource with the MCP server.
-        
+
         Args:
             resource: The MCPResource definition
             read_handler: Async function that takes the URI and returns content
@@ -49,34 +62,53 @@ class MCPServerBase(ABC):
         self.resource_handlers[resource.uri] = read_handler
         self.logger.info("Registered resource: %s (%s)", resource.name, resource.uri)
 
+    def register_tool(self, tool: AbstractTool):
+        """Register an AI-Parrot tool with the MCP server (with filtering)."""
+        tool_name = tool.name
+
+        # Apply filtering (remote-only — core's register_tool has none)
+        if self.config.allowed_tools and tool_name not in self.config.allowed_tools:
+            self.logger.info(
+                f"Skipping tool {tool_name} (not in allowed_tools)"
+            )
+            return
+
+        if self.config.blocked_tools and tool_name in self.config.blocked_tools:
+            self.logger.info(
+                f"Skipping tool {tool_name} (in blocked_tools)"
+            )
+            return
+
+        super().register_tool(tool)
+
     # ... (tools registration) ...
 
-    async def handle_resources_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_resources_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle resources/list request."""
         # Pagination can be implemented later with cursor
         return {
             "resources": [res.to_dict() for res in self.resources.values()]
         }
-        
-    async def handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def handle_resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle resources/read request."""
         uri = params.get("uri")
         if not uri:
             raise ValueError("Missing 'uri' parameter")
-            
+
         if uri not in self.resources:
             raise ValueError(f"Resource not found: {uri}")
-            
+
         handler = self.resource_handlers.get(uri)
         if not handler:
             raise RuntimeError(f"No handler registered for resource: {uri}")
-            
+
         try:
             content = await handler(uri)
-            
+
             # Auto-detect content type if simple string
             is_text = isinstance(content, str)
-             
+
             return {
                 "contents": [
                     {
@@ -94,7 +126,7 @@ class MCPServerBase(ABC):
                 f"Failed to read resource: {e}"
             ) from e
 
-    async def handle_prompts_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle prompts/list request."""
         # By default, we don't have a prompt registry yet.
         return {"prompts": []}
@@ -127,7 +159,7 @@ class MCPServerBase(ABC):
                         self.logger.info(
                             f"Registered static OAuth client: {client.client_id} ({client.client_name})"
                         )
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         self.logger.error("Failed to register static client: %s", e)
 
             self.logger.info("Authentication: OAuth2 (internal) enabled")
@@ -153,34 +185,7 @@ class MCPServerBase(ABC):
         else:
             self.logger.debug("Authentication: None (open access)")
 
-    def register_tool(self, tool: AbstractTool):
-        """Register an AI-Parrot tool with the MCP server."""
-        tool_name = tool.name
-
-        # Apply filtering
-        if self.config.allowed_tools and tool_name not in self.config.allowed_tools:
-            self.logger.info(
-                f"Skipping tool {tool_name} (not in allowed_tools)"
-            )
-            return
-
-        if self.config.blocked_tools and tool_name in self.config.blocked_tools:
-            self.logger.info(
-                f"Skipping tool {tool_name} (in blocked_tools)"
-            )
-            return
-
-        adapter = MCPToolAdapter(tool)
-        self.tools[tool_name] = adapter
-        self.logger.info("Registered tool: %s", tool_name)
-
-    def register_tools(self, tools: List[AbstractTool]):
-        """Register multiple tools."""
-        for tool in tools:
-            self.register_tool(tool)
-
-
-    async def _authenticate_request(self, request: web.Request) -> Optional[web.Response]:
+    async def _authenticate_request(self, request: web.Request) -> web.Response | None:
         """
         Authenticate request based on configured auth method.
 
@@ -205,13 +210,13 @@ class MCPServerBase(ABC):
 
         return None
 
-    async def _authenticate_api_key(self, request: web.Request) -> Optional[web.Response]:
+    async def _authenticate_api_key(self, request: web.Request) -> web.Response | None:
         """Validate API key from header."""
         api_key = request.headers.get(self.config.api_key_header)
         if not api_key:
             return self._unauthorized_response(
                 "API key required",
-                f'X-API-Key realm="mcp"'
+                'X-API-Key realm="mcp"'
             )
 
         record = self.api_key_store.validate_key(api_key)
@@ -226,7 +231,7 @@ class MCPServerBase(ABC):
         request["mcp_user"] = {"user_id": record.user_id, "scopes": record.scopes}
         return None
 
-    def _authenticate_oauth_internal(self, request: web.Request) -> Optional[web.Response]:
+    def _authenticate_oauth_internal(self, request: web.Request) -> web.Response | None:
         """Validate OAuth access token from internal OAuth server."""
         if not self.oauth_server:
             return None
@@ -239,7 +244,7 @@ class MCPServerBase(ABC):
 
         return None
 
-    async def _authenticate_oauth_external(self, request: web.Request) -> Optional[web.Response]:
+    async def _authenticate_oauth_external(self, request: web.Request) -> web.Response | None:
         """Validate OAuth access token via external introspection."""
         if not self.external_oauth:
             return None
@@ -260,7 +265,7 @@ class MCPServerBase(ABC):
         }
         return None
 
-    async def _authenticate_bearer(self, request: web.Request) -> Optional[web.Response]:
+    async def _authenticate_bearer(self, request: web.Request) -> web.Response | None:
         """Validate bearer token via navigator-auth."""
         auth = request.app.get('auth')
         if not auth:
@@ -281,7 +286,7 @@ class MCPServerBase(ABC):
             request["mcp_user"] = userdata
             return None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.error("navigator-auth error: %s", e)
             return web.json_response(
                 {"error": "unauthorized", "error_description": "Authentication failed"},
@@ -289,7 +294,7 @@ class MCPServerBase(ABC):
                 headers={"WWW-Authenticate": 'Bearer realm="mcp"'}
             )
 
-    def _extract_bearer_token(self, auth_header: Optional[str]) -> Optional[str]:
+    def _extract_bearer_token(self, auth_header: str | None) -> str | None:
         """Extract bearer token from Authorization header."""
         if not auth_header:
             return None
@@ -310,57 +315,8 @@ class MCPServerBase(ABC):
         )
 
 
-    async def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle MCP initialize request."""
-        self.logger.info("Initializing MCP server...")
-
-        return {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {
-                "tools": {
-                    "listChanged": False
-                }
-            },
-            "serverInfo": {
-                "name": self.config.name,
-                "version": self.config.version,
-                "description": self.config.description
-            }
-        }
-
-    async def handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle tools/list request."""
-        self.logger.info("Listing %s available tools", len(self.tools))
-
-        tools = []
-        tools.extend(
-            adapter.to_mcp_tool_definition() for adapter in self.tools.values()
-        )
-
-        return {"tools": tools}
-
-    async def handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle tools/call request."""
-        tool_name = params.get("name")
-        arguments = params.get("arguments", {})
-
-        self.logger.info("Calling tool: %s with args: %s", tool_name, arguments)
-
-        if tool_name not in self.tools:
-            raise RuntimeError(
-                f"Tool not found: {tool_name}"
-            )
-
-        adapter = self.tools[tool_name]
-        return await adapter.execute(arguments)
-
-
-    @abstractmethod
-    async def start(self):
-        """Start the MCP server."""
-        pass
-
-    @abstractmethod
-    async def stop(self):
-        """Stop the MCP server."""
-        pass
+# Backward-compat alias (FEAT-403): existing code importing
+# ``from parrot.mcp.transports.base import MCPServerBase`` keeps working —
+# it now resolves to RemoteMCPServerBase, which inherits core's
+# MCPServerBase (parrot.mcp.server_base.MCPServerBase).
+MCPServerBase = RemoteMCPServerBase

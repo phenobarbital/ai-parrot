@@ -57,7 +57,7 @@ from aioquic.quic.events import (
     StreamDataReceived,
 )
 from aioquic.tls import SessionTicket
-from .base import MCPServerBase
+from .base import RemoteMCPServerBase
 from ..config import MCPServerConfig
 
 # Optional: faster serialization
@@ -483,11 +483,11 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
             self.logger.debug("Failed to handle datagram: %s", e)
 
 
-class QuicMCPServer(MCPServerBase):
+class QuicMCPServer(RemoteMCPServerBase):
     """
     QUIC/HTTP3 MCP Server with WebTransport support.
-    
-    Inherits behavior from MCPServerBase and adds QUIC transport layer.
+
+    Inherits behavior from RemoteMCPServerBase and adds QUIC transport layer.
     
     Example:
         >>> from parrot.mcp.server import MCPServerConfig
