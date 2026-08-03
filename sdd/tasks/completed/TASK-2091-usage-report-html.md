@@ -243,10 +243,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-03
+**Notes**: Added `render_usage_html(report)` to `usage_report.py` — a static
+f-string-built page (no templating dependency), fully inlined `<style>`
+block, no `<link>`/`<script src>`/`@import`/CDN reference of any kind. Same
+7-column set as `render_usage_markdown` (Seat, Node, Backend, Model, Rounds,
+Tokens, Duration), same `—`-for-unreported convention (`_fmt_value_html`/
+`_fmt_agent_tokens_html`, escaped variants of the markdown helpers), no
+pricing anywhere. Every interpolated value (`escape()` from stdlib `html`)
+— run_id, seat, node_id, backend, model, formatted duration — is
+HTML-escaped; verified with a `<script>alert(1)</script>` seat name and a
+`<b>run</b>` run_id. Wired `usage.html` into `runner.py._persist_run_bundle`
+alongside `usage.json`, inside the SAME TASK-2090 try/except (both file
+writes must succeed or fail together — one bad write must not silently
+skip the other while still looking "successful"). 11 new unit tests in
+`test_usage_report_html.py`, all pass; ran `test_usage_report.py`/
+`test_usage_report_html.py`/`test_run_bundle.py`/`test_run_bundle_export.py`
+(39 total) and the full `tests/flows/dev_loop/` suite (963 passed, same 2
+pre-existing unrelated failures verified via `git stash -u`). `ruff check`:
+`usage_report.py` clean (0 new findings — added to the same
+already-modern-typed file from TASK-2090); `runner.py` unchanged at 62
+findings (0 new); test file's one import-order finding auto-fixed. No new
+mypy errors (`runner.py` stays at 13 pre-existing error-lines).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — the task's own file list already correctly
+anticipated `run_bundle.py` (MODIFY) for "write usage.html beside
+usage.json," but per TASK-2090's established finding (`run_bundle.py` is
+explicitly "pure: no filesystem" — actual writes happen in
+`runner.py._persist_run_bundle`), the write was added there instead,
+consistent with where `usage.json` itself was wired.
