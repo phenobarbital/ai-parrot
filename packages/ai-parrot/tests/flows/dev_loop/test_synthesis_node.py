@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.flows.dev_loop.dispatcher import DispatchExecutionError
+from parrot.flows.dev_loop.dispatchers import DispatchExecutionError
 from parrot.flows.dev_loop.models import DevelopmentOutput, ResearchOutput, SynthesisReport
 from parrot.flows.dev_loop.nodes.synthesis import SynthesisNode
 

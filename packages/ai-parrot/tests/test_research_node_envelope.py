@@ -51,7 +51,7 @@ for _name in [
     "parrot.flows",
     "parrot.flows.dev_loop",
     "parrot.flows.dev_loop.flow",
-    "parrot.flows.dev_loop.dispatcher",
+    "parrot.flows.dev_loop.dispatchers",
     "parrot.flows.dev_loop.models",
     "parrot.interfaces",
     "parrot.interfaces.file",

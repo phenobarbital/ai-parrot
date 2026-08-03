@@ -79,7 +79,11 @@ def temp_worktree_base(tmp_path, monkeypatch) -> Iterator[str]:
     """Point ``WORKTREE_BASE_PATH`` / ``DEV_LOOP_REPO_BASE_PATH`` at a tmp dir."""
     base = str(tmp_path)
     for target in (
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.codex.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.gemini.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.google_coding.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.llm.conf.WORKTREE_BASE_PATH",
         "parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH",
         "parrot.flows.dev_loop.nodes.research.conf.DEV_LOOP_REPO_BASE_PATH",
     ):

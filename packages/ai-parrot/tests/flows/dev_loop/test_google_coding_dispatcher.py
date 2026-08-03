@@ -58,7 +58,7 @@ class _FakeAgyProcess:
 @pytest.fixture(autouse=True)
 def _patch_worktree_base(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.google_coding.conf.WORKTREE_BASE_PATH",
         str(tmp_path),
     )
     return tmp_path

@@ -23,7 +23,7 @@ from parrot.flows.dev_loop.code_review import (
     CodexAdversarialReviewDispatcher,
     ParallelPerspectiveReviewDispatcher,
 )
-from parrot.flows.dev_loop.dispatcher import CodexCodeDispatcher
+from parrot.flows.dev_loop.dispatchers import CodexCodeDispatcher
 from parrot.flows.dev_loop.models import (
     AdversarialFinding,
     CodeReviewFinding,
@@ -78,7 +78,7 @@ def _write_output(command: Sequence[str], payload: str) -> None:
 @pytest.fixture
 def codex_dispatcher(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.codex.conf.WORKTREE_BASE_PATH",
         str(tmp_path),
     )
     disp = CodexCodeDispatcher(

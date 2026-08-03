@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-03T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-03T11:17:00+00:00",
   "tasks": [
     {
       "id": "TASK-2076",
@@ -42,8 +42,9 @@
       "parallelism_notes": "Depends on adapter extraction (TASK-2076) — must be sequential",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": "2026-08-03T00:10:56+00:00",
-      "file": "sdd/tasks/completed/TASK-2077-mcp-server-base.md"
+      "completed_at": "2026-08-03T11:17:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2077-mcp-server-base.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2078",
@@ -62,8 +63,9 @@
       "parallelism_notes": "Depends on MCPServerBase (TASK-2077) — must be sequential",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": "2026-08-03T00:32:47+00:00",
-      "file": "sdd/tasks/completed/TASK-2078-local-stdio-server.md"
+      "completed_at": "2026-08-03T11:17:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2078-local-stdio-server.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2079",
@@ -84,8 +86,9 @@
       "parallelism_notes": "Can run in parallel with TASK-2080 (wiki tools) — no shared files",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": "2026-08-03T01:19:05+00:00",
-      "file": "sdd/tasks/completed/TASK-2079-remote-base-shims.md"
+      "completed_at": "2026-08-03T11:17:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2079-remote-base-shims.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2080",
@@ -106,8 +109,9 @@
       "parallelism_notes": "Can run in parallel with TASK-2079 (server shims) — no shared files",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": "2026-08-03T01:33:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2080-wiki-tools.md"
+      "completed_at": "2026-08-03T11:17:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2080-wiki-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2081",
@@ -127,8 +131,9 @@
       "parallelism_notes": "Needs both core MCP + wiki tools completed first",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": "2026-08-03T01:52:47+00:00",
-      "file": "sdd/tasks/completed/TASK-2081-wiki-mcp-server-cli.md"
+      "completed_at": "2026-08-03T11:17:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2081-wiki-mcp-server-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2082",
@@ -147,8 +152,9 @@
       "parallelism_notes": "Final task — needs MCP server CLI to exist first",
       "assigned_to": null,
       "started_at": "2026-08-02T23:37:07+00:00",
-      "completed_at": "2026-08-03T01:56:30+00:00",
-      "file": "sdd/tasks/completed/TASK-2082-installer-integration.md"
+      "completed_at": "2026-08-03T11:17:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2082-installer-integration.md",
+      "verification": "verified"
     }
   ]
 }

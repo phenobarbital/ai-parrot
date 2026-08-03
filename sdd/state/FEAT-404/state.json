@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-404",
+  "feature_slug": "bedrock-per-round-token",
+  "started_at": "2026-08-03T00:00:00Z",
+  "updated_at": "2026-08-03T00:30:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-404/source.md",
+    "fetched_at": "2026-08-03T00:00:00Z",
+    "summary_oneline": "Extend FEAT-397 per-round token usage observability to BedrockClient and NovaClient"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-08-03T00:00:00Z",
+      "completed_at": "2026-08-03T00:00:00Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-08-03T00:01:00Z",
+      "completed_at": "2026-08-03T00:04:00Z",
+      "queries_total": 15,
+      "approved_by_user": true,
+      "edited_by_user": true,
+      "plan_path": "sdd/state/FEAT-404/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-08-03T00:04:00Z",
+      "completed_at": "2026-08-03T00:20:00Z",
+      "queries_executed": 15,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 12,
+      "grep_calls": 9,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-08-03T00:20:00Z",
+      "completed_at": "2026-08-03T00:25:00Z",
+      "synthesis_path": "sdd/state/FEAT-404/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 13,
+      "claims_high_conf": 7,
+      "claims_medium_conf": 6,
+      "claims_low_conf": 0,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-08-03T00:25:00Z",
+      "completed_at": "2026-08-03T00:28:00Z",
+      "questions_total": 3,
+      "questions_answered": 3,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-08-03T00:28:00Z",
+      "completed_at": "2026-08-03T00:30:00Z",
+      "proposal_path": "sdd/proposals/bedrock-per-round-token.proposal.md",
+      "commit_sha": "aedab44abb8222bd07eec2a08b29636aa6f01ba1",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization and mechanism are high-confidence and the implementation is a verified single-site replication of an established four-part pattern with no architectural fork to explore."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 12,
+    "grep_calls": 9,
+    "git_calls": 1,
+    "wall_seconds": 0
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Proposal rendered and reviewed; run /sdd-spec FEAT-404"
+  }
+}
