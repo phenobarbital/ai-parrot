@@ -14,7 +14,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Root of the dependency graph; everything else imports these models.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2121-dev-flow-models.md"
+      "completed_at": "2026-08-04T23:39:16+00:00",
+      "file": "sdd/tasks/completed/TASK-2121-dev-flow-models.md"
     },
     {
       "id": "TASK-2122",

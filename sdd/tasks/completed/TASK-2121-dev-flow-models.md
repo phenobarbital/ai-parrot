@@ -146,10 +146,43 @@ def test_ideation_output_document_kind_literal(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
 **Notes**:
 
-**Deviations from spec**: none
+Created the `parrot.flows.dev_flow` package with the three FEAT-412 contracts:
+
+- `models.py` — `DevRequestKind` Literal, `DevRequestBrief` (NL intake, no
+  document validators, `title`/`description` `min_length=1`, optional
+  `context`/`jira_issue_key`/`dev_agents`/`judge_panel`), the
+  `DevFlowBrief` discriminated union on `kind`, `parse_dev_brief()` loader
+  shim, and `IdeationOutput` (all optional fields defaulted).
+- `__init__.py` — eager re-export of the light model contracts plus a
+  `__getattr__`/`_LAZY_EXPORTS` hook so the heavier topology/runner symbols
+  landing in TASK-2127/2128 can be resolved lazily without the package init
+  importing aiohttp/redis/dispatcher machinery.
+- 14 unit tests covering every case in the task's Test Specification plus
+  union `TypeAdapter` validation and the package re-export surface.
+
+Verified against the Codebase Contract before writing code: `FeatureBrief`
+(`models/base.py:725`, eager `document_path` validator at :780),
+`DevAgentSpec` (:388), `JudgePanelConfig` (:866), and the
+`Brief`/`parse_brief` precedent (:984/:987) — all as documented.
+
+Design note: `parse_dev_brief` deliberately **raises** on a missing/unknown
+`kind` rather than defaulting. `parse_brief`'s `WorkBrief` fallback exists
+only to preserve pre-FEAT-378 callers that omit `kind`; dev-flow has no such
+legacy surface and the spec states the intent is always user-selected, so a
+silent default would mask a UI/brief bug. Covered by
+`test_parse_dev_brief_requires_explicit_kind`.
+
+Validation: `pytest packages/ai-parrot/tests/flows/dev_flow/ -q` → 14 passed.
+`ruff check` clean. `mypy` reports 0 errors in `dev_flow/` (the repo-wide
+count comes from pre-existing errors in followed imports, unchanged by this
+task).
+
+**Deviations from spec**: none. `ruff --fix` normalized the spec's
+`Optional[X]`/`List[X]`/`Union[...]` annotation style to PEP 604/585
+(`X | None`, `list[X]`, `A | B`) per the project's lint config — a
+cosmetic style change; field names, types and semantics are exactly as
+specified.
