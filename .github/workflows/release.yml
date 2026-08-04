@@ -332,8 +332,40 @@ jobs:
           name: dist-navrules
           path: dist/*
 
+  build-parrot-codec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Pre-create dist dir
+        run: mkdir -p dist
+
+      - name: Build wheel (manylinux)
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: packages/ai-parrot/src/parrot/codec-rs
+          args: --release --out ${{ github.workspace }}/dist
+          manylinux: auto
+
+      - name: Build sdist
+        run: |
+          pip install maturin
+          cd packages/ai-parrot/src/parrot/codec-rs
+          maturin sdist --out ${{ github.workspace }}/dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-parrot-codec
+          path: dist/*
+
   deploy:
-    needs: [build-core, build-tools, build-loaders, build-embeddings, build-pipelines, build-visualizations, build-integrations, build-formdesigner, build-server, build-advisors, build-navrules]
+    needs: [build-core, build-tools, build-loaders, build-embeddings, build-pipelines, build-visualizations, build-integrations, build-formdesigner, build-server, build-advisors, build-navrules, build-parrot-codec]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     environment:
