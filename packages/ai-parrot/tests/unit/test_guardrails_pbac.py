@@ -124,6 +124,63 @@ class TestPBACToolCallGuardrailCheck:
         assert result.report["rule"] == "policy_engine_unavailable"
 
     @pytest.mark.asyncio
+    async def test_pbac_internal_engine_error_deny_result_fail_closed(self):
+        """`PolicyEvaluator.check_access()` never raises for a Rust-engine
+        failure — it catches internally and returns a normal DENY
+        `EvaluationResult(allowed=False, matched_policy=None,
+        reason="Evaluation engine error: ...")` (verified against the
+        installed navigator_auth source; code-review finding, TASK-2114
+        follow-up). This must be detected and routed through the SAME
+        fail-mode contract as a raised exception — never surfacing the raw
+        internal error string as the LLM-visible denial message."""
+        pytest.importorskip("navigator_auth")
+        evaluator = MagicMock()
+        evaluator.check_access.return_value = _make_eval_result(
+            False, policy=None, reason="Evaluation engine error: rust panic boom"
+        )
+        evaluator._index = MagicMock()
+        evaluator._index.get_for_resource_type.return_value = []
+        guardrail = PBACToolCallGuardrail(evaluator=evaluator)
+        ctx = _make_ctx(_make_permission_context())
+
+        result = await guardrail.check("irrelevant", ctx)
+
+        assert result.action == GuardrailAction.BLOCK
+        assert result.reason == "policy_engine_unavailable"
+        assert result.report["rule"] == "policy_engine_unavailable"
+        # The raw internal Rust error string must never reach the report.
+        assert "rust panic boom" not in str(result.report)
+        assert "rust panic boom" not in (result.reason or "")
+
+    @pytest.mark.asyncio
+    async def test_pbac_internal_engine_error_fail_open_downgrade(self):
+        """Same internal-DENY scenario as above, but the covering policy
+        has enforcement=fail_open -> passes through instead of blocking."""
+        pytest.importorskip("navigator_auth")
+        from navigator_auth.abac.policies.resources import ResourceType
+
+        evaluator = MagicMock()
+        evaluator.check_access.return_value = _make_eval_result(
+            False, policy=None, reason="Evaluation engine error: rust panic boom"
+        )
+        matching_policy = MagicMock()
+        matching_policy.covers_resource.return_value = True
+        matching_policy.attributes = {"enforcement": "fail_open"}
+        evaluator._index = MagicMock()
+
+        def _get_for_resource_type(rtype):
+            assert rtype == ResourceType.TOOL
+            return [matching_policy]
+
+        evaluator._index.get_for_resource_type.side_effect = _get_for_resource_type
+        guardrail = PBACToolCallGuardrail(evaluator=evaluator)
+        ctx = _make_ctx(_make_permission_context(), tool_name="flaky_tool")
+
+        result = await guardrail.check("irrelevant", ctx)
+
+        assert result.action == GuardrailAction.PASS
+
+    @pytest.mark.asyncio
     async def test_pbac_enforcement_fail_open_downgrade(self):
         pytest.importorskip("navigator_auth")
         from navigator_auth.abac.policies.resources import ResourceType

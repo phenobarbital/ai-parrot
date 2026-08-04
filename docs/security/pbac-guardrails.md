@@ -42,13 +42,40 @@ will deny anyway.
 `PBACToolCallGuardrail.on_error = "fail_closed"` (class default — a
 security control): if the policy evaluator itself errors while evaluating
 a tool call, the call is **blocked** with
-`reason="policy_engine_unavailable"`.
+`reason="policy_engine_unavailable"` — and the sanitized
+`"Policy engine is temporarily unavailable."` message, never the raw
+internal exception text.
 
 A specific policy can opt into **fail-open** for its own resource via an
 `enforcement: fail_open` extra key — when the evaluator errors while
 evaluating a tool covered by that policy, the call passes through instead
 of being blocked. Default is `fail_closed` when no covering policy sets
 `enforcement`.
+
+> **Two failure shapes, one contract** (code-review finding): navigator-auth's
+> `PolicyEvaluator.check_access()` catches its own Rust-engine exceptions
+> **internally** and returns a normal DENY `EvaluationResult` (`allowed=False,
+> matched_policy=None, reason="Evaluation engine error: <detail>"`) instead of
+> raising — it does not propagate the exception to the guardrail. `check()`
+> detects this specific shape (`matched_policy is None` + a
+> `"Evaluation engine error"`-prefixed reason) and routes it through the exact
+> same `_policy_enforcement()`/fail-mode logic as a genuinely raised exception
+> (e.g. a bug in our own `to_eval_context()`/`Environment()`/enrichment code),
+> rather than surfacing `result.reason` verbatim as a normal DENY — which would
+> both leak internal engine detail to the LLM (violating the "never leak rule
+> internals" denial-hygiene constraint, spec §7) and make the
+> `enforcement: fail_open` escape hatch permanently unreachable for the
+> scenario it exists to cover.
+>
+> **Known limitation**: `_policy_enforcement()`'s fail-open lookup matches by
+> `covers_resource()` only — it does not check the covering policy's
+> `subjects`/`conditions` against the calling user's `EvalContext`. Two
+> overlapping policies for the same resource with different subjects (one
+> fail-closed, one fail-open) will downgrade fail-open for every caller
+> matching the resource, not only the subject the fail-open policy targets.
+> Acceptable for a best-effort fail-mode escape hatch; be aware of it if you
+> layer multiple `enforcement`-tagged policies for the same resource with
+> different subjects.
 
 > **Known limitation (navigator-auth version gap)**: the currently pinned
 > `navigator_auth.abac.policies.evaluator.PolicyLoader.load_from_dict()`

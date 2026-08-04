@@ -144,13 +144,30 @@ class PBACToolCallGuardrail(Guardrail):
         """Best-effort lookup of the ``enforcement`` attribute for a tool's policy.
 
         Used only to resolve the per-policy ``enforcement: fail_open``
-        fail-mode override (resolved Q3) when the evaluator raises and no
-        normal ``EvaluationResult`` is available to identify the deciding
-        policy. ``PolicyEvaluator`` exposes no public accessor for a single
-        policy's ``attributes`` by resource, so this reaches into the
-        evaluator's private ``_index`` (``PolicyIndex``) — best-effort only;
-        any failure here is swallowed and treated as "no override" (safe
-        fail-closed fallback).
+        fail-mode override (resolved Q3) for engine-unavailable conditions
+        (a raised exception, or the evaluator's own internal engine-error
+        DENY — see ``check()``), when no normal deciding-policy name is
+        available. ``PolicyEvaluator`` exposes no public accessor for a
+        single policy's ``attributes`` by resource, so this reaches into
+        the evaluator's private ``_index`` (``PolicyIndex``) — best-effort
+        only; any failure here is swallowed and treated as "no override"
+        (safe fail-closed fallback).
+
+        ``PolicyIndex.get_for_resource_type()`` returns policies in
+        priority order (highest first — ``PolicyIndex.finalize()`` sorts
+        descending), so the first ``covers_resource()`` match is always the
+        highest-priority covering policy. **Known limitation** (code
+        review, TASK-2114): this lookup only checks ``covers_resource()``
+        — it does NOT check ``subjects``/``conditions`` against the calling
+        user's ``EvalContext``. With two overlapping policies for the same
+        resource (e.g. one fail-closed for most subjects, one fail-open for
+        a narrower subject), an engine error would be downgraded for every
+        caller matching the resource, not only the subject the fail-open
+        policy actually targets. Acceptable for this feature's scope (a
+        best-effort fail-mode escape hatch, not the primary ALLOW/DENY
+        decision), but a caller layering multiple `enforcement`-tagged
+        policies for the SAME resource with DIFFERENT subjects should be
+        aware of this.
 
         Args:
             tool_name: The tool resource name being evaluated.
@@ -180,6 +197,38 @@ class PBACToolCallGuardrail(Guardrail):
             )
             return None
         return None
+
+    def _engine_unavailable_result(self, tool_name: str) -> GuardrailResult:
+        """Build the fail-mode result for a policy-engine-unavailable condition.
+
+        Shared by both failure paths: (a) an exception raised by our own
+        code around the ``check_access()`` call, and (b) the evaluator's
+        own internal Rust-engine-error DENY (which it never raises —
+        see ``check()``'s inline comment). Consults
+        ``_policy_enforcement()`` for a per-policy ``enforcement:
+        fail_open`` override (resolved spec Q3); default is fail-closed.
+
+        Args:
+            tool_name: The tool resource name being evaluated.
+
+        Returns:
+            ``GuardrailResult(action=PASS)`` when the covering policy opts
+            into ``enforcement: fail_open``; otherwise
+            ``GuardrailResult(action=BLOCK, reason="policy_engine_unavailable", ...)``
+            with a sanitized (never raw-exception) message.
+        """
+        enforcement = self._policy_enforcement(tool_name)
+        if enforcement == "fail_open":
+            return GuardrailResult(action=GuardrailAction.PASS)
+        return GuardrailResult(
+            action=GuardrailAction.BLOCK,
+            reason="policy_engine_unavailable",
+            report=PolicyDenialReport(
+                rule="policy_engine_unavailable",
+                message="Policy engine is temporarily unavailable.",
+                tool_name=tool_name,
+            ).model_dump(),
+        )
 
     async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
         """Evaluate the shared PolicyEvaluator for this tool call.
@@ -230,24 +279,35 @@ class PBACToolCallGuardrail(Guardrail):
                 env=env,
             )
         except Exception as exc:  # noqa: BLE001 - fail-mode contract, see class docstring
+            # A raised exception here means our OWN code (to_eval_context(),
+            # Environment(), or enrichment) failed — the evaluator's own
+            # check_access() does NOT raise for internal engine errors (see
+            # branch below); it catches and returns a DENY EvaluationResult.
             self.logger.error(
                 "PBAC TOOL_CALL evaluation failed for tool=%s: %s", tool_name, exc,
             )
-            enforcement = self._policy_enforcement(tool_name)
-            if enforcement == "fail_open":
-                return GuardrailResult(action=GuardrailAction.PASS)
-            return GuardrailResult(
-                action=GuardrailAction.BLOCK,
-                reason="policy_engine_unavailable",
-                report=PolicyDenialReport(
-                    rule="policy_engine_unavailable",
-                    message="Policy engine is temporarily unavailable.",
-                    tool_name=tool_name,
-                ).model_dump(),
-            )
+            return self._engine_unavailable_result(tool_name)
 
         if result.allowed:
             return GuardrailResult(action=GuardrailAction.PASS)
+
+        if result.matched_policy is None and (result.reason or "").startswith(
+            "Evaluation engine error"
+        ):
+            # PolicyEvaluator.check_access() swallows its own Rust-engine
+            # exceptions internally and returns this DENY EvaluationResult
+            # instead of raising (verified against the installed
+            # navigator_auth.abac.policies.evaluator.PolicyEvaluator —
+            # code-review finding, TASK-2114 follow-up). Route it through
+            # the same fail-mode contract as a raised exception: never
+            # surface the raw internal error string (`result.reason`) to
+            # the LLM — that would leak evaluation-engine internals,
+            # violating the "never leak rule internals" denial-hygiene
+            # constraint (spec §7).
+            self.logger.error(
+                "PBAC TOOL_CALL policy engine error for tool=%s: %s", tool_name, result.reason,
+            )
+            return self._engine_unavailable_result(tool_name)
 
         rule = result.matched_policy or "unknown"
         self.logger.warning(

@@ -193,6 +193,35 @@ class TestBusinessHoursE2E:
 
         assert result.action == GuardrailAction.PASS
 
+    @pytest.mark.asyncio
+    async def test_engine_error_via_real_check_access_never_leaks_raw_message(
+        self, shared_evaluator, frozen_environment, monkeypatch,
+    ):
+        """Drives a genuine Rust-engine failure through the REAL,
+        unmodified `PolicyEvaluator.check_access()` (not a mocked
+        `check_access`) — `check_access()` catches its own
+        `evaluate_single()` exception internally and returns a normal DENY
+        `EvaluationResult` instead of raising (code-review finding,
+        TASK-2114 follow-up). Verifies the guardrail detects this and
+        never surfaces the raw internal error text to the LLM.
+        """
+        frozen_environment(hour=10, dow=0)  # inside business hours — would ALLOW otherwise
+        import navigator_auth.abac.policies.evaluator as evaluator_mod
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("rust panic: totally-internal-detail")
+
+        monkeypatch.setattr(evaluator_mod, "evaluate_single", _boom)
+        guardrail = PBACToolCallGuardrail(evaluator=shared_evaluator)
+        ctx = _make_ctx(_make_permission_context(), "demo_business_hours_only")
+
+        result = await guardrail.check("tool_call:demo_business_hours_only", ctx)
+
+        assert result.action == GuardrailAction.BLOCK
+        assert result.reason == "policy_engine_unavailable"
+        assert "totally-internal-detail" not in str(result.report)
+        assert "totally-internal-detail" not in (result.reason or "")
+
 
 # ── Telemetry ────────────────────────────────────────────────────────────────
 
