@@ -1,4 +1,10 @@
-from parrot.bots.chrome import ChromeConfig
+from parrot.bots.chrome import (
+    ChromeConfig,
+    QAAssertion,
+    QAFinding,
+    QAReport,
+    QATestCase,
+)
 from parrot.mcp.integration import create_chrome_devtools_mcp_server
 
 
@@ -86,3 +92,82 @@ def test_create_chrome_devtools_mcp_server_full_config():
     assert "--user-data-dir=/tmp/profile" in config.args
     assert "--channel=dev" in config.args
     assert "--viewport=1280x720" in config.args
+
+
+def test_qa_test_case_minimal():
+    tc = QATestCase(
+        name="login-test",
+        url="http://localhost:8080/login",
+        steps=["Fill email", "Click submit"],
+        expected="Redirect to dashboard",
+    )
+    assert tc.name == "login-test"
+    assert tc.assertions == []
+    assert tc.screenshot_on_fail is True
+    assert tc.tags == []
+    assert tc.viewport is None
+
+
+def test_qa_test_case_with_assertions():
+    tc = QATestCase(
+        name="login-validation",
+        url="http://localhost:8080/login",
+        steps=["Leave email empty", "Click submit"],
+        expected="Error shown",
+        assertions=[
+            QAAssertion(check="element_visible", target=".error-msg"),
+            QAAssertion(check="no_console_errors"),
+        ],
+        viewport="375x812",
+        tags=["smoke", "mobile"],
+    )
+    assert len(tc.assertions) == 2
+    assert tc.assertions[0].check == "element_visible"
+    assert tc.assertions[1].target is None
+    assert tc.viewport == "375x812"
+
+
+def test_qa_finding_defaults():
+    f = QAFinding(
+        test_name="login-test",
+        status="pass",
+        detail="Redirected to /dashboard",
+    )
+    assert f.screenshot_path is None
+    assert f.console_errors == []
+    assert f.duration_ms is None
+
+
+def test_qa_report_counts():
+    report = QAReport(
+        summary="2 of 3 tests passed",
+        url="http://localhost:8080",
+        findings=[
+            QAFinding(test_name="t1", status="pass", detail="ok"),
+            QAFinding(test_name="t2", status="fail", detail="not ok"),
+            QAFinding(test_name="t3", status="pass", detail="ok"),
+        ],
+        total=3,
+        passed=2,
+        failed=1,
+    )
+    assert report.total == 3
+    assert report.passed == 2
+    assert report.failed == 1
+    assert report.errors == 0
+    assert report.skipped == 0
+    assert len(report.findings) == 3
+
+
+def test_qa_test_case_serialization_roundtrip():
+    tc = QATestCase(
+        name="test-1",
+        url="http://localhost/",
+        steps=["Click button"],
+        expected="Modal opens",
+        assertions=[QAAssertion(check="element_visible", target="#modal")],
+    )
+    json_str = tc.model_dump_json()
+    restored = QATestCase.model_validate_json(json_str)
+    assert restored.name == tc.name
+    assert restored.assertions[0].target == "#modal"

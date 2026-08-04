@@ -76,3 +76,58 @@ class ChromeConfig(BaseModel):
         if self.auto_connect:
             args.append("--auto-connect")
         return args
+
+
+class QAAssertion(BaseModel):
+    """Formal acceptance criterion for a QA test case."""
+
+    check: Literal[
+        "element_visible",
+        "element_not_visible",
+        "text_contains",
+        "url_matches",
+        "no_console_errors",
+        "no_network_failures",
+        "screenshot_diff",
+        "performance",
+    ]
+    target: str | None = None
+    value: str | None = None
+
+
+class QATestCase(BaseModel):
+    """A QA test case with natural-language steps and optional assertions."""
+
+    name: str
+    url: str
+    steps: list[str]
+    expected: str
+    assertions: list[QAAssertion] = []
+    screenshot_on_fail: bool = True
+    viewport: str | None = None
+    tags: list[str] = []
+
+
+class QAFinding(BaseModel):
+    """Result of a single QA test case execution."""
+
+    test_name: str
+    status: Literal["pass", "fail", "error", "skip"]
+    detail: str
+    screenshot_path: str | None = None
+    console_errors: list[str] = []
+    duration_ms: int | None = None
+
+
+class QAReport(BaseModel):
+    """Structured QA report — maps to AIMessage.response (summary) + AIMessage.output."""
+
+    summary: str
+    url: str
+    findings: list[QAFinding] = []
+    total: int = 0
+    passed: int = 0
+    failed: int = 0
+    errors: int = 0
+    skipped: int = 0
+    duration_ms: int | None = None
