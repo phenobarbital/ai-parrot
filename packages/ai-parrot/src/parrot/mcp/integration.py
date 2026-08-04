@@ -1110,6 +1110,14 @@ def create_fireflies_mcp_server(
 def create_chrome_devtools_mcp_server(
     browser_url: str = "http://127.0.0.1:9222",
     name: str = "chrome-devtools",
+    headless: bool = False,
+    user_data_dir: Optional[str] = None,
+    channel: Optional[str] = None,
+    viewport: Optional[str] = None,
+    executable_path: Optional[str] = None,
+    isolated: bool = False,
+    no_usage_statistics: bool = True,
+    auto_connect: bool = False,
     **kwargs
 ) -> MCPServerConfig:
     """Create configuration for Chrome DevTools MCP server.
@@ -1118,12 +1126,20 @@ def create_chrome_devtools_mcp_server(
     It automatically installs the chrome-devtools-mcp package using npx.
 
     Args:
-        browser_url: URL where Chrome is listening for devtools protocol (default: http://127.0.0.1:9222)
-        name: Server name
-        **kwargs: Additional MCPServerConfig parameters
+        browser_url: URL where Chrome is listening for devtools protocol.
+        name: Server name.
+        headless: Run Chrome without UI (default: False — visible).
+        user_data_dir: Path to Chrome user data directory (profile).
+        channel: Chrome channel — "stable", "beta", "dev", "canary".
+        viewport: Initial viewport size, e.g. "1280x720".
+        executable_path: Path to custom Chrome executable.
+        isolated: Use temporary user-data-dir, cleaned up on close.
+        no_usage_statistics: Opt out of Google usage statistics.
+        auto_connect: Auto-connect to locally running Chrome (144+).
+        **kwargs: Additional MCPServerConfig parameters.
 
     Returns:
-        MCPServerConfig configured for Chrome DevTools
+        MCPServerConfig configured for Chrome DevTools.
     """
     # Parse port from browser_url or default to 9222
     port = 9222
@@ -1143,24 +1159,39 @@ def create_chrome_devtools_mcp_server(
         # Fallback to assuming local if parsing fails (unlikely for valid URL)
         is_local = True
 
-    # Ensure Chrome is running ONLY if we are connecting locally
-    if is_local:
+    # Ensure Chrome is running ONLY if we are connecting locally and not
+    # relying on chrome-devtools-mcp's own auto-connect behavior.
+    if is_local and not auto_connect:
         # Reuse existing manager or create new one
         if port not in _chrome_managers:
             chrome_manager = ChromeManager(port=port)
             _chrome_managers[port] = chrome_manager
         else:
             chrome_manager = _chrome_managers[port]
-        chrome_manager.start()
+        chrome_manager.start(headless=headless)
+
+    args = ["-y", "chrome-devtools-mcp@latest", f"--browser-url={browser_url}"]
+    if headless:
+        args.append("--headless")
+    if user_data_dir:
+        args.append(f"--user-data-dir={user_data_dir}")
+    if channel:
+        args.append(f"--channel={channel}")
+    if viewport:
+        args.append(f"--viewport={viewport}")
+    if executable_path:
+        args.append(f"--executable-path={executable_path}")
+    if isolated:
+        args.append("--isolated")
+    if no_usage_statistics:
+        args.append("--no-usage-statistics")
+    if auto_connect:
+        args.append("--auto-connect")
 
     return MCPServerConfig(
         name=name,
         command="npx",
-        args=[
-            "-y",
-            "chrome-devtools-mcp@latest",
-            f"--browser-url={browser_url}"
-        ],
+        args=args,
         transport="stdio",
         **kwargs
     )
@@ -1450,21 +1481,45 @@ class MCPEnabledMixin:
         self,
         browser_url: str = "http://127.0.0.1:9222",
         name: str = "chrome-devtools",
+        headless: bool = False,
+        user_data_dir: Optional[str] = None,
+        channel: Optional[str] = None,
+        viewport: Optional[str] = None,
+        executable_path: Optional[str] = None,
+        isolated: bool = False,
+        no_usage_statistics: bool = True,
+        auto_connect: bool = False,
         **kwargs
     ) -> List[str]:
         """Add Chrome DevTools MCP server capability.
 
         Args:
-            browser_url: URL where Chrome is listening for devtools protocol
-            name: Server name
-            **kwargs: Additional MCPServerConfig parameters
+            browser_url: URL where Chrome is listening for devtools protocol.
+            name: Server name.
+            headless: Run Chrome without UI.
+            user_data_dir: Path to Chrome profile directory.
+            channel: Chrome channel (stable/beta/dev/canary).
+            viewport: Initial viewport size, e.g. "1280x720".
+            executable_path: Path to custom Chrome executable.
+            isolated: Use temporary profile.
+            no_usage_statistics: Opt out of Google telemetry.
+            auto_connect: Auto-connect to local Chrome (144+).
+            **kwargs: Additional MCPServerConfig parameters.
 
         Returns:
-            List of registered tool names
+            List of registered tool names.
         """
         config = create_chrome_devtools_mcp_server(
             browser_url=browser_url,
             name=name,
+            headless=headless,
+            user_data_dir=user_data_dir,
+            channel=channel,
+            viewport=viewport,
+            executable_path=executable_path,
+            isolated=isolated,
+            no_usage_statistics=no_usage_statistics,
+            auto_connect=auto_connect,
             **kwargs
         )
         return await self.add_mcp_server(config)

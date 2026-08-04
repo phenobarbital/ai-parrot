@@ -1,4 +1,5 @@
 from parrot.bots.chrome import ChromeConfig
+from parrot.mcp.integration import create_chrome_devtools_mcp_server
 
 
 def test_chrome_config_defaults():
@@ -58,3 +59,30 @@ def test_chrome_config_to_mcp_args_no_stats_disabled():
     config = ChromeConfig(no_usage_statistics=False)
     args = config.to_mcp_args()
     assert "--no-usage-statistics" not in args
+
+
+def test_create_chrome_devtools_mcp_server_default_args():
+    config = create_chrome_devtools_mcp_server()
+    assert config.command == "npx"
+    assert "--no-usage-statistics" in config.args
+    assert "--headless" not in config.args
+
+
+def test_create_chrome_devtools_mcp_server_headless():
+    config = create_chrome_devtools_mcp_server(headless=True)
+    assert "--headless" in config.args
+
+
+def test_create_chrome_devtools_mcp_server_full_config():
+    config = create_chrome_devtools_mcp_server(
+        browser_url="http://127.0.0.1:9333",
+        headless=True,
+        user_data_dir="/tmp/profile",
+        channel="dev",
+        viewport="1280x720",
+    )
+    assert "--browser-url=http://127.0.0.1:9333" in config.args
+    assert "--headless" in config.args
+    assert "--user-data-dir=/tmp/profile" in config.args
+    assert "--channel=dev" in config.args
+    assert "--viewport=1280x720" in config.args
