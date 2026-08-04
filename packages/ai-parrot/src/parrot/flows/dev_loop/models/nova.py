@@ -23,6 +23,27 @@ from pydantic import BaseModel, Field, model_validator
 
 from parrot.flows.dev_loop.models.llm import LLMCodeDispatchProfile
 
+#: Default Bedrock Converse model for BOTH no-tools Nova seats (adversarial
+#: review + mechanical PR summary).
+#:
+#: Amazon's own Nova model, not a ``us.anthropic.*`` id: Bedrock gates every
+#: Anthropic model behind a per-account "Anthropic use case details" form, so
+#: an account with a valid Bedrock API key still gets
+#: ``ResourceNotFoundException`` on the first call until an operator fills
+#: that form in. A *Nova* backend defaulting to a model that needs a separate
+#: Anthropic entitlement is a footgun; native Nova ids need no form.
+#:
+#: The ``us.`` geo prefix is REQUIRED — Nova 2 Lite has no in-region access
+#: (spec ``novaclient-amazon-aws`` §"Verified AWS Facts"). Nova Premier is
+#: deliberately not used here: Legacy on Bedrock, EOL 2026-09-14.
+#:
+#: Kept byte-identical to ``conf.DEV_LOOP_NOVA_REVIEW_MODEL`` /
+#: ``conf.DEV_LOOP_NOVA_MECHANICAL_MODEL``'s fallbacks — the ``models``
+#: package deliberately does not import ``parrot.conf`` (no module under
+#: ``flows/dev_loop/models/`` does), so the two literals are pinned equal by
+#: ``test_nova_profiles.py`` instead of shared by import.
+NOVA_DEFAULT_CONVERSE_MODEL: str = "us.amazon.nova-2-lite-v1:0"
+
 # Verified per-model output-token ceilings (AWS Bedrock model cards,
 # 2026-08-03, FEAT-405 Module 4). Models absent from this map are passed
 # through unclamped by ``effective_max_tokens()`` — "unknown" is not
@@ -118,7 +139,7 @@ class NovaAdversarialReviewProfile(BaseModel):
     """
 
     model: str = Field(
-        default="us.anthropic.claude-opus-5",
+        default=NOVA_DEFAULT_CONVERSE_MODEL,
         description="Bedrock Converse model id for the adversarial reviewer.",
     )
     review_scope: Literal["uncommitted", "base", "commit"] = Field(
@@ -155,7 +176,7 @@ class NovaMechanicalProfile(BaseModel):
     """
 
     model: str = Field(
-        default="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        default=NOVA_DEFAULT_CONVERSE_MODEL,
         description="Bedrock Converse model id for mechanical text generation.",
     )
     max_tokens: int = Field(

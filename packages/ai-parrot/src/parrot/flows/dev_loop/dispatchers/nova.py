@@ -223,14 +223,20 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
 
 @CodeReviewDispatcherFactory.register("nova-adversarial")
 class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
-    """Read-only adversarial second-opinion reviewer on Claude Opus 5.
+    """Read-only adversarial second-opinion reviewer on a Bedrock Converse model.
+
+    Defaults to Amazon's own ``us.amazon.nova-2-lite-v1:0`` (see
+    ``NOVA_DEFAULT_CONVERSE_MODEL``) rather than a ``us.anthropic.*`` id,
+    which Bedrock gates behind a per-account Anthropic use-case form;
+    override with ``DEV_LOOP_NOVA_REVIEW_MODEL``.
 
     Read-only BY CONSTRUCTION: no tools are ever passed to the model. The
     diff, acceptance criteria and review question go directly in the
     prompt; the model returns the verdict as structured output over a
-    single :meth:`NovaClient.ask` call (Converse — Anthropic models on
-    Bedrock have no Chat Completions, so unlike the dev seat this reviewer
-    does NOT use bedrock-mantle). Findings are advisory and must be triaged
+    single :meth:`NovaClient.ask` call (Converse — neither Nova nor
+    Anthropic models on Bedrock expose Chat Completions, so unlike the dev
+    seat this reviewer does NOT use bedrock-mantle). Findings are advisory
+    and must be triaged
     (CONFIRM/REJECT/ESCALATE) by the primary worker downstream, mirroring
     ``CodexAdversarialReviewDispatcher`` (``code_review.py:266-337``).
 
@@ -386,7 +392,7 @@ class NovaAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
 
 
 # ---------------------------------------------------------------------------
-# Mechanical seat (FEAT-405 Module 8) — Haiku PR-body enrichment.
+# Mechanical seat (FEAT-405 Module 8) — PR-body enrichment.
 #
 # NOT a third dispatcher: a small, stateless helper the handoff nodes call
 # directly. "Enrich, never replace" ([R2]): the deterministic template
@@ -427,6 +433,49 @@ def _has_nova_credentials() -> bool:
     return bool(conf.AWS_NOVA_API_KEY)
 
 
+#: Bedrock error codes that are *permanent* for the configured model —
+#: retrying the same call on the next PR will fail identically until an
+#: operator changes AWS-side state (model access / use-case form / region
+#: availability) or points the seat at a different model. Logged as a
+#: single actionable line instead of a stack trace, because the fallback
+#: to the deterministic template is the designed behaviour, not an
+#: incident.
+_NON_RETRYABLE_BEDROCK_CODES = frozenset(
+    {
+        "ResourceNotFoundException",
+        "AccessDeniedException",
+        "ValidationException",
+        "UnrecognizedClientException",
+    }
+)
+
+
+def _bedrock_error_code(error: Exception) -> Optional[str]:
+    """Return the Bedrock/botocore error code for ``error``, if any.
+
+    Recognises both a real ``botocore.exceptions.ClientError`` (via its
+    ``response["Error"]["Code"]`` shape) and the dynamically generated
+    ``client.exceptions.*`` classes, which are matched by class name
+    since they are not import-stable across botocore versions — the same
+    two-pronged detection ``BedrockConverseBase._is_capacity_error()``
+    uses.
+
+    Args:
+        error: The exception raised by the Converse call.
+
+    Returns:
+        The error code string, or ``None`` when the exception carries no
+        recognizable botocore error shape.
+    """
+    response = getattr(error, "response", None)
+    if isinstance(response, dict):
+        code = response.get("Error", {}).get("Code")
+        if code:
+            return str(code)
+    name = type(error).__name__
+    return name if name.endswith("Exception") else None
+
+
 async def summarize_pr_changes(
     context: str,
     *,
@@ -435,8 +484,9 @@ async def summarize_pr_changes(
 ) -> str:
     """Return a short "Summary of changes" markdown block, or ``""`` on any failure.
 
-    Issues exactly one no-tools ``NovaClient.ask()`` call on Claude Haiku
-    4.5. Never raises — the caller (``_build_body_async`` on the handoff
+    Issues exactly one no-tools ``NovaClient.ask()`` call on the model
+    resolved from ``DEV_LOOP_NOVA_MECHANICAL_MODEL`` (default:
+    ``us.amazon.nova-2-lite-v1:0``). Never raises — the caller (``_build_body_async`` on the handoff
     nodes) falls back to the deterministic template alone when this
     returns an empty string. Short-circuits (no network attempt at all)
     when no Nova/Bedrock credential is configured (code-review fix: a
@@ -474,6 +524,9 @@ async def summarize_pr_changes(
             "configured (AWS_NOVA_API_KEY)."
         )
         return ""
+    # NOTE: construction stays *inside* the try — ``NovaClient()`` itself
+    # can raise (bad/absent credentials), and this helper must never raise.
+    client: Optional[NovaClient] = None
     try:
         client = NovaClient()
         async with asyncio.timeout(resolved_profile.timeout_seconds):
@@ -489,8 +542,36 @@ async def summarize_pr_changes(
             )
         summary = str(ai_message.output or "").strip()
         return summary
-    except Exception:  # noqa: BLE001 - enrichment must never break handoff
-        log.warning(
-            "PR summary enrichment failed; using template only.", exc_info=True
-        )
+    except Exception as exc:  # noqa: BLE001 - enrichment must never break handoff
+        code = _bedrock_error_code(exc)
+        if code in _NON_RETRYABLE_BEDROCK_CODES:
+            # Permanent, operator-actionable AWS-side condition (model not
+            # enabled for the account/region, Anthropic use-case form not
+            # submitted, bad model id). A stack trace on every single PR is
+            # pure noise — name the model and the remedy on one line instead.
+            log.warning(
+                "PR summary enrichment unavailable for model %r (%s: %s); "
+                "using template only. Enable the model for this account/"
+                "region in the Bedrock console, or point "
+                "DEV_LOOP_NOVA_MECHANICAL_MODEL at a model this account can "
+                "call (e.g. an Amazon Nova id).",
+                resolved_profile.model,
+                code,
+                exc,
+            )
+        else:
+            log.warning(
+                "PR summary enrichment failed; using template only.",
+                exc_info=True,
+            )
         return ""
+    finally:
+        # The per-call client owns an aioboto3/aiohttp session+connector
+        # opened lazily by BedrockConverseBase.get_client(); without this
+        # every PR leaked one ("Unclosed client session" / "Unclosed
+        # connector" at interpreter shutdown).
+        if client is not None and hasattr(client, "close"):
+            try:
+                await client.close()
+            except Exception as close_exc:  # noqa: BLE001 - teardown is best-effort
+                log.debug("Failed to close Nova mechanical client: %s", close_exc)

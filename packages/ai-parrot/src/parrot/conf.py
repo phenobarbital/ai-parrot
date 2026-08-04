@@ -1136,18 +1136,39 @@ DEV_LOOP_NOVA_MANTLE_REGION: str = config.get(
     "DEV_LOOP_NOVA_MANTLE_REGION",
     fallback=BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1",
 )
+# Both Nova Converse seats below default to Amazon's OWN Nova models rather
+# than to ``us.anthropic.*`` ids. Rationale: Bedrock gates every Anthropic
+# model behind a per-account "Anthropic use case details" form, so an
+# account holding a perfectly valid Bedrock API key still gets
+# ``ResourceNotFoundException`` ("Model use case details have not been
+# submitted for this account") on the very first call. Native Nova ids need
+# no such form, which makes them the correct default for a *NOVA* backend —
+# an operator who has completed the Anthropic form can still point either
+# key back at a ``us.anthropic.*`` id.
+#
+# ``us.amazon.nova-2-lite-v1:0`` is the current-generation Nova text model,
+# Converse-capable, and the id ``NovaClient`` itself defaults to. The ``us.``
+# geo prefix is REQUIRED — Nova 2 Lite has no in-region access (spec
+# ``novaclient-amazon-aws`` §"Verified AWS Facts"). Nova Premier is
+# deliberately NOT used: it is Legacy on Bedrock with EOL 2026-09-14.
+#
+# Duplicated (not imported) from
+# ``parrot.flows.dev_loop.models.nova.NOVA_DEFAULT_CONVERSE_MODEL``: conf.py
+# is a foundational module imported almost everywhere and must not pull in
+# ``parrot.flows``. ``test_nova_profiles.py`` pins the two literals equal.
+_NOVA_DEFAULT_CONVERSE_MODEL: str = "us.amazon.nova-2-lite-v1:0"
+
 # Model used by the read-only nova-adversarial reviewer's single Converse
 # call (``NovaAdversarialReviewDispatcher``). Mirrors
 # ``DEV_LOOP_ADVERSARIAL_MODEL`` (the codex-adversarial equivalent, :1048).
 DEV_LOOP_NOVA_REVIEW_MODEL: str = config.get(
-    "DEV_LOOP_NOVA_REVIEW_MODEL", fallback="us.anthropic.claude-opus-5"
+    "DEV_LOOP_NOVA_REVIEW_MODEL", fallback=_NOVA_DEFAULT_CONVERSE_MODEL
 )
-# Model used by the mechanical (PR-summary) seat (TASK-2092's Haiku
-# enrichment). Not yet consumed — declared here so every DEV_LOOP_NOVA_*
-# key lands in one place (Module 5).
+# Model used by the mechanical (PR-summary) seat (TASK-2092's enrichment
+# call), consumed by ``dispatchers.nova.summarize_pr_changes``.
 DEV_LOOP_NOVA_MECHANICAL_MODEL: str = config.get(
     "DEV_LOOP_NOVA_MECHANICAL_MODEL",
-    fallback="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    fallback=_NOVA_DEFAULT_CONVERSE_MODEL,
 )
 # Adversarial-seat backend selector (FEAT-405 Module 5, [R3]): choice over
 # {"codex", "nova"}, defaulting to "codex" — unconfigured deployments see

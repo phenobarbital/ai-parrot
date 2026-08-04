@@ -98,6 +98,10 @@ class TestPrefixPolicy:
     @pytest.mark.parametrize(
         "already_prefixed_id",
         [
+            # The two no-tools Nova seats' current default (FEAT-405 follow-up:
+            # migrated off us.anthropic.* — those need a per-account Bedrock
+            # Anthropic use-case form; native Nova ids do not).
+            "us.amazon.nova-2-lite-v1:0",
             "us.anthropic.claude-opus-5",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "global.anthropic.claude-fable-5",
