@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def main():
-    target = os.getenv("TARGET_URL", "http://localhost:8080")
+    target = os.getenv("TARGET_URL", "https://concierge.trocdigital.io/")
     headless = os.getenv("CHROME_HEADLESS", "0") == "1"
 
     agent = WebAgent(
