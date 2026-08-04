@@ -50,21 +50,13 @@ _AUTONOMOUS_CLASSES: dict[str, str] = {
 def __getattr__(name: str):
     """Lazy-import autonomous classes from the satellite package."""
     if name in _AUTONOMOUS_CLASSES:
-        import importlib
-        module_path = _AUTONOMOUS_CLASSES[name]
-        try:
-            module = importlib.import_module(module_path)
-        except ImportError as exc:
-            raise ImportError(
-                f"{name!r} requires the ai-parrot-server package. "
-                "Install it with: pip install ai-parrot-server[autonomous]"
-            ) from exc
-        attr = getattr(module, name, None)
-        if attr is None:
-            raise AttributeError(
-                f"module {module_path!r} has no attribute {name!r}"
-            )
-        return attr
+        from parrot._imports import load_satellite_attr
+
+        return load_satellite_attr(
+            name,
+            _AUTONOMOUS_CLASSES[name],
+            install="ai-parrot-server[autonomous]",
+        )
     raise AttributeError(
         f"module 'parrot.autonomous' has no attribute {name!r}. "
         "Install the server package: pip install ai-parrot-server[autonomous]"
