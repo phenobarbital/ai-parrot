@@ -749,3 +749,70 @@ def test_web_agent_system_prompt_documents_new_assertions():
     assert "response_status" in WEB_AGENT_SYSTEM_PROMPT
     assert "accessibility_check" in WEB_AGENT_SYSTEM_PROMPT
     assert "wait_timeout_ms" in WEB_AGENT_SYSTEM_PROMPT
+
+
+# --- Post-review fixes (code-reviewer findings on FEAT-410) ---
+
+
+@pytest.mark.asyncio
+async def test_run_tests_empty_list_does_not_crash():
+    """run_tests([]) must not raise IndexError (empty base_url resolution)."""
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+        agent.ask = AsyncMock()
+
+        result = await agent.run_tests([])
+
+        assert result.output.total == 0
+        assert result.output.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_run_tests_unexpected_exception_marks_error_not_crash():
+    """A non-timeout exception from ask() must produce a per-case error
+    finding, not abort the whole run_tests() call (CI reliability)."""
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+        agent.ask = AsyncMock(side_effect=RuntimeError("LLM API error"))
+
+        cases = [QATestCase(name="t1", url="/", steps=["s"], expected="e")]
+        result = await agent.run_tests(cases)
+
+        finding = result.output.findings[0]
+        assert finding.status == "error"
+        assert "LLM API error" in finding.detail
+        assert result.output.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_run_tests_screenshot_path_includes_predictable_name():
+    """screenshot_dir prompt instruction includes a {test_name}_{timestamp}.png
+    style path, not just the bare directory."""
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = "/tmp/qa-screenshots"
+        agent.logger = MagicMock()
+
+        mock_msg = MagicMock()
+        mock_msg.output = QAFinding(test_name="t1", status="pass", detail="ok")
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [QATestCase(name="t1", url="/", steps=["s"], expected="e")]
+        await agent.run_tests(cases)
+
+        prompt = agent.ask.call_args[0][0]
+        assert "/tmp/qa-screenshots/t1_" in prompt
+        assert ".png" in prompt

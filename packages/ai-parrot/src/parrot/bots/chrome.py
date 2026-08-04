@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 import xml.etree.ElementTree as ET
 from typing import Literal
 
@@ -355,7 +356,7 @@ class WebAgent(BasicAgent):
             AIMessage with the aggregate QAReport in `.output` and the
             summary in `.response`.
         """
-        base_url = url or test_cases[0].url
+        base_url = url or (test_cases[0].url if test_cases else "")
         findings: list[QAFinding] = []
 
         for case in test_cases:
@@ -383,6 +384,19 @@ class WebAgent(BasicAgent):
                         test_name=case.name,
                         status="error",
                         detail=f"Test timed out after {timeout_ms}ms",
+                    )
+                except Exception as exc:
+                    # CI reliability: a single failing test case (LLM/MCP/
+                    # network error) must not abort the whole suite (see
+                    # spec Motivation: "a single network glitch... causing
+                    # false negatives").
+                    self.logger.exception(
+                        "QA test case %r raised an unexpected error", case.name
+                    )
+                    finding = QAFinding(
+                        test_name=case.name,
+                        status="error",
+                        detail=f"Unexpected error: {exc}",
                     )
                 finding.retries = attempt
                 if finding.status == "pass":
@@ -436,7 +450,14 @@ class WebAgent(BasicAgent):
             f"Take a screenshot on failure if screenshot_on_fail is true.\n"
         )
         if self.screenshot_dir:
-            prompt += f"Save failure screenshots to: {self.screenshot_dir}\n"
+            timestamp = int(time.time())
+            screenshot_path = f"{self.screenshot_dir}/{case.name}_{timestamp}.png"
+            prompt += (
+                f"On failure, save the screenshot to exactly this path: "
+                f"{screenshot_path}\n"
+                f"Report this exact path in the finding's screenshot_path "
+                f"field.\n"
+            )
         for assertion in case.assertions:
             if assertion.wait_timeout_ms and assertion.check in (
                 "element_visible",

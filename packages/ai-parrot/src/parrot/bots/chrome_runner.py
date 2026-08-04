@@ -19,6 +19,8 @@ import os
 import sys
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from .chrome import ChromeConfig, QATestCase, WebAgent
 
 logger = logging.getLogger(__name__)
@@ -37,7 +39,8 @@ def load_test_cases(test_file: str) -> list[QATestCase]:
 
     Raises:
         SystemExit: With code 2 if the file cannot be read, is not valid
-            JSON/YAML, or (for YAML) PyYAML is not installed.
+            JSON/YAML, does not validate as `QATestCase`(s), or (for
+            YAML) PyYAML is not installed.
     """
     path = Path(test_file)
     if not path.is_file():
@@ -66,7 +69,14 @@ def load_test_cases(test_file: str) -> list[QATestCase]:
 
     if not isinstance(raw, list):
         raw = [raw]
-    return [QATestCase.model_validate(item) for item in raw]
+    try:
+        return [QATestCase.model_validate(item) for item in raw]
+    except ValidationError as exc:
+        print(
+            f"ERROR: invalid test case definition in {test_file}:\n{exc}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 def build_parser() -> argparse.ArgumentParser:

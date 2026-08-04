@@ -92,6 +92,16 @@ def test_load_test_cases_invalid_json_exits_2(tmp_path):
     assert exc_info.value.code == 2
 
 
+def test_load_test_cases_schema_validation_error_exits_2(tmp_path):
+    """A well-formed JSON document that doesn't satisfy QATestCase's schema
+    (missing required fields) must exit(2), not raise ValidationError."""
+    f = tmp_path / "tests.json"
+    f.write_text(json.dumps([{"name": "t1"}]))  # missing url/steps/expected
+    with pytest.raises(SystemExit) as exc_info:
+        load_test_cases(str(f))
+    assert exc_info.value.code == 2
+
+
 def test_load_test_cases_yaml_missing_pyyaml_exits_2(tmp_path):
     f = tmp_path / "tests.yaml"
     f.write_text("- name: t1\n  url: /\n  steps: [s]\n  expected: e\n")
