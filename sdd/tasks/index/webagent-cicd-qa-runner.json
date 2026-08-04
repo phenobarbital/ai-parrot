@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-04T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-04T18:15:00+00:00",
   "tasks": [
     {
       "id": "TASK-2115",
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-410",
       "feature": "webagent-cicd-qa-runner",
       "spec": "sdd/specs/webagent-cicd-qa-runner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Final task — needs all features implemented to write accurate examples",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2119-examples-and-ci-docs.md"
+      "completed_at": "2026-08-04T18:15:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2119-examples-and-ci-docs.md"
     }
   ]
 }
