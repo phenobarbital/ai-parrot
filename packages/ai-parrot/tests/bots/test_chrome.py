@@ -182,6 +182,12 @@ def test_web_agent_inherits_basic_agent():
     assert issubclass(WebAgent, BasicAgent)
 
 
+def test_web_agent_uses_system_prompt_template():
+    """Verify WEB_AGENT_SYSTEM_PROMPT is actually used (not overridden by PromptBuilder)."""
+    agent = WebAgent(name="test-agent")
+    assert agent._prompt_builder is None
+
+
 def test_web_agent_default_chrome_config():
     with patch.object(BasicAgent, "__init__", return_value=None):
         agent = WebAgent.__new__(WebAgent)

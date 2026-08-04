@@ -170,6 +170,11 @@ class WebAgent(BasicAgent):
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
+        # WebAgent uses its own legacy system_prompt_template (see ProductReport
+        # for the same pattern): BasicAgent.__init__ defaults to the composable
+        # PromptBuilder whenever no explicit system_prompt is given, which would
+        # silently discard WEB_AGENT_SYSTEM_PROMPT. Force the legacy path.
+        self._prompt_builder = None
         self.chrome_config = chrome_config or ChromeConfig()
         self.logger = logging.getLogger(f"{self.name}.WebAgent")
 
