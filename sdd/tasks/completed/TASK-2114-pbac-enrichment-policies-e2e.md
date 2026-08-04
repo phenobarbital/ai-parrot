@@ -103,8 +103,60 @@ class PBACPermissionResolver(AbstractPermissionResolver):
 - ~~`PBACToolCallGuardrail.userinfo_service`~~ — attribute enrichment not yet wired; this task adds it.
 - ~~`EvalContext.employee_profile`~~ — not a direct field; profile attributes are projected as flat attributes.
 - ~~Per-policy timezone~~ — `Environment` business hours are global; no per-policy tz.
-- ~~`policies/` directory with tool policies~~ — may or may not exist; verify before creating.
 - ~~Argument-level ABAC~~ — explicitly out of scope; assert tool args are NOT in policy attributes.
+
+**Codebase Contract corrections (verified 2026-08-04)**:
+1. **`policies/` directory already exists** at repo root (`policies/tools.yaml`,
+   `agents.yaml`, `mcp.yaml`, `defaults.yaml`, `README.md`) and is loaded
+   automatically at startup by `setup_pbac(app, policy_dir="policies")` —
+   confirmed via `policies/README.md`: "All `*.yaml` files in this directory
+   are loaded automatically at startup" and policy names must be "unique
+   across ALL policy files". **A broad `resources: ["tool:*"]` DENY sample
+   would become a live, active production policy gating every tool for
+   every user outside business hours** — not a neutral template. To avoid
+   an unreviewed production behavior change, the two sample policies use a
+   narrowly-scoped, non-colliding demo resource pattern
+   (`tool:demo_business_hours_only`) instead of a wildcard — fully
+   loadable/functional (used by the e2e test) but inert for every real tool.
+2. **`PolicyLoader.load_from_dict()` does NOT forward arbitrary top-level
+   policy keys into `ResourcePolicy.attributes`** — verified against the
+   installed `navigator_auth.abac.policies.evaluator.PolicyLoader.
+   load_from_dict()` (constructs `ResourcePolicy(name=..., description=...,
+   effect=..., resources=..., actions=..., subjects=..., conditions=...,
+   environment=..., priority=..., enforcing=...)` — an explicit, closed
+   kwarg list; no `**policy_data` passthrough). This means an
+   `enforcement: fail_open` key in a YAML file is **silently dropped** when
+   loaded via the standard `load_from_file`/`load_from_directory` path in
+   the currently-pinned navigator-auth version — it only reaches
+   `ResourcePolicy.attributes` (and thus `PBACToolCallGuardrail.
+   _policy_enforcement()`, TASK-2110) when a `ResourcePolicy` is
+   constructed **directly in Python** with `enforcement="fail_open"` as an
+   extra kwarg (`AbstractPolicy.__init__`'s `**kwargs` → `self.attributes`,
+   `abstract.py:122`, unaffected by the loader gap). The sample
+   `tool-business-hours-soft.yaml` still documents the intended YAML syntax
+   (forward-compatible once/if navigator-auth adds passthrough), but the
+   e2e fail-open test constructs its `ResourcePolicy` directly to actually
+   exercise the code path — documented as a known navigator-auth version
+   limitation in `docs/security/pbac-guardrails.md`, not something this
+   feature can or should fix (would require patching a pinned third-party
+   package).
+3. **`PolicyEvaluator._build_user_context(ctx)` (evaluator.py:295-306) only
+   forwards `username`, `groups`, `roles` into the Rust evaluation engine**
+   — `job_code`/`department_code`/`programs` are NOT read by
+   `check_access()` regardless of what `EvalContext.userinfo` carries.
+   Attribute enrichment is still implemented as specified (merges
+   `EmployeeProfile` fields into `eval_ctx.userinfo`, verified mutable via
+   `EvalContext.__setattr__`/`.store` in `navigator_auth/abac/context.py`)
+   — `groups` enrichment has a REAL effect on evaluation (subject-group
+   matching); `job_code`/`department_code`/`programs` are enriched onto the
+   context for forward-compatibility/future policies but do not currently
+   change any ALLOW/DENY outcome. Documented as a navigator-auth limitation
+   in `docs/security/pbac-guardrails.md`, not a bug in this feature.
+4. Test path corrected from
+   `packages/ai-parrot/tests/bots/guardrails/test_pbac_e2e.py` (no such
+   directory) to `packages/ai-parrot/tests/integration/test_pbac_guardrails_e2e.py`
+   (mirrors `tests/integration/test_guardrails_output.py`'s location for
+   integration/e2e-style guardrail tests).
 
 ---
 
@@ -245,10 +297,51 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-04
+**Notes**: Added optional `userinfo_service` param + `_enrich_eval_context()`
+to `PBACToolCallGuardrail` — merges `EmployeeProfile` attributes
+(job_code/department_code/groups/programs) onto `EvalContext.userinfo`;
+profile-fetch failures are logged and never block the call. Added
+`policies/tool-business-hours.yaml` (+ `-soft` fail_open variant), scoped
+to a demo-only resource pattern rather than a wildcard to avoid an
+unreviewed production behavior change (every `*.yaml` in `policies/` loads
+automatically at startup, per `policies/README.md`); each includes a
+baseline ALLOW rule + a DENY-outside-hours override rule at equal priority
+(DENY wins on match, per the documented priority/conflict rules) — verified
+both files load cleanly alongside the existing policy set with no name
+collisions (31 total policies, 0 duplicates). Added deprecation docstring
+notes (no behavioral change) to `UserInfo`/`UserProfileKB`. Wrote
+`docs/security/pbac-guardrails.md` covering the three enforcement layers,
+guard-chain order, fail modes, sample policy YAML, the server-clock
+limitation, and two documented navigator-auth version gaps (see below). 7
+new e2e tests (business-hours DENY inside/outside a frozen clock, fail-open
+downgrade against a real `ResourcePolicy`, telemetry never carries
+content/args, KB regression, Layer-2 resolver still active, tool arguments
+never reach policy evaluation) all pass against a REAL `PolicyEvaluator`;
+full regression suite across guardrails/auth/tools/grants/confirmation
+(227 tests) passes; `ruff check` clean on all changed files (`stores/kb/
+user.py`'s 24 pre-existing lint errors are unchanged from baseline,
+confirmed via `git stash`).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Two genuine navigator-auth version gaps were
+discovered and are now documented (not "fixed", since that would mean
+patching a pinned third-party package outside this feature's scope):
+(1) `PolicyLoader.load_from_dict()` does not forward arbitrary top-level
+YAML keys (like `enforcement:`) into `ResourcePolicy.attributes` — the
+sample `-soft.yaml` documents the intended syntax for forward-compat, but
+the e2e fail-open test constructs its `ResourcePolicy` directly in Python
+to actually exercise the downgrade path. (2)
+`PolicyEvaluator._build_user_context()` only forwards `username`/`groups`/
+`roles` to the Rust evaluation engine — attribute enrichment is fully
+implemented as specified and available on `EvalContext.userinfo`, but only
+the `groups` enrichment currently changes any ALLOW/DENY outcome;
+`job_code`/`department_code`/`programs` are enriched for
+forward-compatibility. Sample policies are scoped to a demo-only resource
+name (`tool:demo_business_hours_only[_soft]`) instead of `tool:*`, since
+this directory's files are loaded live at startup (confirmed via
+`policies/README.md` and by loading the full directory with the new files
+present — no collisions). Test path corrected to
+`packages/ai-parrot/tests/integration/test_pbac_guardrails_e2e.py` (no
+`tests/bots/guardrails/` directory exists). All findings documented in the
+task's corrected Codebase Contract section above before implementing.
