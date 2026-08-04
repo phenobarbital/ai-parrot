@@ -246,10 +246,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-04
+**Notes**: Added `wait_timeout_ms` (default 5000, ge=0) and two new `check`
+Literal values (`response_status`, `accessibility_check`) to `QAAssertion`;
+added `max_retries` (default 0, ge=0) and `timeout_ms` (default None, ge=1000)
+to `QATestCase`; added `retries: int = 0` to `QAFinding`. Appended 16 new unit
+tests to `test_chrome.py` covering defaults, custom values, validation
+errors, and JSON round-trip serialization. All 35 tests in the file pass
+(19 pre-existing + 16 new).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

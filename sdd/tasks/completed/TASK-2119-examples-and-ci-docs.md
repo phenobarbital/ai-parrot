@@ -248,4 +248,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-04
+**Notes**: Updated `examples/chrome_qa_test.py` in place — added
+`max_retries=1`/`timeout_ms=30_000` to the homepage-loads case, a
+`response_status` assertion, and `wait_timeout_ms=3000` on the
+login-validation case's `element_visible` assertion; existing structure
+and backward-compatible usage pattern preserved. Created
+`examples/chrome_ci_test.py` demonstrating the full CI pattern: env-var
+driven headless/URL/tags, `max_retries`/`timeout_ms`, `screenshot_dir`
+CI-artifact directory, `to_junit_xml()` written to `qa-results/results.xml`,
+and `sys.exit(report.exit_code)` for a deploy-or-block gate, plus a
+`.circleci/config.yml` snippet in the docstring. Created
+`examples/qa-tests-sample.json` (3 cases: smoke/regression/accessibility)
+usable directly with `chrome_runner`.
+
+Verification: `ruff check` clean on both example files (fixed one
+`ASYNC230` blocking-`open()`-in-async finding by switching to
+`Path.write_text()`, matching the pattern already used in
+`chrome_runner.py`). Both example files import cleanly (verified via
+isolated `importlib.util` loads — a same-process double-import hit a
+pre-existing, unrelated framework quirk where importing `parrot.bots.chrome`
+chdir's the process to the app's resolved settings root; not something
+this task introduces or fixes). `qa-tests-sample.json` validates as
+`list[QATestCase]` and loads via `chrome_runner.load_test_cases()`
+(3 cases). `examples/chrome_ci_test.py` was gitignored by the repo-wide
+`examples/**/*.py` data-scratch rule (same rule `chrome_qa_test.py` was
+already force-added under) — force-added with `git add -f`, consistent
+with existing project convention.
+
+**Deviations from spec**: none.

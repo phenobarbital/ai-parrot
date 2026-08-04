@@ -152,6 +152,35 @@ class QAFinding(BaseModel):
 - ~~`WebAgent.run_single_test()`~~ — no per-test public method exists
 - ~~`BasicAgent.ask_with_timeout()`~~ — no such method; use `asyncio.wait_for()`
 
+### Codebase Contract Correction (found during implementation)
+
+`AIMessage(response=report.summary, output=report)` (as shown in the
+Implementation Notes below) is **stale and will raise
+`pydantic.ValidationError`** — verified at
+`packages/ai-parrot/src/parrot/models/responses.py:72-120`:
+`AIMessage.input`, `.model`, `.provider`, `.usage` are all required fields
+with no defaults (only `response` has `default=None`). This exact pitfall
+is already documented and fixed elsewhere in the codebase — see
+`packages/ai-parrot/src/parrot/bots/base.py:634-649`
+(FEAT-396 TASK-2028 comment) which establishes the "minimal AIMessage"
+pattern:
+
+```python
+from ..models import AIMessage, CompletionUsage   # CompletionUsage verified: models/__init__.py:7
+
+return AIMessage(
+    input=<original prompt/description text>,
+    output=report,
+    response=report.summary,
+    model="",
+    provider="",
+    usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+)
+```
+
+This task's aggregate-`QAReport`-building code MUST use this pattern
+instead of the two-kwarg form shown further below.
+
 ---
 
 ## Implementation Notes
@@ -455,4 +484,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-04
+**Notes**: Added `default_timeout_ms` (60_000) and `screenshot_dir` (None)
+params to `WebAgent.__init__()`. Refactored `run_tests()` to process one
+`QATestCase` at a time (required for per-test retry/timeout): tag filtering
+produces `status="skip"` findings without an LLM call; each remaining case
+is retried up to `1 + max_retries` times via a new `_execute_single_test()`
+helper (`structured_output=QAFinding`), wrapped in `asyncio.wait_for()`
+using `case.timeout_ms or self.default_timeout_ms`, producing
+`status="error"` on `TimeoutError`. The aggregate `QAReport` is built in
+Python and wrapped in a manually-constructed `AIMessage` (see Codebase
+Contract Correction below). Updated `WEB_AGENT_SYSTEM_PROMPT` to document
+all assertion types including the two new ones and `wait_timeout_ms`
+wait semantics. Added 12 new unit tests and rewrote 3 pre-existing tests
+(`test_run_tests_calls_ask_with_structured_output`,
+`test_run_tests_serializes_all_cases_in_prompt` →
+`test_run_tests_serializes_case_in_its_own_prompt`,
+`test_run_tests_uses_explicit_url_param`) that asserted the old
+single-combined-prompt/`structured_output=QAReport` behavior explicitly
+superseded by this task's mandated refactor. All 58 tests in
+`test_chrome.py` pass; `ruff check` clean.
+
+**Deviations from spec**: none in behavior. One Codebase Contract
+correction was required and is documented in the "Codebase Contract
+Correction" section added to this task file: the spec's/task's example
+`AIMessage(response=report.summary, output=report)` does not compile —
+`AIMessage.input`/`.model`/`.provider`/`.usage` are required fields with
+no defaults (verified at `models/responses.py:72-120`). Used the
+established "minimal AIMessage" pattern from `bots/base.py:634-649`
+(`AIMessage(input=..., output=..., response=..., model="", provider="",
+usage=CompletionUsage(prompt_tokens=0, completion_tokens=0,
+total_tokens=0))`) instead.

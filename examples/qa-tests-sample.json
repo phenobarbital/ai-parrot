@@ -1,0 +1,45 @@
+[
+  {
+    "name": "homepage-smoke",
+    "url": "http://localhost:3000",
+    "steps": ["Wait for the page to fully load"],
+    "expected": "Page loads without errors",
+    "assertions": [
+      {"check": "no_console_errors"},
+      {"check": "no_network_failures"},
+      {"check": "response_status", "target": "200"}
+    ],
+    "tags": ["smoke"],
+    "max_retries": 1,
+    "timeout_ms": 30000
+  },
+  {
+    "name": "login-validation",
+    "url": "http://localhost:3000/login",
+    "steps": [
+      "Leave the email field empty",
+      "Type '123' in the password field",
+      "Click the submit/login button"
+    ],
+    "expected": "Validation errors appear for required fields",
+    "assertions": [
+      {"check": "url_matches", "target": "/login"},
+      {
+        "check": "element_visible",
+        "target": ".error-message",
+        "wait_timeout_ms": 3000
+      }
+    ],
+    "tags": ["regression"]
+  },
+  {
+    "name": "accessibility-check",
+    "url": "http://localhost:3000",
+    "steps": ["Wait for the page to fully load"],
+    "expected": "Page meets basic accessibility standards",
+    "assertions": [
+      {"check": "accessibility_check"}
+    ],
+    "tags": ["smoke", "accessibility"]
+  }
+]
