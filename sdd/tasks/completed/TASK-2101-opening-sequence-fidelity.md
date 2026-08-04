@@ -287,10 +287,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Extracted `_build_prompt_start(prompt_name, voice_id)` (placed just
+above `stream_voice()`) carrying `audioType: "SPEECH"` on
+`audioOutputConfiguration` and the new `toolUseOutputConfiguration`;
+`stream_voice()` now calls it via `await self._send_event(stream,
+self._build_prompt_start(...))`. Added `interactive: True` +
+`audioType: "SPEECH"` to the AUDIO `contentStart`/`audioInputConfiguration`,
+and `interactive: False` + `textInputConfiguration` to the SYSTEM text
+`contentStart`. Created `test_nova_protocol_frames.py` with the 4 tests from
+the Test Specification. One necessary deviation from the spec's own test
+scaffold: added `patch.dict(sys.modules, {"aws_sdk_bedrock_runtime":
+MagicMock()})` around client construction and `stream_voice()` calls — the
+scaffold as written raised `ModuleNotFoundError` on Python 3.11 (SDK absent)
+because `stream_voice()`'s `_require_voice_sdk()` guard runs before the
+patched wrappers; `test_nova.py`'s own `nova_client` fixture uses the same
+stubbing pattern for the identical reason, so this restores the "passes on
+3.11 and 3.13" acceptance criterion rather than skip/fail on 3.11.
+Regression suite: 126 passed/3 skipped (up from 122 passed baseline, +4 new
+tests, 0 regressions). One new ruff finding in audio.py (`UP006`, same style
+category as 13 pre-existing findings) from the new method's `Dict[str, Any]`
+return annotation, matching the file's existing typing idiom.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Test Specification's `_capture_opening_frames`
+helper needed a `sys.modules` SDK stub (see Notes) to satisfy the task's own
+"passes on Python 3.11 and 3.13" acceptance criterion — no protocol-logic
+deviation.

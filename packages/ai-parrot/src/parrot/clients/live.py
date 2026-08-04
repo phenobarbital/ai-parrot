@@ -183,6 +183,11 @@ class LiveVoiceResponse:
     turn_id: Optional[str] = None
     user_id: Optional[str] = None
 
+    # Speaker attribution (FEAT-408)
+    role: Optional[str] = None
+    """Speaker this frame is attributed to: "USER", "ASSISTANT", "TOOL", or
+    None when the provider does not report one (e.g. GeminiLiveClient)."""
+
     # Extra metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -206,6 +211,7 @@ class LiveVoiceResponse:
             "metadata": self.metadata,
             "session_id": self.session_id,
             "turn_id": self.turn_id,
+            "role": self.role,
         }
 
 

@@ -14,16 +14,16 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only task touching clients/live.py and it has no dependencies, so it shares no files with any other task and can run in its own worktree. Every other task modifies clients/nova/audio.py.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2100-live-voice-response-role-field.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:02:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2100-live-voice-response-role-field.md"
     },
     {
       "id": "TASK-2101",
@@ -32,16 +32,16 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Modifies clients/nova/audio.py, shared with TASK-2102..2107. Also extracts _build_prompt_start(), which TASK-2104 edits.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2101-opening-sequence-fidelity.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:05:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2101-opening-sequence-fidelity.md"
     },
     {
       "id": "TASK-2102",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -59,9 +59,9 @@
       "parallel": false,
       "parallelism_notes": "Sets LiveVoiceResponse.role created by TASK-2100, and restructures the audio.py receive loop that TASK-2103 and TASK-2105 then extend.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2102-turn-state-role-and-generation-stage.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:14:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2102-turn-state-role-and-generation-stage.md"
     },
     {
       "id": "TASK-2103",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -79,9 +79,9 @@
       "parallel": false,
       "parallelism_notes": "Barge-in is observed on the textOutput frame, so it edits the same branch TASK-2102 restructures. Also updates test_nova.py::test_stream_voice_barge_in.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2103-barge-in-detection.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:17:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2103-barge-in-detection.md"
     },
     {
       "id": "TASK-2104",
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -99,9 +99,9 @@
       "parallel": false,
       "parallelism_notes": "Adds toolConfiguration into the _build_prompt_start() seam that TASK-2101 extracts, in the shared audio.py.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2104-tool-configuration.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:20:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2104-tool-configuration.md"
     },
     {
       "id": "TASK-2105",
@@ -110,7 +110,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -119,9 +119,9 @@
       "parallel": false,
       "parallelism_notes": "Unreachable in production until TASK-2104 declares toolConfiguration. Uses the _TurnState pending-tool fields declared by TASK-2102 and edits the same receive loop. Also updates test_nova.py::test_stream_voice_tool_use.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2105-tool-result-envelope.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:24:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2105-tool-result-envelope.md"
     },
     {
       "id": "TASK-2106",
@@ -130,16 +130,16 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Independent logically (new usageEvent branch, no shared state) but edits the same audio.py receive loop, so it cannot run in a separate worktree without conflicting. Carries the feature's only unverified frame shape - see spec section 8 question 1.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2106-usage-event-accounting.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:27:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2106-usage-event-accounting.md"
     },
     {
       "id": "TASK-2107",
@@ -148,16 +148,16 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Independent logically (only touches stream_voice()'s finally block) but edits the same audio.py file as TASK-2101..2106.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2107-graceful-session-shutdown.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T20:31:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2107-graceful-session-shutdown.md"
     },
     {
       "id": "TASK-2108",
@@ -166,7 +166,7 @@
       "feature_id": "FEAT-408",
       "feature": "nova-sonic-protocol-fidelity",
       "spec": "sdd/specs/nova-sonic-protocol-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -178,9 +178,9 @@
       "parallel": false,
       "parallelism_notes": "Shares no code files with the audio.py tasks (touches only examples/ and docs/), but is gated by four of them because it documents their delivered behaviour rather than intentions. Note examples/**/*.py is gitignored - see the task file.",
       "assigned_to": null,
-      "started_at": "2026-08-03T19:40:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2108-docs-and-example-role-rendering.md"
+      "started_at": null,
+      "completed_at": "2026-08-03T22:30:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2108-docs-and-example-role-rendering.md"
     }
   ]
 }
