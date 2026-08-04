@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-412
 **Date**: 2026-08-05
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
