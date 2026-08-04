@@ -1,6 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
+
 from parrot.bots.agent import BasicAgent
 from parrot.bots.chrome import (
     ChromeConfig,
@@ -297,3 +299,86 @@ async def test_run_tests_uses_explicit_url_param():
 
         prompt = agent.ask.call_args[0][0]
         assert "http://override.com" in prompt
+
+
+# --- TASK-2115: QA Model Enhancements ---
+
+
+def test_qa_assertion_wait_timeout_default():
+    a = QAAssertion(check="element_visible")
+    assert a.wait_timeout_ms == 5000
+
+
+def test_qa_assertion_wait_timeout_custom():
+    a = QAAssertion(check="element_visible", wait_timeout_ms=3000)
+    assert a.wait_timeout_ms == 3000
+
+
+def test_qa_assertion_wait_timeout_zero():
+    a = QAAssertion(check="element_visible", wait_timeout_ms=0)
+    assert a.wait_timeout_ms == 0
+
+
+def test_qa_assertion_response_status():
+    a = QAAssertion(check="response_status", target="200")
+    assert a.check == "response_status"
+
+
+def test_qa_assertion_accessibility_check():
+    a = QAAssertion(check="accessibility_check")
+    assert a.check == "accessibility_check"
+
+
+def test_qa_assertion_check_is_required():
+    with pytest.raises(ValidationError):
+        QAAssertion()
+
+
+def test_qa_test_case_max_retries_default():
+    tc = QATestCase(name="t", url="/", steps=["s"], expected="e")
+    assert tc.max_retries == 0
+
+
+def test_qa_test_case_max_retries_custom():
+    tc = QATestCase(name="t", url="/", steps=["s"], expected="e", max_retries=3)
+    assert tc.max_retries == 3
+
+
+def test_qa_test_case_timeout_ms_default():
+    tc = QATestCase(name="t", url="/", steps=["s"], expected="e")
+    assert tc.timeout_ms is None
+
+
+def test_qa_test_case_timeout_ms_custom():
+    tc = QATestCase(name="t", url="/", steps=["s"], expected="e", timeout_ms=30000)
+    assert tc.timeout_ms == 30000
+
+
+def test_qa_test_case_timeout_ms_minimum():
+    with pytest.raises(ValidationError):
+        QATestCase(name="t", url="/", steps=["s"], expected="e", timeout_ms=500)
+
+
+def test_qa_finding_retries_default():
+    f = QAFinding(test_name="t", status="pass", detail="ok")
+    assert f.retries == 0
+
+
+def test_qa_finding_retries_custom():
+    f = QAFinding(test_name="t", status="fail", detail="nok", retries=2)
+    assert f.retries == 2
+
+
+def test_new_fields_serialization_roundtrip():
+    tc = QATestCase(
+        name="t", url="/", steps=["s"], expected="e",
+        max_retries=2, timeout_ms=15000,
+        assertions=[
+            QAAssertion(check="response_status", target="200", wait_timeout_ms=3000)
+        ],
+    )
+    restored = QATestCase.model_validate_json(tc.model_dump_json())
+    assert restored.max_retries == 2
+    assert restored.timeout_ms == 15000
+    assert restored.assertions[0].wait_timeout_ms == 3000
+    assert restored.assertions[0].check == "response_status"

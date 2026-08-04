@@ -94,9 +94,16 @@ class QAAssertion(BaseModel):
         "no_network_failures",
         "screenshot_diff",
         "performance",
+        "response_status",
+        "accessibility_check",
     ]
     target: str | None = None
     value: str | None = None
+    wait_timeout_ms: int = Field(
+        default=5000,
+        ge=0,
+        description="Max wait for element-based checks before asserting",
+    )
 
 
 class QATestCase(BaseModel):
@@ -110,6 +117,16 @@ class QATestCase(BaseModel):
     screenshot_on_fail: bool = True
     viewport: str | None = None
     tags: list[str] = []
+    max_retries: int = Field(
+        default=0,
+        ge=0,
+        description="Retry failed test up to N times before final failure",
+    )
+    timeout_ms: int | None = Field(
+        default=None,
+        ge=1000,
+        description="Per-test timeout in ms; None -> use agent default",
+    )
 
 
 class QAFinding(BaseModel):
@@ -121,6 +138,7 @@ class QAFinding(BaseModel):
     screenshot_path: str | None = None
     console_errors: list[str] = []
     duration_ms: int | None = None
+    retries: int = 0
 
 
 class QAReport(BaseModel):
