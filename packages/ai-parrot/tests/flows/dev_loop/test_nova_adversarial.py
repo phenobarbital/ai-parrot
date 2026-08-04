@@ -11,6 +11,7 @@ from parrot.flows.dev_loop.models import (
     CodeReviewFinding,
     CodeReviewVerdict,
 )
+from parrot.flows.dev_loop.models.nova import NOVA_DEFAULT_CONVERSE_MODEL
 from pydantic import BaseModel
 
 
@@ -44,7 +45,7 @@ class TestRegistration:
 
     def test_build_review_profile_defaults(self, reviewer):
         profile = reviewer.build_review_profile()
-        assert profile.model == "us.anthropic.claude-opus-5"
+        assert profile.model == NOVA_DEFAULT_CONVERSE_MODEL
         assert profile.review_scope == "uncommitted"
 
 

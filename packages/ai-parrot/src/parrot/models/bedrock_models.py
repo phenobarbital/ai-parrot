@@ -188,7 +188,7 @@ def translate(public_id: str, region_prefix: str | None = None) -> str:
         # is harmless, not a mistake, so it must NOT warn (code-review fix:
         # this branch previously warned even for a model's own verified
         # default id, e.g. NovaAdversarialReviewProfile's
-        # "us.anthropic.claude-opus-5", spamming a false-positive on every
+        # "us.amazon.nova-2-lite-v1:0", spamming a false-positive on every
         # call). Only warn for a genuinely never-prefix id (vendor
         # namespaces, or a bare "anthropic."/"amazon." id with no prefix
         # applied) that isn't in the allowlist.
