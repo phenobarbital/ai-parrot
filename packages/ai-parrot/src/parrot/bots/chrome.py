@@ -1,8 +1,12 @@
 """WebAgent — browser interaction via Chrome DevTools MCP."""
 
+import logging
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from ..models import AIMessage
+from .agent import BasicAgent
 
 
 class ChromeConfig(BaseModel):
@@ -131,3 +135,89 @@ class QAReport(BaseModel):
     errors: int = 0
     skipped: int = 0
     duration_ms: int | None = None
+
+
+WEB_AGENT_SYSTEM_PROMPT = """\
+You are a web interaction agent with access to a Chrome browser via Chrome \
+DevTools tools. You can navigate pages, interact with elements, take \
+screenshots, inspect console logs, monitor network requests, and analyze \
+performance.
+
+When given QA test cases, execute each one methodically:
+1. Navigate to the target URL
+2. Execute each step using the appropriate browser tools
+3. Verify the expected result and any formal assertions
+4. Take a screenshot on failure if requested
+5. Report findings with pass/fail status and details
+
+When used for general web interaction, follow the user's instructions and \
+report what you observe.
+
+Always report console errors and network failures you encounter, even if \
+not explicitly asked.\
+"""
+
+
+class WebAgent(BasicAgent):
+    """General-purpose web interaction agent via Chrome DevTools MCP."""
+
+    system_prompt_template: str = WEB_AGENT_SYSTEM_PROMPT
+
+    def __init__(
+        self,
+        name: str = "WebAgent",
+        chrome_config: ChromeConfig | None = None,
+        **kwargs,
+    ):
+        super().__init__(name=name, **kwargs)
+        self.chrome_config = chrome_config or ChromeConfig()
+        self.logger = logging.getLogger(f"{self.name}.WebAgent")
+
+    async def configure(self, app=None) -> None:
+        """Configure agent and connect Chrome DevTools MCP server.
+
+        Args:
+            app: Optional application/framework context, forwarded to
+                ``BasicAgent.configure()``.
+        """
+        await super().configure(app)
+        config = self.chrome_config
+        await self.add_chrome_devtools_mcp_server(
+            browser_url=config.browser_url
+            or f"http://127.0.0.1:{config.port}",
+            headless=config.headless,
+            user_data_dir=config.user_data_dir,
+            channel=config.channel,
+            viewport=config.viewport,
+            executable_path=config.executable_path,
+            isolated=config.isolated,
+            no_usage_statistics=config.no_usage_statistics,
+            auto_connect=config.auto_connect,
+        )
+
+    async def run_tests(
+        self,
+        test_cases: list[QATestCase],
+        url: str | None = None,
+    ) -> AIMessage:
+        """Execute QA test cases and return a structured QAReport.
+
+        Args:
+            test_cases: List of test cases to execute.
+            url: Base URL override (defaults to first test case's URL).
+
+        Returns:
+            AIMessage with QAReport in .output and summary in .response.
+        """
+        cases_text = "\n\n".join(
+            case.model_dump_json(indent=2) for case in test_cases
+        )
+        base_url = url or test_cases[0].url
+        prompt = (
+            f"Execute the following QA test cases against {base_url}.\n"
+            f"For each test: navigate to the URL, execute the steps, "
+            f"evaluate the expected result and any assertions.\n"
+            f"Take a screenshot on failure if screenshot_on_fail is true.\n\n"
+            f"Test cases:\n{cases_text}"
+        )
+        return await self.ask(prompt, structured_output=QAReport)

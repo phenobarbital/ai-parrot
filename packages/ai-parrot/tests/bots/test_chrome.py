@@ -1,9 +1,14 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from parrot.bots.agent import BasicAgent
 from parrot.bots.chrome import (
     ChromeConfig,
     QAAssertion,
     QAFinding,
     QAReport,
     QATestCase,
+    WebAgent,
 )
 from parrot.mcp.integration import create_chrome_devtools_mcp_server
 
@@ -171,3 +176,118 @@ def test_qa_test_case_serialization_roundtrip():
     restored = QATestCase.model_validate_json(json_str)
     assert restored.name == tc.name
     assert restored.assertions[0].target == "#modal"
+
+
+def test_web_agent_inherits_basic_agent():
+    assert issubclass(WebAgent, BasicAgent)
+
+
+def test_web_agent_default_chrome_config():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        BasicAgent.__init__(agent, name="WebAgent")
+        agent.chrome_config = ChromeConfig()
+        assert agent.chrome_config.headless is False
+        assert agent.chrome_config.port == 9222
+
+
+def test_web_agent_custom_chrome_config():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        config = ChromeConfig(headless=True, viewport="1920x1080")
+        agent = WebAgent.__new__(WebAgent)
+        BasicAgent.__init__(agent, name="WebAgent")
+        agent.chrome_config = config
+        assert agent.chrome_config.headless is True
+        assert agent.chrome_config.viewport == "1920x1080"
+
+
+@pytest.mark.asyncio
+async def test_web_agent_configure_adds_mcp_server():
+    with patch.object(BasicAgent, "__init__", return_value=None), \
+         patch.object(BasicAgent, "configure", new_callable=AsyncMock):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "WebAgent"
+        agent.chrome_config = ChromeConfig(headless=True, port=9333)
+        agent.logger = MagicMock()
+        agent.add_chrome_devtools_mcp_server = AsyncMock(return_value=["click", "fill"])
+
+        await agent.configure()
+
+        agent.add_chrome_devtools_mcp_server.assert_called_once()
+        call_kwargs = agent.add_chrome_devtools_mcp_server.call_args
+        assert call_kwargs.kwargs.get("headless") is True or \
+               call_kwargs[1].get("headless") is True
+
+
+@pytest.mark.asyncio
+async def test_run_tests_calls_ask_with_structured_output():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "WebAgent"
+        agent.chrome_config = ChromeConfig()
+        agent.logger = MagicMock()
+
+        mock_report = QAReport(
+            summary="1/1 passed",
+            url="http://localhost:8080",
+            total=1,
+            passed=1,
+        )
+        mock_msg = MagicMock()
+        mock_msg.output = mock_report
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [
+            QATestCase(
+                name="t1",
+                url="http://localhost:8080/login",
+                steps=["Click submit"],
+                expected="Error shown",
+            ),
+        ]
+        result = await agent.run_tests(cases)
+
+        agent.ask.assert_called_once()
+        call_kwargs = agent.ask.call_args
+        assert call_kwargs.kwargs.get("structured_output") is QAReport
+        assert result is mock_msg
+
+
+@pytest.mark.asyncio
+async def test_run_tests_serializes_all_cases_in_prompt():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "WebAgent"
+        agent.chrome_config = ChromeConfig()
+        agent.logger = MagicMock()
+        agent.ask = AsyncMock(return_value=MagicMock())
+
+        cases = [
+            QATestCase(name="t1", url="http://a.com", steps=["step1"], expected="ok"),
+            QATestCase(name="t2", url="http://b.com", steps=["step2"], expected="ok"),
+        ]
+        await agent.run_tests(cases)
+
+        prompt = agent.ask.call_args[0][0]  # first positional arg
+        assert "t1" in prompt
+        assert "t2" in prompt
+        assert "step1" in prompt
+        assert "step2" in prompt
+
+
+@pytest.mark.asyncio
+async def test_run_tests_uses_explicit_url_param():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "WebAgent"
+        agent.chrome_config = ChromeConfig()
+        agent.logger = MagicMock()
+        agent.ask = AsyncMock(return_value=MagicMock())
+
+        cases = [
+            QATestCase(name="t1", url="http://a.com", steps=["s"], expected="ok"),
+        ]
+        await agent.run_tests(cases, url="http://override.com")
+
+        prompt = agent.ask.call_args[0][0]
+        assert "http://override.com" in prompt
