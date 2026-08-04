@@ -11,14 +11,34 @@ is composed into :class:`~parrot.clients.google.client.GoogleGenAIClient`.
 
 .. warning::
     **EXPERIMENTAL.** ``aws_sdk_bedrock_runtime==0.7.0`` is Pre-Alpha and its
-    API may change before GA — every raw SDK call is isolated behind three
+    API may change before GA — every raw SDK call is isolated behind four
     thin wrappers (:meth:`NovaAudio._open_stream`,
-    :meth:`NovaAudio._send_event`, :meth:`NovaAudio._iter_events`, mirroring
+    :meth:`NovaAudio._send_event`, :meth:`NovaAudio._iter_events`,
+    :meth:`NovaAudio._close_stream`, mirroring
     :class:`~parrot.clients.bedrock.BedrockConverseBase`'s
     ``_sdk_create``/``_sdk_stream`` pattern) so only those need updating if
     the SDK's shape changes. The Pre-Alpha SDK is imported lazily — only at
     first :meth:`stream_voice` call, via :func:`_require_voice_sdk` — so
     text/generation-only usage of ``NovaClient`` never requires it.
+
+    The wrappers were verified against the real package on
+    ``aws_sdk_bedrock_runtime==0.7.0`` / Python 3.13. The SDK renames its
+    client class across minor releases (``BedrockRuntimeClient`` in 0.3.0
+    and 0.7.0, ``AsyncBedrockRuntimeClient`` in 0.8.0), so
+    :func:`_resolve_voice_client_class` looks the name up tolerantly rather
+    than importing a fixed symbol.
+
+.. note::
+    **Voice auth cannot use a Bedrock API key.** The text path
+    (``BedrockConverseBase``) accepts a bearer token via
+    ``aws_bearer_token``/``AWS_NOVA_API_KEY``, exported as
+    ``AWS_BEARER_TOKEN_BEDROCK`` for botocore. This Pre-Alpha SDK is
+    smithy-based, not botocore-based, and its ``Config`` exposes only
+    ``aws_access_key_id``/``aws_secret_access_key``/``aws_session_token``
+    (or a credentials resolver) — there is no bearer-auth scheme. A
+    bearer-token-only configuration therefore cannot open a voice stream;
+    :meth:`_open_stream` warns and falls through to the SDK's default
+    credential chain.
 
 See ``sdd/specs/novaclient-amazon-aws.spec.md`` (§3 Module 3) for the full
 design.
@@ -28,8 +48,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
@@ -58,6 +80,168 @@ def _require_voice_sdk() -> None:
         ) from exc
 
 
+# Client-class names seen across Pre-Alpha releases, newest-known name last.
+# 0.3.0 / 0.7.0 export ``BedrockRuntimeClient``; 0.8.0 renamed it to
+# ``AsyncBedrockRuntimeClient``. NOTE: ``BedrockAgentRuntimeClient`` is NOT in
+# this list on purpose — that class belongs to the unrelated
+# *bedrock-agent-runtime* service and exists in no version of this package.
+_VOICE_CLIENT_CLASS_NAMES: tuple[str, ...] = (
+    "BedrockRuntimeClient",
+    "AsyncBedrockRuntimeClient",
+)
+
+
+def _resolve_voice_client_class() -> type:
+    """Return the bidirectional-stream client class of the installed SDK.
+
+    The Pre-Alpha package renames this class between minor releases and does
+    NOT re-export it from the package root, so it is resolved by name from
+    ``aws_sdk_bedrock_runtime.client`` instead of imported as a fixed symbol.
+
+    Returns:
+        The SDK's Bedrock Runtime client class.
+
+    Raises:
+        ImportError: When no known client class name is present, listing what
+            the installed package actually exposes so the caller can add the
+            new name to :data:`_VOICE_CLIENT_CLASS_NAMES`.
+    """
+    from aws_sdk_bedrock_runtime import client as sdk_client
+
+    for name in _VOICE_CLIENT_CLASS_NAMES:
+        if (cls := getattr(sdk_client, name, None)) is not None:
+            return cls
+
+    available = sorted(n for n in dir(sdk_client) if n.endswith("Client"))
+    raise ImportError(
+        "No known Bedrock Runtime client class found in "
+        f"aws_sdk_bedrock_runtime.client (tried "
+        f"{', '.join(_VOICE_CLIENT_CLASS_NAMES)}). The installed package "
+        f"exposes: {', '.join(available) or '<none>'}. The Pre-Alpha SDK "
+        "likely renamed it again — add the new name to "
+        "_VOICE_CLIENT_CLASS_NAMES."
+    )
+
+
+@dataclass
+class _TurnState:
+    """Receive-side state carried across frames within one Nova Sonic turn.
+
+    Nova reports the speaker and generation stage on ``contentStart``, not on
+    the ``textOutput`` frames they govern, so this must persist between
+    frames. Kept as a local inside :meth:`NovaAudio.stream_voice` — never on
+    ``self``, since ``NovaAudio`` is a shared mixin that may serve concurrent
+    sessions.
+    """
+    role: Optional[str] = None
+    generation_stage: Optional[str] = None
+    pending_tool: Optional[LiveToolCall] = None
+    pending_tool_raw_input: Optional[str] = None
+
+
+def _parse_generation_stage(additional_model_fields: Any) -> Optional[str]:
+    """Extract ``generationStage`` from a contentStart's additionalModelFields.
+
+    Nova sends this as a JSON *string*. Returns None when absent or malformed
+    — callers treat None as "no stage reported" and emit the text (spec §7:
+    a missing stage must never suppress assistant text).
+
+    Args:
+        additional_model_fields: The raw ``additionalModelFields`` value from
+            a ``contentStart`` frame (expected to be a JSON string).
+
+    Returns:
+        The parsed ``generationStage`` value, or ``None`` when absent or the
+        value does not parse as a JSON object.
+    """
+    if not additional_model_fields:
+        return None
+    try:
+        if isinstance(additional_model_fields, str):
+            additional_model_fields = json.loads(additional_model_fields)
+        return additional_model_fields.get("generationStage")
+    except (ValueError, AttributeError):
+        return None
+
+
+def _is_interruption_payload(content: str) -> bool:
+    """Return whether a textOutput content payload signals barge-in.
+
+    Nova signals interruption by sending an ``{"interrupted": true}`` object
+    as the text content. Parse it rather than matching the sample's exact
+    whitespace (``nova_sonic_tool_use.py:632`` uses
+    ``'{ "interrupted" : true }'``, but the spacing is incidental), falling
+    back to a whitespace-insensitive substring test for payloads that fail
+    to parse as JSON.
+
+    Args:
+        content: The raw ``textOutput.content`` string.
+
+    Returns:
+        ``True`` when the payload signals an interruption.
+    """
+    if not content:
+        return False
+    try:
+        parsed = json.loads(content)
+    except ValueError:
+        compact = "".join(content.split())
+        return '"interrupted":true' in compact
+    return bool(isinstance(parsed, dict) and parsed.get("interrupted"))
+
+
+def _parse_tool_arguments(raw: Any) -> Dict[str, Any]:
+    """Parse a toolUse content payload into kwargs for ``_execute_tool()``.
+
+    Nova sends this as a JSON string. Raises ``ValueError`` for anything that
+    does not decode to a JSON object, so the caller can report a tool error
+    instead of crashing the turn.
+
+    Args:
+        raw: The stashed ``toolUse.content`` payload.
+
+    Returns:
+        The parsed keyword-argument dict.
+
+    Raises:
+        ValueError: When *raw* is not valid JSON, or decodes to something
+            other than a JSON object.
+    """
+    if isinstance(raw, dict):
+        return raw                       # tolerate an already-parsed payload
+    parsed = json.loads(raw or "{}")     # ValueError on malformed input
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"tool arguments must be a JSON object, got {type(parsed).__name__}"
+        )
+    return parsed
+
+
+# Candidate key spellings, most-likely first. The Pre-Alpha samples do not
+# document usageEvent's schema (spec §8 Q1), so probe rather than assume.
+_USAGE_INPUT_KEYS = ("inputTokens", "promptTokens", "input_tokens")
+_USAGE_OUTPUT_KEYS = ("outputTokens", "completionTokens", "output_tokens")
+_USAGE_TOTAL_KEYS = ("totalTokens", "total_tokens")
+
+
+def _first_int(source: Dict[str, Any], keys: tuple) -> Optional[int]:
+    """Return the first key present in *source* whose value is an int.
+
+    Args:
+        source: The (possibly flattened) usageEvent frame.
+        keys: Candidate key spellings to probe, most-likely first.
+
+    Returns:
+        The first matching value coerced to ``int``, or ``None`` when no
+        candidate key is present with a numeric value.
+    """
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, (int, float)):
+            return int(value)
+    return None
+
+
 class NovaAudio:
     """Bidirectional voice-streaming mixin (Nova Sonic / Nova 2 Sonic).
 
@@ -67,7 +251,11 @@ class NovaAudio:
     ``BedrockConverseBase``): ``self.voice_id``, ``self._region``,
     ``self.model``, ``self.default_model``, ``self.logger``,
     ``self._execute_tool(name, input)``,
-    ``self.apply_guardrail_text(text, source)``. Deliberately does NOT
+    ``self.apply_guardrail_text(text, source)``, plus the credentials
+    ``BedrockConverseBase`` resolved — ``self._aws_access_key``,
+    ``self._aws_secret_key``, ``self._aws_session_token`` and
+    ``self._aws_bearer_token`` (all read defensively via ``getattr``, since
+    a mixin cannot assume its host ran that resolution). Deliberately does NOT
     read ``self._region_prefix`` for model resolution — Nova Sonic has no
     cross-region inference profiles (see :meth:`stream_voice`).
     """
@@ -75,6 +263,12 @@ class NovaAudio:
     # Nova Sonic's hard limit is ~8 minutes; reconnect with a safety margin
     # so a turn in progress is not cut off mid-stream.
     _CONNECTION_LIMIT_SECONDS: float = 8 * 60 - 15
+
+    # Bound the wait for the stream's initial response. The Pre-Alpha SDK runs
+    # the request in a background task and, when that task raises (bad
+    # credentials, no model access, wrong region), the output future is never
+    # resolved and ``await_output()`` would block forever — a silent hung turn.
+    _OUTPUT_READY_TIMEOUT_SECONDS: float = 30.0
 
     # PCM format constants (spec §2/§7).
     INPUT_SAMPLE_RATE_HZ: int = 16000
@@ -94,28 +288,181 @@ class NovaAudio:
         text engine and are cached per event loop by
         :class:`~parrot.clients.bedrock.BedrockConverseBase`).
 
+        Credentials are read from the attributes
+        :class:`~parrot.clients.bedrock.BedrockConverseBase` already
+        resolved (``_aws_access_key``/``_aws_secret_key``/
+        ``_aws_session_token``) rather than re-resolved here, so voice and
+        text authenticate as the same identity. When no static keys
+        resolved, the credential kwargs are omitted entirely and the SDK's
+        own default chain applies. A bearer-token-only configuration is
+        warned about — this SDK has no bearer-auth scheme (see the module
+        note).
+
         Returns:
-            The SDK's bidirectional stream handle, exposing an
-            ``input_stream.send(event: dict)`` coroutine for sending event
-            frames and an ``output_stream`` async iterator of response
-            event frames (see :meth:`_send_event` / :meth:`_iter_events`).
+            A ``smithy_core.aio.eventstream.DuplexEventStream``: send input
+            events through ``stream.input_stream.send(chunk)`` (see
+            :meth:`_send_event`) and obtain the output receiver via
+            ``await stream.await_output()`` (see :meth:`_iter_events`).
+            Note ``stream.output_stream`` is ``None`` until ``await_output()``
+            has been awaited.
         """
-        from aws_sdk_bedrock_runtime import BedrockAgentRuntimeClient
+        from aws_sdk_bedrock_runtime.config import Config
         from aws_sdk_bedrock_runtime.models import (
             InvokeModelWithBidirectionalStreamOperationInput,
         )
-        client = BedrockAgentRuntimeClient(region=self._region)
+        from smithy_aws_core.identity.chain import create_default_chain
+
+        client_cls = _resolve_voice_client_class()
+
+        config_kwargs: Dict[str, Any] = {"region": self._region}
+        access_key = getattr(self, "_aws_access_key", None)
+        secret_key = getattr(self, "_aws_secret_key", None)
+        if access_key and secret_key:
+            config_kwargs["aws_access_key_id"] = access_key
+            config_kwargs["aws_secret_access_key"] = secret_key
+            if session_token := getattr(self, "_aws_session_token", None):
+                config_kwargs["aws_session_token"] = session_token
+        elif getattr(self, "_aws_bearer_token", None):
+            self.logger.warning(
+                "A Bedrock API key (bearer token) is configured, but the "
+                "Pre-Alpha voice SDK has no bearer-auth scheme — it cannot "
+                "authenticate a Nova Sonic stream. Falling back to the SDK's "
+                "environment/IMDS credential chain; pass aws_access_key/"
+                "aws_secret_key (or a named aws_id profile) for voice."
+            )
+
+        config = Config(**config_kwargs)
+
+        # Setting the static key fields is NOT sufficient: the SDK leaves
+        # ``aws_credentials_identity_resolver`` at None by default, and SigV4
+        # signing then fails outright with
+        # "Attempted to use SigV4 auth, but aws_credentials_identity_resolver
+        # was not set on the config." There is no implicit default chain, so
+        # install the standard one explicitly — Static (reads the key fields
+        # set above) -> Environment -> IMDS — which covers both the explicit
+        # credentials case and ambient credentials.
+        if config.aws_credentials_identity_resolver is None:
+            config.aws_credentials_identity_resolver = create_default_chain(
+                http_client=config.transport
+            )
+
+        client = client_cls(config=config)
         return await client.invoke_model_with_bidirectional_stream(
             InvokeModelWithBidirectionalStreamOperationInput(model_id=model_id)
         )
 
     async def _send_event(self, stream: Any, event: Dict[str, Any]) -> None:
-        """Send a single JSON event frame to the bidirectional stream."""
-        await stream.input_stream.send(event)
+        """Send a single JSON event frame to the bidirectional stream.
 
-    def _iter_events(self, stream: Any) -> AsyncIterator[Dict[str, Any]]:
-        """Return the async iterator of output event frames from *stream*."""
-        return stream.output_stream
+        The wire format is a length-delimited event-stream chunk carrying the
+        JSON frame as an opaque byte payload — the SDK does NOT accept a bare
+        dict, so *event* is serialized and wrapped here.
+
+        Args:
+            stream: The handle returned by :meth:`_open_stream`.
+            event: A Nova Sonic event frame, e.g.
+                ``{"event": {"audioInput": {...}}}``.
+        """
+        from aws_sdk_bedrock_runtime.models import (
+            BidirectionalInputPayloadPart,
+            InvokeModelWithBidirectionalStreamInputChunk,
+        )
+
+        await stream.input_stream.send(
+            InvokeModelWithBidirectionalStreamInputChunk(
+                value=BidirectionalInputPayloadPart(
+                    bytes_=json.dumps(event).encode("utf-8")
+                )
+            )
+        )
+
+    async def _iter_events(self, stream: Any) -> AsyncIterator[Dict[str, Any]]:
+        """Yield Nova Sonic output frames as plain, unwrapped dicts.
+
+        Normalizes the SDK's transport shape so :meth:`stream_voice` stays
+        SDK-agnostic and can keep doing ``event.get("textOutput")``:
+
+        1. ``await stream.await_output()`` — the receiver does not exist
+           until this is awaited (``stream.output_stream`` is ``None``
+           before it), which is why this is an async generator rather than
+           a plain accessor.
+        2. Each received chunk carries its JSON payload as opaque bytes at
+           ``chunk.value.bytes_`` — decoded here.
+        3. Nova nests every frame under an ``"event"`` envelope
+           (``{"event": {"textOutput": {...}}}``) — unwrapped one level here.
+
+        Args:
+            stream: The handle returned by :meth:`_open_stream`.
+
+        Yields:
+            The inner frame dict, e.g. ``{"textOutput": {"content": "hi"}}``.
+
+        Raises:
+            RuntimeError: When the initial response does not arrive within
+                :data:`_OUTPUT_READY_TIMEOUT_SECONDS`, or when a chunk carries
+                no payload. The output union also contains the service's
+                modelled exceptions (validation, throttling, model-timeout,
+                service-unavailable, ...), which surface here and are reported
+                to ``stream_voice()``'s handler rather than silently skipped.
+        """
+        try:
+            _, receiver = await asyncio.wait_for(
+                stream.await_output(), timeout=self._OUTPUT_READY_TIMEOUT_SECONDS
+            )
+        except TimeoutError as exc:
+            raise RuntimeError(
+                "Nova Sonic did not return an initial response within "
+                f"{self._OUTPUT_READY_TIMEOUT_SECONDS:.0f}s. The Pre-Alpha SDK "
+                "swallows request-pipeline failures instead of failing the "
+                "stream, so this usually means the request never authenticated "
+                "or was rejected: check AWS credentials, Bedrock access to the "
+                f"model in region {self._region!r}, and that the account is "
+                "enabled for Nova Sonic."
+            ) from exc
+        async for chunk in receiver:
+            payload = getattr(getattr(chunk, "value", None), "bytes_", None)
+            if payload is None:
+                raise RuntimeError(
+                    f"Nova Sonic stream returned a non-payload event: {chunk!r}"
+                )
+            frame = json.loads(payload)
+            # Tolerate an already-unwrapped frame so a caller (or test double)
+            # may hand over either shape.
+            yield frame.get("event", frame)
+
+    async def _close_stream(self, stream: Any) -> None:
+        """Close the bidirectional stream, releasing its connection.
+
+        Called from :meth:`stream_voice`'s ``finally`` block. One
+        ``stream_voice()`` call is one turn, so without this every turn
+        would leak a connection. Errors are swallowed: the stream may
+        already be half-closed by the service when a turn ends.
+        """
+        with contextlib.suppress(Exception):
+            await stream.close()
+
+    async def _end_session(self, stream: Any, prompt_name: str) -> None:
+        """Tell Nova Sonic the prompt and session are finished.
+
+        Sends ``promptEnd`` then ``sessionEnd`` so the service can settle the
+        turn before the transport closes. Best-effort: called from
+        :meth:`stream_voice`'s ``finally``, where the stream may already be
+        half-closed by the service, and where raising would mask the real
+        error.
+
+        Args:
+            stream: The handle returned by :meth:`_open_stream`.
+            prompt_name: The turn's prompt identifier.
+        """
+        try:
+            await self._send_event(
+                stream, {"event": {"promptEnd": {"promptName": prompt_name}}}
+            )
+            await self._send_event(stream, {"event": {"sessionEnd": {}}})
+        except Exception as exc:      # noqa: BLE001 — must never escape finally
+            self.logger.debug(
+                "Nova Sonic session shutdown frames not delivered: %s", exc
+            )
 
     # ------------------------------------------------------------------
     # Guardrails (calls the inherited BedrockConverseBase method directly —
@@ -135,6 +482,132 @@ class NovaAudio:
     # ------------------------------------------------------------------
     # Voice streaming
     # ------------------------------------------------------------------
+
+    def _build_tool_configuration(self) -> Optional[Dict[str, Any]]:
+        """Build Nova Sonic's toolConfiguration from the client's tools.
+
+        Returns:
+            ``{"tools": [{"toolSpec": {...}}, ...]}``, or None when the client
+            has no registered tools — in which case the caller must omit the
+            ``toolConfiguration`` key from ``promptStart`` entirely rather than
+            sending an empty list.
+        """
+        manager = getattr(self, "tool_manager", None)
+        if manager is None:
+            return None
+        specs = []
+        for tool in manager.all_tools():
+            try:
+                # AbstractTool instances (the @tool decorator, toolkits) expose
+                # get_schema(); plain ToolDefinition entries (registered via
+                # ToolManager.register_tool() without an AbstractTool wrapper)
+                # do not and instead carry name/description/input_schema
+                # directly — mirrors LiveToolAdapter._tool_to_declaration()'s
+                # verified branching (clients/live.py).
+                if hasattr(tool, "get_schema"):
+                    schema = tool.get_schema()
+                    name = schema.get("name", getattr(tool, "name", "unknown"))
+                    description = schema.get(
+                        "description", getattr(tool, "description", "")
+                    )
+                    parameters = schema.get("parameters", {})
+                elif hasattr(tool, "input_schema"):
+                    name = getattr(tool, "name", "unknown")
+                    description = getattr(tool, "description", "")
+                    parameters = tool.input_schema
+                else:
+                    self.logger.warning(
+                        "Skipping tool with unrecognized shape: %r", tool
+                    )
+                    continue
+            except Exception:            # a broken tool must not kill the turn
+                self.logger.warning("Skipping tool with unreadable schema: %r", tool)
+                continue
+            specs.append({"toolSpec": {
+                "name": name,
+                "description": description,
+                "inputSchema": {"json": parameters},
+            }})
+        return {"tools": specs} if specs else None
+
+    def _build_prompt_start(self, prompt_name: str, voice_id: str) -> Dict[str, Any]:
+        """Build the promptStart event frame for a voice turn.
+
+        Args:
+            prompt_name: Per-turn prompt identifier.
+            voice_id: Resolved Nova Sonic synthesis voice.
+
+        Returns:
+            The complete ``promptStart`` event frame.
+        """
+        prompt_start: Dict[str, Any] = {
+            "promptName": prompt_name,
+            "textOutputConfiguration": {"mediaType": "text/plain"},
+            "audioOutputConfiguration": {
+                "mediaType": "audio/lpcm",
+                "sampleRateHertz": self.OUTPUT_SAMPLE_RATE_HZ,
+                "sampleSizeBits": 16,
+                "channelCount": 1,
+                "voiceId": voice_id,
+                "encoding": "base64",
+                "audioType": "SPEECH",
+            },
+            "toolUseOutputConfiguration": {"mediaType": "application/json"},
+        }
+        tool_configuration = self._build_tool_configuration()
+        if tool_configuration is not None:
+            prompt_start["toolConfiguration"] = tool_configuration
+        return {"event": {"promptStart": prompt_start}}
+
+    async def _send_tool_result(
+        self, stream: Any, prompt_name: str, tool_use_id: str, result: Any
+    ) -> None:
+        """Send a tool result as the three-frame sequence Nova requires.
+
+        ``contentStart(TOOL)`` -> ``toolResult`` -> ``contentEnd``.
+        ``toolUseId`` is carried on the contentStart's
+        ``toolResultInputConfiguration``; the ``toolResult`` frame itself is
+        keyed by ``contentName``, not ``toolUseId``.
+
+        Args:
+            stream: The handle returned by :meth:`_open_stream`.
+            prompt_name: The turn's prompt identifier.
+            tool_use_id: The ``toolUseId`` from the originating ``toolUse``
+                frame.
+            result: The tool's return value (or error string).
+        """
+        content_name = str(uuid.uuid4())
+        await self._send_event(stream, {"event": {"contentStart": {
+            "promptName": prompt_name,
+            "contentName": content_name,
+            "interactive": False,
+            "type": "TOOL",
+            "role": "TOOL",
+            "toolResultInputConfiguration": {
+                "toolUseId": tool_use_id,
+                "type": "TEXT",
+                "textInputConfiguration": {"mediaType": "text/plain"},
+            },
+        }}})
+        if isinstance(result, str):
+            content = result
+        else:
+            try:
+                content = json.dumps(result)
+            except TypeError:
+                # A tool may legitimately return a non-JSON-serializable
+                # object (e.g. a DataFrame); falling back to str() keeps this
+                # one tool call's result-reporting from aborting the turn.
+                content = str(result)
+        await self._send_event(stream, {"event": {"toolResult": {
+            "promptName": prompt_name,
+            "contentName": content_name,
+            "content": content,
+        }}})
+        await self._send_event(stream, {"event": {"contentEnd": {
+            "promptName": prompt_name,
+            "contentName": content_name,
+        }}})
 
     async def stream_voice(
         self,
@@ -193,6 +666,7 @@ class NovaAudio:
         usage = LiveCompletionUsage()
         accumulated_text = ""
         tool_calls_list: List[LiveToolCall] = []
+        turn_state = _TurnState()
 
         self.logger.info(
             "Starting Nova Sonic voice session %s, turn %s (model=%s)",
@@ -205,22 +679,15 @@ class NovaAudio:
         await self._send_event(stream, {"event": {"sessionStart": {
             "inferenceConfiguration": {"maxTokens": 1024, "topP": 0.9, "temperature": 0.7}
         }}})
-        await self._send_event(stream, {"event": {"promptStart": {
-            "promptName": prompt_name,
-            "textOutputConfiguration": {"mediaType": "text/plain"},
-            "audioOutputConfiguration": {
-                "mediaType": "audio/lpcm",
-                "sampleRateHertz": self.OUTPUT_SAMPLE_RATE_HZ,
-                "sampleSizeBits": 16,
-                "channelCount": 1,
-                "voiceId": resolved_voice_id,
-                "encoding": "base64",
-            },
-        }}})
+        await self._send_event(
+            stream, self._build_prompt_start(prompt_name, resolved_voice_id)
+        )
         if system_prompt:
             await self._send_event(stream, {"event": {"contentStart": {
                 "promptName": prompt_name, "contentName": f"{content_name}-sys",
                 "type": "TEXT", "role": "SYSTEM",
+                "interactive": False,
+                "textInputConfiguration": {"mediaType": "text/plain"},
             }}})
             await self._send_event(stream, {"event": {"textInput": {
                 "promptName": prompt_name, "contentName": f"{content_name}-sys",
@@ -233,12 +700,14 @@ class NovaAudio:
         await self._send_event(stream, {"event": {"contentStart": {
             "promptName": prompt_name, "contentName": content_name,
             "type": "AUDIO", "role": "USER",
+            "interactive": True,
             "audioInputConfiguration": {
                 "mediaType": "audio/lpcm",
                 "sampleRateHertz": self.INPUT_SAMPLE_RATE_HZ,
                 "sampleSizeBits": 16,
                 "channelCount": 1,
                 "encoding": "base64",
+                "audioType": "SPEECH",
             },
         }}})
 
@@ -265,33 +734,57 @@ class NovaAudio:
                     )
                     break
 
-                # Barge-in / interruption.
-                if "interruption" in event or event.get("stopReason") == "INTERRUPTED":
-                    turn_metadata.was_interrupted = True
-                    yield LiveVoiceResponse(
-                        text=accumulated_text,
-                        is_complete=True,
-                        is_interrupted=True,
-                        usage=usage,
-                        turn_metadata=turn_metadata,
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        user_id=user_id,
+                content_start = event.get("contentStart")
+                if content_start:
+                    turn_state.role = content_start.get("role")
+                    turn_state.generation_stage = _parse_generation_stage(
+                        content_start.get("additionalModelFields")
                     )
-                    accumulated_text = ""
                     continue
 
                 text_output = event.get("textOutput")
                 if text_output:
                     chunk_text = text_output.get("content", "")
-                    accumulated_text += chunk_text
-                    yield LiveVoiceResponse(
-                        text=chunk_text,
-                        is_complete=False,
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        user_id=user_id,
+
+                    # Barge-in / interruption — Nova signals this as an
+                    # {"interrupted": true} payload inside textOutput content,
+                    # not via a top-level "interruption" key or stopReason
+                    # (neither appears in any AWS Nova Sonic sample).
+                    if _is_interruption_payload(chunk_text):
+                        turn_metadata.was_interrupted = True
+                        yield LiveVoiceResponse(
+                            text=accumulated_text,
+                            is_complete=True,
+                            is_interrupted=True,
+                            usage=usage,
+                            turn_metadata=turn_metadata,
+                            session_id=session_id,
+                            turn_id=turn_id,
+                            user_id=user_id,
+                        )
+                        accumulated_text = ""
+                        continue
+
+                    role = turn_state.role
+                    stage = turn_state.generation_stage
+                    # Missing stage must EMIT, not suppress (spec §7) — only an
+                    # explicitly non-SPECULATIVE stage suppresses assistant text.
+                    suppressed = (
+                        role == "ASSISTANT"
+                        and stage is not None
+                        and stage != "SPECULATIVE"
                     )
+                    if not suppressed:
+                        if role == "ASSISTANT":
+                            accumulated_text += chunk_text
+                        yield LiveVoiceResponse(
+                            text=chunk_text,
+                            role=role,
+                            is_complete=False,
+                            session_id=session_id,
+                            turn_id=turn_id,
+                            user_id=user_id,
+                        )
 
                 audio_output = event.get("audioOutput")
                 if audio_output:
@@ -315,39 +808,85 @@ class NovaAudio:
                         user_id=user_id,
                     )
 
+                usage_event = event.get("usageEvent")
+                if usage_event:
+                    # Nova may nest the counts under a "details"/"totals"
+                    # sub-object; flatten one level so both shapes work.
+                    flat = {**usage_event}
+                    for nested_key in ("details", "totals", "usage"):
+                        nested = usage_event.get(nested_key)
+                        if isinstance(nested, dict):
+                            flat.update(nested)
+                    if (value := _first_int(flat, _USAGE_INPUT_KEYS)) is not None:
+                        usage.prompt_tokens = value
+                    if (value := _first_int(flat, _USAGE_OUTPUT_KEYS)) is not None:
+                        usage.completion_tokens = value
+                    total = _first_int(flat, _USAGE_TOTAL_KEYS)
+                    usage.total_tokens = (
+                        total if total is not None
+                        else usage.prompt_tokens + usage.completion_tokens
+                    )
+                    # Keep the raw frame so the shape can be inspected from a
+                    # real session (spec §8 Q1).
+                    usage.extra["usage_event"] = usage_event
+                    self.logger.debug("Nova Sonic usageEvent: %s", usage_event)
+                    continue
+
                 tool_use = event.get("toolUse")
                 if tool_use:
-                    tool_name = tool_use.get("toolName")
-                    tool_input = tool_use.get("content", {})
+                    # Gap 2: Nova executes the tool call on contentEnd(TOOL),
+                    # not on toolUse — stash it, do NOT execute here.
                     tool_use_id = tool_use.get("toolUseId", str(uuid.uuid4()))
+                    turn_state.pending_tool = LiveToolCall(
+                        id=tool_use_id,
+                        name=tool_use.get("toolName"),
+                        arguments={},
+                    )
+                    turn_state.pending_tool_raw_input = tool_use.get("content")
+                    continue
 
-                    tc = LiveToolCall(id=tool_use_id, name=tool_name, arguments=tool_input)
+                content_end = event.get("contentEnd")
+                if content_end and content_end.get("type") == "TOOL":
+                    pending = turn_state.pending_tool
+                    if pending is None:
+                        # No stashed call for this contentEnd(TOOL) — ignore
+                        # rather than raise.
+                        continue
+
                     start = time.monotonic()
                     try:
-                        result = await self._execute_tool(tool_name, tool_input)
-                        tc.result = result
+                        args = _parse_tool_arguments(turn_state.pending_tool_raw_input)
+                        # Record what was actually attempted before executing,
+                        # so a LiveToolCall.arguments reflects the real
+                        # arguments even if _execute_tool() itself raises.
+                        pending.arguments = args
+                        result = await self._execute_tool(pending.name, args)
+                        pending.result = result
                     except Exception as exc:
-                        tc.error = str(exc)
+                        pending.error = str(exc)
                         result = str(exc)
-                    tc.execution_time_ms = (time.monotonic() - start) * 1000
-                    tool_calls_list.append(tc)
-                    usage.tool_calls_executed += 1
-                    usage.tool_execution_time_ms += tc.execution_time_ms
+                    pending.execution_time_ms = (time.monotonic() - start) * 1000
 
-                    await self._send_event(stream, {"event": {"toolResult": {
-                        "promptName": prompt_name,
-                        "toolUseId": tool_use_id,
-                        "content": str(result),
-                    }}})
+                    tool_calls_list.append(pending)
+                    usage.tool_calls_executed += 1
+                    usage.tool_execution_time_ms += pending.execution_time_ms
+
+                    await self._send_tool_result(
+                        stream, prompt_name, pending.id, result
+                    )
 
                     yield LiveVoiceResponse(
                         text="",
-                        tool_calls=[tc],
+                        tool_calls=[pending],
                         is_complete=False,
                         session_id=session_id,
                         turn_id=turn_id,
                         user_id=user_id,
                     )
+
+                    turn_state.pending_tool = None
+                    turn_state.pending_tool_raw_input = None
+                    continue
 
                 if "completionEnd" in event or event.get("stopReason") == "END_TURN":
                     turn_metadata.ended_at = None
@@ -366,11 +905,20 @@ class NovaAudio:
             self.logger.info("Nova Sonic session %s cancelled", session_id)
             raise
         except Exception as exc:
-            self.logger.error("Nova Sonic session %s error: %s", session_id, exc)
+            # The SDK's modelled service errors (AccessDeniedException,
+            # ValidationException, ...) frequently carry an EMPTY str(), so a
+            # bare str(exc) yields "Nova Sonic session <id> error: " and a
+            # metadata payload of {"error": ""} — undiagnosable, and falsy
+            # enough that consumers testing truthiness miss the failure
+            # entirely. Always include the exception type.
+            error_message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            self.logger.exception(
+                "Nova Sonic session %s error: %s", session_id, error_message
+            )
             yield LiveVoiceResponse(
                 text="",
                 is_complete=True,
-                metadata={"error": str(exc)},
+                metadata={"error": error_message},
                 session_id=session_id,
                 turn_id=turn_id,
                 user_id=user_id,
@@ -379,6 +927,12 @@ class NovaAudio:
             sender_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await sender_task
+            # Tell Nova the prompt/session are over before the transport
+            # closes — best-effort, must never mask the turn's own error.
+            await self._end_session(stream, prompt_name)
+            # One stream_voice() call == one turn, so the stream opened above
+            # must be released here or every turn leaks its connection.
+            await self._close_stream(stream)
 
     async def _audio_sender(
         self,

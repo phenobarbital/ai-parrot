@@ -288,12 +288,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Added module-level `_USAGE_INPUT_KEYS`/`_USAGE_OUTPUT_KEYS`/
+`_USAGE_TOTAL_KEYS` candidate-key tuples and `_first_int()` helper next to
+`_parse_tool_arguments()`. Added a `usageEvent` branch in the receive loop
+(placed before the `toolUse` branch): flattens one level of nesting under
+`details`/`totals`/`usage` sub-keys, sets `usage.prompt_tokens`/
+`usage.completion_tokens` via `_first_int()` when a recognizable key is
+found (leaving them unchanged otherwise), derives `total_tokens` as
+prompt+completion when no total key matches, stashes the raw frame in
+`usage.extra["usage_event"]`, logs at `debug` (not `info`, since these
+arrive frequently), and `continue`s. `tool_calls_executed`/
+`tool_execution_time_ms` accounting (TASK-2105's code) is untouched — a
+different branch entirely. Created `test_nova_usage_event.py` with all 5
+tests from the Test Specification. Regression: 158 passed/3 skipped (`-k
+"nova or bedrock"`, up from 153, +5 new), 108 passed/1 skipped (`voice/`),
+0 regressions. New lint findings (+1 UP006, +1 UP045) match the file's
+existing style categories (`_first_int`'s `Dict[str, Any]` param and
+`Optional[int]` return).
+**Assumed usageEvent keys**: input — `inputTokens` / `promptTokens` /
+`input_tokens`; output — `outputTokens` / `completionTokens` /
+`output_tokens`; total — `totalTokens` / `total_tokens` (first match wins,
+in that order); also probes one level of nesting under `details`/`totals`/
+`usage` sub-objects. Per spec §8 Q1, none of this is verified against a
+real Nova Sonic session — the raw frame is preserved in
+`usage.extra["usage_event"]` specifically so the real shape can be read
+off the first live session and this guess list corrected.
+**Usage frames treated as**: absolute (assign, not accumulate) — chosen
+per the task's explicit default ("assign, don't accumulate, unless a real
+session proves they are incremental"); no evidence either way exists yet.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Assumed usageEvent keys**: <list>
-**Usage frames treated as**: absolute | incremental
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
