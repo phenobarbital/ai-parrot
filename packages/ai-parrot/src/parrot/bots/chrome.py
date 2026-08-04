@@ -1,12 +1,13 @@
 """WebAgent — browser interaction via Chrome DevTools MCP."""
 
+import asyncio
 import logging
 import xml.etree.ElementTree as ET
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..models import AIMessage
+from ..models import AIMessage, CompletionUsage
 from .agent import BasicAgent
 
 
@@ -258,6 +259,25 @@ When given QA test cases, execute each one methodically:
 4. Take a screenshot on failure if requested
 5. Report findings with pass/fail status and details
 
+Assertion types you support:
+- element_visible: Check if a CSS selector is visible on the page. Respect \
+  the wait_timeout_ms — wait up to that many milliseconds before declaring \
+  the element not found.
+- element_not_visible: Inverse of element_visible.
+- text_contains: Check if the page contains the specified text.
+- url_matches: Check the current URL matches the target pattern.
+- no_console_errors: Verify no JavaScript errors in the console.
+- no_network_failures: Verify no failed network requests (4xx/5xx).
+- response_status: Verify the HTTP response status code matches the target \
+  value.
+- accessibility_check: Perform basic accessibility validation — check for \
+  ARIA roles, alt text on images, and proper heading hierarchy.
+- screenshot_diff: (placeholder — not yet implemented)
+- performance: Check performance metrics against thresholds.
+
+When an assertion has a wait_timeout_ms value, wait up to that many \
+milliseconds for the condition to become true before reporting failure.
+
 When used for general web interaction, follow the user's instructions and \
 report what you observe.
 
@@ -275,6 +295,8 @@ class WebAgent(BasicAgent):
         self,
         name: str = "WebAgent",
         chrome_config: ChromeConfig | None = None,
+        default_timeout_ms: int = 60_000,
+        screenshot_dir: str | None = None,
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
@@ -284,6 +306,8 @@ class WebAgent(BasicAgent):
         # silently discard WEB_AGENT_SYSTEM_PROMPT. Force the legacy path.
         self._prompt_builder = None
         self.chrome_config = chrome_config or ChromeConfig()
+        self.default_timeout_ms = default_timeout_ms
+        self.screenshot_dir = screenshot_dir
         self.logger = logging.getLogger(f"{self.name}.WebAgent")
 
     async def configure(self, app=None) -> None:
@@ -312,25 +336,118 @@ class WebAgent(BasicAgent):
         self,
         test_cases: list[QATestCase],
         url: str | None = None,
+        tags: list[str] | None = None,
     ) -> AIMessage:
         """Execute QA test cases and return a structured QAReport.
+
+        Each test case is executed individually (one `ask()` call per
+        case) so that per-test retry and timeout can be applied. Cases
+        that don't match `tags` (when provided) are reported as
+        `status="skip"` without calling the LLM.
 
         Args:
             test_cases: List of test cases to execute.
             url: Base URL override (defaults to first test case's URL).
+            tags: Optional tag filter — only test cases whose `tags`
+                intersect this list are executed. `None` runs all cases.
 
         Returns:
-            AIMessage with QAReport in .output and summary in .response.
+            AIMessage with the aggregate QAReport in `.output` and the
+            summary in `.response`.
         """
-        cases_text = "\n\n".join(
-            case.model_dump_json(indent=2) for case in test_cases
-        )
         base_url = url or test_cases[0].url
-        prompt = (
-            f"Execute the following QA test cases against {base_url}.\n"
-            f"For each test: navigate to the URL, execute the steps, "
-            f"evaluate the expected result and any assertions.\n"
-            f"Take a screenshot on failure if screenshot_on_fail is true.\n\n"
-            f"Test cases:\n{cases_text}"
+        findings: list[QAFinding] = []
+
+        for case in test_cases:
+            if tags and not set(tags).intersection(case.tags):
+                findings.append(
+                    QAFinding(
+                        test_name=case.name,
+                        status="skip",
+                        detail="Filtered by tags",
+                    )
+                )
+                continue
+
+            finding: QAFinding | None = None
+            for attempt in range(1 + case.max_retries):
+                timeout_ms = case.timeout_ms or self.default_timeout_ms
+                timeout_s = timeout_ms / 1000
+                try:
+                    finding = await asyncio.wait_for(
+                        self._execute_single_test(case, base_url),
+                        timeout=timeout_s,
+                    )
+                except TimeoutError:
+                    finding = QAFinding(
+                        test_name=case.name,
+                        status="error",
+                        detail=f"Test timed out after {timeout_ms}ms",
+                    )
+                finding.retries = attempt
+                if finding.status == "pass":
+                    break
+            findings.append(finding)
+
+        report = QAReport(
+            summary=(
+                f"{sum(1 for f in findings if f.status == 'pass')}/"
+                f"{len(findings)} passed"
+            ),
+            url=base_url,
+            findings=findings,
+            total=len(findings),
+            passed=sum(1 for f in findings if f.status == "pass"),
+            failed=sum(1 for f in findings if f.status == "fail"),
+            errors=sum(1 for f in findings if f.status == "error"),
+            skipped=sum(1 for f in findings if f.status == "skip"),
         )
-        return await self.ask(prompt, structured_output=QAReport)
+        return AIMessage(
+            input=f"Execute {len(test_cases)} QA test case(s) against {base_url}",
+            output=report,
+            response=report.summary,
+            model="",
+            provider="",
+            usage=CompletionUsage(
+                prompt_tokens=0, completion_tokens=0, total_tokens=0
+            ),
+        )
+
+    async def _execute_single_test(
+        self,
+        case: QATestCase,
+        base_url: str,
+    ) -> QAFinding:
+        """Execute a single QA test case and return its finding.
+
+        Args:
+            case: The test case to execute.
+            base_url: Base URL to report in the prompt (test cases may
+                have their own `url`, but `base_url` reflects the
+                `run_tests()`-level override).
+
+        Returns:
+            QAFinding: The structured result of executing this test case.
+        """
+        prompt = (
+            f"Execute the following QA test case against {base_url}.\n"
+            f"Navigate to the URL, execute the steps, evaluate the "
+            f"expected result and any assertions.\n"
+            f"Take a screenshot on failure if screenshot_on_fail is true.\n"
+        )
+        if self.screenshot_dir:
+            prompt += f"Save failure screenshots to: {self.screenshot_dir}\n"
+        for assertion in case.assertions:
+            if assertion.wait_timeout_ms and assertion.check in (
+                "element_visible",
+                "element_not_visible",
+                "text_contains",
+            ):
+                prompt += (
+                    f"For '{assertion.check}' on '{assertion.target}': "
+                    f"wait up to {assertion.wait_timeout_ms}ms.\n"
+                )
+        prompt += f"\nTest case:\n{case.model_dump_json(indent=2)}"
+
+        result = await self.ask(prompt, structured_output=QAFinding)
+        return result.output

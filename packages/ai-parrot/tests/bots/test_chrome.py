@@ -1,9 +1,8 @@
+import asyncio
 import xml.etree.ElementTree as ET
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic import ValidationError
-
 from parrot.bots.agent import BasicAgent
 from parrot.bots.chrome import (
     ChromeConfig,
@@ -14,6 +13,7 @@ from parrot.bots.chrome import (
     WebAgent,
 )
 from parrot.mcp.integration import create_chrome_devtools_mcp_server
+from pydantic import ValidationError
 
 
 def test_chrome_config_defaults():
@@ -230,20 +230,21 @@ async def test_web_agent_configure_adds_mcp_server():
 
 @pytest.mark.asyncio
 async def test_run_tests_calls_ask_with_structured_output():
+    """TASK-2117: run_tests() now processes one case at a time, so each
+    ask() call uses structured_output=QAFinding (not QAReport); the
+    aggregate QAReport is built in Python and returned in a fresh
+    AIMessage, not passed through directly."""
     with patch.object(BasicAgent, "__init__", return_value=None):
         agent = WebAgent.__new__(WebAgent)
         agent.name = "WebAgent"
         agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
         agent.logger = MagicMock()
 
-        mock_report = QAReport(
-            summary="1/1 passed",
-            url="http://localhost:8080",
-            total=1,
-            passed=1,
-        )
+        mock_finding = QAFinding(test_name="t1", status="pass", detail="ok")
         mock_msg = MagicMock()
-        mock_msg.output = mock_report
+        mock_msg.output = mock_finding
         agent.ask = AsyncMock(return_value=mock_msg)
 
         cases = [
@@ -258,18 +259,27 @@ async def test_run_tests_calls_ask_with_structured_output():
 
         agent.ask.assert_called_once()
         call_kwargs = agent.ask.call_args
-        assert call_kwargs.kwargs.get("structured_output") is QAReport
-        assert result is mock_msg
+        assert call_kwargs.kwargs.get("structured_output") is QAFinding
+        assert isinstance(result.output, QAReport)
+        assert result.output.total == 1
+        assert result.output.passed == 1
 
 
 @pytest.mark.asyncio
-async def test_run_tests_serializes_all_cases_in_prompt():
+async def test_run_tests_serializes_case_in_its_own_prompt():
+    """TASK-2117: each case gets its own ask() call/prompt (no longer a
+    single combined prompt for all cases)."""
     with patch.object(BasicAgent, "__init__", return_value=None):
         agent = WebAgent.__new__(WebAgent)
         agent.name = "WebAgent"
         agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
         agent.logger = MagicMock()
-        agent.ask = AsyncMock(return_value=MagicMock())
+
+        mock_msg = MagicMock()
+        mock_msg.output = QAFinding(test_name="x", status="pass", detail="ok")
+        agent.ask = AsyncMock(return_value=mock_msg)
 
         cases = [
             QATestCase(name="t1", url="http://a.com", steps=["step1"], expected="ok"),
@@ -277,11 +287,12 @@ async def test_run_tests_serializes_all_cases_in_prompt():
         ]
         await agent.run_tests(cases)
 
-        prompt = agent.ask.call_args[0][0]  # first positional arg
-        assert "t1" in prompt
-        assert "t2" in prompt
-        assert "step1" in prompt
-        assert "step2" in prompt
+        assert agent.ask.call_count == 2
+        prompt1 = agent.ask.call_args_list[0][0][0]
+        prompt2 = agent.ask.call_args_list[1][0][0]
+        assert "t1" in prompt1 and "step1" in prompt1
+        assert "t1" not in prompt2 or "step2" not in prompt1
+        assert "t2" in prompt2 and "step2" in prompt2
 
 
 @pytest.mark.asyncio
@@ -290,8 +301,12 @@ async def test_run_tests_uses_explicit_url_param():
         agent = WebAgent.__new__(WebAgent)
         agent.name = "WebAgent"
         agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
         agent.logger = MagicMock()
-        agent.ask = AsyncMock(return_value=MagicMock())
+        mock_msg = MagicMock()
+        mock_msg.output = QAFinding(test_name="t1", status="pass", detail="ok")
+        agent.ask = AsyncMock(return_value=mock_msg)
 
         cases = [
             QATestCase(name="t1", url="http://a.com", steps=["s"], expected="ok"),
@@ -488,3 +503,249 @@ def test_to_junit_xml_suite_attributes():
     assert suite.get("tests") == "3"
     assert suite.get("failures") == "1"
     assert suite.get("skipped") == "1"
+
+
+# --- TASK-2117: WebAgent run_tests Enhancements ---
+
+
+def test_web_agent_default_timeout_ms():
+    agent = WebAgent(name="test")
+    assert agent.default_timeout_ms == 60_000
+
+
+def test_web_agent_custom_timeout_ms():
+    agent = WebAgent(name="test", default_timeout_ms=30_000)
+    assert agent.default_timeout_ms == 30_000
+
+
+def test_web_agent_screenshot_dir_default():
+    agent = WebAgent(name="test")
+    assert agent.screenshot_dir is None
+
+
+def test_web_agent_screenshot_dir_custom():
+    agent = WebAgent(name="test", screenshot_dir="/tmp/screenshots")
+    assert agent.screenshot_dir == "/tmp/screenshots"
+
+
+@pytest.mark.asyncio
+async def test_run_tests_tag_filtering():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+
+        pass_finding = QAFinding(test_name="t1", status="pass", detail="ok")
+        mock_msg = MagicMock()
+        mock_msg.output = pass_finding
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [
+            QATestCase(name="t1", url="/", steps=["s"], expected="e", tags=["smoke"]),
+            QATestCase(name="t2", url="/", steps=["s"], expected="e", tags=["regression"]),
+        ]
+        result = await agent.run_tests(cases, tags=["smoke"])
+        report = result.output
+
+        assert report.total == 2
+        assert report.skipped == 1
+        # Only one ask() call (the smoke test), not two
+        assert agent.ask.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_tests_empty_after_tag_filtering():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+        agent.ask = AsyncMock()
+
+        cases = [
+            QATestCase(name="t1", url="/", steps=["s"], expected="e", tags=["regression"]),
+        ]
+        result = await agent.run_tests(cases, tags=["smoke"])
+        report = result.output
+
+        assert report.total == 1
+        assert report.skipped == 1
+        assert report.passed == 0
+        agent.ask.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_tests_no_tags_runs_all():
+    """Backward compatibility: no tags filter runs everything."""
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+
+        pass_finding = QAFinding(test_name="t1", status="pass", detail="ok")
+        mock_msg = MagicMock()
+        mock_msg.output = pass_finding
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [
+            QATestCase(name="t1", url="/", steps=["s"], expected="e", tags=["smoke"]),
+            QATestCase(name="t2", url="/", steps=["s"], expected="e", tags=["regression"]),
+        ]
+        await agent.run_tests(cases)
+
+        assert agent.ask.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_tests_screenshot_dir_in_prompt():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = "/tmp/qa-screenshots"
+        agent.logger = MagicMock()
+
+        pass_finding = QAFinding(test_name="t1", status="pass", detail="ok")
+        mock_msg = MagicMock()
+        mock_msg.output = pass_finding
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [QATestCase(name="t1", url="/", steps=["s"], expected="e")]
+        await agent.run_tests(cases)
+
+        prompt = agent.ask.call_args[0][0]
+        assert "/tmp/qa-screenshots" in prompt
+
+
+@pytest.mark.asyncio
+async def test_run_tests_retry_on_failure():
+    """max_retries=2 -> ask() called up to 1 + 2 = 3 times for a failing case."""
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+
+        fail_finding = QAFinding(test_name="t1", status="fail", detail="nok")
+        mock_msg = MagicMock()
+        mock_msg.output = fail_finding
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [
+            QATestCase(name="t1", url="/", steps=["s"], expected="e", max_retries=2),
+        ]
+        result = await agent.run_tests(cases)
+
+        assert agent.ask.call_count == 3
+        finding = result.output.findings[0]
+        assert finding.status == "fail"
+        assert finding.retries == 2
+
+
+@pytest.mark.asyncio
+async def test_run_tests_retry_stops_on_first_pass():
+    """A test that passes on the first attempt should not be retried."""
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+
+        pass_finding = QAFinding(test_name="t1", status="pass", detail="ok")
+        mock_msg = MagicMock()
+        mock_msg.output = pass_finding
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [
+            QATestCase(name="t1", url="/", steps=["s"], expected="e", max_retries=2),
+        ]
+        result = await agent.run_tests(cases)
+
+        assert agent.ask.call_count == 1
+        assert result.output.findings[0].retries == 0
+
+
+@pytest.mark.asyncio
+async def test_run_tests_timeout_marks_error():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+
+        async def slow_ask(*args, **kwargs):
+            await asyncio.sleep(0.2)
+            mock_msg = MagicMock()
+            mock_msg.output = QAFinding(test_name="t1", status="pass", detail="ok")
+            return mock_msg
+
+        agent.ask = slow_ask
+
+        cases = [
+            QATestCase(
+                name="t1", url="/", steps=["s"], expected="e", timeout_ms=1000,
+            ),
+        ]
+        # Bypass the ge=1000 minimum (Pydantic doesn't re-validate plain
+        # attribute assignment) so the real asyncio.wait_for actually
+        # fires within the test's timeframe — avoids mocking wait_for
+        # itself, which would leave the wrapped coroutine unawaited.
+        cases[0].timeout_ms = 50
+        result = await agent.run_tests(cases)
+
+        finding = result.output.findings[0]
+        assert finding.status == "error"
+        assert "timed out" in finding.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_tests_wait_timeout_ms_in_prompt():
+    with patch.object(BasicAgent, "__init__", return_value=None):
+        agent = WebAgent.__new__(WebAgent)
+        agent.name = "test"
+        agent.chrome_config = ChromeConfig()
+        agent.default_timeout_ms = 60_000
+        agent.screenshot_dir = None
+        agent.logger = MagicMock()
+
+        mock_msg = MagicMock()
+        mock_msg.output = QAFinding(test_name="t1", status="pass", detail="ok")
+        agent.ask = AsyncMock(return_value=mock_msg)
+
+        cases = [
+            QATestCase(
+                name="t1", url="/", steps=["s"], expected="e",
+                assertions=[
+                    QAAssertion(
+                        check="element_visible", target=".error", wait_timeout_ms=3000,
+                    ),
+                ],
+            ),
+        ]
+        await agent.run_tests(cases)
+
+        prompt = agent.ask.call_args[0][0]
+        assert "3000" in prompt
+        assert ".error" in prompt
+
+
+def test_web_agent_system_prompt_documents_new_assertions():
+    from parrot.bots.chrome import WEB_AGENT_SYSTEM_PROMPT
+    assert "response_status" in WEB_AGENT_SYSTEM_PROMPT
+    assert "accessibility_check" in WEB_AGENT_SYSTEM_PROMPT
+    assert "wait_timeout_ms" in WEB_AGENT_SYSTEM_PROMPT
