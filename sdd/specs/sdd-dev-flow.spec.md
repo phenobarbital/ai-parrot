@@ -66,9 +66,13 @@ development-only UI template (`static/dev.html`).
    intents — `enhancement`, `new_feature` (both natural-language) and
    `feature` (existing SDD brainstorm/proposal — the existing
    `FeatureBrief`).
-3. **`BrainstormNode`**: converts the natural-language request into a
-   committed `sdd/proposals/<slug>.brainstorm.md` via a new `sdd-brainstorm`
-   subagent, resolving Open Questions through HITL.
+3. **`IdeationNode`**: converts the natural-language request into a
+   committed SDD document via a new `sdd-ideation` subagent — a full
+   `sdd/proposals/<slug>.brainstorm.md` (options analysis) for
+   `new_feature`, a lighter `sdd/proposals/<slug>.proposal.md` (scope +
+   rationale, no options analysis) for `enhancement` — resolving Open
+   Questions through HITL. When the target document already exists, the
+   subagent resumes/extends it (never overwrites, never suffixes).
 4. **HITL Open-Questions gate**: a single gate carrying ALL open questions of
    a round (new `GateKind` `"open_questions"` with structured
    `questions`/`answers`), answered in one round-trip over the existing
@@ -95,9 +99,11 @@ development-only UI template (`static/dev.html`).
   and backward-compatible.)
 - **No LLM-based intent classification** — the user picks the intent in the
   UI (decided 2026-08-05; see §8).
-- No `/sdd-proposal` generation stage: `dev-flow` v1 goes NL → brainstorm →
-  spec. An existing proposal is accepted through the `feature` intent
-  (`document_kind="proposal"`), which `PlannerNode` already handles.
+- No research-first proposal pipeline: the `enhancement` intent generates a
+  *light* proposal (scope, rationale, impact, open questions), not the deep
+  `/sdd-proposal` research artifact. An existing full proposal is accepted
+  through the `feature` intent (`document_kind="proposal"`), which
+  `PlannerNode` already handles.
 - No cross-process gate persistence/resume (same limitation as FEAT-377
   TASK-1917 — in-process park/resume only).
 - No Jira creation anywhere: like feature-mode, Jira is link-only when
@@ -139,10 +145,11 @@ development-only UI template (`static/dev.html`).
                      ┌────────────────┴─────────────────────┐
                      ▼                                      │
              ┌──────────────┐   open_questions gate         │
-             │  brainstorm  │◄──── (HITL, ≤ N rounds, ──────┼── WS read /
+             │   ideation   │◄──── (HITL, ≤ N rounds, ──────┼── WS read /
              └──────┬───────┘       single gate per round)  │   REST write
                     │  emits FeatureBrief(document_kind=    │
-                    │        "brainstorm")                  │
+                    │   "brainstorm" [new_feature] |        │
+                    │   "proposal"   [enhancement])         │
                     └────────────────┬──────────────────────┘
                                      ▼
     planner ──► development ──► synthesis ──► qa ──(passed)──► feature_handoff ──► close
@@ -164,15 +171,15 @@ same node types, same CEL predicates, same bounded repair loop
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `dev_loop.planner/development/synthesis/qa/feedback_router/feature_handoff/failure_handler/close` node types | reuses | Referenced by type name in the new `FlowDefinition`; factories reused via `build_dev_loop_node_factories` (`factories.py`) |
-| `FeatureBrief` (`models/base.py:725`) | reuses | `BrainstormNode` output; `feature` intent passthrough |
+| `FeatureBrief` (`models/base.py:725`) | reuses | `IdeationNode` output; `feature` intent passthrough |
 | `DevLoopNode` + `register_dev_loop_node` (`nodes/base.py:193/:174`) | extends | Base class + idempotent registry for the two new node types |
 | `SessionHost.open_gate/wait_gate/resolve_gate` (`session_state.py:1079/:1149/:1034`) | extends | New gate kind + structured answers (additive fields) |
 | `dev_loop/commands.py` (`resolve_gate_handler:70`, `register_command_routes`) | extends + mounts | `ResolveGateRequest` gains `answers`; `server_dev.py` mounts the routes |
 | `DevLoopRunner` (`runner.py`) | extends | `DevFlowRunner` subclass hosting the single dev-flow topology |
 | `flow_stream_ws` (`dev_loop/streaming.py`) | reuses | Same WS multiplexer (`view=flow\|dispatch\|both\|state`) |
-| `ClaudeCodeDispatcher` + `load_subagent_definition` (`_subagent_defs.py:86`) | extends | New `sdd-brainstorm` subagent definition |
+| `ClaudeCodeDispatcher` + `load_subagent_definition` (`_subagent_defs.py:86`) | extends | New `sdd-ideation` subagent definition (dual-mode: brainstorm/proposal) |
 | `AgentsFlow` explicit-edge mode (`parrot/bots/flows/flow/flow.py`) | uses | OR-joins at `planner` and `failure_handler` require explicit-edge execution (same engine limitation as dev_loop — `definition.py` module docstring) |
-| `DevLoopWikiSearch` (`wiki_search.py`) | reuses | Repo context injected into the `sdd-brainstorm` dispatch |
+| `DevLoopWikiSearch` (`wiki_search.py`) | reuses | Repo context injected into the `sdd-ideation` dispatch |
 | `examples/dev_loop/llm_catalog.py` | reuses | Backend/judge catalogs for `/api/config` |
 
 ### Data Models
@@ -197,13 +204,15 @@ DevFlowBrief = Annotated[
     Union[DevRequestBrief, FeatureBrief], Field(discriminator="kind")
 ]
 
-class BrainstormOutput(BaseModel):
-    """Contract for the sdd-brainstorm subagent's final JSON."""
-    document_path: str                         # sdd/proposals/<slug>.brainstorm.md
+class IdeationOutput(BaseModel):
+    """Contract for the sdd-ideation subagent's final JSON."""
+    document_path: str                # sdd/proposals/<slug>.brainstorm.md | .proposal.md
+    document_kind: Literal["brainstorm", "proposal"]  # brainstorm=new_feature, proposal=enhancement
     slug: str
-    open_questions: List[str] = []             # unresolved [ ] items this round
+    resumed_existing: bool = False    # target doc existed and was extended in place
+    open_questions: List[str] = []    # unresolved [ ] items this round
     summary: str = ""
-    committed: bool = False                    # doc committed to base_branch?
+    committed: bool = False           # doc committed to base_branch?
 ```
 
 ```python
@@ -246,7 +255,7 @@ folds `answers` into the gate exactly like `comment`.
 ```python
 # parrot/flows/dev_flow/definition.py
 def build_dev_flow_definition() -> FlowDefinition: ...
-    # flow="dev-flow"; nodes: dev_flow.dev_intake, dev_flow.brainstorm,
+    # flow="dev-flow"; nodes: dev_flow.dev_intake, dev_flow.ideation,
     # dev_loop.planner, dev_loop.development, dev_loop.synthesis,
     # dev_loop.qa, dev_loop.feedback_router, dev_loop.feature_handoff,
     # dev_loop.failure_handler, dev_loop.close
@@ -258,7 +267,9 @@ def build_dev_flow(
     codereview_dispatcher=None, development_dispatcher_builder=None,
     development_pool_max: int = 4, graph_memory=None,
     wiki_search=None, skip_qa: bool = False,
-    brainstorm_max_rounds: int | None = None,
+    require_plan_approval: bool = False,   # build-time default; per-run
+                                           # override via shared state (§2)
+    ideation_max_rounds: int | None = None,
     name: str = "dev-flow", publish_flow_events: bool = True,
 ) -> AgentsFlow: ...
     # mirrors build_dev_loop_feature_flow (runner.py:178) — declarative
@@ -275,28 +286,36 @@ class DevFlowRunner(DevLoopRunner):
 **CEL routing predicates** (`dev_flow/definition.py`):
 
 ```
-dev_intake → brainstorm : 'result.kind == "enhancement" || result.kind == "new_feature"'
-dev_intake → planner    : 'result.kind == "feature"'
-brainstorm → planner    : on_success
+dev_intake → ideation : 'result.kind == "enhancement" || result.kind == "new_feature"'
+dev_intake → planner  : 'result.kind == "feature"'
+ideation → planner    : on_success
 planner … close         : identical to _build_feature_definition (FEAT-378)
 on_error fan-in         : every middle node → failure_handler
 ```
 
-The `dev_intake → planner` / `brainstorm → planner` merge is an **OR-join**:
+The `dev_intake → planner` / `ideation → planner` merge is an **OR-join**:
 like dev_loop, the graph executes in the engine's explicit-edge mode
 (`AgentsFlow.add_node()/add_edge()`), with the `FlowDefinition` kept as the
 declarative source for materialization/validation/parity.
 
 ### The Open-Questions HITL round-trip (normative)
 
-1. `BrainstormNode` dispatches `sdd-brainstorm` with the `DevRequestBrief`
-   (+ optional `DevLoopWikiSearch` repo context). The subagent writes
-   `sdd/proposals/<slug>.brainstorm.md` (FEAT-145 frontmatter:
-   `type: feature`, `base_branch: dev`; the `enhancement` vs `new_feature`
-   intent recorded in the document header and framing) and returns a
-   `BrainstormOutput` JSON.
+1. `IdeationNode` dispatches `sdd-ideation` with the `DevRequestBrief`
+   (+ optional `DevLoopWikiSearch` repo context). The subagent writes the
+   intent's document — `new_feature` →
+   `sdd/proposals/<slug>.brainstorm.md` (options analysis +
+   recommendation), `enhancement` → `sdd/proposals/<slug>.proposal.md`
+   (light: scope, rationale, impact — no options analysis) — with FEAT-145
+   frontmatter (`type: feature`, `base_branch: dev`) and returns an
+   `IdeationOutput` JSON.
+   **Existing-document policy (resolved 2026-08-05)**: when the target
+   path already exists, the subagent reads it and RESUMES/EXTENDS it in
+   place (new Open-Questions rounds on the same document,
+   `resumed_existing=true`); it never overwrites blindly and never creates
+   `-2`-suffixed copies. The resolved `document_path` is surfaced in the
+   gate title so the user can detect (and reject) an unintended reuse.
 2. If `open_questions` is non-empty: the node opens ONE gate —
-   `host.open_gate(kind="open_questions", node_id="brainstorm",
+   `host.open_gate(kind="open_questions", node_id="ideation",
    title=..., questions=[...], ttl_seconds=DEV_FLOW_GATE_TTL_QUESTIONS,
    on_expiry="fail")` — and `await host.wait_gate(gate_id)`. Park/resume
    (`DEV_LOOP_GATE_PARK`) applies unchanged: a run awaiting answers frees
@@ -305,23 +324,23 @@ declarative source for materialization/validation/parity.
    question, and POSTs `.../gates/{gate_id}/resolve` with
    `resolution="approved"` + `answers={question: answer, ...}`.
    Partial answers are allowed (unanswered questions stay open in the doc).
-4. The node re-dispatches `sdd-brainstorm` (resume) with the answers; the
+4. The node re-dispatches `sdd-ideation` (resume) with the answers; the
    subagent marks answered questions `[x] … — *Resolved*: <answer>` in the
    document (the exact convention `/sdd-spec` §2b consumes). A re-dispatch
    MAY surface new open questions → new gate, bounded by
-   `DEV_FLOW_BRAINSTORM_MAX_ROUNDS` (default 2). Questions still `[ ]` when
+   `DEV_FLOW_IDEATION_MAX_ROUNDS` (default 2). Questions still `[ ]` when
    rounds are exhausted remain in the document and flow into the spec's §8
    via the planner — they do NOT block the run.
-5. `resolution="rejected"` = the user aborts the brainstorm → the node
+5. `resolution="rejected"` = the user aborts the ideation → the node
    raises, the `on_error` edge routes to `failure_handler`.
    Gate expiry is **fail-closed** (`on_expiry="fail"` → `GateExpired` →
    failure path): silence is not consent for spec decisions.
-6. The subagent commits the brainstorm document to `base_branch` (SDD
-   auto-commit rule — worktrees created later by `sdd-planner` must see it);
-   `BrainstormOutput.committed` reports it and the node fails fast when
+6. The subagent commits the document to `base_branch` (SDD auto-commit
+   rule — worktrees created later by `sdd-planner` must see it);
+   `IdeationOutput.committed` reports it and the node fails fast when
    `False`.
 7. Terminal output: the node constructs
-   `FeatureBrief(document_path=..., document_kind="brainstorm",
+   `FeatureBrief(document_path=..., document_kind=<IdeationOutput.document_kind>,
    jira_issue_key/dev_agents/judge_panel passthrough)` and publishes it to
    `ctx["feature_brief"]` — exactly the key `PlannerNode` reads
    (`nodes/planner.py`, spec FEAT-378 §3 Module 2).
@@ -339,8 +358,9 @@ deltas (seams verified in `server.py`):
 | Log toolkits | `_build_log_toolkits()` CloudWatch (`:660`) | **absent** |
 | Jira | reporter/escalation REQUIRED for bugs (`:776`) | optional link-only (`jira_issue_key`) |
 | Brief building | `_build_brief_from_form` (`:714`, requires `affected_component`, `log_sources`) | `_build_dev_brief_from_form`: `DevRequestBrief` (title+description) or `FeatureBrief` (reuse of the `:956` logic) |
-| `GET /api/config` | kinds incl. bug + log_group/time_window/jira_project (`:1031`) | kinds `[enhancement, new_feature, feature]`, `document_kinds`, `brainstorm_max_rounds`, no observability defaults |
+| `GET /api/config` | kinds incl. bug + log_group/time_window/jira_project (`:1031`) | kinds `[enhancement, new_feature, feature]`, `document_kinds`, `ideation_max_rounds`, `require_plan_approval` default, no observability defaults |
 | Gate resolution | **not mounted** | `register_command_routes(app, runner)` (or an `/api/flow/…`-prefixed equivalent) — the HITL write path |
+| Plan gate | conf-only at flow build (`:1405`) | **per-run UI toggle**: form field → `extra_shared["require_plan_approval"]`; `DevelopmentNode` honors the shared-state override (falls back to the build-time flag) |
 | Cancel / bundle / replay / WS | `:1181/:1215/:1270/:1545` | identical (same streaming module) |
 | Default port | 8080 | **8081** (`PORT` env still wins) — both servers can run side-by-side |
 
@@ -353,11 +373,14 @@ deltas (seams verified in `server.py`):
   `affectedComponent/logGroup/timeWindow` form state (`:416–417`).
 - ADDED: 3-intent picker (`enhancement` / `new_feature` / `feature` document);
   NL intake (title + description textarea) for the first two; `TOPOLOGY.dev`
-  entry (`dev_intake, brainstorm, planner, development, synthesis, qa,
+  entry (`dev_intake, ideation, planner, development, synthesis, qa,
   feedback_router, feature_handoff, close, failure_handler`); an
   **Open-Questions panel** that activates on `gate/opened` with
   `kind === "open_questions"` (one input per `gate.questions[]`, submit →
-  `POST resolve` with `answers`, plus a Reject/abort button); gate audit
+  `POST resolve` with `answers`, plus a Reject/abort button); a
+  **plan-approval toggle** in the advanced options (per-run
+  `require_plan_approval`) whose `plan_approval` gate renders in the same
+  HITL panel (approve/reject + comment — no structured answers); gate audit
   trail retained; `localStorage` theme key changed to `"devflow-theme"` to
   not couple with the ops console.
 - KEPT: stepper, execution views (panels/spine/rail), dispatch telemetry,
@@ -368,7 +391,7 @@ deltas (seams verified in `server.py`):
 
 | Key | Default | Meaning |
 |---|---|---|
-| `DEV_FLOW_BRAINSTORM_MAX_ROUNDS` | `2` | Max open-questions HITL rounds per run |
+| `DEV_FLOW_IDEATION_MAX_ROUNDS` | `2` | Max open-questions HITL rounds per run |
 | `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL for `open_questions` gates (fail-closed on expiry) |
 
 Everything else (`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, judge
@@ -384,46 +407,58 @@ NOT fork the shared knobs.
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/__init__.py`,
   `models.py`
 - **Responsibility**: `DevRequestBrief`, `DevFlowBrief` union (discriminator
-  `kind`), `BrainstormOutput`, `parse_dev_brief()` loader. Lazy-import
+  `kind`), `IdeationOutput`, `parse_dev_brief()` loader. Lazy-import
   hygiene mirroring `dev_loop/__init__.py`.
 - **Depends on**: existing `dev_loop.models` (`FeatureBrief`, `DevAgentSpec`,
   `JudgePanelConfig`).
 
-### Module 2: Gate model extension (open_questions)
+### Module 2: Gate model extension (open_questions) + per-run plan-gate override
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py`,
-  `packages/ai-parrot/src/parrot/flows/dev_loop/commands.py`
+  `packages/ai-parrot/src/parrot/flows/dev_loop/commands.py`,
+  `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/development.py`
 - **Responsibility**: `GateKind += "open_questions"`; additive
   `ApprovalGate.questions/answers`, `GateResolved.answers`,
   `SessionHost.open_gate(questions=...)` / `resolve_gate(answers=...)`
   passthrough + reducer fold; `ResolveGateRequest.answers` with host-side
   validation (approved `open_questions` gate requires ≥1 answer).
   Backward-compat: every new field defaults; old envelopes must re-validate.
-- **Depends on**: none (additive to existing FEAT-322 machinery).
+  Additionally (resolved 2026-08-05): `DevelopmentNode`'s plan-gate check
+  honors a per-run `shared["require_plan_approval"]` override before
+  falling back to the constructor flag (additive — the gate helper at
+  `development.py:276` is otherwise unchanged), so the UI toggle works
+  without rebuilding the flow.
+- **Depends on**: none (additive to existing FEAT-322/FEAT-377 machinery).
 
-### Module 3: `sdd-brainstorm` subagent definition
-- **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_data/sdd-brainstorm.md`
-  (+ mirror `.claude/agents/sdd-brainstorm.md`), loader in
+### Module 3: `sdd-ideation` subagent definition
+- **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_data/sdd-ideation.md`
+  (+ mirror `.claude/agents/sdd-ideation.md`), loader in
   `dev_flow/_subagent_defs.py` (same contract as
   `dev_loop/_subagent_defs.py:86 load_subagent_definition`)
-- **Responsibility**: system prompt for the brainstorm phase: consume the NL
-  request (+ wiki context + prior-round answers), write/update
-  `sdd/proposals/<slug>.brainstorm.md` with FEAT-145 frontmatter and the
-  `[ ]`/`[x] — *Resolved*: <answer>` Open-Questions convention, commit it to
-  `base_branch`, emit ONE final `BrainstormOutput` JSON (no prose).
+- **Responsibility**: dual-mode system prompt for the ideation phase —
+  ONE subagent definition with a `mode` field in the dispatch payload
+  (`"brainstorm"` for `new_feature`, `"proposal"` for `enhancement`), NOT
+  two prompt files. Consume the NL request (+ wiki context + prior-round
+  answers), write/update the corresponding
+  `sdd/proposals/<slug>.{brainstorm|proposal}.md` with FEAT-145 frontmatter
+  and the `[ ]`/`[x] — *Resolved*: <answer>` Open-Questions convention,
+  **resume/extend the document if it already exists**, commit it to
+  `base_branch` (explicit paths only, never `git add -A`), emit ONE final
+  `IdeationOutput` JSON (no prose).
 - **Depends on**: Module 1 (contract).
 
-### Module 4: DevIntakeNode + BrainstormNode
+### Module 4: DevIntakeNode + IdeationNode
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/nodes/__init__.py`,
-  `nodes/dev_intake.py`, `nodes/brainstorm.py`
+  `nodes/dev_intake.py`, `nodes/ideation.py`
 - **Responsibility**:
   - `DevIntakeNode` (`dev_flow.dev_intake`): loads/validates the
     `DevFlowBrief` (ctx or JSON prompt — mirrors
     `IntentClassifierNode._load_brief`), publishes `ctx["feature_brief"]`
     when kind == "feature", emits `flow.intake_validated`, returns the brief
     for CEL routing.
-  - `BrainstormNode` (`dev_flow.brainstorm`): the HITL round-trip exactly as
-    §2 (dispatch → gate → re-dispatch, ≤ `DEV_FLOW_BRAINSTORM_MAX_ROUNDS`),
-    terminal output `FeatureBrief` into `ctx["feature_brief"]`.
+  - `IdeationNode` (`dev_flow.ideation`): the HITL round-trip exactly as
+    §2 (dispatch in the intent's mode → gate → re-dispatch,
+    ≤ `DEV_FLOW_IDEATION_MAX_ROUNDS`), terminal output `FeatureBrief`
+    (document_kind from `IdeationOutput`) into `ctx["feature_brief"]`.
   Both subclass `DevLoopNode` and register via `register_dev_loop_node`
   (`nodes/base.py:174` — idempotent, safe across re-imports).
 - **Depends on**: Modules 1, 2, 3.
@@ -452,8 +487,10 @@ NOT fork the shared knobs.
 - **Path**: `examples/dev_loop/server_dev.py`
 - **Responsibility**: aiohttp app per the §2 table — dev-flow wiring, gate
   resolve route mounted, trimmed `/api/config`, `_build_dev_brief_from_form`,
-  default port 8081. Startup mirrors `server.py:_on_startup` minus
-  `_build_log_toolkits` and the bug flow.
+  per-run `require_plan_approval` passthrough (form →
+  `extra_shared["require_plan_approval"]`), default port 8081. Startup
+  mirrors `server.py:_on_startup` minus `_build_log_toolkits` and the bug
+  flow.
 - **Depends on**: Modules 2, 6.
 
 ### Module 8: `static/dev.html`
@@ -484,21 +521,24 @@ NOT fork the shared knobs.
 | `test_gate_resolve_with_answers` | 2 | `resolve_gate(..., answers={...})` folds answers into state; audit fields intact |
 | `test_gate_resolve_answers_required` | 2 | approving an `open_questions` gate with empty answers → rejected (400 at REST layer) |
 | `test_gate_backward_compat` | 2 | pre-FEAT-412 envelopes (no questions/answers) still validate and reduce |
-| `test_brainstorm_output_contract` | 3 | subagent JSON parses into `BrainstormOutput`; `committed=False` fails the node |
-| `test_dev_intake_routes_by_kind` | 4 | enhancement/new_feature → brainstorm edge predicate true; feature → planner edge |
-| `test_brainstorm_gate_roundtrip` | 4 | fake dispatcher emits open questions → gate opens → resolve with answers → re-dispatch receives answers |
-| `test_brainstorm_rounds_bounded` | 4 | subagent keeps asking → stops after `DEV_FLOW_BRAINSTORM_MAX_ROUNDS`, run continues |
-| `test_brainstorm_gate_rejected_escalates` | 4 | rejected gate → node error → failure_handler path |
+| `test_ideation_output_contract` | 3 | subagent JSON parses into `IdeationOutput`; `committed=False` fails the node |
+| `test_plan_gate_per_run_override` | 2 | `shared["require_plan_approval"]=True` opens the plan gate even when the constructor flag is False (and vice versa) |
+| `test_dev_intake_routes_by_kind` | 4 | enhancement/new_feature → ideation edge predicate true; feature → planner edge |
+| `test_ideation_enhancement_emits_proposal` | 4 | `enhancement` intent → dispatch mode "proposal" → `FeatureBrief.document_kind == "proposal"`; `new_feature` → "brainstorm" |
+| `test_ideation_resumes_existing_doc` | 4 | pre-existing target doc → subagent receives it, `resumed_existing=True`, no `-2` copy created |
+| `test_ideation_gate_roundtrip` | 4 | fake dispatcher emits open questions → gate opens → resolve with answers → re-dispatch receives answers |
+| `test_ideation_rounds_bounded` | 4 | subagent keeps asking → stops after `DEV_FLOW_IDEATION_MAX_ROUNDS`, run continues |
+| `test_ideation_gate_rejected_escalates` | 4 | rejected gate → node error → failure_handler path |
 | `test_dev_flow_definition_valid` | 5 | `build_dev_flow_definition()` validates; node/edge inventory matches §2 |
 | `test_dev_flow_parity` | 5 | declarative definition ↔ imperative wiring parity (dev_loop precedent) |
-| `test_runner_accepts_dev_brief` | 6 | `DevFlowRunner.run(DevRequestBrief)` seeds context; feature brief skips brainstorm |
+| `test_runner_accepts_dev_brief` | 6 | `DevFlowRunner.run(DevRequestBrief)` seeds context; feature brief skips ideation |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
-| `test_dev_flow_e2e_nl_to_draft_pr` | Simulated dispatchers (e2e_demo pattern): NL request → brainstorm + 1 HITL round → planner → dev pool → QA pass → draft-PR handoff → close |
-| `test_dev_flow_e2e_document_intake` | `feature` intent with a proposal doc: brainstorm node skipped, rest identical |
+| `test_dev_flow_e2e_nl_to_draft_pr` | Simulated dispatchers (e2e_demo pattern): NL request → ideation + 1 HITL round → planner → dev pool → QA pass → draft-PR handoff → close |
+| `test_dev_flow_e2e_document_intake` | `feature` intent with a proposal doc: ideation node skipped, rest identical |
 | `test_server_dev_gate_route` | `POST /api/…/gates/{id}/resolve` with answers unblocks a parked run (aiohttp test client) |
 | `test_server_dev_config_shape` | `/api/config` has dev kinds only, no log_group/time_window keys |
 
@@ -514,9 +554,9 @@ def dev_request_brief() -> DevRequestBrief:
     )
 
 @pytest.fixture
-def fake_brainstorm_dispatcher():
-    """Scripted dispatcher: round 1 → BrainstormOutput with 2 open questions;
-    round 2 (with answers) → BrainstormOutput with none, committed=True."""
+def fake_ideation_dispatcher():
+    """Scripted dispatcher: round 1 → IdeationOutput with 2 open questions;
+    round 2 (with answers) → IdeationOutput with none, committed=True."""
 ```
 
 ---
@@ -525,15 +565,21 @@ def fake_brainstorm_dispatcher():
 
 - [ ] `build_dev_flow()` produces a valid `AgentsFlow`; parity test between
       `build_dev_flow_definition()` and the imperative wiring passes.
-- [ ] An `enhancement`/`new_feature` run produces a committed
-      `sdd/proposals/<slug>.brainstorm.md` with FEAT-145 frontmatter and the
-      `[x] … — *Resolved*: <answer>` convention for HITL-answered questions.
+- [ ] A `new_feature` run produces a committed
+      `sdd/proposals/<slug>.brainstorm.md`; an `enhancement` run produces a
+      committed `sdd/proposals/<slug>.proposal.md` (light format) — both
+      with FEAT-145 frontmatter and the `[x] … — *Resolved*: <answer>`
+      convention for HITL-answered questions. A pre-existing target
+      document is resumed/extended in place, never overwritten or suffixed.
 - [ ] Open Questions are delivered as ONE `open_questions` gate per round
       (structured `questions` list), resolvable via REST with structured
-      `answers`; rounds bounded by `DEV_FLOW_BRAINSTORM_MAX_ROUNDS`; expiry
+      `answers`; rounds bounded by `DEV_FLOW_IDEATION_MAX_ROUNDS`; expiry
       is fail-closed; rejection aborts to `failure_handler`.
-- [ ] A `feature` intent (existing brainstorm/proposal) skips the brainstorm
+- [ ] A `feature` intent (existing brainstorm/proposal) skips the ideation
       node entirely and behaves like FEAT-378 feature-mode from `planner` on.
+- [ ] The `require_plan_approval` UI toggle opens a `plan_approval` gate for
+      that run only (per-run `extra_shared` override honored by
+      `DevelopmentNode`), resolvable from the dev.html HITL panel.
 - [ ] Every successful run terminates with a **draft PR against `dev`**
       (existing `FeatureHandoffNode` behavior) — never a merge.
 - [ ] The gate-model extension is additive: all existing dev_loop tests pass
@@ -669,8 +715,9 @@ class DevLoopNode(Node)                                        # :193
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
 | `DevIntakeNode` | CEL routing | returns `DevFlowBrief`; `result.kind` predicates | `dev_loop/definition.py` CEL precedent (`_CEL_IS_FEATURE`) |
-| `BrainstormNode` | `SessionHost.open_gate/wait_gate` | `ctx` session host (same access pattern as QA/handoff nodes) | `nodes/qa.py:745,761`; `nodes/deployment_handoff.py:274,283` |
-| `BrainstormNode` | `PlannerNode` | writes `ctx["feature_brief"]` | `nodes/planner.py` (spec FEAT-378 §3 M2 step 1) |
+| `IdeationNode` | `SessionHost.open_gate/wait_gate` | `ctx` session host (same access pattern as QA/handoff nodes) | `nodes/qa.py:745,761`; `nodes/deployment_handoff.py:274,283` |
+| `IdeationNode` | `PlannerNode` | writes `ctx["feature_brief"]` | `nodes/planner.py` (spec FEAT-378 §3 M2 step 1) |
+| plan-gate UI toggle | `DevelopmentNode` plan gate | `extra_shared["require_plan_approval"]` → shared-state override | gate helper at `nodes/development.py:276` (`kind="plan_approval"`, `on_expiry="approve"`) |
 | `build_dev_flow` | node factories | `build_dev_loop_node_factories` + 2 new factories | `dev_loop/factories.py`, `flow.py:build_dev_loop_flow` pattern |
 | `server_dev.py` | gate REST | `register_command_routes(app, runner)` | `commands.py` (routes documented in module docstring) |
 | `dev.html` | state WS | `gate/opened`/`gate/resolved` action folding | `index.html:497–571 foldAction`, `:581 connect` |
@@ -680,7 +727,7 @@ class DevLoopNode(Node)                                        # :193
 
 - ~~`parrot/flows/dev_flow/`~~ — the package does not exist yet (this spec
   creates it).
-- ~~`sdd-brainstorm` subagent~~ — `_subagent_data/` today contains only:
+- ~~`sdd-ideation` subagent~~ — `_subagent_data/` today contains only:
   sdd-autopilot, sdd-codereview, sdd-feedback, sdd-planner, sdd-qa,
   sdd-research, sdd-secondopinion, sdd-worker.
 - ~~`GateKind "open_questions"`~~, ~~`ApprovalGate.questions`~~,
@@ -691,7 +738,10 @@ class DevLoopNode(Node)                                        # :193
   mounts it; the UI's gate panel is read-only.
 - ~~LLM intent classification~~ — `IntentClassifierNode` only VALIDATES a
   typed brief and routes on its `kind`; it never infers intent from text.
-- ~~`DevRequestBrief` / `DevFlowBrief` / `BrainstormOutput`~~ — new models.
+- ~~`DevRequestBrief` / `DevFlowBrief` / `IdeationOutput`~~ — new models.
+- ~~a per-run `require_plan_approval` override~~ — today the flag is fixed
+  at flow construction (`server.py:1405` → node constructor); Module 2
+  adds the `shared["require_plan_approval"]` override.
 - ~~`static/dev.html`~~ / ~~`server_dev.py`~~ — new files. `handle_index`
   serves a hardcoded `static/index.html` (`server.py:1027`); there is NO
   templating/placeholder mechanism anywhere in the example.
@@ -717,7 +767,7 @@ class DevLoopNode(Node)                                        # :193
   snapshots directly.
 - **Additive frozen models**: `_Frozen` state models are persisted in Redis
   streams; every new field MUST default so historical envelopes re-validate.
-- **Subagent I/O contract**: `sdd-brainstorm` emits ONE final JSON object
+- **Subagent I/O contract**: `sdd-ideation` emits ONE final JSON object
   (no prose/fences) exactly like sdd-planner/sdd-feedback; prompts live in
   `_subagent_data/` and are read via a `load_subagent_definition`-style
   loader, mirrored in `.claude/agents/`.
@@ -730,11 +780,23 @@ class DevLoopNode(Node)                                        # :193
   `dev_loop/session_state.py`. Mitigation: strictly additive fields with
   defaults + `test_gate_backward_compat` + the full existing dev_loop suite
   as a regression net.
-- **Brainstorm doc must be committed before planning**: `sdd-planner` runs
+- **Ideation doc must be committed before planning**: `sdd-planner` runs
   `/sdd-spec` and creates the worktree from `base_branch` HEAD — an
-  uncommitted brainstorm is invisible there. The node fails fast on
-  `BrainstormOutput.committed == False`.
-- **Concurrent SDD sessions on `dev`**: the brainstorm/spec commits land on
+  uncommitted document is invisible there. The node fails fast on
+  `IdeationOutput.committed == False`.
+- **Resume/extend can grab the wrong document**: two different ideas can
+  slugify to the same `sdd/proposals/<slug>.*.md`; resuming would then
+  extend an unrelated document. Mitigations: the resolved `document_path`
+  (+ `resumed_existing`) is shown in the gate title/UI, the user can reject
+  the gate, and the subagent is instructed to abort (fresh open question)
+  when the existing document's Problem Statement clearly does not match the
+  request.
+- **Dual-mode subagent prompt**: one `sdd-ideation` definition emits two
+  formats (brainstorm vs light proposal). The mode is a structured dispatch
+  field, and `/sdd-spec` must consume BOTH outputs — the proposal format
+  must keep the same frontmatter + Open-Questions conventions so the
+  planner path stays uniform.
+- **Concurrent SDD sessions on `dev`**: the ideation/spec commits land on
   `dev`; the subagent must stage explicit paths only (never `git add -A`)
   per the SDD auto-commit rule.
 - **HITL latency**: an `open_questions` gate can stay pending for hours —
@@ -777,15 +839,24 @@ class DevLoopNode(Node)                                        # :193
   no LLM classification node.
 - [x] HTML strategy — *Resolved 2026-08-05 (user)*: new `static/dev.html`
   served by `server_dev.py`; `index.html` untouched for operations.
-- [ ] Should `server_dev.py` also expose `require_plan_approval` as a UI
-  toggle (plan gate between planner and development), now that the gate
-  write path exists? — *Owner: Jesus* (default: keep the conf key only)
-- [ ] Slug collision policy when `sdd/proposals/<slug>.brainstorm.md` already
-  exists (suffix `-2` vs resume/extend the existing doc)? — *Owner: Jesus*
-  (proposed default: suffix, never overwrite)
-- [ ] Should the `enhancement` intent eventually map to a lighter path
-  (proposal instead of brainstorm)? Deferred — v1 treats both NL intents
-  identically except for document framing. — *Owner: Jesus*
+- [x] Plan-approval gate in the UI — *Resolved 2026-08-05 (user)*: YES.
+  `dev.html` exposes a per-run `require_plan_approval` toggle (advanced
+  options); the resulting `plan_approval` gate renders in the same HITL
+  panel as the Open Questions (approve/reject + comment). Requires the
+  per-run `shared["require_plan_approval"]` override in `DevelopmentNode`
+  (§3 Module 2).
+- [x] Existing-document policy — *Resolved 2026-08-05 (user)*:
+  RESUME/EXTEND the existing `sdd/proposals/<slug>.*.md` (new
+  Open-Questions rounds on the same doc, `resumed_existing=true`); never
+  overwrite, never create `-2`-suffixed copies. Ambiguity risk mitigated in
+  §7 Known Risks (document path surfaced in the gate; user can reject).
+- [x] `enhancement` path — *Resolved 2026-08-05 (user)*: `enhancement`
+  generates a **light proposal** (`.proposal.md` — scope, rationale,
+  impact, open questions; no options analysis) instead of a brainstorm;
+  `new_feature` keeps the full brainstorm. Both are produced by the single
+  dual-mode `sdd-ideation` subagent and both feed `PlannerNode` unchanged
+  (`FeatureBrief.document_kind` already admits `"proposal"`). This is why
+  the ideation stage is named `ideation`, not `brainstorm`.
 
 ---
 
@@ -808,3 +879,4 @@ class DevLoopNode(Node)                                        # :193
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-05 | Jesus Lara (with Claude) | Initial draft |
+| 0.2 | 2026-08-05 | Jesus Lara (with Claude) | §8 fully resolved: plan-gate UI toggle (per-run override), resume/extend existing docs, enhancement → light proposal; `brainstorm` stage renamed `ideation` (dual-mode `sdd-ideation` subagent) |
