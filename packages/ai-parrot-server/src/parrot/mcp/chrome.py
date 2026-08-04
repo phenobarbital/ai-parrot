@@ -1,19 +1,18 @@
-from typing import Optional
-from pathlib import Path
+import logging
+import socket
 import subprocess
 import time
-import socket
-import logging
+
 import requests
 
 
 class ChromeManager:
     """Manages a headless Chrome instance for MCP tools."""
 
-    def __init__(self, port: int = 9222, logger: Optional[logging.Logger] = None):
+    def __init__(self, port: int = 9222, logger: logging.Logger | None = None):
         self.port = port
         self.logger = logger or logging.getLogger("ChromeManager")
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
 
     def is_port_open(self, host: str, port: int) -> bool:
         """Check if a port is open."""
@@ -32,13 +31,24 @@ class ChromeManager:
         except requests.RequestException:
             return False
 
-    def start(self) -> bool:
-        """Start headless Chrome if not already running."""
+    def start(self, headless: bool = True) -> bool:
+        """Start Chrome if not already running.
+
+        Args:
+            headless: Whether to launch Chrome without a visible window.
+                Defaults to `True` to preserve existing (headless)
+                behavior for callers that do not pass this argument.
+
+        Returns:
+            bool: `True` if Chrome is running (already or newly started),
+            `False` if it failed to start within the timeout.
+        """
         if self.is_chrome_running():
             self.logger.info("Chrome is already running on port %s", self.port)
             return True
 
-        self.logger.info("Starting headless Chrome...")
+        mode = "headless" if headless else "visible"
+        self.logger.info("Starting %s Chrome...", mode)
 
         # Determine Chrome executable
         chrome_bins = [
@@ -63,13 +73,14 @@ class ChromeManager:
         # Using array format for subprocess
         cmd = [
             "google-chrome", # Defaulting to google-chrome, relying on path
-            "--headless=new",
             f"--remote-debugging-port={self.port}",
             "--disable-gpu",
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--remote-allow-origins=*"
         ]
+        if headless:
+            cmd.insert(1, "--headless=new")
 
         try:
             # check if google-chrome exists
@@ -104,7 +115,7 @@ class ChromeManager:
             self.logger.error("Timeout waiting for Chrome to start.")
             return False
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - broad by design: any subprocess/launch fault must not crash the caller
             self.logger.error("Failed to start Chrome: %s", e)
             return False
 
