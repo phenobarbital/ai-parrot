@@ -61,8 +61,9 @@ class DevLoopCloseNode(DevLoopNode):
         Returns:
             ``{"status": "closed", "issue_key": ..., "mode": ...}`` on
             success, ``{"status": "closed_without_ticket", ...}`` when no
-            Jira issue exists, or ``{"status": "close_failed", "error": ...}``
-            when a Jira call raises.
+            Jira issue exists **or the run is under ``skip_jira``**, or
+            ``{"status": "close_failed", "error": ...}`` when a Jira call
+            raises.
         """
         shared = self.shared_state(ctx)
         research: Optional[ResearchOutput] = shared.get("research_output")
@@ -73,6 +74,18 @@ class DevLoopCloseNode(DevLoopNode):
             self.logger.warning(
                 "DevLoopClose: no jira_issue_key in shared state (mode=%s).",
                 mode,
+            )
+            return {"status": "closed_without_ticket", "mode": mode}
+
+        # Under ``skip_jira`` the key is ResearchNode's synthetic "SKIP-0"
+        # placeholder — no ticket was ever created, so commenting on and
+        # transitioning it can only 404. Same bypass the Development,
+        # DeploymentHandoff and FailureHandler nodes already honour.
+        if shared.get("skip_jira", False):
+            self.logger.info(
+                "Jira bypass enabled (skip_jira=True) — closing run %s "
+                "without touching %s (mode=%s).",
+                shared.get("run_id", "?"), issue_key, mode,
             )
             return {"status": "closed_without_ticket", "mode": mode}
 

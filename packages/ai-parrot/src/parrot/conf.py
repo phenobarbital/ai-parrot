@@ -1111,6 +1111,18 @@ DEV_LOOP_WIKI_PAGE_INGEST: bool = config.getboolean(
     "DEV_LOOP_WIKI_PAGE_INGEST", fallback=False
 )
 
+# Whether ``ResearchNode`` fetches REMOTE log excerpts (CloudWatch,
+# Elasticsearch) for a run. Local sources (``inline`` pasted traces and
+# ``attached_file``) are never gated by this — they cost no API call.
+#   "auto"   (default) — only for ``kind == "bug"`` briefs. Enhancement /
+#                        new-feature / spec-driven runs have no incident to
+#                        triage, so the query is pure latency + AWS spend.
+#   "always" — pre-existing behavior: fetch for every work kind.
+#   "never"  — never call a remote log backend, not even for bugs.
+DEV_LOOP_LOG_FETCH_MODE: str = config.get(
+    "DEV_LOOP_LOG_FETCH_MODE", fallback="auto"
+)
+
 # FEAT-405: Nova (AWS Bedrock) dev-loop backend. The dev-seat coding loop
 # (``NovaCodeDispatcher``) reaches MiniMax/Kimi/GLM models over the
 # OpenAI-compatible ``bedrock-mantle`` endpoint rather than through
