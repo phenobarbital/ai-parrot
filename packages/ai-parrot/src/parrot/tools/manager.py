@@ -288,6 +288,15 @@ class ToolManager(MCPToolManagerMixin):
         # FEAT-252 hook falls back to the pre-FEAT-396 default-policy
         # scrubber singleton in that case.
         self._tool_output_pipeline: Optional[Any] = None
+        # FEAT-406 (TASK-2111): the owning bot's TOOL_CALL `GuardrailPipeline`
+        # (`AbstractBot._guardrail_pipelines[GuardrailStage.TOOL_CALL]`),
+        # stamped here right after `AbstractBot.__init__` builds it — mirrors
+        # `_tool_output_pipeline` above. Runs BEFORE GrantGuard/ConfirmationGuard
+        # in `execute_tool()` (a policy-doomed call should never interrupt a
+        # human for confirmation or consume a grant). ``None`` when this
+        # manager isn't owned by a guardrails-aware bot — that path is
+        # unchanged (no TOOL_CALL evaluation).
+        self._tool_call_pipeline: Optional[Any] = None
         self.pandas_tool_name: str = "python_pandas"
         self._wired_toolkits: set = set()  # Track auto-wired toolkit instances
 
@@ -1472,6 +1481,46 @@ class ToolManager(MCPToolManagerMixin):
                 # above — see add_tool()/register_tool()).
                 if getattr(tool, '_tool_output_pipeline', None) is not self._tool_output_pipeline:
                     tool._tool_output_pipeline = self._tool_output_pipeline
+
+                # === TOOL_CALL guardrail pipeline (FEAT-406) ===
+                # Policy-based pre-execution denial (e.g. PBAC). Runs FIRST —
+                # before GrantGuard/ConfirmationGuard — so a policy-doomed
+                # call never interrupts a human for confirmation or consumes
+                # a grant. Purely additive: without a pipeline (or an empty
+                # one) the path below is unchanged (regression-safe).
+                if self._tool_call_pipeline is not None and self._tool_call_pipeline.has_guardrails:
+                    from ..bots.guardrails.base import GuardrailContext, GuardrailStage
+                    tool_call_ctx = GuardrailContext(
+                        stage=GuardrailStage.TOOL_CALL,
+                        agent_name=tool_name,
+                        tool_name=tool_name,
+                        extras={
+                            "permission_context": permission_context,
+                            "tool_name": tool_name,
+                            "arguments": parameters,
+                        },
+                    )
+                    tool_call_outcome = await self._tool_call_pipeline.run(
+                        f"tool_call:{tool_name}", tool_call_ctx
+                    )
+                    if tool_call_outcome.blocked:
+                        # Prefer the blocking guardrail's human-readable report
+                        # message (e.g. PBACToolCallGuardrail's operator-authored
+                        # denial text) over the bare category-label `reason` —
+                        # this is what the LLM sees and verbalizes to the user.
+                        error_message = tool_call_outcome.reason or "Policy denied"
+                        for report in tool_call_outcome.flag_reports.values():
+                            if isinstance(report, dict) and report.get("message"):
+                                error_message = report["message"]
+                                break
+                        return ToolResult(
+                            success=False,
+                            status="forbidden",
+                            error=error_message,
+                            result=None,
+                        )
+                # === End TOOL_CALL guardrail pipeline ===
+
                 # === Grant guard check (FEAT-211) ===
                 # If a GrantGuard is configured and the tool requires a grant,
                 # authorize before dispatching to tool.execute().

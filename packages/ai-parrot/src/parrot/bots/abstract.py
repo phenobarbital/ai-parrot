@@ -745,6 +745,22 @@ class AbstractBot(
         # registrations instead of silently falling back to a hardcoded
         # default-policy singleton.
         self.tool_manager._tool_output_pipeline = self._guardrail_pipelines[GuardrailStage.TOOL_OUTPUT]
+        # FEAT-406 (TASK-2111): stamp the real TOOL_CALL pipeline onto the tool
+        # manager too — same seam as TOOL_OUTPUT above. Runs pre-execution
+        # (before GrantGuard/ConfirmationGuard) inside `ToolManager.execute_tool()`.
+        # A bot opts a policy-driven guardrail (e.g. `PBACToolCallGuardrail`)
+        # into this stage by passing an already-constructed instance — or a
+        # `{"name": "pbac", "evaluator": <shared PolicyEvaluator>}` dict — in
+        # the `guardrails=[...]` kwarg above (resolved spec Q7: the shared
+        # evaluator cannot be expressed as a bare registry name, so
+        # `guardrails=["pbac"]` alone is not sufficient); `build_guardrails()`
+        # (unchanged) already routes either shape into
+        # `self._guardrail_pipelines[GuardrailStage.TOOL_CALL]` via its
+        # per-stage registration loop. No PBAC-specific construction code is
+        # needed here — this bot has no `app`/evaluator reference to build one
+        # from; that reference lives at the caller's application-wiring layer
+        # (`setup_pbac(app)`), not inside `AbstractBot`.
+        self.tool_manager._tool_call_pipeline = self._guardrail_pipelines[GuardrailStage.TOOL_CALL]
 
         # FEAT-176: Emit ToolManagerReadyEvent now that the registry is live.
         if getattr(self, '_tool_manager_ready_pending', False):
