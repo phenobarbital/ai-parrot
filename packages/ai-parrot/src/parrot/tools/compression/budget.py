@@ -161,7 +161,7 @@ def is_rust_available() -> bool:
     except ImportError:
         _rust_available_cache = False
         if not _rust_absence_logged:
-            logger.debug(
+            logger.warning(
                 "parrot_codec Rust extension not available; large payloads "
                 "over the size threshold will pass through uncompressed (G9)."
             )

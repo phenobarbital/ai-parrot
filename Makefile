@@ -3,7 +3,7 @@
 
 .PHONY: venv install install-core install-tools install-loaders install-codex-sdk-editable \
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
-		generate-registry check-registry \
+		generate-registry check-registry build-codec-rs \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
 		install-supertonic docker-tool-worker docker-integrations docker-dev
@@ -175,6 +175,7 @@ install-loaders-all:
 install-all:
 	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
 	uv pip install querysource
+	$(MAKE) build-codec-rs
 	@echo "All packages installed with ALL extras (except gemma4)."
 
 # Generate lock files (uv only)
@@ -197,6 +198,7 @@ endif
 develop:
 	uv sync --all-packages --all-extras --no-extra gemma4
 	$(MAKE) build-inplace
+	$(MAKE) build-codec-rs
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 
 # Fast dev install: all packages but skip heavy ML deps
@@ -205,6 +207,7 @@ develop-fast:
 	uv pip install "Cython==3.0.11" "setuptools>=67.6.1" "wheel>=0.44.0"
 	uv sync --all-packages
 	$(MAKE) build-inplace
+	$(MAKE) build-codec-rs
 	@echo "Fast dev environment ready (no heavy ML deps)."
 
 # Full ML stack (slow install, requires GPU for optimal performance)
@@ -290,7 +293,7 @@ install-supertonic:
 	@echo "   works out of the box. Voices: M1-M5, F1-F5 (TTSConfig(voice='F1'), default M1)."
 
 # Build and publish all packages
-release: lint test clean check-registry
+release: lint test clean check-registry build-codec-rs
 	uv build --package ai-parrot
 	uv build --package ai-parrot-tools
 	uv build --package ai-parrot-loaders
@@ -302,6 +305,7 @@ release: lint test clean check-registry
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
 	uv build --package navrules
+	cd packages/ai-parrot/src/parrot/codec-rs && maturin build --release --out $(CURDIR)/dist
 	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
 	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
 	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
@@ -313,6 +317,7 @@ release: lint test clean check-registry
 	uv publish dist/ai_parrot_server-*.tar.gz dist/ai_parrot_server-*.whl
 	uv publish dist/ai_parrot_advisors-*.tar.gz dist/ai_parrot_advisors-*.whl
 	uv publish dist/navrules-*.tar.gz dist/navrules-*.whl
+	uv publish dist/parrot_codec-*.tar.gz dist/parrot_codec-*.whl
 
 # Alternative release using flit
 release-flit: lint test clean
@@ -361,6 +366,17 @@ build-inplace:
 	@echo "Building Cython extensions in place..."
 	cd packages/ai-parrot && python setup.py build_ext --inplace
 
+# Build optional parrot_codec Rust extension (FEAT-380 / TASK-1955)
+# Requires: maturin + Rust toolchain. Skips gracefully if maturin is absent.
+build-codec-rs:
+	@if command -v maturin >/dev/null 2>&1; then \
+		echo "Building parrot_codec Rust extension..."; \
+		cd packages/ai-parrot/src/parrot/codec-rs && maturin develop --release; \
+		echo "✅ parrot_codec installed."; \
+	else \
+		echo "⚠  maturin not found — skipping parrot_codec (optional)."; \
+	fi
+
 # Full build using uv (builds all workspace packages)
 build: clean
 	@echo "Building all workspace packages with uv..."
@@ -375,6 +391,9 @@ build: clean
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
 	uv build --package navrules
+	@if command -v maturin >/dev/null 2>&1; then \
+		cd packages/ai-parrot/src/parrot/codec-rs && maturin build --release --out $(CURDIR)/dist; \
+	fi
 
 # ============================================================
 # Tool Registry Management
@@ -821,6 +840,7 @@ help:
 	@echo "    generate-registry   - Regenerate TOOL_REGISTRY from source"
 	@echo "    check-registry      - Check if TOOL_REGISTRY is up to date (CI)"
 	@echo "    build               - Build all workspace packages"
+	@echo "    build-codec-rs      - Build optional parrot_codec Rust extension"
 	@echo "    release             - Build and publish all packages to PyPI"
 	@echo ""
 	@echo "  Quality:"
