@@ -393,4 +393,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-04
+**Notes**: Created `parrot/bots/chrome_runner.py` with `load_test_cases()`
+(JSON always supported, YAML optional via `import yaml` with a graceful
+`sys.exit(2)` + install hint on `ImportError`; missing file / invalid JSON
+also exit 2), `build_parser()` (all 9 flags from the spec plus `--verbose`),
+`run_qa()` (creates `screenshot_dir` if missing, builds `WebAgent` with
+`default_timeout_ms`/`screenshot_dir`, calls `agent.configure()` then
+`async with agent: run_tests(...)` — same pattern as
+`examples/chrome_qa_test.py` — prints a human-readable summary, writes
+JUnit XML when requested, returns `report.exit_code`), and `main()`
+(env var overrides `CHROME_HEADLESS`/`TARGET_URL`/`QA_TAGS` applied only
+when the corresponding CLI flag is at its default, so flags win;
+`asyncio.run()` + `sys.exit()`). Verified `python -m
+parrot.bots.chrome_runner --help` works end-to-end. Created
+`tests/bots/test_chrome_runner.py` with 19 tests covering parser,
+file loading (JSON/YAML/missing/invalid), `run_qa()` exit codes/tags/
+JUnit output/screenshot dir (WebAgent mocked, no real Chrome), and
+`main()` env var precedence + exit code propagation. All 19 pass;
+`ruff check` clean.
+
+**Deviations from spec**: none.
