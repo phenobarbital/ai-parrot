@@ -1,0 +1,60 @@
+# Sample PBAC Guardrail Policy — Business-Hours Tool Denial, fail-open variant (FEAT-406)
+# =========================================================================================
+# Same demo as tool-business-hours.yaml, but with `enforcement: fail_open` —
+# demonstrating the per-policy fail-mode downgrade (resolved spec Q3): if the
+# policy engine itself errors while evaluating this tool, the call passes
+# through instead of being blocked with `policy_engine_unavailable`.
+#
+# IMPORTANT (see docs/security/pbac-guardrails.md): the currently-pinned
+# navigator-auth `PolicyLoader` does not forward the `enforcement:` key from
+# YAML into `ResourcePolicy.attributes` — this file documents the intended
+# syntax and is safe/inert to load (no wildcard resource, see the note in
+# tool-business-hours.yaml), but exercising the actual fail-open downgrade
+# today requires constructing a `ResourcePolicy` directly in Python with
+# `enforcement="fail_open"` (as `PBACToolCallGuardrail`'s own e2e test does).
+#
+# Scoped to a different demo-only tool name so both sample files can be
+# loaded side by side without a duplicate-resource ambiguity.
+
+version: "1.0"
+
+defaults:
+  effect: deny
+
+policies:
+  # Baseline allow — see tool-business-hours.yaml for the priority-tie
+  # rationale (DENY wins over ALLOW at equal priority when it matches).
+  - name: demo_business_hours_tool_allow_baseline_soft
+    effect: allow
+    description: >
+      Baseline access to the demo_business_hours_only_soft tool — overridden
+      by the DENY rule below outside business hours.
+    resources:
+      - "tool:demo_business_hours_only_soft"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - "*"
+    priority: 5
+    enforcing: false
+
+  - name: demo_business_hours_tool_deny_soft
+    effect: deny
+    description: >
+      Demo policy (fail-open variant) — the demo_business_hours_only_soft
+      tool is denied outside business hours; engine failures pass through
+      instead of blocking (enforcement: fail_open).
+    resources:
+      - "tool:demo_business_hours_only_soft"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - "*"
+    conditions:
+      environment:
+        is_business_hours: false
+    enforcement: fail_open
+    priority: 5
+    enforcing: false

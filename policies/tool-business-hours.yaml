@@ -1,0 +1,70 @@
+# Sample PBAC Guardrail Policy — Business-Hours Tool Denial (FEAT-406)
+# =====================================================================
+# Demonstrates PBACToolCallGuardrail's third enforcement layer: a policy
+# DENY at the TOOL_CALL guardrail stage returns a structured, explainable
+# denial the LLM verbalizes to the user ("this tool is only available
+# during business hours"), rather than hiding the tool (Layer 1) or
+# silently failing it (Layer 2).
+#
+# Scoped to a demo-only resource pattern (`tool:demo_business_hours_only`)
+# rather than a wildcard (`tool:*`) — this file is loaded automatically at
+# startup like every other file in `policies/` (see README.md), so a
+# wildcard DENY here would become a live production policy gating every
+# real tool for every user outside business hours. Rename/broaden the
+# `resources:` pattern deliberately, with review, if you want this
+# enforced repo-wide.
+#
+# See docs/security/pbac-guardrails.md for the full guide, including the
+# `enforcement:` key's current limitation (see the -soft variant).
+
+version: "1.0"
+
+defaults:
+  effect: deny
+
+policies:
+  # Baseline: everyone may execute the demo tool. The DENY rule below
+  # overrides this at equal priority whenever its condition matches
+  # (outside business hours) — "at equal priority, DENY takes precedence
+  # over ALLOW", see policies/README.md's Priority and Conflict Resolution.
+  - name: demo_business_hours_tool_allow_baseline
+    effect: allow
+    description: >
+      Baseline access to the demo_business_hours_only tool — overridden by
+      the DENY rule below outside business hours.
+    resources:
+      - "tool:demo_business_hours_only"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - "*"
+    priority: 5
+    enforcing: false
+
+  - name: demo_business_hours_tool_deny
+    effect: deny
+    description: >
+      Demo policy — the demo_business_hours_only tool is denied outside
+      business hours (server local clock; see Environment.is_business_hours,
+      configured via BUSINESS_HOURS_START/END + BUSINESS_DAYS).
+    resources:
+      - "tool:demo_business_hours_only"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - "*"
+    conditions:
+      environment:
+        is_business_hours: false
+    # Fail-mode override (resolved spec Q3): default is fail_closed
+    # (PBACToolCallGuardrail.on_error). This key is accepted here for
+    # forward-compatibility, but the currently-pinned navigator-auth
+    # PolicyLoader does NOT forward arbitrary top-level policy keys into
+    # ResourcePolicy.attributes — see docs/security/pbac-guardrails.md for
+    # the exact gap and how to exercise `enforcement: fail_open` today
+    # (constructing a ResourcePolicy directly in Python).
+    enforcement: fail_closed
+    priority: 5
+    enforcing: false

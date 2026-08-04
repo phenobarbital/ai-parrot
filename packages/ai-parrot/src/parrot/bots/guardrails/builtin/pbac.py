@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel
 
 from parrot.auth.permission import PermissionContext, to_eval_context
+from parrot.auth.userinfo import UserInfoService
 
 from ..base import (
     Guardrail,
@@ -59,6 +60,9 @@ class PBACToolCallGuardrail(Guardrail):
 
     Attributes:
         _evaluator: Shared ``PolicyEvaluator`` (from ``setup_pbac()``).
+        _userinfo_service: Optional shared ``UserInfoService`` (FEAT-406
+            Module 6) used to enrich the ``EvalContext`` with curated
+            ``EmployeeProfile`` attributes before evaluation.
         logger: Standard Python logger for denial/error audit events.
     """
     name = "pbac"
@@ -66,16 +70,75 @@ class PBACToolCallGuardrail(Guardrail):
     priority = 10  # sanitizer band — policy check runs before other TOOL_CALL guardrails
     on_error = "fail_closed"  # security control default (resolved Q3)
 
-    def __init__(self, evaluator: "Any", *, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self,
+        evaluator: "Any",
+        *,
+        userinfo_service: UserInfoService | None = None,
+        logger: logging.Logger | None = None,
+    ) -> None:
         """Initialize the guardrail with the shared PolicyEvaluator.
 
         Args:
             evaluator: Shared ``PolicyEvaluator`` instance (same one wired
                 into Guardian and ``PBACPermissionResolver`` by ``setup_pbac()``).
+            userinfo_service: Optional shared ``UserInfoService``. When
+                given, ``check()`` enriches the ``EvalContext`` with the
+                session user's curated ``EmployeeProfile`` attributes
+                before evaluation (thin join point between FEAT-406's two
+                lanes — resolved Module 6). A profile-fetch failure never
+                blocks the tool call; it is logged and evaluation proceeds
+                with session-only attributes.
             logger: Optional logger; defaults to ``logging.getLogger(__name__)``.
         """
         self._evaluator = evaluator
+        self._userinfo_service = userinfo_service
         self.logger = logger or logging.getLogger(__name__)
+
+    async def _enrich_eval_context(self, eval_ctx: Any, permission_context: PermissionContext) -> None:
+        """Best-effort enrichment of ``eval_ctx.userinfo`` with profile attributes.
+
+        Projects ``job_code``, ``department_code``, ``groups``, and
+        ``programs`` from the session user's ``EmployeeProfile`` onto the
+        ``EvalContext``'s mutable ``userinfo`` dict. ``groups`` are merged
+        (union) with the session's existing groups since
+        ``PolicyEvaluator._build_user_context()`` reads ``groups`` when
+        building the Rust engine's evaluation context — the other fields
+        are enriched for forward-compatibility (a documented navigator-auth
+        limitation: `job_code`/`department_code`/`programs` are not
+        currently forwarded to the Rust engine, see
+        ``docs/security/pbac-guardrails.md``).
+
+        Args:
+            eval_ctx: The ``EvalContext`` to enrich in place.
+            permission_context: Carries the session ``user_id`` used to
+                look up the profile.
+
+        Never raises — a fetch failure is logged and evaluation proceeds
+        with session-only attributes (spec: "never block due to profile
+        unavailability").
+        """
+        if self._userinfo_service is None:
+            return
+        try:
+            profile = await self._userinfo_service.get_profile(permission_context.user_id)
+        except Exception as exc:  # noqa: BLE001 - enrichment must never block a tool call
+            self.logger.warning(
+                "PBAC profile enrichment failed for user %s: %s",
+                permission_context.user_id, exc,
+            )
+            return
+        if profile is None:
+            return
+
+        userinfo = eval_ctx.userinfo if isinstance(eval_ctx.userinfo, dict) else {}
+        existing_groups = set(userinfo.get("groups", []) or [])
+        userinfo.update({
+            "job_code": profile.job_code,
+            "department_code": profile.department_code,
+            "groups": list(existing_groups | set(profile.groups)),
+            "programs": profile.programs,
+        })
 
     def _policy_enforcement(self, tool_name: str) -> str | None:
         """Best-effort lookup of the ``enforcement`` attribute for a tool's policy.
@@ -157,6 +220,7 @@ class PBACToolCallGuardrail(Guardrail):
 
         try:
             eval_ctx = to_eval_context(permission_context)
+            await self._enrich_eval_context(eval_ctx, permission_context)
             env = Environment()
             result = self._evaluator.check_access(
                 ctx=eval_ctx,
