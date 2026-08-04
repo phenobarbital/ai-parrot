@@ -147,6 +147,7 @@ A diferencia del demo, `server.py` (y `quickstart.py`) cablean el flujo real
 | Cuenta de servicio Jira: `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`, `JIRA_PROJECT`, `FLOW_BOT_JIRA_ACCOUNT_ID` | Crear/transicionar tickets como `flow-bot` |
 | Identidades reporter/escalación: `JIRA_REPORTER_ACCOUNT_ID`, `JIRA_ESCALATION_ACCOUNT_ID` | Aceptan email o accountId; `FLOW_BOT_JIRA_ACCOUNT_ID` es el fallback |
 | `AWS_PROFILE` (default `cloudwatch`) + `CLOUDWATCH_LOG_GROUP` (default `fluent-bit-cloudwatch`) | `ResearchNode` trae excerpts de logs |
+| `DEV_LOOP_LOG_FETCH_MODE` (default `auto`) | Cuándo `ResearchNode` consulta un backend de logs **remoto** (CloudWatch/Elasticsearch): `auto` = solo runs de bug, `always` = todos los kinds, `never` = deshabilitado. Las fuentes locales (`inline`/`attached_file`) nunca se filtran. |
 | `DEV_LOOP_SUMMARY_LLM` (default `anthropic:claude-haiku-4-5-20251001`) | Modelo para resumir logs cuando exceden el cap de 32 767 chars de Atlassian |
 | `DEV_LOOP_PLAN_LLM` (default `""` → cae a `DEV_LOOP_SUMMARY_LLM`) | Override opcional del modelo para el comentario de plan-summary (FEAT-132) |
 

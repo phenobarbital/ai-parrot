@@ -53,6 +53,7 @@ def build_dev_loop_node_factories(
     development_pool_max: int = 4,
     git_toolkit: Optional[Any] = None,
     log_toolkits: Optional[Dict[str, Any]] = None,
+    log_fetch_mode: Optional[str] = None,
     repos: Optional[List[RepoSpec]] = None,
     codereview_dispatcher: Optional[Any] = None,
     require_deployment_approval: bool = False,
@@ -86,6 +87,11 @@ def build_dev_loop_node_factories(
             ``DEV_LOOP_DEV_POOL_MAX``). Defaults to ``4``.
         git_toolkit: Optional ``GitToolkit`` for repo provisioning (FEAT-250).
         log_toolkits: Optional ``{source_kind: toolkit}`` map for ResearchNode.
+        log_fetch_mode: Remote-log-fetch policy forwarded to
+            ``ResearchNode`` — ``"auto"`` / ``"always"`` / ``"never"``.
+            ``None`` (default) resolves ``DEV_LOOP_LOG_FETCH_MODE``
+            (itself defaulting to ``"auto"``: CloudWatch/Elasticsearch are
+            queried for ``kind == "bug"`` runs only).
         repos: Optional ``RepoSpec`` list cloned/pulled before Development.
         codereview_dispatcher: Optional ``AbstractCodeReviewDispatcher``
             (FEAT-270) used by ``QANode`` for the code-review gate. Defaults
@@ -142,6 +148,7 @@ def build_dev_loop_node_factories(
                 dispatcher=dispatcher,
                 jira_toolkit=jira_toolkit,
                 log_toolkits=log_toolkits,
+                log_fetch_mode=log_fetch_mode,
                 git_toolkit=git_toolkit,
                 repos=repos,
                 graph_memory=graph_memory,

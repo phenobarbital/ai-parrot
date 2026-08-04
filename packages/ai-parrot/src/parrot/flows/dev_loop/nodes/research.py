@@ -85,6 +85,14 @@ _LOG_NOISE_RE = re.compile(
 # useful to a human and they dominate the byte count of a raw dump.
 _LOG_DROP_FIELDS = frozenset({"@ptr"})
 
+# Log-source kinds that hit a REMOTE backend (an AWS/ES API call). Gated by
+# the ``log_fetch_mode`` policy; ``inline`` / ``attached_file`` are local and
+# always processed.
+_REMOTE_LOG_KINDS = frozenset({"cloudwatch", "elasticsearch"})
+
+# Accepted ``log_fetch_mode`` values. See ``DEV_LOOP_LOG_FETCH_MODE``.
+_LOG_FETCH_MODES = frozenset({"auto", "always", "never"})
+
 # FEAT-132: Jira issuetype per work-kind.
 # Keys are the three WorkKind literals; values are the Jira issuetype
 # labels accepted by the NAV Jira instance (verified 2026-04-28).
@@ -106,6 +114,17 @@ def _summarizer_llm_default() -> str:
         "DEV_LOOP_SUMMARY_LLM",
         fallback="anthropic:claude-haiku-4-5-20251001",
     )
+
+
+def _log_fetch_mode_default() -> str:
+    """Resolve the default remote-log-fetch policy.
+
+    Reads ``DEV_LOOP_LOG_FETCH_MODE`` from navconfig (env-overridable).
+    Unknown values fall back to ``"auto"`` — remote logs are fetched for
+    ``kind == "bug"`` briefs only.
+    """
+    mode = str(getattr(conf, "DEV_LOOP_LOG_FETCH_MODE", "auto") or "auto").strip().lower()
+    return mode if mode in _LOG_FETCH_MODES else "auto"
 
 
 def _plan_llm_default() -> str:
@@ -133,6 +152,12 @@ class ResearchNode(DevLoopNode):
         log_toolkits: Mapping ``"cloudwatch"|"elasticsearch"`` →
             toolkit instance. Optional kinds may be missing; an unknown
             ``LogSource.kind`` raises ``ValueError`` at dispatch time.
+        log_fetch_mode: Remote-log-fetch policy — ``"auto"`` (default,
+            from ``DEV_LOOP_LOG_FETCH_MODE``) fetches CloudWatch /
+            Elasticsearch excerpts only for ``kind == "bug"`` briefs;
+            ``"always"`` fetches for every work kind (pre-flag behavior);
+            ``"never"`` disables remote log fetching entirely. Local
+            ``inline`` / ``attached_file`` sources are never gated.
         name: Node id, default ``"research"``.
     """
 
@@ -142,6 +167,7 @@ class ResearchNode(DevLoopNode):
         dispatcher: ClaudeCodeDispatcher,
         jira_toolkit: Any,
         log_toolkits: Optional[Dict[str, Any]] = None,
+        log_fetch_mode: Optional[str] = None,
         summarizer_llm: Optional[str] = None,
         plan_llm: Optional[str] = None,
         git_toolkit: Optional[Any] = None,
@@ -158,6 +184,13 @@ class ResearchNode(DevLoopNode):
         object.__setattr__(self, "_git_toolkit", git_toolkit)
         object.__setattr__(self, "_repos", list(repos or []))
         object.__setattr__(self, "_log_toolkits", log_toolkits or {})
+        mode = (log_fetch_mode or "").strip().lower() or _log_fetch_mode_default()
+        if mode not in _LOG_FETCH_MODES:
+            raise ValueError(
+                f"Invalid log_fetch_mode {log_fetch_mode!r}; "
+                f"expected one of {sorted(_LOG_FETCH_MODES)}."
+            )
+        object.__setattr__(self, "_log_fetch_mode", mode)
         object.__setattr__(self, "_summarizer_llm", summarizer_llm or _summarizer_llm_default())
         object.__setattr__(self, "_summarizer_client", None)
         object.__setattr__(self, "_plan_llm", plan_llm or _plan_llm_default())
@@ -186,9 +219,13 @@ class ResearchNode(DevLoopNode):
         brief: BugBrief = shared["bug_brief"]
 
         # 1. Fetch logs first — cheap, deterministic, and the excerpts
-        # become part of the Jira description.
+        # become part of the Jira description. Remote sources are gated by
+        # ``log_fetch_mode``: a non-bug run has no incident to triage, so by
+        # default it never touches CloudWatch/Elasticsearch.
         excerpts = await self._collect_log_excerpts(
-            brief.log_sources, brief.affected_component
+            brief.log_sources,
+            brief.affected_component,
+            kind=getattr(brief, "kind", "bug"),
         )
 
         # 2. Resolve the Jira ticket BEFORE dispatching. Unit tests pin
@@ -250,19 +287,23 @@ class ResearchNode(DevLoopNode):
 
         # Transition the ticket out of Backlog so downstream nodes
         # (Development, Handoff) can reach In Progress / Resolved
-        # without walking the entire workflow from Backlog.
-        try:
-            await transition_issue_with_candidates(
-                self._jira,
-                issue_key,
-                ["Open", "In Progress", "To Do"],
-                logger=self.logger,
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "Initial Jira transition failed for %s (continuing): %s",
-                issue_key, exc,
-            )
+        # without walking the entire workflow from Backlog. Skipped under
+        # ``skip_jira``: ``issue_key`` is then the synthetic "SKIP-0"
+        # placeholder, and transitioning it only ever produced a 404
+        # warning on every bypassed run.
+        if not skip_jira:
+            try:
+                await transition_issue_with_candidates(
+                    self._jira,
+                    issue_key,
+                    ["Open", "In Progress", "To Do"],
+                    logger=self.logger,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "Initial Jira transition failed for %s (continuing): %s",
+                    issue_key, exc,
+                )
 
         # 3. FEAT-253: Provision repos BEFORE the sdd-research dispatch so
         # the dispatch cwd is set correctly (clone path when a repo is
@@ -451,11 +492,56 @@ class ResearchNode(DevLoopNode):
     # Internal
     # ------------------------------------------------------------------
 
+    def _remote_fetch_enabled(self, kind: str) -> bool:
+        """Whether remote log backends may be queried for this work kind.
+
+        Args:
+            kind: The brief's ``WorkKind`` (``"bug"`` /
+                ``"enhancement"`` / ``"new_feature"``).
+
+        Returns:
+            ``True`` when ``log_fetch_mode`` is ``"always"``, or it is
+            ``"auto"`` and the brief is a bug. ``False`` for ``"never"``
+            and for every non-bug kind under ``"auto"``.
+        """
+        if self._log_fetch_mode == "never":
+            return False
+        if self._log_fetch_mode == "always":
+            return True
+        return kind == "bug"
+
     async def _collect_log_excerpts(
-        self, sources: List[LogSource], affected_component: str = ""
+        self,
+        sources: List[LogSource],
+        affected_component: str = "",
+        kind: str = "bug",
     ) -> List[str]:
+        """Fetch excerpts for every log source, skipping gated remote ones.
+
+        Args:
+            sources: Log sources declared on the brief.
+            affected_component: Component filter forwarded to the
+                CloudWatch Insights query builder.
+            kind: The brief's work kind, used with ``log_fetch_mode`` to
+                decide whether remote backends may be queried. Defaults to
+                ``"bug"`` so direct callers keep the fetch-everything
+                behavior.
+
+        Returns:
+            The concatenated excerpts. A failing source is logged and
+            skipped — log fetching never blocks the flow.
+        """
+        remote_ok = self._remote_fetch_enabled(kind)
         excerpts: List[str] = []
         for src in sources:
+            if src.kind in _REMOTE_LOG_KINDS and not remote_ok:
+                self.logger.info(
+                    "Skipping %s log fetch for %r (kind=%s, "
+                    "log_fetch_mode=%s) — remote log fetching is only for "
+                    "bug runs.",
+                    src.kind, src.locator, kind, self._log_fetch_mode,
+                )
+                continue
             try:
                 excerpts.extend(
                     await self._fetch_logs(src, affected_component)
@@ -515,8 +601,20 @@ class ResearchNode(DevLoopNode):
         raise ValueError(f"Unknown log source kind: {source.kind}")
 
     @staticmethod
+    def _escape_cw_string(value: str) -> str:
+        """Escape a value for a double-quoted CloudWatch Insights string.
+
+        Args:
+            value: Raw text to embed between double quotes.
+
+        Returns:
+            The value with ``\\`` and ``"`` backslash-escaped.
+        """
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
+    @classmethod
     def _build_cw_query(
-        affected_component: str, limit: int = 100
+        cls, affected_component: str, limit: int = 100
     ) -> str:
         """Build a CloudWatch Insights query filtered by the affected component.
 
@@ -525,17 +623,23 @@ class ResearchNode(DevLoopNode):
         OR-matches the full dotted path for precision. This keeps
         the result set focused on the component under investigation
         instead of returning unrelated service logs.
+
+        Uses ``like "<string>"`` (substring match), NOT ``like /<regex>/``:
+        the regex form is delimited by ``/``, so any path-shaped component
+        (``parrot/clients/anthropic.py``) closed the literal early and the
+        StartQuery call failed with ``MalformedQueryException``. Only ``\\``
+        and ``"`` need escaping in the quoted form.
         """
         leaf = affected_component.rsplit(".", 1)[-1]
-        escaped_leaf = re.escape(leaf)
+        escaped_leaf = cls._escape_cw_string(leaf)
         if leaf != affected_component:
-            escaped_full = re.escape(affected_component)
+            escaped_full = cls._escape_cw_string(affected_component)
             filter_clause = (
-                f"filter @message like /{escaped_full}/ "
-                f"or @message like /{escaped_leaf}/"
+                f'filter @message like "{escaped_full}" '
+                f'or @message like "{escaped_leaf}"'
             )
         else:
-            filter_clause = f"filter @message like /{escaped_leaf}/"
+            filter_clause = f'filter @message like "{escaped_leaf}"'
         return (
             "fields @timestamp, @message "
             f"| {filter_clause} "

@@ -277,6 +277,7 @@ def build_dev_loop_flow(
     jira_toolkit: Any,
     log_toolkits: Dict[str, Any],
     redis_url: str,
+    log_fetch_mode: Optional[str] = None,
     name: str = "dev-loop",
     publish_flow_events: bool = True,
     lifecycle_events: bool = True,
@@ -313,6 +314,12 @@ def build_dev_loop_flow(
         jira_toolkit: Service-account ``JiraToolkit`` instance.
         log_toolkits: Mapping of source kind → toolkit. Recognised keys:
             ``"cloudwatch"``, ``"elasticsearch"``.
+        log_fetch_mode: Remote-log-fetch policy for ``ResearchNode`` —
+            ``"auto"`` (default, from ``DEV_LOOP_LOG_FETCH_MODE``) queries
+            CloudWatch/Elasticsearch only for ``kind == "bug"`` runs;
+            ``"always"`` restores the pre-flag fetch-for-every-kind
+            behavior; ``"never"`` disables remote log fetching outright.
+            Local ``inline`` / ``attached_file`` sources are never gated.
         redis_url: Redis URL for ``IntentClassifierNode`` /
             ``BugIntakeNode`` intake events and the flow-level
             node-lifecycle events.
@@ -382,6 +389,7 @@ def build_dev_loop_flow(
         development_pool_max=development_pool_max,
         git_toolkit=git_toolkit,
         log_toolkits=log_toolkits,
+        log_fetch_mode=log_fetch_mode,
         repos=repos,
         codereview_dispatcher=codereview_dispatcher,
         require_deployment_approval=require_deployment_approval,

@@ -231,6 +231,8 @@ BACKENDS: Tuple[BackendInfo, ...] = (
             "minimax.minimax-m2.5",
             "moonshotai.kimi-k2.5",
             "zai.glm-5",
+            "us.amazon.nova-2-lite-v1:0",
+            "us.amazon.nova-pro-v1:0",
             "us.anthropic.claude-opus-5",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "global.anthropic.claude-fable-5",
@@ -238,8 +240,10 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         requires="AWS credentials with Bedrock model access (+ Bedrock API key for bedrock-mantle)",
         roles=("development", "adversarial"),
         notes="Dev seat routes MiniMax/Kimi/GLM via bedrock-mantle; the "
-              "adversarial seat is a read-only, no-tools Claude Opus 5 "
-              "Converse call — select via DEV_LOOP_ADVERSARIAL_BACKEND.",
+              "adversarial seat is a read-only, no-tools Converse call on "
+              "Nova 2 Lite — select via DEV_LOOP_ADVERSARIAL_BACKEND. The "
+              "us.anthropic.* ids remain selectable but require the "
+              "per-account Anthropic use-case form on Bedrock.",
     ),
 )
 
