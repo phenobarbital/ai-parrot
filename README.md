@@ -1,8 +1,50 @@
-# AI-Parrot
+<p align="center">
+  <img src="docs/branding/ai-parrot-wordmark-on-dark.svg" alt="AI-Parrot" width="420">
+</p>
 
-**AI-Parrot** is an async-first Python framework for building, extending, and orchestrating AI Agents and Chatbots. Built on top of `navigator-api`, it provides a unified interface for interacting with various LLM providers, managing tools, conducting agent-to-agent (A2A) communication, and serving agents via the Model Context Protocol (MCP).
+<p align="center">
+  <b>The async-first, vendor-agnostic Python framework for building AI Agents.</b>
+</p>
 
-Whether you need a simple chatbot, a complex multi-agent orchestration workflow, or a robust production-ready AI service, AI-Parrot exposes the primitives to build it efficiently.
+<p align="center">
+  <a href="https://pypi.org/project/ai-parrot/"><img src="https://img.shields.io/pypi/v/ai-parrot.svg?color=blue" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/ai-parrot/"><img src="https://img.shields.io/pypi/pyversions/ai-parrot.svg" alt="Python versions"></a>
+  <a href="https://pypi.org/project/ai-parrot/"><img src="https://img.shields.io/pypi/dm/ai-parrot" alt="Downloads"></a>
+  <a href="https://github.com/phenobarbital/ai-parrot/actions/workflows/ci.yml"><img src="https://github.com/phenobarbital/ai-parrot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/phenobarbital/ai-parrot/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
+  <a href="https://github.com/phenobarbital/ai-parrot/stargazers"><img src="https://img.shields.io/github/stars/phenobarbital/ai-parrot?style=social" alt="GitHub stars"></a>
+</p>
+
+**AI-Parrot** lets you build, extend, and orchestrate AI Agents and Chatbots without marrying yourself to a single LLM vendor. One unified client interface for OpenAI, Anthropic, Google, Groq, and more — plus first-class tools, agent-to-agent (A2A) communication, MCP server/client support, and a batteries-included `aiohttp` production server (via `navigator-api`).
+
+Go from a five-line chatbot script to a multi-agent, tool-using, horizontally-scaled service without changing frameworks along the way.
+
+```bash
+pip install ai-parrot
+```
+
+### Why AI-Parrot?
+
+- 🔌 **Vendor-agnostic by design** — swap `openai:gpt-4o` for `anthropic:claude-sonnet-4` or `google:gemini-3.1-flash` by changing one string, not your code.
+- ⚡ **Async-first, no exceptions** — built for real I/O-bound concurrency, not sync code wrapped in a thread pool.
+- 🧰 **Tools that just work** — turn any Python function into an LLM tool with `@tool`, or plug in 30+ ready-made toolkits (Jira, AWS, Slack, databases, security scanners...).
+- 🕸️ **Real orchestration** — `AgentCrew` (sequential/parallel/flow/loop) and `AgentsFlow` (event-driven DAG with conditional routing) for workflows that outgrow a single prompt.
+- 🌐 **Speaks the protocols that matter** — native A2A agent discovery/messaging and MCP server *and* client support out of the box.
+- 🚀 **Ships as a real service** — `parrot setup` scaffolds a production `aiohttp` server with REST + WebSocket endpoints, ready for Gunicorn.
+- 📦 **Install only what you need** — a modular monorepo of satellite packages (tools, loaders, embeddings, integrations, visualizations) sharing one `parrot.*` namespace.
+
+### Table of Contents
+
+- [Monorepo Structure](#monorepo-structure)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Running as a Server](#running-as-a-server)
+- [Architecture](#architecture)
+- [Core Concepts](#core-concepts)
+- [Connectivity & Exposure](#connectivity-exposure)
+- [Supported LLM Providers](#supported-llm-providers)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -45,7 +87,8 @@ ai-parrot (core)                          ai-parrot-embeddings (satellite)
 
 ---
 
-## Installation
+<a id="installation"></a>
+## 📦 Installation
 
 ### Core framework
 
@@ -187,7 +230,8 @@ The `parrot install` command pulls and configures the required Docker containers
 
 ---
 
-## Quick Start
+<a id="quick-start"></a>
+## 🚀 Quick Start
 
 Create a simple weather chatbot in just a few lines of code:
 
@@ -254,7 +298,8 @@ Each provider client (`GoogleGenAIClient`, `OpenAIClient`, `AnthropicClient`, et
 
 ---
 
-## Running as a Server
+<a id="running-as-a-server"></a>
+## 🌐 Running as a Server
 
 AI-Parrot is not only a library — it is also a full **aiohttp-based application server** that exposes your agents as REST APIs, WebSocket endpoints, and more. This is powered by [Navigator](https://github.com/phenobarbital/navigator-api), an async web framework built on aiohttp.
 
@@ -355,7 +400,8 @@ curl -X POST "http://localhost:5000/api/v1/agents/chat/my-agent?output_format=ma
 
 ---
 
-## Architecture
+<a id="architecture"></a>
+## 🏗️ Architecture
 
 AI-Parrot is designed with a modular architecture enabling agents to be both consumers and providers of tools and services.
 
@@ -392,7 +438,8 @@ graph TD
 
 ---
 
-## Core Concepts
+<a id="core-concepts"></a>
+## 🧩 Core Concepts
 
 ### Agents (`Chatbot`)
 
@@ -511,7 +558,8 @@ class DailyBot(Chatbot):
 
 ---
 
-## Connectivity & Exposure
+<a id="connectivity-exposure"></a>
+## 🔌 Connectivity & Exposure
 
 ### Agent-to-Agent (A2A) Protocol
 
@@ -564,7 +612,8 @@ Expose your bots natively to chat platforms (via `ai-parrot-integrations`):
 
 ---
 
-## Supported LLM Providers
+<a id="supported-llm-providers"></a>
+## 🤖 Supported LLM Providers
 
 | Provider | Extra | Identifier | Example |
 |----------|-------|------------|---------|
@@ -580,7 +629,8 @@ Expose your bots natively to chat platforms (via `ai-parrot-integrations`):
 
 ---
 
-## Contributing
+<a id="contributing"></a>
+## 🤝 Contributing
 
 ### Development setup (from source)
 
@@ -724,9 +774,10 @@ AI-Parrot publishes packages on every GitHub release. Each package is independen
 
 ---
 
-## License
+<a id="license"></a>
+## 📄 License
 
 MIT
 
 ---
-*Built with care by the AI-Parrot Team*
+*Built with love by the AI-Parrot Team*
