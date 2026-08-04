@@ -6,7 +6,7 @@
   "base_branch": "dev",
   "jira": "NAV-9384",
   "created_at": "2026-08-04T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-04T00:00:00+00:00",
   "tasks": [
     {
       "id": "TASK-2120",
@@ -14,12 +14,12 @@
       "feature": "remove-google-ask-timing-debug",
       "title": "Remove all 'Google ask timing' debug/info log calls from GoogleGenAIClient",
       "slug": "remove-google-ask-timing-debug-calls",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-2120-remove-google-ask-timing-debug-calls.md"
+      "file": "sdd/tasks/completed/TASK-2120-remove-google-ask-timing-debug-calls.md"
     }
   ]
 }
