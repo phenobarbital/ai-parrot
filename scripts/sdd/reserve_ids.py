@@ -127,7 +127,9 @@ def _assert_safe_to_reserve(root: Path, base_branch: str) -> None:
     dirty = [
         line
         for line in status.stdout.splitlines()
-        if line.strip() and _porcelain_path(line) != str(LEDGER_PATH)
+        if line.strip()
+        and not line.startswith("?? ")
+        and _porcelain_path(line) != str(LEDGER_PATH)
     ]
     if dirty:
         raise IdReservationError(
