@@ -1,3 +1,4 @@
+import xml.etree.ElementTree as ET
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -382,3 +383,108 @@ def test_new_fields_serialization_roundtrip():
     assert restored.timeout_ms == 15000
     assert restored.assertions[0].wait_timeout_ms == 3000
     assert restored.assertions[0].check == "response_status"
+
+
+# --- TASK-2116: JUnit XML Serialization & Exit Code ---
+
+
+def test_qa_report_exit_code_all_pass():
+    r = QAReport(summary="ok", url="/", total=3, passed=3)
+    assert r.exit_code == 0
+
+
+def test_qa_report_exit_code_with_failure():
+    r = QAReport(summary="nok", url="/", total=3, passed=2, failed=1)
+    assert r.exit_code == 1
+
+
+def test_qa_report_exit_code_with_error():
+    r = QAReport(summary="err", url="/", total=3, passed=2, errors=1)
+    assert r.exit_code == 1
+
+
+def test_qa_report_exit_code_empty():
+    r = QAReport(summary="empty", url="/")
+    assert r.exit_code == 0
+
+
+def test_to_junit_xml_well_formed():
+    r = QAReport(
+        summary="1/1 passed", url="http://localhost",
+        findings=[QAFinding(test_name="t1", status="pass", detail="ok")],
+        total=1, passed=1,
+    )
+    xml_str = r.to_junit_xml()
+    assert xml_str.startswith("<?xml")
+    root = ET.fromstring(xml_str)
+    assert root.tag == "testsuites"
+
+
+def test_to_junit_xml_pass_no_children():
+    r = QAReport(
+        summary="ok", url="/",
+        findings=[QAFinding(test_name="t1", status="pass", detail="ok", duration_ms=2100)],
+        total=1, passed=1,
+    )
+    root = ET.fromstring(r.to_junit_xml())
+    tc = root.find(".//testcase[@name='t1']")
+    assert tc is not None
+    assert len(tc) == 0  # no child elements
+    assert float(tc.get("time", "0")) == pytest.approx(2.1, abs=0.01)
+
+
+def test_to_junit_xml_failure_with_console_errors():
+    r = QAReport(
+        summary="nok", url="/",
+        findings=[QAFinding(
+            test_name="t1", status="fail", detail="broken",
+            console_errors=["TypeError: x is undefined"],
+            retries=2,
+        )],
+        total=1, failed=1,
+    )
+    root = ET.fromstring(r.to_junit_xml())
+    failure = root.find(".//testcase/failure")
+    assert failure is not None
+    assert "broken" in (failure.text or "")
+    assert "TypeError" in (failure.text or "")
+    assert "Retries: 2" in (failure.text or "")
+
+
+def test_to_junit_xml_error_status():
+    r = QAReport(
+        summary="err", url="/",
+        findings=[QAFinding(test_name="t1", status="error", detail="timed out")],
+        total=1, errors=1,
+    )
+    root = ET.fromstring(r.to_junit_xml())
+    error = root.find(".//testcase/error")
+    assert error is not None
+
+
+def test_to_junit_xml_skipped_status():
+    r = QAReport(
+        summary="skip", url="/",
+        findings=[QAFinding(test_name="t1", status="skip", detail="filtered")],
+        total=1, skipped=1,
+    )
+    root = ET.fromstring(r.to_junit_xml())
+    skipped = root.find(".//testcase/skipped")
+    assert skipped is not None
+
+
+def test_to_junit_xml_suite_attributes():
+    r = QAReport(
+        summary="2/3", url="/",
+        findings=[
+            QAFinding(test_name="t1", status="pass", detail="ok"),
+            QAFinding(test_name="t2", status="fail", detail="nok"),
+            QAFinding(test_name="t3", status="skip", detail="filtered"),
+        ],
+        total=3, passed=1, failed=1, skipped=1, duration_ms=5000,
+    )
+    root = ET.fromstring(r.to_junit_xml())
+    suite = root.find("testsuite")
+    assert suite.get("tests") == "3"
+    assert suite.get("failures") == "1"
+    assert suite.get("skipped") == "1"

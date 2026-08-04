@@ -1,6 +1,7 @@
 """WebAgent — browser interaction via Chrome DevTools MCP."""
 
 import logging
+import xml.etree.ElementTree as ET
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -153,6 +154,95 @@ class QAReport(BaseModel):
     errors: int = 0
     skipped: int = 0
     duration_ms: int | None = None
+
+    @property
+    def exit_code(self) -> int:
+        """Return 0 if all tests passed, 1 if any failure or error occurred.
+
+        Returns:
+            int: `0` when `failed + errors == 0`, otherwise `1`. Intended
+            to be used directly as a CI process exit code.
+        """
+        return 1 if (self.failed + self.errors) > 0 else 0
+
+    def to_junit_xml(self, suite_name: str = "WebAgent QA") -> str:
+        """Serialize this report to a JUnit XML document.
+
+        Uses only `xml.etree.ElementTree` (stdlib) to build a
+        `<testsuites><testsuite>...</testsuite></testsuites>` document
+        compatible with CircleCI, GitHub Actions, GitLab CI, and Jenkins
+        JUnit parsers.
+
+        Args:
+            suite_name: Name reported for the `<testsuite>` element and
+                used as the `classname` attribute on each `<testcase>`.
+
+        Returns:
+            str: The complete XML document (including the XML
+            declaration) as a string.
+        """
+        testsuites = ET.Element("testsuites")
+        total_time = (self.duration_ms or 0) / 1000
+        testsuite = ET.SubElement(
+            testsuites,
+            "testsuite",
+            {
+                "name": suite_name,
+                "tests": str(self.total),
+                "failures": str(self.failed),
+                "errors": str(self.errors),
+                "skipped": str(self.skipped),
+                "time": str(total_time),
+            },
+        )
+        for finding in self.findings:
+            time_s = (finding.duration_ms or 0) / 1000
+            testcase = ET.SubElement(
+                testsuite,
+                "testcase",
+                {
+                    "name": finding.test_name,
+                    "classname": suite_name,
+                    "time": str(time_s),
+                },
+            )
+            if finding.status == "fail":
+                failure = ET.SubElement(
+                    testcase, "failure", {"message": finding.detail}
+                )
+                failure.text = self._junit_detail_body(finding)
+            elif finding.status == "error":
+                error = ET.SubElement(
+                    testcase, "error", {"message": finding.detail}
+                )
+                error.text = self._junit_detail_body(finding)
+            elif finding.status == "skip":
+                ET.SubElement(testcase, "skipped", {"message": finding.detail})
+            # "pass" -> no child element
+
+        return ET.tostring(
+            testsuites, encoding="unicode", xml_declaration=True
+        )
+
+    @staticmethod
+    def _junit_detail_body(finding: "QAFinding") -> str:
+        """Build the failure/error text body for a `QAFinding`.
+
+        Args:
+            finding: The finding to render (status must be "fail" or
+                "error").
+
+        Returns:
+            str: Multi-line body with detail, console errors (if any),
+            and retry count (if > 0).
+        """
+        lines = [f"Detail: {finding.detail}"]
+        if finding.console_errors:
+            lines.append("Console errors:")
+            lines.extend(f"- {err}" for err in finding.console_errors)
+        if finding.retries > 0:
+            lines.append(f"Retries: {finding.retries}")
+        return "\n" + "\n".join(lines) + "\n"
 
 
 WEB_AGENT_SYSTEM_PROMPT = """\
