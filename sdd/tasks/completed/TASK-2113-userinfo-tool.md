@@ -85,6 +85,32 @@ class ToolResult(BaseModel):
 - ~~`UserinfoTool`~~ — does not exist anywhere.
 - ~~`AbstractTool.permission_context`~~ — not a direct attribute; it's passed via `execute()` kwargs.
 - ~~`AbstractTool.session_user_id`~~ — not a real attribute; identity comes from `permission_context`.
+- ~~`parrot/tools/result.py`~~ — does not exist; `ToolResult` is defined in
+  `tools/abstract.py:198`, not a separate `result.py` module.
+
+**Codebase Contract corrections (verified 2026-08-04)**:
+1. `from parrot.tools.result import ToolResult` is stale — `ToolResult` lives
+   in `parrot.tools.abstract` (`class ToolResult(BaseModel)`, line 198); no
+   `tools/result.py` module exists.
+2. **Identity threading**: `AbstractTool.execute()` pops `_permission_context`
+   from kwargs (line 735) and stores it on the instance as
+   `self._current_pctx` (line 770, reset to `None` in a `finally` at line
+   1023) BEFORE dispatching to `_execute()` — so `_execute(**kwargs)` never
+   receives `_permission_context` in its own kwargs at all (confirmed by
+   reading `execute()` end-to-end). The task's suggested
+   `kwargs.get("_permission_context_user_id")` pattern does not exist;
+   `self._current_pctx` (a `PermissionContext | None`, whose `.user_id`
+   property already exists — `auth/permission.py:129-131`) is the real,
+   verified access point.
+3. With the default `args_schema = AbstractToolArgsSchema` (no fields
+   declared), `validate_args()` (`tools/abstract.py:628-630`) returns a bare
+   `AbstractToolArgsSchema()` regardless of what kwargs were passed, and
+   `_execute()` is dispatched with the resulting **empty** `resolved_kwargs`
+   (`.model_dump()` of a model with no fields) — i.e. `UserinfoTool` never
+   even sees whatever arguments the LLM supplied, an even stronger form of
+   the "ignore any LLM-supplied identity argument" security invariant than
+   defensively checking a kwarg. `UserinfoTool` intentionally leaves
+   `args_schema` at its default for this reason.
 
 ---
 
@@ -190,10 +216,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-04
+**Notes**: Implemented `UserinfoTool(AbstractTool)` in `tools/userinfo.py`.
+Identity is read exclusively from `self._current_pctx` (set by
+`AbstractTool.execute()` from `_permission_context`, never from kwargs);
+`args_schema` intentionally left at its `AbstractToolArgsSchema` default so
+`execute()`'s own validation strips any LLM-supplied arguments before
+`_execute()` is even called — a stronger guarantee than defensively
+ignoring a kwarg. Missing session or missing profile row both return a
+structured `{"status": "unavailable", "message": ...}` dict, never an
+exception. Class docstring doubles as the LLM-facing tool description
+(`AbstractTool.__init__`'s existing `self.description = description or
+self.__class__.__doc__ or ...` convention). 6 new unit tests (direct
+`_execute()` + full `execute()` wrapper paths, JSON round-trip through
+`EmployeeProfile`, missing profile, no session, LLM-supplied-kwarg
+ignored) pass; full guardrails/grants/confirmation regression suite (176
+tests) passes; `ruff check` clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `ToolResult` import corrected — it lives in
+`parrot.tools.abstract` (line 198), not a `parrot.tools.result` module
+(which does not exist). Identity access corrected from the task's
+suggested `kwargs.get("_permission_context_user_id")` to
+`self._current_pctx.user_id` — the real, verified mechanism
+`AbstractTool.execute()` uses to thread the permission context to
+`_execute()` (confirmed by reading `execute()` end-to-end: it pops
+`_permission_context` from kwargs and stores it as `self._current_pctx`
+before dispatch, resetting it to `None` afterward). Both documented in the
+task's corrected Codebase Contract section above before implementing.

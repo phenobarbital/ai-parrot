@@ -91,7 +91,7 @@
       "feature_id": "FEAT-406",
       "feature": "pbac-guardrails",
       "spec": "sdd/specs/pbac-guardrails.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Lane B — touches only tools/userinfo.py (new file), disjoint from Lane A",
       "assigned_to": null,
       "started_at": "2026-08-04T00:57:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2113-userinfo-tool.md"
+      "completed_at": "2026-08-04T01:35:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2113-userinfo-tool.md"
     },
     {
       "id": "TASK-2114",
