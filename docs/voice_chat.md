@@ -232,6 +232,10 @@ Open DevTools to see WebSocket messages and audio processing logs.
 - [Gemini Live API Documentation](https://ai.google.dev/gemini-api/docs/live)
 - [Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 - [aiohttp WebSockets](https://docs.aiohttp.org/en/stable/web_quickstart.html#websockets)
+- [Nova Sonic Voice Protocol](nova_voice_protocol.md) — the equivalent
+  bidirectional-streaming reference for `NovaClient`/`NovaAudio` (Amazon
+  Nova Sonic), covering the event frame sequence, role/generation-stage
+  semantics, tool calling, barge-in, and graceful shutdown (FEAT-408)
 
 ## 📄 License
 

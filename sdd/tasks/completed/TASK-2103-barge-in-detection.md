@@ -266,10 +266,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Removed the `"interruption" in event or event.get("stopReason") ==
+"INTERRUPTED"` check entirely. Added a module-private `_is_interruption_payload()`
+helper (JSON-parse first, whitespace-insensitive substring fallback) next to
+`_parse_generation_stage()`. Moved the check inside the `textOutput` branch
+TASK-2102 built, checked first (before role/stage attribution), preserving
+the exact emitted shape (`is_interrupted=True`, `is_complete=True`,
+`turn_metadata.was_interrupted = True`, `accumulated_text` reset to `""`)
+and `continue`-ing so the interrupted payload is never yielded as text or
+accumulated. Updated the pre-existing `test_stream_voice_barge_in` in
+`test_nova.py` (flagged by the task) to feed `{"textOutput": {"content":
+'{"interrupted":true}'}}` instead of the old `{"interruption": True}` frame.
+Created `test_nova_barge_in.py` with all 4 tests from the Test
+Specification (parametrized detection across 3 payload whitespace variants,
+non-emission, false-positive guard, and the source-string regression
+guard) — 6 collected/passed. Regression: 139 passed/3 skipped (`-k "nova or
+bedrock"`, up from 133, +6 new), 108 passed/1 skipped (`voice/`), 0
+regressions. Lint: audio.py and test_nova.py both match their pre-task
+baselines exactly (19 and 2 errors respectively) — no new findings.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

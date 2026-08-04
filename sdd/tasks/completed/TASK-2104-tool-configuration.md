@@ -257,11 +257,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Added `_build_tool_configuration() -> Optional[Dict[str, Any]]`
+(reads `self.tool_manager` defensively via `getattr`, iterates
+`manager.all_tools()`, skips any tool whose `get_schema()` raises with a
+`self.logger.warning`, returns `None` when no tools produced a spec).
+Wired it into `_build_prompt_start()`: builds the `prompt_start` dict as a
+local first, then conditionally adds `"toolConfiguration"` only when
+`_build_tool_configuration()` returns non-None, so the key is fully omitted
+(not an empty list) for tool-less sessions — verified by
+`test_prompt_start_omits_key_when_no_tools`. Created
+`test_nova_tool_configuration.py` with all 5 tests from the Test
+Specification. Regression: 144 passed/3 skipped (`-k "nova or bedrock"`, up
+from 139, +5 new), 108 passed/1 skipped (`voice/`), 0 regressions. New
+lint findings (4: +1 BLE001, +2 UP006, +1 UP045) all match the file's
+pre-existing style categories — the `except Exception:` broad catch is the
+task's own specified pattern ("a broken tool must not kill the turn").
+**`inputSchema.json` sent as**: dict (not JSON string) — per Key
+Constraints, the dict form was implemented with the schema value passed
+straight through in one place (`schema.get("parameters", {})`), so
+switching to `json.dumps(...)` later is a one-line change if live
+verification against Bedrock shows Nova expects a string.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**`inputSchema.json` sent as**: dict | JSON string
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

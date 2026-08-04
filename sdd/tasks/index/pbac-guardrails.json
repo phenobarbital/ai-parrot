@@ -1,0 +1,129 @@
+{
+  "feature": "pbac-guardrails",
+  "feature_id": "FEAT-406",
+  "spec": "sdd/specs/pbac-guardrails.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-04T12:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2109",
+      "slug": "tool-call-guardrail-stage",
+      "title": "Add TOOL_CALL Guardrail Stage",
+      "feature_id": "FEAT-406",
+      "feature": "pbac-guardrails",
+      "spec": "sdd/specs/pbac-guardrails.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Lane A foundation — modifies shared guardrail base module",
+      "assigned_to": null,
+      "started_at": "2026-08-04T00:57:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2109-tool-call-guardrail-stage.md"
+    },
+    {
+      "id": "TASK-2110",
+      "slug": "pbac-tool-call-guardrail",
+      "title": "Implement PBACToolCallGuardrail",
+      "feature_id": "FEAT-406",
+      "feature": "pbac-guardrails",
+      "spec": "sdd/specs/pbac-guardrails.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2109"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Lane A — depends on TOOL_CALL stage and creates the guardrail used by TASK-2111",
+      "assigned_to": null,
+      "started_at": "2026-08-04T00:57:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2110-pbac-tool-call-guardrail.md"
+    },
+    {
+      "id": "TASK-2111",
+      "slug": "toolmanager-hook-bot-wiring",
+      "title": "ToolManager Hook + AbstractBot Wiring",
+      "feature_id": "FEAT-406",
+      "feature": "pbac-guardrails",
+      "spec": "sdd/specs/pbac-guardrails.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2109",
+        "TASK-2110"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Lane A — modifies ToolManager and AbstractBot (shared high-traffic files)",
+      "assigned_to": null,
+      "started_at": "2026-08-04T00:57:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2111-toolmanager-hook-bot-wiring.md"
+    },
+    {
+      "id": "TASK-2112",
+      "slug": "userinfo-service-employee-profile",
+      "title": "UserInfoService + EmployeeProfile",
+      "feature_id": "FEAT-406",
+      "feature": "pbac-guardrails",
+      "spec": "sdd/specs/pbac-guardrails.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Lane B — touches only auth/userinfo.py (new file), disjoint from Lane A's guardrail/tool files",
+      "assigned_to": null,
+      "started_at": "2026-08-04T00:57:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2112-userinfo-service-employee-profile.md"
+    },
+    {
+      "id": "TASK-2113",
+      "slug": "userinfo-tool",
+      "title": "UserinfoTool",
+      "feature_id": "FEAT-406",
+      "feature": "pbac-guardrails",
+      "spec": "sdd/specs/pbac-guardrails.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2112"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Lane B — touches only tools/userinfo.py (new file), disjoint from Lane A",
+      "assigned_to": null,
+      "started_at": "2026-08-04T00:57:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2113-userinfo-tool.md"
+    },
+    {
+      "id": "TASK-2114",
+      "slug": "pbac-enrichment-policies-e2e",
+      "title": "PBAC Attribute Enrichment + Sample Policies + E2E",
+      "feature_id": "FEAT-406",
+      "feature": "pbac-guardrails",
+      "spec": "sdd/specs/pbac-guardrails.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2111",
+        "TASK-2113"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Join task — merges both lanes (guardrail + userinfo), runs last",
+      "assigned_to": null,
+      "started_at": "2026-08-04T00:57:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2114-pbac-enrichment-policies-e2e.md"
+    }
+  ]
+}

@@ -208,10 +208,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Added `role: Optional[str] = None` to `LiveVoiceResponse` (with
+Google-style docstring, appended after `user_id` so it stays additive), and
+added `"role": self.role` to `to_websocket_message()` output. Created
+`test_live_voice_response_role.py` with the 5 tests from the Test
+Specification — all pass. Regression suites pass: 122 passed/3 skipped
+(`-k "nova or bedrock"`), 108 passed/1 skipped (`voice/`). One new ruff
+finding (`UP045`, same style category as 82 pre-existing findings in this
+file) from the new `Optional[str]` field, which is the idiom the task
+explicitly required — not a regression in kind.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -316,10 +316,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: Added `_end_session(stream, prompt_name)` (placed right after
+`_close_stream()`) sending `promptEnd` (carrying `promptName`) then
+`sessionEnd` (empty object), wrapped in a broad `except Exception` that logs
+at `debug` and never raises — verbatim the task's specified pattern. Wired
+it into `stream_voice()`'s `finally`, between the sender-task cancellation
+and `_close_stream(stream)` (order: cancel sender → `_end_session` →
+`_close_stream`, matching Key Constraints). Verified `_audio_sender` already
+sends `contentEnd` for the audio content block on its `None` sentinel — no
+duplicate added. Created `test_nova_session_shutdown.py` with all 4 tests
+from the Test Specification, covering: send order + close ordering,
+`promptName` propagation + empty `sessionEnd`, shutdown failure not
+propagating, and shutdown failure not masking the turn's own original
+exception. Regression: 162 passed/3 skipped (`-k "nova or bedrock"`, up
+from 158, +4 new), 108 passed/1 skipped (`voice/`), 0 regressions — including
+`test_nova_audio_sdk.py`'s SDK-dependent `stream.closed` assertion (skipped
+on this Python 3.11 environment, same as baseline). Lint: audio.py matches
+its pre-task baseline exactly (27 errors) — no new findings (the `# noqa:
+BLE001` on the broad except suppresses what would otherwise be a 4th
+instance of the pre-existing BLE001 category).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

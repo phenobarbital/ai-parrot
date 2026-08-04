@@ -1493,6 +1493,14 @@ $backstory
         if isinstance(tool, ToolDefinition):
             fn = tool.function
         elif isinstance(tool, AbstractTool):
+            # MCP tools expose their accepted params via input_schema
+            # rather than a bound_method — use schema properties when
+            # available so context keys get filtered correctly.
+            schema = getattr(tool, 'input_schema', None)
+            if schema and isinstance(schema, dict):
+                props = schema.get('properties')
+                if props and isinstance(props, dict):
+                    return set(props.keys())
             fn = getattr(tool, 'bound_method', None)
         if fn is None:
             return None

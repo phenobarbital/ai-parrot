@@ -7,6 +7,7 @@ import uuid
 from string import Template
 import importlib
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 # Navconfig
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611
@@ -115,7 +116,13 @@ class Chatbot(BaseBot):
                 return pool
 
             pool = AsyncPool('pg', dsn=default_dsn)
-            await pool.connect()  # pylint: disable=E1101 # noqa
+            _asyncdb_logger = logging.getLogger('asyncdb')
+            _prev_level = _asyncdb_logger.level
+            _asyncdb_logger.setLevel(logging.CRITICAL)
+            try:
+                await pool.connect()  # pylint: disable=E1101 # noqa
+            finally:
+                _asyncdb_logger.setLevel(_prev_level)
             cls._db_pool = pool
             return pool
 

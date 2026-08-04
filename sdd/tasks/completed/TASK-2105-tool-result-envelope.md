@@ -400,10 +400,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-03
+**Notes**: `toolUse` now only stashes `turn_state.pending_tool` (a
+`LiveToolCall` with empty `arguments={}` pending parsing) and
+`turn_state.pending_tool_raw_input` (the raw JSON-string content), then
+`continue`s — no execution. Added a `contentEnd` branch that fires only
+when `content_end.get("type") == "TOOL"`; ignores (via `continue`) when
+`turn_state.pending_tool is None`. On a real pending tool: times the whole
+parse+execute block, parses via the new module-level
+`_parse_tool_arguments()` helper (tolerates an already-parsed dict,
+otherwise `json.loads`, raises `ValueError` for non-object JSON), executes
+via `self._execute_tool(pending.name, args)`, updates
+`pending.arguments`/`.result` on success or `.error` on any exception
+(parse or execution — both funnel through one `except Exception`, so a
+malformed payload never reaches `_execute_tool`, matching
+`test_not_executed_on_tool_use_frame`/malformed-content acceptance
+criteria). Preserves `usage.tool_calls_executed` /
+`tool_execution_time_ms` accounting and both `LiveVoiceResponse` emissions
+(immediate + terminal). Added `_send_tool_result()` sending the exact
+three-frame `contentStart(TOOL)` → `toolResult` → `contentEnd` sequence
+from the task's Pattern to Follow, with `toolUseId` on the contentStart's
+`toolResultInputConfiguration` and `contentName` (not `toolUseId`) on
+`toolResult`. Cleared `pending_tool`/`pending_tool_raw_input` after
+handling so a second tool call can't reuse stale state. Updated
+`test_nova.py::test_stream_voice_tool_use` per the task's explicit
+instruction: inserted a `{"contentEnd": {"type": "TOOL"}}` frame between
+`toolUse` and `completionEnd`, changed `content` to a JSON string (matching
+the real Nova shape), and fixed the stale `toolResult["toolUseId"]`
+assertion to assert `contentName` present / `toolUseId` absent instead.
+Created `test_nova_tool_result.py` with all 9 tests from the Test
+Specification. Regression: 153 passed/3 skipped (`-k "nova or bedrock"`, up
+from 144, +9 new), 108 passed/1 skipped (`voice/`), 0 regressions. New
+lint: audio.py +2 (BLE001/UP006/UP045 counts otherwise unchanged from
+baseline; the one new category, `TRY004` on `_parse_tool_arguments`'s
+`raise ValueError(...)`, is the exact code given in the task's own
+Implementation Notes pattern — task fidelity over a style nitpick).
+Sequential tool execution only (not parallel/background tasks like the AWS
+sample) — flagging as a possible follow-up per the task's own NOT-in-scope
+note.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

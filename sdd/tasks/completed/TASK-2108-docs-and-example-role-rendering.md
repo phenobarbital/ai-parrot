@@ -268,11 +268,54 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-04
+**Notes**: **Contract note**: `examples/clients/nova/audio.py` was untracked
+in this worktree — `git worktree add` does not carry over untracked files
+from the source checkout, and the file (though present in the main repo
+checkout) had never been committed. Copied it into the worktree from the
+main checkout (content-only copy, no git operation on the main repo) so it
+could be edited as this task requires; this is exactly the scenario the
+task's own warning anticipated. Removed the stale "Known limitation"
+section from the module docstring (replaced with a "Protocol reference"
+pointer to the new doc page, since `role` now exists and the note was
+actively wrong). Added `"role": resp.role` to the `_relay()` "text" frame.
+JS: `appendStream(chunk, role)` now starts a new bubble on any role change
+(`role !== streamRole`) — `you` for `role === "USER"`, `assistant`
+otherwise (so `role: null`, e.g. a provider that reports none, falls back
+safely to the assistant bubble) — and keeps streaming consecutive
+same-role chunks into one bubble; `closeStream()` resets `streamRole` too.
+Updated the `"text"` case to pass `msg.role`. Removed the placeholder
+`addBubble("you", "🎙 speaking…", "You")` call from `startTalking()` — the
+real USER transcription now arrives via the `"text"` frame's `role`.
+`turn_complete`'s usage note required no code change: it already reads
+`u.total_tokens`, which TASK-2106 makes non-zero. Created
+`docs/nova_voice_protocol.md` covering the full frame sequence (opening,
+steady-state, shutdown), role/generationStage semantics, the tool
+three-frame envelope, barge-in detection, usage accounting (flagged
+unverified per spec §8 Q1), and the two SDK gotchas
+(`BedrockAgentRuntimeClient` non-existence,
+`aws_credentials_identity_resolver` requirement) — each section cites the
+specific AWS sample file/line it derives from, and the transport fix is
+cited by commit (`89204b9f0`) rather than restated as part of this
+feature. Linked it from `docs/voice_chat.md`'s Resources section.
+Verified: `node --check` on the extracted `<script>` block passes; a live
+`aiohttp` server smoke test (serving `build_app()`, fetching `/`) confirms
+`streamRole` is present and the `speaking…` placeholder string is gone.
+Regression: 162 passed/3 skipped (`-k "nova or bedrock"`), 108 passed/1
+skipped (`voice/`) — unchanged from TASK-2107, as expected (this task adds
+no test-suite code). `ruff check` on the example shows 7 pre-existing
+`UP045`-style findings, none at the lines this task touched (verified by
+line-number cross-reference against the diff).
+**`examples/**/*.py` ignore-rule decision**: force-added
+(`git add -f examples/clients/nova/audio.py`) — `git ls-files examples/`
+shows 205 tracked `.py` files already under the same blanket
+`examples/**/*.py` ignore rule, including three siblings in this exact
+`examples/clients/` directory (`claude_agent_example.py`,
+`create_images.py`, `google_client_example.py`, `hf.py`), confirming
+force-add-per-file is the established convention rather than an ignore-rule
+exception. Did not narrow or remove the `.gitignore` rule itself — that
+would be a broader policy change outside this task's scope.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**`examples/**/*.py` ignore-rule decision**: force-added | rule narrowed | left untracked
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none, aside from the worktree-file-copy noted
+above (mechanical, not a design deviation).

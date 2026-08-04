@@ -749,6 +749,12 @@ install-github:
 	@echo "Installing GitHub MCP server..."
 	npm install @modelcontextprotocol/server-github
 
+# Install Chrome DevTools MCP Server
+# https://github.com/ChromeDevTools/chrome-devtools-mcp
+install-chrome-devtools:
+	@echo "Installing Chrome DevTools MCP server..."
+	npm install chrome-devtools-mcp
+	@echo "Chrome DevTools MCP server installed successfully."
 
 # Install MCP Toolbox
 install-toolbox:
@@ -853,6 +859,7 @@ help:
 	@echo "    cuda-info           - Show GPU/CUDA information"
 	@echo "    install-go          - Install Go toolchain"
 	@echo "    install-genmedia    - Install GenMedia MCP Server"
+	@echo "    install-chrome-devtools - Install Chrome DevTools MCP Server"
 	@echo "    install-tesseract   - Install Tesseract OCR"
 	@echo "    install-gvisor      - Install gVisor sandbox runtime"
 	@echo ""
