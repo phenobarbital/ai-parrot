@@ -345,3 +345,23 @@ present — no collisions). Test path corrected to
 `packages/ai-parrot/tests/integration/test_pbac_guardrails_e2e.py` (no
 `tests/bots/guardrails/` directory exists). All findings documented in the
 task's corrected Codebase Contract section above before implementing.
+
+**Post-review follow-up fix** (adversarial code review, same session):
+`PolicyEvaluator.check_access()` was found to catch its own Rust-engine
+exceptions internally and return a normal DENY `EvaluationResult`
+(`matched_policy=None`, `reason="Evaluation engine error: ..."`) instead of
+raising — making `PBACToolCallGuardrail`'s exception-based fail-mode
+handling unreachable for this real failure, and leaking the raw internal
+error string to the LLM as the denial message. Fixed in `check()` by
+detecting this specific result shape and routing it through the same
+`_policy_enforcement()`/fail-mode contract as a raised exception (sanitized
+`"Policy engine is temporarily unavailable."` message, `enforcement:
+fail_open` override still honored). Added 3 regression tests (2 unit,
+mocking the exact `EvaluationResult` shape; 1 e2e, driving a genuine
+failure through the real, unmodified `PolicyEvaluator.check_access()` by
+patching `evaluate_single`) plus a documentation update
+(`docs/security/pbac-guardrails.md`) explaining both failure shapes and the
+already-documented subject/condition-blindness of the fail-open lookup.
+230 tests pass; `ruff check` clean. See commit
+"fix(pbac-guardrails): route internal engine-error DENY through fail-mode
+contract".
