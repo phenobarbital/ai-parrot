@@ -32,7 +32,7 @@
       "feature_id": "FEAT-410",
       "feature": "webagent-cicd-qa-runner",
       "spec": "sdd/specs/webagent-cicd-qa-runner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Can run in parallel with TASK-2117 — both depend on TASK-2115 but touch different parts of chrome.py (QAReport methods vs WebAgent class)",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2116-junit-xml-and-exit-code.md"
+      "completed_at": "2026-08-04T17:52:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2116-junit-xml-and-exit-code.md"
     },
     {
       "id": "TASK-2117",
