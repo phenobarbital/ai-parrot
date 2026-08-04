@@ -14,7 +14,7 @@
       "feature_id": "FEAT-410",
       "feature": "webagent-cicd-qa-runner",
       "spec": "sdd/specs/webagent-cicd-qa-runner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on the model changes here",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2115-qa-model-enhancements.md"
+      "completed_at": "2026-08-04T17:49:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2115-qa-model-enhancements.md"
     },
     {
       "id": "TASK-2116",
