@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-04T00:00:00Z",
-  "completed_at": "2026-08-04T18:15:00+00:00",
+  "completed_at": "2026-08-04T18:35:33+00:00",
   "tasks": [
     {
       "id": "TASK-2115",
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation task — all other tasks depend on the model changes here",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": "2026-08-04T17:49:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2115-qa-model-enhancements.md"
+      "completed_at": "2026-08-04T18:35:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2115-qa-model-enhancements.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2116",
@@ -42,8 +43,9 @@
       "parallelism_notes": "Can run in parallel with TASK-2117 — both depend on TASK-2115 but touch different parts of chrome.py (QAReport methods vs WebAgent class)",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": "2026-08-04T17:52:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2116-junit-xml-and-exit-code.md"
+      "completed_at": "2026-08-04T18:35:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2116-junit-xml-and-exit-code.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2117",
@@ -62,8 +64,9 @@
       "parallelism_notes": "Can run in parallel with TASK-2116 — both depend on TASK-2115 but touch different parts of chrome.py (WebAgent class vs QAReport methods)",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": "2026-08-04T18:01:38+00:00",
-      "file": "sdd/tasks/completed/TASK-2117-run-tests-enhancements.md"
+      "completed_at": "2026-08-04T18:35:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2117-run-tests-enhancements.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2118",
@@ -84,8 +87,9 @@
       "parallelism_notes": "Depends on all three prior tasks — uses models, JUnit XML, and run_tests()",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": "2026-08-04T18:06:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2118-cli-runner.md"
+      "completed_at": "2026-08-04T18:35:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2118-cli-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2119",
@@ -105,8 +109,9 @@
       "parallelism_notes": "Final task — needs all features implemented to write accurate examples",
       "assigned_to": null,
       "started_at": "2026-08-04T17:46:40+00:00",
-      "completed_at": "2026-08-04T18:15:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2119-examples-and-ci-docs.md"
+      "completed_at": "2026-08-04T18:35:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2119-examples-and-ci-docs.md",
+      "verification": "verified"
     }
   ]
 }

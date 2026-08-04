@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-410 — WebAgent CI/CD QA Runner Enhancements
 **Spec**: `sdd/specs/webagent-cicd-qa-runner.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-04
+**Verification**: verified (evidence: commits + files present in feat-410-webagent-cicd-qa-runner worktree)
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2115
