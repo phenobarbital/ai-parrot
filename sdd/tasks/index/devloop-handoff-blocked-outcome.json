@@ -1,0 +1,29 @@
+{
+  "feature": "devloop-handoff-blocked-outcome",
+  "feature_id": "FEAT-413",
+  "spec": "sdd/specs/devloop-handoff-blocked-outcome.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-05T11:38:38+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2132",
+      "slug": "close-host-blocked-outcome",
+      "title": "_close_host must record outcome=\"failed\" for a blocked handoff",
+      "feature_id": "FEAT-413",
+      "feature": "devloop-handoff-blocked-outcome",
+      "spec": "sdd/specs/devloop-handoff-blocked-outcome.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single-task spec; the only task touches runner.py + its test file together.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2132-close-host-blocked-outcome.md"
+    }
+  ]
+}
