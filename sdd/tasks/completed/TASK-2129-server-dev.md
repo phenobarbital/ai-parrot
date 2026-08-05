@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-412 — Dev-Flow: SDD-Oriented AgentsFlow for Feature Development
 **Spec**: `sdd/specs/sdd-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-05
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2122, TASK-2123, TASK-2128
@@ -180,10 +182,72 @@ async def test_plan_approval_flag_in_extra_shared(aiohttp_client): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
 **Notes**:
 
-**Deviations from spec**: none
+`server_dev.py` (~480 lines) + 28 integration tests (145 across `dev_flow`).
+
+**Reuse decision.** The task offered "import from server.py" or "copy the few
+needed helpers". I chose **import** — `sys.path.insert(...)` then
+`import server as ops_server`, the same trick `server.py` itself uses for
+`llm_catalog`. `server.py` is only *read*, never modified (asserted by
+`git diff --name-only dev...HEAD -- examples/dev_loop/server.py` being empty).
+Imported: the dispatcher/reviewer builders
+(`_resolve_codereview_dispatcher`, `_build_judge_panel_dispatcher`,
+`_log_development_agent_selection`, `_DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV`),
+the toolkit builders, `_build_feature_brief_from_form`, `_parse_dev_agents`,
+`_parse_judge_panel`, `RUN_ARTIFACT_DIR`, `_on_cleanup`, and the
+`handle_bundle`/`handle_replay`/`handle_cancel` handlers — those three are
+app-key driven and mode-agnostic, so reusing them keeps the artifact/cancel
+contract *identical* by construction rather than by convention
+(`test_reuses_ops_helpers_without_modifying_them` asserts the reused handlers
+are the very same objects, and that the ops `handle_index`/`handle_config`/
+`handle_run` are NOT mounted). Deliberately **not** imported:
+`_build_log_toolkits` (CloudWatch) and `_build_brief_from_form` (bug intake).
+
+**Gate route — one option, as instructed.** Only the
+`POST /api/flow/{run_id}/gates/{gate_id}/resolve` alias is mounted, not
+`register_command_routes`'s `/runs/...` pair, so every console route shares
+one prefix and `handle_cancel` remains the single cancel entry point. The
+alias is a pure delegation to the library `resolve_gate_handler`, so the body
+contract (`ResolveGateRequest` incl. `answers`) and every status code are
+identical. It is published to the UI as `gate_resolve_url_template` in
+`/api/config`, and `_on_startup` binds `app["dev_loop_runner"]` (the key the
+library handler reads). `test_gate_resolve_route_mounted` drives the whole
+round-trip: run → gate opens → REST POST with `answers` → the flow observes
+those answers → 200. `test_gate_resolve_empty_answers_400` confirms the
+host-side validation surfaces as `answers_required`.
+
+**Jira is genuinely optional.** `_build_optional_jira_toolkit()` short-circuits
+to `None` when `JIRA_INSTANCE`/`JIRA_USERNAME` are unset and also swallows a
+construction failure, so a dev machine with no Jira env starts cleanly
+(`test_jira_is_optional`). Startup never calls `_build_log_toolkits`.
+
+**Per-run plan gate.** `require_plan_approval` is forwarded to `extra_shared`
+**only when the key is present in the form**, so an absent toggle falls back
+to the flow's build-time default rather than silently overriding it with
+`False` — which is exactly the absent-vs-explicit-False distinction
+TASK-2123 implemented. All three cases are tested
+(`True` forwarded, explicit `False` forwarded, absent not forwarded).
+
+**Test-design note worth recording.** My first pass asserted absence of ops
+concerns by substring-scanning `inspect.getsource(module)`, which failed
+because this module's *own documentation* names `_build_log_toolkits` and
+`_build_brief_from_form` in order to state they are excluded. Replaced with
+`_referenced_identifiers()`, which walks the **AST** and collects
+`Name`/`Attribute`/`keyword`/`alias` identifiers — docstrings and comments are
+excluded by construction. `test_index_serves_dev_html` was likewise rewritten
+from source-scanning to behavioral (call the handler, assert the
+`FileResponse` path is `STATIC_DIR/dev.html`).
+
+Also verified: the module imports and `build_app()` succeeds standalone (15
+routes), and `main()`'s port default is 8081 (`test_default_port_is_8081`).
+
+`ruff`: `server_dev.py` and its test file at **0** findings.
+
+**Deviations from spec**: none.
+
+Note: `GET /` currently 404s because `static/dev.html` lands in TASK-2130 —
+which is why `test_index_serves_dev_html` asserts the resolved path rather
+than a 200.

@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-412 — Dev-Flow: SDD-Oriented AgentsFlow for Feature Development
 **Spec**: `sdd/specs/sdd-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-05
+**Verification**: verified
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2121
@@ -143,10 +145,53 @@ async def test_emits_intake_validated_event(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
 **Notes**:
 
-**Deviations from spec**: none
+`DevIntakeNode` registered as `dev_flow.dev_intake`, mirroring
+`IntentClassifierNode`'s structure without importing or subclassing it:
+`execute` → `_load_brief` → per-kind publication → `_emit_validated_event`,
+plus `_ensure_redis`/`close` for the lazy cached client.
+
+Publication contract:
+
+- `ctx["dev_brief"]` is set for **every** kind (canonical dev-flow key).
+- `ctx["feature_brief"]` is set **only** for `kind == "feature"` — the exact
+  key `PlannerNode` reads, which is what lets a document intake skip
+  ideation. A natural-language brief deliberately leaves it unset;
+  `IdeationNode` populates it later (asserted by
+  `test_loads_brief_from_ctx`).
+- The bug-mode keys (`bug_brief` / `work_brief`) are never written
+  (`test_never_publishes_bug_mode_keys`).
+
+Load order is `ctx["dev_brief"]` → `ctx["feature_brief"]` → JSON prompt,
+accepting either a model instance or a raw dict. Validation happens in
+`_load_brief`, i.e. **before** anything is published and before the event is
+emitted — `test_invalid_brief_raises_before_return` asserts an unreadable
+`FeatureBrief.document_path` leaves the context untouched and `xadd`
+un-awaited.
+
+The `flow.intake_validated` payload is per-kind: a `FeatureBrief` reports
+`document_kind`/`document_path`/`jira_issue_key`, a `DevRequestBrief` reports
+`title`/`jira_issue_key`. The `n_criteria`/`affected_component` fields from
+the bug-mode event are deliberately absent — dev-flow briefs have neither.
+
+20 tests, all passing (51 across the whole `dev_flow` suite). Includes the
+degraded-Redis paths (connect failure and `xadd` failure both drop the event
+without failing the run), the no-`run_id` skip, and `close()` idempotency.
+
+`ruff`: the entire `dev_flow` package + test package is at **0** findings.
+The two unavoidable `except Exception` telemetry guards carry an explicit
+`# noqa: BLE001 — telemetry must never break a run`, the same convention
+`session_state.py:1023` uses (the mirrored `intent_classifier.py` predates
+that convention and carries the findings unsuppressed).
+
+**Deviations from spec**: none.
+
+Contract note: the task's Codebase Contract did not name the `NODE_REGISTRY`
+import path, and my registration test initially guessed
+`parrot.bots.flows.core.registry`, which does not exist. Verified and
+corrected to `parrot.bots.flows.flow.flow` (the path
+`dev_loop/nodes/base.py:30` itself imports from). Test-only; no production
+code was affected.

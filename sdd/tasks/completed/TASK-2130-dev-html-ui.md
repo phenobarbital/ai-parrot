@@ -2,7 +2,9 @@
 
 **Feature**: FEAT-412 — Dev-Flow: SDD-Oriented AgentsFlow for Feature Development
 **Spec**: `sdd/specs/sdd-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
+**Completed**: 2026-08-05
+**Verification**: verified
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2129
@@ -175,10 +177,100 @@ Manual checklist (record results in the Completion Note):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
 **Notes**:
 
-**Deviations from spec**: none
+`dev.html` (1862 lines). Method: started as a **byte copy** of `index.html`,
+then applied surgical edits — so every KEEP item (stepper, panels/spine/rail
+execution views, `foldAction` vocabulary, dispatch telemetry, judge verdicts,
+feedback decisions, docs artifact, PR summary card, gate audit trail,
+bundle/report, cancel/restart, theme toggle) is preserved *exactly* rather
+than re-typed. `index.html` is byte-identical (`git diff --name-only
+dev...HEAD` clean of it).
+
+**REMOVED** as specified: bug intake markup, `TOPOLOGY.bug`, the
+`criteria`/`context`/`observability`/`jira` tab bodies and their `TAB_NOTES`,
+the bug `buildPayload()` branch, `criteriaSummary()`, and the
+`affectedComponent`/`logGroup`/`timeWindow`/`existingIssueKey`/`criteria`
+form state. Grep-verified zero occurrences of `affected_component`,
+`log_group`, `time_window`, `CloudWatch`, `bug_intake`,
+`acceptance_criteria`, `existing_issue_key`, `afd-theme`.
+
+**ADDED**: the 3-intent picker (no availability gating — one topology); the NL
+intake (title + description + optional context) whose "will write" row shows
+the exact `sdd/proposals/<slug>.{brainstorm|proposal}.md` the run will
+produce (client-side `slugify` mirroring the subagent's rule, so a resume of
+an existing document is predictable *before* dispatch); a single `TOPOLOGY.dev`
+with all 10 nodes; an **Ideation & gates** tab holding the per-run
+`require_plan_approval` toggle plus read-only round-budget and fail-closed TTL;
+and the **HITL panel**.
+
+**HITL panel design** (the net-new surface):
+
+- Renders from `app.s.gates` via `pendingGate()`, **not** from live actions —
+  so a reload mid-gate re-renders from the adopted snapshot (the task's
+  reconnect requirement). Handles every gate kind, not just
+  `open_questions`: `plan_approval` and friends get approve/reject + comment
+  with no answer inputs.
+- One `<textarea>` per `gate.questions[]`; only non-empty answers are sent, so
+  partial answers work and blanks stay `[ ]` in the document. Submitting with
+  *zero* answers is blocked client-side with a message pointing at Reject —
+  which mirrors the server's own `answers_required` 400 rather than relying on
+  it for the common case.
+- Draft answers live in `app.hitl`, not the DOM, because a streamed node event
+  triggers a re-render every second — without that, typing would be wiped
+  mid-answer.
+- After a successful resolve it deliberately does **not** touch local state;
+  the `gate/resolved` action on the state socket folds the resolution and
+  hides the panel. Commented in-file and asserted by a test.
+- `resolved_by` comes from `localStorage["devflow-user"]` with a `prompt()`
+  fallback (the REST body requires `min_length=1`).
+- The gate URL comes from `/api/config`'s `gate_resolve_url_template`, with the
+  literal route as a fallback.
+
+**Bug found and fixed while trimming** (inherited from the copy):
+`handoffNodeId()` returned `"deployment_handoff"` whenever
+`app.mode !== "feature"`. In dev-flow the only terminal handoff is
+`feature_handoff`, so **every natural-language run's summary would have
+rendered blank/failed** even on success. Now pinned to `feature_handoff` with
+a comment. Three neighbouring `app.mode === "feature"` wording branches
+(handoff sub-line, Jira note, pool/judge hints) were also collapsed, since
+`mode` now selects only the *intake shape* — the topology never varies.
+
+**Verification** (no JS harness exists and the task forbids adding one):
+
+- `node --check` on both extracted `<script>` blocks → syntax OK.
+- A cross-check script confirmed **all 52** element ids the JS references
+  exist in the markup (`MISSING: NONE`), that the payload the JS builds is
+  accepted by the real `_build_dev_brief_from_form`, and that the JS's gate
+  URL template matches a route actually mounted by `build_app()`.
+- 22 new tests appended to `test_server_dev.py` (the spec's chosen home for
+  UI assertions) covering the removed ops surface, the added dev surface,
+  state-driven gate rendering, the no-local-mutation rule, and that
+  `index.html` is still the ops console. Suite: 50 passed.
+
+**Manual checklist**: NOT executed — the 6 scenarios all require a live Redis
+plus real Claude/Codex dispatches (a full ideation → planner → dev-pool → QA
+run per item), which is not available in this environment. The mechanical
+preconditions each scenario depends on are covered by the automated checks
+above (payload shapes per intent, gate render-from-state, resolve POST
+contract and route, plan-gate flag reaching `extra_shared`, reject path). The
+browser-in-the-loop passes are left for the reviewer; the scenarios are
+reproduced verbatim in `README`/`GUIA` by TASK-2131.
+
+**Deviations from spec**: none.
+
+### Post-completion fix (same feature branch)
+
+Self-review after marking this task done caught one requirement from the
+Implementation Notes I had missed: *"Summary must render
+`document_kind`/document path when available (ideation output surfaces via node
+summary)"*. Fixed in a follow-up commit — `IdeationNode` returns the
+`FeatureBrief` it produced and `node/completed` carries the serialised result
+as its `summary` (`session_state.py:1269-1272`), so `app.s.nodes.ideation.summary`
+already had `document_path`/`document_kind` client-side. The run summary now
+shows an "SDD document written by ideation" card above the documentation
+artifact, with the kind and how many Open-Questions rounds the run took.
+The "no `pr_url` ⇒ failure" precedent was already preserved by the copy
+(`summaryHeadline()`), now reading the correct `feature_handoff` node.
