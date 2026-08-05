@@ -1078,6 +1078,14 @@ DEV_LOOP_CODEREVIEW_JUDGE: bool = config.getboolean(
 DEV_LOOP_GATE_TTL_REVIEW_ESCALATION: int = config.getint(
     "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", fallback=86400  # 24h, fail-closed
 )
+# HITL gate TTL for a dev-flow ideation Open-Questions round
+# (``GateKind="open_questions"``, FEAT-412). Fail-closed like the other
+# DEV_LOOP_GATE_TTL_* settings: silence is not consent for spec decisions,
+# so an unanswered round expires the run into the failure path rather than
+# auto-approving an under-specified document.
+DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint(
+    "DEV_FLOW_GATE_TTL_QUESTIONS", fallback=86400  # 24h, fail-closed
+)
 # Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
 # "base" (e.g. "dev" or "origin/main"). Required in that case — the server
 # bootstrap raises at startup rather than silently degrading every review if

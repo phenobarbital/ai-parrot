@@ -52,6 +52,13 @@ class ResolveGateRequest(BaseModel):
     resolved_by: str = Field(..., min_length=1)
     comment: str = ""
     client_seq: int = 0
+    # FEAT-412: structured ``question -> answer`` mapping for an
+    # ``open_questions`` gate (dev-flow ideation rounds). Defaulted so every
+    # pre-FEAT-412 client body still validates against this frozen,
+    # extra="forbid" model. The HOST enforces that approving an
+    # ``open_questions`` gate carries at least one answer — surfaced here as
+    # a 400 (see :func:`resolve_gate_handler`).
+    answers: dict[str, str] = Field(default_factory=dict)
 
 
 class CancelRunRequest(BaseModel):
@@ -102,7 +109,7 @@ async def resolve_gate_handler(request: web.Request) -> web.Response:
     try:
         envelope = await runner.resolve_gate(
             run_id, gate_id, body.resolution, body.resolved_by,
-            body.comment, origin=origin,
+            body.comment, origin=origin, answers=body.answers,
         )
     except GateNotFoundError:
         # NOTE: GateNotFoundError subclasses KeyError — this except clause
@@ -117,6 +124,18 @@ async def resolve_gate_handler(request: web.Request) -> web.Response:
             "resolve_gate: unknown run_id=%s gate_id=%s", run_id, gate_id
         )
         return web.json_response({"error": "unknown_run"}, status=404)
+    except ValueError as exc:
+        # FEAT-412: the host rejects approving an "open_questions" gate with
+        # no answers. Neither GateNotFoundError (KeyError) nor
+        # GateAlreadyResolvedError (RuntimeError) derives from ValueError, so
+        # this clause cannot shadow them.
+        logger.info(
+            "resolve_gate: invalid resolution for gate_id=%s on run_id=%s: %s",
+            gate_id, run_id, exc,
+        )
+        return web.json_response(
+            {"error": "answers_required", "detail": str(exc)}, status=400
+        )
     except GateAlreadyResolvedError:
         host = runner.get_host(run_id)
         gate = host.state.gates.get(gate_id) if host is not None else None
