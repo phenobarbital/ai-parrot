@@ -14,7 +14,7 @@
       "feature_id": "FEAT-415",
       "feature": "workday-interfaces-homologation",
       "spec": "sdd/specs/workday-interfaces-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task. Modifies config.py, which TASK-2137 and TASK-2138 both build on. Spec mandates per-spec isolation, so it runs first and sequentially in the shared worktree.",
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2136-workday-env-selector-conf.md"
+      "completed_at": "2026-08-05T19:02:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2136-workday-env-selector-conf.md"
     },
     {
       "id": "TASK-2137",
