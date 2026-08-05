@@ -1,10 +1,10 @@
-from typing import List
+
 import pandas as pd
 
-from .base import WorkdayTypeBase
 from ..models.organizations import Organization
 from ..parsers.organization_parsers import parse_organization_data
 from ..utils import safe_serialize
+from .base import WorkdayTypeBase
 
 
 class OrganizationType(WorkdayTypeBase):
@@ -31,7 +31,9 @@ class OrganizationType(WorkdayTypeBase):
         Supported parameters:
         - organization_id: Specific organization ID to fetch (uses Request_References)
         - organization_id_type: Type of organization ID (WID, Organization_Reference_ID, Cost_Center_Reference_ID, etc.)
-        - organization_type: Filter by organization type (Company, Cost Center, Custom, Matrix, Pay Group, Region, Retiree, Supervisory, etc.)
+        - organization_type: Filter by organization type ID (Company, Cost_Center, Custom,
+          Matrix, Pay_Group, Region, Retiree, Supervisory, etc.). Uses the underscore
+          `Organization_Type_ID` form (e.g. "Cost_Center", not "Cost Center").
         - include_inactive: Include inactive organizations (True/False)
         - enable_transaction_log_lite: Enable transaction log lite (True/False)
         """
@@ -97,13 +99,13 @@ class OrganizationType(WorkdayTypeBase):
             raise
 
         # Parse into Pydantic models
-        parsed: List[Organization] = []
+        parsed: list[Organization] = []
         for i, org in enumerate(organizations_raw):
             try:
                 parsed_data = parse_organization_data(org)
                 
                 parsed.append(parsed_data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — pre-existing, untouched by this task
                 self._logger.error(f"Error parsing organization {i+1}: {e}")
                 self._logger.error(f"Raw data: {safe_serialize(org)}")
                 continue
@@ -137,8 +139,9 @@ class OrganizationType(WorkdayTypeBase):
     async def get_organizations_by_type(self, organization_type: str) -> pd.DataFrame:
         """
         Get organizations filtered by type.
-        
-        :param organization_type: Organization type (Company, Cost Center, Custom, Matrix, Pay Group, Region, Retiree, Supervisory, etc.)
+
+        :param organization_type: Organization type ID (Company, Cost_Center, Custom, Matrix,
+            Pay_Group, Region, Retiree, Supervisory, etc.) — underscore `Organization_Type_ID` form
         :return: DataFrame with organizations data
         """
         return await self.execute(organization_type=organization_type)
@@ -171,10 +174,10 @@ class OrganizationType(WorkdayTypeBase):
     async def get_cost_centers(self) -> pd.DataFrame:
         """
         Get only cost center organizations.
-        
+
         :return: DataFrame with cost center organizations data
         """
-        return await self.execute(organization_type="Cost Center")
+        return await self.execute(organization_type="Cost_Center")
 
     async def get_companies(self) -> pd.DataFrame:
         """
