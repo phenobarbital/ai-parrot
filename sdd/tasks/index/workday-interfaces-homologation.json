@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-05T00:00:00+00:00",
-  "completed_at": "2026-08-05T19:46:02+00:00",
+  "completed_at": "2026-08-05T22:59:22+00:00",
   "tasks": [
     {
       "id": "TASK-2136",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:02:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2136-workday-env-selector-conf.md"
+      "file": "sdd/tasks/completed/TASK-2136-workday-env-selector-conf.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2137",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:05:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2137-workday-soap-endpoint-rewrite.md"
+      "file": "sdd/tasks/completed/TASK-2137-workday-soap-endpoint-rewrite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2138",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:10:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2138-workday-rest-client-aiohttp.md"
+      "file": "sdd/tasks/completed/TASK-2138-workday-rest-client-aiohttp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2139",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:16:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2139-workday-cost-center-enrichment.md"
+      "file": "sdd/tasks/completed/TASK-2139-workday-cost-center-enrichment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2140",
@@ -99,7 +103,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:19:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2140-workday-clock-event-write-surface.md"
+      "file": "sdd/tasks/completed/TASK-2140-workday-clock-event-write-surface.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2141",
@@ -117,7 +122,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:23:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2141-workday-custom-report-json.md"
+      "file": "sdd/tasks/completed/TASK-2141-workday-custom-report-json.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2142",
@@ -135,7 +141,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:27:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2142-workday-latent-bug-fixes.md"
+      "file": "sdd/tasks/completed/TASK-2142-workday-latent-bug-fixes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2143",
@@ -153,7 +160,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:40:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2143-workday-residual-hunks.md"
+      "file": "sdd/tasks/completed/TASK-2143-workday-residual-hunks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2144",
@@ -178,7 +186,8 @@
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
       "completed_at": "2026-08-05T19:45:33+00:00",
-      "file": "sdd/tasks/completed/TASK-2144-workday-extra-and-smoke-script.md"
+      "file": "sdd/tasks/completed/TASK-2144-workday-extra-and-smoke-script.md",
+      "verification": "verified"
     }
   ]
 }
