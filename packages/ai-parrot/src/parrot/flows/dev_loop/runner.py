@@ -87,6 +87,8 @@ _GATE_TTL_CONF_ATTR: Dict[GateKind, str] = {
     "revision_approval": "DEV_LOOP_GATE_TTL_REVISION",
     "plan_approval": "DEV_LOOP_GATE_TTL_PLAN",
     "review_escalation": "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION",
+    # FEAT-412 dev-flow: ideation Open-Questions round (fail-closed).
+    "open_questions": "DEV_FLOW_GATE_TTL_QUESTIONS",
 }
 
 
@@ -718,6 +720,7 @@ class DevLoopRunner:
         resolved_by: str,
         comment: str = "",
         origin: Optional[ActionOrigin] = None,
+        answers: Optional[Dict[str, str]] = None,
     ) -> ActionEnvelope:
         """Resolve a pending gate on ``run_id``'s host.
 
@@ -729,6 +732,9 @@ class DevLoopRunner:
             comment: Optional free-text audit comment.
             origin: Optional multi-client attribution (FEAT-322 TASK-1855 —
                 the REST command layer passes the calling client here).
+            answers: FEAT-412 — structured ``question -> answer`` mapping for
+                an ``open_questions`` gate (dev-flow ideation rounds).
+                Required when approving such a gate; ignored otherwise.
 
         Returns:
             The sequenced :class:`ActionEnvelope` for the resolution.
@@ -738,12 +744,14 @@ class DevLoopRunner:
                 terminated run).
             GateNotFoundError: ``gate_id`` does not exist on this run.
             GateAlreadyResolvedError: the gate is no longer pending.
+            ValueError: An ``open_questions`` gate is approved with no answers.
         """
         host = self._hosts.get(run_id)
         if host is None:
             raise KeyError(f"no active session host for run_id={run_id!r}")
         return host.resolve_gate(
-            gate_id, resolution, resolved_by, comment, origin=origin
+            gate_id, resolution, resolved_by, comment, origin=origin,
+            answers=answers,
         )
 
     async def cancel_run(self, run_id: str, requested_by: str) -> ActionEnvelope:

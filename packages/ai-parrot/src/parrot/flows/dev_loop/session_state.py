@@ -152,6 +152,10 @@ NodeId = Literal[
     "synthesis",
     "feedback_router",
     "feature_handoff",
+    # -- dev-flow intake topology (FEAT-412) --
+    # Additive only: dev-flow reuses every node id above from "planner" on.
+    "dev_intake",
+    "ideation",
 ]
 
 NodeStatus = Literal["idle", "running", "completed", "failed", "skipped"]
@@ -175,6 +179,7 @@ GateKind = Literal[
     "revision_approval",    # gate before pushing a revision to the PR
     "plan_approval",        # optional: approve ResearchOutput plan
     "review_escalation",    # FEAT-375: adversarial-review ESCALATE disposition
+    "open_questions",       # FEAT-412: dev-flow ideation Open Questions round
 ]
 
 GateStatus = Literal["pending", "approved", "rejected", "expired"]
@@ -249,6 +254,14 @@ class ApprovalGate(_Frozen):
     resolved_by: str = ""           # client/user identity — audit trail
     resolved_at: Optional[float] = None
     comment: str = ""
+    # -- FEAT-412: structured question/answer gates (kind="open_questions") --
+    # Additive and defaulted so pre-FEAT-412 persisted envelopes still
+    # validate (same precedent as DispatchState's TASK-1927 fields).
+    # ONE gate carries ALL Open Questions of an ideation round (spec §8);
+    # ``answers`` maps question -> answer and is folded on resolution.
+    # Partial answers are allowed: unanswered questions stay open in the doc.
+    questions: List[str] = Field(default_factory=list)
+    answers: Dict[str, str] = Field(default_factory=dict)
 
 
 class JudgeVerdict(_Frozen):
@@ -450,6 +463,10 @@ class GateResolved(_ActionBase):
     resolution: Literal["approved", "rejected"]
     resolved_by: str
     comment: str = ""
+    # FEAT-412: structured answers for an "open_questions" gate. Defaulted
+    # so pre-FEAT-412 persisted envelopes re-validate; folded into the
+    # gate by the reducer exactly like ``comment``.
+    answers: Dict[str, str] = Field(default_factory=dict)
 
 
 class GateExpired(_ActionBase):
@@ -831,6 +848,10 @@ def reduce(  # noqa: C901 — a flat, exhaustive match is the point
             "resolved_by": action.resolved_by,
             "resolved_at": action.ts,
             "comment": action.comment,
+            # FEAT-412: fold structured answers exactly like ``comment``.
+            # Empty for every non-``open_questions`` gate, so the previous
+            # (empty) value is preserved byte-identically.
+            "answers": dict(action.answers),
         })
         gates = {**state.gates, gate.gate_id: gate}
         return _recompute_phase(state.model_copy(update={"gates": gates}))
@@ -1038,6 +1059,7 @@ class SessionHost:
         resolved_by: str,
         comment: str = "",
         origin: Optional[ActionOrigin] = None,
+        answers: Optional[Dict[str, str]] = None,
     ) -> ActionEnvelope:
         """Client command path — validated BEFORE sequencing.
 
@@ -1052,6 +1074,11 @@ class SessionHost:
             comment: Optional free-text audit comment.
             origin: Optional multi-client attribution (FEAT-322 TASK-1855 —
                 the REST command layer records the calling client here).
+            answers: FEAT-412 — structured ``question -> answer`` mapping for
+                an ``open_questions`` gate. Required (non-empty) when
+                approving such a gate; ignored for every other kind. Partial
+                answers are allowed: questions the user left out simply stay
+                open in the ideation document.
 
         Returns:
             The sequenced :class:`ActionEnvelope` for the resolution.
@@ -1059,6 +1086,10 @@ class SessionHost:
         Raises:
             GateNotFoundError: ``gate_id`` does not exist.
             GateAlreadyResolvedError: the gate is no longer ``"pending"``.
+            ValueError: An ``open_questions`` gate is being approved with no
+                answers — approving an ideation round means answering at
+                least one question (rejection needs none: it aborts the
+                ideation).
         """
         gate = self._state.gates.get(gate_id)
         if gate is None:
@@ -1068,10 +1099,18 @@ class SessionHost:
                 f"gate {gate_id} already {gate.status} "
                 f"by {gate.resolved_by or 'system'}"
             )
+        answers = dict(answers or {})
+        if gate.kind == "open_questions" and resolution == "approved" and not answers:
+            raise ValueError(
+                f"gate {gate_id} is an 'open_questions' gate: approving it "
+                "requires at least one answer (use resolution='rejected' to "
+                "abort the ideation instead)"
+            )
         return self.apply(
             GateResolved(
                 gate_id=gate_id, resolution=resolution,
                 resolved_by=resolved_by, comment=comment,
+                answers=answers,
             ),
             origin=origin,
         )
@@ -1086,18 +1125,24 @@ class SessionHost:
         payload_ref: str = "",
         ttl_seconds: Optional[int] = None,
         on_expiry: Literal["fail", "approve"] = "fail",
+        questions: Optional[List[str]] = None,
     ) -> Tuple[str, ActionEnvelope]:
         """Open a new gate (convenience for QA/DeploymentHandoff nodes).
 
         Args:
             kind: The gate kind (``manual_criterion``, ``deployment_approval``,
-                ``revision_approval``, ``plan_approval``).
+                ``revision_approval``, ``plan_approval``,
+                ``review_escalation``, ``open_questions``).
             node_id: The node opening the gate.
             title: Short human-readable title.
             instructions: Longer instructions/context for the approver.
             payload_ref: Changeset/terminal URI carrying supporting evidence.
             ttl_seconds: Optional per-gate TTL override.
             on_expiry: ``"fail"`` (fail-closed) or ``"approve"`` (fail-open).
+            questions: FEAT-412 — the structured Open Questions carried by an
+                ``open_questions`` gate (ONE gate per ideation round holds
+                ALL of that round's questions). The UI renders one input per
+                entry and POSTs back an ``answers`` mapping.
 
         Returns:
             A ``(gate_id, envelope)`` tuple.
@@ -1110,6 +1155,7 @@ class SessionHost:
             opened_at=now,
             expires_at=(now + ttl_seconds) if ttl_seconds else None,
             on_expiry=on_expiry,
+            questions=list(questions or []),
         )
         return gate.gate_id, self.apply(GateOpened(gate=gate))
 

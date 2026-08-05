@@ -124,6 +124,33 @@ class DevLoopRunner:
 - ~~a per-question gate model~~ — spec decision: ONE gate carries ALL
   questions of a round.
 
+### ⚠️ Contract correction (discovered 2026-08-05 during implementation)
+
+The task/spec contract omitted `NodeId`, which is a **closed Literal** in the
+same file (`session_state.py:140-155`) and does NOT contain the dev-flow's
+two new node ids:
+
+```python
+NodeId = Literal[
+    "intent_classifier", "bug_intake", "research", "development", "qa",
+    "deployment_handoff", "revision_handoff", "failure_handler", "close",
+    # -- feature-mode topology (FEAT-378) --
+    "planner", "synthesis", "feedback_router", "feature_handoff",
+]
+```
+
+`ApprovalGate.node_id` is typed `NodeId`, so the spec's own normative call —
+`host.open_gate(kind="open_questions", node_id="ideation", ...)` (spec §2
+"The Open-Questions HITL round-trip", step 2) — raises a
+`ValidationError` until `NodeId` gains `"dev_intake"` and `"ideation"`.
+
+**Resolution**: extend `NodeId` additively with the two dev-flow node ids,
+exactly as FEAT-378 did for its four feature-mode ids (same file, same
+comment convention). Strictly additive — no existing value changes, so all
+persisted envelopes and existing call sites are unaffected. Done here rather
+than in TASK-2126 because `session_state.py` is already in this task's
+scope and TASK-2125/2126 would otherwise be blocked on it.
+
 ---
 
 ## Implementation Notes
@@ -185,10 +212,69 @@ def test_open_questions_expiry_fail_closed(): ...  # GateExpired emitted
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
 **Notes**:
 
-**Deviations from spec**: none
+Strictly additive extension of the shared gate model:
+
+- `session_state.py` — `GateKind += "open_questions"`;
+  `ApprovalGate.questions: List[str] = []` / `answers: Dict[str, str] = {}`;
+  `GateResolved.answers`; `open_gate(questions=...)` and
+  `resolve_gate(answers=...)` passthrough; reducer folds `answers` alongside
+  `comment`. Host-side validation raises `ValueError` when an
+  `open_questions` gate is **approved** with no answers — before sequencing,
+  so no action is emitted and the gate stays pending (asserted in
+  `test_gate_resolve_answers_required`). Rejection needs no answers.
+- `commands.py` — `ResolveGateRequest.answers` (defaulted, so pre-FEAT-412
+  bodies still satisfy the frozen `extra="forbid"` model) + a dedicated
+  `except ValueError` → **400 `answers_required`**. Placed deliberately:
+  `GateNotFoundError` is a `KeyError` and `GateAlreadyResolvedError` is a
+  `RuntimeError`, so the new clause cannot shadow the existing 404/409 paths
+  (the module's ordering caveat is preserved).
+- `runner.py` — `DevLoopRunner.resolve_gate(answers=...)` passthrough.
+
+Backward compatibility is covered explicitly: `test_gate_backward_compat`
+validates a hand-written pre-FEAT-412 `ApprovalGate` dict, a `gate/opened`
+and a `gate/resolved` envelope with **no** `questions`/`answers` keys, then
+reduces the pair and asserts the old semantics; plus a REST test with a
+legacy body. 17 new tests, all passing.
+
+**Regression net**: full `dev_loop` suite → **1033 passed, 6 skipped, 1
+failed**. The single failure,
+`test_qa_codereview.py::test_review_brief_carries_deterministic_qa_results`
+(`review_brief.qa_criterion_results == []`), is **pre-existing on `dev`** and
+unrelated to gates — verified by running that test against the unmodified
+main checkout at `dev` HEAD, where it fails identically. Not touched (out of
+scope, Cardinal Rule 5).
+
+`ruff`: `commands.py` and the new test file are at **0** findings; the
+`session_state.py`/`runner.py`/`conf.py` counts are unchanged from `dev`
+apart from the new lines following each file's own `Dict`/`List`/`Optional`
+house style. (Note: the repo ships no ruff config and CI's
+"Lint & Registry Check" job does not run ruff, so these files carry 63/62
+default-ruleset findings on `dev` already; "clean on modified files" is
+interpreted as "adds no new findings".)
+
+**Deviations from spec**: two, both forced and strictly additive.
+
+1. **`NodeId` extended** with `"dev_intake"` and `"ideation"`
+   (`session_state.py:150-159`). Not in the task/spec contract, but
+   `ApprovalGate.node_id` is typed `NodeId` — a **closed** Literal — so the
+   spec's own normative call `open_gate(kind="open_questions",
+   node_id="ideation", ...)` (§2 round-trip step 2) raised a
+   `ValidationError`. Extended exactly as FEAT-378 did for its four
+   feature-mode ids. Full detail recorded in the *Contract correction*
+   section above.
+2. **`packages/ai-parrot/src/parrot/conf.py` modified** (not in this task's
+   file table) to add `DEV_FLOW_GATE_TTL_QUESTIONS` (int, default 86400 —
+   24h, fail-closed), plus its `_GATE_TTL_CONF_ATTR` entry in `runner.py`.
+   Forced by `test_runner_host.py::test_gate_ttl_for_covers_every_gate_kind`,
+   a deliberate regression guard asserting **every** `GateKind` resolves a
+   TTL — extending `GateKind` (this task's core scope) breaks it otherwise,
+   which would violate this task's own "full existing dev_loop suite passes"
+   criterion. The key, its name and its default are exactly as specified in
+   spec §2 Configuration.
+   **Hand-off**: `conf.py` and both `DEV_FLOW_*` keys are listed under
+   TASK-2126, which should now add only the remaining
+   `DEV_FLOW_IDEATION_MAX_ROUNDS` key.
