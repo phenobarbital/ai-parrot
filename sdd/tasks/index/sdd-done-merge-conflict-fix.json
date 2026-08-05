@@ -32,7 +32,7 @@
       "feature_id": "FEAT-414",
       "feature": "sdd-done-merge-conflict-fix",
       "spec": "sdd/specs/sdd-done-merge-conflict-fix.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies sdd-done.md Step 9 — depends on TASK-2133 (same file)",
       "assigned_to": null,
       "started_at": "2026-08-05T14:04:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2134-simplify-step9-merge-block.md"
+      "completed_at": "2026-08-05T14:33:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2134-simplify-step9-merge-block.md"
     },
     {
       "id": "TASK-2135",
