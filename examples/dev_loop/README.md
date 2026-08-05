@@ -28,10 +28,26 @@ examples/dev_loop/
 ├── README.md          ← this file
 ├── e2e_demo.py        ← self-contained end-to-end demo (no external services)
 ├── quickstart.py      ← real-mode programmatic example (no UI)
-├── server.py          ← aiohttp server: real flow + WS multiplexer
+├── server.py          ← OPERATIONS console: bug/enhancement/new_feature + feature
+├── server_dev.py      ← DEVELOPMENT console: the dev-flow (FEAT-412), port 8081
 └── static/
-    └── index.html     ← vanilla-JS UI client (no build step)
+    ├── index.html     ← operations UI (served by server.py)
+    └── dev.html       ← development UI with the HITL panel (served by server_dev.py)
 ```
+
+**Two consoles, two audiences** (FEAT-412). They share Redis, the streaming
+layer and the artifact conventions, and they can run side by side:
+
+| | `server.py` + `index.html` | `server_dev.py` + `dev.html` |
+|---|---|---|
+| For | operating: bugs, log triage, ticketed work | developing: turning an idea into a PR |
+| Port | 8080 | **8081** |
+| Intake | summary + affected component + log sources | natural language, or an SDD document |
+| CloudWatch | yes | **never wired** |
+| Jira | required for bug runs | optional, link-only |
+| HITL | read-only gate audit trail | **interactive** — answers gates from the browser |
+
+See **Development console** below.
 
 Both real-mode entry points wire the **real** flow — no fakes, no stubs.
 They differ only in how the run is triggered: `quickstart.py` runs the brief
@@ -359,6 +375,195 @@ Common gotchas:
   allowlisted head (e.g. `pytest scripts/check_pipeline.py`).
 * If you need a `FlowtaskCriterion` with a specific `task_path` /
   structured `args` array, post the full criterion dict via curl.
+
+## Development console — `server_dev.py` + `static/dev.html` (FEAT-412)
+
+```bash
+source .venv/bin/activate
+python examples/dev_loop/server_dev.py
+# open http://localhost:8081        (PORT / HOST / REDIS_URL env still win)
+```
+
+Redis is the only hard requirement. **No `CLOUDWATCH_*` and no `JIRA_*` env is
+needed** — the dev-flow wires no log toolkits at all, and Jira is link-only:
+when `JIRA_INSTANCE`/`JIRA_USERNAME` are unset the server logs one line and
+runs with `jira_toolkit=None`.
+
+Because the port differs, this console runs **alongside** the operations one
+(8080) against the same Redis.
+
+### The topology
+
+```
+dev_intake ─(enhancement | new_feature)→ ideation ─┐
+     └──────(feature)──────────────────────────────┤
+                                                   ▼
+planner → development → synthesis → qa ─(passed)→ feature_handoff → close
+                ↑                    │                  ▲   (draft PR)
+                └─(retry, bounded)───┤                  │
+                                     ▼                  │
+                              feedback_router ──(accept_with_notes)
+                                     ├─(escalate)→ failure_handler
+                          (+ on_error fan-in from every middle node)
+```
+
+Everything from `planner` onward behaves exactly like the feature-mode chain —
+same node types, same predicates, same bounded repair loop. Only the intake is
+new. The run always ends at a **draft PR against `dev`**; the flow never
+merges.
+
+### The three intents
+
+The intent is a **user choice in the UI** — there is no LLM classification
+anywhere in this flow.
+
+| Intent | Intake | Ideation writes | Then |
+|---|---|---|---|
+| `enhancement` | natural language (`title` + `description`) | `sdd/proposals/<slug>.proposal.md` — a **light** proposal: scope, rationale, impact, open questions (no options analysis) | planner → … |
+| `new_feature` | natural language (`title` + `description`) | `sdd/proposals/<slug>.brainstorm.md` — a **full** brainstorm: options A/B/C + a recommendation | planner → … |
+| `feature` | an existing SDD document (`document_path` + `document_kind`) | *nothing — ideation is skipped by routing* | planner → … |
+
+`title` is the slug source. **If the target document already exists it is
+resumed and extended in place** — never overwritten, never `-2`-suffixed. The
+resolved path is shown in the gate title so you can spot (and reject) an
+unintended reuse; if the existing document is clearly about something else the
+subagent refuses to touch it and returns the collision as an open question.
+
+### Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Serves `static/dev.html` |
+| `/api/config` | GET | Backends/models catalog, the three intents, `document_kinds`, `nl_kinds`, `gate_resolve_url_template`, and the dev defaults (`ideation_max_rounds`, `gate_ttl_questions`, `require_plan_approval`, `qa_max_retries`, `development_pool_max`, `max_concurrent_runs`, …). Carries **no** `log_group`, `time_window_minutes` or `jira_project`. |
+| `/api/flow/run` | POST | Start a run. Body per the intent (below). Returns `run_id`, `mode`, `kind`, `ws_url`, `state_ws_url`, `bundle_url`, `gate_resolve_url`. |
+| `/api/flow/{run_id}/gates/{gate_id}/resolve` | POST | **The HITL write path** — resolve a gate. `server.py` never mounts this. |
+| `/api/flow/{run_id}/cancel` | POST | Cancel a run |
+| `/api/flow/{run_id}/ws` | GET | `flow_stream_ws` — `?view=flow\|dispatch\|both\|state` |
+| `/api/flow/{run_id}/bundle` | GET | Finished run's bundle (`?format=md` for the report) |
+| `/api/flow/{run_id}/replay` | GET | JSON dump of stored events |
+
+### Run payloads
+
+Natural language (`enhancement` / `new_feature`):
+
+```bash
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "new_feature",
+    "title": "compression budget telemetry",
+    "description": "Add per-tool telemetry to the compression budget so operators can see which tool blew the budget.",
+    "context": "See PR #1204 for the original budget work.",
+    "require_plan_approval": true
+  }'
+```
+
+`title` and `description` are required; everything else is optional. There is
+**no** `affected_component`, `log_sources`, `acceptance_criteria`, `reporter`
+or `escalation_assignee` — those are bug-intake concepts.
+
+Existing document (`feature`) — identical to the ops console's feature payload:
+
+```bash
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "feature",
+    "document_path": "sdd/proposals/my-feature.brainstorm.md",
+    "document_kind": "brainstorm"
+  }'
+```
+
+Optional in both shapes: `jira_issue_key` (link-only), `dev_agents`,
+`judge_panel`, `skip_qa`, `skip_jira`, `require_plan_approval`.
+
+### The `open_questions` gate protocol
+
+Ideation is **interactive and bounded**. Per round:
+
+1. `IdeationNode` dispatches `sdd-ideation`, which writes/extends the document
+   and reports the questions it still needs answered.
+2. If there are any, the node opens **ONE gate carrying ALL of that round's
+   questions** (`kind="open_questions"`, `questions=[...]`) and awaits it. The
+   run **parks** while waiting (`DEV_LOOP_GATE_PARK`), so it releases its
+   concurrency slot and a human can take hours.
+3. `dev.html` receives `gate/opened` on the state WebSocket and renders one
+   input per question. It renders from the folded **state**, not from the live
+   action alone — so reloading the page mid-gate re-renders the pending gate.
+4. You submit; the answers ride the next dispatch, and the subagent marks each
+   answered question `- [x] <question> — *Resolved*: <answer>` in the document
+   (the convention `/sdd-spec` §2b consumes) and folds the decision into the
+   body.
+5. A re-dispatch may surface new questions → a new gate, bounded by
+   `DEV_FLOW_IDEATION_MAX_ROUNDS`. When the budget is spent, anything still
+   `[ ]` **stays in the document and is carried into the spec's §8 by the
+   planner** — it does not block the run.
+
+**Partial answers are fine** — blanks stay open. **Rejecting aborts** the
+ideation and routes the run to `failure_handler`. **Expiry is fail-closed**:
+an unanswered gate expires the run into the failure path, because silence is
+not consent for spec decisions.
+
+Resolving a gate from the CLI (the same call the browser makes):
+
+```bash
+curl -X POST http://localhost:8081/api/flow/run-1a2b3c4d/gates/9f8e7d6c/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "resolution": "approved",
+    "resolved_by": "jesus",
+    "comment": "answered round 1",
+    "answers": {
+      "Which store backs the telemetry?": "pgvector",
+      "Sync or async flush?": "async"
+    }
+  }'
+```
+
+Responses: `200` with the sequenced envelope · `400 invalid_body` ·
+`400 answers_required` (approving an `open_questions` gate with no answers —
+use `"resolution": "rejected"` to abort instead) · `404 unknown_run` /
+`unknown_gate` · `409 already_resolved` (first writer wins, and the body names
+who won). To abort:
+
+```bash
+curl -X POST http://localhost:8081/api/flow/run-1a2b3c4d/gates/9f8e7d6c/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"resolution": "rejected", "resolved_by": "jesus", "comment": "wrong document"}'
+```
+
+The same panel handles a `plan_approval` gate (approve/reject + comment, no
+answer inputs) when you tick **Require plan approval** — see below.
+
+### Per-run plan-approval gate
+
+`dev.html`'s *Ideation & gates* tab has a **Require plan approval** toggle.
+Ticking it sends `require_plan_approval: true`, which the server forwards as
+`extra_shared["require_plan_approval"]`; `DevelopmentNode` honours that per-run
+value **over** its build-time flag, so no flow rebuild is needed. An explicit
+`false` suppresses a gate the server was built with; omitting the field leaves
+the build-time default alone. The resulting gate opens after the planner and
+before the dev-agent fleet dispatches.
+
+### New configuration keys
+
+| Key | Default | Meaning |
+|---|---|---|
+| `DEV_FLOW_IDEATION_MAX_ROUNDS` | `2` | Max Open-Questions HITL rounds (gates) per run. Leftover questions are carried into the spec, never re-asked forever. |
+| `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL for an `open_questions` gate. **Fail-closed** — expiry routes the run to `failure_handler`. |
+
+Everything else is reused unchanged from the existing `DEV_LOOP_*` keys
+(`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
+`DEV_LOOP_DEV_AGENTS`, `DEV_LOOP_DEV_POOL_MAX`, `DEV_LOOP_REPOS`,
+`DEV_LOOP_DOCS_ARTIFACT_DIR`, `FLOW_MAX_CONCURRENT_RUNS`, …) — the dev-flow
+deliberately does not fork the shared knobs.
+`DEV_LOOP_REQUIRE_PLAN_APPROVAL` still sets the server-wide default that the
+per-run toggle overrides.
+
+### Not exposed
+
+Revision mode (`DevLoopRunner.run_revision`) is a library/`e2e_demo` feature
+and is not served by either console.
 
 ## Stream layout (for reference)
 
