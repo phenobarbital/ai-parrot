@@ -2,9 +2,12 @@
 Cost Center parsers for Workday Get_Cost_Centers operation.
 """
 
+import logging
 from typing import Any
 
 from ..utils import ensure_list, extract_by_type
+
+logger = logging.getLogger(__name__)
 
 
 def safe_get_nested(data: dict, *keys, default=None) -> Any:
@@ -31,38 +34,50 @@ def safe_get_nested(data: dict, *keys, default=None) -> Any:
 def parse_integration_id_data(integration_data: list | dict | None) -> dict[str, Any]:
     """
     Parse Integration ID Data from Cost Center response.
-    
+
+    The live shape (verified 2026-07-20) is a LIST of entries, each entry
+    carrying its own nested "ID" list of `{"_value_1": ..., "System_ID": ...}`
+    objects, e.g.:
+        [{"ID": [{"_value_1": "2502$3", "System_ID": "WD-I"},
+                  {"_value_1": "795b89c2...", "System_ID": "WD-WID"}]}]
+
     Args:
         integration_data: Integration ID data from the response
-        
+
     Returns:
-        Dictionary with parsed integration data
+        Dictionary with parsed integration data. `integration_ids` values are
+        formatted as `"<System_ID>:<value>"` (matching the organization
+        parser's `external_ids` format), falling back to the bare value when
+        no `System_ID` is present.
     """
     result = {
         "integration_ids": [],
         "external_integration_id": None
     }
-    
+
     if not integration_data:
         return result
-    
-    # Handle both dict and list cases
+
+    # Normalize to a flat list of ID-value dicts, unwrapping the nested
+    # "ID" sub-list each entry carries.
+    entries = integration_data if isinstance(integration_data, list) else [integration_data]
     id_items = []
-    if isinstance(integration_data, dict):
-        id_items = integration_data.get("ID", [])
-        if not isinstance(id_items, list):
-            id_items = [id_items]
-    elif isinstance(integration_data, list):
-        id_items = integration_data
-    
+    for entry in entries:
+        if isinstance(entry, dict) and "ID" in entry:
+            nested = entry.get("ID", [])
+            id_items.extend(nested if isinstance(nested, list) else [nested])
+        else:
+            id_items.append(entry)
+
     for id_item in id_items:
         if isinstance(id_item, dict):
             # Handle structured ID objects
             id_value = id_item.get("_value_1") or id_item.get("ID")
             system_id = id_item.get("System_ID")
-            
+
             if id_value:
-                result["integration_ids"].append(str(id_value))
+                formatted = f"{system_id}:{id_value}" if system_id else str(id_value)
+                result["integration_ids"].append(formatted)
                 if system_id == "WD-WID" and not result["external_integration_id"]:
                     result["external_integration_id"] = str(id_value)
         elif id_item:
@@ -70,7 +85,7 @@ def parse_integration_id_data(integration_data: list | dict | None) -> dict[str,
             result["integration_ids"].append(str(id_item))
             if not result["external_integration_id"]:
                 result["external_integration_id"] = str(id_item)
-    
+
     return result
 
 
@@ -154,8 +169,17 @@ def parse_organization_container_data(container_data: dict) -> dict[str, Any]:
     """
     if not container_data or not isinstance(container_data, dict):
         return {}
-    
+
     container_ref = container_data.get("Organization_Container_Reference", {})
+    # Live shape (verified 2026-07-20): Organization_Container_Reference is a
+    # LIST with a single container observed live — take the first element.
+    if isinstance(container_ref, list):
+        if len(container_ref) > 1:
+            logger.debug(
+                "Organization_Container_Reference has %d entries; using the first",
+                len(container_ref),
+            )
+        container_ref = container_ref[0] if container_ref else {}
     if not isinstance(container_ref, dict):
         return {}
     
@@ -270,9 +294,16 @@ def parse_cost_center_data(cost_center: dict) -> dict[str, Any]:
     # Parse Worktags
     worktags = parse_worktags_data(cc_data.get("Worktags_Data"))
     
-    # Parse Integration ID Data (exists under Organization_Data)
-    integration_data = parse_integration_id_data(cc_data.get("Integration_ID_Data")) if isinstance(cc_data, dict) else {"integration_ids": [], "external_integration_id": None}
-    
+    # Parse Integration ID Data — lives under Cost_Center_Data.Organization_Data
+    # (NOT directly under Cost_Center_Data; verified 2026-07-20). Re-derived
+    # here from the same source parse_organization_data() already used, so it
+    # is the last (and correct) value merged into parsed_data below.
+    integration_data = (
+        parse_integration_id_data(cc_data.get("Organization_Data", {}).get("Integration_ID_Data"))
+        if isinstance(cc_data, dict) and isinstance(cc_data.get("Organization_Data"), dict)
+        else {"integration_ids": [], "external_integration_id": None}
+    )
+
     # Effective Date
     effective_date = cc_data.get("Effective_Date") if isinstance(cc_data, dict) else None
     

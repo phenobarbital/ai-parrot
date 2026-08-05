@@ -131,6 +131,22 @@ class CustomReportType(WorkdayTypeBase):
                 result[f"ID_{key}"] = values[0] if len(values) == 1 else values
             return result or None
 
+        # JSON RaaS shape: a list of dicts whose values are plain scalars, e.g.
+        # ``[{"Time_Entry_Codes": "A; B"}, {"Time_Entry_Codes": "C"}]``. Merge by
+        # key, joining repeated values with ``"; "`` so the multi-instance group
+        # collapses into a single flat string column.
+        if all(all(not isinstance(v, (dict, list)) for v in i.values()) for i in items):
+            result = {}
+            for item in items:
+                for key, value in item.items():
+                    if value is None:
+                        continue
+                    if key in result:
+                        result[key] = f"{result[key]}; {value}"
+                    else:
+                        result[key] = value
+            return result or None
+
         return None
 
     def _expand_list_dict_columns(self, df: pd.DataFrame, drop_original: bool) -> pd.DataFrame:

@@ -119,6 +119,8 @@ class ReportedTimeBlock(BaseModel):
         time_entry_code: Optional Time_Entry_Code (plain string).
         reported_quantity: Optional duration/quantity of time.
         comment: Optional free-text comment.
+        override_rate: Override Rate used while reporting time; presence-based
+            — a value including ``0`` is sent, ``None`` omits it.
     """
 
     employee_id: str
@@ -128,6 +130,7 @@ class ReportedTimeBlock(BaseModel):
     time_entry_code: str | None = None
     reported_quantity: float | None = None
     comment: str | None = None
+    override_rate: float | None = Field(default=None, ge=0)
 
     class Config:
         extra = "allow"
