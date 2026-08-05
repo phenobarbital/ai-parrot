@@ -52,7 +52,7 @@
       "feature_id": "FEAT-415",
       "feature": "workday-interfaces-homologation",
       "spec": "sdd/specs/workday-interfaces-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Creates a brand-new file (rest.py) so it is file-disjoint from Modules 3-6, but it consumes the env selector from TASK-2136. Largest single deliverable; the aiohttp rewrite is the main behavioural risk in the feature.",
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2138-workday-rest-client-aiohttp.md"
+      "completed_at": "2026-08-05T19:10:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2138-workday-rest-client-aiohttp.md"
     },
     {
       "id": "TASK-2139",

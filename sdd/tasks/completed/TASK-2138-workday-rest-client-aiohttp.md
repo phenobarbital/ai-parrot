@@ -214,8 +214,39 @@ class TestLifecycle:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
+**Notes**: Created `rest.py` — `WorkdayRestClient` reimplemented on `aiohttp`
+(never `httpx`/`requests`, incl. in comments/docstrings — verified by grep
+and a dedicated test) preserving flowtask's public surface verbatim:
+`__init__(*, config, timeout, time_tracking_version)`, `base_url`,
+`set_token`, `get_token`, `get`, `find_worker`, `get_time_clock_events`,
+`find_time_clock_event`, plus explicit `close()`. Session is lazily created
+and reused (`_ensure_session`); `close()` closes and clears it. Token is
+cached in-memory (`time.monotonic()`-based expiry, no Redis); a `401`
+despite a cached token clears the cache and re-authenticates exactly once
+before retrying the request. `get_time_clock_events` catches
+`aiohttp.ClientResponseError(status=400)` and re-raises a new
+`WorkdayRestError` naming the WID requirement, so an Employee_ID misuse is
+actionable instead of an opaque 400.
 
-**Deviations from spec**: none | describe if any
+Two deliberate adaptations beyond a literal flowtask port, both required by
+ai-parrot's vendor-neutral `WorkdayConfig` (`tenant`/`workday_url` default to
+`None`, unlike flowtask's hardcoded defaults): `base_url` uses
+`resolved_workday_url` (conf-resolved fallback) instead of the raw
+`workday_url` field, and both endpoint methods use `resolved_tenant` instead
+of the raw `tenant` field. Without these, an all-defaults `WorkdayConfig()`
+would crash on `.rstrip()`/`None` string formatting.
+
+23 new tests (`test_rest_client.py`) using `pytest-aiohttp`'s `aiohttp_server`
+fixture against a real local server (no network, no hand-rolled async
+context-manager mocks) — covers token caching/refresh/401-retry-once, all
+three endpoints, session lifecycle, the `httpx`/`requests`-absence check, and
+the TASK-2136 environment-selector integration. Full `tests/workday/` suite
+(95 tests) passes; `ruff check` clean.
+
+**Deviations from spec**: `get_time_clock_events` additionally accepts
+`**criteria: Any` (matching the spec's §2 `New Public Interfaces` signature
+listing, which differs slightly from the task's own Codebase Contract
+excerpt of the flowtask source) so callers can forward extra query
+parameters; `limit` is still explicit and defaulted as flowtask has it.
