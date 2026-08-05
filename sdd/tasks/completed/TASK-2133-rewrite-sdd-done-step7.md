@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-414 — Fix sdd-done Merge Conflicts
 **Spec**: `sdd/specs/sdd-done-merge-conflict-fix.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ---
 
@@ -220,10 +220,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-08-05
+**Notes**: Replaced lines 164–185 of `.claude/commands/sdd-done.md` with the new
+"Stamp Verification (on feature branch)" step exactly as specified in the
+Implementation Notes. Verified: no functional call to `close_task.sh` remains
+(only the explanatory "Why not close_task.sh?" callout, which is part of the
+task's own specified template text); jq stamps `verification` per task and
+`completed_at` at the header level when all tasks are done; commit happens via
+`git -C "$WORKTREE_PATH"` on the feature branch. Lines before 164 and after the
+replaced block are unchanged (content shifted down naturally due to the
+replacement's line-count delta, but no other section was touched).
 
-**Completed by**: unassigned
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

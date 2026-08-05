@@ -14,7 +14,7 @@
       "feature_id": "FEAT-414",
       "feature": "sdd-done-merge-conflict-fix",
       "spec": "sdd/specs/sdd-done-merge-conflict-fix.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Modifies sdd-done.md Step 7 — must be done first",
       "assigned_to": null,
       "started_at": "2026-08-05T14:04:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2133-rewrite-sdd-done-step7.md"
+      "completed_at": "2026-08-05T14:27:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2133-rewrite-sdd-done-step7.md"
     },
     {
       "id": "TASK-2134",
