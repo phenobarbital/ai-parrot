@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-414 — Fix sdd-done Merge Conflicts
 **Spec**: `sdd/specs/sdd-done-merge-conflict-fix.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2133
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ---
 
@@ -161,10 +161,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-08-05
+**Notes**: Simplified the `--merge` conflict block in Step 9 of
+`.claude/commands/sdd-done.md` — replaced the SDD-specific framing (listing
+`file1`/`file2` and numbered resolve/abort options) with the shorter generic
+handler from the Implementation Notes. The merge command
+(`git merge --no-edit`), the `heal_orphans.sh` self-heal block, the PR flow
+section, and the hotfix refusal block were all left untouched — confirmed via
+`git diff` scoped to only this block.
 
-**Completed by**: unassigned
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
