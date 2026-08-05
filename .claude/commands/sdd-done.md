@@ -282,19 +282,13 @@ When `--merge` is explicitly passed, perform a direct merge instead of a PR:
 git merge --no-edit feat-<FEAT-ID>-<slug>
 ```
 
-If the merge has conflicts:
+If the merge has conflicts (e.g. code-level changes to the same files):
 ```
 ⚠️  Merge conflict when merging feat-<FEAT-ID>-<slug> into <BASE_BRANCH>.
-   Conflicting files:
-     - <file1>
-     - <file2>
-
-   Options:
-     1. Resolve conflicts now (recommended)
-     2. Abort merge: git merge --abort
+   Resolve conflicts, then continue with: git merge --continue
+   Or abort: git merge --abort
 ```
-If conflicts are resolved, commit the merge. If the user aborts, STOP and
-do NOT proceed to cleanup.
+If the user aborts, STOP and do NOT proceed to cleanup.
 
 **Self-heal — reap stalled `active/` orphans (runs after every `--merge`):**
 
