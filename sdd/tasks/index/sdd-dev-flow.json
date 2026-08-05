@@ -193,7 +193,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -203,8 +203,8 @@
       "parallelism_notes": "Consumes /api/config and route shapes shipped by TASK-2129.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2130-dev-html-ui.md"
+      "completed_at": "2026-08-05T01:23:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2130-dev-html-ui.md"
     },
     {
       "id": "TASK-2131",
