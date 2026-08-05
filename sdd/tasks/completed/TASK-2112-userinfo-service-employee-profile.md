@@ -100,8 +100,31 @@ def _get_qs_conf():
 - ~~`UserInfoService`~~ — does not exist anywhere.
 - ~~`EmployeeProfile`~~ — does not exist anywhere.
 - ~~`ManagerRef`~~ — does not exist anywhere.
-- ~~`auth.vw_users.department_code`~~ — column is in `UserProfileKB`'s view; verify it's also in `vw_users` or use the profile KB query.
-- ~~`auth.vw_users.groups` / `auth.vw_users.programs`~~ — these are in the profile KB's distinct view, not necessarily in `vw_users`; may need a join or second query.
+
+**Codebase Contract corrections (verified 2026-08-04)**:
+1. **`TTLCache` import path is `parrot.stores.kb.cache`, NOT `parrot.stores.cache`**
+   (the task's stated `from parrot.stores.cache import TTLCache` module does not
+   exist) — verified via `stores/kb/user.py:8`'s own `from .cache import TTLCache`
+   (relative from `parrot/stores/kb/`). `TTLCache` methods are **all async**:
+   `async def get(key, default=None)`, `async def set(key, value, ttl=None)`,
+   `async def start()` (starts a background cleanup task) — the task's snippet
+   (`self._cache.get(str(user_id))`, unawaited) is stale; every cache call must
+   be awaited.
+2. **`auth.vw_users` already has `department_code`, `groups`, `programs`** —
+   resolved, no join needed. `UserProfileKB.search()` (`stores/kb/user.py:116-124`)
+   queries `first_name, last_name, email, job_code, title, department_code,
+   groups, programs FROM auth.vw_users` — the SAME table `UserInfo.search()`
+   queries for `user_id, display_name, username, email, job_code, ...,
+   worker_type, manager_id` (`stores/kb/user.py:52-54`). One consolidated
+   `SELECT` covering both column sets is sufficient.
+3. `lazy_import` signature (verified `parrot/_imports.py:110`):
+   `lazy_import(module_path, package_name=None, extra=None)` — matches the
+   exact call already used at `stores/kb/user.py:25`:
+   `lazy_import("querysource.conf", package_name="querysource", extra="db")`.
+4. `AsyncDB.connection()` usage pattern (verified `stores/kb/user.py:49-57`):
+   `async with await self.db.connection() as conn: result = await
+   conn.fetch_one(query, param)` — the returned row is dict-convertible
+   (`dict(result)`).
 
 ---
 
@@ -238,10 +261,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-04
+**Notes**: Created `EmployeeProfile`, `ManagerRef`, `UserInfoService` in
+`auth/userinfo.py`; exported `EmployeeProfile`/`UserInfoService` from
+`auth/__init__.py`. One consolidated `SELECT` against `auth.vw_users`
+covers all curated fields (`department_code`/`groups`/`programs` already
+live on that same view — no join needed, verified against
+`UserProfileKB.search()`'s existing query). `manager_id` triggers one extra
+lookup building a nested `ManagerRef`. Profiles are cached per user via
+`TTLCache` (600s TTL / 500 max, mirrors `stores/kb/user.py`). Missing row →
+`None`, no exception. 7 new unit tests (curated fields, nested manager,
+no-manager path, cache-hit-avoids-second-query, missing row) pass; `ruff
+check` clean on all changed files. Confirmed pre-existing, unrelated
+failures in `tests/auth/test_dataset_guard.py` and
+`tests/auth/test_pbac_setup.py` (identical with/without this diff, verified
+via `git stash`) — out of scope.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `TTLCache` import path corrected to
+`parrot.stores.kb.cache` (task stated `parrot.stores.cache`, which does not
+exist) — verified via `stores/kb/user.py:8`'s own relative import. All
+`TTLCache` calls (`.get()`/`.set()`) are awaited since the real class is
+fully async (task's snippet showed unawaited calls). Documented in the
+task's corrected Codebase Contract section above before implementing. No
+other deviations — `UserInfo`/`UserProfileKB` KBs untouched.

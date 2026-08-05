@@ -9,7 +9,17 @@ from .cache import TTLCache
 
 
 class UserInfo(AbstractKnowledgeBase):
-    """Class to manage user information."""
+    """Class to manage user information.
+
+    .. deprecated-note::
+        FEAT-406 introduces ``parrot.auth.userinfo.UserInfoService`` as the
+        preferred *structured* source of curated user attributes (feeds
+        PBAC policy evaluation and ``UserinfoTool``'s JSON output). This KB
+        remains unchanged and fully supported for its existing purpose —
+        flattening ``auth.vw_users`` into prose "facts" injected into
+        ``<userdata>`` for the system prompt. The two coexist by design;
+        this is a documentation note only, no behavioral change.
+    """
 
     def __init__(self, **kwargs):
         super().__init__(
@@ -76,7 +86,17 @@ class UserInfo(AbstractKnowledgeBase):
         return []
 
 class UserProfileKB(AbstractKnowledgeBase):
-    """KB that queries database for user information."""
+    """KB that queries database for user information.
+
+    .. deprecated-note::
+        FEAT-406 introduces ``parrot.auth.userinfo.UserInfoService`` as the
+        preferred *structured* source of curated user attributes (feeds
+        PBAC policy evaluation and ``UserinfoTool``'s JSON output). This KB
+        remains unchanged and fully supported for its existing purpose —
+        flattening ``auth.vw_users`` into prose "facts" for the system
+        prompt. The two coexist by design; this is a documentation note
+        only, no behavioral change.
+    """
 
     def __init__(self, **kwargs):
         super().__init__(

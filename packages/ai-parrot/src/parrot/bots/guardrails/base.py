@@ -20,11 +20,13 @@ class GuardrailStage(str, Enum):
         TOOL_OUTPUT: A tool's result, before it is returned to the agent loop.
         OUTPUT: The final answer, before it is returned to the caller.
         OUTPUT_STREAM: Individual chunks emitted while streaming a response.
+        TOOL_CALL: Before tool execution; intercepts the call before guards/body.
     """
     INPUT = "input"
     TOOL_OUTPUT = "tool_output"
     OUTPUT = "output"
     OUTPUT_STREAM = "output_stream"
+    TOOL_CALL = "tool_call"
 
 
 class GuardrailAction(str, Enum):
