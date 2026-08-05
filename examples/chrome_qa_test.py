@@ -1,5 +1,11 @@
 """WebAgent QA testing example.
 
+Demonstrates `max_retries` (flakiness absorption), `timeout_ms` (per-test
+timeout), `wait_timeout_ms` (element-wait semantics), and the
+`response_status` assertion. For a full CI/CD pipeline example (headless,
+tag filtering, JUnit XML, screenshots, exit code), see
+`examples/chrome_ci_test.py`.
+
 Usage:
     # Visible Chrome (default):
     python examples/chrome_qa_test.py
@@ -50,8 +56,11 @@ async def main():
             assertions=[
                 QAAssertion(check="no_console_errors"),
                 QAAssertion(check="no_network_failures"),
+                QAAssertion(check="response_status", target="200"),
             ],
             tags=["smoke"],
+            max_retries=1,       # Retry once on failure (absorbs flakiness)
+            timeout_ms=30_000,   # Abort after 30s so CI doesn't hang
         ),
         QATestCase(
             name="login-validation",
@@ -64,7 +73,11 @@ async def main():
             expected="Validation errors appear for required fields",
             assertions=[
                 QAAssertion(check="url_matches", target="/login"),
-                QAAssertion(check="element_visible", target=".error-message"),
+                QAAssertion(
+                    check="element_visible",
+                    target=".error-message",
+                    wait_timeout_ms=3000,  # Wait up to 3s for the error to render
+                ),
             ],
             tags=["regression"],
         ),

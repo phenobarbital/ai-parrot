@@ -87,6 +87,8 @@ _GATE_TTL_CONF_ATTR: Dict[GateKind, str] = {
     "revision_approval": "DEV_LOOP_GATE_TTL_REVISION",
     "plan_approval": "DEV_LOOP_GATE_TTL_PLAN",
     "review_escalation": "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION",
+    # FEAT-412 dev-flow: ideation Open-Questions round (fail-closed).
+    "open_questions": "DEV_FLOW_GATE_TTL_QUESTIONS",
 }
 
 
@@ -110,6 +112,21 @@ def gate_ttl_for(kind: GateKind) -> int:
 
 # Actions-stream expiry/retention sweep cadence (seconds).
 _SWEEP_INTERVAL_SECONDS = 30
+
+# Terminal node ids whose status dict may signal a non-success close
+# (FEAT-413). These nodes never raise on failure by design — they return
+# a status dict instead — so `_close_host` must scan their responses
+# explicitly rather than rely on `FlowResult.status`/`AgentsFlow`'s
+# completed/failed bookkeeping, which only reflects whether a node raised.
+_TERMINAL_NODE_IDS = (
+    "deployment_handoff", "feature_handoff", "revision_handoff", "failure_handler",
+)
+_FAILED_TERMINAL_STATUSES = frozenset({
+    "blocked",                    # all three handoff nodes: nothing delivered
+    "escalated",                  # failure_handler: QA failed, run escalated
+    "escalated_without_ticket",   # failure_handler, no Jira / skip_jira
+    "escalation_failed",          # failure_handler, Jira call raised
+})
 
 
 def build_dev_loop_revision_flow(
@@ -718,6 +735,7 @@ class DevLoopRunner:
         resolved_by: str,
         comment: str = "",
         origin: Optional[ActionOrigin] = None,
+        answers: Optional[Dict[str, str]] = None,
     ) -> ActionEnvelope:
         """Resolve a pending gate on ``run_id``'s host.
 
@@ -729,6 +747,9 @@ class DevLoopRunner:
             comment: Optional free-text audit comment.
             origin: Optional multi-client attribution (FEAT-322 TASK-1855 —
                 the REST command layer passes the calling client here).
+            answers: FEAT-412 — structured ``question -> answer`` mapping for
+                an ``open_questions`` gate (dev-flow ideation rounds).
+                Required when approving such a gate; ignored otherwise.
 
         Returns:
             The sequenced :class:`ActionEnvelope` for the resolution.
@@ -738,12 +759,14 @@ class DevLoopRunner:
                 terminated run).
             GateNotFoundError: ``gate_id`` does not exist on this run.
             GateAlreadyResolvedError: the gate is no longer pending.
+            ValueError: An ``open_questions`` gate is approved with no answers.
         """
         host = self._hosts.get(run_id)
         if host is None:
             raise KeyError(f"no active session host for run_id={run_id!r}")
         return host.resolve_gate(
-            gate_id, resolution, resolved_by, comment, origin=origin
+            gate_id, resolution, resolved_by, comment, origin=origin,
+            answers=answers,
         )
 
     async def cancel_run(self, run_id: str, requested_by: str) -> ActionEnvelope:
@@ -1350,6 +1373,26 @@ class DevLoopRunner:
         pr_url = ""
         if isinstance(handoff_resp, dict):
             pr_url = str(handoff_resp.get("pr_url", "") or "")
+
+        # FEAT-413: none of the terminal nodes raise on failure — they
+        # return a status dict instead — so a blocked handoff or an
+        # escalated failure_handler still lands in FlowResult.status ==
+        # "completed" (AgentsFlow only tracks whether a node raised).
+        # Scan the explicit terminal-node allowlist directly against
+        # result.responses (NOT handoff_resp, which is None when the
+        # handoff node was skipped, e.g. the failure_handler case) and
+        # force outcome="failed" when any of them reported a failure
+        # status.
+        for _nid in _TERMINAL_NODE_IDS:
+            _resp = result.responses.get(_nid)
+            if isinstance(_resp, dict) and _resp.get("status") in _FAILED_TERMINAL_STATUSES:
+                self.logger.warning(
+                    "Run %s: terminal node %s reported status=%s — recording "
+                    "outcome=failed (FlowResult.status=%s)",
+                    run_id, _nid, _resp.get("status"), result.status,
+                )
+                outcome = "failed"
+                break
 
         host.apply(RunClosed(
             outcome=outcome, jira_issue_key=jira_issue_key, pr_url=pr_url,

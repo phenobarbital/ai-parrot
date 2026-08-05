@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import pandas as pd
+from parrot.interfaces.soap import SOAPClient
 from zeep.helpers import serialize_object as zeep_serialize
 
-from parrot.interfaces.soap import SOAPClient
 from parrot_tools.interfaces.workday.config import WorkdayConfig, get_wsdl_path
 
 # ---------------------------------------------------------------------------
@@ -41,8 +42,8 @@ from parrot_tools.interfaces.workday.handlers import (
     CandidateType,
     CompanyPaymentDatesType,
     CostCenterType,
-    CustomPunchFieldReportType,
     CustomPunchFieldReportRestType,
+    CustomPunchFieldReportType,
     CustomReportType,
     ImportReportedTimeBlocksType,
     ImportTimeClockEventsType,
@@ -68,14 +69,14 @@ from parrot_tools.interfaces.workday.handlers.location_hierarchy_assignments imp
     LocationHierarchyAssignmentsType,
 )
 from parrot_tools.interfaces.workday.handlers.organization_single import GetOrganization
+from parrot_tools.interfaces.workday.models.applicant import Applicant
+from parrot_tools.interfaces.workday.models.candidate import Candidate
 
 # Model classes used by fetch_models() (operation_type → model class mapping).
 from parrot_tools.interfaces.workday.models.clock_event import (
     ClockEvent,
     ReportedTimeBlock,
 )
-from parrot_tools.interfaces.workday.models.applicant import Applicant
-from parrot_tools.interfaces.workday.models.candidate import Candidate
 from parrot_tools.interfaces.workday.models.cost_center import CostCenter
 from parrot_tools.interfaces.workday.models.job_posting import JobPosting
 from parrot_tools.interfaces.workday.models.job_posting_site import JobPostingSite
@@ -85,7 +86,9 @@ from parrot_tools.interfaces.workday.models.organizations import Organization
 from parrot_tools.interfaces.workday.models.reference import WorkdayReference
 from parrot_tools.interfaces.workday.models.time_block import TimeBlock
 from parrot_tools.interfaces.workday.models.time_off_balance import TimeOffBalance
-from parrot_tools.interfaces.workday.models.time_off_eligibility import TimeOffEligibility
+from parrot_tools.interfaces.workday.models.time_off_eligibility import (
+    TimeOffEligibility,
+)
 from parrot_tools.interfaces.workday.models.time_request import TimeRequest
 from parrot_tools.interfaces.workday.models.worker import Worker
 
@@ -377,7 +380,7 @@ class WorkdayService(SOAPClient):
 
     async def put_time_clock_events(
         self,
-        events: "list[ClockEvent]",
+        events: list[ClockEvent],
         *,
         auto_submit: bool | None = None,
     ) -> pd.DataFrame:
@@ -406,7 +409,7 @@ class WorkdayService(SOAPClient):
 
     async def import_time_clock_events(
         self,
-        events: "list[ClockEvent]",
+        events: list[ClockEvent],
         *,
         batch_id: str | None = None,
     ) -> pd.DataFrame:
@@ -428,7 +431,7 @@ class WorkdayService(SOAPClient):
 
     async def import_reported_time_blocks(
         self,
-        blocks: "list[ReportedTimeBlock]",
+        blocks: list[ReportedTimeBlock],
     ) -> pd.DataFrame:
         """Import reported time blocks via Import_Reported_Time_Blocks.
 
@@ -469,6 +472,61 @@ class WorkdayService(SOAPClient):
     async def close(self) -> None:
         """Release transport, Redis, and Zeep client."""
         await super().close()
+
+    def bind_service(self) -> Any:
+        """Bind the Zeep service and point it at the configured tenant host.
+
+        The shipped WSDLs hardcode the PRODUCTION SOAP endpoint
+        (``services1.wd501.myworkday.com``).  When ``workday_url`` selects a
+        different host — e.g. a sandbox/implementation tenant at
+        ``impl-services1.wd501.myworkday.com`` — rewrite the endpoint host so
+        SOAP operations (reads AND writes) target the configured environment
+        instead of always hitting production.
+
+        Only the scheme + host are swapped; the WSDL path is preserved
+        verbatim, so both the standard ``/ccx/service/<tenant>/<Service>/<ver>``
+        and the longer ``/ccx/service/customreport2/...`` forms keep working.
+        For the production default the host already matches, so this is a no-op.
+
+        Returns:
+            The Zeep service proxy, with its endpoint host aligned to
+            ``self.workday_url``.
+        """
+        service = super().bind_service()
+        try:
+            self._point_endpoint_at_configured_host(service)
+        except Exception as exc:  # noqa: BLE001 — never break binding over an endpoint rewrite
+            self._logger.warning("Could not override SOAP endpoint host: %s", exc)
+        return service
+
+    def _point_endpoint_at_configured_host(self, service: Any) -> None:
+        """Swap the bound SOAP endpoint's host for ``self.workday_url``'s host.
+
+        Args:
+            service: The Zeep service proxy returned by ``bind_service``.
+        """
+        options = getattr(service, "_binding_options", None)
+        if not options:
+            return
+        current = options.get("address")
+        if not current or not self.workday_url:
+            return
+
+        cfg = urlparse(self.workday_url)
+        if not cfg.netloc:
+            return
+        cur = urlparse(current)
+        scheme = cfg.scheme or cur.scheme
+        if cur.netloc == cfg.netloc and cur.scheme == scheme:
+            return  # already on the configured host (production default no-op)
+
+        new_addr = urlunparse(
+            (scheme, cfg.netloc, cur.path, cur.params, cur.query, cur.fragment)
+        )
+        options["address"] = new_addr
+        self._logger.info(
+            "Workday SOAP endpoint host set to %s (was %s)", cfg.netloc, cur.netloc
+        )
 
     # ------------------------------------------------------------------
     # Helpers

@@ -54,8 +54,49 @@ or attribute enrichment from EmployeeProfile (TASK-2114).
 |---|---|---|
 | `packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py` | CREATE | `PBACToolCallGuardrail` + `PolicyDenialReport` |
 | `packages/ai-parrot/src/parrot/bots/guardrails/registry.py` | MODIFY | Add `"pbac"` lazy factory registration |
-| `packages/ai-parrot/src/parrot/bots/guardrails/builtin/__init__.py` | MODIFY | Export if needed |
-| `packages/ai-parrot/tests/bots/guardrails/test_pbac_guardrail.py` | CREATE | Unit tests |
+| `packages/ai-parrot/tests/unit/test_guardrails_pbac.py` | CREATE | Unit tests |
+
+**Codebase Contract corrections (verified 2026-08-04)**:
+1. Test path corrected from `packages/ai-parrot/tests/bots/guardrails/test_pbac_guardrail.py`
+   (no such directory exists) to `packages/ai-parrot/tests/unit/test_guardrails_pbac.py`,
+   matching the flat `test_guardrails_*.py` convention (`test_guardrails_secrets.py`, etc.).
+2. `builtin/__init__.py` does NOT need modification — verified it stays empty by design
+   (lazy-import discipline, per its own docstring); registration happens only in `registry.py`.
+3. **`PolicyEvaluator.check_access()` does NOT return `PolicyResponse`** (that type is
+   returned by the lower-level `ResourcePolicy.evaluate()`/`is_allowed()`, not by the
+   evaluator entry point). Verified via
+   `packages/ai-parrot/.venv/lib/python3.11/site-packages/navigator_auth/abac/policies/evaluator.py:59-71,402-511`:
+   `check_access(ctx, resource_type, resource_name, action, env=None, ...)` is a
+   **synchronous** method (not async) returning an `EvaluationResult` dataclass:
+   `allowed: bool`, `effect: PolicyEffect`, `matched_policy: Optional[str]`,
+   `reason: str`, `evaluation_time_ms: float`, `cached: bool`. `action` is a
+   required parameter — use `action="tool:execute"` (mirrors
+   `auth/resolver.py:322-328`'s Layer-2 call). This is the pattern actually used by
+   both `PBACPermissionResolver.can_execute()` (`auth/resolver.py:312-339`) and
+   `enforce_agent_access()` (`auth/agent_guard.py:266-278`) — both read
+   `result.allowed` / `result.matched_policy` / `result.reason`, never
+   `PolicyResponse.rule`/`.response`. `PBACToolCallGuardrail` follows the same
+   real pattern: `reason="policy:<matched_policy>"`,
+   `report.message = result.reason`.
+4. **EvalContext construction**: use the existing bridge
+   `parrot.auth.permission.to_eval_context(permission_context: PermissionContext) -> EvalContext`
+   (`auth/permission.py:209-252`) rather than constructing `EvalContext` by hand —
+   this is the exact helper `PBACPermissionResolver` itself uses
+   (`auth/resolver.py:19,319`), and `ctx.extras["permission_context"]` is a
+   `PermissionContext` instance per the spec's payload shape.
+5. `ResourceType` import corrected to
+   `from navigator_auth.abac.policies.resources import ResourceType` (verified
+   present, `ResourceType.TOOL` exists) — the spec's contract omitted this import.
+6. **Per-policy `enforcement: fail_open` lookup**: no public evaluator method
+   exposes a single policy's `.attributes` by resource. `PolicyEvaluator` has a
+   private `_index` (`PolicyIndex`) with `get_for_resource_type(ResourceType) ->
+   list[ResourcePolicy]` and each `ResourcePolicy.covers_resource(resource_type,
+   resource_name) -> bool` / `.attributes: dict` (set from `AbstractPolicy.__init__`
+   `**kwargs`, `abstract.py:122`). On an evaluator exception, the guardrail does a
+   best-effort private-attribute lookup (`evaluator._index...`) to find the policy
+   that would have covered this tool and check `attributes.get("enforcement")`;
+   documented as best-effort/fragile (private API) with a safe fail-closed fallback
+   if the lookup itself fails for any reason.
 
 ---
 
@@ -246,10 +287,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-04
+**Notes**: Implemented `PBACToolCallGuardrail` + `PolicyDenialReport` in
+`bots/guardrails/builtin/pbac.py`, registered `"pbac"` in `registry.py` via
+lazy factory. ALLOW → PASS; DENY → BLOCK with `reason="policy:<matched_policy>"`
+and a `PolicyDenialReport` in `report`; missing `permission_context` → PASS
+(session-scoped enforcement); evaluator exception → BLOCK
+`policy_engine_unavailable` by default, downgraded to PASS when the covering
+policy's `attributes["enforcement"] == "fail_open"`. 8 new unit tests +
+full guardrails/auth regression suite (154 tests) pass; `ruff check` clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's Codebase Contract described
+`evaluator.check_access()` returning a `PolicyResponse` (`.rule`/`.response`
+fields) — verified against the installed `navigator_auth` package
+(`abac/policies/evaluator.py`) that this is stale: `check_access()` is
+**synchronous** and returns an `EvaluationResult` dataclass
+(`allowed`/`matched_policy`/`reason`), matching the real pattern already
+used by `PBACPermissionResolver.can_execute()` and `enforce_agent_access()`.
+Implemented against the verified real API instead (documented in the task's
+corrected Codebase Contract section above) — `PolicyResponse` is only
+returned by the lower-level `ResourcePolicy.evaluate()`/`is_allowed()`, not
+by the evaluator entry point the guardrail calls.
+EvalContext construction reuses the existing `parrot.auth.permission.
+to_eval_context()` bridge (same one `PBACPermissionResolver` uses) rather
+than hand-building `EvalContext`, per the corrected contract.
+Per-policy `enforcement: fail_open` lookup (only reachable on an evaluator
+exception, since `check_access()` itself fails closed internally for engine
+errors) uses a best-effort private-attribute reach into
+`evaluator._index.get_for_resource_type()` — no public accessor exists for
+a single policy's `.attributes` by resource; documented as fragile
+best-effort with a safe fail-closed fallback if the lookup itself fails.
+Test file path corrected to `tests/unit/test_guardrails_pbac.py`
+(no `tests/bots/guardrails/` directory exists); `builtin/__init__.py` left
+unmodified — verified it intentionally stays empty (lazy-import discipline).

@@ -109,3 +109,28 @@ async def test_close_node_includes_codereview_findings(research, jira):
     await node.execute(ctx, deps=None)
     body = jira.jira_add_comment.await_args.kwargs["body"]
     assert "nit: rename foo" in body
+
+
+@pytest.mark.asyncio
+async def test_close_node_skips_jira_under_bypass(jira):
+    """skip_jira runs carry ResearchNode's synthetic "SKIP-0" key.
+
+    Commenting on / transitioning that placeholder can only 404, so the
+    node closes the run without touching Jira at all.
+    """
+    research = ResearchOutput(
+        jira_issue_key="SKIP-0",
+        spec_path="x",
+        feat_id="FEAT-130",
+        branch_name="feat-130-fix",
+        worktree_path="/abs/.claude/worktrees/feat-130-fix",
+    )
+    node = DevLoopCloseNode(jira_toolkit=jira)
+    out = await node.execute(
+        {"research_output": research, "skip_jira": True, "run_id": "r-skip"},
+        deps=None,
+    )
+    assert out["status"] == "closed_without_ticket"
+    assert out["mode"] == "initial"
+    jira.jira_add_comment.assert_not_called()
+    jira.jira_transition_to.assert_not_called()

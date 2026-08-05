@@ -324,6 +324,58 @@ class TestSummarizePrChanges:
         result = await summarize_pr_changes("some context")
         assert result == ""
 
+    @pytest.mark.parametrize("failing", [False, True])
+    async def test_client_is_always_closed(self, monkeypatch, failing):
+        """The per-call client owns an aioboto3/aiohttp session+connector;
+        leaking it produced an "Unclosed client session" error on every PR.
+        It must be closed on the success path *and* the failure path."""
+        closed = False
+
+        async def _close(_self):
+            nonlocal closed
+            closed = True
+
+        async def _ask(_self, *args, **kwargs):
+            if failing:
+                raise RuntimeError("boom")
+            return type("M", (), {"output": "- a bullet"})()
+
+        fake_client = type("C", (), {"ask": _ask, "close": _close})()
+        _patch_nova_client(monkeypatch, lambda: fake_client)
+
+        await summarize_pr_changes("some context")
+
+        assert closed is True
+
+    async def test_non_retryable_bedrock_error_logged_without_traceback(
+        self, monkeypatch, caplog
+    ):
+        """A permanent AWS-side condition (model not enabled for the account
+        / Anthropic use-case form not submitted) degrades to the template by
+        design — it must log one actionable line naming the model and the
+        remedy, not a stack trace on every single PR."""
+
+        class ResourceNotFoundException(Exception):
+            pass
+
+        async def _ask(_self, *args, **kwargs):
+            raise ResourceNotFoundException(
+                "Model use case details have not been submitted for this account."
+            )
+
+        fake_client = type("C", (), {"ask": _ask})()
+        _patch_nova_client(monkeypatch, lambda: fake_client)
+
+        with caplog.at_level("WARNING"):
+            result = await summarize_pr_changes("some context")
+
+        assert result == ""
+        record = next(
+            r for r in caplog.records if "enrichment unavailable" in r.message.lower()
+        )
+        assert record.exc_info is None
+        assert "DEV_LOOP_NOVA_MECHANICAL_MODEL" in record.getMessage()
+
 
 class TestCredentialShortCircuit:
     """Code-review fix: no credential configured -> no network attempt at

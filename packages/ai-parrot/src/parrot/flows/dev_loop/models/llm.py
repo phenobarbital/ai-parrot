@@ -16,7 +16,7 @@ class LLMCodeDispatchProfile(BaseModel):
     """
 
     subagent: Literal["sdd-worker"] = "sdd-worker"
-    llm: str = "nvidia:moonshotai/kimi-k2-instruct-0905"
+    llm: str = "nvidia:minimaxai/minimax-m3"
     sandbox: Literal["workspace-write"] = "workspace-write"
     approval_policy: Literal["never"] = "never"
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
@@ -42,6 +42,6 @@ class LLMCodeDispatchProfile(BaseModel):
     )
     enable_thinking: bool = Field(
         default=False,
-        description="Forward Nvidia reasoning flags for models such as z-ai/glm-5.1.",
+        description="Forward Nvidia reasoning flags for models such as z-ai/glm-5.2.",
     )
     clear_thinking: bool = False

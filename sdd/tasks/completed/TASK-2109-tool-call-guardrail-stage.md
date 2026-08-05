@@ -45,7 +45,15 @@ hook (TASK-2111), or any bot wiring.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/bots/guardrails/base.py` | MODIFY | Add `TOOL_CALL` member to `GuardrailStage` |
-| `packages/ai-parrot/tests/bots/guardrails/test_tool_call_stage.py` | CREATE | Unit tests for the new stage |
+| `packages/ai-parrot/tests/unit/test_guardrails_tool_call_stage.py` | CREATE | Unit tests for the new stage |
+
+**Codebase Contract correction (verified 2026-08-04)**: the task's original
+path `packages/ai-parrot/tests/bots/guardrails/test_tool_call_stage.py` does
+not match the existing guardrails test convention — all FEAT-396 guardrail
+unit tests live flat under `packages/ai-parrot/tests/unit/test_guardrails_*.py`
+(e.g. `test_guardrails_core_models.py`, `test_guardrails_registry_config.py`).
+Corrected to `packages/ai-parrot/tests/unit/test_guardrails_tool_call_stage.py`
+to match. No `tests/bots/guardrails/` directory exists in the repo.
 
 ---
 
@@ -172,10 +180,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-04
+**Notes**: Added `GuardrailStage.TOOL_CALL = "tool_call"` with docstring entry
+to `bots/guardrails/base.py`. Confirmed `build_pipelines_from_config()`
+builds a pipeline for it automatically via enum iteration (no code change
+needed). Added 3 unit tests; full guardrails regression suite (127 tests
+across `tests/unit/test_guardrails_*.py` + `tests/integration/test_guardrails_output.py`)
+passes. `ruff check` clean.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Test file path corrected from the task's stated
+`packages/ai-parrot/tests/bots/guardrails/test_tool_call_stage.py` (which
+does not match the codebase's actual test layout — no `tests/bots/guardrails/`
+directory exists) to `packages/ai-parrot/tests/unit/test_guardrails_tool_call_stage.py`,
+matching the established flat convention for all other FEAT-396 guardrail
+tests (`test_guardrails_core_models.py`, `test_guardrails_registry_config.py`,
+etc.). Documented in the task's Files table above before implementing.

@@ -163,3 +163,12 @@ register_guardrail(
     "groundedness",
     _make_lazy_factory("parrot.security.groundedness.guardrail", "GroundednessGuardrail"),
 )
+# FEAT-406 (TASK-2110): PBAC tool-call denial guardrail. Registered for
+# discoverability only — the concrete evaluator-carrying instance is
+# constructed by bot wiring and passed directly in `guardrails=[...]`
+# (resolved spec Q7), since the shared `PolicyEvaluator` cannot be expressed
+# as a kwargs-only factory argument.
+register_guardrail(
+    "pbac",
+    _make_lazy_factory("parrot.bots.guardrails.builtin.pbac", "PBACToolCallGuardrail"),
+)

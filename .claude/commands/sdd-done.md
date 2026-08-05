@@ -161,27 +161,40 @@ If any tasks are ⚠️ PARTIAL or ❌ NO EVIDENCE:
 If `--dry-run`, show the report and STOP.
 If `--force`, close all tasks regardless.
 
-### 7. Close Tasks (on `<BASE_BRANCH>`)
+### 7. Stamp Verification (on feature branch)
 
-For each task being closed, update the per-spec index in place. We are
-already on `BASE_BRANCH` (verified in Step 1).
+Stamp verification metadata on each closed task in the worktree's per-spec
+index. The feature branch already carries the task files in `completed/` and
+the index with `status: "done"` — this step only adds the `verification`
+field and the feature-level `completed_at`.
 
-> **CRITICAL — use the script, do NOT hand-roll the move.** See the note in
-> `/sdd-start`: closing a task is a *move*, and agents that copy instead leave
-> `active/` orphans that survive the merge. `scripts/sdd/close_task.sh` does the
-> `git mv` + index stamp + a hard post-condition (exit 3 if an `active/` copy
-> survives).
+> **Why not close_task.sh?** The feature branch already moved files
+> `active/` → `completed/` and set status/completed_at/file during
+> `sdd-worker`/`sdd-start`. Running `close_task.sh` again on `base_branch`
+> would create duplicate state that conflicts on merge (FEAT-414).
 
 ```bash
-# Close each task being closed (idempotent; stamps the index header when the
-# whole feature is done). Repeat per task id:
-scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
+WORKTREE_PATH=".claude/worktrees/feat-<FEAT-ID>-<slug>"
+INDEX="sdd/tasks/index/${FEATURE_SLUG}.json"
+NOW="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 
-# Update task file headers (Status/Completed/Verification) in the completed/ copy.
+# Stamp verification on each task being closed.
+# Use "verified" for ✅ VERIFIED tasks, "partial" for ⚠️ PARTIAL, "forced" for --force.
+for TASK_ID in "${TASK_IDS[@]}"; do
+  jq --arg id "$TASK_ID" --arg ver "$VERIFICATION" '
+    (.tasks[] | select(.id == $id) | .verification) = $ver
+  ' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
+done
 
-# Commit ONLY the staged SDD state — never "git add ." / "git add -A".
-git diff --cached --name-only      # sanity-check: only index + task files
-git commit -m "sdd: close tasks for FEAT-<ID> — <title>"
+# Stamp feature-level completed_at if all tasks are done.
+jq --arg now "$NOW" '
+  if all(.tasks[]; .status == "done") then .completed_at = $now else . end
+' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
+
+# Commit on the feature branch (inside the worktree) — never on base_branch.
+git -C "$WORKTREE_PATH" add "$INDEX"
+git -C "$WORKTREE_PATH" diff --cached --name-only   # sanity-check: only the index
+git -C "$WORKTREE_PATH" commit -m "sdd: close tasks for FEAT-<ID> — <slug>"
 ```
 
 ### 8. Push the Feature Branch
@@ -269,19 +282,13 @@ When `--merge` is explicitly passed, perform a direct merge instead of a PR:
 git merge --no-edit feat-<FEAT-ID>-<slug>
 ```
 
-If the merge has conflicts:
+If the merge has conflicts (e.g. code-level changes to the same files):
 ```
 ⚠️  Merge conflict when merging feat-<FEAT-ID>-<slug> into <BASE_BRANCH>.
-   Conflicting files:
-     - <file1>
-     - <file2>
-
-   Options:
-     1. Resolve conflicts now (recommended)
-     2. Abort merge: git merge --abort
+   Resolve conflicts, then continue with: git merge --continue
+   Or abort: git merge --abort
 ```
-If conflicts are resolved, commit the merge. If the user aborts, STOP and
-do NOT proceed to cleanup.
+If the user aborts, STOP and do NOT proceed to cleanup.
 
 **Self-heal — reap stalled `active/` orphans (runs after every `--merge`):**
 

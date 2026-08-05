@@ -545,6 +545,12 @@ AWS_CREDENTIALS = {
         "region_name": config.get("AWS_SECURITY_REGION", fallback="us-east-2"),
         "bucket_name": config.get("AWS_SECURITY_BUCKET_NAME"),
     },
+    "nova_sonic": {
+        "use_credentials": True,
+        "aws_key": config.get("AWS_NOVA_SONIC_KEY_ID"),
+        "aws_secret": config.get("AWS_NOVA_SONIC_SECRET_KEY"),
+        "region_name": config.get("AWS_NOVA_SONIC_REGION", fallback="us-east-1"),
+    }
 }
 
 """
@@ -690,6 +696,15 @@ WORKDAY_WSDL_PATHS = {
     "recruiting": WORKDAY_WSDL_RECRUITING,
     "payroll": WORKDAY_WSDL_PAYROLL
 }
+
+# WORKDAY_ENV selects which credential set WorkdayConfig resolves:
+#   "prod" (default) → WORKDAY_* ; "sandbox"/"impl"/"implementation" → WORKDAY_*_IMPL
+WORKDAY_ENV = config.get("WORKDAY_ENV", fallback="prod")
+# Sandbox / implementation tenant credentials (used when WORKDAY_ENV=sandbox)
+WORKDAY_CLIENT_ID_IMPL = config.get("WORKDAY_CLIENT_ID_IMPL", fallback=None)
+WORKDAY_CLIENT_SECRET_IMPL = config.get("WORKDAY_CLIENT_SECRET_IMPL", fallback=None)
+WORKDAY_REFRESH_TOKEN_IMPL = config.get("WORKDAY_REFRESH_TOKEN_IMPL", fallback=None)
+WORKDAY_TOKEN_URL_IMPL = config.get("WORKDAY_TOKEN_URL_IMPL", fallback=None)
 
 # NetSuite MCP settings (OAuth2 Client Credentials M2M + certificate)
 NETSUITE_ACCOUNT_ID = config.get("NETSUITE_ACCOUNT_ID")
@@ -1072,6 +1087,22 @@ DEV_LOOP_CODEREVIEW_JUDGE: bool = config.getboolean(
 DEV_LOOP_GATE_TTL_REVIEW_ESCALATION: int = config.getint(
     "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", fallback=86400  # 24h, fail-closed
 )
+# HITL gate TTL for a dev-flow ideation Open-Questions round
+# (``GateKind="open_questions"``, FEAT-412). Fail-closed like the other
+# DEV_LOOP_GATE_TTL_* settings: silence is not consent for spec decisions,
+# so an unanswered round expires the run into the failure path rather than
+# auto-approving an under-specified document.
+DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint(
+    "DEV_FLOW_GATE_TTL_QUESTIONS", fallback=86400  # 24h, fail-closed
+)
+# FEAT-412: maximum number of HITL Open-Questions rounds (i.e. gates) the
+# dev-flow's IdeationNode may open per run. Once exhausted, questions still
+# `[ ]` in the document are NOT re-asked and do NOT block the run — they are
+# carried into the spec's §8 by the planner. Read at execute() time (not
+# import time) so tests can monkeypatch it per-case.
+DEV_FLOW_IDEATION_MAX_ROUNDS: int = config.getint(
+    "DEV_FLOW_IDEATION_MAX_ROUNDS", fallback=2
+)
 # Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
 # "base" (e.g. "dev" or "origin/main"). Required in that case — the server
 # bootstrap raises at startup rather than silently degrading every review if
@@ -1111,6 +1142,18 @@ DEV_LOOP_WIKI_PAGE_INGEST: bool = config.getboolean(
     "DEV_LOOP_WIKI_PAGE_INGEST", fallback=False
 )
 
+# Whether ``ResearchNode`` fetches REMOTE log excerpts (CloudWatch,
+# Elasticsearch) for a run. Local sources (``inline`` pasted traces and
+# ``attached_file``) are never gated by this — they cost no API call.
+#   "auto"   (default) — only for ``kind == "bug"`` briefs. Enhancement /
+#                        new-feature / spec-driven runs have no incident to
+#                        triage, so the query is pure latency + AWS spend.
+#   "always" — pre-existing behavior: fetch for every work kind.
+#   "never"  — never call a remote log backend, not even for bugs.
+DEV_LOOP_LOG_FETCH_MODE: str = config.get(
+    "DEV_LOOP_LOG_FETCH_MODE", fallback="auto"
+)
+
 # FEAT-405: Nova (AWS Bedrock) dev-loop backend. The dev-seat coding loop
 # (``NovaCodeDispatcher``) reaches MiniMax/Kimi/GLM models over the
 # OpenAI-compatible ``bedrock-mantle`` endpoint rather than through
@@ -1130,18 +1173,39 @@ DEV_LOOP_NOVA_MANTLE_REGION: str = config.get(
     "DEV_LOOP_NOVA_MANTLE_REGION",
     fallback=BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1",
 )
+# Both Nova Converse seats below default to Amazon's OWN Nova models rather
+# than to ``us.anthropic.*`` ids. Rationale: Bedrock gates every Anthropic
+# model behind a per-account "Anthropic use case details" form, so an
+# account holding a perfectly valid Bedrock API key still gets
+# ``ResourceNotFoundException`` ("Model use case details have not been
+# submitted for this account") on the very first call. Native Nova ids need
+# no such form, which makes them the correct default for a *NOVA* backend —
+# an operator who has completed the Anthropic form can still point either
+# key back at a ``us.anthropic.*`` id.
+#
+# ``us.amazon.nova-2-lite-v1:0`` is the current-generation Nova text model,
+# Converse-capable, and the id ``NovaClient`` itself defaults to. The ``us.``
+# geo prefix is REQUIRED — Nova 2 Lite has no in-region access (spec
+# ``novaclient-amazon-aws`` §"Verified AWS Facts"). Nova Premier is
+# deliberately NOT used: it is Legacy on Bedrock with EOL 2026-09-14.
+#
+# Duplicated (not imported) from
+# ``parrot.flows.dev_loop.models.nova.NOVA_DEFAULT_CONVERSE_MODEL``: conf.py
+# is a foundational module imported almost everywhere and must not pull in
+# ``parrot.flows``. ``test_nova_profiles.py`` pins the two literals equal.
+_NOVA_DEFAULT_CONVERSE_MODEL: str = "us.amazon.nova-2-lite-v1:0"
+
 # Model used by the read-only nova-adversarial reviewer's single Converse
 # call (``NovaAdversarialReviewDispatcher``). Mirrors
 # ``DEV_LOOP_ADVERSARIAL_MODEL`` (the codex-adversarial equivalent, :1048).
 DEV_LOOP_NOVA_REVIEW_MODEL: str = config.get(
-    "DEV_LOOP_NOVA_REVIEW_MODEL", fallback="us.anthropic.claude-opus-5"
+    "DEV_LOOP_NOVA_REVIEW_MODEL", fallback=_NOVA_DEFAULT_CONVERSE_MODEL
 )
-# Model used by the mechanical (PR-summary) seat (TASK-2092's Haiku
-# enrichment). Not yet consumed — declared here so every DEV_LOOP_NOVA_*
-# key lands in one place (Module 5).
+# Model used by the mechanical (PR-summary) seat (TASK-2092's enrichment
+# call), consumed by ``dispatchers.nova.summarize_pr_changes``.
 DEV_LOOP_NOVA_MECHANICAL_MODEL: str = config.get(
     "DEV_LOOP_NOVA_MECHANICAL_MODEL",
-    fallback="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    fallback=_NOVA_DEFAULT_CONVERSE_MODEL,
 )
 # Adversarial-seat backend selector (FEAT-405 Module 5, [R3]): choice over
 # {"codex", "nova"}, defaulting to "codex" — unconfigured deployments see

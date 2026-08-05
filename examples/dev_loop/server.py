@@ -52,7 +52,7 @@ Runtime requirements:
 * Optional Nvidia/LLM Development mode:
   ``DEV_LOOP_DEVELOPMENT_AGENT=nvidia`` and ``NVIDIA_API_KEY`` available.
   ``DEV_LOOP_NVIDIA_CODE_MODEL`` defaults to
-  ``moonshotai/kimi-k2-instruct-0905``; set it to ``z-ai/glm-5.1`` and
+  ``minimaxai/minimax-m3``; set it to ``z-ai/glm-5.2`` and
   ``DEV_LOOP_NVIDIA_ENABLE_THINKING=true`` for GLM reasoning mode.
 * Jira service account: ``JIRA_INSTANCE``, ``JIRA_USERNAME``,
   ``JIRA_API_TOKEN`` and (optionally) ``JIRA_PROJECT`` — the toolkit uses
@@ -731,7 +731,9 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     * ``description``          — long-form incident text appended to the
                                  summary.
     * ``log_group``            — CloudWatch log group override; falls back
-                                 to ``CLOUDWATCH_LOG_GROUP``.
+                                 to ``CLOUDWATCH_LOG_GROUP``. Only used when
+                                 ``kind == "bug"`` — non-bug runs get an
+                                 empty ``log_sources`` list.
     * ``time_window_minutes``  — CloudWatch lookback window (default 60).
     * ``reporter``             — Jira accountId; falls back to
                                  ``JIRA_REPORTER_ACCOUNT_ID`` then
@@ -784,18 +786,27 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
             "in the form payload."
         )
 
-    payload: dict[str, Any] = {
-        "kind": raw_kind,  # FEAT-132
-        "summary": summary,
-        "description": description,
-        "affected_component": component,
-        "log_sources": [
+    # CloudWatch is a bug-triage affordance: only a defect run has an
+    # incident whose logs are worth pulling. Enhancement / new-feature runs
+    # get no remote log source at all, so ResearchNode never issues a
+    # StartQuery for them. ``DEV_LOOP_LOG_FETCH_MODE`` is the node-side
+    # backstop for briefs built elsewhere (API clients, quickstart, tests).
+    log_sources: list[dict[str, Any]] = []
+    if raw_kind == "bug":
+        log_sources.append(
             {
                 "kind": "cloudwatch",
                 "locator": log_group,
                 "time_window_minutes": window,
             }
-        ],
+        )
+
+    payload: dict[str, Any] = {
+        "kind": raw_kind,  # FEAT-132
+        "summary": summary,
+        "description": description,
+        "affected_component": component,
+        "log_sources": log_sources,
         "acceptance_criteria": criteria,
         "reporter": reporter,
         "escalation_assignee": escalation,

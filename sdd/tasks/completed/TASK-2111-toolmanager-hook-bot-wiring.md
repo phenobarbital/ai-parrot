@@ -51,7 +51,56 @@ enrichment (TASK-2114).
 |---|---|---|
 | `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | Add `_tool_call_pipeline` attr + pre-execution hook in `execute_tool()` |
 | `packages/ai-parrot/src/parrot/bots/abstract.py` | MODIFY | Stamp `_tool_call_pipeline` + construct PBAC guardrail when enabled |
-| `packages/ai-parrot/tests/bots/guardrails/test_tool_call_hook.py` | CREATE | Unit tests for the wiring |
+| `packages/ai-parrot/tests/unit/test_guardrails_tool_call_hook.py` | CREATE | Unit tests for the wiring |
+
+**Codebase Contract corrections (verified 2026-08-04)**:
+1. Test path corrected from `packages/ai-parrot/tests/bots/guardrails/test_tool_call_hook.py`
+   (no such directory) to `packages/ai-parrot/tests/unit/test_guardrails_tool_call_hook.py`.
+2. `ToolManager` has no `_agent_name` attribute (`getattr(self, '_agent_name', '')`
+   in the task's snippet does not exist and would always be `''`). The established
+   precedent at this exact seam — `tools/abstract.py`'s `_run_tool_output_guardrails()`
+   (line ~142), which builds `GuardrailContext` at a call site with the same
+   information available (a tool name, no bot back-reference) — uses
+   `agent_name=tool_name` (the tool name doubles as the agent_name field since
+   `ToolManager` has no bot reference). Followed the same precedent here for
+   consistency instead of inventing a new fallback.
+3. Guardrail imports are **lazy** (function-local), not top-level, mirroring
+   `tools/abstract.py`'s own `from ..bots.guardrails.base import GuardrailContext,
+   GuardrailStage  # noqa: PLC0415` — `tools/manager.py` currently has zero
+   `bots.guardrails` imports; introducing one at module level would be a new,
+   heavier import-time coupling this task's scope doesn't require.
+4. **"Construct `PBACToolCallGuardrail` when PBAC is enabled" — verified this
+   requires ZERO new code in `AbstractBot.__init__`.** `AbstractBot` has no
+   `app`/aiohttp reference and no `_pbac_evaluator` attribute (confirmed —
+   `setup_pbac(app, ...)` is only called at the application/handler level,
+   e.g. `auth/dataset_guard.py:28`, never inside `bots/abstract.py`), so
+   there is no verified in-bot hook to "detect" PBAC and auto-build the
+   guardrail — inventing one (a new `app=`/`pbac_evaluator=` constructor
+   kwarg) would be unverified architecture invention beyond this task's
+   Codebase Contract. Instead: `AbstractBot.__init__`'s existing
+   `guardrails: Optional[List[Union[str, Dict[str, Any], Guardrail]]] = None`
+   parameter (line 277) already flows into `build_pipelines_from_config()` →
+   `build_guardrails()` (both unchanged since TASK-2109/2110), which already
+   accepts a `Guardrail` **instance** as-is, or a `{"name": "pbac", **kwargs}`
+   **dict** forwarded to the TASK-2110-registered lazy factory as keyword
+   arguments — i.e. `guardrails=[PBACToolCallGuardrail(evaluator=shared_evaluator)]`
+   or `guardrails=[{"name": "pbac", "evaluator": shared_evaluator}]` both
+   already work end-to-end today, land in
+   `self._guardrail_pipelines[GuardrailStage.TOOL_CALL]` via the existing
+   per-stage loop in `config.py` (`for stage in guardrail.stages: pipelines[stage].add(guardrail)`),
+   and are reachable via `tool_manager._tool_call_pipeline` once stamped.
+   This is exactly the "bot wiring" the spec's resolved Q7 describes ("the
+   concrete instance is constructed by bot wiring... passed as an instance
+   entry in `guardrails=[...]`") — "bot wiring" is the caller code that
+   calls `setup_pbac(app)` and instantiates the bot, not `AbstractBot.__init__`
+   itself. A bare string `guardrails=["pbac"]` (no evaluator) correctly
+   raises `TypeError` from the guardrail's required `evaluator` parameter —
+   by design, since the registry name is documented as discoverability-only
+   (`registry.py`'s own comment) and there is no default evaluator to fall
+   back to. "Skip registration when `setup_pbac()` returned `(None, None,
+   None)`" is therefore satisfied trivially by the caller simply not passing
+   a `PBACToolCallGuardrail` when it has no evaluator — no new conditional
+   code needed in `AbstractBot`.
 
 ---
 
@@ -215,10 +264,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-04
+**Notes**: Added `ToolManager._tool_call_pipeline` (mirrors `_tool_output_pipeline`)
+and a pre-execution TOOL_CALL guardrail hook in `execute_tool()`, inserted
+right before the Grant guard block — runs first in the chain
+(TOOL_CALL → grant → confirm). A blocked outcome returns
+`ToolResult(success=False, status="forbidden", error=<message>)` before the
+tool ever executes, preferring the blocking guardrail's human-readable
+`report["message"]` over the bare category-label `reason`. Stamped
+`tool_manager._tool_call_pipeline` in `AbstractBot.__init__` right after the
+existing `_tool_output_pipeline` stamp (same seam, `abstract.py:747`). 7 new
+unit tests (order, BLOCK translation, no-pipeline/empty-pipeline regression,
+bot-wiring stamp, custom-instance guardrail actually running, PBAC-absent
+regression) + full guardrails/auth/grants/confirmation regression suite
+(207 tests) pass. Confirmed pre-existing, unrelated failures in
+`tests/tools/databasequery/test_toolkit_ddl_guard.py` and
+`tests/tools/test_auto_registration_hooks.py` (identical failures with and
+without this diff, verified via `git stash`) — out of scope. `ruff check`:
+no new lint categories introduced (`abstract.py` unchanged at 256
+pre-existing errors; `manager.py` gained exactly one `UP045` on the new
+`_tool_call_pipeline: Optional[Any] = None` line, stylistically identical
+to the adjacent pre-existing `_tool_output_pipeline` line it mirrors — new
+test file is itself ruff-clean).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Test file path corrected to
+`tests/unit/test_guardrails_tool_call_hook.py` (no `tests/bots/guardrails/`
+directory exists). (2) `ToolManager` has no `_agent_name` attribute (the
+task's suggested `getattr(self, '_agent_name', '')` would always be `''`)
+— followed the exact precedent at this same architectural seam
+(`tools/abstract.py`'s `_run_tool_output_guardrails()`), which uses the
+tool name for both `GuardrailContext.agent_name` and `.tool_name` since
+`ToolManager` has no bot back-reference. (3) Guardrail imports are
+function-local/lazy (`# noqa` removed since `PLC0415` isn't an enabled
+ruff rule here), mirroring `tools/abstract.py`'s own lazy-import
+convention — `tools/manager.py` had zero `bots.guardrails` imports
+before this task. (4) **No PBAC-specific construction code was added to
+`AbstractBot.__init__`** — verified this is unnecessary: `AbstractBot` has
+no `app`/evaluator reference (`setup_pbac(app)` is only ever called at the
+application/handler layer), so there is no in-bot hook to build the
+guardrail from; inventing one would be unverified architecture invention.
+Instead, the existing (unchanged since TASK-2109/2110) `guardrails=[...]`
+constructor kwarg + `build_guardrails()`/`build_pipelines_from_config()`
+machinery already routes either a `PBACToolCallGuardrail(evaluator=...)`
+instance or a `{"name": "pbac", "evaluator": ...}` dict into the TOOL_CALL
+pipeline end-to-end — this IS the "bot wiring" the spec's Q7 describes (the
+caller code that calls `setup_pbac(app)` and instantiates the bot), not
+`AbstractBot.__init__` itself. Verified with a new integration-style test
+(`test_custom_tool_call_guardrail_instance_actually_runs`). All findings
+documented in the task's corrected Codebase Contract section above before
+implementing.

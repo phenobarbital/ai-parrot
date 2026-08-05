@@ -15,9 +15,11 @@ examples/dev_loop/
 ├── GUIA.md            ← este documento
 ├── e2e_demo.py        ← demo end-to-end SIN servicios externos (cero setup)
 ├── quickstart.py      ← flujo real, un run programático y sale (sin UI)
-├── server.py          ← servidor aiohttp: flujo real + WebSocket multiplexado
+├── server.py          ← consola de OPERACIÓN: bugs, triage de logs, Jira
+├── server_dev.py      ← consola de DESARROLLO: el dev-flow (FEAT-412), puerto 8081
 └── static/
-    └── index.html     ← cliente UI (JS vanilla, sin build step)
+    ├── index.html     ← UI de operación (la sirve server.py)
+    └── dev.html       ← UI de desarrollo con panel HITL (la sirve server_dev.py)
 ```
 
 El flujo es un `AgentsFlow` de 8 nodos:
@@ -34,7 +36,13 @@ La única diferencia es cómo se dispara y qué se simula:
 |---|---|---|---|
 | `e2e_demo.py` | **todos simulados** en proceso | ninguna (stdout) | Ver la mecánica sin montar nada |
 | `quickstart.py` | **reales** | ninguna (stdout) | Embeber el flujo en tu propio servicio |
-| `server.py` + UI | **reales** | HTTP + WebSocket + UI | Ver el stream de eventos en vivo |
+| `server.py` + UI | **reales** | HTTP + WebSocket + UI | Ver el stream de eventos en vivo (operación) |
+| `server_dev.py` + UI | **reales** (sin CloudWatch, Jira opcional) | HTTP + WebSocket + UI | Convertir una idea en un PR draft, contestando preguntas en el navegador |
+
+> **Dos consolas, dos públicos** (FEAT-412). `server.py` es la consola de
+> **operación** (bugs, logs de CloudWatch, tickets). `server_dev.py` es la de
+> **desarrollo**: entra lenguaje natural, sale un PR draft. Usan el mismo Redis
+> y puertos distintos (8080 y 8081), así que pueden correr a la vez. Ver §9.
 
 ---
 
@@ -147,6 +155,7 @@ A diferencia del demo, `server.py` (y `quickstart.py`) cablean el flujo real
 | Cuenta de servicio Jira: `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`, `JIRA_PROJECT`, `FLOW_BOT_JIRA_ACCOUNT_ID` | Crear/transicionar tickets como `flow-bot` |
 | Identidades reporter/escalación: `JIRA_REPORTER_ACCOUNT_ID`, `JIRA_ESCALATION_ACCOUNT_ID` | Aceptan email o accountId; `FLOW_BOT_JIRA_ACCOUNT_ID` es el fallback |
 | `AWS_PROFILE` (default `cloudwatch`) + `CLOUDWATCH_LOG_GROUP` (default `fluent-bit-cloudwatch`) | `ResearchNode` trae excerpts de logs |
+| `DEV_LOOP_LOG_FETCH_MODE` (default `auto`) | Cuándo `ResearchNode` consulta un backend de logs **remoto** (CloudWatch/Elasticsearch): `auto` = solo runs de bug, `always` = todos los kinds, `never` = deshabilitado. Las fuentes locales (`inline`/`attached_file`) nunca se filtran. |
 | `DEV_LOOP_SUMMARY_LLM` (default `anthropic:claude-haiku-4-5-20251001`) | Modelo para resumir logs cuando exceden el cap de 32 767 chars de Atlassian |
 | `DEV_LOOP_PLAN_LLM` (default `""` → cae a `DEV_LOOP_SUMMARY_LLM`) | Override opcional del modelo para el comentario de plan-summary (FEAT-132) |
 
@@ -295,6 +304,136 @@ consume tal cual:
 
 ---
 
+## 9. Consola de desarrollo (`server_dev.py` + `static/dev.html`)
+
+Esta es la consola para **desarrollar**: describes lo que quieres en lenguaje
+natural, el flujo escribe el documento SDD, **te pregunta lo que no sabe**, y
+termina en un PR draft contra `dev`.
+
+### 9.1. Arrancar
+
+```bash
+source .venv/bin/activate
+python examples/dev_loop/server_dev.py
+# abre http://localhost:8081
+```
+
+Lo único imprescindible es **Redis**. A diferencia de `server.py`:
+
+* **no necesita nada de CloudWatch** — este flujo no cablea toolkits de logs;
+* **no necesita Jira** — si no hay `JIRA_INSTANCE`/`JIRA_USERNAME` arranca
+  igual, con `jira_toolkit=None` (Jira aquí es sólo un enlace opcional).
+
+Sí necesita, como el modo real, el CLI `claude` autenticado y `gh` para el PR.
+
+Como el puerto es 8081, puedes tener las dos consolas levantadas al mismo
+tiempo:
+
+```bash
+python examples/dev_loop/server.py      # operación  → :8080
+python examples/dev_loop/server_dev.py  # desarrollo → :8081
+```
+
+### 9.2. Elegir el intent (lo eliges tú, no un LLM)
+
+| Intent | Qué escribes | Qué documento genera |
+|---|---|---|
+| **Enhancement** | título + descripción | `sdd/proposals/<slug>.proposal.md` — propuesta **ligera**: alcance, motivo, impacto (sin análisis de opciones) |
+| **New Feature** | título + descripción | `sdd/proposals/<slug>.brainstorm.md` — brainstorm **completo**: opciones A/B/C + recomendación |
+| **Feature (SDD)** | ruta de un documento que ya existe | ninguno — la ideación **se salta** y el run arranca en el planner |
+
+El **título** genera el slug. Si el documento ya existe **se retoma y se
+amplía** — nunca se sobreescribe ni se crea un `-2`. La ruta resuelta sale en
+el título del gate justamente para que puedas detectar (y rechazar) que haya
+cogido un documento que no era.
+
+### 9.3. Contestar las Open Questions (el paso nuevo)
+
+Cuando la ideación necesita decisiones tuyas:
+
+1. Aparece arriba el panel **“Waiting on you”** con **todas** las preguntas de
+   esa ronda (un gate por ronda, no uno por pregunta).
+2. Rellenas las que sepas — **las respuestas parciales valen**: lo que dejes en
+   blanco se queda como `[ ]` en el documento.
+3. **Submit answers** → tus respuestas viajan en el siguiente dispatch y el
+   subagente marca cada pregunta contestada como
+   `- [x] <pregunta> — *Resolved*: <respuesta>` en el documento, y mete la
+   decisión en el cuerpo.
+4. Puede haber otra ronda. El máximo es `DEV_FLOW_IDEATION_MAX_ROUNDS`
+   (por defecto **2**). Al agotarse, lo que siga sin contestar **no bloquea el
+   run**: se queda en el documento y el planner lo arrastra al §8 del spec.
+
+Mientras el gate está abierto el run se **aparca** y libera su slot de
+concurrencia, así que puedes tardar horas. Dos avisos:
+
+* **Reject & abort run** cancela la ideación y manda el run al
+  `failure_handler`.
+* Si nadie contesta, el gate **expira y el run falla** (fail-closed, TTL
+  `DEV_FLOW_GATE_TTL_QUESTIONS`, 24 h por defecto): en decisiones de diseño,
+  el silencio no es un “sí”.
+* Si recargas la página con un gate abierto, el panel **vuelve a aparecer**
+  (se pinta del estado, no del evento suelto).
+
+### 9.4. Contestar un gate por curl (sin UI)
+
+```bash
+# aprobar contestando
+curl -X POST http://localhost:8081/api/flow/run-1a2b3c4d/gates/9f8e7d6c/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "resolution": "approved",
+    "resolved_by": "jesus",
+    "answers": {"¿Qué store usamos?": "pgvector"}
+  }'
+
+# abortar
+curl -X POST http://localhost:8081/api/flow/run-1a2b3c4d/gates/9f8e7d6c/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"resolution": "rejected", "resolved_by": "jesus", "comment": "documento equivocado"}'
+```
+
+Aprobar un gate `open_questions` **sin** `answers` devuelve `400
+answers_required` (para abortar se usa `rejected`). Un segundo intento sobre el
+mismo gate devuelve `409` y dice quién lo resolvió primero.
+
+### 9.5. Lanzar un run por curl
+
+```bash
+curl -X POST http://localhost:8081/api/flow/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "new_feature",
+    "title": "telemetría del compression budget",
+    "description": "Añadir telemetría por herramienta al compression budget para ver cuál se come el presupuesto.",
+    "require_plan_approval": true
+  }'
+```
+
+`title` y `description` son obligatorios. Aquí **no hay**
+`affected_component`, `log_sources` ni `acceptance_criteria` — eso es del
+intake de bugs.
+
+### 9.6. Gate de aprobación del plan (opcional)
+
+En la pestaña **Ideation & gates** hay un check **Require plan approval**. Si
+lo marcas, después del planner y **antes** de que salga la flota de agentes se
+abre un gate `plan_approval` que se contesta en el mismo panel (aprobar/
+rechazar + comentario). Es **por run**: manda sobre el valor con el que se
+construyó el servidor, sin reconstruir el flujo.
+
+### 9.7. Variables nuevas
+
+| Variable | Default | Para qué |
+|---|---|---|
+| `DEV_FLOW_IDEATION_MAX_ROUNDS` | `2` | Rondas máximas de Open Questions por run |
+| `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL del gate `open_questions`; al expirar el run **falla** |
+
+El resto se reutiliza tal cual de las `DEV_LOOP_*` que ya conoces
+(`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
+`DEV_LOOP_DEV_AGENTS`, `FLOW_MAX_CONCURRENT_RUNS`…).
+
+---
+
 ## 8. Resumen — qué ejecutar según lo que quieras
 
 | Quiero… | Comando | Setup |
@@ -302,3 +441,4 @@ consume tal cual:
 | Ver el flujo sin montar nada | `python examples/dev_loop/e2e_demo.py` | solo `uv sync` |
 | Embeberlo en mi servicio | `python examples/dev_loop/quickstart.py` | modo real (§4.1) |
 | Verlo en vivo con UI | `python examples/dev_loop/server.py` → `http://localhost:8080` | modo real (§4.1) |
+| Desarrollar una feature de cero (idea → PR draft) | `python examples/dev_loop/server_dev.py` → `http://localhost:8081` | Redis + `claude` + `gh` (sin CloudWatch, Jira opcional) — §9 |

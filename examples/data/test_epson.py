@@ -21,7 +21,7 @@ async def test_pandas_agent():
         # llm="openai",
         # model="gpt-4o-mini",
         # sllm='groq',
-        # model="moonshotai/kimi-k2-instruct-0905",
+        # model="minimaxai/minimax-m3",
         df=data,
         max_tokens=16000
         # max_tokens=8192

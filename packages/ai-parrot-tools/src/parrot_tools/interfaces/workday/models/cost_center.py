@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+
 from pydantic import BaseModel, Field, validator
 
 
@@ -6,61 +6,70 @@ class CostCenter(BaseModel):
     """Complete cost center model based on Workday Get_Cost_Centers API documentation."""
     
     # Cost Center Reference
-    cost_center_id: Optional[str] = None
-    cost_center_wid: Optional[str] = None
-    cost_center_name: Optional[str] = None
-    cost_center_code: Optional[str] = None
+    cost_center_id: str | None = None
+    cost_center_wid: str | None = None
+    cost_center_name: str | None = None
+    cost_center_code: str | None = None
     
     # Organization Data
-    organization_id: Optional[str] = None
-    organization_name: Optional[str] = None
-    organization_code: Optional[str] = None
-    include_organization_code_in_name: Optional[Union[bool, str]] = None
-    organization_active: Optional[Union[bool, str]] = None
-    organization_visibility: Optional[str] = None
-    external_url: Optional[str] = None
+    organization_id: str | None = None
+    organization_name: str | None = None
+    organization_code: str | None = None
+    include_organization_code_in_name: bool | str | None = None
+    organization_active: bool | str | None = None
+    organization_visibility: str | None = None
+    external_url: str | None = None
     
     # Organization Type and Subtype
-    organization_type: Optional[str] = None
-    organization_type_id: Optional[str] = None
-    organization_subtype: Optional[str] = None
-    organization_subtype_id: Optional[str] = None
+    organization_type: str | None = None
+    organization_type_id: str | None = None
+    organization_subtype: str | None = None
+    organization_subtype_id: str | None = None
     
     # Dates
-    effective_date: Optional[str] = None
-    availability_date: Optional[str] = None
-    last_updated_datetime: Optional[str] = None
-    inactive_date: Optional[str] = None
+    effective_date: str | None = None
+    availability_date: str | None = None
+    last_updated_datetime: str | None = None
+    inactive_date: str | None = None
     
     # Status
-    inactive: Optional[Union[bool, str]] = None
+    inactive: bool | str | None = None
     
     # Organization Container
-    container_organization_id: Optional[str] = None
-    container_organization_name: Optional[str] = None
-    container_organization_wid: Optional[str] = None
+    container_organization_id: str | None = None
+    container_organization_name: str | None = None
+    container_organization_wid: str | None = None
     
     # Worktags
-    worktags: Optional[List[str]] = Field(default_factory=list)
+    worktags: list[str] | None = Field(default_factory=list)
     
     # Integration ID Data  
-    integration_ids: Optional[List[str]] = Field(default_factory=list)
-    external_integration_id: Optional[str] = None
+    integration_ids: list[str] | None = Field(default_factory=list)
+    external_integration_id: str | None = None
     
     # Manager Information
-    manager_reference: Optional[str] = None
-    manager_name: Optional[str] = None
-    manager_id: Optional[str] = None
+    manager_reference: str | None = None
+    manager_name: str | None = None
+    manager_id: str | None = None
     
     # Hierarchy Information
-    hierarchy_data: Optional[dict] = None
-    superior_organization_id: Optional[str] = None
-    superior_organization_name: Optional[str] = None
+    hierarchy_data: dict | None = None
+    superior_organization_id: str | None = None
+    superior_organization_name: str | None = None
     
     # Financial Information
-    budget_reference: Optional[str] = None
-    cost_center_type: Optional[str] = None
-    
+    budget_reference: str | None = None
+    cost_center_type: str | None = None
+
+    # Organization enrichment (cost-centre organisation-hierarchy enrichment)
+    org_parent_organization_id: str | None = None
+    org_parent_organization_name: str | None = None
+    org_parent_organization_type: str | None = None
+    org_roles: list[str] | None = None
+    org_external_ids: list[str] | None = None
+    org_last_updated: str | None = None
+    org_hierarchy_chain: str | None = None
+
     @validator('organization_active', 'include_organization_code_in_name', 'inactive', pre=True)
     def parse_boolean_fields(cls, v):
         """Convert boolean-like values to proper booleans."""

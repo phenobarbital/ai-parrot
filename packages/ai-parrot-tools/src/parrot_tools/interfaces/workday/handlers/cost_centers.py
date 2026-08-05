@@ -1,11 +1,14 @@
 import asyncio
+import json
 import math
-from typing import List
+
 import pandas as pd
 
-from .base import WorkdayTypeBase
 from ..models.cost_center import CostCenter
-from ..parsers.cost_center_parsers import parse_cost_center_data
+from ..parsers.cost_center_parsers import merge_org_enrichment, parse_cost_center_data
+from ..utils import extract_by_type, first
+from .base import WorkdayTypeBase
+from .organizations import OrganizationType
 
 
 class CostCenterType(WorkdayTypeBase):
@@ -41,6 +44,9 @@ class CostCenterType(WorkdayTypeBase):
         updated_from_date = kwargs.pop("updated_from_date", None)
         updated_to_date = kwargs.pop("updated_to_date", None)
         include_inactive = kwargs.pop("include_inactive", None)
+        # Organization enrichment always runs; this only controls whether
+        # the recursive Cost_Center_Hierarchy chain is also built.
+        include_hierarchy_chain = kwargs.pop("include_hierarchy_chain", False)
 
         # Build request payload
         payload = {**self.request_payload}
@@ -173,7 +179,7 @@ class CostCenterType(WorkdayTypeBase):
                 )
                 self._logger.info(f"📄 Page 1/{total_pages} fetched: {len(page1)} cost centers")
                 
-                all_cost_centers: List[dict] = list(page1)
+                all_cost_centers: list[dict] = list(page1)
                 
                 # If more pages, batch them (max 10 parallel requests)
                 max_parallel = 10
@@ -236,8 +242,16 @@ class CostCenterType(WorkdayTypeBase):
 
             # Convert to DataFrame
             if cost_centers_processed:
+                # Organization enrichment ALWAYS runs (batch path and
+                # single-ID path alike) — graceful degradation on failure.
+                cost_centers_processed = await self._enrich_with_organizations(
+                    cost_centers_processed,
+                    cost_center_id=cost_center_id,
+                    include_hierarchy_chain=include_hierarchy_chain,
+                )
+
                 df = pd.DataFrame(cost_centers_processed)
-                
+
                 # Log DataFrame info
                 self._logger.info(f"✅ Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
                 self._logger.debug(f"DataFrame columns: {list(df.columns)}")
@@ -254,10 +268,10 @@ class CostCenterType(WorkdayTypeBase):
 
         except Exception as e:
             self._logger.error(f"Error in Get_Cost_Centers operation: {e}")
-            self._logger.error("Traceback: ", exc_info=True)
+            self._logger.exception("Traceback: ")
             raise
 
-    async def _fetch_cost_center_page(self, page_num: int, base_payload: dict) -> List[dict]:
+    async def _fetch_cost_center_page(self, page_num: int, base_payload: dict) -> list[dict]:
         """
         Fetch a single page of Get_Cost_Centers. Returns list of cost center dicts.
         Similar to candidates.py _fetch_candidate_page method.
@@ -302,5 +316,289 @@ class CostCenterType(WorkdayTypeBase):
         
         cost_centers_count = len(items) if items else 0
         self._logger.debug(f"✅ Page {page_num} completed: {cost_centers_count} cost centers fetched")
-        
-        return items or [] 
+
+        return items or []
+
+    # ------------------------------------------------------------------
+    # Organization enrichment orchestration
+    # ------------------------------------------------------------------
+
+    async def _enrich_with_organizations(
+        self,
+        cost_centers_processed: list[dict],
+        cost_center_id: str | None = None,
+        include_hierarchy_chain: bool = False,
+    ) -> list[dict]:
+        """
+        Enrich already-parsed cost center rows with organization data.
+        Always runs — batch path and single-ID path alike. On any failure,
+        logs a WARNING and returns the rows unchanged (graceful degradation).
+
+        Args:
+            cost_centers_processed: List of `CostCenter.dict()` rows (already
+                built from the base `Get_Cost_Centers` fetch).
+            cost_center_id: When set, enrich via the single-ID direct lookup
+                path instead of the batch path.
+            include_hierarchy_chain: When True, also build the recursive
+                `org_hierarchy_chain` JSON column.
+
+        Returns:
+            The same rows with the seven `org_*` keys populated (or the
+            original rows unchanged if enrichment fails).
+        """
+        try:
+            if cost_center_id:
+                # Single-ID path: exactly one extra SOAP call, direct lookup
+                # by Cost_Center_Reference_ID.
+                org_type = OrganizationType(self.service)
+                org_df = await org_type.execute(
+                    organization_id=cost_center_id,
+                    organization_id_type="Cost_Center_Reference_ID",
+                )
+            else:
+                # Batch path: one Get_Organizations call filtered to
+                # Cost_Center-type orgs, Include_Inactive=True (required for
+                # the join to close 1:1 on the live tenant).
+                org_df = await self._fetch_org_enrichment(include_inactive=True)
+
+            org_lookup: dict[str, dict] = {}
+            if org_df is not None and not org_df.empty and "organization_id" in org_df.columns:
+                for record in org_df.to_dict(orient="records"):
+                    key = record.get("organization_id")
+                    if key:
+                        # OrganizationType.execute() pre-serializes list
+                        # columns to JSON strings for the DataFrame (its own
+                        # existing behaviour, organizations.py) — deserialize
+                        # back so merge_org_enrichment() (which expects
+                        # Organization.dict()-shaped plain lists) receives
+                        # the right type.
+                        for list_col in ("roles", "external_ids"):
+                            value = record.get(list_col)
+                            if isinstance(value, str):
+                                try:
+                                    record[list_col] = json.loads(value) if value else []
+                                except (TypeError, ValueError):
+                                    record[list_col] = []
+                        org_lookup[str(key)] = record
+
+            container_ids: set[str] = set()
+            for row in cost_centers_processed:
+                # Primary join key: cost_center_id == organization_id
+                # (Reference_ID) — verified 1:1 on the live tenant.
+                org_row = org_lookup.get(str(row.get("cost_center_id")))
+                if org_row is None:
+                    self._logger.debug(
+                        f"No matching organization found for cost center "
+                        f"{row.get('cost_center_id')!r}; org_* columns left None."
+                    )
+                merged = merge_org_enrichment(row, org_row)
+                row.update(merged)
+                parent_id = merged.get("org_parent_organization_id")
+                if parent_id:
+                    container_ids.add(parent_id)
+
+            if container_ids:
+                container_cache = await self._resolve_container_orgs(container_ids)
+                for row in cost_centers_processed:
+                    parent_id = row.get("org_parent_organization_id")
+                    if parent_id and parent_id in container_cache:
+                        info = container_cache[parent_id]
+                        row["org_parent_organization_name"] = info.get("name")
+                        row["org_parent_organization_type"] = info.get("type")
+
+                if include_hierarchy_chain:
+                    for row in cost_centers_processed:
+                        parent_id = row.get("org_parent_organization_id")
+                        if not parent_id:
+                            continue
+                        chain = await self._build_hierarchy_chain(parent_id, container_cache)
+                        row["org_hierarchy_chain"] = json.dumps(chain) if chain else None
+
+            return cost_centers_processed
+
+        except Exception as exc:
+            self._logger.warning(
+                f"⚠️ Organization enrichment failed, returning base cost center "
+                f"data unchanged: {exc}"
+            )
+            self._logger.debug("Traceback: ", exc_info=True)
+            return cost_centers_processed
+
+    async def _fetch_org_enrichment(self, include_inactive: bool = True) -> pd.DataFrame:
+        """
+        Batch-fetch Cost_Center-type organizations for enrichment. Uses
+        `organization_type="Cost_Center"` (underscore form — calling
+        `execute()` directly with the explicit kwarg avoids the space-form
+        bug in the `get_cost_centers()` convenience method) and
+        `include_inactive=True` (required for the join to close 1:1 on the
+        live tenant).
+
+        Args:
+            include_inactive: Whether to include inactive organizations.
+
+        Returns:
+            DataFrame of organizations (as produced by
+            `OrganizationType.execute()`).
+        """
+        org_type = OrganizationType(self.service)
+        return await org_type.execute(
+            organization_type="Cost_Center",
+            include_inactive=include_inactive,
+        )
+
+    async def _resolve_container_orgs(self, container_ids: set[str]) -> dict[str, dict]:
+        """
+        Resolve the `Cost_Center_Hierarchy` container orgs referenced by
+        cost centers' `org_parent_organization_id` (in-run cache, one
+        `Get_Organizations` lookup each).
+
+        Args:
+            container_ids: Distinct `org_parent_organization_id` values to
+                resolve.
+
+        Returns:
+            `{container_id: {"name": ..., "type": ..., "superior_id": ...}}`.
+            `superior_id` is the container's own `Included_In`/`Superior`
+            parent (used by `_build_hierarchy_chain`); `None` for roots or
+            on lookup failure.
+        """
+        cache: dict[str, dict] = {}
+        for container_id in container_ids:
+            if not container_id or container_id in cache:
+                continue
+            try:
+                cache[container_id] = await self._fetch_container_org_info(container_id)
+            except Exception as exc:  # noqa: BLE001 — graceful degradation, never raise
+                self._logger.warning(
+                    f"Failed to resolve container organization {container_id!r}: {exc}"
+                )
+                cache[container_id] = {"name": None, "type": None, "superior_id": None}
+        return cache
+
+    async def _build_hierarchy_chain(self, parent_id: str, cache: dict) -> list:
+        """
+        Walk `Superior_Organization_Reference` of `Cost_Center_Hierarchy`
+        container orgs from `parent_id` up to the root (JSON array of
+        `{id, name}`, parent → root order).
+
+        Ancestors not already present in `cache` are resolved on demand and
+        memoized into `cache` (bounded by the small number of total
+        container orgs in the tenant, regardless of how many cost center
+        rows are walked). Capped at 10 levels with a WARNING (cycle guard);
+        live depth is typically shallow.
+
+        Args:
+            parent_id: The cost center's `org_parent_organization_id` to
+                start the walk from.
+            cache: The in-run container cache (from `_resolve_container_orgs`,
+                extended in place as ancestors are resolved).
+
+        Returns:
+            List of `{"id": ..., "name": ...}` dicts, immediate parent first.
+        """
+        chain: list[dict] = []
+        current_id = parent_id
+        seen: set[str] = set()
+        max_depth = 10
+
+        while current_id and len(chain) < max_depth:
+            if current_id in seen:
+                self._logger.warning(
+                    f"Cycle detected while walking hierarchy chain at "
+                    f"{current_id!r} (started from {parent_id!r}); stopping."
+                )
+                break
+            seen.add(current_id)
+
+            if current_id not in cache:
+                try:
+                    cache[current_id] = await self._fetch_container_org_info(current_id)
+                except Exception as exc:  # noqa: BLE001 — graceful degradation, never raise
+                    self._logger.warning(
+                        f"Failed to resolve container organization {current_id!r} "
+                        f"during chain walk: {exc}"
+                    )
+                    cache[current_id] = {"name": None, "type": None, "superior_id": None}
+
+            info = cache[current_id]
+            chain.append({"id": current_id, "name": info.get("name")})
+            current_id = info.get("superior_id")
+
+        if current_id and len(chain) >= max_depth:
+            self._logger.warning(
+                f"Hierarchy chain starting at {parent_id!r} exceeded "
+                f"{max_depth} levels; capped."
+            )
+
+        return chain
+
+    async def _fetch_container_org_info(self, organization_id: str) -> dict:
+        """
+        Fetch a single organization by `Organization_Reference_ID` and parse
+        `name`, `type` and `superior_id` directly from the raw response.
+
+        Bypasses the `Organization` pydantic model (`OrganizationType.execute()`)
+        because it does not expose `Hierarchy_Data.Superior_Organization_Reference`
+        — only `Included_In_Organization_Reference` (mapped to
+        `parent_organization_id`). Container/hierarchy orgs use the
+        `Superior_Organization_Reference` field instead (verified: always
+        null for cost-center orgs, populated for `Cost_Center_Hierarchy` orgs).
+
+        Args:
+            organization_id: `Organization_Reference_ID` of the container org.
+
+        Returns:
+            `{"name": ..., "type": ..., "superior_id": ...}` — any of which
+            may be `None` if absent in the response.
+        """
+        org_type = OrganizationType(self.service)
+        payload = {**org_type.request_payload}
+        payload["Request_References"] = {
+            "Organization_Reference": [
+                {"ID": [{"type": "Organization_Reference_ID", "_value_1": organization_id}]}
+            ]
+        }
+
+        # Retry with exponential backoff — same idiom as the page fetches above.
+        # Without it, a single transient SOAP error would permanently null the
+        # parent name/type (and chain) for every cost center under this container.
+        raw = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                raw = await self.service.call_operation(operation="Get_Organizations", **payload)
+                break
+            except Exception as exc:
+                self._logger.warning(
+                    f"[Get_Organizations] Error fetching container org {organization_id} "
+                    f"(attempt {attempt}/{self.max_retries}): {exc}"
+                )
+                if attempt == self.max_retries:
+                    self._logger.error(
+                        f"[Get_Organizations] Failed container org {organization_id} after "
+                        f"{self.max_retries} attempts."
+                    )
+                    raise
+                delay = min(self.retry_delay * (2 ** (attempt - 1)), 8.0)
+                await asyncio.sleep(delay)
+        data = self.service.serialize_object(raw)
+        items = data.get("Response_Data", {}).get("Organization", [])
+        item = items[0] if isinstance(items, list) and items else (items if isinstance(items, dict) else {})
+
+        org_data = item.get("Organization_Data", {}) if isinstance(item, dict) else {}
+        if not isinstance(org_data, dict):
+            org_data = {}
+
+        name = org_data.get("Name")
+
+        type_ref = org_data.get("Organization_Type_Reference", {}) or {}
+        org_type_id = extract_by_type(type_ref.get("ID", []), "Organization_Type_ID")
+
+        hierarchy = org_data.get("Hierarchy_Data", {}) or {}
+        superior_ref = first(hierarchy.get("Superior_Organization_Reference"))
+        superior_id = (
+            extract_by_type(superior_ref.get("ID", []), "Organization_Reference_ID")
+            if superior_ref
+            else None
+        )
+
+        return {"name": name, "type": org_type_id, "superior_id": superior_id} 

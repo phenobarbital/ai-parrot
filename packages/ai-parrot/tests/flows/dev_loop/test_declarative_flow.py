@@ -238,7 +238,7 @@ def test_development_factory_accepts_alternate_dispatcher():
 def test_development_factory_accepts_llm_dispatch_profile():
     default_dispatcher = MagicMock()
     development_dispatcher = MagicMock()
-    development_profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.1")
+    development_profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.2")
     factories = build_dev_loop_node_factories(
         dispatcher=default_dispatcher,
         development_dispatcher=development_dispatcher,

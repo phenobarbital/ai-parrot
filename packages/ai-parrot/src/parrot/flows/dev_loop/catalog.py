@@ -184,8 +184,13 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         label="Nvidia NIM",
         transport="api",
         model_env="DEV_LOOP_NVIDIA_CODE_MODEL",
-        default_model="moonshotai/kimi-k2-instruct-0905",
-        models=("moonshotai/kimi-k2-instruct-0905", "z-ai/glm-5.1"),
+        default_model="minimaxai/minimax-m3",
+        models=(
+            "minimaxai/minimax-m3",
+            "z-ai/glm-5.2",
+            "poolside/laguna-xs-2.1",
+            "meta/llama-3.3-70b-instruct",
+        ),
         requires="NVIDIA_API_KEY",
         roles=("development",),
         notes="Set DEV_LOOP_NVIDIA_ENABLE_THINKING=true for GLM reasoning mode.",
@@ -231,6 +236,8 @@ BACKENDS: Tuple[BackendInfo, ...] = (
             "minimax.minimax-m2.5",
             "moonshotai.kimi-k2.5",
             "zai.glm-5",
+            "us.amazon.nova-2-lite-v1:0",
+            "us.amazon.nova-pro-v1:0",
             "us.anthropic.claude-opus-5",
             "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "global.anthropic.claude-fable-5",
@@ -238,8 +245,10 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         requires="AWS credentials with Bedrock model access (+ Bedrock API key for bedrock-mantle)",
         roles=("development", "adversarial"),
         notes="Dev seat routes MiniMax/Kimi/GLM via bedrock-mantle; the "
-              "adversarial seat is a read-only, no-tools Claude Opus 5 "
-              "Converse call — select via DEV_LOOP_ADVERSARIAL_BACKEND.",
+              "adversarial seat is a read-only, no-tools Converse call on "
+              "Nova 2 Lite — select via DEV_LOOP_ADVERSARIAL_BACKEND. The "
+              "us.anthropic.* ids remain selectable but require the "
+              "per-account Anthropic use-case form on Bedrock.",
     ),
 )
 
