@@ -547,13 +547,25 @@ def test_no_bug_brief_builder(server_dev):
 
 
 def test_uses_dev_flow_runner_and_builder(server_dev):
+    """Startup builds the dev-flow graph/runner and never a dev_loop one.
+
+    AST-based: comments in `_on_startup` legitimately *name*
+    `build_dev_loop_feature_flow` to explain which parameters dev-flow
+    deliberately does not take, which a substring scan would flag.
+    """
+    import ast
     import inspect
 
-    source = inspect.getsource(server_dev._on_startup)
-    assert "build_dev_flow(" in source
-    assert "DevFlowRunner(" in source
-    assert "build_dev_loop_flow" not in source
-    assert "build_dev_loop_feature_flow" not in source
+    tree = ast.parse(inspect.getsource(server_dev._on_startup).lstrip())
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "build_dev_flow" in called
+    assert "DevFlowRunner" in called
+    assert "build_dev_loop_flow" not in called
+    assert "build_dev_loop_feature_flow" not in called
 
 
 def test_jira_is_optional(server_dev, monkeypatch):
@@ -669,3 +681,34 @@ def test_index_html_untouched(dev_html):
     assert "CloudWatch" in index
     assert "afd-theme" in index
     assert index != dev_html
+
+
+def test_dev_html_always_sends_the_plan_gate_boolean(dev_html):
+    """Review finding: sending only `true` made the toggle one-way.
+
+    The server honours the per-run override only when the key is PRESENT, so a
+    UI that omitted `require_plan_approval` when unchecked could never turn OFF
+    a gate the server defaults ON.
+    """
+    assert "payload.require_plan_approval = !!f.requirePlanApproval;" in dev_html
+    # The old one-way form must be gone.
+    assert "if (f.requirePlanApproval) payload.require_plan_approval = true;" not in dev_html
+
+
+@pytest.mark.asyncio
+async def test_plan_approval_false_reaches_extra_shared_and_suppresses(make_client):
+    """The full path: UI false -> extra_shared false -> DevelopmentNode off.
+
+    Pairs with test_shared_false_overrides_ctor_true in
+    test_plan_gate_override.py, which covers the node half.
+    """
+    client = await make_client()
+    await client.post(
+        "/api/flow/run",
+        json={
+            "kind": "enhancement", "title": "t", "description": "d",
+            "require_plan_approval": False,
+        },
+    )
+    ctx = await _wait_for_context(client.app_flow)
+    assert ctx.shared_data["require_plan_approval"] is False

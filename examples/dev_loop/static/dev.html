@@ -1503,10 +1503,13 @@ function buildPayload() {
   if (f.judges.length) payload.judge_panel = f.judges;
   if (f.skipQa) payload.skip_qa = true;
   if (f.skipJira) payload.skip_jira = true;
-  // FEAT-412: only sent when the operator actually touched the toggle, so an
-  // untouched form falls back to the flow's build-time default instead of
-  // overriding it with an implicit false.
-  if (f.requirePlanApproval) payload.require_plan_approval = true;
+  // FEAT-412: ALWAYS send the boolean, both true and false.
+  // The checkbox is initialised from the server's own default at boot, so its
+  // state is always a deliberate, user-visible value — and the server only
+  // honours an override when the key is PRESENT. Sending only `true` would
+  // make it impossible to turn a server-default-on plan gate off for a run
+  // (the omitted key silently falls back to that same default).
+  payload.require_plan_approval = !!f.requirePlanApproval;
   return payload;
 }
 

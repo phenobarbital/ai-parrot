@@ -538,3 +538,62 @@ async def test_no_wiki_means_empty_context(doc):
     await node.execute({"run_id": RUN_ID, "dev_brief": _brief()})
 
     assert dispatcher.calls[0]["brief"].graph_context == ""
+
+
+# ---------------------------------------------------------------------------
+# Reused-chain compatibility (FEAT-412 review finding)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_qa_node_survives_a_briefless_dev_flow_run():
+    """QANode must not KeyError when there is no `bug_brief`.
+
+    dev-flow (and FEAT-378 feature-mode) have no BugIntakeNode, so nothing
+    ever seeds `shared["bug_brief"]` — but QANode read it unconditionally,
+    which made every run raise `KeyError: 'bug_brief'` at QA, BEFORE the
+    handoff that is supposed to produce the draft PR (and before the skip_qa
+    bypass could even be honoured). Regression guard for the fallback.
+    """
+    from unittest.mock import MagicMock
+
+    from parrot.flows.dev_loop.models import ResearchOutput
+    from parrot.flows.dev_loop.nodes.qa import QANode
+
+    shared = {
+        "run_id": "r1",
+        "skip_qa": True,
+        # Exactly what PlannerNode bridges — and nothing else.
+        "research_output": ResearchOutput(
+            jira_issue_key="", spec_path="sdd/specs/x.spec.md",
+            feat_id="FEAT-412", branch_name="b", worktree_path="/tmp/x",
+            repo_path="",
+        ),
+    }
+
+    report = await QANode(dispatcher=MagicMock()).execute(shared)
+
+    assert report.passed is True
+    assert "bug_brief" not in shared
+
+
+@pytest.mark.asyncio
+async def test_briefless_summary_prefers_the_feature_document(tmp_path):
+    """The synthetic brief's summary labels the run for reviewers/judges."""
+    from parrot.flows.dev_loop.models import ResearchOutput
+    from parrot.flows.dev_loop.nodes.qa import QANode
+
+    research = ResearchOutput(
+        jira_issue_key="", spec_path="sdd/specs/x.spec.md", feat_id="FEAT-412",
+        branch_name="b", worktree_path="/tmp/x", repo_path="",
+    )
+    doc = tmp_path / "idea.proposal.md"
+    doc.write_text("# p", encoding="utf-8")
+    fb = FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+    assert QANode._briefless_summary({"feature_brief": fb}, research) == str(doc)
+    # Falls back to the spec path, then the feat id — never raises.
+    assert QANode._briefless_summary({}, research) == "sdd/specs/x.spec.md"
+    assert QANode._briefless_summary(
+        {}, research.model_copy(update={"spec_path": ""})
+    ) == "FEAT-412"

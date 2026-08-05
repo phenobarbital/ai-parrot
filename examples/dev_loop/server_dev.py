@@ -434,6 +434,16 @@ async def _on_startup(app: web.Application) -> None:
         ops_server._log_development_agent_selection(
             backend, development_profile
         )
+        # NOTE: like feature-mode (`build_dev_loop_feature_flow`), the dev-flow
+        # builder takes no `development_dispatcher`/`development_profile`, so
+        # this selection currently applies to the code-review reviewer
+        # resolution below, not to DevelopmentNode's own dispatches. Pin the
+        # backend per run from the console's "Agents & models" tab instead.
+        logger.info(
+            "DEV_LOOP_DEVELOPMENT_AGENT=%r selected; dev-flow dispatches "
+            "development through the shared claude-code dispatcher unless a "
+            "pool is declared per run.", development_agent,
+        )
     else:
         raise RuntimeError(
             "DEV_LOOP_DEVELOPMENT_AGENT must be 'claude-code', 'codex', "
@@ -468,8 +478,17 @@ async def _on_startup(app: web.Application) -> None:
         stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
     )
     if development_pool_config is not None:
+        # Honest reporting: dev-flow sizes the pool the way feature-mode does —
+        # PlannerNode derives it from the first task-dependency wave (capped at
+        # development_pool_max), or the brief's own `dev_agents` overrides it.
+        # `build_dev_flow` deliberately takes no `development_pool_config`
+        # (its signature mirrors build_dev_loop_feature_flow), so this env
+        # value is NOT injected into DevelopmentNode here.
         logger.info(
-            "Dev-agent pool configured: %s (isolation=%s, pool_max=%d)",
+            "DEV_LOOP_DEV_AGENTS is set (%s, isolation=%s) but dev-flow does "
+            "NOT inject it: the pool is planner-sized (cap pool_max=%d) or set "
+            "per run via the brief's dev_agents. Use the console's "
+            "'Agents & models' tab to pin a pool for a run.",
             ", ".join(
                 f"{spec.agent}x{spec.count}"
                 for spec in development_pool_config.agents

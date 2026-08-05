@@ -67,6 +67,24 @@ _LINT_TARGET_RE = re.compile(
 )
 
 
+class _NoBugBrief(BaseModel):
+    """Stand-in for ``shared["bug_brief"]`` in briefless topologies.
+
+    The feature-mode (FEAT-378) and dev-flow (FEAT-412) graphs have **no**
+    ``BugIntakeNode``, so nothing ever seeds ``shared["bug_brief"]`` — their
+    acceptance criteria live in the spec/task artifacts, not on the intake
+    brief. This node only reads ``.acceptance_criteria`` and ``.summary`` off
+    that brief, so supplying this shim keeps the deterministic lint gate and
+    the code-review gate running (with zero brief-level criteria to
+    partition) instead of raising ``KeyError`` before QA even starts.
+
+    Bug/revision runs are unaffected: they always seed a real ``BugBrief``.
+    """
+
+    acceptance_criteria: List[AcceptanceCriterion] = Field(default_factory=list)
+    summary: str = ""
+
+
 class _QABrief(BaseModel):
     """Internal brief shape passed to the ``sdd-qa`` subagent.
 
@@ -161,7 +179,13 @@ class QANode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
-        brief: BugBrief = shared["bug_brief"]
+        # FEAT-412: `bug_brief` only exists in the bug/revision topologies.
+        # Feature-mode and dev-flow reach this node with no intake brief at
+        # all, so read it defensively (see _NoBugBrief) rather than
+        # KeyError-ing before the skip_qa check below.
+        brief: Union[BugBrief, _NoBugBrief] = shared.get("bug_brief") or _NoBugBrief(
+            summary=self._briefless_summary(shared, research)
+        )
 
         runtime_skip = shared.get("skip_qa", False)
         if self._skip_qa or runtime_skip:
@@ -370,6 +394,27 @@ class QANode(DevLoopNode):
     # ------------------------------------------------------------------
     # Deterministic QA dispatch
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _briefless_summary(
+        shared: Dict[str, Any], research: ResearchOutput
+    ) -> str:
+        """Best-effort run label when there is no intake brief (FEAT-412).
+
+        Used only to populate ``_NoBugBrief.summary``, which the downstream
+        dispatch briefs echo so a reviewer/judge knows what the run is about.
+
+        Args:
+            shared: The flow's shared state.
+            research: The bridged research output (spec path, feat id).
+
+        Returns:
+            The feature document's path when a ``feature_brief`` is present,
+            else the spec path, else the FEAT id — never raises.
+        """
+        feature_brief = shared.get("feature_brief")
+        document = getattr(feature_brief, "document_path", "") or ""
+        return document or research.spec_path or research.feat_id or ""
 
     async def _run_deterministic_qa(
         self,
