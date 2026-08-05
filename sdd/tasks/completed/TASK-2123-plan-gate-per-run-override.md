@@ -127,10 +127,40 @@ async def test_plan_gate_checked_guard_still_wins(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
 **Notes**:
 
-**Deviations from spec**: none
+`DevelopmentNode._check_plan_approval` now resolves the requirement per run:
+
+```python
+override = shared.get("require_plan_approval")
+required = self._require_plan_approval if override is None else bool(override)
+if not required or shared.get("_plan_gate_checked"):
+    return
+```
+
+Implementation choices worth recording:
+
+- **Sentinel, not truthiness** (as the task required): an explicit `False`
+  suppresses a gate the constructor flag would have opened, while an absent
+  key falls back to that flag. A present-but-`None` value is treated as
+  *absent* rather than as `False` — a form/JSON payload that omits the field
+  (or sends `null`) must not silently disable a flow-level plan gate.
+  Pinned by `test_none_value_is_treated_as_absent`.
+- `_require_plan_approval` is **read**, never mutated — no `object.__setattr__`
+  at check time, so concurrent runs sharing one node instance cannot leak
+  each other's toggle.
+- The `_plan_gate_checked` guard is untouched and still short-circuits ahead
+  of any gate work, so a QA-repair-loop re-entry cannot re-open the gate even
+  with the override set (`test_plan_gate_checked_guard_still_wins`,
+  `test_preset_checked_guard_suppresses_override`).
+- The no-host legacy fallback (warn + proceed) applies to the override path
+  too (`test_override_without_host_warns_and_proceeds`).
+
+9 new tests, all passing. Regression: `test_gate_integration.py`,
+`test_runner_park.py`, `test_development_node.py`, `test_development.py` →
+57 passed unmodified. `ruff`: new test file 0 findings;
+`development.py` unchanged at 28 (pre-existing, same count as on `dev`).
+
+**Deviations from spec**: none.

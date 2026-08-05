@@ -641,6 +641,9 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
+# FEAT-412: dev_flow ships its own prompt set (sdd-ideation); the loader
+# reads it via importlib.resources, so it MUST be in the wheel.
+"parrot.flows.dev_flow" = ["_subagent_data/*.md"]
 # Interactive HTML artifact catalog (library specs + scaffold templates),
 # loaded from disk at runtime by parrot.tools.interactive.catalog_registry.
 "parrot.tools.interactive" = [
