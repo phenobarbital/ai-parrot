@@ -6,15 +6,16 @@ specific type implementations. It uses dynamic parameter passing and
 automatic DataFrame generation from XML responses with dynamic parsing.
 """
 from collections import defaultdict
-from typing import Optional, Dict, Any, List
-import pandas as pd
+from typing import Any
 from urllib.parse import urlencode
-import xmltodict
 
-from .base import WorkdayTypeBase
-from ..utils import safe_serialize
-from parrot.interfaces.http import HTTPService
+import pandas as pd
+import xmltodict
 from parrot.conf import WORKDAY_DEFAULT_TENANT, WORKDAY_REPORT_OWNER
+from parrot.interfaces.http import HTTPService
+
+from ..utils import safe_serialize
+from .base import WorkdayTypeBase
 
 
 class CustomReportType(WorkdayTypeBase):
@@ -76,7 +77,7 @@ class CustomReportType(WorkdayTypeBase):
             return value.strip().lower() in {"1", "true", "yes", "y"}
         return bool(value)
 
-    def _coerce_bool_int(self, value: Any) -> Optional[int]:
+    def _coerce_bool_int(self, value: Any) -> int | None:
         if value is None:
             return None
         if isinstance(value, bool):
@@ -91,12 +92,12 @@ class CustomReportType(WorkdayTypeBase):
                 return 0
         return value
 
-    def _list_of_dicts_to_dict(self, items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _list_of_dicts_to_dict(self, items: list[dict[str, Any]]) -> dict[str, Any] | None:
         if not isinstance(items, list) or not items or not all(isinstance(i, dict) for i in items):
             return None
 
         if all("type" in i and "_value" in i for i in items):
-            result: Dict[str, Any] = {}
+            result: dict[str, Any] = {}
             for item in items:
                 key = str(item.get("type"))
                 value = item.get("_value")
@@ -115,7 +116,7 @@ class CustomReportType(WorkdayTypeBase):
             descriptors = [i.get("Descriptor") for i in items if i.get("Descriptor") is not None]
             if descriptors:
                 result["Descriptor"] = descriptors[0] if len(descriptors) == 1 else descriptors
-            ids_by_type: Dict[str, List[Any]] = {}
+            ids_by_type: dict[str, list[Any]] = {}
             for item in items:
                 ids = item.get("ID")
                 if isinstance(ids, list):
@@ -160,7 +161,7 @@ class CustomReportType(WorkdayTypeBase):
         base_df = df.drop(columns=drop_cols) if drop_cols else df
         return pd.concat([base_df] + expanded_frames, axis=1)
 
-    def _parse_xml_to_entries(self, xml_bytes: bytes) -> List[Dict[str, Any]]:
+    def _parse_xml_to_entries(self, xml_bytes: bytes) -> list[dict[str, Any]]:
         """
         Parse XML response from Workday RaaS and extract report entries.
 
@@ -208,12 +209,43 @@ class CustomReportType(WorkdayTypeBase):
             self._logger.error(f"Error parsing XML response: {e}")
             raise
 
+    def _parse_json_to_entries(self, body: Any) -> list[dict[str, Any]]:
+        """Extract ``Report_Entry`` rows from a RaaS JSON response.
+
+        Workday's ``?format=json`` RaaS output is already a list of flat dicts
+        (no namespace prefixes, no ``type``/``_value`` wrappers), so it feeds
+        straight into ``pd.json_normalize``. Multi-instance group columns arrive
+        as a list of dicts with scalar values, collapsed later by
+        :meth:`_list_of_dicts_to_dict` when ``flatten_list_dicts`` is set.
+
+        Args:
+            body: Parsed JSON payload (dict) or a raw JSON string/bytes.
+
+        Returns:
+            List of report-entry dicts (empty when none present).
+        """
+        import json as _json
+
+        if isinstance(body, (bytes, bytearray)):
+            body = body.decode("utf-8", errors="replace")
+        if isinstance(body, str):
+            body = _json.loads(body)
+
+        if isinstance(body, list):
+            return body
+        if isinstance(body, dict):
+            entries = body.get("Report_Entry", [])
+            if entries and not isinstance(entries, list):
+                entries = [entries]
+            return entries or []
+        return []
+
     def _build_raas_url(
         self,
         report_name: str,
-        report_owner: Optional[str] = None,
-        query_params: Optional[Dict[str, Any]] = None,
-        report_path: Optional[str] = None
+        report_owner: str | None = None,
+        query_params: dict[str, Any] | None = None,
+        report_path: str | None = None
     ) -> str:
         """
         Build the RaaS (Reports as a Service) REST API URL.
@@ -260,7 +292,7 @@ class CustomReportType(WorkdayTypeBase):
     async def execute(
         self,
         report_name: str,
-        report_owner: Optional[str] = None,
+        report_owner: str | None = None,
         **query_params
     ) -> pd.DataFrame:
         """
@@ -286,6 +318,9 @@ class CustomReportType(WorkdayTypeBase):
                 - supervisory_organizations_wid: WID value for Supervisory_Organizations!WID.
                 - supervisory_organization_wid: alias for supervisory_organizations_wid.
                 - include_subordinate_organizations: bool/int for Include_Subordinate_Organizations.
+                - output_format: str, ``"xml"`` (default, legacy) or ``"json"``. JSON yields a
+                  cleaner shape for reports with nested multi-instance groups (no xmltodict
+                  cardinality split).
 
         Returns:
             DataFrame with automatic column detection from JSON response
@@ -318,12 +353,21 @@ class CustomReportType(WorkdayTypeBase):
             'flatten_list_dicts', 'drop_flattened_columns',
             'supervisory_organizations', 'supervisory_organizations_wid',
             'supervisory_organization_wid', 'include_subordinate_organizations',
-            'query_string_template'
+            'query_string_template', 'output_format'
         }
 
         offer_and_hire = self._coerce_bool(query_params.pop('offer_and_hire', False))
         flatten_list_dicts = self._coerce_bool(query_params.pop('flatten_list_dicts', False))
         drop_flattened_columns = self._coerce_bool(query_params.pop('drop_flattened_columns', False))
+        # Output format: 'xml' (default, legacy) or 'json'. JSON yields a
+        # cleaner shape for reports with nested multi-instance groups (no
+        # xmltodict cardinality split).
+        output_format = str(query_params.pop('output_format', 'xml')).strip().lower()
+        if output_format not in ('xml', 'json'):
+            self._logger.warning(
+                "Unknown output_format '%s'; falling back to 'xml'", output_format
+            )
+            output_format = 'xml'
         report_path = query_params.pop('report_path', None)
         query_string_template = query_params.pop('query_string_template', None)
 
@@ -356,6 +400,10 @@ class CustomReportType(WorkdayTypeBase):
             k: v for k, v in query_params.items()
             if k not in internal_params
         }
+
+        # RaaS switches output via the ``format`` query param (default is XML).
+        if output_format == 'json' and 'format' not in filtered_params:
+            filtered_params['format'] = 'json'
 
         if offer_and_hire:
             self._logger.debug(
@@ -413,12 +461,16 @@ class CustomReportType(WorkdayTypeBase):
             # Build base URL without query params, then append template
             base_url = self._build_raas_url(report_name, report_owner, None, report_path)
             url = f"{base_url}?{query_string}"
+            if output_format == 'json' and 'format=' not in query_string:
+                url = f"{url}&format=json"
         else:
             # Use standard URL building with filtered_params
             url = self._build_raas_url(report_name, report_owner, filtered_params, report_path)
 
         self._logger.info(f"Executing custom report: {report_name}")
         self._logger.debug(f"RaaS URL: {url}")
+
+        accept_mime = "application/json" if output_format == "json" else "application/xml"
 
         # Initialize HTTP client if needed
         if self._http_client is None:
@@ -447,7 +499,7 @@ class CustomReportType(WorkdayTypeBase):
                     "password": password
                 },
                 auth_type="basic",
-                accept="application/xml",
+                accept=accept_mime,
                 timeout=120
             )
             # Set logger for HTTP client
@@ -458,12 +510,12 @@ class CustomReportType(WorkdayTypeBase):
             result, error = await self._http_client.async_request(
                 url=url,
                 method="GET",
-                accept="application/xml"
+                accept=accept_mime
             )
 
             if error:
                 self._logger.error(f"Error fetching custom report: {error}")
-                raise Exception(f"Failed to fetch custom report: {error}")
+                raise Exception(f"Failed to fetch custom report: {error}")  # noqa: TRY002 — pre-existing, untouched by this task
 
             if not result:
                 self._logger.warning("Empty response from custom report")
@@ -473,15 +525,16 @@ class CustomReportType(WorkdayTypeBase):
             self._logger.error(f"Error executing custom report via REST: {exc}")
             raise
 
-        # Parse the XML response
-        # Convert to bytes for xmltodict
-        xml_bytes = result if isinstance(result, (bytes, bytearray)) else str(result).encode()
-
-        # Parse XML to list of dicts
-        raw_response = self._parse_xml_to_entries(xml_bytes)
+        # Parse the response into a list of report-entry dicts.
+        if output_format == "json":
+            raw_response = self._parse_json_to_entries(result)
+        else:
+            # Convert to bytes for xmltodict
+            xml_bytes = result if isinstance(result, (bytes, bytearray)) else str(result).encode()
+            raw_response = self._parse_xml_to_entries(xml_bytes)
 
         if not raw_response:
-            self._logger.warning("No report entries found in XML response")
+            self._logger.warning("No report entries found in %s response", output_format.upper())
             return pd.DataFrame()
 
         # Convert parsed XML (now as list of dicts) to DataFrame
