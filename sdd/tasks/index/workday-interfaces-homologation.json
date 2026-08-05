@@ -144,7 +144,7 @@
       "feature_id": "FEAT-415",
       "feature": "workday-interfaces-homologation",
       "spec": "sdd/specs/workday-interfaces-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [],
@@ -152,8 +152,8 @@
       "parallelism_notes": "No hard dependency, but MUST run late: it regenerates the normalised diff so gaps already closed by TASK-2136..2142 drop out of its worklist. Touches many files across parsers/models/handlers, so it would conflict with almost any concurrent task.",
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2143-workday-residual-hunks.md"
+      "completed_at": "2026-08-05T19:40:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2143-workday-residual-hunks.md"
     },
     {
       "id": "TASK-2144",
