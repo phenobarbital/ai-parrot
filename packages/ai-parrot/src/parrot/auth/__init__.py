@@ -36,6 +36,9 @@ from .resolver import (
     PBACPermissionResolver,
 )
 from .pbac import setup_pbac
+# UserInfoService + EmployeeProfile (FEAT-406) — curated structured user
+# attributes, feeding both PBAC EvalContext enrichment and UserinfoTool.
+from .userinfo import EmployeeProfile, UserInfoService
 from .dataset_guard import DatasetPolicyGuard
 from .dataplane_guard import DataPlanePolicyGuard
 from .rls_registry import RlsRegistry, RlsRule, RlsPredicate
@@ -88,6 +91,9 @@ __all__ = [
     "PBACPermissionResolver",
     # PBAC setup
     "setup_pbac",
+    # UserInfoService + EmployeeProfile (FEAT-406)
+    "EmployeeProfile",
+    "UserInfoService",
     # Dataset policy guard
     "DatasetPolicyGuard",
     # Data-plane policy guard (FEAT-228)
