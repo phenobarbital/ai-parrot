@@ -170,8 +170,37 @@ class TestFormatRouting:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
+**Notes**: Ported `_parse_json_to_entries(self, body: Any) -> List[Dict[str, Any]]`
+onto `CustomReportType` verbatim (placed right after `_parse_xml_to_entries`),
+handling dict/str/bytes/list bodies and both the `{"Report_Entry": [...]}`
+and bare-list RaaS JSON shapes, mirroring the XML sibling's
+"single item not wrapped in a list" and "empty → []" behaviour. Wired an
+`output_format` kwarg (`'xml'` default, `'json'` opt-in, unknown values
+warn-and-fall-back-to-xml) into `execute()`: added to `internal_params`,
+appends `format=json` to `filtered_params` (both the standard URL-building
+path and the `query_string_template` path, dedup-checked against an
+explicit `format`), computes `accept_mime` from it, threads that mime type
+into both the `HTTPService(...)` constructor and the `async_request(...)`
+call (replacing the two hardcoded `"application/xml"` occurrences), and
+routes the fetched body to `_parse_json_to_entries` or `_parse_xml_to_entries`
+by `output_format` before the shared `pd.json_normalize` /
+`_expand_list_dict_columns` / dedup-columns / array-serialisation pipeline
+that already existed. `_build_raas_url` itself was NOT touched — the
+`format=json` injection happens in `execute()`, same as flowtask.
 
-**Deviations from spec**: none | describe if any
+19 new tests (`test_custom_report_json.py`) covering `_parse_json_to_entries`
+directly (dict/string/bytes/bare-list bodies, single-entry-not-a-list
+wrapping, empty-body variants, and a same-shape-as-XML-parser equality
+check), `_expand_list_dict_columns` interop, and `execute()` routing
+end-to-end via a fake `_http_client` (JSON path, XML regression path,
+no-duplicate `format=json` when explicit, unknown-format fallback, empty
+JSON response → empty DataFrame). Full `tests/workday/` suite (136 tests)
+passes; `ruff check` clean on both files (fixed pre-existing mechanical
+style debt already present in the whole file — old-style `Dict`/`List`/
+`Optional` → builtin generics/`| None`, import ordering, all auto-fixable,
+zero behaviour change — plus one justified `# noqa: TRY002` on a
+pre-existing, untouched bare `raise Exception(...)` in the HTTP-error branch).
+
+**Deviations from spec**: none.

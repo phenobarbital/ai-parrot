@@ -108,7 +108,7 @@
       "feature_id": "FEAT-415",
       "feature": "workday-interfaces-homologation",
       "spec": "sdd/specs/workday-interfaces-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -116,8 +116,8 @@
       "parallelism_notes": "Technically file-disjoint (custom_report.py only). Kept sequential per the spec's per-spec isolation decision.",
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2141-workday-custom-report-json.md"
+      "completed_at": "2026-08-05T19:23:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2141-workday-custom-report-json.md"
     },
     {
       "id": "TASK-2142",
