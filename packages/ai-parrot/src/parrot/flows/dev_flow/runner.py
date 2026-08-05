@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from parrot.bots.flows.core.context import FlowContext
 
@@ -46,7 +46,13 @@ class DevFlowRunner(DevLoopRunner):
         )
     """
 
-    async def run(
+    # Deliberate Liskov narrowing: the base accepts ``WorkBrief |
+    # FeatureBrief``, but the dev-flow graph cannot serve a bug-mode
+    # ``WorkBrief`` (there is no bug_intake/research node in it). Narrowing the
+    # annotation documents the real contract, and ``_summary_for`` raises
+    # TypeError for anything else BEFORE a host is registered or a slot
+    # acquired — so the substitution fails loudly rather than half-running.
+    async def run(  # type: ignore[override]
         self,
         brief: DevRequestBrief | FeatureBrief,
         *,
@@ -204,7 +210,9 @@ class DevFlowRunner(DevLoopRunner):
         )
 
     @staticmethod
-    def _work_kind_for(brief: DevRequestBrief | FeatureBrief) -> str:
+    def _work_kind_for(
+        brief: DevRequestBrief | FeatureBrief,
+    ) -> Literal["bug", "enhancement", "new_feature"]:
         """Map the brief onto ``RunCreated.work_kind``.
 
         ``work_kind`` is a closed ``Literal["bug", "enhancement",
