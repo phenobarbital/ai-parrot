@@ -415,10 +415,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet, autonomous)
+**Date**: 2026-08-05
+**Notes**: Implemented exactly as specified. Added `_TERMINAL_NODE_IDS` and
+`_FAILED_TERMINAL_STATUSES` module-level constants next to
+`_SWEEP_INTERVAL_SECONDS`, and inserted the terminal-status scan in
+`_close_host` immediately after the existing `pr_url` extraction block
+(left byte-for-byte unchanged, verified via `git diff`). The scan iterates
+`_TERMINAL_NODE_IDS` against `result.responses` directly (not
+`handoff_resp`), guards each lookup with `isinstance(resp, dict)`, emits
+the required WARNING log naming the node id and status, and forces
+`outcome = "failed"` on match. Added 6 regression tests to
+`test_run_bundle_export.py` (5 parametrized terminal-status cases —
+blocked deployment/feature/revision handoff, escalated failure_handler,
+comment_failed control — plus 1 non-terminal-node allowlist-isolation
+test) using the existing `_FakeFlow` harness. All 10 tests in the file
+pass (4 pre-existing + 6 new), asserting `bundle.developed.pr_url`
+(never `bundle.pr_url`) per the contract.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Ran the full `pytest packages/ai-parrot/tests/flows/dev_loop/ -q -m "not
+live"` suite in the worktree and cross-checked against an unmodified
+`dev` checkout: both report the identical pre-existing 22 failed / 13
+errors (missing/misconfigured server-wiring fixtures unrelated to this
+change — `test_adversarial_server_wiring.py`, `test_code_review.py`,
+`test_server_repo_wiring.py`, `test_qa_codereview.py`,
+`test_examples_form.py`); the only delta is the 6 new passing tests
+added here. No regression introduced.
 
-**Deviations from spec**: none | describe if any
+The worktree's `.venv` was missing several optional runtime deps needed
+just to import `parrot.flows.dev_loop` for collection (`aioquic`,
+`rustworkx`, `networkx`, `google-genai`, `hypothesis`) — pre-existing
+environment gaps unrelated to this task's diff; installed them via `uv
+pip install` in the shared `.venv` to unblock test collection. No
+project files were changed to work around this.
+
+`ruff check` on both changed files shows only pre-existing findings
+(64 in `runner.py`, 5 in the test file) — none fall within the lines
+this task added (verified by line-range cross-reference); the new code
+is ruff-clean.
+
+**Deviations from spec**: none.
