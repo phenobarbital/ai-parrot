@@ -585,3 +585,87 @@ def test_reuses_ops_helpers_without_modifying_them(server_dev):
     assert ops.handle_index not in handlers
     assert ops.handle_config not in handlers
     assert ops.handle_run not in handlers
+
+
+# ---------------------------------------------------------------------------
+# static/dev.html — TASK-2130 guarantees (asserted here because the repo has
+# no JS test harness and the spec forbids adding one)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def dev_html() -> str:
+    return (_REPO_ROOT / "examples" / "dev_loop" / "static" / "dev.html").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_dev_html_exists_and_is_served(dev_html, server_dev):
+    assert dev_html.startswith("<!doctype html>")
+    assert (server_dev.STATIC_DIR / "dev.html").is_file()
+
+
+@pytest.mark.parametrize(
+    "forbidden",
+    [
+        "affected_component",      # bug intake
+        "log_group",               # CloudWatch
+        "time_window",
+        "CloudWatch",
+        "bug_intake",              # ops node
+        "acceptance_criteria",     # bug-mode criteria
+        "existing_issue_key",
+        "afd-theme",               # must not share the ops console's theme key
+    ],
+)
+def test_dev_html_has_no_ops_surface(dev_html, forbidden):
+    assert forbidden not in dev_html
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        "open_questions",              # the HITL gate kind
+        "hitl-submit",                 # the answer-submit control
+        "hitl-reject",                 # the abort control
+        "require_plan_approval",        # the per-run plan-gate toggle
+        "gate_resolve_url_template",   # route taken from /api/config
+        "devflow-theme",               # its own theme key
+        "dev_intake",                  # dev-flow topology
+        "ideation",
+        "feature_handoff",
+    ],
+)
+def test_dev_html_has_dev_flow_surface(dev_html, required):
+    assert required in dev_html
+
+
+def test_dev_html_topology_is_dev_only(dev_html):
+    """One topology: no bug/feature TOPOLOGY split, no ops nodes."""
+    assert "TOPOLOGY = {" in dev_html
+    assert "TOPOLOGY.dev" in dev_html
+    assert "TOPOLOGY.bug" not in dev_html
+    assert "revision_handoff" not in dev_html
+
+
+def test_dev_html_renders_gates_from_state(dev_html):
+    """The panel must survive a reload mid-gate → it reads app.s.gates."""
+    assert "function pendingGate()" in dev_html
+    assert "app.s.gates" in dev_html
+    assert "function renderHitl()" in dev_html
+
+
+def test_dev_html_does_not_mutate_state_after_resolve(dev_html):
+    """gate/resolved on the state socket is the single source of truth."""
+    assert "Deliberately no local mutation" in dev_html
+
+
+def test_index_html_untouched(dev_html):
+    """dev.html is a copy-and-trim; index.html must remain the ops console."""
+    index = (
+        _REPO_ROOT / "examples" / "dev_loop" / "static" / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "bug_intake" in index          # still the ops console
+    assert "CloudWatch" in index
+    assert "afd-theme" in index
+    assert index != dev_html
