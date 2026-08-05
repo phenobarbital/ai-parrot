@@ -258,3 +258,17 @@ browser-in-the-loop passes are left for the reviewer; the scenarios are
 reproduced verbatim in `README`/`GUIA` by TASK-2131.
 
 **Deviations from spec**: none.
+
+### Post-completion fix (same feature branch)
+
+Self-review after marking this task done caught one requirement from the
+Implementation Notes I had missed: *"Summary must render
+`document_kind`/document path when available (ideation output surfaces via node
+summary)"*. Fixed in a follow-up commit — `IdeationNode` returns the
+`FeatureBrief` it produced and `node/completed` carries the serialised result
+as its `summary` (`session_state.py:1269-1272`), so `app.s.nodes.ideation.summary`
+already had `document_path`/`document_kind` client-side. The run summary now
+shows an "SDD document written by ideation" card above the documentation
+artifact, with the kind and how many Open-Questions rounds the run took.
+The "no `pr_url` ⇒ failure" precedent was already preserved by the copy
+(`summaryHeadline()`), now reading the correct `feature_handoff` node.
