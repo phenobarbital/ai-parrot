@@ -184,8 +184,43 @@ class TestEnrichmentIntegration:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
+**Notes**: Ported all five enrichment methods onto `CostCenterType`
+(`_enrich_with_organizations`, `_fetch_org_enrichment`,
+`_resolve_container_orgs`, `_build_hierarchy_chain`,
+`_fetch_container_org_info`) plus `merge_org_enrichment` in
+`cost_center_parsers.py`, adapted only for the import-prefix change
+(`flowtask.` → `parrot_tools.`) — logic is otherwise verbatim from flowtask.
+`execute()` now pops an `include_hierarchy_chain` kwarg and always runs
+enrichment on the processed rows before building the DataFrame (batch path
+via `_fetch_org_enrichment(include_inactive=True)`, single-ID path via a
+direct `OrganizationType.execute(organization_id=..., ...)` call).
+Enrichment failures are caught and logged as a WARNING, returning the base
+rows unchanged (graceful degradation, never raises). `_build_hierarchy_chain`
+walks `superior_id` up to a root, is capped at 10 levels with a cycle guard
+(`seen` set), and memoizes into the shared `cache` dict across the whole
+enrichment run. `asyncio`/`math` imports retained (still in use elsewhere
+in the file); `datetime`/`Optional`(-where-flowtask-doesn't-need-it) were
+NOT re-introduced (flowtask's `datetime` import was dead code there too —
+confirmed by grep). `safe_serialize` was NOT imported (also dead in
+flowtask's original — only `extract_by_type`/`first` are actually used).
 
-**Deviations from spec**: none | describe if any
+21 new tests (`test_cost_center_enrichment.py`) covering hierarchy-chain
+building, missing-parent, cycle termination, cache memoization, max-depth
+cap, container resolution (success + graceful failure), the full
+`_enrich_with_organizations` orchestration (merge, no-match, and
+failure-degrades-gracefully paths), and an `execute()` integration test
+proving the DataFrame carries the hierarchy chain column. Full
+`tests/workday/` suite (106 tests) passes; `ruff check` clean on all three
+changed/created files (fixed pre-existing mechanical style debt already
+present in both files being modified — old-style `typing.Dict`/`List`/`Set`
+→ builtin generics, import ordering, `__all__` sorting, one
+`.error(exc_info=True)` → `.exception()` — all auto-fixable, zero behaviour
+change; added two justified `# noqa: BLE001` on the intentional
+never-raise graceful-degradation catches, matching the TASK-2137 precedent).
+
+**Deviations from spec**: none — `models/cost_center.py` was left untouched
+as scoped (TASK-2143); enrichment operates on the post-`.dict()` plain-dict
+rows, and `CostCenter.Config.extra = "allow"` already accepts the new
+`org_*` keys without any model change being "strictly required."
