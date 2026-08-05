@@ -75,6 +75,9 @@ wikipedia = ["wikipedia>=1.4", "mediawikiapi>=1.2"]
 weather = ["pyowm>=3.3"]
 messaging = ["gmqtt>=0.6", "aioimaplib>=1.1"]
 security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
+# zeep pin aligned with packages/ai-parrot/pyproject.toml's existing "zeep[async]==4.3.3".
+# All three already arrive transitively via ai-parrot; this makes them explicit.
+workday = ["zeep[async]>=4.3.3", "pandas>=2.0", "aiohttp>=3.9"]
 all = [
     "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss]"
 ]

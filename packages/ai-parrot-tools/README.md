@@ -48,6 +48,7 @@ pip install ai-parrot-tools[all]
 | `wikipedia` | Wikipedia lookups |
 | `weather` | OpenWeatherMap |
 | `messaging` | MQTT and IMAP messaging |
+| `workday` | Workday SOAP/REST interfaces (`zeep`, `pandas`, `aiohttp`) — see `parrot_tools.interfaces.workday` |
 
 ## Quick Start
 
