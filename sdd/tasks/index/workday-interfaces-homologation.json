@@ -126,7 +126,7 @@
       "feature_id": "FEAT-415",
       "feature": "workday-interfaces-homologation",
       "spec": "sdd/specs/workday-interfaces-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -134,8 +134,8 @@
       "parallelism_notes": "Small and file-disjoint (time_block.py + organizations.py), but both changes alter existing behaviour, so they are isolated into their own task with regression tests that must fail before the fix.",
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2142-workday-latent-bug-fixes.md"
+      "completed_at": "2026-08-05T19:27:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2142-workday-latent-bug-fixes.md"
     },
     {
       "id": "TASK-2143",

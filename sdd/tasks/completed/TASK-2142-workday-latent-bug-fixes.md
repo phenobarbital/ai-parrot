@@ -205,8 +205,38 @@ class TestOrganizationTypeForm:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
+**Notes**: Bug 1 — added explicit `= None` to all 13 bare `Optional[...]`
+fields on `TimeBlock` (`time_block_id`, `time_block_wid`, `worker_id`,
+`worker_name`, `calculated_date`, `calculated_in_time`,
+`calculated_out_time`, `calculated_quantity`, `status`, `is_deleted`,
+`calculation_tags`, `last_updated`, `worktags`); `shift_date` (already
+correct) and `raw_data` (still mandatory via `Field(..., exclude=True)`)
+untouched. Ported flowtask's explanatory comment about Pydantic v2
+`Optional[X]`-without-default semantics. Bug 2 — `get_cost_centers()` now
+calls `execute(organization_type="Cost_Center")` (underscore form);
+`execute()` and `get_organizations_by_type()` docstrings updated to
+document the underscore `Organization_Type_ID` form with the full value
+list (Company, Cost_Center, Custom, Matrix, Pay_Group, Region, Retiree,
+Supervisory). No imports re-added to `organizations.py` (verified: no
+`asyncio`/`math`/`datetime` present).
 
-**Deviations from spec**: none | describe if any
+Wrote both regression tests FIRST and confirmed they fail against the
+pre-fix code (verified via `git stash` on just the two source files,
+re-running the test file, then popping the stash): `test_partial_response_parses`
+raised `ValidationError` pre-fix, and `test_get_cost_centers_sends_underscore_form`
+asserted `'Cost Center' == 'Cost_Center'` pre-fix. 5 new tests total
+(`test_latent_bug_fixes.py`) — the two regressions above, a full-response
+non-regression check, a `raw_data`-still-required check, and one pinning
+`execute(organization_type=...)`'s payload shape directly. Full
+`tests/workday/` suite (141 tests) passes; `ruff check` clean on all three
+files (fixed pre-existing mechanical style debt in both modified files —
+old-style `Optional`/`List`/`Dict` → `X | None`/builtin generics, import
+ordering, all auto-fixable, zero behaviour change; one justified
+`# noqa: BLE001` on a pre-existing, untouched broad `except Exception` in
+the organization-parsing loop; used `pydantic.ValidationError` instead of
+bare `Exception` in the new required-field regression test to satisfy
+`B017`).
+
+**Deviations from spec**: none.
