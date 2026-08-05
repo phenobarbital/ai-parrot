@@ -46,6 +46,20 @@ _thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
     "_nvidia_thinking_ctx", default={}
 )
 
+# Sampling parameters that ``OpenAIClient.ask`` cannot accept.  Its signature is
+# fixed and carries no ``**kwargs``, so passing ``top_p``/``seed`` to it raises
+# TypeError.  They ride the same ContextVar channel as the thinking flags and
+# are merged into the request inside ``_chat_completion``.
+_sampling_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
+    "_nvidia_sampling_ctx", default={}
+)
+
+#: Sampling parameters this client can inject that the parent cannot forward.
+#: ``top_p`` is deliberately NOT defaulted from ``self.top_p``: ``AbstractClient``
+#: assigns it ``0.2`` when the caller says nothing (base.py:319), and silently
+#: sending that would change results for every existing Nvidia call.
+INJECTABLE_SAMPLING_PARAMS: tuple[str, ...] = ("top_p", "seed")
+
 
 class NvidiaRateLimitError(ParrotError):
     """Raised when a free-tier slot could not be acquired within ``max_wait``.
@@ -261,9 +275,18 @@ class NvidiaClient(OpenAIClient):
         free_tier: Optional[bool] = None,
         requests_per_minute: Optional[int] = None,
         rate_limit_max_wait: Optional[float] = None,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         resolved_key = api_key or config.get("NVIDIA_API_KEY")
+
+        # Capture an explicit top_p BEFORE super().__init__ runs: AbstractClient
+        # assigns self.top_p = kwargs.get('top_p', 0.2), after which an explicit
+        # 0.2 is indistinguishable from the default.  Only a caller-supplied
+        # value becomes the per-instance default, so existing behaviour (no
+        # top_p on the wire) is preserved for everyone who never passed one.
+        explicit_top_p = kwargs.get("top_p")
+
         super().__init__(
             api_key=resolved_key,
             base_url="https://integrate.api.nvidia.com/v1",
@@ -288,6 +311,32 @@ class NvidiaClient(OpenAIClient):
             if self.free_tier
             else None
         )
+
+        # Per-instance sampling defaults for the parameters the parent drops.
+        self.seed: Optional[int] = seed
+        self._default_top_p: Optional[float] = explicit_top_p
+
+    def _resolve_sampling(
+        self,
+        top_p: Optional[float],
+        seed: Optional[int],
+    ) -> Dict[str, Any]:
+        """Merge per-call sampling overrides over the per-instance defaults.
+
+        Args:
+            top_p: Per-call nucleus-sampling value, or ``None`` to fall back to
+                the value passed to the constructor.
+            seed: Per-call seed, or ``None`` to fall back to the constructor's.
+
+        Returns:
+            Only the parameters that resolved to a non-``None`` value, so
+            nothing extra is ever put on the wire.
+        """
+        resolved = {
+            "top_p": top_p if top_p is not None else self._default_top_p,
+            "seed": seed if seed is not None else self.seed,
+        }
+        return {key: value for key, value in resolved.items() if value is not None}
 
     async def _acquire_rate_limit_slot(self) -> float:
         """Reserve a free-tier slot before issuing a request.
@@ -397,6 +446,13 @@ class NvidiaClient(OpenAIClient):
                 True,
                 thinking.get("clear_thinking", False),
             )
+
+        # Inject the sampling parameters the parent's fixed signature drops.
+        # An explicit value already in kwargs always wins, so this can never
+        # override something a caller managed to set by another route.
+        for name, value in _sampling_ctx.get().items():
+            if name in INJECTABLE_SAMPLING_PARAMS and kwargs.get(name) is None:
+                kwargs[name] = value
         retry_policy = AsyncRetrying(
             retry=retry_if_exception_type(
                 (APIConnectionError, RateLimitError, APIError)
@@ -420,16 +476,24 @@ class NvidiaClient(OpenAIClient):
         *,
         enable_thinking: bool = False,
         clear_thinking: bool = False,
+        top_p: Optional[float] = None,
+        seed: Optional[int] = None,
         **kwargs,
     ) -> AIMessage:
         """Submit a prompt and return the full response.
 
-        Identical to ``OpenAIClient.ask`` with an additional ``enable_thinking``
-        shortcut that injects ``chat_template_kwargs`` into ``extra_body`` for
-        reasoning-capable models (e.g. ``z-ai/glm-5.2``).
+        Identical to ``OpenAIClient.ask`` with two additions:
 
-        The flags are forwarded to ``_chat_completion`` via an async context
-        variable, so the parent's call signature is preserved.
+        1. An ``enable_thinking`` shortcut that injects
+           ``chat_template_kwargs`` into ``extra_body`` for reasoning-capable
+           models (e.g. ``z-ai/glm-5.2``).
+        2. ``top_p`` and ``seed`` support. ``OpenAIClient.ask`` has a fixed
+           signature with no ``**kwargs``, so passing either to it raises
+           ``TypeError``; both are accepted here and merged into the request
+           inside ``_chat_completion``.
+
+        All of it travels via async context variables, so the parent's call
+        signature is preserved.
 
         Args:
             prompt: User message text.
@@ -437,6 +501,11 @@ class NvidiaClient(OpenAIClient):
                 ``extra_body["chat_template_kwargs"]["enable_thinking"] = True``.
             clear_thinking: Forwarded to ``clear_thinking`` in the payload
                 when ``enable_thinking`` is ``True``.
+            top_p: Nucleus-sampling value. Defaults to the ``top_p`` passed to
+                the constructor; when neither is given, none is sent and the
+                endpoint's own default applies.
+            seed: Sampling seed for reproducibility. Defaults to the ``seed``
+                passed to the constructor.
             **kwargs: All other keyword arguments delegated to
                 ``OpenAIClient.ask`` (e.g. ``model``, ``temperature``,
                 ``system_prompt``, ``session_id``).
@@ -445,13 +514,15 @@ class NvidiaClient(OpenAIClient):
             AIMessage with the model response.
         """
         kwargs.setdefault("model", self.model or self._default_model)
-        token = _thinking_ctx.set(
+        thinking_token = _thinking_ctx.set(
             {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )
+        sampling_token = _sampling_ctx.set(self._resolve_sampling(top_p, seed))
         try:
             return await super().ask(prompt, **kwargs)
         finally:
-            _thinking_ctx.reset(token)
+            _thinking_ctx.reset(thinking_token)
+            _sampling_ctx.reset(sampling_token)
 
     async def ask_stream(
         self,
@@ -459,6 +530,8 @@ class NvidiaClient(OpenAIClient):
         *,
         enable_thinking: bool = False,
         clear_thinking: bool = False,
+        top_p: Optional[float] = None,
+        seed: Optional[int] = None,
         **kwargs,
     ) -> AsyncIterator[str]:
         """Submit a prompt and stream response chunks.
@@ -475,12 +548,21 @@ class NvidiaClient(OpenAIClient):
         than routing through ``_chat_completion``, so the free-tier slot is
         reserved here — once per stream, before the first chunk is requested.
 
+        That same detour is why ``top_p`` and ``seed`` are **not** supported on
+        the streaming path: with ``_chat_completion`` skipped there is no seam to
+        merge them into. They are accepted in the signature purely so the
+        limitation raises immediately instead of being silently dropped — a
+        silently ignored sampling parameter is the failure mode this client
+        already suffered from ``AbstractClient.top_p``.
+
         Args:
             prompt: User message text.
             enable_thinking: When ``True``, inject reasoning flags into
                 ``extra_body``.
             clear_thinking: Forwarded to ``clear_thinking`` in the payload
                 when ``enable_thinking`` is ``True``.
+            top_p: Unsupported while streaming; raises if not ``None``.
+            seed: Unsupported while streaming; raises if not ``None``.
             **kwargs: All other keyword arguments delegated to
                 ``OpenAIClient.ask_stream`` (e.g. ``model``, ``temperature``,
                 ``system_prompt``, ``session_id``).
@@ -491,7 +573,23 @@ class NvidiaClient(OpenAIClient):
         Raises:
             NvidiaRateLimitError: If ``rate_limit_max_wait`` is set and no
                 free-tier slot became available within that budget.
+            NotImplementedError: If ``top_p`` or ``seed`` is supplied.
         """
+        unsupported = [
+            name
+            for name, value in (("top_p", top_p), ("seed", seed))
+            if value is not None
+        ]
+        if unsupported:
+            raise NotImplementedError(
+                f"{', '.join(unsupported)} cannot be applied while streaming: "
+                "OpenAIClient.ask_stream calls the SDK directly and bypasses "
+                "NvidiaClient._chat_completion, where these are injected. Use "
+                "ask() for a non-streamed call, or call "
+                "client.client.chat.completions.create(..., stream=True) "
+                "directly — note that bypasses the free-tier rate limiter."
+            )
+
         kwargs.setdefault("model", self.model or self._default_model)
         await self._acquire_rate_limit_slot()
         token = _thinking_ctx.set(

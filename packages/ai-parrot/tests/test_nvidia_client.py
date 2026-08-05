@@ -227,6 +227,132 @@ class TestNvidiaThinkingHelper:
 
 
 # ---------------------------------------------------------------------------
+# TestNvidiaSamplingParams
+# ---------------------------------------------------------------------------
+
+
+class TestNvidiaSamplingParams:
+    """Tests for top_p / seed, which OpenAIClient.ask cannot forward.
+
+    ``OpenAIClient.ask`` has a fixed signature with no ``**kwargs``, so these
+    ride a ContextVar down to ``_chat_completion``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_top_p_and_seed_reach_the_request(self, client):
+        """Per-call top_p / seed are merged into the SDK call."""
+        captured: dict = {}
+
+        async with mocked_sdk(client, captured):
+            await client.ask("hello", top_p=0.95, seed=42)
+
+        assert captured["top_p"] == 0.95
+        assert captured["seed"] == 42
+
+    @pytest.mark.asyncio
+    async def test_nothing_sent_when_not_requested(self, client):
+        """Neither key is put on the wire when the caller says nothing.
+
+        Guards the regression risk in defaulting from ``self.top_p``, which
+        AbstractClient sets to 0.2 whether or not the caller asked for it.
+        """
+        captured: dict = {}
+
+        async with mocked_sdk(client, captured):
+            await client.ask("hello")
+
+        assert "top_p" not in captured
+        assert "seed" not in captured
+
+    def test_abstract_client_top_p_default_is_not_adopted(self, client):
+        """self.top_p exists but must not become the injected default."""
+        # AbstractClient assigns 0.2 when the caller passes nothing...
+        assert client.top_p == 0.2
+        # ...but the client must not treat that as an explicit request.
+        assert client._default_top_p is None
+
+    @pytest.mark.asyncio
+    async def test_constructor_values_used_as_defaults(self):
+        """top_p / seed given to the constructor apply to every call."""
+        c = NvidiaClient(api_key="k", top_p=0.9, seed=7)
+        assert c._default_top_p == 0.9
+        assert c.seed == 7
+
+        captured: dict = {}
+        async with mocked_sdk(c, captured):
+            await c.ask("hello")
+
+        assert captured["top_p"] == 0.9
+        assert captured["seed"] == 7
+
+    @pytest.mark.asyncio
+    async def test_per_call_overrides_constructor(self):
+        """A per-call value wins over the per-instance default."""
+        c = NvidiaClient(api_key="k", top_p=0.9, seed=7)
+
+        captured: dict = {}
+        async with mocked_sdk(c, captured):
+            await c.ask("hello", top_p=0.1, seed=99)
+
+        assert captured["top_p"] == 0.1
+        assert captured["seed"] == 99
+
+    @pytest.mark.asyncio
+    async def test_sampling_coexists_with_thinking(self, client):
+        """Sampling injection does not disturb the enable_thinking payload."""
+        captured: dict = {}
+
+        async with mocked_sdk(client, captured):
+            await client.ask("hello", enable_thinking=True, top_p=0.5, seed=1)
+
+        assert captured["top_p"] == 0.5
+        assert captured["seed"] == 1
+        ctk = captured["extra_body"]["chat_template_kwargs"]
+        assert ctk["enable_thinking"] is True
+
+    @pytest.mark.asyncio
+    async def test_context_is_reset_between_calls(self):
+        """A call with sampling params must not leak into the next call."""
+        c = NvidiaClient(api_key="k")
+
+        first: dict = {}
+        async with mocked_sdk(c, first):
+            await c.ask("one", top_p=0.3, seed=5)
+        assert first["top_p"] == 0.3
+
+        second: dict = {}
+        async with mocked_sdk(c, second):
+            await c.ask("two")
+        assert "top_p" not in second, "sampling params leaked across calls"
+        assert "seed" not in second
+
+    @pytest.mark.asyncio
+    async def test_stream_rejects_sampling_params(self, client):
+        """Streaming raises rather than silently dropping top_p / seed."""
+        with pytest.raises(NotImplementedError, match="top_p"):
+            async for _ in client.ask_stream("hello", top_p=0.95):
+                pass
+
+        with pytest.raises(NotImplementedError, match="seed"):
+            async for _ in client.ask_stream("hello", seed=42):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_still_works_without_sampling_params(self, client):
+        """The guard does not disturb ordinary streaming."""
+
+        async def fake_parent_stream(self, prompt, **kwargs):
+            yield "a"
+
+        with patch(
+            "parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_parent_stream
+        ):
+            chunks = [chunk async for chunk in client.ask_stream("hello")]
+
+        assert chunks == ["a"]
+
+
+# ---------------------------------------------------------------------------
 # TestSlidingWindowRateLimiter
 # ---------------------------------------------------------------------------
 

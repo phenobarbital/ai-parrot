@@ -45,10 +45,13 @@ Notes:
       reference snippet). Set it too low and the cap is consumed entirely by
       reasoning, so the provider bills the tokens and returns ``content=None``
       — the example detects and explains that case rather than printing nothing.
-    - Nvidia's reference snippet also sets ``top_p`` and ``seed``, but
-      ``OpenAIClient.ask()`` has a fixed signature with no ``**kwargs``, so
-      passing them raises ``TypeError``. Only ``max_tokens`` and ``temperature``
-      are forwardable through ``ask()``.
+    - ``top_p`` and ``seed`` are accepted by ``NvidiaClient.ask()`` even though
+      ``OpenAIClient.ask()`` cannot forward them (fixed signature, no
+      ``**kwargs``); the Nvidia client threads them down to the request itself.
+      They are *not* supported while streaming, where ``ask_stream`` bypasses
+      that seam — it raises ``NotImplementedError`` rather than dropping them.
+    - ``--seed`` makes runs reproducible: the same seed on the same prompt
+      returns byte-identical output, verified against the live endpoint.
 """
 from __future__ import annotations
 
@@ -298,16 +301,15 @@ async def generate_code(
     free_tier: bool,
     max_tokens: int,
     temperature: float,
+    top_p: float,
+    seed: int | None,
 ) -> tuple[AIMessage, float]:
     """Run the code-generation task against a NIM-hosted model.
 
-    Note:
-        Nvidia's reference snippet for these models also sets ``top_p`` and
-        ``seed``, but ``OpenAIClient.ask()`` has a fixed signature with no
-        ``**kwargs``, so those two raise ``TypeError`` here and are omitted.
-        To use them, call ``client.client.chat.completions.create(...)``
-        directly — the rate limiter only covers ``ask``/``ask_stream``, so a
-        direct SDK call bypasses the free-tier throttle.
+    Passes the full set of parameters from Nvidia's reference snippet.
+    ``top_p`` and ``seed`` work here because ``NvidiaClient.ask`` accepts them
+    and injects them itself — the inherited ``OpenAIClient.ask`` signature
+    cannot carry them. They are unavailable on the streaming path.
 
     Args:
         model: NIM model slug to generate with.
@@ -319,6 +321,8 @@ async def generate_code(
         max_tokens: Upper bound on generated tokens. Reasoning models need
             headroom — too low a cap truncates before any code is emitted.
         temperature: Sampling temperature.
+        top_p: Nucleus-sampling value.
+        seed: Sampling seed for reproducibility, or ``None`` to leave it unset.
 
     Returns:
         A tuple of the resulting message and the wall-clock seconds elapsed.
@@ -332,6 +336,8 @@ async def generate_code(
             enable_thinking=enable_thinking,
             max_tokens=max_tokens,
             temperature=temperature,
+            top_p=top_p,
+            seed=seed,
         )
         elapsed = time.perf_counter() - started
 
@@ -444,6 +450,21 @@ def parse_args() -> argparse.Namespace:
             "though code generation usually favours determinism"
         ),
     )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=0.95,
+        help="nucleus sampling; default 0.95 follows Nvidia's reference snippet",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help=(
+            "sampling seed for reproducible output (default: 42, as in Nvidia's "
+            "snippet). Pass -1 to leave the seed unset."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -461,12 +482,16 @@ async def main() -> int:
         return 2
 
     model = resolve_model(args.model)
+    # -1 is the sentinel for "send no seed at all".
+    seed = None if args.seed == -1 else args.seed
     enable_thinking = not args.no_thinking
     print(f"model          : {model}")
     print(f"thinking       : {enable_thinking}")
     print(f"free_tier      : {not args.paid_tier}")
     print(f"max_tokens     : {args.max_tokens}")
     print(f"temperature    : {args.temperature}")
+    print(f"top_p          : {args.top_p}")
+    print(f"seed           : {seed if seed is not None else 'unset'}")
     print("\nasking...")
 
     message, _ = await generate_code(
@@ -475,6 +500,8 @@ async def main() -> int:
         free_tier=not args.paid_tier,
         max_tokens=args.max_tokens,
         temperature=args.temperature,
+        top_p=args.top_p,
+        seed=seed,
     )
     return report_code(message)
 
