@@ -2,11 +2,12 @@
 Cost Center parsers for Workday Get_Cost_Centers operation.
 """
 
-from typing import Dict, List, Any, Union
+from typing import Any
+
 from ..utils import ensure_list, extract_by_type
 
 
-def safe_get_nested(data: Dict, *keys, default=None) -> Any:
+def safe_get_nested(data: dict, *keys, default=None) -> Any:
     """
     Safely get nested dictionary values.
     
@@ -27,7 +28,7 @@ def safe_get_nested(data: Dict, *keys, default=None) -> Any:
     return current
 
 
-def parse_integration_id_data(integration_data: Union[List, Dict, None]) -> Dict[str, Any]:
+def parse_integration_id_data(integration_data: list | dict | None) -> dict[str, Any]:
     """
     Parse Integration ID Data from Cost Center response.
     
@@ -73,7 +74,7 @@ def parse_integration_id_data(integration_data: Union[List, Dict, None]) -> Dict
     return result
 
 
-def parse_organization_data(org_data: Dict) -> Dict[str, Any]:
+def parse_organization_data(org_data: dict) -> dict[str, Any]:
     """
     Parse Organization Data section from Cost Center response.
     
@@ -114,7 +115,7 @@ def parse_organization_data(org_data: Dict) -> Dict[str, Any]:
     }
 
 
-def parse_organization_type_data(type_data: Dict) -> Dict[str, Any]:
+def parse_organization_type_data(type_data: dict) -> dict[str, Any]:
     """
     Parse Organization Type and Subtype data.
     
@@ -141,7 +142,7 @@ def parse_organization_type_data(type_data: Dict) -> Dict[str, Any]:
     }
 
 
-def parse_organization_container_data(container_data: Dict) -> Dict[str, Any]:
+def parse_organization_container_data(container_data: dict) -> dict[str, Any]:
     """
     Parse Organization Container data.
     
@@ -183,7 +184,7 @@ def parse_organization_container_data(container_data: Dict) -> Dict[str, Any]:
     }
 
 
-def parse_worktags_data(worktags_data: Union[List, Dict, None]) -> List[str]:
+def parse_worktags_data(worktags_data: list | dict | None) -> list[str]:
     """
     Parse Worktags data.
     
@@ -214,7 +215,7 @@ def parse_worktags_data(worktags_data: Union[List, Dict, None]) -> List[str]:
     return worktags
 
 
-def parse_cost_center_reference(cc_ref: Dict) -> Dict[str, str]:
+def parse_cost_center_reference(cc_ref: dict) -> dict[str, str]:
     """
     Parse Cost Center Reference to extract WID and ID.
     
@@ -237,7 +238,7 @@ def parse_cost_center_reference(cc_ref: Dict) -> Dict[str, str]:
     return result
 
 
-def parse_cost_center_data(cost_center: Dict) -> Dict[str, Any]:
+def parse_cost_center_data(cost_center: dict) -> dict[str, Any]:
     """
     Parse complete Cost Center data from Workday response.
     
@@ -295,14 +296,60 @@ def parse_cost_center_data(cost_center: Dict) -> Dict[str, Any]:
     return parsed_data
 
 
+def merge_org_enrichment(cc_row: dict, org_row: dict | None) -> dict[str, Any]:
+    """
+    Map a matched `Organization` row onto the `org_*` CostCenter columns.
+
+    Only the fields directly derivable from the matched Organization row are
+    populated here (`parent_organization_id`, `roles`, `external_ids`,
+    `last_updated_datetime`). `org_parent_organization_name`,
+    `org_parent_organization_type` and `org_hierarchy_chain` are filled in by
+    the enrichment orchestration (`CostCenterType._enrich_with_organizations`)
+    from the resolved container-org cache / hierarchy walk — this helper
+    always sets them to `None`.
+
+    Args:
+        cc_row: The cost center row dict being enriched (currently unused;
+            reserved for future context-aware merging / logging).
+        org_row: The matched `Organization` model dict (as returned by
+            `Organization.dict()`), or `None` when no organization matched
+            this cost center (e.g. inactive cost centers with no
+            `Included_In` reference).
+
+    Returns:
+        Dictionary with exactly the seven `org_*` keys.
+    """
+    if not org_row:
+        return {
+            "org_parent_organization_id": None,
+            "org_parent_organization_name": None,
+            "org_parent_organization_type": None,
+            "org_roles": None,
+            "org_external_ids": None,
+            "org_last_updated": None,
+            "org_hierarchy_chain": None,
+        }
+
+    return {
+        "org_parent_organization_id": org_row.get("parent_organization_id"),
+        "org_parent_organization_name": None,
+        "org_parent_organization_type": None,
+        "org_roles": org_row.get("roles"),
+        "org_external_ids": org_row.get("external_ids"),
+        "org_last_updated": org_row.get("last_updated_datetime"),
+        "org_hierarchy_chain": None,
+    }
+
+
 __all__ = [
+    "extract_by_type",
+    "merge_org_enrichment",
     "parse_cost_center_data",
     "parse_cost_center_reference",
+    "parse_integration_id_data",
+    "parse_organization_container_data",
     "parse_organization_data",
     "parse_organization_type_data",
-    "parse_organization_container_data",
     "parse_worktags_data",
-    "parse_integration_id_data",
-    "extract_by_type",
     "safe_get_nested"
 ]
