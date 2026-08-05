@@ -32,7 +32,7 @@
       "feature_id": "FEAT-415",
       "feature": "workday-interfaces-homologation",
       "spec": "sdd/specs/workday-interfaces-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Needs the env-aware workday_url from TASK-2136. Also edits service.py, a convergence point shared with TASK-2138's config surface and the FEAT-230/232 handler registrations — must not be merged concurrently.",
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2137-workday-soap-endpoint-rewrite.md"
+      "completed_at": "2026-08-05T19:05:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2137-workday-soap-endpoint-rewrite.md"
     },
     {
       "id": "TASK-2138",

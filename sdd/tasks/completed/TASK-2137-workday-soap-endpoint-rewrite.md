@@ -205,8 +205,22 @@ class TestEndpointRewrite:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
+**Notes**: Ported `bind_service()` + `_point_endpoint_at_configured_host()`
+from flowtask's `service.py` verbatim (only scheme+netloc swapped, WSDL path
+preserved). Added to the "Lifecycle overrides" section of `WorkdayService`,
+right after `close()`. Missing `_binding_options`, empty address, and
+malformed `workday_url` all return without raising; a raising rewrite is
+caught and logged via `self._logger.warning`, binding still succeeds. Added
+`from urllib.parse import urlparse, urlunparse` to the module imports. 9 new
+tests in `test_endpoint_rewrite.py`; full `tests/workday/` suite (86 tests)
+passes; `ruff check` clean on both changed files (fixed 4 pre-existing
+mechanical lint issues — import ordering + stale quoted forward-ref
+annotations, both trivially safe under the module's existing
+`from __future__ import annotations` — plus one `# noqa: BLE001` on the
+required broad `except Exception` per the task's explicit reference
+pattern). FEAT-230/232 handler registrations in `_type_handlers` (the dict
+the spec calls `_handlers`) verified untouched by `grep`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
