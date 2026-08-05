@@ -198,8 +198,45 @@ excel = ["openpyxl>=3.1", "odfpy>=1.4"]
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
+**Notes**: Added `workday = ["zeep[async]>=4.3.3", "pandas>=2.0", "aiohttp>=3.9"]`
+to `packages/ai-parrot-tools/pyproject.toml` `[project.optional-dependencies]`,
+matching the existing extras style; the `zeep[async]>=4.3.3` floor aligns
+with (rather than conflicts with) the core package's
+`zeep[async]==4.3.3` pin. Added a `workday` row to the README's extras
+table. Did NOT add `workday` to the `all` meta-extra (not requested by
+scope) and did NOT touch `packages/ai-parrot/pyproject.toml` (out of scope
+— it already pins `zeep`).
 
-**Deviations from spec**: none | describe if any
+Created `examples/workday_homologation_smoke.py`: a maintainer-run-only
+script (module docstring states this explicitly) exercising
+`WorkdayConfig(env="sandbox")` resolution, the SOAP endpoint host rewrite
+(inspects the bound service's `_binding_options["address"]`), a
+`WorkdayService.fetch("get_workers", ...)` read, and a
+`WorkdayRestClient.find_worker(...)` + `get_time_clock_events(...)` round
+trip, with an optional `Put_Time_Clock_Events` write + REST read-back
+verification gated behind a SEPARATE `--write` CLI flag plus an
+interactive `input("...type 'yes'...")` confirmation on top of the
+script's own `--confirm` opt-in gate (three layers total for the write
+path: `--confirm`, `--write`, interactive `yes`). Uses explicit
+`start()`/`close()` throughout (`WorkdayService` has no
+`__aenter__`/`__aexit__`) and always calls `WorkdayRestClient.close()` in a
+`finally` block. No credentials appear anywhere in the script — it only
+reads `WorkdayConfig(env="sandbox")`, which resolves from `parrot.conf`/env
+exactly like every other sandbox caller.
+
+Verified: `pytest --collect-only` picks up 0 tests from the file (not
+named `test_*`, not under `tests/`); running with no flags prints a clear
+refusal and exits 1; `--help` works without a live tenant; `ruff check`
+clean; `uv pip install --dry-run -e 'packages/ai-parrot-tools[workday]'`
+resolves 215 packages with no conflicts (only unrelated
+worktree-vs-main-repo path/version noise for `aioboto3`/`boto3`,
+pre-existing and unrelated to this change). Full `tests/workday/` suite
+(160 tests, unchanged from TASK-2143) still passes. Force-added the new
+example file with `git add -f` — the repo's `.gitignore` has a blanket
+`examples/**/*.py` rule (documented in `CLAUDE.md`'s "Heads-up" note for a
+different path, `sdd/templates/`, but the same mechanism applies here).
+
+**Deviations from spec**: none. This is the final task of FEAT-415 —
+all nine tasks (TASK-2136 through TASK-2144) are now complete.
