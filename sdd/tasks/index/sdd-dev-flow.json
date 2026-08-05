@@ -130,7 +130,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -141,8 +141,8 @@
       "parallelism_notes": "Wires both new nodes into the graph.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2127-dev-flow-topology.md"
+      "completed_at": "2026-08-05T00:44:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2127-dev-flow-topology.md"
     },
     {
       "id": "TASK-2128",
