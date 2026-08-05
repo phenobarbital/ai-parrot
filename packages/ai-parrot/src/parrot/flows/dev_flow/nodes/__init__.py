@@ -16,5 +16,6 @@ re-import cycle).
 from __future__ import annotations
 
 from parrot.flows.dev_flow.nodes.dev_intake import DevIntakeNode
+from parrot.flows.dev_flow.nodes.ideation import IdeationNode
 
-__all__ = ["DevIntakeNode"]
+__all__ = ["DevIntakeNode", "IdeationNode"]

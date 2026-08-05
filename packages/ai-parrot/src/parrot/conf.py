@@ -1086,6 +1086,14 @@ DEV_LOOP_GATE_TTL_REVIEW_ESCALATION: int = config.getint(
 DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint(
     "DEV_FLOW_GATE_TTL_QUESTIONS", fallback=86400  # 24h, fail-closed
 )
+# FEAT-412: maximum number of HITL Open-Questions rounds (i.e. gates) the
+# dev-flow's IdeationNode may open per run. Once exhausted, questions still
+# `[ ]` in the document are NOT re-asked and do NOT block the run — they are
+# carried into the spec's §8 by the planner. Read at execute() time (not
+# import time) so tests can monkeypatch it per-case.
+DEV_FLOW_IDEATION_MAX_ROUNDS: int = config.getint(
+    "DEV_FLOW_IDEATION_MAX_ROUNDS", fallback=2
+)
 # Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
 # "base" (e.g. "dev" or "origin/main"). Required in that case — the server
 # bootstrap raises at startup rather than silently degrading every review if
