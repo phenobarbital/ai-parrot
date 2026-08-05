@@ -14,14 +14,14 @@
       "feature_id": "FEAT-414",
       "feature": "sdd-done-merge-conflict-fix",
       "spec": "sdd/specs/sdd-done-merge-conflict-fix.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Modifies sdd-done.md Step 7 — must be done first",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-05T14:04:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2133-rewrite-sdd-done-step7.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-414",
       "feature": "sdd-done-merge-conflict-fix",
       "spec": "sdd/specs/sdd-done-merge-conflict-fix.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2133"],
+      "depends_on": [
+        "TASK-2133"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies sdd-done.md Step 9 — depends on TASK-2133 (same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-05T14:04:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2134-simplify-step9-merge-block.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-414",
       "feature": "sdd-done-merge-conflict-fix",
       "spec": "sdd/specs/sdd-done-merge-conflict-fix.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-2133"],
+      "depends_on": [
+        "TASK-2133"
+      ],
       "parallel": false,
       "parallelism_notes": "Different file than TASK-2134 but trivial — run sequentially",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-05T14:04:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2135-update-claude-md-autocommit-table.md"
     }
