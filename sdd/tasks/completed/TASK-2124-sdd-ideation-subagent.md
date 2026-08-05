@@ -155,10 +155,72 @@ def test_prompt_mandates_resume_extend_policy(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
 **Notes**:
 
-**Deviations from spec**: none
+Created the dual-mode `sdd-ideation` definition (320 lines), the dev_flow
+loader, and the byte-identical `.claude/agents/` mirror.
+
+**Prompt structure** — input table (`mode`, `title`, `description`,
+`context`, `graph_context`, `answers`, `document_path`, `round`) → 4 steps
+(slug/path resolution → existing-document policy → write → commit) →
+cardinal rules → output contract → failure handling. Both mode formats are
+spelled out as literal section skeletons so the two outputs stay uniform for
+`/sdd-spec` and `PlannerNode`:
+
+- `mode="brainstorm"` — Problem Statement, Constraints, **Options Explored
+  (A/B/C) + Recommendation**, Feature Description, Impact, Code Context,
+  Open Questions.
+- `mode="proposal"` — Origin, Scope (What Changes / What's New / Non-Goals),
+  Rationale, Impact, Code Context, Open Questions. Explicitly disclaims the
+  deep `/sdd-proposal` artifact ("no confidence maps, no hypothesis blocks,
+  no research audit") per spec §1 Non-Goals.
+
+**Three-way existing-document policy** (spec §8 + §7 Known Risks): absent →
+create; exists and matches → `Edit` in place with `resumed_existing=true`;
+exists but the Problem Statement is about something else → **touch nothing**,
+return ONE open question naming the collision, `committed=false`. Overwriting
+and `-2`-suffixed copies are called out as "absolutely forbidden" — the human
+resolves slug collisions.
+
+**Open-Questions convention verified against the real parser**, not just the
+task text. `/sdd-spec` §2b (`.claude/commands/sdd-spec.md:70-90`) documents
+`- [x] q — *Owner: name*: <answer>` and defines the answer as *"the text
+after the final `:` on the same line"*. The spec's mandated
+`- [x] q — *Resolved*: <answer>` satisfies that same rule, so the two are
+compatible; I used the spec's form and made the "answer follows the final
+`:`" rule explicit in the prompt. The prompt also requires **folding a
+resolved answer into the document body**, not just flipping the checkbox
+(mirrors §2b rule 2), and forbids deleting or rephrasing unanswered
+questions.
+
+**`open_questions` strings must match the document text exactly** — the
+prompt states this, because the flow uses them as dictionary keys when
+collecting the human's `answers`.
+
+17 tests. The content assertions are behavioral (each guards an instruction
+whose loss would break the flow) rather than cosmetic, plus loader-contract
+tests, `_strip_frontmatter` edge cases (including the malformed-frontmatter
+no-truncation path), and a byte-parity test against the `.claude/agents/`
+twin modelled on `dev_loop`'s `test_subagent_parity.py`.
+
+Full `dev_flow` suite: 31 passed. `ruff`: 0 findings on both new files.
+
+**Deviations from spec**: one, forced and additive.
+
+- **`packages/ai-parrot/pyproject.toml` modified** (not in this task's file
+  table): added
+  `"parrot.flows.dev_flow" = ["_subagent_data/*.md"]` to
+  `[tool.setuptools.package-data]`, mirroring the existing
+  `parrot.flows.dev_loop` entry. Without it the prompt is **not shipped in
+  the wheel**, and since `load_subagent_definition` reads it through
+  `importlib.resources` (deliberately, so dispatch works outside a repo
+  checkout), the loader would raise `FileNotFoundError` for every installed
+  deployment — i.e. this task's first acceptance criterion would hold only in
+  a source checkout. One line + comment; no other packaging metadata touched.
+
+Note for reviewers: `.claude/` is gitignored, so the mirror was added with
+`git add -f`, the same grandfathered-path pattern CLAUDE.md documents for
+`sdd/templates/*.md`. The other 10 files under `.claude/agents/` are tracked
+the same way.

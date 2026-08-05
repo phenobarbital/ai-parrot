@@ -68,7 +68,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Needs IdeationOutput contract from TASK-2121; independent of TASK-2122/2123 otherwise.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2124-sdd-ideation-subagent.md"
+      "completed_at": "2026-08-05T00:17:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2124-sdd-ideation-subagent.md"
     },
     {
       "id": "TASK-2125",
