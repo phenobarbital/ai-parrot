@@ -10,7 +10,7 @@
     {
       "id": "TASK-2132",
       "slug": "close-host-blocked-outcome",
-      "title": "_close_host must record outcome=\"failed\" for a blocked handoff",
+      "title": "_close_host must record outcome=\"failed\" for a failed terminal node",
       "feature_id": "FEAT-413",
       "feature": "devloop-handoff-blocked-outcome",
       "spec": "sdd/specs/devloop-handoff-blocked-outcome.spec.md",

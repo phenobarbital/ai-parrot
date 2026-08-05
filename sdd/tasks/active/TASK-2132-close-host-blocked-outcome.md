@@ -1,4 +1,4 @@
-# TASK-2132: `_close_host` must record `outcome="failed"` for a blocked handoff
+# TASK-2132: `_close_host` must record `outcome="failed"` for a failed terminal node
 
 **Feature**: FEAT-413 — devloop-handoff-blocked-outcome
 **Spec**: `sdd/specs/devloop-handoff-blocked-outcome.spec.md`
@@ -12,18 +12,32 @@
 
 ## Context
 
-`FeatureHandoffNode`/`DeploymentHandoffNode` never raise on a blocked
-handoff (failed `git push` or PR creation after retry) — by explicit,
-intentional design they return `{"status": "blocked", "error": ...}`
-instead. `AgentsFlow` only distinguishes `completed`/`failed` nodes by
-whether the node *raised*, so a blocked handoff still lands in
-`FlowResult.status == "completed"`. `DevLoopRunner._close_host` then
-maps that straight through `_outcome_from_status` to
-`outcome="succeeded"`, recording a "succeeded" run with no PR —
-contradicting the "a successful run always has a PR" invariant assumed
-across both `dev_loop` and `dev_flow` (FEAT-412). See spec §1 for the
-full trace (discovered via FEAT-412's code review; reproduces
-identically and independently on unmodified `dev`).
+Every `dev_loop` terminal node is written to **never raise** — by
+explicit, intentional design they return a status dict instead
+(`{"status": "blocked", ...}`, `{"status": "escalated", ...}`, …).
+`AgentsFlow` only distinguishes `completed`/`failed` nodes by whether the
+node *raised* (`flow.py:1701/1717`), so a terminal failure still lands in
+`FlowResult.status == "completed"`. `DevLoopRunner._close_host` maps that
+straight through `_outcome_from_status` to `outcome="succeeded"` —
+recording a "succeeded" run with no PR, contradicting the "a successful
+run always has a PR" invariant assumed across both `dev_loop` and
+`dev_flow` (FEAT-412).
+
+Two instances, same root cause, same fix point:
+
+1. **Blocked handoff** (`deployment_handoff` / `feature_handoff` /
+   `revision_handoff` → `"blocked"`): push or PR creation failed, nothing
+   was delivered. Discovered via FEAT-412's code review; reproduces
+   identically on unmodified `dev`.
+2. **Escalated run** (`failure_handler` → `"escalated"` /
+   `"escalated_without_ticket"` / `"escalation_failed"`): QA failed, the
+   handoff node was *skipped*, so `handoff_resp` is `None` — and the run
+   is recorded as a clean success. `RunPhase` documents `"failed"` as
+   *"failure_handler terminal"* (`session_state.py:168`), but that phase
+   is currently unreachable via the failure path. **This is the more
+   consequential of the two** and was added by the v0.2 spec review.
+
+See spec §1 and §6's verified status-vocabulary table for the full trace.
 
 This is the spec's only task — implements spec §3 Modules 1 and 2
 together (one file-pair change).
@@ -32,29 +46,45 @@ together (one file-pair change).
 
 ## Scope
 
-- In `DevLoopRunner._close_host`, after the existing `handoff_resp`
-  lookup, check whether `handoff_resp` is a dict with
-  `handoff_resp.get("status") == "blocked"`. If so, force
-  `outcome = "failed"` before constructing `RunClosed`, overriding
-  whatever `_outcome_from_status(result.status)` computed.
-- Add two new regression tests (blocked `deployment_handoff`, blocked
-  `feature_handoff`) using the existing `_FakeFlow` harness from
-  `test_run_bundle_export.py`, asserting `RunBundle.outcome == "failed"`
-  and `pr_url == ""`.
+- In `DevLoopRunner._close_host`, **after** (not inside) the existing
+  `handoff_resp`/`pr_url` block, scan `result.responses` over an explicit
+  terminal-node allowlist and force `outcome = "failed"` when any of them
+  reported a failure status — overriding whatever
+  `_outcome_from_status(result.status)` computed — plus a REQUIRED
+  WARNING log naming the node id and status.
+- Add the module-level constants `_TERMINAL_NODE_IDS` and
+  `_FAILED_TERMINAL_STATUSES` (exact contents in Implementation Notes).
+- Add five regression tests using the existing `_FakeFlow` harness from
+  `test_run_bundle_export.py`: blocked `deployment_handoff`, blocked
+  `feature_handoff`, escalated `failure_handler`, blocked
+  `revision_handoff` (all → `outcome == "failed"`), plus a
+  `comment_failed` control (→ `outcome == "succeeded"`).
 - Confirm the existing succeeded-path test
   (`test_close_host_writes_bundle_and_report`) still passes unmodified.
 
 **NOT in scope**:
-- Any change to `FeatureHandoffNode` / `DeploymentHandoffNode` — their
-  `execute()` contract (return a dict, never raise on blocked) is
-  untouched.
+- Any change to `FeatureHandoffNode` / `DeploymentHandoffNode` /
+  `RevisionHandoffNode` / `FailureHandlerNode` — their `execute()`
+  contracts (return a dict, never raise) are untouched. This task only
+  *reads* their status values from `_close_host`.
 - Any change to `bots/flows/core/result.py::determine_run_status` or
   `bots/flows/flow/flow.py`'s `completed`/`failed` bookkeeping — shared
   by every `AgentsFlow` consumer, out of scope for this task.
-- `revision_handoff.py`'s blocked path — not read by `_close_host`'s
-  `handoff_resp` lookup at all.
+- **Touching the `pr_url` extraction.** The override changes `outcome`
+  only. Do NOT add `pr_url = ""` on the failure path: a blocked
+  deployment-approval rejection (`deployment_handoff.py:199`) happens
+  *after* a real draft PR was created, so forcing an empty `pr_url` would
+  freeze that information loss in place. See spec Non-Goals.
+- `revision_handoff`'s `comment_failed` status — the revision WAS pushed
+  and the PR exists; only the courtesy comment failed. Stays
+  `"succeeded"` (there is a control test for this).
+- `close`'s `close_failed` status — not inspected (the PR exists, only
+  Jira bookkeeping failed).
+- Changing the caller-visible `FlowResult.status`, which stays
+  `"completed"` by design (the required WARNING log is what reconciles the
+  logs with the bundle).
 - Adding a third `Literal` value to `RunClosed.outcome` — it stays
-  `["succeeded", "failed"]`; blocked maps to the existing `"failed"`.
+  `["succeeded", "failed"]`.
 
 ---
 
@@ -62,8 +92,8 @@ together (one file-pair change).
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/flows/dev_loop/runner.py` | MODIFY | `_close_host` — force `outcome="failed"` when the handoff response is `{"status": "blocked", ...}` |
-| `packages/ai-parrot/tests/flows/dev_loop/test_run_bundle_export.py` | MODIFY | Add the two blocked-outcome regression tests |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/runner.py` | MODIFY | `_TERMINAL_NODE_IDS` + `_FAILED_TERMINAL_STATUSES` constants; `_close_host` — force `outcome="failed"` + WARNING log when a terminal node reported a failure status |
+| `packages/ai-parrot/tests/flows/dev_loop/test_run_bundle_export.py` | MODIFY | Add the five terminal-outcome regression tests |
 
 ---
 
@@ -126,11 +156,42 @@ class RunClosed(_ActionBase):
     jira_issue_key: str = ""
     pr_url: str = ""
 
-# packages/ai-parrot/src/parrot/flows/dev_loop/nodes/feature_handoff.py:186-189 (blocked-return shape, unchanged)
-#   return {"status": "blocked", "error": last_error or "unknown PR error"}
-# packages/ai-parrot/src/parrot/flows/dev_loop/nodes/deployment_handoff.py:142-143, 199 (blocked-return shape, unchanged)
-#   return {"status": "blocked", "error": f"push: {exc}"}
-#   return {"status": "blocked", "error": gate_error}
+# ── Terminal-node status vocabulary (COMPLETE, grepped 2026-08-05) ─────
+# Node files are NOT modified — these are the values to match on.
+#
+# feature_handoff.py:238      {"status": "ready_to_deploy", "pr_url", "pr_number", ...}  -> succeeded
+# feature_handoff.py:164,189  {"status": "blocked", "error": ...}                        -> FAILED
+# deployment_handoff.py:241   {"status": "ready_to_deploy", "pr_url", "pr_number"}       -> succeeded
+# deployment_handoff.py:143,175,199
+#                             {"status": "blocked", "error": ...}                        -> FAILED
+#   (:199 is the deployment-approval rejection — a real PR exists but its
+#    url is NOT in the payload; see Scope "NOT in scope" re: pr_url)
+# revision_handoff.py:96      {"status": "revised", "pr_number", "branch"}               -> succeeded
+# revision_handoff.py:74      {"status": "blocked", "error", "branch"}                   -> FAILED
+# revision_handoff.py:89-94   {"status": "comment_failed", "pr_number", "branch", ...}   -> succeeded (degraded)
+# failure_handler.py:125      {"status": "escalated", "issue_key"}                       -> FAILED
+# failure_handler.py:92       {"status": "escalated_without_ticket"}                     -> FAILED
+# failure_handler.py:111-112  {"status": "escalation_failed", "error"}                   -> FAILED
+# close.py                    {"status": "closed"|"closed_without_ticket"|"close_failed"} -> not inspected
+
+# ── Mechanics this fix relies on (all verified 2026-08-05) ─────────────
+# 1. FlowResult.responses maps node_id -> the node's RAW execute() dict, so
+#    isinstance(resp, dict) holds in production, not just under _FakeFlow:
+#      bots/flows/flow/flow.py:891  ->  responses=dict(results)
+# 2. failed[] only gets nodes that RAISED (flow.py:1701); skipped nodes are
+#    absent from responses entirely -> a non-raising terminal failure yields
+#    FlowStatus.COMPLETED (core/result.py:242-260).
+# 3. RunClosed is applied in EXACTLY ONE place repo-wide: runner.py:1354.
+# 4. Assertion chain: RunClosed.outcome -> state.phase (session_state.py:761)
+#                                       -> RunBundle.outcome (run_bundle.py:330)
+# 5. RunBundle has NO top-level pr_url — it is NESTED:
+#      run_bundle.py:144  class RunBundle:    outcome: RunPhase
+#      run_bundle.py:98   class DevelopedWork: pr_url: str = ""
+#      run_bundle.py:308  developed = DevelopedWork(pr_url=state.pr_url or "", ...)
+#    -> assert bundle.developed.pr_url == ""   # bundle.pr_url -> AttributeError
+# 6. _mark_blocked() (feature_handoff.py:331-346) only touches JIRA — it
+#    applies no SessionHost action, which is why _close_host is the only
+#    viable fix point.
 
 # packages/ai-parrot/tests/flows/dev_loop/test_run_bundle_export.py:47-64 (existing test harness, verbatim)
 class _FakeFlow:
@@ -155,17 +216,22 @@ class _FakeFlow:
 ```
 
 ### Does NOT Exist
+- ~~`bundle.pr_url`~~ — no such attribute on `RunBundle`; it is
+  `bundle.developed.pr_url` (`run_bundle.py:98`, populated at `:308`).
+  Asserting `bundle.pr_url` raises `AttributeError`.
 - ~~a `"blocked"` value in `RunClosed.outcome`'s `Literal`~~ — stays
   `["succeeded", "failed"]`.
-- ~~raising from `FeatureHandoffNode`/`DeploymentHandoffNode` on the
-  blocked path~~ — not part of this task; their `execute()` contract is
-  unchanged.
+- ~~raising from any terminal node on the failure path~~ — not part of
+  this task; their `execute()` contracts are unchanged.
 - ~~a change to `determine_run_status` / `AgentsFlow`'s
   `completed`/`failed` bookkeeping~~
   (`bots/flows/core/result.py`, `bots/flows/flow/flow.py:1701/1717`) —
   out of scope.
-- ~~`revision_handoff.py` changes~~ — out of scope; not read by
-  `_close_host`'s `handoff_resp` lookup.
+- ~~`revision_handoff.py` / `failure_handler.py` **file** changes~~ —
+  their statuses are read from `_close_host`; the node files are not
+  edited.
+- ~~a session-state "blocked" action~~ — `_mark_blocked()` is Jira-only
+  (see mechanics note 6).
 
 ---
 
@@ -173,20 +239,48 @@ class _FakeFlow:
 
 ### Pattern to Follow
 ```python
-# Inside _close_host, right after the existing pr_url extraction:
-if isinstance(handoff_resp, dict) and handoff_resp.get("status") == "blocked":
-    outcome = "failed"
+# Module level in runner.py (near the other module constants):
+_TERMINAL_NODE_IDS = (
+    "deployment_handoff", "feature_handoff", "revision_handoff", "failure_handler",
+)
+_FAILED_TERMINAL_STATUSES = frozenset({
+    "blocked",                    # all three handoff nodes: nothing delivered
+    "escalated",                  # failure_handler: QA failed, run escalated
+    "escalated_without_ticket",   # failure_handler, no Jira / skip_jira
+    "escalation_failed",          # failure_handler, Jira call raised
+})
+
+# Inside _close_host, AFTER the existing pr_url block (leave it untouched):
+for _nid in _TERMINAL_NODE_IDS:
+    _resp = result.responses.get(_nid)
+    if isinstance(_resp, dict) and _resp.get("status") in _FAILED_TERMINAL_STATUSES:
+        self.logger.warning(
+            "Run %s: terminal node %s reported status=%s — recording "
+            "outcome=failed (FlowResult.status=%s)",
+            run_id, _nid, _resp.get("status"), result.status,
+        )
+        outcome = "failed"
+        break
 ```
 Keep this as a minimal, additive insertion — do not refactor the
 surrounding method or reorder existing lines.
 
 ### Key Constraints
-- `handoff_resp` can legitimately be `None` (bug-mode runs where
-  neither handoff node ever ran, e.g. QA-blocked runs) — reuse the
-  existing `isinstance(handoff_resp, dict)` guard, do not assume a dict.
+- **Do not build the scan on `handoff_resp`.** That variable is
+  `deployment_handoff or feature_handoff`; in the `failure_handler` case
+  the handoff node was *skipped*, so it is `None` and a scan based on it
+  would miss the most important case. Iterate `result.responses` by node
+  id, as shown.
+- Every `result.responses` value can be `None` or a non-dict (a node that
+  never ran, or a skipped node absent from the mapping) — guard each with
+  `isinstance(resp, dict)`, mirroring `runner.py:1349`.
+- Keep the node-id list an explicit allowlist: a NON-terminal node
+  returning `{"status": "blocked"}` must never flip a run's outcome.
+- Do not touch the `pr_url` lines, and do not gate the override on
+  `pr_url` being empty.
+- The WARNING log is REQUIRED (spec §5), not optional — use the file's
+  existing `self.logger` convention.
 - No new Pydantic models, no new public interfaces.
-- Follow the file's existing logging conventions if you add a log line
-  for the override (optional; not required by acceptance criteria).
 
 ### References in Codebase
 - `packages/ai-parrot/tests/flows/dev_loop/test_run_bundle_export.py` — test harness pattern (`_FakeFlow`, `brief` fixture, bundle-path helper) to extend for the two new tests.
@@ -195,15 +289,28 @@ surrounding method or reorder existing lines.
 
 ## Acceptance Criteria
 
-- [ ] `_close_host` records `RunClosed(outcome="failed")` when the
-      terminal handoff response (`deployment_handoff` or
-      `feature_handoff`) is `{"status": "blocked", ...}`, even though
-      `FlowResult.status == "completed"`.
-- [ ] `pr_url` remains `""` in that case.
-- [ ] `FeatureHandoffNode`/`DeploymentHandoffNode` are NOT modified.
+- [ ] `_close_host` records `RunClosed(outcome="failed")` when any node in
+      `_TERMINAL_NODE_IDS` reported a status in
+      `_FAILED_TERMINAL_STATUSES`, even though
+      `FlowResult.status == "completed"` — covering blocked
+      `deployment_handoff`, blocked `feature_handoff`, blocked
+      `revision_handoff`, and `failure_handler`'s three escalation
+      statuses.
+- [ ] The override emits a WARNING log naming the node id and status.
+- [ ] The `pr_url` extraction block is byte-for-byte unchanged (verify
+      with `git diff` — the only changed lines are the two new constants
+      and the new scan).
+- [ ] A non-terminal node returning `{"status": "blocked"}` does NOT flip
+      the outcome (explicit node-id allowlist).
+- [ ] `revision_handoff`'s `comment_failed` still records
+      `outcome="succeeded"`.
+- [ ] No node file is modified (`feature_handoff.py`,
+      `deployment_handoff.py`, `revision_handoff.py`,
+      `failure_handler.py`).
 - [ ] `bots/flows/core/result.py` and `bots/flows/flow/flow.py` are NOT modified.
 - [ ] `test_close_host_writes_bundle_and_report` (pre-existing) still passes unmodified.
-- [ ] Two new tests (blocked `deployment_handoff`, blocked `feature_handoff`) pass, asserting `outcome == "failed"`.
+- [ ] The five new tests pass, using `bundle.developed.pr_url` (NOT
+      `bundle.pr_url`).
 - [ ] All tests pass: `pytest packages/ai-parrot/tests/flows/dev_loop/ -v`
 - [ ] No linting errors: `ruff check packages/ai-parrot/src/parrot/flows/dev_loop/runner.py`
 
@@ -213,43 +320,76 @@ surrounding method or reorder existing lines.
 
 ```python
 # packages/ai-parrot/tests/flows/dev_loop/test_run_bundle_export.py — additions
+#
+# NOTE the assertion is bundle.developed.pr_url — RunBundle has NO top-level
+# pr_url field (run_bundle.py:98/144/308). bundle.pr_url -> AttributeError.
 
+
+@pytest.mark.parametrize(
+    "case_id, node_id, response, expected_outcome",
+    [
+        # FAILED — nothing was delivered.
+        ("blocked-deployment", "deployment_handoff",
+         {"status": "blocked", "error": "push failed"}, "failed"),
+        ("blocked-feature", "feature_handoff",
+         {"status": "blocked", "error": "PR create failed"}, "failed"),
+        ("blocked-revision", "revision_handoff",
+         {"status": "blocked", "error": "push: boom", "branch": "b"}, "failed"),
+        # FAILED — QA failed and the run escalated; the handoff node was
+        # SKIPPED, so there is no handoff response at all.
+        ("escalated", "failure_handler",
+         {"status": "escalated", "issue_key": "OPS-1"}, "failed"),
+        # SUCCEEDED — degraded but delivered: the revision WAS pushed, only
+        # the courtesy PR comment failed.
+        ("comment-failed", "revision_handoff",
+         {"status": "comment_failed", "pr_number": 7, "branch": "b"}, "succeeded"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_close_host_marks_blocked_deployment_handoff_as_failed(tmp_path, brief):
-    flow = _FakeFlow(responses={
-        "deployment_handoff": {"status": "blocked", "error": "push failed"},
-    })
+async def test_close_host_outcome_from_terminal_status(
+    tmp_path, brief, case_id, node_id, response, expected_outcome,
+):
+    flow = _FakeFlow(responses={node_id: response})
     runner = DevLoopRunner(flow, max_concurrent_runs=2)  # type: ignore[arg-type]
+    run_id = f"run-terminal-{case_id}"
 
-    result = await runner.run(brief, run_id="run-blocked-deployment1")
-    assert result.status == FlowStatus.COMPLETED  # node didn't raise
-
-    bundle_path, _ = _bundle_paths("run-blocked-deployment1")
-    bundle = RunBundle.model_validate(json.loads(bundle_path.read_text()))
-    assert bundle.outcome == "failed"
-    assert bundle.pr_url == ""
-
-
-@pytest.mark.asyncio
-async def test_close_host_marks_blocked_feature_handoff_as_failed(tmp_path, brief):
-    flow = _FakeFlow(responses={
-        "feature_handoff": {"status": "blocked", "error": "PR create failed"},
-    })
-    runner = DevLoopRunner(flow, max_concurrent_runs=2)  # type: ignore[arg-type]
-
-    result = await runner.run(brief, run_id="run-blocked-feature1")
+    result = await runner.run(brief, run_id=run_id)
+    # The terminal node never raises, so the flow itself still reports
+    # COMPLETED — that is deliberate (spec Non-Goals); only the RECORDED
+    # outcome is corrected.
     assert result.status == FlowStatus.COMPLETED
 
-    bundle_path, _ = _bundle_paths("run-blocked-feature1")
+    bundle_path, _ = _bundle_paths(run_id)
     bundle = RunBundle.model_validate(json.loads(bundle_path.read_text()))
-    assert bundle.outcome == "failed"
-    assert bundle.pr_url == ""
+    assert bundle.outcome == expected_outcome
+    # No PR url in any of these canned payloads.
+    assert bundle.developed.pr_url == ""
+
+
+@pytest.mark.asyncio
+async def test_close_host_ignores_blocked_status_on_non_terminal_node(tmp_path, brief):
+    """A non-terminal node using the same status vocabulary must NOT flip
+    the run outcome — the scan is an explicit node-id allowlist."""
+    flow = _FakeFlow(responses={
+        "development": {"status": "blocked", "error": "not a terminal node"},
+        "deployment_handoff": {"status": "ready_to_deploy", "pr_url": "http://pr/9"},
+    })
+    runner = DevLoopRunner(flow, max_concurrent_runs=2)  # type: ignore[arg-type]
+
+    await runner.run(brief, run_id="run-terminal-allowlist")
+
+    bundle_path, _ = _bundle_paths("run-terminal-allowlist")
+    bundle = RunBundle.model_validate(json.loads(bundle_path.read_text()))
+    assert bundle.outcome == "succeeded"
+    assert bundle.developed.pr_url == "http://pr/9"
 ```
 
-(Verify `RunBundle`'s exact field name for `pr_url` against
-`run_bundle.py` before writing the assertion — the spec's contract
-traces it through `RunClosed.pr_url`, but confirm `build_run_bundle`
-projects it onto the same field name on `RunBundle`.)
+The `parametrize` form is a suggestion — five separate test functions are
+equally acceptable, as long as all five cases plus the allowlist case are
+covered. `_FakeFlow`, the `brief` fixture and `_bundle_paths` already
+exist in that file (`test_run_bundle_export.py:34-70`); the autouse
+`_isolate_dev_loop_run_artifacts` fixture in `conftest.py` already
+redirects `conf.OUTPUT_DIR` to `tmp_path`.
 
 ---
 
