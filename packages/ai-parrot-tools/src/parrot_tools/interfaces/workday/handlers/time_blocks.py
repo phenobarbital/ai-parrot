@@ -1,11 +1,11 @@
-from typing import List, Optional
-import pandas as pd
 from datetime import datetime
 
-from .base import WorkdayTypeBase
+import pandas as pd
+
 from ..models import TimeBlock
 from ..parsers import parse_time_block_data
 from ..utils import safe_serialize
+from .base import WorkdayTypeBase
 
 
 class TimeBlockType(WorkdayTypeBase):
@@ -36,6 +36,10 @@ class TimeBlockType(WorkdayTypeBase):
 
         Supported parameters:
         - worker_id: Specific worker ID to fetch time blocks for
+        - worker_id_type: Worker_Reference ID type — WorkerObjectID accepts
+          Employee_ID (default), Contingent_Worker_ID, or WID. Use
+          Contingent_Worker_ID for contractors, else Workday rejects their
+          id as "not a valid ID value for Employee_ID".
         - start_date: Start date for date range filter (YYYY-MM-DD)
         - end_date: End date for date range filter (YYYY-MM-DD)
         - time_block_id: Specific time block ID to fetch (Worker_Time_Block_ID type)
@@ -46,6 +50,10 @@ class TimeBlockType(WorkdayTypeBase):
         """
         # Extract parameters
         worker_id = kwargs.pop("worker_id", None)
+        # Worker_Reference ID type — WorkerObjectID accepts Employee_ID (default),
+        # Contingent_Worker_ID, or WID. Use Contingent_Worker_ID for contractors,
+        # else Workday rejects their id as "not a valid ID value for Employee_ID".
+        worker_id_type = kwargs.pop("worker_id_type", "Employee_ID")
         start_date = kwargs.pop("start_date", None)
         end_date = kwargs.pop("end_date", None)
         time_block_id = kwargs.pop("time_block_id", None)
@@ -58,7 +66,7 @@ class TimeBlockType(WorkdayTypeBase):
         payload = self._get_default_payload()
 
         # Stable snapshot timestamp for pagination
-        as_of_entry = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        as_of_entry = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"  # noqa: DTZ003 — pre-existing, untouched by this task
         payload["Response_Filter"]["As_Of_Entry_DateTime"] = as_of_entry
 
         # Toggle Include_Deleted only when explicitly requested
@@ -88,7 +96,7 @@ class TimeBlockType(WorkdayTypeBase):
             # Worker filter
             if worker_id:
                 request_criteria["Worker_Reference"] = [
-                    {"ID": {"type": "Employee_ID", "_value_1": worker_id}}
+                    {"ID": {"type": worker_id_type, "_value_1": worker_id}}
                 ]
 
             # Status filter
@@ -121,14 +129,14 @@ class TimeBlockType(WorkdayTypeBase):
         )
 
         # Parse into Pydantic models
-        parsed: List[TimeBlock] = []
+        parsed: list[TimeBlock] = []
         for i, tb in enumerate(time_blocks_raw):
             try:
                 parsed_data = parse_time_block_data(tb)
                 parsed_data["raw_data"] = tb
                 time_block = TimeBlock(**parsed_data)
                 parsed.append(time_block)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — pre-existing, untouched by this task
                 print(f"❌ DEBUG: Error parsing time block {i+1}: {e}")
                 continue
 
@@ -145,8 +153,8 @@ class TimeBlockType(WorkdayTypeBase):
         
         return df
 
-    async def get_time_blocks_by_worker(self, worker_id: str, start_date: Optional[str] = None, 
-                                       end_date: Optional[str] = None) -> pd.DataFrame:
+    async def get_time_blocks_by_worker(self, worker_id: str, start_date: str | None = None, 
+                                       end_date: str | None = None) -> pd.DataFrame:
         """
         Convenience method to get time blocks for a specific worker.
         """
@@ -157,7 +165,7 @@ class TimeBlockType(WorkdayTypeBase):
         )
 
     async def get_time_blocks_by_date_range(self, start_date: str, end_date: str, 
-                                           status: Optional[str] = None) -> pd.DataFrame:
+                                           status: str | None = None) -> pd.DataFrame:
         """
         Convenience method to get time blocks for a date range.
         """

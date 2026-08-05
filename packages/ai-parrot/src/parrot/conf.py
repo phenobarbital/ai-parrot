@@ -697,6 +697,15 @@ WORKDAY_WSDL_PATHS = {
     "payroll": WORKDAY_WSDL_PAYROLL
 }
 
+# WORKDAY_ENV selects which credential set WorkdayConfig resolves:
+#   "prod" (default) → WORKDAY_* ; "sandbox"/"impl"/"implementation" → WORKDAY_*_IMPL
+WORKDAY_ENV = config.get("WORKDAY_ENV", fallback="prod")
+# Sandbox / implementation tenant credentials (used when WORKDAY_ENV=sandbox)
+WORKDAY_CLIENT_ID_IMPL = config.get("WORKDAY_CLIENT_ID_IMPL", fallback=None)
+WORKDAY_CLIENT_SECRET_IMPL = config.get("WORKDAY_CLIENT_SECRET_IMPL", fallback=None)
+WORKDAY_REFRESH_TOKEN_IMPL = config.get("WORKDAY_REFRESH_TOKEN_IMPL", fallback=None)
+WORKDAY_TOKEN_URL_IMPL = config.get("WORKDAY_TOKEN_URL_IMPL", fallback=None)
+
 # NetSuite MCP settings (OAuth2 Client Credentials M2M + certificate)
 NETSUITE_ACCOUNT_ID = config.get("NETSUITE_ACCOUNT_ID")
 NETSUITE_CLIENT_ID = config.get("NETSUITE_CLIENT_ID")

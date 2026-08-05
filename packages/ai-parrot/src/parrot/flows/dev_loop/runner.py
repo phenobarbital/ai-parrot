@@ -113,6 +113,21 @@ def gate_ttl_for(kind: GateKind) -> int:
 # Actions-stream expiry/retention sweep cadence (seconds).
 _SWEEP_INTERVAL_SECONDS = 30
 
+# Terminal node ids whose status dict may signal a non-success close
+# (FEAT-413). These nodes never raise on failure by design — they return
+# a status dict instead — so `_close_host` must scan their responses
+# explicitly rather than rely on `FlowResult.status`/`AgentsFlow`'s
+# completed/failed bookkeeping, which only reflects whether a node raised.
+_TERMINAL_NODE_IDS = (
+    "deployment_handoff", "feature_handoff", "revision_handoff", "failure_handler",
+)
+_FAILED_TERMINAL_STATUSES = frozenset({
+    "blocked",                    # all three handoff nodes: nothing delivered
+    "escalated",                  # failure_handler: QA failed, run escalated
+    "escalated_without_ticket",   # failure_handler, no Jira / skip_jira
+    "escalation_failed",          # failure_handler, Jira call raised
+})
+
 
 def build_dev_loop_revision_flow(
     *,
@@ -1358,6 +1373,26 @@ class DevLoopRunner:
         pr_url = ""
         if isinstance(handoff_resp, dict):
             pr_url = str(handoff_resp.get("pr_url", "") or "")
+
+        # FEAT-413: none of the terminal nodes raise on failure — they
+        # return a status dict instead — so a blocked handoff or an
+        # escalated failure_handler still lands in FlowResult.status ==
+        # "completed" (AgentsFlow only tracks whether a node raised).
+        # Scan the explicit terminal-node allowlist directly against
+        # result.responses (NOT handoff_resp, which is None when the
+        # handoff node was skipped, e.g. the failure_handler case) and
+        # force outcome="failed" when any of them reported a failure
+        # status.
+        for _nid in _TERMINAL_NODE_IDS:
+            _resp = result.responses.get(_nid)
+            if isinstance(_resp, dict) and _resp.get("status") in _FAILED_TERMINAL_STATUSES:
+                self.logger.warning(
+                    "Run %s: terminal node %s reported status=%s — recording "
+                    "outcome=failed (FlowResult.status=%s)",
+                    run_id, _nid, _resp.get("status"), result.status,
+                )
+                outcome = "failed"
+                break
 
         host.apply(RunClosed(
             outcome=outcome, jira_issue_key=jira_issue_key, pr_url=pr_url,

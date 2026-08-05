@@ -15,20 +15,23 @@ Acknowledgment (Import_Time_Clock_Events_Response → Put_Import_Process_Respons
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import pandas as pd
 from zeep.helpers import serialize_object
 
 from parrot_tools.interfaces.workday.handlers.base import WorkdayWriteTypeBase
-from parrot_tools.interfaces.workday.models.clock_event import ClockEvent, ClockEventResult
+from parrot_tools.interfaces.workday.models.clock_event import (
+    ClockEvent,
+    ClockEventResult,
+)
 
 
 def _isoformat_dt(dt: datetime) -> str:
     """Serialise a datetime as Workday-compatible xsd:dateTime string."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -48,8 +51,8 @@ class ImportTimeClockEventsType(WorkdayWriteTypeBase):
 
     def build_request(  # type: ignore[override]
         self,
-        events: List[ClockEvent],
-        batch_id: Optional[str] = None,
+        events: list[ClockEvent],
+        batch_id: str | None = None,
         **kwargs,
     ) -> dict:
         """Build the Import_Time_Clock_Events SOAP body.
@@ -88,8 +91,15 @@ class ImportTimeClockEventsType(WorkdayWriteTypeBase):
                 }
             if ev.time_entry_code:
                 item["Time_Entry_Code"] = ev.time_entry_code
+            if ev.location:
+                item["Location"] = ev.location
+            if ev.cost_center:
+                item["Cost_Center"] = ev.cost_center
+            if ev.override_rate is not None:
+                item["Override_Rate"] = ev.override_rate
             if ev.comment:
                 item["Comment"] = ev.comment
+            # latitude/longitude are NOT emitted — no geo field in the WSDL.
             event_data.append(item)
 
         body: dict[str, Any] = {"Time_Clock_Event_Data": event_data}
@@ -134,8 +144,8 @@ class ImportTimeClockEventsType(WorkdayWriteTypeBase):
 
     async def execute(  # type: ignore[override]
         self,
-        events: List[ClockEvent],
-        batch_id: Optional[str] = None,
+        events: list[ClockEvent],
+        batch_id: str | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         """Execute Import_Time_Clock_Events and return per-row status DataFrame.
@@ -161,7 +171,7 @@ class ImportTimeClockEventsType(WorkdayWriteTypeBase):
                     operation=operation, **request_body
                 )
                 break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — pre-existing, untouched by this task
                 exc_str = str(exc)
                 is_fault = any(
                     kw in exc_str

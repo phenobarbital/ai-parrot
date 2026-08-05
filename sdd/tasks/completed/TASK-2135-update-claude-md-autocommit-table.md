@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-414 — Fix sdd-done Merge Conflicts
 **Spec**: `sdd/specs/sdd-done-merge-conflict-fix.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2133
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ---
 
@@ -116,10 +116,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-08-05
+**Notes**: Replaced the `/sdd-done` row (line 239) in CLAUDE.md's "SDD
+Auto-Commit Rule" table with the exact replacement text specified in the
+task. Confirmed via `git diff` that only this one line changed — no other
+rows in the table or other parts of CLAUDE.md were touched.
 
-**Completed by**: unassigned
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
