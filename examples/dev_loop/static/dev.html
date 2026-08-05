@@ -1325,13 +1325,6 @@ function tabBodyHtml(tab) {
     const rounds = d.ideation_max_rounds ?? 2;
     const ttlHours = Math.round((d.gate_ttl_questions ?? 86400) / 3600);
     return grid(`
-      <div class="field" style="grid-column:1/-1">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="chk-plan-approval" ${f.requirePlanApproval ? "checked" : ""} style="width:16px;height:16px" />
-          <span class="field-label" style="margin:0">Require plan approval before development</span>
-        </label>
-        <p class="hint">Opens a <span class="mono">plan_approval</span> gate after the planner and before the agent fleet dispatches — it appears in the panel above, with approve/reject and a comment. Per-run: it overrides the server default (<span class="mono">${d.require_plan_approval ? "on" : "off"}</span>) for this run only.</p>
-      </div>
       <div class="field"><span class="field-label">Open-Questions rounds (DEV_FLOW_IDEATION_MAX_ROUNDS)</span>
         <input class="input mono" value="${esc(String(rounds))}" disabled />
         <p class="hint">Max HITL rounds. Anything still unanswered afterwards stays in the document and flows into the spec's §8.</p>
@@ -1343,9 +1336,16 @@ function tabBodyHtml(tab) {
   }
   if (tab === "planning") {
     return grid(`
+      <div class="field" style="grid-column:1/-1">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="chk-plan-approval" ${f.requirePlanApproval ? "checked" : ""} style="width:16px;height:16px" />
+          <span class="field-label" style="margin:0">Require plan approval before development</span>
+        </label>
+        <p class="hint">Opens a <span class="mono">plan_approval</span> gate after the planner and before the agent fleet dispatches — it appears in the panel above, with approve/reject and a comment. Per-run: it overrides the server default (<span class="mono">${d.require_plan_approval ? "on" : "off"}</span>) for this run only. Available in every mode — <span class="mono">feature</span> intent included.</p>
+      </div>
       <div class="field">
         <label for="t-jira-key">Jira issue key (optional)</label>
-        <input id="t-jira-key" class="input mono" data-form="jiraIssueKey" value="${esc(f.jiraIssueKey)}" placeholder="blank — no ticket is created in feature mode" />
+        <input id="t-jira-key" class="input mono" data-form="jiraIssueKey" value="${esc(f.jiraIssueKey)}" placeholder="blank — no ticket is created" />
         <p class="hint">When set, downstream nodes only link, transition and comment on it.</p>
       </div>
       <div class="field">
@@ -1423,7 +1423,7 @@ function tabBodyHtml(tab) {
         <input type="checkbox" id="chk-skip-jira" ${skipJiraChecked} style="width:16px;height:16px" />
         <span class="field-label" style="margin:0">Skip Jira for this run</span>
       </label>
-      <p class="hint">No ticket creation, no transitions, no comments. Research still runs (logs + triage + sdd-research dispatch) but without Jira integration. Use for local experiments or when Jira is down.</p>
+      <p class="hint">No ticket creation, no transitions, no comments — the rest of the run proceeds unchanged. Use for local experiments or when Jira is down.</p>
     </div>
     <div class="field"><span class="field-label">QA repair retries (DEV_LOOP_QA_MAX_RETRIES)</span>
       <input class="input mono" value="${esc(String(d.qa_max_retries ?? "—"))}" disabled /></div>

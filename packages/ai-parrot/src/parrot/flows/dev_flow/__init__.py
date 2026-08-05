@@ -41,11 +41,18 @@ __all__ = [
     "parse_dev_brief",
 ]
 
-# Lazily-resolved exports: attribute name -> submodule it lives in. Populated
-# as the topology lands (definition/flow/runner/nodes); keeping the mapping
-# here means ``from parrot.flows.dev_flow import X`` works without the
-# package init importing the heavy modules eagerly.
-_LAZY_EXPORTS: dict[str, str] = {}
+# Lazily-resolved exports: attribute name -> submodule it lives in. Keeping
+# the mapping here means ``from parrot.flows.dev_flow import X`` works
+# without the package init importing the heavy modules (topology, runner,
+# nodes) eagerly.
+_LAZY_EXPORTS: dict[str, str] = {
+    "build_dev_flow_definition": "parrot.flows.dev_flow.definition",
+    "build_dev_flow_node_factories": "parrot.flows.dev_flow.factories",
+    "build_dev_flow": "parrot.flows.dev_flow.flow",
+    "DevFlowRunner": "parrot.flows.dev_flow.runner",
+    "DevIntakeNode": "parrot.flows.dev_flow.nodes",
+    "IdeationNode": "parrot.flows.dev_flow.nodes",
+}
 
 
 def __getattr__(name: str) -> Any:
