@@ -52,7 +52,7 @@ Runtime requirements:
 * Optional Nvidia/LLM Development mode:
   ``DEV_LOOP_DEVELOPMENT_AGENT=nvidia`` and ``NVIDIA_API_KEY`` available.
   ``DEV_LOOP_NVIDIA_CODE_MODEL`` defaults to
-  ``moonshotai/kimi-k2-instruct-0905``; set it to ``z-ai/glm-5.1`` and
+  ``minimaxai/minimax-m3``; set it to ``z-ai/glm-5.2`` and
   ``DEV_LOOP_NVIDIA_ENABLE_THINKING=true`` for GLM reasoning mode.
 * Jira service account: ``JIRA_INSTANCE``, ``JIRA_USERNAME``,
   ``JIRA_API_TOKEN`` and (optionally) ``JIRA_PROJECT`` — the toolkit uses

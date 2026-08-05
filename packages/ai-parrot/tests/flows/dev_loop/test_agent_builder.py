@@ -73,7 +73,7 @@ class TestBuildDispatcher:
             stream_ttl_seconds=3600,
             config_getter=fake_getter({}),
         )
-        assert profile.llm == "nvidia:moonshotai/kimi-k2-instruct-0905"
+        assert profile.llm == "nvidia:minimaxai/minimax-m3"
 
     def test_zai_defaults(self):
         _, profile = build_dispatcher(

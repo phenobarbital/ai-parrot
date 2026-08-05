@@ -161,7 +161,7 @@ def build_dispatcher(
     if spec.agent == "nvidia":
         dispatcher = LLMCodeDispatcher(**common)
         nvidia_model = spec.model or config_getter(
-            "DEV_LOOP_NVIDIA_CODE_MODEL", "moonshotai/kimi-k2-instruct-0905"
+            "DEV_LOOP_NVIDIA_CODE_MODEL", "minimaxai/minimax-m3"
         )
         profile = LLMCodeDispatchProfile(
             llm=f"nvidia:{nvidia_model}",

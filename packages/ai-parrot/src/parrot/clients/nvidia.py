@@ -4,13 +4,20 @@ Extends OpenAIClient to route requests through Nvidia's OpenAI-compatible
 NIM gateway at https://integrate.api.nvidia.com/v1.
 
 All completion, streaming, tool-calling, retry, and invoke logic is inherited
-from OpenAIClient unchanged. The only Nvidia-specific affordance is the
-``enable_thinking`` keyword on ``ask`` / ``ask_stream`` that injects
-``chat_template_kwargs`` into ``extra_body`` for reasoning-capable models
-such as ``z-ai/glm-5.1``.
+from OpenAIClient unchanged. Two Nvidia-specific affordances are added:
+
+1. The ``enable_thinking`` keyword on ``ask`` / ``ask_stream`` that injects
+   ``chat_template_kwargs`` into ``extra_body`` for reasoning-capable models
+   such as ``z-ai/glm-5.2``.
+2. A ``free_tier`` flag (default ``True``) that throttles outbound requests to
+   Nvidia's free-endpoint quota of 40 requests per minute.  Set
+   ``free_tier=False`` — or ``NVIDIA_FREE_TIER=false`` in the environment — for
+   paid/self-hosted NIM endpoints that carry no such cap.
 """
+import asyncio
 import contextvars
-from typing import Any, AsyncIterator, Dict, Optional
+from collections import deque
+from typing import Any, AsyncIterator, Deque, Dict, Optional
 
 from navconfig import config
 from tenacity import (
@@ -20,9 +27,16 @@ from tenacity import (
     wait_exponential,
 )
 
+from ..exceptions import ParrotError
 from ..models import AIMessage
 from .gpt import OpenAIClient
 from ..models.nvidia import NvidiaModel
+
+#: Requests-per-minute quota enforced on Nvidia's free NIM endpoints.
+FREE_TIER_RPM: int = 40
+
+#: Length of the rate-limit window, in seconds.
+RATE_LIMIT_WINDOW: float = 60.0
 
 # Context variable that carries enable_thinking / clear_thinking flags from
 # ask / ask_stream down to _chat_completion without altering the parent's
@@ -31,6 +45,149 @@ from ..models.nvidia import NvidiaModel
 _thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
     "_nvidia_thinking_ctx", default={}
 )
+
+
+class NvidiaRateLimitError(ParrotError):
+    """Raised when a free-tier slot could not be acquired within ``max_wait``.
+
+    Only raised when :class:`NvidiaClient` was constructed with an explicit
+    ``rate_limit_max_wait``.  With the default (``None``) the client waits as
+    long as necessary instead of raising.
+
+    Args:
+        message: Human-readable error description.
+        *args: Forwarded to :class:`~parrot.exceptions.ParrotError`.
+        retry_after: Seconds the caller should wait before retrying, when known.
+        **kwargs: Forwarded to :class:`~parrot.exceptions.ParrotError`.
+
+    Attributes:
+        retry_after: Seconds until a slot is expected to free up, or ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *args,
+        retry_after: Optional[float] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(message, *args, **kwargs)
+        self.retry_after: Optional[float] = retry_after
+
+
+class SlidingWindowRateLimiter:
+    """Async sliding-window rate limiter.
+
+    Admits at most ``limit`` acquisitions in any trailing ``window`` seconds.
+    Unlike a fixed-window counter, a sliding window cannot be defeated by
+    bursting across a window boundary, which matters because Nvidia measures
+    its 40 rpm free-tier quota continuously.
+
+    Timestamps come from the running event loop's monotonic clock
+    (``loop.time()``), so the limiter is unaffected by wall-clock adjustments.
+
+    The limiter is *not* shared between instances: each :class:`NvidiaClient`
+    owns its own window.  Nvidia enforces the quota per account, so N clients
+    sharing one API key can collectively exceed 40 rpm.
+
+    Args:
+        limit: Maximum number of acquisitions per window. Must be >= 1.
+        window: Window length in seconds. Must be > 0.
+
+    Raises:
+        ValueError: If ``limit`` < 1 or ``window`` <= 0.
+
+    Example::
+
+        limiter = SlidingWindowRateLimiter(limit=40, window=60.0)
+        waited = await limiter.acquire()
+    """
+
+    #: Added to every computed sleep so float imprecision can never cause a
+    #: spin where the woken waiter finds the oldest hit still inside the window.
+    _EPSILON: float = 0.001
+
+    def __init__(self, limit: int, window: float = RATE_LIMIT_WINDOW) -> None:
+        if limit < 1:
+            raise ValueError(f"limit must be >= 1, got {limit!r}")
+        if window <= 0:
+            raise ValueError(f"window must be > 0, got {window!r}")
+        self._limit: int = int(limit)
+        self._window: float = float(window)
+        self._hits: Deque[float] = deque()
+        self._lock: asyncio.Lock = asyncio.Lock()
+
+    @property
+    def limit(self) -> int:
+        """Maximum acquisitions allowed per window."""
+        return self._limit
+
+    @property
+    def window(self) -> float:
+        """Window length in seconds."""
+        return self._window
+
+    def _prune(self, now: float) -> None:
+        """Drop recorded hits that have aged out of the trailing window.
+
+        Args:
+            now: Current monotonic time, from ``loop.time()``.
+        """
+        cutoff = now - self._window
+        while self._hits and self._hits[0] <= cutoff:
+            self._hits.popleft()
+
+    def current_usage(self) -> int:
+        """Return how many acquisitions currently occupy the window.
+
+        Intended for logging and tests; the value is a snapshot and may be
+        stale as soon as it is returned. Must be called from inside a running
+        event loop, since the window is measured on that loop's clock.
+
+        Returns:
+            Number of hits still inside the trailing window.
+
+        Raises:
+            RuntimeError: If called with no running event loop.
+        """
+        self._prune(asyncio.get_running_loop().time())
+        return len(self._hits)
+
+    async def acquire(self, max_wait: Optional[float] = None) -> float:
+        """Reserve one slot, sleeping while the window is saturated.
+
+        Args:
+            max_wait: Maximum total seconds to wait. ``None`` waits as long as
+                necessary. When the projected wait exceeds this budget the
+                call raises instead of sleeping, and no slot is consumed.
+
+        Returns:
+            Total seconds spent waiting (``0.0`` when a slot was free).
+
+        Raises:
+            NvidiaRateLimitError: If a slot could not be reserved within
+                ``max_wait`` seconds.
+        """
+        waited = 0.0
+        while True:
+            async with self._lock:
+                now = asyncio.get_running_loop().time()
+                self._prune(now)
+                if len(self._hits) < self._limit:
+                    self._hits.append(now)
+                    return waited
+                # Window is full: the oldest hit dictates when a slot frees.
+                sleep_for = max(self._hits[0] + self._window - now, 0.0)
+            sleep_for += self._EPSILON
+            if max_wait is not None and waited + sleep_for > max_wait:
+                raise NvidiaRateLimitError(
+                    f"Nvidia free-tier rate limit reached "
+                    f"({self._limit} requests / {self._window:g}s); a slot would "
+                    f"not free up within max_wait={max_wait:g}s",
+                    retry_after=sleep_for,
+                )
+            await asyncio.sleep(sleep_for)
+            waited += sleep_for
 
 
 class NvidiaClient(OpenAIClient):
@@ -44,34 +201,68 @@ class NvidiaClient(OpenAIClient):
     ``_chat_completion``, tool calling, structured output, and retry — works
     without modification.
 
-    The only Nvidia-specific affordance is the ``enable_thinking`` shortcut on
-    ``ask`` / ``ask_stream`` that injects ``chat_template_kwargs`` into
-    ``extra_body`` for reasoning-capable models (e.g. ``z-ai/glm-5.1``).
+    Two Nvidia-specific affordances are layered on top:
 
-    ``enable_thinking`` is propagated to ``_chat_completion`` via an async
-    context variable so that no changes to the parent's call signatures are
-    required.
+    **Thinking flags.** The ``enable_thinking`` shortcut on ``ask`` /
+    ``ask_stream`` injects ``chat_template_kwargs`` into ``extra_body`` for
+    reasoning-capable models (e.g. ``z-ai/glm-5.2``).  It is propagated to
+    ``_chat_completion`` via an async context variable so that no changes to
+    the parent's call signatures are required.
+
+    **Free-tier rate limiting.** Nvidia's free NIM endpoints cap traffic at 40
+    requests per minute.  With ``free_tier=True`` (the default) every outbound
+    request first reserves a slot in a :class:`SlidingWindowRateLimiter`,
+    async-sleeping when the window is saturated so the quota is never
+    exceeded.  Set ``free_tier=False`` for paid or self-hosted NIM endpoints to
+    remove the cap entirely.  The limiter covers ``ask``, ``invoke``,
+    ``ask_stream``, and every other path routed through ``_chat_completion``;
+    each retry attempt consumes its own slot, since a retry is a real request.
+    Inherited OpenAI-only vision helpers (e.g. ``ask_to_image``) call the SDK
+    directly and are therefore not counted.
 
     Args:
         api_key: Nvidia NIM API key. Falls back to ``NVIDIA_API_KEY`` env var
             (resolved via ``navconfig.config``).
+        free_tier: When ``True`` (default), throttle requests to
+            ``requests_per_minute``. When ``None``, the value is read from the
+            ``NVIDIA_FREE_TIER`` env var, itself defaulting to ``True``.
+        requests_per_minute: Requests allowed per 60s window while
+            ``free_tier`` is active. Defaults to :data:`FREE_TIER_RPM` (40).
+        rate_limit_max_wait: Maximum seconds to wait for a free-tier slot.
+            ``None`` (default) waits as long as necessary; a number makes the
+            client raise :class:`NvidiaRateLimitError` rather than block past
+            that budget.
         **kwargs: Additional arguments passed to ``OpenAIClient`` /
             ``AbstractClient``.
 
     Example::
 
-        client = NvidiaClient(model=NvidiaModel.GLM_5_1)
+        client = NvidiaClient(model=NvidiaModel.GLM_5_2)
         response = await client.ask(
             "Explain gradient descent.",
             enable_thinking=True,
         )
+
+        # Paid endpoint — no throttling.
+        paid = NvidiaClient(free_tier=False)
+
+        # Free endpoint, but fail fast instead of waiting more than 5s.
+        strict = NvidiaClient(rate_limit_max_wait=5.0)
     """
 
     client_type: str = "nvidia"
     client_name: str = "nvidia"
-    _default_model: str = NvidiaModel.KIMI_K2_INSTRUCT_0905.value
+    _default_model: str = NvidiaModel.MINIMAX_M3.value
 
-    def __init__(self, api_key: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        *,
+        free_tier: Optional[bool] = None,
+        requests_per_minute: Optional[int] = None,
+        rate_limit_max_wait: Optional[float] = None,
+        **kwargs,
+    ):
         resolved_key = api_key or config.get("NVIDIA_API_KEY")
         super().__init__(
             api_key=resolved_key,
@@ -82,6 +273,49 @@ class NvidiaClient(OpenAIClient):
         # self.api_key during its own initialisation.  This mirrors the guard
         # used by OpenRouterClient (openrouter.py:75).
         self.api_key = resolved_key
+
+        # Rate-limit state is built after super().__init__ for the same reason:
+        # the parent must not be able to clobber it.
+        if free_tier is None:
+            free_tier = config.getboolean("NVIDIA_FREE_TIER", fallback=True)
+        self.free_tier: bool = bool(free_tier)
+        self.requests_per_minute: int = int(
+            requests_per_minute if requests_per_minute is not None else FREE_TIER_RPM
+        )
+        self.rate_limit_max_wait: Optional[float] = rate_limit_max_wait
+        self._rate_limiter: Optional[SlidingWindowRateLimiter] = (
+            SlidingWindowRateLimiter(self.requests_per_minute, RATE_LIMIT_WINDOW)
+            if self.free_tier
+            else None
+        )
+
+    async def _acquire_rate_limit_slot(self) -> float:
+        """Reserve a free-tier slot before issuing a request.
+
+        A no-op returning ``0.0`` when ``free_tier`` is ``False``.  Otherwise
+        delegates to the client's :class:`SlidingWindowRateLimiter`, sleeping
+        until the 40 rpm window has room.
+
+        Returns:
+            Seconds spent waiting for the slot.
+
+        Raises:
+            NvidiaRateLimitError: If ``rate_limit_max_wait`` is set and a slot
+                could not be reserved within that budget.
+        """
+        if self._rate_limiter is None:
+            return 0.0
+        waited = await self._rate_limiter.acquire(
+            max_wait=self.rate_limit_max_wait
+        )
+        if waited > 0:
+            self.logger.warning(
+                "Nvidia free-tier limit (%s rpm) reached; throttled for %.2fs. "
+                "Pass free_tier=False for paid NIM endpoints.",
+                self._rate_limiter.limit,
+                waited,
+            )
+        return waited
 
     @staticmethod
     def _merge_thinking_extra_body(
@@ -130,14 +364,17 @@ class NvidiaClient(OpenAIClient):
     ) -> Any:
         """Run a chat completion against NVIDIA NIM via ``create()``.
 
-        Two NVIDIA-specific differences from ``OpenAIClient._chat_completion``:
+        Three NVIDIA-specific differences from ``OpenAIClient._chat_completion``:
 
         1. Always uses ``client.chat.completions.create``. NIM rejects the
            OpenAI SDK's ``parse()`` shortcut (returns 5xx / "page not found"),
            so we never route through it — even when ``use_tools`` is ``False``.
         2. Reads the thinking flags from the async context variable set by
            ``ask`` / ``ask_stream`` and merges them into ``extra_body`` for
-           reasoning-capable models (e.g. ``z-ai/glm-5.1``).
+           reasoning-capable models (e.g. ``z-ai/glm-5.2``).
+        3. Reserves a free-tier rate-limit slot before *each* attempt when
+           ``free_tier`` is active, so retries are counted against the quota
+           too.
 
         Args:
             model: Model identifier string.
@@ -147,6 +384,10 @@ class NvidiaClient(OpenAIClient):
 
         Returns:
             Raw OpenAI ``ChatCompletion`` response.
+
+        Raises:
+            NvidiaRateLimitError: If ``rate_limit_max_wait`` is set and no
+                free-tier slot became available within that budget.
         """
         from openai import APIConnectionError, APIError, RateLimitError
         thinking = _thinking_ctx.get()
@@ -166,6 +407,7 @@ class NvidiaClient(OpenAIClient):
         )
         async for attempt in retry_policy:
             with attempt:
+                await self._acquire_rate_limit_slot()
                 return await self.client.chat.completions.create(
                     model=model,
                     messages=messages,
@@ -184,7 +426,7 @@ class NvidiaClient(OpenAIClient):
 
         Identical to ``OpenAIClient.ask`` with an additional ``enable_thinking``
         shortcut that injects ``chat_template_kwargs`` into ``extra_body`` for
-        reasoning-capable models (e.g. ``z-ai/glm-5.1``).
+        reasoning-capable models (e.g. ``z-ai/glm-5.2``).
 
         The flags are forwarded to ``_chat_completion`` via an async context
         variable, so the parent's call signature is preserved.
@@ -223,11 +465,15 @@ class NvidiaClient(OpenAIClient):
 
         Identical to ``OpenAIClient.ask_stream`` with the same
         ``enable_thinking`` shortcut as ``ask``.  For reasoning-capable models
-        (e.g. ``z-ai/glm-5.1``) each chunk may carry a
+        (e.g. ``z-ai/glm-5.2``) each chunk may carry a
         ``delta.reasoning_content`` field in addition to ``delta.content``.
 
         The flags are forwarded to ``_chat_completion`` via an async context
         variable, so the parent's call signature is preserved.
+
+        ``OpenAIClient.ask_stream`` calls the SDK's ``create()`` directly rather
+        than routing through ``_chat_completion``, so the free-tier slot is
+        reserved here — once per stream, before the first chunk is requested.
 
         Args:
             prompt: User message text.
@@ -241,8 +487,13 @@ class NvidiaClient(OpenAIClient):
 
         Yields:
             Response text chunks (same shape as ``OpenAIClient.ask_stream``).
+
+        Raises:
+            NvidiaRateLimitError: If ``rate_limit_max_wait`` is set and no
+                free-tier slot became available within that budget.
         """
         kwargs.setdefault("model", self.model or self._default_model)
+        await self._acquire_rate_limit_slot()
         token = _thinking_ctx.set(
             {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )

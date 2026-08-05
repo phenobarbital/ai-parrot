@@ -214,7 +214,7 @@ class MinimaxProvider:
     def __init__(
         self,
         client: NvidiaClient | None = None,
-        default_model: str = NvidiaModel.KIMI_K2_INSTRUCT_0905.value,
+        default_model: str = NvidiaModel.MINIMAX_M3.value,
     ) -> None:
         self.client = client or NvidiaClient(model=default_model)
         self.default_model = default_model
