@@ -149,6 +149,65 @@ async def test_bundle_export_failure_never_breaks_teardown(tmp_path, brief, monk
     assert snapshot_path.exists()
 
 
+@pytest.mark.parametrize(
+    "case_id, node_id, response, expected_outcome",
+    [
+        # FAILED — nothing was delivered.
+        ("blocked-deployment", "deployment_handoff",
+         {"status": "blocked", "error": "push failed"}, "failed"),
+        ("blocked-feature", "feature_handoff",
+         {"status": "blocked", "error": "PR create failed"}, "failed"),
+        ("blocked-revision", "revision_handoff",
+         {"status": "blocked", "error": "push: boom", "branch": "b"}, "failed"),
+        # FAILED — QA failed and the run escalated; the handoff node was
+        # SKIPPED, so there is no handoff response at all.
+        ("escalated", "failure_handler",
+         {"status": "escalated", "issue_key": "OPS-1"}, "failed"),
+        # SUCCEEDED — degraded but delivered: the revision WAS pushed, only
+        # the courtesy PR comment failed.
+        ("comment-failed", "revision_handoff",
+         {"status": "comment_failed", "pr_number": 7, "branch": "b"}, "succeeded"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_close_host_outcome_from_terminal_status(
+    tmp_path, brief, case_id, node_id, response, expected_outcome,
+):
+    flow = _FakeFlow(responses={node_id: response})
+    runner = DevLoopRunner(flow, max_concurrent_runs=2)  # type: ignore[arg-type]
+    run_id = f"run-terminal-{case_id}"
+
+    result = await runner.run(brief, run_id=run_id)
+    # The terminal node never raises, so the flow itself still reports
+    # COMPLETED — that is deliberate (spec Non-Goals); only the RECORDED
+    # outcome is corrected.
+    assert result.status == FlowStatus.COMPLETED
+
+    bundle_path, _ = _bundle_paths(run_id)
+    bundle = RunBundle.model_validate(json.loads(bundle_path.read_text()))
+    assert bundle.outcome == expected_outcome
+    # No PR url in any of these canned payloads.
+    assert bundle.developed.pr_url == ""
+
+
+@pytest.mark.asyncio
+async def test_close_host_ignores_blocked_status_on_non_terminal_node(tmp_path, brief):
+    """A non-terminal node using the same status vocabulary must NOT flip
+    the run outcome — the scan is an explicit node-id allowlist."""
+    flow = _FakeFlow(responses={
+        "development": {"status": "blocked", "error": "not a terminal node"},
+        "deployment_handoff": {"status": "ready_to_deploy", "pr_url": "http://pr/9"},
+    })
+    runner = DevLoopRunner(flow, max_concurrent_runs=2)  # type: ignore[arg-type]
+
+    await runner.run(brief, run_id="run-terminal-allowlist")
+
+    bundle_path, _ = _bundle_paths("run-terminal-allowlist")
+    bundle = RunBundle.model_validate(json.loads(bundle_path.read_text()))
+    assert bundle.outcome == "succeeded"
+    assert bundle.developed.pr_url == "http://pr/9"
+
+
 def test_package_exports():
     """`from parrot.flows.dev_loop import RunBundle, build_run_bundle,
     render_markdown` must work (TASK-1929 package-export requirement)."""
