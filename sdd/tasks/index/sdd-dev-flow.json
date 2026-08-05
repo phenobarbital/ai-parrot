@@ -151,7 +151,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -161,8 +161,8 @@
       "parallelism_notes": "Needs build_dev_flow from TASK-2127.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2128-dev-flow-runner.md"
+      "completed_at": "2026-08-05T00:57:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2128-dev-flow-runner.md"
     },
     {
       "id": "TASK-2129",
