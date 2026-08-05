@@ -50,7 +50,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Touches only dev_loop/nodes/development.py — no overlap with any other FEAT-412 task.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2123-plan-gate-per-run-override.md"
+      "completed_at": "2026-08-05T00:10:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2123-plan-gate-per-run-override.md"
     },
     {
       "id": "TASK-2124",
