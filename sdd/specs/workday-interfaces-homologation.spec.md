@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-415
 **Date**: 2026-08-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.2.0 (`ai-parrot-tools`, currently 0.1.85)
 
 **Source brainstorm**: `sdd/proposals/workday-interfaces-homologation.brainstorm.md`
