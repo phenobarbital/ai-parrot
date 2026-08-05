@@ -90,7 +90,7 @@
       "feature_id": "FEAT-415",
       "feature": "workday-interfaces-homologation",
       "spec": "sdd/specs/workday-interfaces-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -98,8 +98,8 @@
       "parallelism_notes": "Technically file-disjoint (clock_event.py + put_time_clock_events.py). Kept sequential per the spec's per-spec isolation decision.",
       "assigned_to": null,
       "started_at": "2026-08-05T18:32:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2140-workday-clock-event-write-surface.md"
+      "completed_at": "2026-08-05T19:19:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2140-workday-clock-event-write-surface.md"
     },
     {
       "id": "TASK-2141",

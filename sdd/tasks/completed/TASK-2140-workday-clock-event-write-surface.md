@@ -255,8 +255,33 @@ class TestPayloadEmission:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-05
+**Notes**: Added `delete`, `location`, `cost_center`,
+`override_rate` (`Field(ge=0)`, presence-based), `latitude`
+(`Field(ge=-90, le=90)`) and `longitude` (`Field(ge=-180, le=180)`) to
+`ClockEvent`, plus the `_delete_requires_event_id` `model_validator
+(mode="after")` that raises when `delete=True` without
+`time_clock_event_id`. Pydantic import extended to `BaseModel, Field,
+model_validator`. `PutTimeClockEventsType.build_request` emits
+`Delete_Time_Clock_Event`/`Location`/`Cost_Center`/`Override_Rate` using
+truthiness for the first three and `is not None` for `override_rate`
+(so `0` is sent, `None` is omitted) — `latitude`/`longitude` are
+deliberately never referenced in the emission block. `class Config: extra
+= "allow"` kept unchanged.
 
-**Deviations from spec**: none | describe if any
+30 new tests (`test_clock_event_write_surface.py`) covering the delete
+validator (with/without event id), GPS range validation (in + out of
+range, all four boundary directions), backwards-compatible construction
+with only pre-existing fields, and payload emission for all four new
+fields including the override_rate=0 vs None distinction and a
+belt-and-suspenders string-search assertion that GPS values never appear
+anywhere in the built payload. Full `tests/workday/` suite (123 tests)
+passes; `ruff check` clean on all three files (fixed pre-existing
+mechanical style debt in both modified files — `List`/`Optional` →
+builtin generics, `timezone.utc` → `datetime.UTC`, import ordering — all
+auto-fixable, zero behaviour change; one justified `# noqa: BLE001` on a
+pre-existing, untouched broad `except Exception` in `execute()`'s SOAP
+fault-classification retry loop).
+
+**Deviations from spec**: none.
