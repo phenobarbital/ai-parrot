@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-412 — Dev-Flow: SDD-Oriented AgentsFlow for Feature Development
 **Spec**: `sdd/specs/sdd-dev-flow.spec.md`
-**Status**: done
-**Completed**: 2026-08-05
-**Verification**: verified
+**Status**: pending
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2129, TASK-2130
@@ -110,51 +108,10 @@ works, and which conf keys are new.
 
 ## Completion Note
 
-**Completed by**: sdd-worker (Claude)
-**Date**: 2026-08-05
+*(Agent fills this in when done)*
+
+**Completed by**:
+**Date**:
 **Notes**:
 
-**README.md** — file tree now lists `server_dev.py` / `static/dev.html`, plus a
-two-consoles comparison table right after it (audience, port, intake,
-CloudWatch, Jira, HITL) so a reader picks the right pair before reading
-further. New **Development console** section covering: quickstart and the
-"Redis is the only hard requirement" point (no `CLOUDWATCH_*`, no `JIRA_*`),
-side-by-side operation, the topology diagram, the three intents with the exact
-document each writes (light `.proposal.md` vs full `.brainstorm.md`), the
-resume/extend policy and its collision behaviour, the full endpoint table, both
-run payload shapes with curls, the normative `open_questions` protocol as 5
-numbered steps, approve **and** reject curls, every status code (incl.
-`400 answers_required` and `409 already_resolved`), the per-run plan-approval
-override semantics, and the two new conf keys with a note that nothing else is
-forked from `DEV_LOOP_*`. Explicitly records that revision mode stays unexposed.
-
-**GUIA.md** — kept Spanish and in its "cómo lo arranco" register. Extended the
-file tree, the script-comparison table (with a callout that the two consoles
-coexist on 8080/8081) and the closing "qué ejecutar" table, plus a new **§9**
-covering arranque, intent choice, and — the part a newcomer actually needs —
-how to answer the Open Questions: partial answers are valid, bounded rounds,
-what happens when the budget runs out (does **not** block), the run parking so
-you can take hours, reject-aborts, fail-closed expiry ("el silencio no es un
-'sí'"), and reload-mid-gate. Includes curl equivalents for both resolve
-directions and for starting a run.
-
-**Verification** — rather than writing from memory (the task's explicit
-warning), I ran a cross-check script against the loaded `server_dev.py`:
-
-- every mounted `/api/*` route is documented, and every documented route is
-  mounted (7/7, incl. the gate-resolution route);
-- every `/api/config` key the docs promise is actually emitted by
-  `handle_config` (`ideation_max_rounds`, `gate_ttl_questions`,
-  `require_plan_approval`, `qa_max_retries`, `development_pool_max`,
-  `max_concurrent_runs`, `document_kinds`, `nl_kinds`,
-  `gate_resolve_url_template`);
-- the keys the docs claim are **absent** (`log_group`, `time_window_minutes`,
-  `jira_project`) really are absent from the dev config;
-- the documented NL payload is accepted verbatim by
-  `_build_dev_brief_from_form`;
-- the defaults quoted in the docs (`2` rounds, `86400` s) match `conf`.
-
-All checks passed.
-
-**Deviations from spec**: none. No code was touched; `documentation/` site
-pages and docstrings were left alone as instructed.
+**Deviations from spec**: none

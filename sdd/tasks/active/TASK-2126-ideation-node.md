@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-412 — Dev-Flow: SDD-Oriented AgentsFlow for Feature Development
 **Spec**: `sdd/specs/sdd-dev-flow.spec.md`
-**Status**: done
-**Completed**: 2026-08-05
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2121, TASK-2122, TASK-2124
@@ -189,78 +187,10 @@ async def test_resumed_existing_flag_passthrough(): ...
 
 ## Completion Note
 
-**Completed by**: sdd-worker (Claude)
-**Date**: 2026-08-05
+*(Agent fills this in when done)*
+
+**Completed by**:
+**Date**:
 **Notes**:
 
-`IdeationNode` registered as `dev_flow.ideation`, implementing spec §2's
-round-trip. 22 tests, all green on the first run; 73 across `dev_flow`.
-
-**Round accounting.** `rounds_used` counts *gates opened*, and the loop
-condition is `output.open_questions and host is not None and rounds_used <
-max_rounds`. With the default 2 that yields at most 2 gates and 3 dispatches
-(1 initial + 2 re-dispatches), and the re-dispatch after the last allowed
-round cannot open a gate — the task's explicit requirement. Covered by
-`test_rounds_bounded` (asserts exactly 2 gates / 3 dispatches),
-`test_max_rounds_zero_opens_no_gate`, and
-`test_max_rounds_reads_conf_when_not_overridden` (conf read at execute time,
-so a monkeypatch takes effect per-case).
-
-**Gate shape.** ONE gate per round carrying **all** questions, `node_id`
-`"ideation"`, `on_expiry="fail"`, `ttl_seconds=conf.DEV_FLOW_GATE_TTL_QUESTIONS`
-(read via `getattr` at call time). The resolved `document_path` goes in the
-gate **title** — spec §7's mitigation for the slug-collision risk, so the user
-can spot and reject an unintended resume. `instructions` carry
-round N/M, the `resumed_existing` state, the summary, and a note that partial
-answers are fine and rejection aborts. Asserted in
-`test_gate_roundtrip_answers_reach_redispatch`.
-
-**Two contract details worth flagging for review:**
-
-1. **The subagent is dispatched via `system_prompt_override`, not
-   `profile.subagent`.** `ClaudeCodeDispatchProfile.subagent` is a closed
-   Literal without `"sdd-ideation"`, and — decisively —
-   `dispatchers/claude.py:393` resolves a non-`None` `subagent` through
-   **`dev_loop`'s** `load_subagent_definition`, which raises
-   `ValueError: Unknown subagent name 'sdd-ideation'` by design (TASK-2124's
-   contract forbids extending that loader; the dev_flow package owns its
-   prompts). So extending the Literal would have produced a runtime failure.
-   Passing the dev_flow-loaded body as `system_prompt_override` with
-   `subagent=None` is the path the dispatcher already supports
-   (`claude.py:414-415` → `ClaudeAgentRunOptions(system_prompt=...)`), and it
-   touches **zero** shared `dev_loop` code — consistent with the spec's
-   "reuse at the right altitude". Pinned by
-   `test_dispatch_payload_and_profile`.
-2. **`_resolve_document_path`.** `FeatureBrief` validates `document_path`
-   readability eagerly, but the subagent reports a **repo-relative** path and
-   the hosting process' CWD is not guaranteed to be the repo root. The helper
-   tries the path as given, then anchored at `conf.PROJECT_ROOT`, and raises
-   an actionable `RuntimeError` ("reported committed=True … but no readable
-   document was found") if neither resolves — instead of letting a confusing
-   pydantic `ValidationError` escape from deep inside the model. This also
-   catches a subagent that lies about `committed`. Covered by
-   `test_unreadable_document_raises`.
-
-Dispatch `cwd` is `conf.PROJECT_ROOT` (the base checkout), **not**
-`WORKTREE_BASE_PATH`: the document is committed to `base_branch` and the
-feature worktree does not exist yet at ideation time — `sdd-planner` creates
-it later.
-
-Other behaviors pinned by tests: jira/dev_agents/judge_panel passthrough into
-the `FeatureBrief`; `ideation_output` + `feature_brief` published to shared
-state; partial answers accepted; rejection (`match="rejected by bob"`) and
-fail-closed expiry both raise with no re-dispatch; `committed=False` raises
-with `feature_brief` never set; a `FeatureBrief` arriving on `dev_brief`
-raises (it must route to the planner instead); wiki context injected,
-degraded to `""` on failure.
-
-`ruff`: the whole `dev_flow` package and test package are at **0** findings.
-
-**Deviations from spec**: one, scoped down rather than up.
-
-- The task's scope says "Add the **two** conf keys". Only
-  `DEV_FLOW_IDEATION_MAX_ROUNDS` was added here —
-  `DEV_FLOW_GATE_TTL_QUESTIONS` was already added in **TASK-2122**, where the
-  `GateKind` extension forced it (the `gate_ttl_for` exhaustiveness guard).
-  Its name, type and 86400 default are exactly as this task specifies, and it
-  is consumed here as planned. No duplication.
+**Deviations from spec**: none

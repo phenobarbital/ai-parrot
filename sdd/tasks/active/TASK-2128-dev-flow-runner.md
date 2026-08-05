@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-412 — Dev-Flow: SDD-Oriented AgentsFlow for Feature Development
 **Spec**: `sdd/specs/sdd-dev-flow.spec.md`
-**Status**: done
-**Completed**: 2026-08-05
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2127
@@ -148,65 +146,10 @@ async def test_never_calls_run_feature(monkeypatch): ...
 
 ## Completion Note
 
-**Completed by**: sdd-worker (Claude)
-**Date**: 2026-08-05
+*(Agent fills this in when done)*
+
+**Completed by**:
+**Date**:
 **Notes**:
 
-`DevFlowRunner(DevLoopRunner)` overrides **only** `run()`. 19 tests (117
-across `dev_flow`). No change to `DevLoopRunner` was needed — nothing in the
-base had to be touched or made protected-accessible.
-
-**Single topology, routed not branched.** Both brief kinds execute
-`self.flow`; a `FeatureBrief` reaches `planner` because `dev_intake`'s
-conditional edge sends it there, so "ideation is skipped by routing, not by
-the runner" is literally true. `test_never_calls_run_feature` monkeypatches
-`_run_feature` to raise and asserts `_feature_flow` stays `None`;
-`test_both_kinds_use_the_same_flow_object` asserts `_rev_flow` and
-`_feature_flow` are both still `None` after one run of each kind.
-
-**Seeding**: `dev_brief` always; `feature_brief` additionally for a document
-brief (pre-seeding a key `DevIntakeNode` would set anyway, so the context is
-honest for any observer before intake runs); bug-mode keys never set
-(`test_never_seeds_bug_mode_keys`). `extra_shared` merges last —
-`test_extra_shared_passthrough` covers `require_plan_approval` + `skip_qa`,
-which is the seam TASK-2123 and TASK-2129 depend on.
-
-**Two projections instead of inline branching**, both static and unit-tested:
-
-- `_summary_for` — the request `title` for an NL brief,
-  `"Feature: <document_path>"` for a document brief (matching
-  `_run_feature`'s wording). Also the `TypeError` guard: a bug-mode
-  `WorkBrief` is rejected **before** any host is registered or slot acquired
-  (`test_rejects_non_dev_flow_brief` asserts the flow never ran).
-- `_work_kind_for` — `RunCreated.work_kind` is a closed
-  `Literal["bug","enhancement","new_feature"]`, deliberately not extended
-  with `"feature"` (TASK-1918). A `DevRequestBrief`'s kind maps *directly*
-  onto two of those members (nicer than feature-mode, which has no NL kind
-  to report); a document brief reuses `"bug"` as the structural placeholder
-  exactly as `_run_feature` does, with the same explanatory comment.
-  `test_run_created_work_kind_maps_per_brief` pins all three.
-
-**On replicating the lifecycle block.** The task asked me to either replicate
-`run()`'s sequence or call the smallest inherited helpers. The
-host-registration/seeding/close parts *are* inherited helpers
-(`_register_host`, `_apply_root_action`, `_run_summary_from_host`,
-`_close_host`), but the ~35-line park-aware semaphore block is inlined in all
-three existing base-class run paths with no extractable helper, so it is
-replicated verbatim (comments included). This is necessary, not stylistic: an
-ideation `open_questions` gate parks the run from deep inside `IdeationNode`
-*while* `run_flow()` is in flight, so `async with self._semaphore` cannot
-express the release/re-acquire, and without registering
-`_run_completion[rid]` a `resume_run()` caller would have nothing to await.
-`test_parked_run_frees_its_slot` proves it end-to-end: the gate opens, the run
-parks, `active_runs` becomes empty, and answering the gate resumes it to
-COMPLETED. (A future refactor extracting that block into a base-class helper
-would now have four call sites — worth doing, out of scope here.)
-
-`ruff`: whole `dev_flow` package + tests at **0** findings.
-
-**Deviations from spec**: none.
-
-Contract note: the task's Verified Imports did not name `FlowResult`'s module,
-and my first draft guessed `parrot.bots.flows.core.types`, which raised
-`ImportError`. Verified and corrected to `parrot.bots.flows.core.result` —
-the module `dev_loop/runner.py:36` itself imports it from.
+**Deviations from spec**: none

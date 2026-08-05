@@ -2,9 +2,7 @@
 
 **Feature**: FEAT-412 — Dev-Flow: SDD-Oriented AgentsFlow for Feature Development
 **Spec**: `sdd/specs/sdd-dev-flow.spec.md`
-**Status**: done
-**Completed**: 2026-08-05
-**Verification**: verified
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2125, TASK-2126
@@ -182,76 +180,10 @@ def test_declarative_imperative_parity(): ...
 
 ## Completion Note
 
-**Completed by**: sdd-worker (Claude)
-**Date**: 2026-08-05
+*(Agent fills this in when done)*
+
+**Completed by**:
+**Date**:
 **Notes**:
 
-Three modules + 25 tests (98 across `dev_flow`; `dev_loop`'s own
-`test_declarative_flow.py` / `test_feature_flow.py` still 27 passed).
-
-**Inventory**: `build_dev_flow_definition()` → `flow="dev-flow"`, **10 nodes**
-(`dev_flow.dev_intake`, `dev_flow.ideation` + the 8 reused `dev_loop.*`),
-**20 edges** = 12 routing + 8 `on_error`. `test_no_ops_nodes_present`
-asserts `bug_intake`, `research`, `deployment_handoff`, `revision_handoff`
-**and** `intent_classifier` are absent, so the "no ops concerns" property is
-enforced rather than merely intended.
-
-**Anti-drift decision worth flagging.** Rather than re-spelling the FEAT-378
-chain, this task **imports** it:
-
-- node ids (`PLANNER`, `DEVELOPMENT`, …) and the CEL strings
-  (`_CEL_QA_PASSED`, `_CEL_FEEDBACK_{ESCALATE,ACCEPT,RETRY}`, `_CEL_QA_FAILED`)
-  from `dev_loop.definition`;
-- the Python routing predicates (`_qa_passed`, `_qa_failed`,
-  `_feedback_*`), `FlowEventPublisher` and `_NullAgentRegistry` from
-  `dev_loop.flow`.
-
-The task said "REPLICATE … verbatim"; importing is the strictly stronger
-reading — a future edit to feature-mode's predicates cannot leave dev-flow
-silently behind, and `test_edge_predicates_match_feature_mode_verbatim`
-asserts equality against the imported constants *and* against the literal
-strings the spec quotes, so an upstream change still has to be conscious.
-It does mean this module depends on two private `dev_loop` names
-(`_NullAgentRegistry`, and the `_feedback_*`/`_qa_*` predicates) — the same
-cross-module private use `dev_loop/runner.py` itself already makes of
-`dev_loop/flow.py`.
-
-**Only the intake fork is new**: `dev_intake -(NL)-> ideation`,
-`dev_intake -(feature)-> planner`, `ideation -> planner` (on_success). That
-makes `planner` a **third** OR-join in the graph, which is the concrete
-reason explicit-edge execution is mandatory here — recorded in both module
-docstrings and pinned by `test_planner_is_an_or_join`.
-
-`factories.py` delegates the eight reused types to
-`build_dev_loop_node_factories` (a `dict(...)` copy, so the returned map is
-never mutated in place) and adds only the two `dev_flow.*` factories.
-`wiki_search` is forwarded to **both** the reused factories and
-`IdeationNode`. Importing `factories.py` imports both node packages, which is
-what guarantees the `@register_dev_loop_node` decorators have run before
-materialization.
-
-`_with_graph` is duplicated locally (4 lines) rather than importing
-`dev_loop.factories._with_graph` — noted as a deliberate small duplication in
-its docstring, since it is the one private helper whose cross-package import
-buys nothing.
-
-`build_dev_flow()` signature matches the spec's §2 declaration exactly,
-including `ideation_max_rounds` and the `require_plan_approval` build-time
-default (the per-run override from TASK-2123 does the rest —
-`test_require_plan_approval_reaches_development` covers both directions).
-
-Parity test asserts node-id set equality, edge-triple set equality (with the
-pre-existing `on_success`→`always` vocabulary normalization the dev_loop
-parity tests already use), and that every `on_condition` edge carries a
-predicate **on both sides** — a declarative predicate with no imperative twin
-would otherwise never route.
-
-`ruff`: whole `dev_flow` package + tests at **0** findings.
-
-**Deviations from spec**: none.
-
-Not touched (out of scope, deliberately): `dev_flow/__init__.py`'s
-`_LAZY_EXPORTS` map is still empty, so `build_dev_flow` is reached via
-`from parrot.flows.dev_flow.flow import build_dev_flow`. Neither this task
-nor TASK-2128 lists `__init__.py`; if the server prefers the package-level
-symbol, that is a one-line addition there.
+**Deviations from spec**: none

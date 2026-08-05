@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-05T00:00:00Z",
-  "completed_at": "2026-08-05T11:40:04+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-2121",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,9 +22,8 @@
       "parallelism_notes": "Root of the dependency graph; everything else imports these models.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2121-dev-flow-models.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2121-dev-flow-models.md"
     },
     {
       "id": "TASK-2122",
@@ -33,7 +32,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -41,9 +40,8 @@
       "parallelism_notes": "Touches only dev_loop/session_state.py + commands.py + runner.py — no file overlap with TASK-2121/2123/2124.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2122-open-questions-gate.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2122-open-questions-gate.md"
     },
     {
       "id": "TASK-2123",
@@ -52,7 +50,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -60,9 +58,8 @@
       "parallelism_notes": "Touches only dev_loop/nodes/development.py — no overlap with any other FEAT-412 task.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2123-plan-gate-per-run-override.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2123-plan-gate-per-run-override.md"
     },
     {
       "id": "TASK-2124",
@@ -71,7 +68,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,9 +78,8 @@
       "parallelism_notes": "Needs IdeationOutput contract from TASK-2121; independent of TASK-2122/2123 otherwise.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2124-sdd-ideation-subagent.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2124-sdd-ideation-subagent.md"
     },
     {
       "id": "TASK-2125",
@@ -92,7 +88,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -102,9 +98,8 @@
       "parallelism_notes": "Shares dev_flow/nodes/__init__.py with TASK-2126 — run sequentially within the worktree.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2125-dev-intake-node.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2125-dev-intake-node.md"
     },
     {
       "id": "TASK-2126",
@@ -113,7 +108,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -125,9 +120,8 @@
       "parallelism_notes": "Consumes the gate extension (2122) and the subagent contract (2124); shares nodes/__init__.py with TASK-2125.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2126-ideation-node.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2126-ideation-node.md"
     },
     {
       "id": "TASK-2127",
@@ -136,7 +130,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -147,9 +141,8 @@
       "parallelism_notes": "Wires both new nodes into the graph.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2127-dev-flow-topology.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2127-dev-flow-topology.md"
     },
     {
       "id": "TASK-2128",
@@ -158,7 +151,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -168,9 +161,8 @@
       "parallelism_notes": "Needs build_dev_flow from TASK-2127.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2128-dev-flow-runner.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2128-dev-flow-runner.md"
     },
     {
       "id": "TASK-2129",
@@ -179,7 +171,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -191,9 +183,8 @@
       "parallelism_notes": "Integrates the gate route (2122), plan-gate override (2123) and runner (2128).",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2129-server-dev.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2129-server-dev.md"
     },
     {
       "id": "TASK-2130",
@@ -202,7 +193,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -212,9 +203,8 @@
       "parallelism_notes": "Consumes /api/config and route shapes shipped by TASK-2129.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2130-dev-html-ui.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2130-dev-html-ui.md"
     },
     {
       "id": "TASK-2131",
@@ -223,7 +213,7 @@
       "feature_id": "FEAT-412",
       "feature": "sdd-dev-flow",
       "spec": "sdd/specs/sdd-dev-flow.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -234,9 +224,8 @@
       "parallelism_notes": "Documents what 2129/2130 shipped.",
       "assigned_to": null,
       "started_at": "2026-08-04T23:27:14+00:00",
-      "completed_at": "2026-08-05T11:40:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2131-dev-flow-docs.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2131-dev-flow-docs.md"
     }
   ]
 }
