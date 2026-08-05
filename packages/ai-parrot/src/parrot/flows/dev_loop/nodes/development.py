@@ -235,6 +235,15 @@ class DevelopmentNode(DevLoopNode):
         ``DeploymentHandoffNode.require_deployment_approval``'s fail-open
         legacy fallback — when no ``SessionHost`` is present.
 
+        Whether the gate is required is resolved **per run** (FEAT-412):
+        an explicit ``shared["require_plan_approval"]`` (``True`` *or*
+        ``False``) wins over the constructor flag, so a UI toggle can turn
+        the gate on/off for a single run without rebuilding the flow (the
+        server passes it through ``DevLoopRunner.run(extra_shared=...)``).
+        When the key is absent — or present as ``None`` — the
+        constructor flag applies, so every pre-FEAT-412 call site behaves
+        byte-identically.
+
         Args:
             shared: The flow's shared state dict.
             research: The upstream research output (Jira key, spec path).
@@ -248,7 +257,15 @@ class DevelopmentNode(DevLoopNode):
                 via the flow's ``on_error`` edge, the same terminate-the-run
                 effect a rejected ``deployment_approval`` gate has.
         """
-        if not self._require_plan_approval or shared.get("_plan_gate_checked"):
+        # FEAT-412: per-run override. Read with an absent-vs-explicit-False
+        # distinction (NOT truthiness): a run that explicitly sets False must
+        # suppress a gate the constructor flag would have opened, while an
+        # absent key (or an explicit None) must fall back to that flag.
+        override = shared.get("require_plan_approval")
+        required = (
+            self._require_plan_approval if override is None else bool(override)
+        )
+        if not required or shared.get("_plan_gate_checked"):
             return
         shared["_plan_gate_checked"] = True
 
