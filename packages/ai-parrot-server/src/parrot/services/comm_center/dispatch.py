@@ -173,12 +173,33 @@ async def fan_out(batch_id: uuid.UUID, payloads: list) -> None:
     Reuses a single ``NotifyClient`` connection for the whole batch
     (connect once, close in ``finally`` — spec Key Constraints).
 
+    Also accepts a ``PreparedBatch`` directly in place of ``payloads`` —
+    defense in depth for dry-run (spec §3 Module 9): duck-typed via a
+    ``dry_run`` attribute, since importing
+    :class:`~parrot.services.comm_center.models.PreparedBatch` here would
+    be a needless coupling for what is otherwise a plain list of tuples.
+    A batch prepared with ``dry_run=True`` is refused unconditionally —
+    the real handler already never reaches this (TASK-2159/2161 skip
+    fan-out/``publish_one`` entirely for a dry run), but a future caller
+    of this service bypassing the handler must not be able to publish one
+    either.
+
     Args:
         batch_id: The batch these payloads belong to.
         payloads: ``(row_id, payload)`` pairs — the already-persisted
             :class:`NotificationBatchRecipient` id and its wire payload
-            from :func:`build_wire_payload`.
+            from :func:`build_wire_payload` — or a ``PreparedBatch``.
+
+    Raises:
+        RuntimeError: ``payloads`` is a ``PreparedBatch`` with
+            ``dry_run=True``.
     """
+    if hasattr(payloads, "dry_run"):
+        prepared_batch = payloads
+        if prepared_batch.dry_run:
+            raise RuntimeError("Refusing to publish a dry-run batch")
+        payloads = [(msg.row_number, msg.payload) for msg in prepared_batch.queued]
+
     client = _get_notify_client()
     await client.connect()
     try:

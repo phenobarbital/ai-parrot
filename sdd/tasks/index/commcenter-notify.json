@@ -193,7 +193,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "Sequential and last of the behavior tasks: touches render.py, dispatch.py and comm_center.py, and must cover BOTH send endpoints, so it needs 2161 in place. Guard is enforced at the service layer so no future caller can bypass it.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2162-dry-run-mode.md"
+      "completed_at": "2026-08-06T22:05:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2162-dry-run-mode.md"
     },
     {
       "id": "TASK-2163",

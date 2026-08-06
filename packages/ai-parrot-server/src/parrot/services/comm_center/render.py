@@ -268,6 +268,47 @@ def build_wire_payload(
     return payload
 
 
+def build_preview(payload: dict) -> str:
+    """Render the exact text pass 2 would produce for one recipient (spec §3 Module 9).
+
+    Simulates ``AbstractProvider._render_``'s context
+    (``notify/providers/base.py:177-183``): ``{"recipient": to, "username":
+    to, "message": message, "subject": subject, **kwargs}``, where
+    ``**kwargs`` is bound **last** and overrides the defaults. Uses the
+    *same* ``payload`` :func:`build_wire_payload` produced — never a
+    separately-constructed context — so the preview is guaranteed to match
+    what a real send would deliver (spec §5 preview-fidelity criterion).
+    Because ``build_wire_payload`` always emits a real ``username`` string
+    (Trap 1 guard), the simulated default Actor-object binding is always
+    overridden here too, exactly as it is in the real pass 2.
+
+    Args:
+        payload: A wire payload from :func:`build_wire_payload` (the first
+            queued recipient's, by convention).
+
+    Returns:
+        The fully-rendered preview text.
+    """
+    env = Environment(undefined=DebugUndefined, autoescape=False)
+    template = env.from_string(payload.get("template") or "")
+    context = {
+        "recipient": None,  # reserved; never meaningfully used in a template
+        "username": None,
+        "message": None,
+        "subject": payload.get("subject"),
+    }
+    # Row fields forwarded as pass-2 kwargs — last, so they override the
+    # defaults above, exactly like the real `**kwargs` in providers/base.py.
+    context.update(
+        {
+            key: value
+            for key, value in payload.items()
+            if key not in ("provider", "recipient", "template")
+        }
+    )
+    return template.render(**context)
+
+
 async def prepare(
     *,
     recipients: list,
@@ -275,6 +316,7 @@ async def prepare(
     template_source: str,
     subject: str | None = None,
     now: datetime | None = None,
+    dry_run: bool = False,
 ) -> PreparedBatch:
     """Run every step short of publishing: render, validate, build payloads.
 
@@ -291,6 +333,15 @@ async def prepare(
             is the caller's job; this function only renders it.
         subject: The message subject, if any.
         now: Injectable current time, threaded into :func:`resolve_functions`.
+        dry_run: When ``True``, the returned :class:`PreparedBatch` carries
+            ``dry_run=True`` and a ``preview`` of the first queued
+            recipient's fully-rendered (both passes) text — ``None`` when
+            nothing is queued (spec §3 Module 9). This flag is only ever
+            *recorded*, never acted on here — :func:`prepare` never
+            publishes regardless; the actual publish refusal is enforced
+            in :mod:`parrot.services.comm_center.dispatch` (defense in
+            depth), and the handler is what actually skips
+            persistence/fan-out for a dry run.
 
     Returns:
         A :class:`PreparedBatch` with the resolved functions, the
@@ -311,10 +362,14 @@ async def prepare(
             PreparedMessage(recipient=recipient, payload=payload, row_number=row_number)
         )
 
+    preview = build_preview(queued[0].payload) if dry_run and queued else None
+
     return PreparedBatch(
         resolved_functions=functions,
         template=rendered_template,
         subject=subject,
         queued=queued,
         skipped=skipped,
+        dry_run=dry_run,
+        preview=preview,
     )

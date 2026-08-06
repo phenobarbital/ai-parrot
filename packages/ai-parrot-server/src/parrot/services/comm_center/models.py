@@ -74,6 +74,8 @@ class PreparedBatch(BaseModel):
     subject: Optional[str] = Field(required=False, default=None)
     queued: list = Field(required=False, default_factory=list)
     skipped: list = Field(required=False, default_factory=list)
+    dry_run: bool = Field(required=False, default=False)
+    preview: Optional[str] = Field(required=False, default=None)
 
 
 class SenderRequest(BaseModel):

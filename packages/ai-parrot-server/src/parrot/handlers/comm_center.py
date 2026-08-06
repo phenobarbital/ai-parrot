@@ -320,9 +320,26 @@ class CommCenterHandler(BaseHandler):
                 provider=sender_request.provider,
                 template_source=template_source,
                 subject=subject,
+                dry_run=sender_request.dry_run,
             )
         except Exception as exc:  # noqa: BLE001 -- centralized error mapping
             return self._map_error(exc)
+
+        if prepared.dry_run:
+            # Spec §3 Module 9 / G14: stop before any xadd and before any
+            # tracking write. No DB connection, no NotifyClient, no batch_id.
+            self.logger.info("Dry run for /sender — publishing nothing")
+            response = SenderResponse(
+                batch_id=None,
+                status="dry_run",
+                total=len(prepared.queued) + len(prepared.skipped),
+                queued=len(prepared.queued),
+                skipped=len(prepared.skipped),
+                resolved_functions=prepared.resolved_functions,
+                skipped_details=[{"row": s.row, "reason": s.reason} for s in prepared.skipped],
+                preview=prepared.preview,
+            )
+            return self.json_response(response.to_dict(), status=200)
 
         batch_id = uuid.uuid4()
         payloads: list = []
@@ -469,9 +486,27 @@ class CommCenterHandler(BaseHandler):
                 provider=message_request.provider,
                 template_source=template_source,
                 subject=subject,
+                dry_run=message_request.dry_run,
             )
         except Exception as exc:  # noqa: BLE001 -- centralized error mapping
             return self._map_error(exc)
+
+        if prepared.dry_run:
+            # Spec §3 Module 9 / G14: stop before any xadd and before any
+            # tracking write, on THIS endpoint too. Takes priority over the
+            # divergent invalid-recipient 400 below -- dry-run reports the
+            # skip as data, it does not error.
+            self.logger.info("Dry run for /message — publishing nothing")
+            reason = prepared.skipped[0].reason if prepared.skipped else None
+            response = SingleMessageResponse(
+                batch_id=None,
+                message_id=None,
+                status="dry_run",
+                reason=reason,
+                resolved_functions=prepared.resolved_functions,
+                preview=prepared.preview,
+            )
+            return self.json_response(response.to_dict(), status=200)
 
         if prepared.skipped:
             # Deliberate divergence: 400 + reason, never 202/skipped (spec Module 8).
