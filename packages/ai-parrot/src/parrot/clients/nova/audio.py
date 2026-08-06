@@ -51,7 +51,7 @@ import contextlib
 import json
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
@@ -137,6 +137,12 @@ class _TurnState:
     generation_stage: Optional[str] = None
     pending_tool: Optional[LiveToolCall] = None
     pending_tool_raw_input: Optional[str] = None
+    # FEAT-416 (TASK-2148): completed (contentEnd-TOOL) tool calls queued
+    # for execution, as (LiveToolCall, raw_input) pairs. Nova may emit
+    # several toolUse/contentEnd(TOOL) pairs back-to-back in one turn
+    # before the next non-tool event — this queue accumulates them so they
+    # can be executed together (see NovaAudio._flush_pending_tools).
+    pending_tools: List[tuple] = field(default_factory=list)
 
 
 def _parse_generation_stage(additional_model_fields: Any) -> Optional[str]:
@@ -610,6 +616,99 @@ class NovaAudio:
             "contentName": content_name,
         }}})
 
+    async def _flush_pending_tools(
+        self,
+        stream: Any,
+        prompt_name: str,
+        pending_tools: List[tuple],
+        tool_calls_list: List[LiveToolCall],
+        usage: LiveCompletionUsage,
+        session_id: Optional[str],
+        turn_id: str,
+        user_id: Optional[str],
+        parallel_tool_execution: bool,
+    ) -> List[LiveVoiceResponse]:
+        """Execute and send results for all queued tool calls (FEAT-416,
+        TASK-2148 — spec §3 Module 4).
+
+        Executes sequentially (current, default behavior) unless
+        *parallel_tool_execution* is ``True`` AND more than one tool is
+        queued, in which case all queued tools run concurrently via
+        ``asyncio.TaskGroup``. Either way, every tool's result is sent back
+        via :meth:`_send_tool_result` (all results reach Nova before the
+        model resumes — a Nova Sonic protocol requirement) and one
+        :class:`LiveVoiceResponse` is returned per tool, in queued order.
+
+        A per-tool ``try/except`` (not TaskGroup's own exception
+        propagation, which would cancel sibling tasks) ensures one failing
+        tool does not prevent the others from completing.
+
+        Args:
+            stream: The handle returned by :meth:`_open_stream`.
+            prompt_name: The turn's prompt identifier.
+            pending_tools: Queued ``(LiveToolCall, raw_input)`` pairs.
+            tool_calls_list: The turn's accumulated tool-call list; executed
+                calls are appended here.
+            usage: The turn's usage accumulator; tool timing/count fields
+                are updated in place.
+            session_id: Session identifier for the yielded responses.
+            turn_id: Turn identifier for the yielded responses.
+            user_id: User identifier for the yielded responses.
+            parallel_tool_execution: Concurrency gate (from ``VoiceConfig``,
+                wired via ``**kwargs`` — TASK-2151 threads this from
+                ``VoiceBot``).
+
+        Returns:
+            One :class:`LiveVoiceResponse` per queued tool, in order.
+        """
+        if not pending_tools:
+            return []
+
+        async def _run_one(pending: LiveToolCall, raw_input: Optional[str]) -> Any:
+            start = time.monotonic()
+            try:
+                args = _parse_tool_arguments(raw_input)
+                # Record what was actually attempted before executing, so
+                # LiveToolCall.arguments reflects the real arguments even if
+                # _execute_tool() itself raises.
+                pending.arguments = args
+                result = await self._execute_tool(pending.name, args)
+                pending.result = result
+            except Exception as exc:
+                pending.error = str(exc)
+                result = str(exc)
+            pending.execution_time_ms = (time.monotonic() - start) * 1000
+            return result
+
+        if parallel_tool_execution and len(pending_tools) > 1:
+            async with asyncio.TaskGroup() as tg:
+                tasks = [
+                    tg.create_task(_run_one(pending, raw_input))
+                    for pending, raw_input in pending_tools
+                ]
+            results = [task.result() for task in tasks]
+        else:
+            results = [
+                await _run_one(pending, raw_input)
+                for pending, raw_input in pending_tools
+            ]
+
+        responses: List[LiveVoiceResponse] = []
+        for (pending, _raw_input), result in zip(pending_tools, results, strict=True):
+            tool_calls_list.append(pending)
+            usage.tool_calls_executed += 1
+            usage.tool_execution_time_ms += pending.execution_time_ms
+            await self._send_tool_result(stream, prompt_name, pending.id, result)
+            responses.append(LiveVoiceResponse(
+                text="",
+                tool_calls=[pending],
+                is_complete=False,
+                session_id=session_id,
+                turn_id=turn_id,
+                user_id=user_id,
+            ))
+        return responses
+
     async def stream_voice(
         self,
         audio_iterator: AsyncIterator[bytes],
@@ -660,6 +759,10 @@ class NovaAudio:
             self.model or self.default_model, region_prefix=None
         )
         resolved_voice_id = kwargs.get("voice_id") or self.voice_id
+        # FEAT-416 (TASK-2148): gate concurrent tool execution on the
+        # VoiceConfig-derived flag (VoiceBot wires this in TASK-2151).
+        # Default False preserves current sequential behavior exactly.
+        parallel_tool_execution = kwargs.get("parallel_tool_execution", False)
         prompt_name = str(uuid.uuid4())
         content_name = str(uuid.uuid4())
 
@@ -677,8 +780,22 @@ class NovaAudio:
         connection_start = time.monotonic()
         stream = await self._open_stream(resolved_model)
 
+        # FEAT-416 (TASK-2147): thread VoiceConfig inference parameters
+        # through to the Nova Sonic sessionStart event instead of hardcoding
+        # them. Defaults match the previous hardcoded values exactly, so
+        # callers that don't pass these kwargs see no behavior change.
+        # VoiceBot wires these from VoiceConfig (TASK-2151); this task just
+        # opens the door.
+        temperature = kwargs.get("temperature", 0.7)
+        max_tokens = kwargs.get("max_tokens", 1024)
+        top_p = kwargs.get("top_p", 0.9)
+
         await self._send_event(stream, {"event": {"sessionStart": {
-            "inferenceConfiguration": {"maxTokens": 1024, "topP": 0.9, "temperature": 0.7}
+            "inferenceConfiguration": {
+                "maxTokens": max_tokens,
+                "topP": top_p,
+                "temperature": temperature,
+            }
         }}})
         await self._send_event(
             stream, self._build_prompt_start(prompt_name, resolved_voice_id)
@@ -717,6 +834,22 @@ class NovaAudio:
         try:
             async for event in self._iter_events(stream):
                 if time.monotonic() - connection_start >= self._CONNECTION_LIMIT_SECONDS:
+                    # Code-review fix (FEAT-416 TASK-2148/2152): flush any
+                    # tool queued-but-not-yet-executed (TASK-2148 defers
+                    # execution from contentEnd(TOOL) to the next non-tool
+                    # event) before tearing down for reconnect — otherwise
+                    # the 8-minute connection limit landing in that window
+                    # would silently drop the tool call: never executed,
+                    # its result never sent to Nova.
+                    if turn_state.pending_tools:
+                        for tool_response in await self._flush_pending_tools(
+                            stream, prompt_name, turn_state.pending_tools,
+                            tool_calls_list, usage, session_id, turn_id, user_id,
+                            parallel_tool_execution,
+                        ):
+                            yield tool_response
+                        turn_state.pending_tools = []
+
                     self.logger.info(
                         "Nova Sonic session %s approaching 8-minute connection "
                         "limit — signalling reconnect.", session_id,
@@ -739,6 +872,25 @@ class NovaAudio:
                     "Nova Sonic event: %s",
                     ", ".join(event_keys) if event_keys else list(event.keys()),
                 )
+
+                # FEAT-416 (TASK-2148): flush any queued tool-call batch
+                # before handling a non-tool event, so all tool results are
+                # sent back before the model resumes (Nova Sonic protocol
+                # requirement) — this is the "next non-tool event" boundary
+                # described in spec §3 Module 4. No-op when nothing is
+                # queued (the default, single-tool-at-a-time case).
+                is_tool_event = (
+                    "toolUse" in event
+                    or (event.get("contentEnd") or {}).get("type") == "TOOL"
+                )
+                if not is_tool_event and turn_state.pending_tools:
+                    for tool_response in await self._flush_pending_tools(
+                        stream, prompt_name, turn_state.pending_tools,
+                        tool_calls_list, usage, session_id, turn_id, user_id,
+                        parallel_tool_execution,
+                    ):
+                        yield tool_response
+                    turn_state.pending_tools = []
 
                 content_start = event.get("contentStart")
                 if content_start:
@@ -859,37 +1011,20 @@ class NovaAudio:
                         # rather than raise.
                         continue
 
-                    start = time.monotonic()
-                    try:
-                        args = _parse_tool_arguments(turn_state.pending_tool_raw_input)
-                        # Record what was actually attempted before executing,
-                        # so a LiveToolCall.arguments reflects the real
-                        # arguments even if _execute_tool() itself raises.
-                        pending.arguments = args
-                        result = await self._execute_tool(pending.name, args)
-                        pending.result = result
-                    except Exception as exc:
-                        pending.error = str(exc)
-                        result = str(exc)
-                    pending.execution_time_ms = (time.monotonic() - start) * 1000
-
-                    tool_calls_list.append(pending)
-                    usage.tool_calls_executed += 1
-                    usage.tool_execution_time_ms += pending.execution_time_ms
-
-                    await self._send_tool_result(
-                        stream, prompt_name, pending.id, result
+                    # FEAT-416 (TASK-2148): queue the completed tool call
+                    # instead of executing it immediately — Nova may send
+                    # several toolUse/contentEnd(TOOL) pairs back-to-back
+                    # before the next non-tool event, and the queue lets
+                    # them execute concurrently (parallel_tool_execution)
+                    # when there's more than one. Execution + result-sending
+                    # happens in _flush_pending_tools(), triggered at the
+                    # next non-tool event boundary above — for the default
+                    # single-tool case that's immediate (this loop's very
+                    # next iteration sees a non-tool event), so behavior is
+                    # unchanged from the previous synchronous-execute path.
+                    turn_state.pending_tools.append(
+                        (pending, turn_state.pending_tool_raw_input)
                     )
-
-                    yield LiveVoiceResponse(
-                        text="",
-                        tool_calls=[pending],
-                        is_complete=False,
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        user_id=user_id,
-                    )
-
                     turn_state.pending_tool = None
                     turn_state.pending_tool_raw_input = None
                     continue
@@ -915,6 +1050,16 @@ class NovaAudio:
                     "Nova Sonic session %s: stream ended without completionEnd",
                     session_id,
                 )
+                # FEAT-416 (TASK-2148): flush any tool batch still queued
+                # when the stream ended without a completionEnd boundary.
+                if turn_state.pending_tools:
+                    for tool_response in await self._flush_pending_tools(
+                        stream, prompt_name, turn_state.pending_tools,
+                        tool_calls_list, usage, session_id, turn_id, user_id,
+                        parallel_tool_execution,
+                    ):
+                        yield tool_response
+                    turn_state.pending_tools = []
                 yield LiveVoiceResponse(
                     text="",
                     is_complete=True,

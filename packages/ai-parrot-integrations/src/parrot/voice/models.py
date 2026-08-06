@@ -3,12 +3,22 @@ Voice Module Data Models
 
 Defines the data structures for voice interactions, including
 audio chunks, voice messages, and response formats.
+
+FEAT-416: ``VoiceConfig`` here has been replaced by a deprecation-warning
+re-export of the unified ``parrot.models.voice.VoiceConfig`` (core) — see
+``__getattr__`` at the bottom of this module. ``VoiceProvider`` has moved
+to ``parrot.models.voice`` too and is re-exported below (a move, not a
+rename, so no deprecation warning is raised for it).
 """
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import base64
+import warnings
+
+from parrot.models.voice import VoiceConfig as _VoiceConfig
+from parrot.models.voice import VoiceProvider  # noqa: F401 — re-exported, no warning (a move)
 
 
 class AudioFormat(Enum):
@@ -19,23 +29,6 @@ class AudioFormat(Enum):
     MP3 = "audio/mp3"
     OGG_OPUS = "audio/ogg;codecs=opus"
     WEBM_OPUS = "audio/webm;codecs=opus"
-
-
-class VoiceProvider(Enum):
-    """Supported voice providers."""
-    GOOGLE_LIVE = "google_live"
-    OPENAI_REALTIME = "openai_realtime"
-    WHISPER_TTS = "whisper_tts"  # Fallback: Whisper STT + LLM + TTS
-    # FEAT-302/FEAT-315: Amazon Nova 2 Sonic bidirectional voice
-    # (experimental) — backed by parrot.clients.nova.NovaClient (core
-    # ai-parrot; supersedes the deleted legacy voice-only client module
-    # from FEAT-302). Audio format compatibility: Nova Sonic's PCM 16kHz
-    # in / 24kHz out matches the existing AudioFormat.PCM_16K /
-    # AudioFormat.PCM_24K values above exactly — no new AudioFormat
-    # entries needed. FEAT-315 breaking change: renamed from the previous
-    # snake-case provider key (see docs/migration/feat-315-novaclient.md);
-    # no alias kept.
-    NOVA = "nova"
 
 
 class SessionState(Enum):
@@ -152,74 +145,20 @@ class VoiceResponse:
         }
 
 
-@dataclass 
-class VoiceConfig:
-    """
-    Configuration for voice sessions.
-    
-    Defines audio parameters, provider settings, and behavior options.
-    """
-    # Provider selection
-    provider: VoiceProvider = VoiceProvider.GOOGLE_LIVE
-    
-    # Audio settings
-    input_format: AudioFormat = AudioFormat.PCM_16K
-    output_format: AudioFormat = AudioFormat.PCM_24K
-    input_sample_rate: int = 16000
-    output_sample_rate: int = 24000
-    
-    # Voice settings (provider-specific)
-    voice_name: str = "Puck"  # Gemini: Aoede, Charon, Fenrir, Kore, Puck
-    language: str = "en-US"
-    
-    # Session behavior
-    enable_vad: bool = True  # Voice Activity Detection
-    vad_mode: str = "server_vad"  # server_vad, semantic_vad, none
-    enable_interruption: bool = True
-    
-    # Transcription
-    enable_input_transcription: bool = True
-    enable_output_transcription: bool = True
-    
-    # Timeouts
-    session_timeout_seconds: int = 1800  # 30 minutes
-    silence_timeout_seconds: int = 30
-    
-    # Model settings
-    model: Optional[str] = None  # Auto-select based on provider
-    temperature: float = 0.7
-    max_tokens: int = 4096
-    
-    def get_model(self) -> str:
-        """Get the appropriate model string for the provider."""
-        if self.model:
-            return self.model
-        
-        if self.provider == VoiceProvider.GOOGLE_LIVE:
-            return "gemini-2.5-flash-native-audio-preview-09-2025"
-        elif self.provider == VoiceProvider.OPENAI_REALTIME:
-            return "gpt-realtime"
-        else:
-            return "gemini-2.5-flash"  # Fallback
-    
-    def to_gemini_config(self) -> Dict[str, Any]:
-        """Convert to Gemini Live API configuration format."""
-        return {
-            "response_modalities": ["AUDIO", "TEXT"],
-            "speech_config": {
-                "voice_config": {
-                    "prebuilt_voice_config": {
-                        "voice_name": self.voice_name
-                    }
-                },
-            },
-            "realtime_input_config": {
-                "automatic_activity_detection": {
-                    "disabled": not self.enable_vad
-                }
-            },
-            "generation_config": {
-                "temperature": self.temperature,
-                "max_output_tokens": self.max_tokens
-            }
-        }
+# =============================================================================
+# FEAT-416: VoiceConfig deprecation shim
+# =============================================================================
+# VoiceConfig used to be defined here (17 fields, provider: VoiceProvider).
+# It is now unified in parrot.models.voice (core) — see that module's
+# docstring for the merge rationale. Importing VoiceConfig from this
+# integrations module still works, but emits a DeprecationWarning pointing
+# callers at the new location.
+
+def __getattr__(name: str):
+    if name == "VoiceConfig":
+        warnings.warn(
+            "Import VoiceConfig from parrot.models.voice instead",
+            DeprecationWarning, stacklevel=2,
+        )
+        return _VoiceConfig
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

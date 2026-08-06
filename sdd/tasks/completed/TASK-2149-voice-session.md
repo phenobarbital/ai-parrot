@@ -272,4 +272,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per spec §3 Module 5, faithfully porting
+`NovaVoiceSession` (`examples/clients/nova/audio.py:116-338`):
+
+- `packages/ai-parrot/src/parrot/voice/session.py` (CREATE, directory
+  didn't exist — created) — `VoiceSession` with `client: VoiceCapable`
+  (not `NovaClient`), injected `send_fn` (not `self.ws.send_json`),
+  `voice_config: VoiceConfig`. All lifecycle methods
+  (`start_turn`/`push_audio`/`end_turn`/`close`/`_cancel_turn`/
+  `_audio_iterator`/`_run_turn`/`_relay`/`_send`) ported 1:1, including the
+  **20ms-paced silence injection exactly as-is** (critical per spec — VAD
+  misses end-of-speech on a burst).
+- Two NovaClient-specific attribute reads had to be adapted since
+  `VoiceCapable` only declares `stream_voice()` (verified: the test
+  spec's own `MockVoiceClient` has neither attribute, so leaving these in
+  would raise `AttributeError` on the very first test):
+  - `self.client.model`/`self.client.voice_id` in `_run_turn`'s log line
+    → dropped (log message simplified to session id only).
+  - `self.client.OUTPUT_SAMPLE_RATE_HZ` (audio frame's `sample_rate`
+    field) → `self.voice_config.output_sample_rate`.
+  - `NovaClient.INPUT_SAMPLE_RATE_HZ` (silence frame count) →
+    `self.voice_config.input_sample_rate`, exactly per the task's own Key
+    Constraints.
+- `packages/ai-parrot/src/parrot/voice/__init__.py` (CREATE) — exports
+  `VoiceSession`.
+- `packages/ai-parrot/tests/voice/test_voice_session.py` (CREATE, plus
+  `tests/voice/__init__.py`) — the task's Test Specification here was
+  already complete, runnable code (unlike most other tasks' scaffolds),
+  used verbatim, plus 3 added tests (`test_send_fn_called_not_ws`,
+  `test_new_turn_cancels_previous`, `test_no_aiohttp_import`) directly
+  covering acceptance criteria the given scaffold didn't exercise
+  ("`send_fn` is called (not `ws.send_json`)", "no aiohttp import").
+
+**⚠️ CRITICAL cross-package packaging risk found for TASK-2152 — must be
+resolved there, NOT fixed here (out of this task's file scope):**
+`packages/ai-parrot-integrations/src/parrot/voice/__init__.py` **already
+exists** as a real (non-namespace) package (`from .tts import
+VoiceSynthesizer`) — the task's Codebase Contract only checked core and
+didn't know this. Per PEP 420 namespace-package resolution, `sys.path`
+order matters and this repo's `.pth` files put `ai-parrot/src` before
+`ai-parrot-integrations/src` alphabetically. In a full workspace install
+(confirmed: `.venv` has both), a `parrot.voice.__init__.py` **that exists
+on both sides** does not merge — whichever one has `__init__.py` on the
+path that Python's `PathFinder` reaches first (as a spec with a real
+loader) wins **exclusively**, and the other side's submodules become
+unreachable via `parrot.voice.*` entirely. Concretely: once
+TASK-2152 imports `from parrot.voice.session import VoiceSession` inside
+`packages/ai-parrot-integrations/src/parrot/voice/handler.py`, that
+package's own sibling `parrot/voice/__init__.py` and everything under it
+(`handler.py`, `models.py`, `tts/`, `transcriber/`, `ui/`) will collide
+with core's new `parrot/voice/__init__.py` under the same dotted name.
+**This does NOT break in isolation** (core-only install, this task's own
+tests) — it only surfaces once both packages are installed together,
+which is exactly TASK-2152's situation. TASK-2152 will need to convert
+`ai-parrot-integrations`'s `parrot/voice/__init__.py` to a bare namespace
+directory (matching the `ai-parrot-embeddings` precedent in
+`.agent/CONTEXT.md`) — moving its `VoiceSynthesizer` convenience
+re-export to a documented explicit `from parrot.voice.tts import
+VoiceSynthesizer` import, or an equivalent fix — before its own
+acceptance criteria (which require `VoiceSession` and `VoiceChatHandler`
+loaded in the same process) can actually be verified.
+
+Lint: `ruff check --select=E,F,W,C,B --ignore=E501,W293,C901` passes on
+all four files.
+
+**Tests not executed** — same pre-existing, sandbox-wide broken-venv
+limitation as prior tasks (verified via `python -m py_compile` instead).
+Recommend running
+`pytest packages/ai-parrot/tests/voice/test_voice_session.py -v` in a
+fully-provisioned environment before merge.

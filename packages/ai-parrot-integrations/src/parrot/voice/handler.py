@@ -37,15 +37,21 @@ if TYPE_CHECKING:
     # dependencies, but this keeps the module-scope import list minimal and
     # matches the lazy-import style used for NovaClient/GeminiLiveClient
     # in resolve_voice_client_class() below.
-    from parrot.voice.models import VoiceProvider
+    # FEAT-416 (TASK-2152): import the unified VoiceProvider from core —
+    # parrot.voice.models.VoiceProvider is now just a re-export of this.
+    from parrot.models.voice import VoiceProvider
 
 # Type hints for optional imports
 try:
     from parrot.bots.voice import VoiceBot, create_voice_bot
     from parrot.models.voice import VoiceConfig
+    # FEAT-416 (TASK-2152): VoiceSession (TASK-2149) replaces the inlined
+    # turn lifecycle previously in _run_voice_session().
+    from parrot.voice.session import VoiceSession
 except ImportError:
     VoiceBot = Any
     VoiceConfig = Any
+    VoiceSession = Any
     create_voice_bot = None
 
 
@@ -94,7 +100,8 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
             not installed and ``stream_voice()`` is called — importing
             :class:`NovaClient` itself never requires it.
     """
-    from parrot.voice.models import VoiceProvider as _VoiceProvider
+    # FEAT-416 (TASK-2152): import the unified VoiceProvider from core.
+    from parrot.models.voice import VoiceProvider as _VoiceProvider
 
     if provider == _VoiceProvider.NOVA:
         from parrot.clients.nova import NovaClient
@@ -199,6 +206,12 @@ class WebSocketConnection:
     # Voice session task
     voice_task: Optional[asyncio.Task] = None
 
+    # FEAT-416 (TASK-2152): the VoiceSession managing this connection's
+    # turn lifecycle (start_turn/push_audio/end_turn/close/reconnection).
+    # Created in _handle_start_session(), consumed by
+    # _handle_start_recording()/_handle_audio_data()/_handle_stop_recording().
+    voice_session: Optional["VoiceSession"] = None
+
     # Shutdown event
     shutdown_event: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -217,6 +230,155 @@ class WebSocketConnection:
     # Type is Optional[Any] to avoid importing the liveavatar stack at module level
     # (lazy import so /ws/voice works without the ai-parrot-integrations[liveavatar] extra).
     avatar_session: Optional[Any] = None
+
+
+# =============================================================================
+# VoiceSession relay adapter (FEAT-416, TASK-2152)
+# =============================================================================
+# VoiceSession's own _relay() (parrot.voice.session, TASK-2149) builds a
+# generic, minimal frame vocabulary (text/audio/tool_call/interrupted/
+# turn_complete/error/reconnect). VoiceChatHandler's existing
+# _send_voice_response() implements a much richer, ALREADY-SHIPPED
+# WebSocket protocol that real browser clients depend on
+# (response_chunk/transcription/response_complete/ready_to_speak/
+# display_data/session_warning, STT-only gating, "thought" text
+# filtering, and the LiveAvatar audio tee) — none of which VoiceSession's
+# generic relay can reproduce without dropping information (its frames
+# don't carry user_transcription/assistant_transcription/display_data/
+# turn_metadata/go_away separately). Modifying VoiceSession itself is
+# explicitly out of this task's scope (and would mean changing a
+# just-shipped core class for one integrations-side caller).
+#
+# Resolution: subclass VoiceSession, overriding ONLY _relay() to delegate
+# to the handler's existing _send_voice_response() — preserving the full,
+# real wire protocol byte-for-byte — while inheriting every turn-lifecycle
+# method (start_turn/push_audio/end_turn/close/_cancel_turn/
+# _audio_iterator/_run_turn, INCLUDING TASK-2150's reconnection loop)
+# unchanged. This is real delegation (no inlined turn lifecycle here) with
+# zero regression to the existing protocol. See TASK-2152 Completion Note
+# for the full analysis, including the one accepted gap: VoiceSession's
+# reconnection only reacts to `reconnect_required` — Gemini's separate
+# `go_away` signal (handled here, replicated below) does not by itself
+# trigger a VoiceSession-managed reconnect, only the same informational
+# `session_warning` frame the original inlined code sent.
+class _HandlerVoiceSession(VoiceSession):
+    """VoiceSession that relays through VoiceChatHandler's existing,
+    richer WebSocket frame protocol instead of VoiceSession's own."""
+
+    def __init__(self, *args, handler: "VoiceChatHandler", connection: "WebSocketConnection", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._handler = handler
+        self._connection = connection
+
+    async def _send(self, payload: dict) -> None:
+        # Code-review fix: route through the handler's own _send_message()
+        # (blanket try/except + logged failure) instead of the inherited
+        # VoiceSession._send(), which only suppresses ConnectionResetError
+        # — keeps error/reconnect frames (sent via self._send() from
+        # _run_turn(), overridden below) on the exact same safety net as
+        # every other frame this handler sends.
+        await self._handler._send_message(self._connection.ws, payload)
+
+    async def _relay(self, resp, turn_no: int) -> None:  # noqa: ARG002 — turn_no kept for signature parity
+        await self._handler._send_voice_response(self._connection, resp)
+
+        # Gemini's GoAway signal is distinct from reconnect_required and is
+        # not, by itself, understood by VoiceSession's (inherited,
+        # unmodified) reconnection loop in _run_turn(). The original
+        # inlined code sent this same informational frame and then
+        # unconditionally restarted its outer ask_stream() loop. Since
+        # _run_turn() reads resp.metadata AFTER awaiting _relay() (this
+        # method), mutating it here — rather than modifying VoiceSession
+        # itself, out of scope — lets go_away piggyback on the exact same
+        # inherited reconnect path Nova's 8-minute limit uses. One
+        # accepted behavior change: this now also respects
+        # `voice_config.reconnect_on_limit` (defaults True), whereas the
+        # original go_away handling had no such gate — arguably more
+        # consistent (one reconnection policy, not two).
+        if resp.metadata.get("go_away"):
+            await self._handler._send_message(self._connection.ws, {
+                "type": "session_warning",
+                "message": "Session reconnecting...",
+            })
+            resp.metadata["reconnect_required"] = True
+
+    async def _run_turn(self, turn_no: int) -> None:
+        """Delegates audio-queue creation/iteration to the base
+        :class:`VoiceSession` (``self._audio_iterator(queue)``), but
+        drives the turn through ``VoiceBot.ask_stream()`` — not the raw
+        client's ``stream_voice()`` — so conversation-memory persistence,
+        ``stt_only``, and VoiceConfig inference-parameter threading (all
+        ``VoiceBot``-level features, TASK-2151) are preserved. Otherwise
+        this mirrors ``VoiceSession._run_turn()``'s reconnection loop
+        (TASK-2150) exactly — duplicated here (not inherited unchanged)
+        because reusing it would require calling
+        ``self.client.stream_voice()`` directly, bypassing ``VoiceBot``
+        entirely. See the class docstring / TASK-2152 Completion Note.
+        """
+        queue = self._queue
+        assert queue is not None  # set by start_turn() before the task starts
+
+        bot = self._connection.bot
+        self.logger.info(
+            "Turn %d starting (session=%s)", turn_no, self.session_id,
+        )
+        try:
+            while True:
+                reconnecting = False
+                stream = bot.ask_stream(
+                    audio_input=self._audio_iterator(queue),
+                    session_id=self.session_id,
+                    user_id=self._connection.user_id,
+                    stt_only=self._connection.stt_only,
+                )
+                try:
+                    async for resp in stream:
+                        await self._relay(resp, turn_no)
+
+                        if not (
+                            resp.metadata.get("reconnect_required")
+                            and self.voice_config.reconnect_on_limit
+                        ):
+                            continue
+
+                        if self._reconnect_count >= self.voice_config.max_reconnects:
+                            await self._send({
+                                "type": "error",
+                                "message": "max reconnections reached",
+                                "session_id": self.session_id,
+                            })
+                            if self._task is asyncio.current_task():
+                                self._queue = None
+                                self._task = None
+                            return
+
+                        self._reconnect_count += 1
+                        await self._send({
+                            "type": "reconnect",
+                            "session_id": self.session_id,
+                            "reconnect_count": self._reconnect_count,
+                        })
+                        reconnecting = True
+                        break
+                finally:
+                    with contextlib.suppress(Exception):
+                        await stream.aclose()
+
+                if not reconnecting:
+                    break
+        except asyncio.CancelledError:
+            self.logger.info("Turn %d cancelled", turn_no)
+            raise
+        except Exception as exc:
+            self.logger.exception("Turn %d failed", turn_no)
+            await self._send({
+                "type": "error",
+                "turn": turn_no,
+                "message": f"{type(exc).__name__}: {exc}",
+            })
+        finally:
+            if self._task is asyncio.current_task():
+                self._queue = None
 
 
 # =============================================================================
@@ -556,12 +718,27 @@ class VoiceChatHandler:
                         connection.gemini_responding = False
                         connection.recording_start_time = datetime.now()
                         connection.audio_buffer = b""  # Reset buffer
+                        # FEAT-416 (TASK-2152 code-review fix): mirrors
+                        # _handle_audio_data()'s implicit-start-of-turn
+                        # handling — this binary path bypasses that
+                        # method entirely, so it needs its own start_turn()
+                        # for the same auto-start-on-first-chunk case.
+                        if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+                            await connection.voice_session.start_turn()
                     connection.is_recording = True
 
                     if connection.session_active and not connection.stop_audio_sending:
                         if connection.streaming_mode == "streaming":
-                            # Streaming mode: send to queue immediately
-                            await connection.audio_queue.put(msg.data)
+                            # FEAT-416 (TASK-2152 code-review fix): this
+                            # path previously queued into
+                            # connection.audio_queue, which nothing has
+                            # drained since the VoiceSession refactor —
+                            # audio sent as raw binary WS frames (rather
+                            # than base64-in-JSON via _handle_audio_data())
+                            # was being silently dropped. Route through
+                            # the same VoiceSession the JSON path uses.
+                            if connection.voice_session is not None:
+                                await connection.voice_session.push_audio(msg.data)
                         else:
                             # Buffered mode: accumulate audio
                             connection.audio_buffer += msg.data
@@ -980,6 +1157,16 @@ class VoiceChatHandler:
         connection.is_recording = True
         connection.recording_start_time = datetime.now()
 
+        # FEAT-416 (TASK-2152): in streaming mode, each recording is one
+        # VoiceSession turn — start_turn() creates the (fresh, per-turn)
+        # audio queue that _handle_audio_data()/_handle_stop_recording()
+        # below feed. VoiceSession itself also emits a "turn_started"
+        # frame (additive — existing clients should ignore unknown frame
+        # types; this is new functionality this refactor enables, not a
+        # change to any existing frame).
+        if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+            await connection.voice_session.start_turn()
+
         await self._send_message(connection.ws, {
             "type": "recording_started",
         })
@@ -1011,12 +1198,16 @@ class VoiceChatHandler:
                 self.logger.info(
                     f"Recording too short ({duration_ms:.0f}ms), ignoring"
                 )
-                # Clear audio
-                while not connection.audio_queue.empty():
-                    try:
-                        connection.audio_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
+                # FEAT-416 (TASK-2152): previously drained
+                # connection.audio_queue directly; audio now lives in
+                # VoiceSession's own per-turn queue (created by
+                # start_turn() in _handle_start_recording()), so abandon
+                # that turn outright via VoiceSession's own cancellation
+                # (cheaper than end_turn()'s ~460ms paced-silence
+                # sequence, which is pointless for a clip too short to
+                # process anyway).
+                if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+                    await connection.voice_session._cancel_turn()
                 connection.audio_buffer = b""
 
                 await self._send_message(connection.ws, {
@@ -1030,6 +1221,13 @@ class VoiceChatHandler:
             "message": "Processing...",
             "duration_ms": duration_ms,
         })
+
+        # FEAT-416 (TASK-2152): signal end-of-turn through VoiceSession —
+        # this injects the 20ms-paced silence VAD needs before the
+        # end-of-turn sentinel (TASK-2149), which the previous inlined
+        # audio_from_queue() generator did not do.
+        if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+            await connection.voice_session.end_turn()
 
         # In buffered mode, process the accumulated audio now
         if connection.streaming_mode == "buffered" and connection.audio_buffer:
@@ -1055,6 +1253,14 @@ class VoiceChatHandler:
             connection.gemini_responding = False
             connection.recording_start_time = datetime.now()
             connection.audio_buffer = b""
+            # FEAT-416 (TASK-2152): some clients send audio_data without a
+            # preceding explicit start_recording — auto-start the
+            # VoiceSession turn here too (matching the implicit
+            # is_recording=True above), otherwise push_audio() below would
+            # silently drop this audio (VoiceSession._queue is None until
+            # start_turn() runs, TASK-2149).
+            if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+                await connection.voice_session.start_turn()
 
         connection.is_recording = True
 
@@ -1065,7 +1271,8 @@ class VoiceChatHandler:
             audio_bytes = base64.b64decode(audio_b64)
 
             if connection.streaming_mode == "streaming":
-                await connection.audio_queue.put(audio_bytes)
+                if connection.voice_session is not None:
+                    await connection.voice_session.push_audio(audio_bytes)
             else:
                 # Buffered mode
                 connection.audio_buffer += audio_bytes
@@ -1318,57 +1525,53 @@ class VoiceChatHandler:
     # =========================================================================
 
     async def _run_voice_session(self, connection: WebSocketConnection) -> None:
-        """Run voice session with audio streaming."""
+        """Own the connection's :class:`VoiceSession` for its lifetime.
+
+        FEAT-416 (TASK-2152): the actual turn lifecycle (audio queue,
+        turn task, silence-paced end-of-turn, reconnection) is now owned
+        by ``connection.voice_session`` (a :class:`_HandlerVoiceSession`),
+        driven by ``_handle_start_recording()``/``_handle_audio_data()``/
+        ``_handle_stop_recording()``. This method just constructs the
+        session and keeps this task alive until shutdown, then tears it
+        down — mirroring the task's own Implementation Notes pattern.
+        """
         if not connection.bot:
             return
 
-        async def audio_from_queue():
-            """Generator that reads audio from queue."""
-            audio_ended_sent = False
+        bot = connection.bot
 
+        # VoiceSession requires a VoiceCapable client. Reuse VoiceBot's own
+        # lazy-construction (matches ask_stream()/ask()'s
+        # `if self._llm is None: ...` pattern) rather than duplicating
+        # VoiceBot's private _resolve_llm_config()/_create_llm_client()
+        # call sequence differently — accesses the same "private" attrs
+        # the rest of this handler already does (e.g.
+        # connection.bot.conversation_memory above).
+        if bot._llm is None:
+            config = bot._resolve_llm_config()
+            bot._llm = bot._create_llm_client(config, bot.conversation_memory)
+        client = bot._llm
+
+        async def send_fn(payload: dict) -> None:
+            if not connection.ws.closed:
+                await connection.ws.send_json(payload)
+
+        connection.voice_session = _HandlerVoiceSession(
+            client=client,
+            send_fn=send_fn,
+            system_prompt=bot.system_prompt,
+            voice_config=bot.voice_config,
+            session_id=connection.session_id,
+            handler=self,
+            connection=connection,
+        )
+
+        try:
             while not connection.shutdown_event.is_set():
-                try:
-                    chunk = await asyncio.wait_for(
-                        connection.audio_queue.get(),
-                        timeout=0.5
-                    )
-                    audio_ended_sent = False
-                    yield chunk
-                except asyncio.TimeoutError:
-                    if connection.stop_audio_sending and connection.audio_queue.empty():
-                        if not audio_ended_sent:
-                            yield None
-                            audio_ended_sent = True
-                    continue
-                except asyncio.CancelledError:
-                    break
-
-        while not connection.shutdown_event.is_set():
-            try:
-                async for response in connection.bot.ask_stream(
-                    audio_input=audio_from_queue(),
-                    session_id=connection.session_id,
-                    user_id=connection.user_id,
-                    stt_only=connection.stt_only,
-                ):
-                    await self._send_voice_response(connection, response)
-
-                    if response.metadata.get("go_away"):
-                        await self._send_message(connection.ws, {
-                            "type": "session_warning",
-                            "message": "Session reconnecting...",
-                        })
-                        break
-
-                    if connection.shutdown_event.is_set():
-                        return
-
-            except asyncio.CancelledError:
-                return
-            except Exception as e:
-                self.logger.error("Voice session error: %s", e)
-                await self._send_error(connection.ws, str(e))
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
+        finally:
+            if connection.voice_session is not None:
+                await connection.voice_session.close()
 
     async def _send_voice_response(
         self,
