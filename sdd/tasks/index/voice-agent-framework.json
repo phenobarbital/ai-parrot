@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-06T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-06T09:37:36+00:00",
   "tasks": [
     {
       "id": "TASK-2145",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T02:23:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2145-voice-capable-protocol.md"
+      "file": "sdd/tasks/completed/TASK-2145-voice-capable-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2146",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T02:28:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2146-voice-config-unification.md"
+      "file": "sdd/tasks/completed/TASK-2146-voice-config-unification.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2147",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T02:31:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2147-inference-parameter-threading.md"
+      "file": "sdd/tasks/completed/TASK-2147-inference-parameter-threading.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2148",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T02:39:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2148-parallel-tool-execution.md"
+      "file": "sdd/tasks/completed/TASK-2148-parallel-tool-execution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2149",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T02:45:08+00:00",
-      "file": "sdd/tasks/completed/TASK-2149-voice-session.md"
+      "file": "sdd/tasks/completed/TASK-2149-voice-session.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2150",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T02:48:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2150-automatic-reconnection.md"
+      "file": "sdd/tasks/completed/TASK-2150-automatic-reconnection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2151",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T02:54:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2151-voicebot-refinements.md"
+      "file": "sdd/tasks/completed/TASK-2151-voicebot-refinements.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2152",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
       "completed_at": "2026-08-06T03:11:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2152-voicechathandler-refactor.md"
+      "file": "sdd/tasks/completed/TASK-2152-voicechathandler-refactor.md",
+      "verification": "verified"
     }
   ]
 }
