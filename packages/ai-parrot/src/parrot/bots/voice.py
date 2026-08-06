@@ -24,14 +24,16 @@ from ..clients.live import (
     GeminiLiveClient,
     LiveVoiceResponse,
     LiveCompletionUsage,
-    GoogleVoiceModel,
 )
+# FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
+# _create_llm_client()'s return value (spec §3 Module 7).
+from ..clients.protocols import VoiceCapable
 from .base import BaseBot
 from .prompts.builder import PromptBuilder
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
 from ..mcp import MCPEnabledMixin, MCPServerConfig
-# Voice configuration from models
+# Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
 from ..models.voice import VoiceConfig, AudioFormat
 from datetime import datetime
 from ..memory import ConversationTurn
@@ -177,11 +179,15 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # NovaClient's default model (nova-2-lite) is the TEXT model —
             # voice sessions need the Sonic model explicitly unless the
             # caller already configured one (spec §3 Module 6).
-            resolved_model = model or (
-                self.voice_config.model
-                if self.voice_config.model != GoogleVoiceModel.DEFAULT
-                else "nova-2-sonic"
-            )
+            # FEAT-416 (TASK-2151 code-review fix): the unified VoiceConfig
+            # (TASK-2146) defaults `model` to None (not
+            # GoogleVoiceModel.DEFAULT) so the config stays
+            # provider-agnostic — a truthiness check is the correct way to
+            # detect "caller didn't configure a model" now; the previous
+            # `!= GoogleVoiceModel.DEFAULT` comparison would always be True
+            # for the new None default, incorrectly resolving to None
+            # instead of falling back to "nova-2-sonic".
+            resolved_model = model or self.voice_config.model or "nova-2-sonic"
             return LLMConfig(
                 provider='nova',
                 client_class=NovaClient,
@@ -215,7 +221,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         self,
         config,
         conversation_memory=None
-    ) -> AbstractClient:
+    ) -> VoiceCapable:
         """
         Create the voice-provider client (GeminiLiveClient or, per FEAT-315,
         NovaClient) with voice-specific parameters.
@@ -223,6 +229,12 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         This integrates with the standard configure() flow in AbstractBot,
         ensuring self._llm is a properly configured voice client matching
         ``config.provider`` (as set by :meth:`_resolve_llm_config`).
+
+        FEAT-416 (TASK-2151): the returned client is verified against the
+        :class:`~parrot.clients.protocols.VoiceCapable` Protocol at runtime
+        (``isinstance``) before being returned — a provider that doesn't
+        implement ``stream_voice()`` fails loudly here instead of silently
+        at the first ``ask_stream()`` call.
         """
         # Get all tools from tool_manager (includes dynamically registered tools)
         current_tools = []
@@ -232,7 +244,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
 
         if config.provider == 'nova':
             from ..clients.nova import NovaClient
-            return NovaClient(
+            client = NovaClient(
                 model=config.model,
                 voice_id=config.extra.get('voice_id', 'matthew'),
                 tools=current_tools,
@@ -241,22 +253,29 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 conversation_memory=conversation_memory,
                 **{k: v for k, v in config.extra.items() if k != 'voice_id'}
             )
+        else:
+            # Default (existing behavior, unchanged): GeminiLiveClient.
+            client = GeminiLiveClient(
+                model=config.model,
+                voice_name=config.extra.get('voice_name', self.voice_config.voice_name),
+                language=config.extra.get('language', self.voice_config.language),
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                # Tools from tool_manager
+                tools=current_tools,
+                use_tools=use_tools,
+                tool_manager=self.tool_manager,
+                conversation_memory=conversation_memory,
+                # Credentials and extra config (exclude already-passed args)
+                **{k: v for k, v in config.extra.items() if k not in ('voice_name', 'language', 'temperature', 'max_tokens')}
+            )
 
-        # Default (existing behavior, unchanged): GeminiLiveClient.
-        client = GeminiLiveClient(
-            model=config.model,
-            voice_name=config.extra.get('voice_name', self.voice_config.voice_name),
-            language=config.extra.get('language', self.voice_config.language),
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            # Tools from tool_manager
-            tools=current_tools,
-            use_tools=use_tools,
-            tool_manager=self.tool_manager,
-            conversation_memory=conversation_memory,
-            # Credentials and extra config (exclude already-passed args)
-            **{k: v for k, v in config.extra.items() if k not in ('voice_name', 'language', 'temperature', 'max_tokens')}
-        )
+        if not isinstance(client, VoiceCapable):
+            raise TypeError(
+                f"Provider '{self.voice_config.provider}' created a client "
+                f"({type(client).__name__}) that does not implement VoiceCapable. "
+                f"Voice streaming is not supported."
+            )
         return client
 
     async def configure(self, app=None) -> None:
@@ -402,6 +421,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         audio_input: Union[bytes, AsyncIterator[bytes]],
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        stt_only: bool = False,
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
@@ -415,7 +435,17 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             audio_input: Audio data - complete bytes or async iterator
             session_id: Session identifier
             user_id: User identifier
-            **kwargs: Additional options
+            stt_only: When True, run in STT-only mode (transcription only,
+                no model response/audio output). Passed through to the
+                underlying client's ``stream_voice()``; currently
+                supported by ``GeminiLiveClient`` only — Nova Sonic has no
+                documented STT-only mode (FEAT-416 spec §7 Known Risks;
+                that guard is the client's own responsibility, not
+                VoiceBot's).
+            **kwargs: Additional options. Explicit values here override the
+                ``VoiceConfig``-derived ``temperature``/``max_tokens``/
+                ``top_p``/``parallel_tool_execution`` defaults threaded to
+                ``stream_voice()`` (FEAT-416 spec §3 Module 7).
 
         Yields:
             LiveVoiceResponse with text, audio and usage metadata
@@ -501,13 +531,27 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             assistant_transcript = ""
             started_at = None
 
+            # FEAT-416 (TASK-2151): thread VoiceConfig inference/parallel-
+            # tool-execution parameters through to stream_voice() — any of
+            # these explicitly present in **kwargs win over the
+            # VoiceConfig-derived default (dict-literal unpacking: later
+            # keys override earlier ones).
+            voice_stream_kwargs = {
+                'temperature': self.voice_config.temperature,
+                'max_tokens': self.voice_config.max_tokens,
+                'top_p': self.voice_config.top_p,
+                'parallel_tool_execution': self.voice_config.parallel_tool_execution,
+                **kwargs,
+            }
+
             async with self._llm as client:
                 async for response in client.stream_voice(
                     audio_iterator=audio_iterator,
                     system_prompt=system_prompt,
                     session_id=session_id,
                     user_id=user_id,
-                    **kwargs
+                    stt_only=stt_only,
+                    **voice_stream_kwargs
                 ):
                     # Handle memory persistence if enabled
                     if self.conversation_memory:
