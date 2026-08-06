@@ -25,12 +25,16 @@ Example::
     from parrot_tools.interfaces.workday.config import WorkdayConfig
     from parrot_tools.interfaces.workday.rest import WorkdayRestClient
 
-    client = WorkdayRestClient(config=WorkdayConfig(env="sandbox"))
-    try:
+    async with WorkdayRestClient(config=WorkdayConfig(env="sandbox")) as client:
         workers = await client.find_worker("123456")
         events = await client.get_time_clock_events(workers[0]["id"])
-    finally:
-        await client.close()
+
+The ``aiohttp`` session is long-lived — the flowtask implementation this
+replaces opened a throwaway HTTP client per call and so needed no teardown,
+whereas here the session MUST be released: use the context manager above, or
+call ``close()`` in a ``finally``. A client kept as a module-level singleton
+needs its ``close()`` registered on application shutdown (``app.on_cleanup``)
+— otherwise aiohttp logs "Unclosed client session" at exit.
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ from __future__ import annotations
 import base64
 import logging
 import time as _time
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 
@@ -102,6 +106,29 @@ class WorkdayRestClient:
         if self._session is not None and not self._session.closed:
             await self._session.close()
         self._session = None
+
+    async def __aenter__(self) -> Self:
+        """Enter the async context; the session is still created lazily.
+
+        The predecessor implementation opened a throwaway HTTP client per call
+        and needed no teardown; this one keeps a long-lived ``aiohttp`` session
+        that MUST be closed. Prefer this context manager, or an explicit
+        ``close()`` in a ``finally``; a client held in a module-level singleton
+        needs its ``close()`` wired into the application shutdown hook (e.g.
+        ``app.on_cleanup``), otherwise aiohttp reports "Unclosed client
+        session" at exit.
+
+        Returns:
+            This client.
+        """
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit the async context, closing the shared session.
+
+        Returns ``None`` so any in-flight exception propagates.
+        """
+        await self.close()
 
     # ------------------------------------------------------------------
     # Auth
