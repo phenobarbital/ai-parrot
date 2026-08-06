@@ -96,12 +96,22 @@ pinned down and *tested* while there are only two implementations.
   ≥3.12-only and pre-alpha; importing `NovaClient` must keep working on 3.11
   (`_require_voice_sdk` is called at first `stream_voice()`, not import).
   The example must degrade to Gemini-only on 3.11 rather than fail to start.
-- **Breaking change is accepted, scoped.** Per Round 3, `role` becomes
-  canonical (lowercase `"user"`/`"assistant"`) and
-  `metadata["user_transcription"]` is **removed**, not aliased. That makes
-  `VoiceChatHandler` (`handler.py:1576+`) and
-  `docs/frontend/voicebot-realtime-frontend-guide.md` part of this spec's
-  scope — they must migrate in the same change.
+- **Breaking change is accepted, scoped, with no deprecation window.**
+  `role` becomes canonical (lowercase `"user"`/`"assistant"`) and
+  `metadata["user_transcription"]` is **removed**, not aliased and not
+  dual-emitted for a release. That makes `VoiceChatHandler`
+  (`handler.py:1576+`) and `docs/frontend/voicebot-realtime-frontend-guide.md`
+  part of this spec's scope — they must migrate in the same change. The
+  consumer count is small and known; fixing them is cheaper than carrying
+  two envelope shapes.
+- **The capability descriptor covers audio formats.** Input/output
+  `AudioFormat` and sample rates are part of `VoiceCapabilities`, not just
+  the behavioral knobs — so a future non-PCM provider is describable and
+  format mismatches fail at session construction rather than as garbled
+  audio.
+- **No voice-specific `max_tokens` default.** `VoiceConfig.max_tokens = 4096`
+  is the shared default for both providers (Nova's current hardcoded `1024`
+  goes away); `8192` is an explicitly supported value.
 - **Nova cannot truly do STT-only.** Nova 2 Sonic always generates voice +
   text and there is no documented switch to disable generation. Per Round 3,
   `stt_only=True` on Nova must **not** raise and must **not** be emulated by
@@ -206,7 +216,14 @@ Promote "drop-in" from a claim to an executable contract, in three pieces:
    a `voice_capabilities` property on the Protocol, declaring per provider:
    `native_stt_only`, `supports_top_p`, `supports_per_call_voice`,
    `emits_reconnect_signal`, `supports_session_resumption`,
-   `max_session_seconds`, `voice_catalog`. Unsupported-but-requested knobs
+   `max_session_seconds`, `voice_catalog`, `max_output_tokens`, plus the
+   **audio-format contract**: `input_formats` / `output_formats` (sets of
+   `AudioFormat`) and the supported sample rates. Nova and Gemini agree
+   today (16 kHz PCM in / 24 kHz PCM out), so the fields are descriptive on
+   day one — their purpose is that a future non-PCM provider (Opus, μ-law,
+   a different rate) becomes *declarable* instead of a silent mismatch, and
+   that `VoiceSession` can assert the transport's expectation against the
+   provider's reality. Unsupported-but-requested knobs
    are logged once per session and surfaced as a `capability_notice` frame
    — never a silent divergence, and (per Round 3) never a hard failure.
 3. **A conformance kit** — a shared, parametrized pytest suite
@@ -383,7 +400,10 @@ unavailable and the Gemini route runs normally.
 3. **Nova lane.** Voice-id validation against the Nova catalog with a
    warned fallback to `"matthew"`; canonical lowercase `role` mapping from
    the `contentStart` role it already tracks; `stt_only` accepted, declared
-   non-native, logged once.
+   non-native, logged once. The hardcoded `max_tokens` fallback of `1024`
+   (`nova/audio.py:790`) is dropped in favor of the shared `VoiceConfig`
+   default of `4096` — the spec should confirm Nova 2 Sonic's real ceiling
+   against the Bedrock docs so `8192` is validated rather than clamped.
 4. **Session layer.** `VoiceSession._run_turn()` forwards the projected
    `VoiceStreamOptions` on every turn *and across reconnects*, and gains a
    relay extension hook so `_HandlerVoiceSession` can keep its richer frame
@@ -425,9 +445,16 @@ unavailable and the Gemini route runs normally.
 - **Nova SDK missing (Python 3.11)** → `NovaClient` still imports; the
   example marks the Nova route unavailable at startup; `stream_voice()`
   raises only if actually invoked.
-- **Provider switch mid-conversation in the example** → treated as a new
-  session on the target socket. Cross-provider conversation-memory continuity
-  is explicitly **not** claimed (see Open Questions).
+- **Provider switch mid-conversation in the example** → **always a fresh
+  session** (resolved decision). The old socket is closed and its
+  `VoiceSession` torn down; no memory replay and no transcript migration
+  across providers. `VoiceSession` is stateless w.r.t. history by design
+  (`voice/session.py:14-18`), so this needs no new machinery — only a clean
+  teardown on switch.
+- **Transport expects a format the provider does not declare** → caught at
+  session construction by comparing `VoiceConfig.input_format`/
+  `output_format` against `VoiceCapabilities.input_formats`/
+  `output_formats`, instead of surfacing as garbled audio at runtime.
 - **Transport drops mid-turn** → unchanged: `ConnectionResetError` suppressed
   in `VoiceSession._send()` (`voice/session.py:318-326`).
 
@@ -437,7 +464,7 @@ unavailable and the Gemini route runs normally.
 
 ### New Capabilities
 - `voice-stream-options`: typed per-call option object projected from `VoiceConfig`, forwarded identically by `VoiceBot`, `VoiceSession` and `VoiceChatHandler`.
-- `voice-capabilities-descriptor`: per-provider declaration of what is natively supported, inspectable at runtime and asserted by tests.
+- `voice-capabilities-descriptor`: per-provider declaration of what is natively supported — behavioral knobs, voice catalog, session limits, **and the audio-format/sample-rate contract** — inspectable at runtime and asserted by tests.
 - `voice-response-envelope-canonical`: canonical lowercase `role` on `LiveVoiceResponse`; removal of `metadata["user_transcription"]`.
 - `gemini-live-session-resumption`: `GoAway` → `reconnect_required` parity plus resumption-handle continuity.
 - `voice-provider-conformance-suite`: parametrized pytest kit every `VoiceCapable` implementation must pass.
@@ -738,7 +765,7 @@ from google.genai import types                             # google-genai 2.17.0
 - [x] Transcript envelope normalization — *Owner: Jesus Lara*: canonicalize and break cleanly. Both clients emit lowercase `role` (`"user"`/`"assistant"`); `metadata["user_transcription"]` is **removed**, and `VoiceChatHandler` plus `docs/frontend/voicebot-realtime-frontend-guide.md` migrate within this spec.
 - [x] `_HandlerVoiceSession` duplication — *Owner: Jesus Lara*: give `VoiceSession` a relay extension hook and delete the duplicated `_run_turn()`, so the handler inherits kwargs threading and reconnection from one implementation.
 - [x] Browser UI for the example — *Owner: Jesus Lara*: extract the UI from `examples/clients/nova/audio.py` into a shared static asset under `examples/clients/voice/` and serve it from the new demo. The Nova raw-client example survives.
-- [ ] Should the example's provider switch attempt conversation continuity across providers (replaying memory into the new session), or is each provider a fresh session? Current assumption: **fresh session**, since `VoiceSession` is explicitly stateless w.r.t. history (`voice/session.py:14-18`) and cross-provider transcript replay is its own design problem — *Owner: Jesus Lara*
-- [ ] Does the canonical `role` break warrant a deprecation window (one minor release emitting both forms) for out-of-repo consumers, or is the clean break at 0.25.x acceptable given the pre-1.0 status? Round 3 chose the clean break for in-repo consumers; this asks only about external ones — *Owner: Jesus Lara*
-- [ ] Should `VoiceCapabilities` also declare audio-format constraints (Nova and Gemini agree today at 16 kHz in / 24 kHz out, so nothing is broken — but a third provider may not), or keep the descriptor limited to the behavioral knobs this feature homologates? — *Owner: Jesus Lara*
-- [ ] Nova's `max_tokens` default in `stream_voice` is `1024` (`clients/nova/audio.py:790`) while `VoiceConfig.max_tokens` defaults to `4096` (`models/voice.py:78`). Once threading is complete, Nova voice turns silently get 4× the previous budget. Accept as the intended unification, or pin a voice-specific default? — *Owner: Jesus Lara*
+- [x] Conversation continuity across a provider switch — *Owner: Jesus Lara*: **never continue** — flipping the provider always starts a fresh session. No memory replay, no transcript migration. This matches `VoiceSession` being explicitly stateless w.r.t. history (`voice/session.py:14-18`), so no work is needed beyond making the example's switch tear down the old socket cleanly.
+- [x] Deprecation window for the canonical `role` break — *Owner: Jesus Lara*: **no window**. There are few consumers and they can be fixed. Both forms are never emitted simultaneously; `metadata["user_transcription"]` disappears in the same release that introduces canonical `role`.
+- [x] Should `VoiceCapabilities` declare audio-format constraints — *Owner: Jesus Lara*: **yes**. Even though Nova and Gemini agree today (16 kHz PCM in / 24 kHz PCM out), the descriptor must carry input/output format and sample-rate support so a future provider that is not PCM — Opus, μ-law, a different rate — is describable rather than a surprise.
+- [x] Nova's `max_tokens` unification (1024 → `VoiceConfig` default) — *Owner: Jesus Lara*: accept the unification, **do not** pin a voice-specific default. `VoiceConfig.max_tokens = 4096` stands as the shared default and `8192` is an explicitly supported value for callers who want more headroom. The provider-side ceiling for Nova 2 Sonic should be confirmed against the Bedrock docs while writing the spec, so the value is validated rather than silently clamped.
