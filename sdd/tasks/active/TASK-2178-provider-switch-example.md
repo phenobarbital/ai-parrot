@@ -113,6 +113,22 @@ class VoiceProvider(str, Enum):
 
 ## Implementation Notes
 
+### ⚠️ `.gitignore` trap — read this first
+
+`examples/clients/voice/server.py` is **silently ignored** by `.gitignore:21`
+(`examples/**/*.py`), and any `.html` you add is ignored by `.gitignore:28`
+(`examples/**/*.html`). Verified 2026-08-07 with `git check-ignore -v`.
+`README.md` and `.js` files are not ignored.
+
+A normal `git add` will appear to succeed and the example will simply not exist
+for anyone else. Use `git add -f` for every new `.py`/`.html`, and verify:
+
+```bash
+git check-ignore -v examples/clients/voice/server.py   # expect a hit
+git add -f examples/clients/voice/server.py
+git status --porcelain                                  # must list it
+```
+
 ### Key Constraints
 - **Async-first, `aiohttp` only.** No `requests`, no `httpx` (CLAUDE.md).
 - Nova's SDK is lazy and Python ≥3.12-only: importing `NovaClient` must not fail
