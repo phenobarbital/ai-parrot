@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-417
 **Date**: 2026-08-06
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 
 **Brainstorm**: `sdd/proposals/commcenter-notify.brainstorm.md` (Option B — Partial-Render Gateway)
@@ -236,19 +236,21 @@ class SenderRequest(BaseModel):
     recipients: Optional[list[RecipientIn]]
     file_b64: Optional[str]
     filename: Optional[str]
+    dry_run: bool = False            # validate + render, publish NOTHING (Q3)
 
 class SkippedRow(BaseModel):
     row: int
     reason: str
 
 class SenderResponse(BaseModel):
-    batch_id: uuid.UUID
-    status: str                      # publishing | completed | failed
+    batch_id: Optional[uuid.UUID]    # None when dry_run=True (no batch persisted)
+    status: str                      # publishing | completed | failed | dry_run
     total: int
     queued: int
     skipped: int
     resolved_functions: dict         # {"today": "2026-08-06"} — auditable
     skipped_details: list[SkippedRow]
+    preview: Optional[str]           # dry_run only: first queued row, both passes
 ```
 
 ```python
@@ -287,15 +289,45 @@ class NotificationBatchRecipient(Model):
     provider: str
     recipient_name: Optional[str]
     recipient_address: Optional[str]   # email / phone / channel id
-    status: str                        # queued | skipped | publish_failed
+    status: str                        # pending|publishing|queued|skipped|publish_failed
     reason: Optional[str]
-    message_id: Optional[str]          # Redis stream entry id from xadd
+    message_id: Optional[str]          # Redis stream entry id returned by xadd
+    published_at: Optional[datetime]   # set when xadd returns — the retry marker
+    attempts: int = 0                  # incremented on each publish attempt
     template_ref: Optional[str]
     subject: Optional[str]
     created_at: datetime
     created_by: Optional[int]
     updated_at: datetime
 ```
+
+**Row status state machine (Q4 — duplicate-delivery containment).** The naive
+design ("retry everything still `queued`") double-sends after a crash, because
+`queued` cannot distinguish "never published" from "published, status update
+lost". A pre-`xadd` marker shrinks that ambiguity to a single state:
+
+```
+  created ──► pending ──(set publishing, THEN xadd)──► publishing
+                 │                                          │
+                 │                              xadd returns entry id
+                 │                                          ▼
+                 │                                       queued  ── terminal, NEVER retried
+                 │                                          
+                 └── validation failed ──► skipped ── terminal, NEVER retried
+                                    
+              xadd raised ──► publish_failed ── safe to retry (nothing landed)
+```
+
+| Status | Meaning | Retry behavior |
+|---|---|---|
+| `pending` | Row persisted, `xadd` not yet attempted | **Retried** — definitively never published |
+| `publishing` | Marker written, `xadd` outcome unknown (process died mid-call) | **Ambiguous** — reported, retried only with explicit `?force=true` |
+| `queued` | `xadd` returned an entry id (`message_id` set) | **Never** retried |
+| `skipped` | Failed validation; never eligible | **Never** retried |
+| `publish_failed` | `xadd` raised — nothing landed | **Retried** |
+
+This makes duplicate delivery possible **only** for rows caught mid-`xadd`, and
+those are surfaced to the operator rather than silently re-sent.
 
 **Wire format published to Redis** (verified round-trip — §6):
 
@@ -325,6 +357,29 @@ dict keys in this order (`notify/server/wrapper.py:45-58`): `chat_id` → `Chat`
 
 ⚠️ **`team_id` is checked before `channel_id`** — a dict carrying both becomes a
 `TeamsChannel`, never a `Channel`. Emit only the keys the target provider needs.
+
+### Pass-2 binding precedence (and the `username` trap)
+
+`AbstractProvider._render_` builds its template context as
+(`notify/providers/base.py:177-183`):
+
+```python
+{"recipient": to, "username": to, "message": message, "subject": subject, **kwargs}
+```
+
+`**kwargs` is **last**, so the row fields we publish override the defaults. Two
+consequences that are **not** optional to handle:
+
+1. **`username` defaults to the `Actor` object, not a string.** If a row has no
+   `username` column, `{{ username }}` renders the Actor's `__str__` —
+   verified output: `<Ana Gomez: c1c4f2c8-deda-46e8-bda2-c9b5f6018b97>`. A raw
+   UUID would ship inside a real email.
+   **Requirement**: `CommCenterService.build_wire_payload()` MUST always emit a
+   `username` key, falling back to the row's `name` when the column is absent.
+   The same defensive rule applies to any canonical field the catalog advertises.
+2. **`recipient`, `message` and `subject` are reserved.** `{{ recipient }}`
+   renders an object repr, not a name. The catalog marks all three `reserved`
+   with "do not use in templates".
 
 ### New Public Interfaces
 
@@ -372,11 +427,11 @@ class CommCenterService:
 
 **Routes**
 
-| Method | Path |
-|---|---|
-| `POST` | `/api/v1/comm_center/sender` |
-| `GET` | `/api/v1/comm_center/sender/{batch_id}` |
-| `POST` | `/api/v1/comm_center/sender/{batch_id}/retry` |
+| Method | Path | Query parameters |
+|---|---|---|
+| `POST` | `/api/v1/comm_center/sender` | — (`dry_run` is a body field) |
+| `GET` | `/api/v1/comm_center/sender/{batch_id}` | `details` (bool, default `false`), `status` (filter), `limit` (default `100`, max `1000`), `offset` (default `0`) |
+| `POST` | `/api/v1/comm_center/sender/{batch_id}/retry` | `force` (bool, default `false` — include `publishing` rows) |
 | `GET` | `/api/v1/comm_center/templates` |
 | `GET` | `/api/v1/comm_center/templates/{template_id}` |
 | `POST` | `/api/v1/comm_center/templates` |
@@ -411,13 +466,44 @@ class CommCenterService:
 
 ### Module 3: Placeholder Catalog
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/comm_center_placeholders.py`
-- **Responsibility**: Static catalog — recipient fields (resolved worker-side)
-  and computed functions (resolved handler-side, delegating to
-  `resolve_date`/`DATE_RESOLVERS`), each with description, example, and live
-  sample value. Carries the documented **template-language limitation** string.
+- **Responsibility**: Static catalog in three groups, each entry carrying
+  `name`, `description`, `example`, and (for functions) a live `sample` value.
   Mirrors the cached-static-catalog pattern of `ScrapingInfoHandler`.
 - **Depends on**: `parrot.outputs.a2ui.recipes.params`.
 - **Capability**: `comm-center-placeholders`
+
+**Final catalog (Q1 — resolved).**
+
+*Group 1 — recipient fields* (pass 2, worker-side; sourced from the row):
+
+| Placeholder | Required | Notes |
+|---|---|---|
+| `{{name}}` | yes | The only mandatory column |
+| `{{username}}` | no | **Always emitted**; falls back to `name` — see §2 trap |
+| `{{email}}` | conditional | Required when the resolved provider is email-like |
+| `{{phone}}` | conditional | Required when the resolved provider is SMS-like |
+| `{{address}}` | no | Free-form postal/other address |
+
+*Group 2 — computed functions* (pass 1, handler-side). The five
+`DATE_RESOLVERS` verbatim plus two module-local extras:
+
+| Placeholder | Source | Output |
+|---|---|---|
+| `{{today}}` | `resolve_date("today")` | `YYYY-MM-DD` |
+| `{{yesterday}}` | `resolve_date("yesterday")` | `YYYY-MM-DD` |
+| `{{first_of_month}}` | `resolve_date("first_of_month")` | `YYYY-MM-DD` |
+| `{{current_month}}` | `resolve_date("current_month")` | `YYYY-MM` |
+| `{{previous_month}}` | `resolve_date("previous_month")` | `YYYY-MM` |
+| `{{now}}` | module-local | ISO-8601 timestamp |
+| `{{current_year}}` | module-local | `YYYY` |
+
+*Group 3 — reserved* (bound by Notify; **must not** be used in templates):
+`{{recipient}}`, `{{message}}`, `{{subject}}` — `{{recipient}}` renders an
+object repr, not a name.
+
+**Extra columns**: any column beyond the canonical five is forwarded verbatim
+as a pass-2 placeholder. The response documents this, plus the bare-placeholder
+limitation (no filters/conditionals on record fields — §7).
 
 ### Module 4: Recipient Ingestion
 - **Path**: `packages/ai-parrot-server/src/parrot/services/comm_center/ingest.py`
@@ -445,9 +531,13 @@ class CommCenterService:
 ### Module 6: Fan-out + Batch Persistence
 - **Path**: `packages/ai-parrot-server/src/parrot/services/comm_center/dispatch.py`
 - **Responsibility**: Lazy-import `NotifyClient`; publish one `xadd` per
-  recipient; write/update tracking rows; background `asyncio.Task` with
-  guaranteed status finalization; batch aggregation query; retry of orphaned
-  `queued` rows.
+  recipient driving the §2 status state machine (`pending` → set `publishing`
+  **before** the call → `queued` + `message_id` + `published_at` on success,
+  `publish_failed` on exception); background `asyncio.Task` with a done-callback
+  that logs and finalizes batch status so no batch is stranded in `publishing`;
+  batch aggregation query with optional paginated row details; retry that
+  re-publishes `pending` + `publish_failed`, and `publishing` only under
+  `?force=true`.
 - **Depends on**: Modules 2, 5.
 - **Capability**: `comm-center-sender`, `comm-center-batch-tracking`
 
@@ -507,8 +597,21 @@ convention — e.g. `test_infographic_render_route.py`).
 | `test_sender_payload_carries_no_credentials` | 6 | Published dict has no secret-ish keys |
 | `test_publish_failure_marks_row_failed` | 6 | `stream()` raises → row `publish_failed`, batch continues |
 | `test_batch_progress_aggregation` | 6 | `GET /sender/{id}` totals from the flat table |
-| `test_retry_republishes_only_queued_rows` | 6 | Retry touches orphans only, not `skipped`/`publish_failed` |
 | `test_lazy_import_missing_async_notify` | 6,7 | Absent dep → actionable error naming the `comm-center` extra |
+| `test_publishing_marker_written_before_xadd` | 6 | Status is `publishing` at the moment `stream()` is entered (assert inside the mock) |
+| `test_queued_rows_never_retried` | 6 | Retry skips `queued` and `skipped` — no duplicate send |
+| `test_retry_republishes_pending_and_failed` | 6 | Both states re-published; `attempts` incremented |
+| `test_retry_excludes_publishing_without_force` | 6 | `publishing` rows reported `ambiguous`, not re-sent |
+| `test_retry_includes_publishing_with_force` | 6 | `?force=true` re-publishes them |
+| `test_batch_details_paginated` | 6 | `?details=true&limit=…&offset=…`; `limit` clamped to 1000 |
+| `test_batch_details_status_filter` | 6 | `?status=skipped` returns only those rows |
+| `test_dry_run_publishes_nothing` | 5,7 | `dry_run=true` → `200`, `stream()` never called, **no tracking rows written** |
+| `test_dry_run_returns_preview_and_validation` | 5,7 | Preview shows both passes applied; skipped rows still reported |
+| `test_username_always_emitted_falls_back_to_name` | 5 | Row without `username` → payload carries `username == name` |
+| `test_username_absent_would_leak_actor_repr` | 5 | Regression guard: pinning the upstream behavior the fallback defends against |
+| `test_reserved_placeholders_flagged_in_catalog` | 3 | `recipient`/`message`/`subject` marked reserved |
+| `test_catalog_functions_are_five_resolvers_plus_two` | 3 | Exactly `DATE_RESOLVERS` + `now` + `current_year` |
+| `test_extra_columns_forwarded_as_placeholders` | 4,5 | A non-canonical column reaches the payload kwargs |
 
 ### Integration Tests
 
@@ -563,8 +666,19 @@ def frozen_now() -> datetime:
 - [ ] Rows missing their provider's contact field are `skipped` with a reason
       and reported; **the remaining rows are still sent**.
 - [ ] Unknown per-row provider → `skipped`, never a silent fallback.
-- [ ] `GET /sender/{batch_id}` returns aggregated progress from the flat table.
-- [ ] `POST /sender/{batch_id}/retry` re-publishes only rows still `queued`.
+- [ ] `GET /sender/{batch_id}` returns aggregated progress from the flat table;
+      `?details=true` adds per-recipient rows paginated by `limit` (default 100,
+      clamped to 1000) / `offset`, filterable by `?status=`.
+- [ ] Row status follows the §2 state machine, with `publishing` written
+      **before** the `xadd` and `message_id` + `published_at` after it.
+- [ ] `POST /sender/{batch_id}/retry` re-publishes `pending` and
+      `publish_failed` rows; **never** `queued` or `skipped`; includes
+      `publishing` rows only under `?force=true`, reporting them as ambiguous.
+- [ ] `dry_run=true` returns `200` with `resolved_functions`, the validation
+      report and a rendered `preview`, while publishing nothing and writing
+      **no** tracking rows.
+- [ ] `username` is always present in the published payload, falling back to
+      `name`, so `{{username}}` can never render an `Actor` repr.
 - [ ] Batch is capped at 10 000 recipients (`400`) and uploads at 50 MB (`413`).
 
 **Rendering**
@@ -581,9 +695,10 @@ def frozen_now() -> datetime:
 - [ ] `is_active=false` templates are rejected by `/sender`.
 
 **Placeholders**
-- [ ] `GET /placeholders` returns recipient fields **and** computed functions
-      with descriptions, examples, live sample values, and the documented
-      template-language limitation.
+- [ ] `GET /placeholders` returns the three §3 groups — 5 recipient fields,
+      7 computed functions (`DATE_RESOLVERS` + `now` + `current_year`), and the
+      3 reserved names — with descriptions, examples, live sample values, the
+      extra-columns note, and the documented template-language limitation.
 
 **Cross-cutting**
 - [ ] All endpoints require `@is_authenticated`.
@@ -837,7 +952,19 @@ NotifyWrapper(provider="email",
 #   → these become the pass-2 render kwargs via send(**kwargs) → _render_(**kwargs)  ✅
 ```
 
-**3. The other three discriminators:**
+**3. Pass-2 binding precedence and the `username` trap** (simulating
+`providers/base.py:177-183` exactly):
+```python
+args = {"recipient": to, "username": to, "message": message, "subject": subject, **kwargs}
+# A) row HAS username  → "Hola agomez / Ana Gomez"                          ✅ kwargs win
+# B) row LACKS username → "Hola <Ana Gomez: c1c4f2c8-deda-46e8-bda2-c9b5f6018b97>"
+#                                                    ⚠️ Actor repr leaks into the message
+# C) "{{ recipient }}"  → "<Ana Gomez: c1c4f2c8-…>"  ⚠️ object repr, never a name
+# ⇒ REQUIREMENT: always emit `username` (fallback to `name`); mark
+#   recipient/message/subject reserved.
+```
+
+**4. The other three discriminators:**
 ```python
 NotifyWrapper(provider="teams",    recipient=[{"team_id":"T1","channel_id":"C1","name":"Ops"}])
 #   → TeamsChannel(name='Ops', channel_id='C1', team_id='T1')            ✅
@@ -955,7 +1082,9 @@ NotifyWrapper(provider="slack",    recipient=[{"channel_id":"C9","channel_name":
 | **Non-dict recipients are silently discarded** (`wrapper.py:58` just prints) | Always emit dicts; never `BaseModel` instances over JSON |
 | **No delivery confirmation** — worker publishes no results | Tracking vocabulary is limited to `queued`/`skipped`/`publish_failed`. API docs must not promise delivery. **The UI must not render "delivered"** |
 | **Partial send on Redis failure mid-fan-out**: already-published rows stay `queued`, the rest become `publish_failed` | Surfaced by `GET /sender/{batch_id}`; the batch status reflects partial failure explicitly |
-| **Restart mid-fan-out strands rows in `queued` forever** | `POST /sender/{batch_id}/retry` (G10). Retry must be idempotent-ish: it re-publishes only `queued` rows, and duplicate delivery is possible if the original `xadd` actually landed — document that trade |
+| **Restart mid-fan-out strands rows** | `POST /sender/{batch_id}/retry` (G10) driven by the §2 state machine. The pre-`xadd` `publishing` marker narrows duplicate-delivery risk to rows caught mid-call; those are reported as ambiguous and re-sent only under `?force=true`. `queued` rows are never retried |
+| **`{{username}}` leaks an `Actor` repr** when the row lacks that column — Notify binds `username` to the Actor object, so a UUID ships inside a real message. Verified: `<Ana Gomez: c1c4f2c8-…>` | `build_wire_payload()` always emits `username`, falling back to `name`. Two tests pin both the fallback and the upstream behavior it defends against |
+| **Reserved names** `recipient`/`message`/`subject` silently shadow row columns of the same name | Catalog marks them reserved; ingestion warns if an uploaded file uses one as a column header |
 | **Background task exceptions get swallowed** by a bare `asyncio.create_task` | Attach a done-callback that logs and finalizes batch status; never leave a batch stuck in `publishing` |
 | **Redis 7-day stream retention** (`cleanup_old_messages`, `server.py:102-120`) | Irrelevant for us (we don't read back), but do not build any tracking that assumes stream durability |
 | **Forward dependency on async-notify string templates** | See gating below |
@@ -1018,12 +1147,19 @@ release. Instead:
 - [x] Where do the DDL files get applied? — *Resolved by convention*: authored but **not executed**; applying them is an operator/deployment step, as with `users_prompts_creation.sql`. → §1 Non-Goals.
 - [x] CRUD style for templates? — *Resolved from requirement*: **hand-written methods on `CommCenterHandler`**, since the requirement specifies all endpoints on the same `BaseHandler`. A `ModelView` would need a second class and separate route registration. → §2 New Public Interfaces, Module 7.
 
-**Still open** (may be decided during implementation):
+**Resolved at approval** (spec approved 2026-08-06 — no open questions remain):
 
-- [ ] Exact final placeholder catalog — confirm the recipient-field list beyond `name`/`username`/`email`/`phone`/`address`, and whether computed functions extend `DATE_RESOLVERS` with `now` / `current_year` / `datetime`. — *Owner: Jesus Lara*
-- [ ] Should `GET /sender/{batch_id}` paginate the per-recipient rows for a 10 000-row batch, or return aggregates only with an opt-in `?details=true`? — *Owner: implementer*
-- [ ] Does `POST /sender` accept a `dry_run=true` that renders and validates but publishes nothing? Cheap to add given the architecture; not required by any goal. — *Owner: Jesus Lara*
-- [ ] Retry duplicate-delivery semantics: if the original `xadd` actually landed before the restart, retry double-sends. Accept and document, or add a per-row published-marker written before the `xadd`? — *Owner: Jesus Lara*
+- [x] Exact final placeholder catalog? — *Resolved*: three groups. **5 recipient fields** (`name`, `username`, `email`, `phone`, `address`), **7 computed functions** (the five `DATE_RESOLVERS` verbatim + module-local `now` and `current_year`), and **3 reserved names** (`recipient`, `message`, `subject`) that must not be used. Extra columns pass through as placeholders automatically. → §3 Module 3, §5.
+- [x] Paginate `GET /sender/{batch_id}`? — *Resolved*: aggregates by default; `?details=true` adds rows paginated by `limit` (default 100, clamped to 1000) / `offset`, filterable by `?status=`. Keeps the default response O(1) for a 10 000-row batch. → §2 routes, §5.
+- [x] `dry_run=true`? — *Resolved*: **yes**. Runs ingest → render → validate, returns `200` with `resolved_functions`, the skip report and a rendered `preview`; publishes nothing and writes no tracking rows. Near-free given the architecture, and the natural backstop for a mass-send endpoint. → §2 Data Models, §5.
+- [x] Retry duplicate-delivery semantics? — *Resolved*: **add the pre-`xadd` marker.** Row states are `pending → publishing → queued`, with `publishing` written immediately before the call. Retry re-publishes `pending` + `publish_failed`, never `queued`/`skipped`, and includes `publishing` only under `?force=true`. Duplicate risk is confined to rows caught mid-`xadd`, and those are surfaced rather than silently re-sent. → §2 state machine, §3 Module 6, §5, §7.
+
+**Deliberately deferred to follow-up specs** (not blocking implementation):
+
+- Per-user rate limiting / quotas (§1 Non-Goals).
+- HTML-escaping strategy for untrusted recipient values in HTML email (§7).
+- Template versioning / history.
+- Exposing bulk send as an agent toolkit (brainstorm Option C; G12 keeps the path open).
 
 ---
 
@@ -1067,3 +1203,4 @@ during spec authoring. Push feature-branch commits promptly and never
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-06 | Jesus Lara | Initial draft from `commcenter-notify.brainstorm.md` (Option B). All 13 brainstorm resolutions carried forward; 8 further questions resolved (4 by user, 4 from evidence/convention); wire contract verified by execution. |
+| 1.0 | 2026-08-06 | Jesus Lara | **Approved.** Final 4 open questions resolved: placeholder catalog (5 fields / 7 functions / 3 reserved), `?details=true` pagination, `dry_run`, and the `pending→publishing→queued` state machine containing retry duplicates. Added the verified `username` → `Actor`-repr trap and its mandatory fallback. Zero open questions remain. |
