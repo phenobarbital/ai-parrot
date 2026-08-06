@@ -4,13 +4,15 @@
 (inline JSON, ``multipart/form-data``, base64) produces (spec §2 Data
 Models, §3 Module 4). ``SkippedRow`` documents why a row never reached the
 NotifyWorker stream (spec §5 — skipped rows must be reported, never
-silently dropped).
+silently dropped). ``SenderRequest``/``SenderResponse`` are the
+``POST /sender`` bulk-send request/response bodies (TASK-2159).
 """
 # ruff: noqa: UP045 -- `datamodel.BaseModel` field validation does not
 # understand PEP 604 `X | None` unions (raises `TypeError: Expected type,
 # got types.UnionType` at construction time); `typing.Optional[X]` is
 # required here, verified live against this repo's installed `datamodel`
 # package.
+import uuid
 from typing import Optional
 
 from datamodel import BaseModel, Field
@@ -72,3 +74,38 @@ class PreparedBatch(BaseModel):
     subject: Optional[str] = Field(required=False, default=None)
     queued: list = Field(required=False, default_factory=list)
     skipped: list = Field(required=False, default_factory=list)
+
+
+class SenderRequest(BaseModel):
+    """``POST /sender`` request body — the bulk-send endpoint (spec §2).
+
+    Exactly one of ``template_id``, ``template_name``, ``template``, or
+    ``template_file`` must be provided; exactly one of ``recipients``
+    (inline JSON) or ``file_b64`` must be provided when the transport is
+    JSON (multipart uploads carry recipients as a file part instead, never
+    through this model).
+    """
+
+    provider: str = Field(required=True)
+    template_id: Optional[uuid.UUID] = Field(required=False, default=None)
+    template_name: Optional[str] = Field(required=False, default=None)
+    template: Optional[str] = Field(required=False, default=None)
+    template_file: Optional[str] = Field(required=False, default=None)
+    subject: Optional[str] = Field(required=False, default=None)
+    recipients: Optional[list] = Field(required=False, default=None)
+    file_b64: Optional[str] = Field(required=False, default=None)
+    filename: Optional[str] = Field(required=False, default=None)
+    dry_run: bool = Field(required=False, default=False)
+
+
+class SenderResponse(BaseModel):
+    """``POST /sender`` response body (spec §2, §5 acceptance criteria)."""
+
+    batch_id: Optional[uuid.UUID] = Field(required=False, default=None)
+    status: str = Field(required=True)
+    total: int = Field(required=True)
+    queued: int = Field(required=True)
+    skipped: int = Field(required=True)
+    resolved_functions: dict = Field(required=False, default_factory=dict)
+    skipped_details: list = Field(required=False, default_factory=list)
+    preview: Optional[str] = Field(required=False, default=None)

@@ -128,7 +128,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -141,8 +141,8 @@
       "parallelism_notes": "Sequential and the feature's serialization point: creates comm_center.py, which TASK-2160/2161/2162 all edit. Registers every route and leaves explicit NotImplementedError stubs for the methods those tasks fill in.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2159-commcenter-handler-routes.md"
+      "completed_at": "2026-08-06T21:18:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2159-commcenter-handler-routes.md"
     },
     {
       "id": "TASK-2160",
