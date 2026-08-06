@@ -68,6 +68,9 @@ class VoiceSession:
         self._queue: Optional[asyncio.Queue] = None
         self._task: Optional[asyncio.Task] = None
         self._turn_no = 0
+        # FEAT-416 (TASK-2150): lifetime reconnection counter — resets
+        # only on __init__, not per-turn (spec §3 Module 6 Key Constraints).
+        self._reconnect_count = 0
 
     # -- turn lifecycle -----------------------------------------------------
 
@@ -169,12 +172,70 @@ class VoiceSession:
             "Turn %d starting (session=%s)", turn_no, self.session_id,
         )
         try:
-            async for resp in self.client.stream_voice(
-                self._audio_iterator(queue),
-                system_prompt=self.system_prompt,
-                session_id=self.session_id,
-            ):
-                await self._relay(resp, turn_no)
+            # FEAT-416 (TASK-2150): outer loop enables transparent
+            # reconnection — reconnect_required=True + reconnect_on_limit
+            # closes the exhausted stream_voice() generator and opens a
+            # fresh one with the same system_prompt/session_id, resuming
+            # from the same (still-live) audio queue (spec §3 Module 6).
+            while True:
+                reconnecting = False
+                stream = self.client.stream_voice(
+                    self._audio_iterator(queue),
+                    system_prompt=self.system_prompt,
+                    session_id=self.session_id,
+                )
+                try:
+                    async for resp in stream:
+                        # Relaying the frame first — including any
+                        # tool_calls it carries — before evaluating
+                        # reconnect_required ensures pending tool
+                        # execution for this response is already
+                        # complete (spec §7 8-minute reconnection race).
+                        await self._relay(resp, turn_no)
+
+                        if not (
+                            resp.metadata.get("reconnect_required")
+                            and self.voice_config.reconnect_on_limit
+                        ):
+                            continue
+
+                        if self._reconnect_count >= self.voice_config.max_reconnects:
+                            await self._send({
+                                "type": "error",
+                                "message": "max reconnections reached",
+                                "session_id": self.session_id,
+                            })
+                            # Tear down directly rather than via close()/
+                            # _cancel_turn() — this coroutine IS self._task,
+                            # so awaiting self._task here would deadlock
+                            # (a task cannot await itself). The task is
+                            # ending on its own; just clear the references
+                            # (guarded, mirroring the outer finally below,
+                            # in case a newer start_turn() already replaced
+                            # them).
+                            if self._task is asyncio.current_task():
+                                self._queue = None
+                                self._task = None
+                            return
+
+                        self._reconnect_count += 1
+                        await self._send({
+                            "type": "reconnect",
+                            "session_id": self.session_id,
+                            "reconnect_count": self._reconnect_count,
+                        })
+                        reconnecting = True
+                        break
+                finally:
+                    # Close the exhausted (or abandoned) generator before
+                    # opening a new one or exiting — mirrors "close the
+                    # old stream_voice() async generator" (spec §3
+                    # Module 6, step 3).
+                    with contextlib.suppress(Exception):
+                        await stream.aclose()
+
+                if not reconnecting:
+                    break
         except asyncio.CancelledError:
             self.logger.info("Turn %d cancelled", turn_no)
             raise
