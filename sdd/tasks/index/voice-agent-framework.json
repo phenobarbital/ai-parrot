@@ -90,7 +90,7 @@
       "feature_id": "FEAT-416",
       "feature": "voice-agent-framework",
       "spec": "sdd/specs/voice-agent-framework.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Core new file; TASK-2150 and TASK-2152 extend it",
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2149-voice-session.md"
+      "completed_at": "2026-08-06T02:45:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2149-voice-session.md"
     },
     {
       "id": "TASK-2150",
