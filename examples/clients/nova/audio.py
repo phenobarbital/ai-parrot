@@ -67,18 +67,40 @@ import base64
 import contextlib
 import json
 import logging
+import os
 import uuid
+from pathlib import Path
 from typing import AsyncIterator, Optional
 
 from aiohttp import WSMsgType, web
-
+from navconfig import config
 from parrot.clients.live import LiveVoiceResponse
 from parrot.clients.nova import NovaClient
+
+# ---------------------------------------------------------------------------
+# Load env/.env so AWS_NOVA_SONIC_* vars are available as os.environ defaults
+# ---------------------------------------------------------------------------
+_ENV_FILE = Path(__file__).resolve().parents[3] / "env" / ".env"
+if _ENV_FILE.is_file():
+    with open(_ENV_FILE) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _key, _, _val = _line.partition("=")
+            os.environ.setdefault(_key.strip(), _val.strip())
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# Silence the verbose smithy/CRT debug chatter — they log full HTTP
+# headers (including credentials) and every raw event-stream frame.
+for _noisy in (
+    "smithy_core", "smithy_http", "smithy_aws", "smithy_aws_event_stream",
+    "awscrt", "botocore",
+):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 logger = logging.getLogger("nova.audio.example")
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -150,12 +172,41 @@ class NovaVoiceSession:
     async def end_turn(self) -> None:
         """Signal end-of-turn so Nova Sonic starts responding.
 
-        Pushes the ``None`` sentinel that ``NovaAudio._audio_sender`` turns
-        into a ``contentEnd`` frame. The turn task keeps running until Nova
-        finishes its reply.
+        Nova Sonic's VAD (voice-activity detection) ends the user turn on
+        detected end-of-speech — audio that stops abruptly after the last
+        spoken word gives ``userSpeechStart`` but the model never replies.
+        Inject ~1.5 s of trailing silence so the VAD detects end-of-speech
+        before we push the ``None`` sentinel that ``NovaAudio._audio_sender``
+        turns into a ``contentEnd`` frame. The turn task keeps running until
+        Nova finishes its reply.
         """
         if self._queue is not None:
+            # ~1.5 s of silence at 16 kHz, 16-bit mono = 48000 bytes.
+            # Sent as 1024-sample frames (~64 ms each) to match the
+            # browser's AudioWorklet frame size.
+            #
+            # CRITICAL: pace the silence so Nova's VAD has time to detect
+            # end-of-speech. Dumping all frames in a burst (~6 ms total)
+            # causes the VAD to miss end-of-speech entirely — Nova sees
+            # userSpeechStart but never fires end-of-speech, so it never
+            # replies (confirmed by 55 s idle timeout with 0 output
+            # tokens). The working sonic_e2e_demo.py paces every frame at
+            # 20 ms; we use the same rate here (~3× real-time for 64 ms
+            # frames). Total wall-clock cost: ~460 ms.
+            silence_frame = b"\x00\x00" * 1024
+            num_frames = int(NovaClient.INPUT_SAMPLE_RATE_HZ * 1.5 / 1024)
+            qsize_before = self._queue.qsize()
+            for _ in range(num_frames):
+                await self._queue.put(silence_frame)
+                await asyncio.sleep(0.02)
             await self._queue.put(None)
+            self.logger.info(
+                "end_turn: pushed %d silence frames + None "
+                "(queue was %d, now %d)",
+                num_frames, qsize_before, self._queue.qsize(),
+            )
+        else:
+            self.logger.warning("end_turn: _queue is None — nothing pushed")
 
     async def close(self) -> None:
         """Tear down any in-flight turn (browser disconnected)."""
@@ -260,6 +311,14 @@ class NovaVoiceSession:
 
         if resp.is_complete:
             usage = resp.usage
+            if usage:
+                self.logger.info(
+                    "Turn %d usage: %d input / %d output / %d total tokens%s",
+                    turn_no, usage.prompt_tokens, usage.completion_tokens,
+                    usage.total_tokens,
+                    f" ({usage.tool_calls_executed} tool call(s))"
+                    if usage.tool_calls_executed else "",
+                )
             await self._send({
                 "type": "turn_complete",
                 "turn": turn_no,
@@ -358,10 +417,20 @@ async def on_cleanup(app: web.Application) -> None:
 
 def build_app(args: argparse.Namespace) -> web.Application:
     """Wire the ``NovaClient``, routes and shutdown hook into an app."""
+    # Resolve explicit AWS credentials for Nova Sonic voice streaming.
+    # The voice SDK (Pre-Alpha smithy-based) requires access key / secret key;
+    # bearer tokens are not supported.  CLI flags win → env vars → None (which
+    # lets BedrockConverseBase fall through to its own resolution chain).
+    aws_access_key = args.aws_access_key or config.get("AWS_NOVA_SONIC_KEY_ID")
+    aws_secret_key = args.aws_secret_key or config.get("AWS_NOVA_SONIC_SECRET_KEY")
+    region = args.region or config.get("AWS_NOVA_SONIC_REGION")
+
     client = NovaClient(
         model=args.model,
-        region=args.region,
+        region=region,
         aws_id=args.aws_id,
+        aws_access_key=aws_access_key,
+        aws_secret_key=aws_secret_key,
         voice_id=args.voice,
         # Nova Sonic has no cross-region inference profiles — NovaAudio already
         # forces region_prefix=None for the voice model, this just keeps the
@@ -471,6 +540,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     font: inherit; font-size: 11px; padding: 1px 5px; border-radius: 4px;
     border: 1px solid var(--line); background: var(--panel); color: var(--muted);
   }
+  #disconnectBtn {
+    font: inherit; font-size: 11px; font-weight: 600; padding: 5px 14px;
+    border-radius: 999px; border: 1px solid rgba(255,107,129,.4); cursor: pointer;
+    background: rgba(255,107,129,.12); color: var(--danger);
+    transition: background .15s, border-color .15s;
+  }
+  #disconnectBtn:hover { background: rgba(255,107,129,.22); border-color: var(--danger); }
+  #disconnectBtn.off {
+    border-color: rgba(64,214,176,.4); background: rgba(64,214,176,.12);
+    color: var(--accent-2);
+  }
+  #disconnectBtn.off:hover { background: rgba(64,214,176,.22); border-color: var(--accent-2); }
 </style>
 </head>
 <body>
@@ -482,6 +563,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <span class="tag" id="tagModel"></span>
       <span class="tag" id="tagVoice"></span>
       <span class="tag" id="tagRate"></span>
+      <button id="disconnectBtn">Disconnect</button>
     </div>
   </header>
 
@@ -681,6 +763,11 @@ function toBase64(u8) {
 let ws = null;
 let recording = false;
 let awaitingReply = false;
+let manualDisconnect = false;
+let keepaliveId = null;
+let thinkingTimeout = null;
+const KEEPALIVE_INTERVAL_MS = 25000;  // send silence every 25s (Nova times out at 55s)
+const THINKING_TIMEOUT_MS = 60000;    // force-reset button after 60s stuck in "thinking"
 
 function setPhase(phase, text) {
   ptt.classList.toggle("recording", phase === "recording");
@@ -705,8 +792,13 @@ function connect() {
   ws.onclose = () => {
     dot.classList.remove("on");
     recording = false;
-    setPhase("offline", "Disconnected — reconnecting in 2 s…");
-    setTimeout(connect, 2000);
+    stopKeepAlive();
+    if (manualDisconnect) {
+      setPhase("offline", "Disconnected.");
+    } else {
+      setPhase("offline", "Disconnected — reconnecting in 2 s…");
+      setTimeout(connect, 2000);
+    }
   };
 
   ws.onerror = () => statusEl.textContent = "WebSocket error — see the browser console.";
@@ -722,9 +814,20 @@ function connect() {
         statusEl.textContent = "Turn " + msg.turn + " open — speak now.";
         break;
       case "text":
+        // Re-enable the button as soon as Nova starts replying — the user
+        // can see the reply is streaming and should be able to start a new
+        // turn (barge-in) without waiting for the full turn_complete.
+        if (awaitingReply && msg.role !== "USER") {
+          awaitingReply = false;
+          setPhase("idle", "Nova is replying… hold to talk again.");
+        }
         appendStream(msg.text, msg.role);
         break;
       case "audio":
+        if (awaitingReply) {
+          awaitingReply = false;
+          setPhase("idle", "Nova is replying… hold to talk again.");
+        }
         playPCM(base64ToBytes(msg.audio_base64), msg.sample_rate || CONFIG.outputSampleRate);
         break;
       case "tool_call":
@@ -739,9 +842,18 @@ function connect() {
       case "turn_complete": {
         closeStream();
         awaitingReply = false;
+        clearTimeout(thinkingTimeout);
         const u = msg.usage;
         let note = "Turn " + msg.turn + " complete.";
-        if (u && u.total_tokens) note += " " + u.total_tokens + " tokens.";
+        if (u && u.total_tokens) {
+          note += " " + u.prompt_tokens + " in / " + u.completion_tokens + " out / " + u.total_tokens + " total tokens.";
+          if (u.tool_calls_executed) note += " " + u.tool_calls_executed + " tool call(s).";
+          addBubble("system",
+            "\u{1f4ca} " + u.prompt_tokens + " input · " +
+            u.completion_tokens + " output · " +
+            u.total_tokens + " total tokens" +
+            (u.tool_calls_executed ? " · " + u.tool_calls_executed + " tool call(s)" : ""));
+        }
         if (msg.reconnect_required) {
           note += " Nova's 8-minute stream limit was reached — the next press opens a fresh stream.";
         }
@@ -750,9 +862,15 @@ function connect() {
       }
       case "error":
         awaitingReply = false;
+        clearTimeout(thinkingTimeout);
         closeStream();
-        addBubble("error", msg.message);
-        setPhase("idle", "Turn failed — see the message above.");
+        if (msg.message && msg.message.includes("Timed out waiting for audio")) {
+          addBubble("system", "Session timed out — Nova received no speech. Press and hold to try again.");
+          setPhase("idle", "Idle timeout. Hold to talk.");
+        } else {
+          addBubble("error", msg.message);
+          setPhase("idle", "Turn failed — see the message above.");
+        }
         break;
     }
   };
@@ -767,19 +885,36 @@ function base64ToBytes(b64) {
 
 // ------------------------------------------------------------ push-to-talk
 
+let pendingStop = false;
+
 async function startTalking() {
   if (recording || awaitingReply || !ws || ws.readyState !== WebSocket.OPEN) return;
+  // Set recording BEFORE any await — pointerup can fire during mic init
+  // and must see recording===true so stopTalking() is not a no-op.
+  recording = true;
+  pendingStop = false;
+  setPhase("recording", "Initialising mic…");
   try {
     if (!micCtx) await initMic();
     if (micCtx.state === "suspended") await micCtx.resume();
   } catch (err) {
+    recording = false;
+    pendingStop = false;
     addBubble("error", "Microphone unavailable: " + err.message);
+    setPhase("idle", "Hold the button or press space to talk.");
+    return;
+  }
+  if (pendingStop) {
+    // User released the button while we were initialising the mic.
+    recording = false;
+    pendingStop = false;
+    setPhase("idle", "Hold the button or press space to talk.");
     return;
   }
   stopPlayback();
   closeStream();
-  recording = true;
   ws.send(JSON.stringify({ type: "start_turn" }));
+  startKeepAlive();
   setPhase("recording", "Listening… release to send.");
   // No placeholder bubble here — the real USER transcription now arrives
   // from Nova via the "text" frame's role, rendered by appendStream().
@@ -787,7 +922,9 @@ async function startTalking() {
 
 function stopTalking() {
   if (!recording) return;
+  pendingStop = true;
   recording = false;
+  stopKeepAlive();
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     setPhase("offline", "Connection dropped mid-turn.");
     return;
@@ -795,6 +932,16 @@ function stopTalking() {
   awaitingReply = true;
   ws.send(JSON.stringify({ type: "end_turn" }));
   setPhase("thinking", "Sent — waiting for Nova…");
+  // Safety: force-reset if turn_complete never arrives.
+  clearTimeout(thinkingTimeout);
+  thinkingTimeout = setTimeout(() => {
+    if (awaitingReply) {
+      awaitingReply = false;
+      closeStream();
+      addBubble("system", "No reply from Nova within 60 s — resetting.");
+      setPhase("idle", "Hold to talk again.");
+    }
+  }, THINKING_TIMEOUT_MS);
 }
 
 ptt.addEventListener("pointerdown", (e) => { e.preventDefault(); startTalking(); });
@@ -813,6 +960,50 @@ document.addEventListener("keydown", (e) => {
 });
 document.addEventListener("keyup", (e) => {
   if (e.code === "Space") { e.preventDefault(); stopTalking(); }
+});
+
+// -------------------------------------------------------- keepalive (silence)
+// Nova Sonic times out after 55s of no audio/interaction.  While a turn is
+// open and recording, the AudioWorklet already pushes frames continuously.
+// This keepalive covers the edge case where the worklet stalls or the mic
+// produces no data — it sends a short silence frame every 25s.
+
+function startKeepAlive() {
+  stopKeepAlive();
+  keepaliveId = setInterval(() => {
+    if (!recording || !ws || ws.readyState !== WebSocket.OPEN) return;
+    // 512 zero samples = 32 ms of silence at 16 kHz
+    const silence = new ArrayBuffer(1024);
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(silence)));
+    ws.send(JSON.stringify({ type: "audio", data: b64 }));
+  }, KEEPALIVE_INTERVAL_MS);
+}
+
+function stopKeepAlive() {
+  if (keepaliveId !== null) { clearInterval(keepaliveId); keepaliveId = null; }
+}
+
+// ---------------------------------------------------------- disconnect button
+
+const disconnectBtn = document.getElementById("disconnectBtn");
+
+function doDisconnect() {
+  manualDisconnect = true;
+  if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
+  stopKeepAlive();
+  disconnectBtn.textContent = "Connect";
+  disconnectBtn.classList.add("off");
+}
+
+function doConnect() {
+  manualDisconnect = false;
+  disconnectBtn.textContent = "Disconnect";
+  disconnectBtn.classList.remove("off");
+  connect();
+}
+
+disconnectBtn.addEventListener("click", () => {
+  if (manualDisconnect) doConnect(); else doDisconnect();
 });
 
 connect();
@@ -848,6 +1039,16 @@ def parse_args() -> argparse.Namespace:
         "--aws-id",
         default=None,
         help="AWS_CREDENTIALS profile name resolved by BedrockConverseBase",
+    )
+    parser.add_argument(
+        "--aws-access-key",
+        default=None,
+        help="AWS access key ID (default: $AWS_NOVA_SONIC_KEY_ID from env/.env)",
+    )
+    parser.add_argument(
+        "--aws-secret-key",
+        default=None,
+        help="AWS secret access key (default: $AWS_NOVA_SONIC_SECRET_KEY from env/.env)",
     )
     parser.add_argument(
         "--system-prompt",
