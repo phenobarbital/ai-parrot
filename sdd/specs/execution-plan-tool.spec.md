@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-419
 **Date**: 2026-08-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 **Brainstorm**: `sdd/proposals/execution-plan-tool.brainstorm.md` (Option D accepted)
 
@@ -119,7 +119,7 @@ It exposes four small tools to the agent's LLM:
 | `plan_execute(objective=None, plan_name=None, params=None)` | Acquire → validate → compile → run. Exactly one of `objective`/`plan_name`. Returns the full `ExecutionManifest` if done within `soft_timeout`, else `{run_id, status:"running", nodes_total, nodes_done}` while execution continues in background. |
 | `plan_status(run_id)` | Progress counts while running; the final `ExecutionManifest` after completion (kept in the run registry). |
 | `plan_artifacts(run_id)` | `ArtifactRef` list so far — the WorkingMemory key map the analyst reads. |
-| `plan_validate(objective=None, plan_name=None, params=None)` | Dry-run: acquire + validate, return plan JSON + `ValidationReport`, execute nothing. |
+| `plan_validate(objective=None, plan_name=None, params=None)` | Dry-run: acquire + validate, return the acquired plan JSON **verbatim** (including planner-generated plans in `objective` mode — enables the save-and-promote-to-`plans_dir` workflow) + the full `ValidationReport`, execute nothing. |
 
 Failure semantics (resolved in brainstorm, Axis 4): the manifest is ALWAYS
 the success payload — `status` `completed|partial|failed` with per-node
@@ -406,6 +406,9 @@ def plans_dir(tmp_path):
 - [ ] An invalid plan fails at validation with ALL issues in one report —
   including `tool_not_allowed` for tools outside `allowed_tools` — and no
   tool is ever executed.
+- [ ] `plan_validate` returns the acquired plan JSON verbatim (both modes)
+  plus the complete `ValidationReport`, and never calls
+  `ToolManager.execute_tool`.
 - [ ] `plan_name` mode loads YAML/JSON from `plans_dir` with load-time
   `{params.<name>}` substitution; missing or unused params fail the load;
   the executor's runtime placeholders are untouched.
@@ -688,24 +691,22 @@ body above):
 - [x] `PermissionContext` — *Resolved in brainstorm*: deferred; v1 uses a
   constructor-level optional default forwarded to the node factory.
 
-Resolved in this spec draft (defaults set — flag on review if wrong):
+Resolved in this spec, confirmed by user on 2026-08-07:
 
-- [x] Run-registry bounds — *Resolved in spec*: `max_completed_runs=50`,
+- [x] Run-registry bounds — *Confirmed*: `max_completed_runs=50`,
   evict oldest completed/failed; in-flight runs never evicted; no
   `max_concurrent_runs` cap in v1.
-- [x] Cross-restart `plan_resume` — *Resolved in spec*: confirmed OUT of
-  v1 (Non-Goal); `skip_existing` idempotence is the v1 recovery story.
-- [x] Tool naming + `soft_timeout` default — *Resolved in spec*:
+- [x] Cross-restart `plan_resume` — *Confirmed*: OUT of v1 (Non-Goal);
+  `skip_existing` idempotence is the v1 recovery story.
+- [x] Tool naming + `soft_timeout` default — *Confirmed*:
   `plan_execute` / `plan_status` / `plan_artifacts` / `plan_validate`;
   `soft_timeout=60.0`.
+- [x] `plan_validate` dry-run response — *Confirmed*: YES — includes the
+  acquired plan JSON verbatim in both modes (objective-mode plans enable
+  the save-and-promote-to-`plans_dir` workflow) plus the full
+  `ValidationReport`.
 
-Still open:
-
-- [ ] Should `plan_validate`'s dry-run response include the *generated*
-  plan JSON verbatim in objective mode (useful for promoting ad-hoc plans
-  to `plans_dir`), or only the `ValidationReport`? Leaning yes (it enables
-  the save-and-promote workflow) — decide at implementation. — *Owner:
-  implementation*
+Still open: none.
 
 ---
 
@@ -714,3 +715,4 @@ Still open:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-07 | Jesus Lara | Initial draft from brainstorm (Option D) |
+| 0.2 | 2026-08-07 | Jesus Lara | All open questions confirmed; status → approved |
