@@ -66,7 +66,11 @@ class TestInstaller:
         )
         entry = settings["hooks"]["PreToolUse"][0]
         assert entry["matcher"] == assets.HOOK_MATCHER
-        assert entry["hooks"][0]["command"] == assets.HOOK_COMMAND
+        # The command is resolved to an absolute path when the binary is
+        # found on PATH or in the project venv; always ends with the
+        # HOOK_COMMAND needle.
+        assert entry["hooks"][0]["command"].endswith(assets.HOOK_COMMAND)
+        assert entry["hooks"][0]["command"] == assets.hook_command(repo)
         # Permissions live in settings.local.json, not the shared file.
         assert "permissions" not in settings
 
@@ -120,7 +124,7 @@ class TestInstaller:
             upgraded["hooks"]["PreToolUse"][0]["matcher"]
             == assets.HOOK_MATCHER == "Grep|Glob|Read|Bash"
         )
-        assert any("matcher updated" in a for a in actions)
+        assert any("hook updated" in a for a in actions)
 
     def test_reinstall_migrates_nudge_tools(self, repo):
         install_claude_integration(repo)

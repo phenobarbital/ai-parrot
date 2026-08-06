@@ -8,6 +8,9 @@ added without touching user content.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 # --------------------------------------------------------------------------
 # Markers / identifiers
 # --------------------------------------------------------------------------
@@ -18,6 +21,11 @@ CLAUDE_MD_END = "<!-- parrot:wiki:end -->"
 
 #: Hook command written into .claude/settings.json — also the needle
 #: used to find (and remove) our hook entries when merging settings.
+#: When the installer can resolve an absolute path to the binary, the
+#: full path replaces the bare name (worktrees don't inherit the venv's
+#: ``$PATH``, so the bare name would fail there).  This constant is
+#: still the *identification needle* used by ``_is_our_hook`` — it is
+#: always a substring of the resolved command.
 HOOK_COMMAND = "wikitoolkit claude-hook"
 
 #: Tool matcher for the PreToolUse nudge. Includes ``Bash`` so shell-based
@@ -43,15 +51,87 @@ PERMISSION_RULES: tuple[str, ...] = (
 #: Filename of the slash command (under .claude/commands/).
 SLASH_COMMAND_FILENAME = "parrotwiki.md"
 
-#: .mcp.json entry for the wikitoolkit MCP stdio server (FEAT-403). Claude
-#: Code starts this automatically, exposing the six wiki tools natively —
-#: equal standing with Grep/Read at tool-selection time — instead of
-#: relying solely on the PreToolUse nudge hook to redirect to the CLI.
+#: Default .mcp.json entry for the wikitoolkit MCP stdio server (FEAT-403).
+#: The installer replaces ``"wikitoolkit"`` with the resolved absolute
+#: path via :func:`mcp_json_entry` so the server starts in worktrees too.
 MCP_JSON_ENTRY: dict = {
     "command": "wikitoolkit",
     "args": ["mcp"],
     "env": {},
 }
+
+
+# --------------------------------------------------------------------------
+# Binary resolution — used by the installer to write absolute paths
+# --------------------------------------------------------------------------
+
+
+def resolve_wikitoolkit_bin(root: Path) -> str:
+    """Return the absolute path to the ``wikitoolkit`` binary.
+
+    Resolution order:
+
+    1. ``<root>/.venv/bin/wikitoolkit`` — the project venv (most common
+       with ``uv`` / ``pip install -e .``).
+    2. ``shutil.which("wikitoolkit")`` — globally installed or on
+       ``$PATH`` at install time.
+    3. Bare ``"wikitoolkit"`` — fallback; works only when the venv is
+       activated at hook-execution time.
+    """
+    venv_bin = root / ".venv" / "bin" / "wikitoolkit"
+    if venv_bin.exists():
+        return str(venv_bin)
+    found = shutil.which("wikitoolkit")
+    if found:
+        return found
+    return "wikitoolkit"
+
+
+def hook_command(root: Path) -> str:
+    """Build the ``PreToolUse`` hook command with an absolute path."""
+    return f"{resolve_wikitoolkit_bin(root)} claude-hook"
+
+
+def mcp_json_entry(root: Path) -> dict:
+    """Build the ``.mcp.json`` entry with an absolute path."""
+    return {
+        "command": resolve_wikitoolkit_bin(root),
+        "args": ["mcp"],
+        "env": {},
+    }
+
+
+def git_hook_block(root: Path) -> str:
+    """Build the ``post-commit`` hook block with an absolute path."""
+    wt_bin = resolve_wikitoolkit_bin(root)
+    return (
+        f"{GIT_HOOK_BEGIN}\n"
+        f"# Keep the LLM-wiki knowledge graph in sync with the last commit.\n"
+        f"# Installed by `parrot claude install`; "
+        f"remove with `parrot claude uninstall`.\n"
+        f"{wt_bin} upsert --changed --quiet >/dev/null 2>&1 || true\n"
+        f"{GIT_HOOK_END}\n"
+    )
+
+
+def git_hook_new_file(root: Path) -> str:
+    """Build a fresh ``post-commit`` hook file with an absolute path."""
+    return f"#!/bin/sh\n{git_hook_block(root)}"
+
+
+def permission_rules(root: Path) -> tuple[str, ...]:
+    """Return permission rules including absolute-path variants.
+
+    Extends the static :data:`PERMISSION_RULES` with rules that match
+    the resolved binary path so wiki commands work in worktrees (where
+    ``wikitoolkit`` is not on ``$PATH``).
+    """
+    resolved = resolve_wikitoolkit_bin(root)
+    if resolved == "wikitoolkit":
+        return PERMISSION_RULES
+    return PERMISSION_RULES + (
+        f"Bash({resolved}:*)",
+    )
 
 # --------------------------------------------------------------------------
 # CLAUDE.md managed section

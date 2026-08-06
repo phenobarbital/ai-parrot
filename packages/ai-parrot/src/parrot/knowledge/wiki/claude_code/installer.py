@@ -106,14 +106,19 @@ def _install_claude_md(root: Path) -> str:
     return "CLAUDE.md — wiki section already current"
 
 
-def _hook_entry() -> dict[str, Any]:
-    """Build the PreToolUse hook entry for settings.json."""
+def _hook_entry(root: Path) -> dict[str, Any]:
+    """Build the PreToolUse hook entry for settings.json.
+
+    The command is resolved to an absolute path so the hook fires
+    correctly inside git worktrees (which do not inherit the venv's
+    ``$PATH``).
+    """
     return {
         "matcher": assets.HOOK_MATCHER,
         "hooks": [
             {
                 "type": "command",
-                "command": assets.HOOK_COMMAND,
+                "command": assets.hook_command(root),
                 "timeout": 10,
             }
         ],
@@ -176,19 +181,32 @@ def _install_settings_hook(root: Path) -> str:
     if not isinstance(pre, list):
         raise RuntimeError(f"{path}: 'hooks.PreToolUse' is not a list")
 
+    resolved_cmd = assets.hook_command(root)
+
     existing = next(
         (e for e in pre if isinstance(e, dict) and _is_our_hook(e)), None
     )
     if existing is not None:
-        # Upgrade an older install in place when the matcher changed
-        # (e.g. Grep|Glob|Read → Grep|Glob|Read|Bash) so a re-run picks
-        # up new coverage instead of reporting "already installed".
+        # Upgrade an older install in place when the matcher or command
+        # changed (e.g. bare → absolute path, or Grep|Glob|Read →
+        # Grep|Glob|Read|Bash) so a re-run picks up the fix instead of
+        # reporting "already installed".
+        dirty = False
         if existing.get("matcher") != assets.HOOK_MATCHER:
             existing["matcher"] = assets.HOOK_MATCHER
+            dirty = True
+        for hook in existing.get("hooks", []):
+            if (
+                assets.HOOK_COMMAND in str(hook.get("command", ""))
+                and hook.get("command") != resolved_cmd
+            ):
+                hook["command"] = resolved_cmd
+                dirty = True
+        if dirty:
             _write_settings(path, settings)
-            return ".claude/settings.json — PreToolUse hook matcher updated"
+            return ".claude/settings.json — PreToolUse hook updated"
         return ".claude/settings.json — PreToolUse hook already installed"
-    pre.append(_hook_entry())
+    pre.append(_hook_entry(root))
     _write_settings(path, settings)
     return ".claude/settings.json — PreToolUse wiki nudge hook added"
 
@@ -246,7 +264,8 @@ def _install_permissions(root: Path) -> list[str]:
             f"{local_path}: 'permissions.allow' is not a list"
         )
 
-    missing = [r for r in assets.PERMISSION_RULES if r not in allow]
+    all_rules = assets.permission_rules(root)
+    missing = [r for r in all_rules if r not in allow]
     if not missing:
         actions.append(
             ".claude/settings.local.json — wikitoolkit permissions "
@@ -267,7 +286,8 @@ def _install_mcp_json(root: Path) -> str:
 
     ``.mcp.json`` lives at the project root (NOT inside ``.claude/``) and
     may already carry entries for other MCP servers — only the
-    ``wikitoolkit`` key is ever touched here.
+    ``wikitoolkit`` key is ever touched here.  The command is resolved to
+    an absolute path so the MCP server starts in worktrees too.
     """
     path = root / ".mcp.json"
     if path.exists():
@@ -280,10 +300,12 @@ def _install_mcp_json(root: Path) -> str:
     if not isinstance(data, dict):
         data = {}
 
+    entry = assets.mcp_json_entry(root)
+
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
         servers = data["mcpServers"] = {}
-    if servers.get("wikitoolkit") == assets.MCP_JSON_ENTRY:
+    if servers.get("wikitoolkit") == entry:
         return ".mcp.json — wikitoolkit entry already current"
 
     action = (
@@ -291,7 +313,7 @@ def _install_mcp_json(root: Path) -> str:
         if "wikitoolkit" in servers
         else ".mcp.json — wikitoolkit entry added"
     )
-    servers["wikitoolkit"] = assets.MCP_JSON_ENTRY
+    servers["wikitoolkit"] = entry
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return action
 
@@ -403,6 +425,8 @@ def _install_git_hook(root: Path) -> str:
     hook_path = _git_hook_path(root)
     if hook_path is None:
         return "git hook — skipped (not a git repository)"
+    block = assets.git_hook_block(root)
+    new_file = assets.git_hook_new_file(root)
     if hook_path.exists():
         text = hook_path.read_text(encoding="utf-8")
         if assets.GIT_HOOK_BEGIN in text:
@@ -417,11 +441,11 @@ def _install_git_hook(root: Path) -> str:
             )
         if not text.endswith("\n"):
             text += "\n"
-        hook_path.write_text(text + assets.GIT_HOOK_BLOCK, encoding="utf-8")
+        hook_path.write_text(text + block, encoding="utf-8")
         action = "git post-commit hook — chained into existing hook"
     else:
         hook_path.parent.mkdir(parents=True, exist_ok=True)
-        hook_path.write_text(assets.GIT_HOOK_NEW_FILE, encoding="utf-8")
+        hook_path.write_text(new_file, encoding="utf-8")
         action = "git post-commit hook — created"
     mode = hook_path.stat().st_mode
     hook_path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -586,8 +610,11 @@ def uninstall_claude_integration(root: Path) -> list[str]:
             else []
         )
         if isinstance(l_allow, list):
+            # Remove both the static rules and any absolute-path variants
+            # that a previous install may have written.
+            all_rules = assets.permission_rules(root)
             kept_local = [
-                r for r in l_allow if r not in assets.PERMISSION_RULES
+                r for r in l_allow if r not in all_rules
             ]
             if len(kept_local) != len(l_allow):
                 local["permissions"]["allow"] = kept_local
