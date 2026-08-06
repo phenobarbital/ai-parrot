@@ -183,4 +183,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented exactly as specified:
+
+- Created `packages/ai-parrot/src/parrot/clients/protocols.py` (actual repo
+  path — the codebase root is `packages/ai-parrot/src/parrot/`, not a
+  top-level `parrot/`; contract paths in the spec/task are relative to
+  that root) with `@runtime_checkable class VoiceCapable(Protocol)`
+  declaring only `stream_voice()` with the common parameter set, matching
+  the `AnthropicBackendProtocol` pattern verified at
+  `anthropic_backends.py:39`.
+- Created `packages/ai-parrot/tests/bots/test_voice_capable_protocol.py`
+  exactly per the task's Test Specification.
+- Lint: `ruff check --select=E,F,W,C,B` passes (bare `ruff check` flags
+  `UP035`/`UP045` pyupgrade rules that contradict this codebase's own
+  `Optional[X]`/`typing.AsyncIterator` convention used throughout
+  `live.py`; the project's configured linter is `.flake8`, which does not
+  enable those rules — `flake8` itself is not installed in either project
+  venv, so the equivalent `ruff --select` subset was used instead).
+
+**Environment limitation (pre-existing, not introduced by this task):**
+this sandbox's Python venvs (`.venv`, `.venv12`) ship with native/compiled
+extensions stripped across a wide swath of third-party dependencies
+(`pydantic_core`, `python-datamodel`, `orjson`, `asyncpg`,
+`psycopg2-binary`, `numpy`/`pandas`, and the internal `navconfig` package
+all failed to import with `ModuleNotFoundError` on their compiled
+submodules). I reinstalled the first several (pydantic-core, datamodel,
+orjson, asyncpg, psycopg2-binary, numpy, pandas) to try to unblock
+`import parrot.clients.live`, but the cascade continued into
+`navconfig.utils.functions` (a private internal package) and I stopped
+there — full remediation is out of scope for this feature and risks
+disrupting other concurrent sessions sharing the same venvs. As a result
+**`pytest` could not be executed** for this or any other task's tests in
+this session. This mirrors the pre-existing, documented limitation in
+`tests/bots/test_voicebot_nova_wiring.py` (`parrot.bots` unimportable due
+to an unbuilt Cython extension) but is broader in this session.
+Recommend running
+`pytest packages/ai-parrot/tests/bots/test_voice_capable_protocol.py -v`
+in a fully-provisioned environment before merge.

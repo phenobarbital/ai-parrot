@@ -226,4 +226,79 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per spec §3 Module 7, with one design decision and one
+pre-existing bug fixed along the way (both flagged in TASK-2146's
+Completion Note as deferred to this task):
+
+1. **Export**: `parrot/bots/__init__.py` gains a plain eager
+   `from .voice import VoiceBot` + `__all__` entry, matching this file's
+   existing convention (every other bot class is imported eagerly; no
+   lazy-import pattern exists here to match, despite the task's Key
+   Constraint suggesting one — verified by reading the file first).
+2. **`stt_only`**: added as an explicit `ask_stream()` parameter, passed
+   through to `client.stream_voice(stt_only=stt_only, ...)`. Left Nova's
+   missing-`stt_only`-support gap untouched — raising `NotImplementedError`
+   there is explicitly the client's responsibility (spec §7), and
+   modifying clients is explicitly out of this task's scope.
+3. **Inference param threading**: `temperature`/`max_tokens`/`top_p`/
+   `parallel_tool_execution` are merged from `VoiceConfig` into a
+   `voice_stream_kwargs` dict *before* `**kwargs`, so any of these
+   explicitly passed by the caller to `ask_stream()` override the
+   `VoiceConfig` default (dict-literal unpacking: later keys win) —
+   without duplicate-keyword risk and without mutating the original
+   `kwargs` dict (which is separately still forwarded to
+   `create_system_prompt()`, unaffected).
+4. **`VoiceCapable` check**: `_create_llm_client()` return type annotated
+   `-> VoiceCapable`; both provider branches (`nova`/default-Gemini) now
+   assign to a shared `client` variable and pass through one
+   `isinstance(client, VoiceCapable)` check before returning, raising
+   `TypeError` otherwise — restructured from two early-returns without
+   changing either branch's construction logic.
+5. **Bug fix (flagged in TASK-2146)**: `_resolve_llm_config`'s Nova model
+   fallback used `self.voice_config.model != GoogleVoiceModel.DEFAULT` to
+   detect an unconfigured model — broken by TASK-2146 changing the
+   unified `VoiceConfig.model` default to `None` (always `!=
+   GoogleVoiceModel.DEFAULT`, so it never fell back to `"nova-2-sonic"`).
+   Replaced with `model or self.voice_config.model or "nova-2-sonic"`
+   (truthiness), and removed the now-unused `GoogleVoiceModel` import.
+   Verified `GeminiLiveClient.__init__`'s *actual* `model` parameter
+   default is already `None` (not `GoogleVoiceModel.DEFAULT` as its own
+   docstring's example implies) — so passing `model=None` through to it
+   for the Gemini branch was already safe and required no similar fix.
+
+**Compatibility verified against existing AST-based tests** in this same
+`tests/bots/` directory (`test_voicebot_nova_wiring.py`,
+`test_voicebot_provider_switch.py`), which pin the literal presence of
+`'nova'`/`config.provider`/`GeminiLiveClient` substrings in
+`_resolve_llm_config`/`_create_llm_client`'s source — all preserved by
+construction (kept the `if config.provider == 'nova':` string-literal
+branch as-is; the unified `VoiceProvider(str, Enum)` from TASK-2146 makes
+this comparison already correct without an enum rewrite, so there was no
+reason to risk breaking those pinned tests).
+
+Files touched exactly as scoped:
+`packages/ai-parrot/src/parrot/bots/voice.py`,
+`packages/ai-parrot/src/parrot/bots/__init__.py`,
+`packages/ai-parrot/tests/bots/test_voicebot_refinements.py` (created).
+Test file follows this directory's own established convention (AST source
+inspection, not live instantiation — `parrot.bots` cannot be imported in
+this sandbox, Cython `parrot.utils.types` unbuilt) for the `stt_only`/
+`VoiceCapable`/bugfix tests; `TestVoiceBotExport` uses the task's literal
+real-import test code as given (valid in a fully-provisioned environment;
+noted in the file's own docstring why it differs from its siblings).
+
+Lint: `ruff check --select=E,F,W,C,B --ignore=E501,W293,C901` passes (3
+pre-existing `F401`/`W291`/`F841` findings elsewhere in `voice.py`
+verified via `git diff` to be outside this task's diff, left untouched).
+
+**Tests not executed** — same pre-existing, sandbox-wide broken-venv
+limitation as prior tasks (verified via `python -m py_compile`; AST-based
+assertions were also cross-checked by hand against the actual modified
+source via `grep` to confirm every literal substring they assert on is
+present verbatim). Recommend running
+`pytest packages/ai-parrot/tests/bots/test_voicebot_refinements.py
+packages/ai-parrot/tests/bots/test_voicebot_nova_wiring.py
+packages/ai-parrot/tests/bots/test_voicebot_provider_switch.py -v`
+in a fully-provisioned environment before merge — the latter two
+specifically to confirm no regression in the pinned provider-branching
+contract.
