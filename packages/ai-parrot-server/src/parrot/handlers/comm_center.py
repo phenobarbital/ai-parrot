@@ -8,10 +8,14 @@ HTTP error mapping. All rendering, validation, and publishing logic is
 delegated to :mod:`parrot.services.comm_center` (Modules 4-6) — this
 handler must never touch Jinja2, Redis, or pandas directly.
 
-Route bodies owned by other tasks (``post_message`` — TASK-2161; the five
-templates-CRUD methods — TASK-2160) are registered here as explicit
-``NotImplementedError`` stubs so routing is complete end-to-end; those
-tasks only need to fill in the method bodies.
+Templates CRUD (``list_templates``/``get_template``/``create_template``/
+``update_template``/``delete_template``) is hand-written on this same
+class per spec §8 — not a ``ModelView`` — backed by the
+``NotificationTemplate`` model (TASK-2153).
+
+The single-recipient endpoint body (``post_message`` — TASK-2161) is
+registered here as an explicit ``NotImplementedError`` stub so routing is
+complete end-to-end; that task only needs to fill in the method body.
 """
 import base64
 import uuid
@@ -25,6 +29,7 @@ from datamodel.parsers.json import json_encoder
 from navconfig.logging import logging
 from navigator.views import BaseHandler
 from navigator_auth.decorators import is_authenticated
+from navigator_session import get_session
 from parrot.conf import default_dsn
 from parrot.handlers.comm_center_placeholders import build_catalog
 from parrot.handlers.models import NotificationBatchRecipient, NotificationTemplate
@@ -80,6 +85,31 @@ def _as_bool(value) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in ("1", "true", "yes")
+
+
+def _looks_like_unique_violation(exc: Exception) -> bool:
+    """Detect a Postgres unique-constraint violation from an insert error.
+
+    Prefers a precise ``asyncpg.exceptions.UniqueViolationError`` check
+    (verified live: this repo's ``pg`` driver is asyncpg-based) and falls
+    back to a message-content heuristic in case ``asyncdb`` re-wraps the
+    original exception into one of its own types.
+
+    Args:
+        exc: The exception raised by ``NotificationTemplate.insert()``.
+
+    Returns:
+        ``True`` if ``exc`` looks like a duplicate-``name`` violation.
+    """
+    try:
+        import asyncpg.exceptions as pg_exceptions
+
+        if isinstance(exc, pg_exceptions.UniqueViolationError):
+            return True
+    except ImportError:
+        pass
+    message = str(exc).lower()
+    return "unique" in message or "duplicate key" in message
 
 
 class CommCenterHandler(BaseHandler):
@@ -326,7 +356,7 @@ class CommCenterHandler(BaseHandler):
             resolved_functions=prepared.resolved_functions,
             skipped_details=[{"row": s.row, "reason": s.reason} for s in prepared.skipped],
         )
-        return self.json_response(response.to_dict(), dumps=json_encoder, status=202)
+        return self.json_response(response.to_dict(), status=202)
 
     @is_authenticated()
     async def get_batch(self, request: web.Request) -> web.Response:
@@ -344,7 +374,7 @@ class CommCenterHandler(BaseHandler):
             limit=int(qs.get("limit", 100)),
             offset=int(qs.get("offset", 0)),
         )
-        return self.json_response(result, dumps=json_encoder, status=200)
+        return self.json_response(result, status=200)
 
     @is_authenticated()
     async def retry_batch(self, request: web.Request) -> web.Response:
@@ -365,7 +395,7 @@ class CommCenterHandler(BaseHandler):
         result = await dispatch_retry_batch(
             uuid.UUID(batch_id), force=_as_bool(qs.get("force"))
         )
-        return self.json_response(result, dumps=json_encoder, status=200)
+        return self.json_response(result, status=200)
 
     # ------------------------------------------------------------------
     # Placeholders (static catalog)
@@ -374,7 +404,7 @@ class CommCenterHandler(BaseHandler):
     @is_authenticated()
     async def get_placeholders(self, request: web.Request) -> web.Response:
         """``GET /api/v1/comm_center/placeholders`` — the cached catalog."""
-        return self.json_response(self._placeholder_catalog, dumps=json_encoder, status=200)
+        return self.json_response(self._placeholder_catalog, status=200)
 
     # ------------------------------------------------------------------
     # Single-recipient send (TASK-2161) — stub
@@ -389,33 +419,192 @@ class CommCenterHandler(BaseHandler):
         raise NotImplementedError("post_message is implemented by TASK-2161")
 
     # ------------------------------------------------------------------
-    # Templates CRUD (TASK-2160) — stubs
+    # Templates CRUD (spec §8 — hand-written on this class, not a ModelView)
     # ------------------------------------------------------------------
+
+    async def _get_user_id(self, request: web.Request) -> int | None:
+        """Resolve the authenticated user's id from the request session.
+
+        Mirrors ``handlers/bots.py:109``'s ``get_userid(session=self._session)``
+        pattern; this handler is method-based (not ``ModelView``), so it has
+        no ``self._session`` populated automatically and resolves the
+        session directly from the method's own ``request`` instead.
+
+        Args:
+            request: The incoming request.
+
+        Returns:
+            The session's ``user_id``, or ``None`` if it cannot be resolved.
+        """
+        session = await get_session(request)
+        return await self.get_userid(session=session)
 
     @is_authenticated()
     async def list_templates(self, request: web.Request) -> web.Response:
-        """``GET /api/v1/comm_center/templates``. Stub — TASK-2160."""
-        raise NotImplementedError("list_templates is implemented by TASK-2160")
+        """``GET /api/v1/comm_center/templates``.
+
+        Optional filters: ``is_active`` (bool), ``tags`` (comma-separated,
+        any-overlap match), ``name`` (case-insensitive substring match).
+        """
+        qs = self.query_parameters(request)
+        db_filters = {}
+        if "is_active" in qs:
+            db_filters["is_active"] = _as_bool(qs["is_active"])
+
+        db = _get_db()
+        async with await db.connection() as conn:
+            NotificationTemplate.Meta.connection = conn
+            rows = (
+                await NotificationTemplate.filter(**db_filters)
+                if db_filters
+                else await NotificationTemplate.all()
+            )
+
+        tags_filter = None
+        if qs.get("tags"):
+            tags_filter = {t.strip() for t in qs["tags"].split(",") if t.strip()}
+        name_filter = qs.get("name")
+
+        results = []
+        for row in rows or []:
+            if tags_filter and not (tags_filter & set(row.tags or [])):
+                continue
+            if name_filter and name_filter.lower() not in (row.name or "").lower():
+                continue
+            results.append(row.to_dict())
+
+        return self.json_response({"templates": results}, status=200)
 
     @is_authenticated()
     async def get_template(self, request: web.Request) -> web.Response:
-        """``GET /api/v1/comm_center/templates/{template_id}``. Stub — TASK-2160."""
-        raise NotImplementedError("get_template is implemented by TASK-2160")
+        """``GET /api/v1/comm_center/templates/{template_id}`` — one row, or 404."""
+        template_id = request.match_info["template_id"]
+        db = _get_db()
+        async with await db.connection() as conn:
+            NotificationTemplate.Meta.connection = conn
+            try:
+                tpl = await NotificationTemplate.get(template_id=uuid.UUID(template_id))
+            except NoDataFound as exc:
+                raise web.HTTPNotFound(
+                    text=json_encoder({"message": "Template not found"}),
+                    content_type="application/json",
+                ) from exc
+        return self.json_response(tpl.to_dict(), status=200)
 
     @is_authenticated()
     async def create_template(self, request: web.Request) -> web.Response:
-        """``POST /api/v1/comm_center/templates``. Stub — TASK-2160."""
-        raise NotImplementedError("create_template is implemented by TASK-2160")
+        """``POST /api/v1/comm_center/templates`` — create; ``409`` on duplicate name."""
+        body = await self.get_json(request) or {}
+        if not body.get("name"):
+            raise web.HTTPBadRequest(
+                text=json_encoder({"message": "'name' is required"}),
+                content_type="application/json",
+            )
+        if not body.get("template_string"):
+            raise web.HTTPBadRequest(
+                text=json_encoder({"message": "'template_string' is required"}),
+                content_type="application/json",
+            )
+
+        user_id = await self._get_user_id(request)
+        tpl = NotificationTemplate(
+            name=body["name"],
+            template_string=body["template_string"],
+            subject=body.get("subject"),
+            provider=body.get("provider"),
+            description=body.get("description"),
+            tags=body.get("tags") or [],
+            is_active=body.get("is_active", True),
+            created_by=user_id,
+            updated_by=user_id,
+        )
+
+        db = _get_db()
+        async with await db.connection() as conn:
+            NotificationTemplate.Meta.connection = conn
+            try:
+                await tpl.insert()
+            except Exception as exc:
+                if _looks_like_unique_violation(exc):
+                    raise web.HTTPConflict(
+                        text=json_encoder(
+                            {"message": f"Template name {body['name']!r} already exists"}
+                        ),
+                        content_type="application/json",
+                    ) from exc
+                raise
+
+        return self.json_response(tpl.to_dict(), status=201)
 
     @is_authenticated()
     async def update_template(self, request: web.Request) -> web.Response:
-        """``PUT``/``PATCH /api/v1/comm_center/templates/{template_id}``. Stub — TASK-2160."""
-        raise NotImplementedError("update_template is implemented by TASK-2160")
+        """``PUT``/``PATCH /api/v1/comm_center/templates/{template_id}``.
+
+        ``PUT`` is treated as a full update, ``PATCH`` as partial — both
+        are routed to this same method (spec §2 routes table). ``updated_at``
+        is never set here; the DB trigger (TASK-2153's DDL) owns it.
+        """
+        template_id = request.match_info["template_id"]
+        body = await self.get_json(request) or {}
+        user_id = await self._get_user_id(request)
+
+        db = _get_db()
+        async with await db.connection() as conn:
+            NotificationTemplate.Meta.connection = conn
+            try:
+                tpl = await NotificationTemplate.get(template_id=uuid.UUID(template_id))
+            except NoDataFound as exc:
+                raise web.HTTPNotFound(
+                    text=json_encoder({"message": "Template not found"}),
+                    content_type="application/json",
+                ) from exc
+
+            for field in (
+                "name",
+                "template_string",
+                "subject",
+                "provider",
+                "description",
+                "tags",
+                "is_active",
+            ):
+                if field in body:
+                    setattr(tpl, field, body[field])
+            tpl.updated_by = user_id
+
+            try:
+                await tpl.update()
+            except Exception as exc:
+                if _looks_like_unique_violation(exc):
+                    raise web.HTTPConflict(
+                        text=json_encoder(
+                            {"message": f"Template name {body.get('name')!r} already exists"}
+                        ),
+                        content_type="application/json",
+                    ) from exc
+                raise
+
+        return self.json_response(tpl.to_dict(), status=200)
 
     @is_authenticated()
     async def delete_template(self, request: web.Request) -> web.Response:
-        """``DELETE /api/v1/comm_center/templates/{template_id}``. Stub — TASK-2160."""
-        raise NotImplementedError("delete_template is implemented by TASK-2160")
+        """``DELETE /api/v1/comm_center/templates/{template_id}`` — or 404."""
+        template_id = request.match_info["template_id"]
+        db = _get_db()
+        async with await db.connection() as conn:
+            NotificationTemplate.Meta.connection = conn
+            try:
+                tpl = await NotificationTemplate.get(template_id=uuid.UUID(template_id))
+            except NoDataFound as exc:
+                raise web.HTTPNotFound(
+                    text=json_encoder({"message": "Template not found"}),
+                    content_type="application/json",
+                ) from exc
+            await tpl.delete()
+        return self.json_response(
+            {"message": "Template deleted", "template_id": template_id},
+            status=200,
+        )
 
     # ------------------------------------------------------------------
     # Route wiring

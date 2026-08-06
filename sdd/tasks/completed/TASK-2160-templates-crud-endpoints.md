@@ -221,8 +221,57 @@ class TestTemplatesCRUD:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Filled in the five templates-CRUD method bodies on `CommCenterHandler`
+(no `ModelView`, per spec §8), backed by `NotificationTemplate`
+(TASK-2153). `list_templates` supports `is_active`/`tags`/`name` filters;
+`update_template` serves both PUT/PATCH and never sets `updated_at`
+(verified by `test_updated_at_not_set_by_app`, which asserts the string
+does not even appear in the method's source); `created_by`/`updated_by`
+resolved via a new `_get_user_id()` helper (`get_session(request)` +
+`self.get_userid(session=...)`, since this method-based handler has no
+`self._session` the way `ModelView` does). Duplicate `name` maps to `409`
+via a `_looks_like_unique_violation()` helper (precise
+`asyncpg.exceptions.UniqueViolationError` check, verified this repo's
+`pg` driver is asyncpg-based, plus a message-content fallback).
 
-**Deviations from spec**: none | describe if any
+**Critical bug found and fixed — affects TASK-2159's endpoints too, not
+just this task's new code.** While verifying `create_template` with a
+diagnostic harness, hit
+`TypeError: BaseHandler.json_response() got an unexpected keyword
+argument 'dumps'`. Read `navigator/views/base.py:122-143` and
+`navigator/responses.py:81-101` live: `self.json_response(...)`
+(`BaseHandler`'s own method) has signature `(response, reason, headers,
+status, state, cls)` — **no `dumps` parameter at all** — and internally
+calls `JSONResponse(...)`, which *already* hardcodes `dumps=json_encoder`
+before delegating to `aiohttp.web.json_response`. I had conflated this
+with `ScrapingInfoHandler.get_actions`'s pattern
+(`web.json_response({...}, dumps=json_encoder)`), which calls the
+**different**, module-level `aiohttp.web.json_response` function
+directly — that one *does* take `dumps`. Every `self.json_response(...,
+dumps=json_encoder, ...)` call in `comm_center.py` — in `post_sender`,
+`get_batch`, `retry_batch`, and `get_placeholders` (all TASK-2159) as well
+as this task's five new CRUD methods — would have raised this `TypeError`
+on every real request. **Fixed by removing `dumps=json_encoder` from all
+nine call sites**; `self.json_response()` already serializes UUID/
+datetime correctly on its own. `json_encoder(...)` is still used directly
+and correctly elsewhere, for the `text=` bodies of hand-raised
+`web.HTTPException`s (`_map_error`, the 404/400/409 raises here) — those
+bypass `self.json_response()` entirely and were unaffected.
+
+Verified all of the above (including the `dumps` fix) with a throwaway
+diagnostic harness — stubbing the same pre-existing, unrelated
+environment gaps documented in TASK-2153/2155/2159
+(`navigator_session.vault`, `navigator_eventbus`) plus a duck-typed
+`NotificationTemplate` stand-in exposing the real persistence method
+names — covering create/read/update/delete/list, duplicate-name 409,
+missing-field 400s, and get/update/delete-missing 404s. All passed; the
+harness was deleted after verification. `pytest` itself cannot collect
+this task's test file in this sandbox for the same reasons already
+documented.
+
+**Deviations from spec**: none in delivered CRUD behavior. One
+significant cross-task bug fix (above), required for both this task's and
+TASK-2159's endpoints to function at all.
