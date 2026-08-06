@@ -6,8 +6,13 @@ touching files under ``TEMPLATE_DIR``. Templates are **global** (no
 ``user_id``) — see spec ``commcenter-notify.spec.md`` §8, resolved in
 brainstorm.
 """
+# ruff: noqa: UP045 -- `datamodel`/`asyncdb.models.Model` field validation does
+# not understand PEP 604 `X | None` unions (raises `TypeError: Expected type,
+# got types.UnionType` at construction time); `typing.Optional[X]` is required
+# here, verified live against this repo's installed `datamodel` package.
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from asyncdb.models import Model
 from datamodel import Field
@@ -30,15 +35,15 @@ class NotificationTemplate(Model):
     )
     name: str = Field(required=True)
     template_string: str = Field(required=True)
-    subject: str | None = Field(required=False, default=None)
-    provider: str | None = Field(required=False, default=None)
-    description: str | None = Field(required=False, default=None)
+    subject: Optional[str] = Field(required=False, default=None)
+    provider: Optional[str] = Field(required=False, default=None)
+    description: Optional[str] = Field(required=False, default=None)
     tags: list = Field(required=False, default_factory=list)
     is_active: bool = Field(required=False, default=True)
     created_at: datetime = Field(required=False, default=datetime.now)
-    created_by: int | None = Field(required=False, default=None)
+    created_by: Optional[int] = Field(required=False, default=None)
     updated_at: datetime = Field(required=False, default=datetime.now)
-    updated_by: int | None = Field(required=False, default=None)
+    updated_by: Optional[int] = Field(required=False, default=None)
 
     class Meta:
         """Meta NotificationTemplate."""

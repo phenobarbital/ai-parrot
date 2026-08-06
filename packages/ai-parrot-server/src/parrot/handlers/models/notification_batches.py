@@ -10,8 +10,13 @@ machine (spec §2): ``pending`` -> ``publishing`` (written immediately
 before the ``xadd`` call) -> ``queued`` (terminal) or ``publish_failed``
 (retryable), with ``skipped`` (terminal) for rows that fail validation.
 """
+# ruff: noqa: UP045 -- `datamodel`/`asyncdb.models.Model` field validation does
+# not understand PEP 604 `X | None` unions (raises `TypeError: Expected type,
+# got types.UnionType` at construction time); `typing.Optional[X]` is required
+# here, verified live against this repo's installed `datamodel` package.
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from asyncdb.models import Model
 from datamodel import Field
@@ -32,19 +37,19 @@ class NotificationBatchRecipient(Model):
         default_factory=uuid.uuid4,
     )
     batch_id: uuid.UUID = Field(required=True)
-    row_number: int = Field(required=False, default=None)
+    row_number: Optional[int] = Field(required=False, default=None)
     provider: str = Field(required=True)
-    recipient_name: str | None = Field(required=False, default=None)
-    recipient_address: str | None = Field(required=False, default=None)
+    recipient_name: Optional[str] = Field(required=False, default=None)
+    recipient_address: Optional[str] = Field(required=False, default=None)
     status: str = Field(required=True)
-    reason: str | None = Field(required=False, default=None)
-    message_id: str | None = Field(required=False, default=None)
-    published_at: datetime | None = Field(required=False, default=None)
+    reason: Optional[str] = Field(required=False, default=None)
+    message_id: Optional[str] = Field(required=False, default=None)
+    published_at: Optional[datetime] = Field(required=False, default=None)
     attempts: int = Field(required=False, default=0)
-    template_ref: str | None = Field(required=False, default=None)
-    subject: str | None = Field(required=False, default=None)
+    template_ref: Optional[str] = Field(required=False, default=None)
+    subject: Optional[str] = Field(required=False, default=None)
     created_at: datetime = Field(required=False, default=datetime.now)
-    created_by: int | None = Field(required=False, default=None)
+    created_by: Optional[int] = Field(required=False, default=None)
     updated_at: datetime = Field(required=False, default=datetime.now)
 
     class Meta:
