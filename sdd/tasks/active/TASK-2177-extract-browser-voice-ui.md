@@ -107,6 +107,32 @@ class VoiceSession:                                           # line 36
 
 ## Implementation Notes
 
+### ⚠️ `.gitignore` trap — read this first
+
+`.gitignore` silently swallows the files this task creates:
+
+```
+.gitignore:21  examples/**/*.py     → examples/clients/voice/*.py     IGNORED
+.gitignore:28  examples/**/*.html   → examples/clients/voice/static/index.html  IGNORED
+```
+
+Verified 2026-08-07 with `git check-ignore -v`. `README.md` and `.js` files under
+`examples/` are **not** ignored. If you `git add` normally, the extracted UI will
+appear to commit fine and simply not exist for anyone else — the same class of
+failure as the `sdd/templates/` note in `CLAUDE.md`.
+
+**Every new `.py` and `.html` under `examples/` in this task must be added with
+`git add -f`.** Verify before committing:
+
+```bash
+git check-ignore -v examples/clients/voice/static/index.html   # expect a hit
+git add -f examples/clients/voice/static/index.html
+git status --porcelain                                          # must list it
+```
+
+Putting the AudioWorklet/JS in a separate `.js` file (not ignored) reduces how
+much has to be force-added — and is better structure anyway.
+
 ### Key Constraints
 - `VoiceSession` takes an injected `send_fn`, not a WebSocket — wrap
   `ws.send_json` in a small adapter, exactly as `_run_voice_session()` does at
