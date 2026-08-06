@@ -321,8 +321,14 @@ corrective objective (Axis 5: replan lives outside).
      messages are written for exactly this), then give up with a structural
      error.
    - (b) `plan_name` mode: load `plans_dir/<plan_name>.(yaml|json)`,
-     substitute `params` into declared placeholders,
-     `ExecutionPlan.model_validate()`.
+     substitute `params` at **load time** — `{params.<name>}` placeholders in
+     string leaves of the plan document, replaced *before*
+     `ExecutionPlan.model_validate()` + `validate_plan()`, so validation sees
+     final values. A missing or unused param is a load error (nothing
+     silent). Load-time substitution is the only option compatible with the
+     frozen executor: `PlanToolNode._resolve_args()` only knows the three
+     runtime families (`{nodes.<id>.output}`, `{artifacts.<id>}`,
+     `{item}`/`{index}`) and must not be extended.
 2. **Validate** — `validate_plan(plan, tool_manager)` plus the toolkit's
    allowlist check layered as extra `ValidationIssue`s (`tool_not_allowed`).
    All issues reported in one pass; errors block execution.
@@ -425,7 +431,9 @@ with the same Layer-2 enforcement as a direct agent call.
 **Follow-up features (out of scope here):** pluggable persistent
 `WorkingMemory` backend (spill to disk/S3 + Postgres index, pattern
 `PostgresS3SecurityReportStore`); cross-restart `plan_resume`; DB-backed
-plan store; execution-wiki / `ReportRef` traceability integration.
+plan store; execution-wiki / `ReportRef` traceability integration;
+per-call `PermissionContext` propagation from the invoking agent (v1 uses
+a constructor-level default + the allowlist).
 
 ---
 
@@ -486,6 +494,19 @@ class PlanToolNode(_BaseNode):  # :60 — fields: plan_node, tool_manager,
     async def execute(self, ctx, deps=None, **kwargs) -> ArtifactRef  # :123
 MAX_RECORDED_ERRORS = 20  # :47
 # also exported: make_tool_node_factory, build_manifest, ToolExecutionError
+# _resolve_args (:290) resolves EXACTLY three placeholder families:
+#   {nodes.<id>.output} | {artifacts.<id>} | {item}/{item.<field>}/{index}
+# — nothing else; a string that is exactly one placeholder resolves to the
+#   native value, an embedded one interpolates as text.
+
+# sdd/artifacts/execution_plan.schema.json — THE plan grammar (verified):
+#   byte-equivalent to ExecutionPlan.model_json_schema() from models.py
+#   (same docstrings, required=[name, objective, nodes],
+#   additionalProperties=false throughout, ForEach alias "as").
+#   Dual role in v1: structured-output schema for the planner LLM AND the
+#   validation contract for plans_dir files.
+# sdd/artifacts/example_plan.json — 4-node daily_security_sweep example;
+#   NOTE: its "date": "{input}" placeholder is NOT supported (see below).
 ```
 
 #### Flow engine (`packages/ai-parrot/src/parrot/bots/flows/flow/flow.py`)
@@ -573,6 +594,13 @@ from ..abstract import AbstractTool, AbstractToolArgsSchema, ToolResult  # tool 
   constructor-injection decision (Axis 7) exists partly because of this.
 - ~~`CompressionReport` wired to `ToolManager`~~ — not wired (its own
   docstring says so).
+- ~~`{input}` / `{params.*}` resolution in `PlanToolNode`~~ — the executor
+  resolves ONLY `{nodes.<id>.output}`, `{artifacts.<id>}` and
+  `{item}`/`{item.<field>}`/`{index}` (node.py:290-328, grep-verified).
+  `sdd/artifacts/example_plan.json` uses `"date": "{input}"`, which would
+  reach the tool as the literal string `"{input}"` — the example must be
+  migrated to `{params.date}` under the load-time substitution decision.
+  Do NOT extend `_resolve_args` (frozen module).
 
 ---
 
@@ -627,13 +655,22 @@ loop; if any write path ever moves to threads, it needs a lock.)
   configurable `plans_dir` (YAML/JSON); DB backend v2.
 - [x] Planner LLM config — *Owner: jesuslara*: `planner_llm=` constructor
   arg, same formats as bots' `llm`; no implicit default.
-- [ ] `params` substitution grammar for persisted plans (which fields are
-  parameterizable, escaping, missing-param behavior) — *Owner: spec phase*
+- [x] `params` substitution grammar for persisted plans — *Owner:
+  jesuslara*: the plan-document grammar IS
+  `sdd/artifacts/execution_plan.schema.json` (verified byte-equivalent to
+  `ExecutionPlan.model_json_schema()`); per-run parameters use
+  `{params.<name>}` placeholders in string leaves, substituted by the
+  toolkit at **load time**, before `model_validate` + `validate_plan`.
+  Missing or unused params fail the load. The executor's runtime
+  placeholders are untouched; `example_plan.json`'s `{input}` must be
+  migrated to `{params.date}`.
 - [ ] Run-registry bounds: max retained runs / eviction policy, and whether
   a `max_concurrent_runs` cap is needed in v1 — *Owner: spec phase*
-- [ ] How the toolkit obtains the invoking agent's `PermissionContext` at
-  call time (per-call forwarding vs constructor default) — *Owner: spec
-  phase, check ToolkitTool dispatch path*
+- [x] How the toolkit obtains the invoking agent's `PermissionContext` —
+  *Owner: jesuslara*: deferred to a follow-up feature. v1 forwards an
+  optional constructor-level `permission_context=None` into
+  `make_tool_node_factory`; per-call propagation from the invoking agent's
+  context is out of scope for v1 (the allowlist is the v1 defense).
 - [ ] Cross-restart `plan_resume(run_id)` on top of FEAT-399 checkpoints —
   v2 candidate; confirm it stays out of v1 — *Owner: jesuslara*
 - [ ] Exact tool names (`plan_execute` vs `execute_plan` prefix convention)
