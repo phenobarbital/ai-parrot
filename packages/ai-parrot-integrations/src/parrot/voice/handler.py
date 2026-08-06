@@ -270,6 +270,15 @@ class _HandlerVoiceSession(VoiceSession):
         self._handler = handler
         self._connection = connection
 
+    async def _send(self, payload: dict) -> None:
+        # Code-review fix: route through the handler's own _send_message()
+        # (blanket try/except + logged failure) instead of the inherited
+        # VoiceSession._send(), which only suppresses ConnectionResetError
+        # — keeps error/reconnect frames (sent via self._send() from
+        # _run_turn(), overridden below) on the exact same safety net as
+        # every other frame this handler sends.
+        await self._handler._send_message(self._connection.ws, payload)
+
     async def _relay(self, resp, turn_no: int) -> None:  # noqa: ARG002 — turn_no kept for signature parity
         await self._handler._send_voice_response(self._connection, resp)
 
@@ -709,12 +718,27 @@ class VoiceChatHandler:
                         connection.gemini_responding = False
                         connection.recording_start_time = datetime.now()
                         connection.audio_buffer = b""  # Reset buffer
+                        # FEAT-416 (TASK-2152 code-review fix): mirrors
+                        # _handle_audio_data()'s implicit-start-of-turn
+                        # handling — this binary path bypasses that
+                        # method entirely, so it needs its own start_turn()
+                        # for the same auto-start-on-first-chunk case.
+                        if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+                            await connection.voice_session.start_turn()
                     connection.is_recording = True
 
                     if connection.session_active and not connection.stop_audio_sending:
                         if connection.streaming_mode == "streaming":
-                            # Streaming mode: send to queue immediately
-                            await connection.audio_queue.put(msg.data)
+                            # FEAT-416 (TASK-2152 code-review fix): this
+                            # path previously queued into
+                            # connection.audio_queue, which nothing has
+                            # drained since the VoiceSession refactor —
+                            # audio sent as raw binary WS frames (rather
+                            # than base64-in-JSON via _handle_audio_data())
+                            # was being silently dropped. Route through
+                            # the same VoiceSession the JSON path uses.
+                            if connection.voice_session is not None:
+                                await connection.voice_session.push_audio(msg.data)
                         else:
                             # Buffered mode: accumulate audio
                             connection.audio_buffer += msg.data

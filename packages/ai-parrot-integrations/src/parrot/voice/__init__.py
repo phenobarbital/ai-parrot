@@ -7,9 +7,11 @@ that can be used by any integration (MS Teams, Telegram, etc.).
 Submodules:
 - ``parrot.voice.transcriber`` — STT (speech-to-text) backends + VoiceTranscriber
 - ``parrot.voice.tts`` — TTS (text-to-speech) backends + VoiceSynthesizer
-- ``parrot.voice.session`` / ``parrot.voice.handler`` / ``parrot.voice.models``
-  — provided by the core ``ai-parrot`` distribution (FEAT-416); merged in
-  below.
+- ``parrot.voice.handler`` / ``parrot.voice.models`` — defined in this same
+  distribution (``ai-parrot-integrations``), alongside this file.
+- ``parrot.voice.session`` — provided by the core ``ai-parrot`` distribution
+  (FEAT-416, TASK-2149); merged into this package's ``__path__`` below (the
+  only cross-distribution submodule today).
 
 FEAT-416 (TASK-2152) packaging note: ``parrot.voice`` is split across two
 installed distributions — this one (``ai-parrot-integrations``, this

@@ -99,6 +99,19 @@ class TestHandlerRefactor:
         sig = inspect.signature(VoiceChatHandler.handle_websocket)
         assert list(sig.parameters) == ["self", "request"]
 
+    def test_binary_audio_frames_route_through_voice_session(self):
+        """Code-review regression guard: raw binary WS audio frames
+        (WSMsgType.BINARY, as opposed to base64-in-JSON audio_data
+        messages) must be routed through connection.voice_session
+        .push_audio() — not connection.audio_queue, which nothing has
+        drained since _run_voice_session() stopped reading it (this was
+        found and fixed as a CRITICAL finding in the TASK-2152 code
+        review: that path previously left binary-frame audio silently
+        dropped in streaming mode)."""
+        src = inspect.getsource(VoiceChatHandler.handle_websocket)
+        assert "connection.voice_session.push_audio(msg.data)" in src
+        assert "connection.audio_queue.put(msg.data)" not in src
+
 
 class TestFrameProtocolUnchanged:
     """The refactored relay (_HandlerVoiceSession._relay ->

@@ -998,18 +998,36 @@ class GeminiLiveClient(AbstractClient):
                                         for fc in function_calls
                                     ]
                                 tool_results = [t.result() for t in tasks]
-                            else:
-                                tool_results = [
-                                    await _run_one_tool_call(fc) for fc in function_calls
-                                ]
 
-                            # All tool results must reach the model before it
-                            # resumes — send them together in one call.
-                            await session.send_tool_response(
-                                function_responses=[
-                                    func_response for _, func_response, _ in tool_results
-                                ]
-                            )
+                                # All tool results must reach the model
+                                # before it resumes — send them together
+                                # in one call (parallel path only).
+                                await session.send_tool_response(
+                                    function_responses=[
+                                        func_response for _, func_response, _ in tool_results
+                                    ]
+                                )
+                            else:
+                                # Sequential (default, or a single call):
+                                # preserve the previous behavior exactly —
+                                # execute and send each tool's response
+                                # immediately, one at a time. Code-review
+                                # fix: batching the send here (as the
+                                # parallel path does) would have changed
+                                # the wire-level cadence of
+                                # send_tool_response() calls to Gemini for
+                                # a multi-tool *sequential* turn — an
+                                # existing case Gemini already supports
+                                # independent of this feature — with no
+                                # test coverage to confirm Gemini tolerates
+                                # that change.
+                                tool_results = []
+                                for fc in function_calls:
+                                    result = await _run_one_tool_call(fc)
+                                    tool_results.append(result)
+                                    await session.send_tool_response(
+                                        function_responses=[result[1]]
+                                    )
 
                             for tool_call, _func_response, display_data in tool_results:
                                 usage.tool_calls_executed += 1

@@ -834,6 +834,22 @@ class NovaAudio:
         try:
             async for event in self._iter_events(stream):
                 if time.monotonic() - connection_start >= self._CONNECTION_LIMIT_SECONDS:
+                    # Code-review fix (FEAT-416 TASK-2148/2152): flush any
+                    # tool queued-but-not-yet-executed (TASK-2148 defers
+                    # execution from contentEnd(TOOL) to the next non-tool
+                    # event) before tearing down for reconnect — otherwise
+                    # the 8-minute connection limit landing in that window
+                    # would silently drop the tool call: never executed,
+                    # its result never sent to Nova.
+                    if turn_state.pending_tools:
+                        for tool_response in await self._flush_pending_tools(
+                            stream, prompt_name, turn_state.pending_tools,
+                            tool_calls_list, usage, session_id, turn_id, user_id,
+                            parallel_tool_execution,
+                        ):
+                            yield tool_response
+                        turn_state.pending_tools = []
+
                     self.logger.info(
                         "Nova Sonic session %s approaching 8-minute connection "
                         "limit — signalling reconnect.", session_id,
