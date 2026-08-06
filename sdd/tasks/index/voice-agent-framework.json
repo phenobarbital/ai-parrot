@@ -111,7 +111,7 @@
       "feature_id": "FEAT-416",
       "feature": "voice-agent-framework",
       "spec": "sdd/specs/voice-agent-framework.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Extends VoiceSession created in TASK-2149",
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2150-automatic-reconnection.md"
+      "completed_at": "2026-08-06T02:48:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2150-automatic-reconnection.md"
     },
     {
       "id": "TASK-2151",

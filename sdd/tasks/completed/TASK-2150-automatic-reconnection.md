@@ -247,4 +247,58 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per spec §3 Module 6, with one real bug fixed in the task's
+own Implementation Notes pseudocode:
+
+- `_run_turn()` now wraps `stream_voice()` in an outer `while True:` loop.
+  Each iteration captures the async generator explicitly (`stream = self.
+  client.stream_voice(...)`) so it can be `.aclose()`'d in a `finally`
+  before either reconnecting or exiting — satisfying "close the old
+  `stream_voice()` async generator" literally, not just implicitly via
+  loop exit (which would otherwise leak a suspended generator on early
+  `break`).
+- Relaying happens **before** checking `reconnect_required`, so any tool
+  calls carried on that same response are already sent — the sequential
+  nature of `async for` means the provider client (which only sets
+  `reconnect_required` between its own already-flushed tool batches,
+  confirmed in TASK-2148) guarantees no pending tool execution is
+  in-flight when a reconnect is triggered; no extra explicit "wait"
+  needed.
+- `_reconnect_count` is a plain instance counter set in `__init__`,
+  incremented only on an actual reconnect, never reset per-turn — matches
+  "tracks lifetime reconnections, not per-turn."
+
+**Bug fixed in the task's own pseudocode**: the Implementation Notes
+example calls `await self.close()` when `max_reconnects` is exhausted.
+`close()` → `_cancel_turn()` does `self._task.cancel(); await
+self._task` — but at that point in the code, `self._task` **is** the
+currently-running coroutine calling `close()` (this method only ever runs
+inside `_run_turn`, which *is* `self._task`). Awaiting a task from inside
+its own coroutine raises `RuntimeError` (a task cannot await itself) —
+this would have crashed on the very first `max_reconnects`-exhausted
+turn. Fixed by clearing `self._queue`/`self._task` directly (guarded by
+`self._task is asyncio.current_task()`, mirroring the existing outer
+`finally`) and `return`ing instead — the task is ending on its own, there
+is nothing to cancel.
+
+Files touched exactly as scoped:
+- `packages/ai-parrot/src/parrot/voice/session.py` (MODIFY) — added
+  `self._reconnect_count = 0` to `__init__` and the reconnection loop to
+  `_run_turn()`. No other methods changed.
+- `packages/ai-parrot/tests/voice/test_voice_reconnection.py` (CREATE) —
+  the task's Test Specification was already complete, runnable code; used
+  verbatim, plus 2 added tests
+  (`test_reconnect_count_persists_across_turns`,
+  `test_reconnect_frame_includes_session_and_count`) directly covering
+  the "lifetime, not per-turn" constraint and the `reconnect` frame shape,
+  neither exercised by the given scaffold.
+
+Lint: `ruff check --select=E,F,W,C,B --ignore=E501,W293,C901` passes.
+
+**Tests not executed** — same pre-existing, sandbox-wide broken-venv
+limitation as prior tasks (verified via `python -m py_compile` instead).
+Recommend running
+`pytest packages/ai-parrot/tests/voice/test_voice_reconnection.py
+packages/ai-parrot/tests/voice/test_voice_session.py -v`
+in a fully-provisioned environment before merge — the latter to confirm
+no regression in TASK-2149's turn-lifecycle contract.
