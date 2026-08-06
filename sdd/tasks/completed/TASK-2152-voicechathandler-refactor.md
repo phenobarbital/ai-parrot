@@ -387,6 +387,39 @@ nova-provider suites specifically to confirm zero regression from the
 `_run_voice_session`/handler rewiring and the `VoiceProvider` import
 switch.
 
+### Code Review Addendum (post-completion, commit `6f0f5bb5d`)
+
+The feature-level adversarial code review found one **CRITICAL** and one
+**suggestion**-level finding in this task's own files, both fixed:
+
+1. **CRITICAL**: `handle_websocket()`'s raw-binary-frame path
+   (`WSMsgType.BINARY` — a second, separate audio-ingestion route
+   alongside the base64-in-JSON `_handle_audio_data()` I did rewire) was
+   missed during the original refactor — it still queued into
+   `connection.audio_queue`, which nothing has drained since
+   `_run_voice_session()` stopped reading it. **Any client sending audio
+   as raw binary WS frames had its audio silently dropped in streaming
+   mode** — a real breaking change to `handle_websocket()`'s protocol
+   the acceptance criteria explicitly guard against, and the one I
+   should have caught by reading `handle_websocket()` in full rather
+   than only the message-type dispatch table in `_handle_message()`.
+   Fixed by routing this path through `connection.voice_session
+   .push_audio()` too (plus the same auto-`start_turn()` logic
+   `_handle_audio_data()` already had). Added a source-based regression
+   test (`test_binary_audio_frames_route_through_voice_session`).
+2. **Suggestion**: `_HandlerVoiceSession`'s inherited `_send()` (used by
+   `_run_turn()` for `error`/`reconnect` frames) only suppressed
+   `ConnectionResetError`, unlike the handler's own `_send_message()`
+   (blanket `try/except Exception` + log). Overrode `_send()` to route
+   through `_send_message()` for consistency.
+
+The reviewer also confirmed (not a finding): the `pkgutil.extend_path`
+namespace fix works as verified, the frame-protocol adapter is correct,
+and `resolve_provider_client`/`VoiceProvider` re-export are unaffected.
+One `parrot/voice/__init__.py` docstring inaccuracy (claimed
+`handler.py`/`models.py` were core-provided; they're integrations-local)
+was also fixed per the review.
+
 ### Feature-wide follow-up recommendation
 
 All 8 tasks are now implemented. Given the depth of judgment calls in

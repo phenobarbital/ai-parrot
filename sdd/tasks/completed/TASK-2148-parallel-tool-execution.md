@@ -272,6 +272,30 @@ using the `test_nova_tool_result.py` mock harness with `_execute_tool`
 side-effects that `asyncio.sleep(0.1)`, asserting real wall-clock
 concurrency rather than call counts).
 
+### Code Review Addendum (post-completion, commit `6f0f5bb5d`)
+
+The feature-level adversarial code review (run after all 8 tasks) found
+and this addendum fixed two real regressions in this task's own files:
+
+1. **Nova (`nova/audio.py`)**: the 8-minute connection-limit check could
+   fire on the event immediately following a queued-but-not-yet-flushed
+   tool call (queuing was introduced by this task), silently dropping
+   that tool: never executed, its result never sent to Nova. Fixed by
+   flushing `turn_state.pending_tools` before yielding the
+   `reconnect_required` response, not just at the general non-tool-event
+   boundary.
+2. **Gemini (`live.py`)**: batching `send_tool_response()` into one call
+   applied even to the *sequential* multi-tool case (an existing,
+   pre-feature Gemini capability — multiple `function_calls` in one turn,
+   independent of `parallel_tool_execution`), changing the wire-level
+   cadence from the original per-tool-immediate-send behavior. Fixed by
+   restoring exact per-tool immediate send for the sequential path;
+   batching now only happens when `parallel_tool_execution=True` and
+   `len(function_calls) > 1` (the actual parallel path this task added).
+
+Both fixes verified via `ruff`/`py_compile` only (same sandbox
+limitation as the original implementation).
+
 Lint: `ruff check --select=E,F,W,C,B --ignore=E501,W293,C901` passes on
 all three files (`C901`/`B004` pre-existing, verified via `git stash`/
 grep-against-diff before fixing the real `B905`/`B023` findings my change
