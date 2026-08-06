@@ -86,7 +86,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -97,8 +97,8 @@
       "parallelism_notes": "Sequential: needs the catalog's function names (2155) and the RecipientIn shape (2156), and extends services/comm_center/models.py. This is the shared core every send path routes through — the highest-risk task, carrying all three verified wire traps.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2157-render-validation-core.md"
+      "completed_at": "2026-08-06T20:19:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2157-render-validation-core.md"
     },
     {
       "id": "TASK-2158",
