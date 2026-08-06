@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-418
 **Date**: 2026-08-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 
 > Input document: `sdd/proposals/googlelive-nova2-audiobot-homologation.brainstorm.md`
@@ -918,3 +918,4 @@ git worktree add -b feat-418-googlelive-nova2-audiobot-homologation \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-07 | Jesus Lara | Initial draft from `googlelive-nova2-audiobot-homologation.brainstorm.md` (Option C); all 13 brainstorm questions carried forward as resolved; blast radius and target version resolved during spec research |
+| 1.0 | 2026-08-07 | Jesus Lara | **Approved.** The two remaining `[ ]` items in §8 (Nova's `max_output_tokens` ceiling, completeness of both voice catalogs) are provider-documentation lookups that set values, not design decisions — they are resolved during implementation and do not gate task decomposition |
