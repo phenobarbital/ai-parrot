@@ -90,6 +90,14 @@ manual work.
   actionable error when absent.
 - **G12** — Factor the sending core as a `CommCenterService` the handler calls,
   so a future toolkit can reuse it without a rewrite.
+- **G13** — `POST /api/v1/comm_center/message` sends to a **single recipient**:
+  takes one `Recipient` + a template + an explicit `provider`, publishes
+  **synchronously inside the request** (one `xadd`, no background task), and
+  returns `202` with the Redis `message_id`. Tracked as a one-row batch in the
+  same table so audit, progress and retry work identically.
+- **G14** — **Dry-run** on *both* send endpoints: validate, resolve functions
+  and render, return the outcome plus a preview, and publish **nothing** to
+  NotifyWorker while writing **no** tracking rows.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -251,6 +259,27 @@ class SenderResponse(BaseModel):
     resolved_functions: dict         # {"today": "2026-08-06"} — auditable
     skipped_details: list[SkippedRow]
     preview: Optional[str]           # dry_run only: first queued row, both passes
+
+
+class SingleMessageRequest(BaseModel):
+    """POST /message — one recipient, one provider (G13)."""
+    provider: str                    # REQUIRED and explicit — no default,
+                                     #   no per-record override (there is one record)
+    recipient: RecipientIn           # singular
+    template_id: Optional[uuid.UUID] # ─┐
+    template_name: Optional[str]     #  ├─ exactly one, same resolution as bulk
+    template: Optional[str]          #  │
+    template_file: Optional[str]     # ─┘
+    subject: Optional[str]
+    dry_run: bool = False
+
+class SingleMessageResponse(BaseModel):
+    batch_id: Optional[uuid.UUID]    # one-row batch; None when dry_run=True
+    message_id: Optional[str]        # Redis stream entry id — None when dry_run=True
+    status: str                      # queued | publish_failed | skipped | dry_run
+    reason: Optional[str]            # populated when skipped / publish_failed
+    resolved_functions: dict
+    preview: Optional[str]           # dry_run only
 ```
 
 ```python
@@ -391,10 +420,13 @@ class CommCenterHandler(BaseHandler):
 
     def __init__(self, *args, **kwargs) -> None: ...
 
-    # --- sender ---
+    # --- sender (bulk) ---
     async def post_sender(self, request: web.Request) -> web.Response: ...
     async def get_batch(self, request: web.Request) -> web.Response: ...
     async def retry_batch(self, request: web.Request) -> web.Response: ...
+
+    # --- single recipient (G13) ---
+    async def post_message(self, request: web.Request) -> web.Response: ...
 
     # --- templates CRUD (hand-written, same class per requirement) ---
     async def list_templates(self, request: web.Request) -> web.Response: ...
@@ -423,13 +455,30 @@ class CommCenterService:
                                       ) -> tuple[list, list[SkippedRow]]: ...
     def build_wire_payload(self, recipient, provider, template, subject) -> dict: ...
     async def fan_out(self, batch_id, payloads) -> None: ...
+
+    # --- shared by BOTH endpoints (G13/G14) ---
+    async def prepare(self, *, recipients, provider, template_source, subject,
+                      now=None) -> "PreparedBatch": ...
+        """Everything up to (not including) publishing: resolve template,
+        partial-render, validate, resolve providers, build payloads.
+        This is the ONLY code path dry-run executes."""
+    async def publish_one(self, batch_id, payload, row_id) -> str: ...
+        """Single xadd driving the status state machine. Returns message_id."""
 ```
+
+**Shared-core requirement.** `POST /sender`, `POST /message` and both dry-run
+paths MUST route through the same `prepare()`. The single-recipient endpoint is
+a thin arity-1 caller — it must not re-implement template resolution, partial
+rendering, provider resolution or validation. This is what makes the two
+endpoints provably consistent (see the paired tests in §4) and it is the
+concrete payoff of G12.
 
 **Routes**
 
 | Method | Path | Query parameters |
 |---|---|---|
 | `POST` | `/api/v1/comm_center/sender` | — (`dry_run` is a body field) |
+| `POST` | `/api/v1/comm_center/message` | — single recipient; `dry_run` is a body field |
 | `GET` | `/api/v1/comm_center/sender/{batch_id}` | `details` (bool, default `false`), `status` (filter), `limit` (default `100`, max `1000`), `offset` (default `0`) |
 | `POST` | `/api/v1/comm_center/sender/{batch_id}/retry` | `force` (bool, default `false` — include `publishing` rows) |
 | `GET` | `/api/v1/comm_center/templates` |
@@ -545,17 +594,54 @@ limitation (no filters/conditionals on record fields — §7).
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/comm_center.py`
 - **Responsibility**: The `BaseHandler` subclass — auth, content-type dispatch,
   request/response models, hand-written templates CRUD, `setup(app)`. Thin: all
-  logic delegates to Modules 4–6.
+  logic delegates to Modules 4–6. Registers every route in §2 including
+  `POST /message` (implemented in Module 8).
 - **Depends on**: Modules 1–6.
-- **Capability**: all four
+- **Capability**: `comm-center-sender`, `comm-center-templates`,
+  `comm-center-placeholders`, `comm-center-batch-tracking`
 
-### Module 8: Packaging + Tests
+### Module 8: Single-Recipient Send Endpoint (G13)
+- **Path**: `packages/ai-parrot-server/src/parrot/handlers/comm_center.py`
+  (`post_message`) + `services/comm_center/dispatch.py` (`publish_one`)
+- **Responsibility**: `POST /api/v1/comm_center/message`. Validate
+  `SingleMessageRequest`; call `CommCenterService.prepare()` with a
+  one-element recipient list; **publish synchronously inside the request** via
+  `publish_one()` (no background task — a single `xadd` does not justify one);
+  persist exactly one tracking row under a freshly minted `batch_id`; return
+  `202` with `batch_id`, `message_id` and `status`.
+  - `provider` is **required and explicit** — there is no per-record override
+    to resolve.
+  - A recipient failing validation (e.g. `provider=email`, no `email`) returns
+    **`400` with the reason**, not a `202` with `skipped` — with one recipient
+    there is no "rest of the batch" to protect, so failing loudly is correct.
+    *(This is the one deliberate behavioral divergence from the bulk endpoint.)*
+  - A publish failure returns **`502`** with `status=publish_failed`; the row is
+    persisted so `/sender/{batch_id}/retry` can re-publish it.
+- **Depends on**: Modules 2, 5, 6, 7.
+- **Capability**: `comm-center-single-send`
+
+### Module 9: Dry-Run Mode (G14)
+- **Path**: `services/comm_center/render.py` + both handler entry points
+- **Responsibility**: `dry_run=true` on **both** send endpoints. Executes
+  `prepare()` in full — ingest, template resolution, partial render, provider
+  resolution, validation — then **stops before any `xadd` and before any
+  tracking write**. Returns `200` (not `202`) carrying `resolved_functions`,
+  the full skip report, and a `preview`: the first queued recipient rendered
+  through **both** passes, so the caller sees the exact text that would be
+  delivered.
+  - `batch_id` and `message_id` are `null`; `status` is `"dry_run"`.
+  - Must be enforced at the **service** layer, not only the handler, so no
+    future caller of `CommCenterService` can bypass it.
+- **Depends on**: Modules 4, 5, 7, 8.
+- **Capability**: `comm-center-dry-run`
+
+### Module 10: Packaging + Tests
 - **Path**: `packages/ai-parrot-server/pyproject.toml`,
   `packages/ai-parrot-server/tests/handlers/test_comm_center*.py`
 - **Responsibility**: `comm-center` extra (`async-notify`, `pandas`,
   `openpyxl`) added to the `all` aggregator; the full test suite from §4;
   Excel/CSV fixtures.
-- **Depends on**: Modules 1–7.
+- **Depends on**: Modules 1–9.
 
 ---
 
@@ -605,8 +691,18 @@ convention — e.g. `test_infographic_render_route.py`).
 | `test_retry_includes_publishing_with_force` | 6 | `?force=true` re-publishes them |
 | `test_batch_details_paginated` | 6 | `?details=true&limit=…&offset=…`; `limit` clamped to 1000 |
 | `test_batch_details_status_filter` | 6 | `?status=skipped` returns only those rows |
-| `test_dry_run_publishes_nothing` | 5,7 | `dry_run=true` → `200`, `stream()` never called, **no tracking rows written** |
-| `test_dry_run_returns_preview_and_validation` | 5,7 | Preview shows both passes applied; skipped rows still reported |
+| `test_dry_run_publishes_nothing` | 9 | `dry_run=true` on `/sender` → `200`, `stream()` never called, **no tracking rows written** |
+| `test_dry_run_returns_preview_and_validation` | 9 | Preview shows both passes applied; skipped rows still reported |
+| `test_dry_run_on_message_endpoint` | 9 | Same guarantees on `POST /message`: `200`, no `xadd`, no row, `batch_id`/`message_id` null |
+| `test_dry_run_enforced_at_service_layer` | 9 | Calling `CommCenterService` directly with `dry_run` cannot publish — the guard is not handler-only |
+| `test_message_sends_single_recipient` | 8 | `POST /message` → exactly **one** `xadd`; `202` carries `batch_id` + `message_id` |
+| `test_message_publishes_synchronously` | 8 | The `xadd` has already happened when the response is returned (no pending task) |
+| `test_message_persists_one_row_batch` | 8 | Exactly one tracking row; `GET /sender/{batch_id}` reports `total=1` |
+| `test_message_invalid_recipient_returns_400` | 8 | `provider=email` with no email → `400` + reason, **not** `202`/`skipped` (documented divergence) |
+| `test_message_requires_explicit_provider` | 8 | Missing `provider` → `400` |
+| `test_message_publish_failure_returns_502` | 8 | `stream()` raises → `502`, row `publish_failed`, retryable |
+| `test_message_retry_via_batch_endpoint` | 8,6 | A failed single send is re-publishable through `/sender/{batch_id}/retry` |
+| `test_message_and_sender_produce_identical_payload` | 8,5 | **Parity guard**: same recipient + template through both endpoints → byte-identical wire payload (proves the shared `prepare()`) |
 | `test_username_always_emitted_falls_back_to_name` | 5 | Row without `username` → payload carries `username == name` |
 | `test_username_absent_would_leak_actor_repr` | 5 | Regression guard: pinning the upstream behavior the fallback defends against |
 | `test_reserved_placeholders_flagged_in_catalog` | 3 | `recipient`/`message`/`subject` marked reserved |
@@ -622,6 +718,8 @@ convention — e.g. `test_infographic_render_route.py`).
 | `test_end_to_end_stored_template_partial_render` | Template row → partial render → payload carries resolved `{{today}}` and literal `{{ name }}` |
 | `test_smoke_template_file_path_real_notify` | **Real `TEMPLATE_DIR` filename** through `NotifyWrapper` — the path that works on async-notify 1.5.5 today (see §7 gating) |
 | `test_mixed_valid_invalid_rows_partial_send` | Some rows skipped, rest published; response reports both |
+| `test_end_to_end_single_message_mocked_worker` | `POST /message` → captured payload builds a valid `Actor` via a real `NotifyWrapper` |
+| `test_dry_run_then_real_send_produce_same_payload` | Dry-run preview matches what the subsequent real send publishes — the preview is trustworthy |
 
 ### Test Data / Fixtures
 
@@ -674,9 +772,27 @@ def frozen_now() -> datetime:
 - [ ] `POST /sender/{batch_id}/retry` re-publishes `pending` and
       `publish_failed` rows; **never** `queued` or `skipped`; includes
       `publishing` rows only under `?force=true`, reporting them as ambiguous.
-- [ ] `dry_run=true` returns `200` with `resolved_functions`, the validation
-      report and a rendered `preview`, while publishing nothing and writing
-      **no** tracking rows.
+- [ ] `dry_run=true` on **both** send endpoints returns `200` with
+      `resolved_functions`, the validation report and a rendered `preview`,
+      while publishing nothing and writing **no** tracking rows; the guard is
+      enforced in `CommCenterService`, not only in the handler.
+- [ ] The dry-run `preview` is byte-identical to what a real send would
+      publish for the same input.
+
+**Single-recipient endpoint (G13)**
+- [ ] `POST /api/v1/comm_center/message` accepts one `Recipient`, a template
+      (any of the four sources) and an **explicit required** `provider`.
+- [ ] It publishes **synchronously within the request** — exactly one `xadd`,
+      no background task — and returns `202` with `batch_id`, `message_id`
+      and `status`.
+- [ ] It persists exactly one tracking row, so `GET /sender/{batch_id}` and
+      `POST /sender/{batch_id}/retry` work identically for a single send.
+- [ ] An invalid recipient returns `400` **with the reason** (not `202` +
+      `skipped`); a missing `provider` returns `400`; a publish failure returns
+      `502` with the row left retryable.
+- [ ] Both send endpoints route through the **same** `CommCenterService.prepare()`
+      and produce byte-identical wire payloads for the same recipient +
+      template (parity test).
 - [ ] `username` is always present in the published payload, falling back to
       `name`, so `{{username}}` can never render an `Actor` repr.
 - [ ] Batch is capped at 10 000 recipients (`400`) and uploads at 50 MB (`413`).
@@ -1181,7 +1297,13 @@ handler. Sequential tasks in one worktree keep each commit small and
 conflict-free.
 
 **Suggested task order** (dependency-driven):
-`Module 1 → Module 2 → Module 3 → Module 4 → Module 5 → Module 6 → Module 7 → Module 8`
+`Module 1 → Module 2 → Module 3 → Module 4 → Module 5 → Module 6 → Module 7 →
+Module 8 (single-send) → Module 9 (dry-run) → Module 10 (packaging + tests)`
+
+Modules 8 and 9 land **after** the handler (7) because both are thin layers over
+the shared `prepare()` core: the single-send endpoint is an arity-1 caller, and
+dry-run is a short-circuit inside the same path. Attempting either before the
+core exists would mean writing the pipeline twice.
 
 **Cross-feature dependencies**: none. Every primary file is new. The only
 shared touchpoints are `packages/ai-parrot-server/pyproject.toml` (one extra)
@@ -1204,3 +1326,4 @@ during spec authoring. Push feature-branch commits promptly and never
 |---|---|---|---|
 | 0.1 | 2026-08-06 | Jesus Lara | Initial draft from `commcenter-notify.brainstorm.md` (Option B). All 13 brainstorm resolutions carried forward; 8 further questions resolved (4 by user, 4 from evidence/convention); wire contract verified by execution. |
 | 1.0 | 2026-08-06 | Jesus Lara | **Approved.** Final 4 open questions resolved: placeholder catalog (5 fields / 7 functions / 3 reserved), `?details=true` pagination, `dry_run`, and the `pending→publishing→queued` state machine containing retry duplicates. Added the verified `username` → `Actor`-repr trap and its mandatory fallback. Zero open questions remain. |
+| 1.1 | 2026-08-06 | Jesus Lara | Scope addition (approved spec amended, still approved). **G13** — new `POST /api/v1/comm_center/message` single-recipient endpoint: explicit required provider, synchronous publish, `202` + `message_id`, persisted as a one-row batch so audit/retry are uniform. **G14** — dry-run promoted to a first-class module covering *both* send endpoints and enforced at the service layer. Added `CommCenterService.prepare()` / `publish_one()` as the shared core both endpoints must route through, with a payload-parity test. Modules 8–10 added/renumbered (Packaging + Tests is now Module 10). |
