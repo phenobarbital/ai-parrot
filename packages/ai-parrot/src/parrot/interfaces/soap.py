@@ -2,7 +2,7 @@
 
 import base64
 from abc import ABC
-from typing import Any, Optional, Union
+from typing import Any, Optional, Self, Union
 from pathlib import Path
 import httpx
 import redis.asyncio as aioredis
@@ -250,8 +250,40 @@ class SOAPClient(ABC):
     async def close(self) -> None:
         """
         Cleanup HTTP session and Redis connection.
+
+        Idempotent: the transport and Redis handles are dropped after being
+        released, so a second call (e.g. an explicit ``close()`` inside a
+        ``finally`` nested in an ``async with`` block) is a no-op.
         """
         if self._transport and hasattr(self._transport, "session"):
             await self._transport.session.aclose()
+            self._transport = None
         if self._redis:
             await self._redis.close()
+            self._redis = None
+
+    async def __aenter__(self) -> Self:
+        """
+        Enter the async context, running :meth:`start`.
+
+        If ``start()`` raises, whatever it had already opened is released
+        before the exception propagates — Python does not call ``__aexit__``
+        when ``__aenter__`` fails, so the cleanup has to happen here.
+
+        Returns:
+            This client, already started.
+        """
+        try:
+            await self.start()
+        except BaseException:
+            await self.close()
+            raise
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """
+        Exit the async context, running :meth:`close`.
+
+        Returns ``None`` so any in-flight exception propagates.
+        """
+        await self.close()

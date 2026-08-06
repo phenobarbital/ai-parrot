@@ -192,6 +192,59 @@ class TestLifecycle:
         await client.close()
         assert client._session is None
 
+    async def test_close_is_idempotent(self, aiohttp_server):
+        async def token_handler(request):
+            return web.json_response({"access_token": "tok", "expires_in": 300})
+
+        app = web.Application()
+        app.router.add_post("/token", token_handler)
+        server = await aiohttp_server(app)
+
+        client = WorkdayRestClient(config=_make_config(str(server.make_url(""))))
+        await client.get_token()
+
+        await client.close()
+        await client.close()  # must not raise
+        assert client._session is None
+
+    async def test_async_context_manager_closes_session(self, aiohttp_server):
+        """FEAT-415: the aiohttp session is long-lived, so the client offers the
+        context manager protocol the per-call predecessor did not need."""
+        async def token_handler(request):
+            return web.json_response({"access_token": "tok", "expires_in": 300})
+
+        app = web.Application()
+        app.router.add_post("/token", token_handler)
+        server = await aiohttp_server(app)
+
+        cfg = _make_config(str(server.make_url("")))
+        async with WorkdayRestClient(config=cfg) as client:
+            await client.get_token()
+            assert client._session is not None
+            assert not client._session.closed
+            leaked = client._session
+
+        assert client._session is None
+        assert leaked.closed
+
+    async def test_async_context_manager_closes_on_exception(self, aiohttp_server):
+        async def token_handler(request):
+            return web.json_response({"access_token": "tok", "expires_in": 300})
+
+        app = web.Application()
+        app.router.add_post("/token", token_handler)
+        server = await aiohttp_server(app)
+
+        cfg = _make_config(str(server.make_url("")))
+        client = WorkdayRestClient(config=cfg)
+
+        with pytest.raises(ValueError, match="inner"):
+            async with client:
+                await client.get_token()
+                raise ValueError("inner")
+
+        assert client._session is None
+
     def test_module_does_not_import_httpx(self):
         import parrot_tools.interfaces.workday.rest as mod
 
