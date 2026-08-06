@@ -217,8 +217,17 @@ class TestNotificationBatchRecipient:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `NotificationBatchRecipient` model + flat DDL exactly per
+contract (single table, no header/batches table, 5-value CHECK vocabulary,
+`(batch_id, status)` composite index, renamed trigger). Verified with
+`py_compile` and `uvx ruff check` (clean). Same pre-existing
+`navigator_session.vault` import-chain environment blocker as TASK-2153
+prevents running `pytest` in this sandbox — see that task's Completion Note
+for the full trace; it is unrelated to this task's files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Test execution blocked by the pre-existing
+`navigator_session.vault` environment issue; code and tests are otherwise
+complete and lint-clean.

@@ -239,8 +239,26 @@ class TestPlaceholderCatalog:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `build_catalog()` with the exact 5/7/3 group split, delegating
+every date function to `resolve_date` (no reimplemented date math); `now`
+and `current_year` are the two module-local extras. Verified with
+`py_compile` and `uvx ruff check` (clean, aside from the `DTZ001` nitpick
+on the test file's mandated `FROZEN = datetime(2026, 8, 6, 12, 0, 0)`
+literal, which is taken verbatim from this task's Test Specification).
 
-**Deviations from spec**: none | describe if any
+`pytest` could not be executed successfully in this sandbox: importing
+`parrot.outputs.a2ui.recipes.params` pulls in `parrot.outputs.a2ui.recipes`
+-> `.models` -> `parrot.tools.infographic_sections` -> `parrot.tools`
+-> `parrot.tools.abstract` -> `parrot.core.events.lifecycle` ->
+`navigator_eventbus.lifecycle.trace`, and `navigator_eventbus` is not
+installed in this environment. This is a second, independent pre-existing
+environment/dependency gap (alongside the `navigator_session.vault` one
+noted in TASK-2153/2154), unrelated to this task's files, and out of
+scope to fix here.
+
+**Deviations from spec**: none. Test execution blocked by pre-existing
+environment dependency gaps (`navigator_eventbus` missing); code and tests
+are otherwise complete and lint-clean.

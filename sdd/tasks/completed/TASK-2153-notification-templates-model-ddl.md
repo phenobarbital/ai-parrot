@@ -230,8 +230,23 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `NotificationTemplate` model + DDL exactly per contract, copying
+the `UserPrompts`/`users_prompts_creation.sql` shape. Verified with
+`py_compile` and `uvx ruff check` (clean). `pytest` could not be executed
+successfully: importing `parrot.handlers.models` (via the pre-existing
+`users_bots.py` -> `_encrypted_field.py` -> `parrot.handlers.credentials_utils`
+-> `parrot.security` -> `parrot.security.vault_utils` -> `parrot.security.
+credentials_utils` chain) unconditionally imports `navigator_session.vault.
+crypto`, which does not exist in this sandbox's installed `navigator_session`
+package (confirmed: the installed package only ships `conf.py`, `data.py`,
+`middleware.py`, `session.py`, `storages`, `version.py` — no `vault`
+subpackage). This is a pre-existing environment/dependency-version mismatch
+entirely unrelated to this task's files (it reproduces on the unmodified
+`users_bots.py` import chain) and out of this task's scope to fix.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Test execution blocked by the pre-existing
+`navigator_session.vault` environment issue described above — flagging for
+maintainer attention; code and tests are otherwise complete and lint-clean.
