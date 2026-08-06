@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-416
 **Date**: 2026-08-06
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.25.32
 
 ---
@@ -224,6 +224,7 @@ class VoiceConfig:
     session_timeout_seconds: int = 1800
     silence_timeout_seconds: int = 30
     reconnect_on_limit: bool = True
+    max_reconnects: int = 3
 
     # Tools
     parallel_tool_execution: bool = False
@@ -363,6 +364,7 @@ class VoiceSession:
 | `test_voice_session_silence_injection` | 5 | Verify `end_turn()` injects paced silence frames for VAD |
 | `test_reconnect_on_limit` | 6 | Verify `reconnect_required=True` triggers a new `stream_voice()` call |
 | `test_reconnect_disabled` | 6 | Verify `reconnect_on_limit=False` does not reconnect |
+| `test_reconnect_max_retries_exhausted` | 6 | Verify `max_reconnects=3` exhausted → error frame emitted + session closes |
 | `test_voicebot_exports` | 7 | Verify `from parrot.bots import VoiceBot` works |
 | `test_voicebot_stt_only` | 7 | Verify `ask_stream(stt_only=True)` passes through to client |
 | `test_voicebot_voice_capable_typecheck` | 7 | Verify `_create_llm_client()` returns a `VoiceCapable` instance |
@@ -425,6 +427,7 @@ def voice_config():
 - [ ] `VoiceSession` is importable from `parrot.voice.session` and handles start_turn / push_audio / end_turn / close lifecycle
 - [ ] `VoiceSession` silence injection uses 20ms-paced frames (matching working `sonic_e2e_demo.py` pattern)
 - [ ] `reconnect_on_limit=True` + `reconnect_required` metadata triggers transparent re-open of `stream_voice()`
+- [ ] `max_reconnects=3` exhausted → session emits error frame and closes (no infinite loop)
 - [ ] `VoiceBot` is importable from `parrot.bots` (`from parrot.bots import VoiceBot`)
 - [ ] `VoiceBot.ask_stream(stt_only=True)` passes `stt_only=True` to the underlying client's `stream_voice()`
 - [ ] `VoiceChatHandler._run_voice_session()` delegates to `VoiceSession` (no duplicated turn lifecycle)
@@ -647,6 +650,7 @@ class ToolManager(MCPToolManagerMixin):                       # line 233
 - ~~`VoiceConfig.top_p`~~ — does not exist on either VoiceConfig class
 - ~~`VoiceConfig.parallel_tool_execution`~~ — does not exist
 - ~~`VoiceConfig.reconnect_on_limit`~~ — does not exist
+- ~~`VoiceConfig.max_reconnects`~~ — does not exist
 - ~~`VoiceBot` in `parrot.bots.__all__`~~ — NOT exported; requires import from `parrot.bots.voice`
 - ~~`VoiceBot.ask_stream(stt_only=...)`~~ — `stt_only` parameter does not exist on VoiceBot
 
@@ -743,16 +747,26 @@ class ToolManager(MCPToolManagerMixin):                       # line 233
 
 ## 8. Open Questions
 
-- [ ] Should `VoiceCapable` also declare `close()` or `disconnect()` for
-  session teardown? — *Owner: Jesus Lara*
-- [ ] Should `VoiceSession` support multi-turn conversation history
+- [x] Should `VoiceCapable` also declare `close()` or `disconnect()` for
+  session teardown? — *Resolved*: No. Keep `VoiceCapable` minimal —
+  declares only `stream_voice()`. Session-level cleanup stays in
+  `VoiceSession.close()`, which cancels the turn task and triggers the
+  client's own `finally` blocks.
+- [x] Should `VoiceSession` support multi-turn conversation history
   internally (carry context across reconnections) or leave that to
-  `VoiceBot`? — *Owner: Jesus Lara*
+  `VoiceBot`? — *Resolved*: Leave it to `VoiceBot`. `VoiceSession` is
+  stateless w.r.t. conversation history — it passes `system_prompt` and
+  `session_id` on reconnect; `VoiceBot` owns memory persistence.
 - [ ] For Gemini Live, does the Google SDK actually send multiple
   `function_call` parts in a single `model_turn` (parallel tool calls)?
-  Need to verify against the SDK source / API docs. — *Owner: implementer*
-- [ ] Should the reconnection loop have a max-retries limit to prevent
-  infinite reconnection on persistent server errors? — *Owner: Jesus Lara*
+  — *Owner: implementer* — verify during Module 4 implementation. If
+  Gemini sends single calls, the `TaskGroup` path is a no-op (still
+  correct). Non-blocking for spec approval.
+- [x] Should the reconnection loop have a max-retries limit to prevent
+  infinite reconnection on persistent server errors? — *Resolved*: Yes.
+  Add `max_reconnects: int = 3` to `VoiceConfig` (configurable). After
+  exhausting retries, emit `{"type": "error", "message": "max
+  reconnections reached"}` and close the session.
 
 ---
 
@@ -778,3 +792,4 @@ git worktree add -b feat-416-voice-agent-framework \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-06 | Jesus Lara | Initial draft from gap analysis |
+| 0.2 | 2026-08-06 | Jesus Lara | Resolve open questions Q1/Q2/Q4; add max_reconnects; mark approved |
