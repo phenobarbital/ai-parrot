@@ -550,13 +550,14 @@ class NovaAudio:
                 "channelCount": 1,
                 "voiceId": voice_id,
                 "encoding": "base64",
-                "audioType": "SPEECH",
             },
-            "toolUseOutputConfiguration": {"mediaType": "application/json"},
         }
         tool_configuration = self._build_tool_configuration()
         if tool_configuration is not None:
             prompt_start["toolConfiguration"] = tool_configuration
+            prompt_start["toolUseOutputConfiguration"] = {
+                "mediaType": "application/json",
+            }
         return {"event": {"promptStart": prompt_start}}
 
     async def _send_tool_result(
@@ -686,7 +687,7 @@ class NovaAudio:
             await self._send_event(stream, {"event": {"contentStart": {
                 "promptName": prompt_name, "contentName": f"{content_name}-sys",
                 "type": "TEXT", "role": "SYSTEM",
-                "interactive": False,
+                "interactive": True,
                 "textInputConfiguration": {"mediaType": "text/plain"},
             }}})
             await self._send_event(stream, {"event": {"textInput": {
@@ -700,14 +701,12 @@ class NovaAudio:
         await self._send_event(stream, {"event": {"contentStart": {
             "promptName": prompt_name, "contentName": content_name,
             "type": "AUDIO", "role": "USER",
-            "interactive": True,
             "audioInputConfiguration": {
                 "mediaType": "audio/lpcm",
                 "sampleRateHertz": self.INPUT_SAMPLE_RATE_HZ,
                 "sampleSizeBits": 16,
                 "channelCount": 1,
                 "encoding": "base64",
-                "audioType": "SPEECH",
             },
         }}})
 
@@ -733,6 +732,13 @@ class NovaAudio:
                         user_id=user_id,
                     )
                     break
+
+                # Log every received event type for diagnostics.
+                event_keys = [k for k in event if k != "promptName"]
+                self.logger.debug(
+                    "Nova Sonic event: %s",
+                    ", ".join(event_keys) if event_keys else list(event.keys()),
+                )
 
                 content_start = event.get("contentStart")
                 if content_start:
@@ -901,6 +907,24 @@ class NovaAudio:
                         user_id=user_id,
                     )
                     break
+            else:
+                # Stream ended without a completionEnd event (e.g. server
+                # closed the connection).  Yield a completion so callers
+                # are never left hanging.
+                self.logger.warning(
+                    "Nova Sonic session %s: stream ended without completionEnd",
+                    session_id,
+                )
+                yield LiveVoiceResponse(
+                    text="",
+                    is_complete=True,
+                    tool_calls=tool_calls_list,
+                    usage=usage,
+                    turn_metadata=turn_metadata,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    user_id=user_id,
+                )
         except asyncio.CancelledError:
             self.logger.info("Nova Sonic session %s cancelled", session_id)
             raise
@@ -912,9 +936,23 @@ class NovaAudio:
             # enough that consumers testing truthiness miss the failure
             # entirely. Always include the exception type.
             error_message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
-            self.logger.exception(
-                "Nova Sonic session %s error: %s", session_id, error_message
+
+            # Nova Sonic sends a ValidationException after 55 s of no audio
+            # or interactive content — this is normal idle-session expiry,
+            # not a bug. Log at INFO (no traceback) instead of ERROR.
+            is_idle_timeout = (
+                "Timed out waiting for audio" in str(exc)
+                or "gaps between audio bytes" in str(exc)
             )
+            if is_idle_timeout:
+                self.logger.info(
+                    "Nova Sonic session %s idle timeout (55 s no audio)",
+                    session_id,
+                )
+            else:
+                self.logger.exception(
+                    "Nova Sonic session %s error: %s", session_id, error_message
+                )
             yield LiveVoiceResponse(
                 text="",
                 is_complete=True,
@@ -950,10 +988,18 @@ class NovaAudio:
         try:
             async for chunk in audio_iterator:
                 if chunk is None:
+                    self.logger.debug(
+                        "Audio sender: received None sentinel (chunks_sent=%d)",
+                        chunks_sent,
+                    )
                     if chunks_sent > 0:
                         await self._send_event(stream, {"event": {"contentEnd": {
                             "promptName": prompt_name, "contentName": content_name,
                         }}})
+                        self.logger.info(
+                            "Audio sender: contentEnd sent after %d chunks",
+                            chunks_sent,
+                        )
                     continue
                 # Code-review fix: audioInputConfiguration declares
                 # "encoding": "base64" (see stream_voice()'s contentStart
@@ -967,7 +1013,17 @@ class NovaAudio:
                     "content": base64.b64encode(chunk).decode("ascii"),
                 }}})
                 chunks_sent += 1
+                if chunks_sent % 50 == 0:
+                    self.logger.debug(
+                        "Audio sender: %d chunks sent so far", chunks_sent
+                    )
         except asyncio.CancelledError:
+            self.logger.debug(
+                "Audio sender: cancelled (chunks_sent=%d)", chunks_sent
+            )
             raise
         except Exception as exc:
-            self.logger.error("Nova Sonic audio sender error: %s", exc)
+            self.logger.error(
+                "Nova Sonic audio sender error after %d chunks: %s",
+                chunks_sent, exc,
+            )
