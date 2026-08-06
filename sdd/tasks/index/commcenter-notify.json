@@ -107,7 +107,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -118,8 +118,8 @@
       "parallelism_notes": "Sequential: consumes the tracking model (2154) and the prepared payloads (2157). Sole owner of Redis I/O and the duplicate-delivery containment state machine.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2158-fanout-state-machine-retry.md"
+      "completed_at": "2026-08-06T20:46:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2158-fanout-state-machine-retry.md"
     },
     {
       "id": "TASK-2159",
