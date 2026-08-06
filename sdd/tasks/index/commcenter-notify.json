@@ -14,7 +14,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Leaf module (spec Module 1). Own model + .sql files. Only overlap with TASK-2154 is a one-line export in handlers/models/__init__.py — trivial to reconcile, but it IS a shared file, so a parallel worktree run needs that one merge.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2153-notification-templates-model-ddl.md"
+      "completed_at": "2026-08-06T19:45:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2153-notification-templates-model-ddl.md"
     },
     {
       "id": "TASK-2154",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Leaf module (spec Module 2). Same one-line handlers/models/__init__.py overlap with TASK-2153; no other shared file. Encodes the pending/publishing/queued/skipped/publish_failed state machine as a CHECK constraint.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2154-batch-tracking-model-ddl.md"
+      "completed_at": "2026-08-06T19:45:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2154-batch-tracking-model-ddl.md"
     },
     {
       "id": "TASK-2155",
