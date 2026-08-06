@@ -677,8 +677,22 @@ class NovaAudio:
         connection_start = time.monotonic()
         stream = await self._open_stream(resolved_model)
 
+        # FEAT-416 (TASK-2147): thread VoiceConfig inference parameters
+        # through to the Nova Sonic sessionStart event instead of hardcoding
+        # them. Defaults match the previous hardcoded values exactly, so
+        # callers that don't pass these kwargs see no behavior change.
+        # VoiceBot wires these from VoiceConfig (TASK-2151); this task just
+        # opens the door.
+        temperature = kwargs.get("temperature", 0.7)
+        max_tokens = kwargs.get("max_tokens", 1024)
+        top_p = kwargs.get("top_p", 0.9)
+
         await self._send_event(stream, {"event": {"sessionStart": {
-            "inferenceConfiguration": {"maxTokens": 1024, "topP": 0.9, "temperature": 0.7}
+            "inferenceConfiguration": {
+                "maxTokens": max_tokens,
+                "topP": top_p,
+                "temperature": temperature,
+            }
         }}})
         await self._send_event(
             stream, self._build_prompt_start(prompt_name, resolved_voice_id)
