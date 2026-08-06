@@ -131,7 +131,7 @@
       "feature_id": "FEAT-416",
       "feature": "voice-agent-framework",
       "spec": "sdd/specs/voice-agent-framework.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Modifies bots/voice.py; logically independent of TASK-2147/2148 but sequential in worktree",
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2151-voicebot-refinements.md"
+      "completed_at": "2026-08-06T02:54:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2151-voicebot-refinements.md"
     },
     {
       "id": "TASK-2152",
