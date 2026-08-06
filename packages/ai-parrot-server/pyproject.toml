@@ -57,9 +57,19 @@ autonomous = [
     "aiofiles>=23.0",
 ]
 
+# CommCenter bulk notification sender (FEAT-417) — NotifyClient/NotifyWorker
+# publishing, plus Excel/CSV recipient ingestion. Lazy-imported (spec G11):
+# importing parrot.handlers.comm_center / parrot.services.comm_center never
+# requires this extra; only calling a function that actually publishes does.
+comm-center = [
+    "async-notify>=1.5.5",
+    "pandas>=2.2",
+    "openpyxl>=3.1.2,<=3.1.5",
+]
+
 # Aggregator: all server extras
 all = [
-    "ai-parrot-server[scheduler,mcp,a2a,autonomous]",
+    "ai-parrot-server[scheduler,mcp,a2a,autonomous,comm-center]",
 ]
 
 [project.scripts]
