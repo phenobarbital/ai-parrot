@@ -763,6 +763,13 @@ class GeminiLiveClient(AbstractClient):
 
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
+        # FEAT-416 (TASK-2148): gate concurrent tool execution on the
+        # VoiceConfig-derived flag (VoiceBot wires this in TASK-2151).
+        # Default False preserves current sequential behavior exactly. If
+        # the Google SDK only ever sends one function_call per turn, the
+        # TaskGroup path is simply never taken (len(function_calls) > 1
+        # guard below) — correct either way (spec §8 Q3).
+        parallel_tool_execution = kwargs.get("parallel_tool_execution", False)
 
         live_config = self._build_live_config(
             system_prompt=system_prompt,
@@ -919,17 +926,32 @@ class GeminiLiveClient(AbstractClient):
                         if hasattr(response, 'tool_call') and response.tool_call:
                             self.logger.info(f"Tool call received: {response.tool_call}")
                             adapter = self._get_tool_adapter()
+                            function_calls = list(response.tool_call.function_calls)
 
-                            for fc in response.tool_call.function_calls:
+                            async def _run_one_tool_call(
+                                fc, turn_id=turn_id, adapter=adapter,
+                                session_id=session_id, user_id=user_id,
+                            ):
+                                # Bind the enclosing loop's turn_id/adapter/
+                                # session_id/user_id as defaults (evaluated
+                                # once, at definition time) rather than
+                                # reading them as free variables — avoids
+                                # ruff/flake8-bugbear B023's late-binding
+                                # closure warning; this coroutine is always
+                                # fully awaited (or collected via TaskGroup)
+                                # within the same outer-loop iteration it was
+                                # defined in, so the values never actually
+                                # change underneath it, but binding them
+                                # explicitly makes that guarantee visible.
                                 start = datetime.now()
-                                
+
                                 # Create tool call object early
                                 tool_call = LiveToolCall(
                                     id=fc.id or str(uuid.uuid4()),  # Ensure ID exists
                                     name=fc.name,
                                     arguments=dict(fc.args) if fc.args else {},
                                 )
-                                
+
                                 # Pass session context to tool execution
                                 tool_context = {
                                     "session_id": session_id,
@@ -939,27 +961,63 @@ class GeminiLiveClient(AbstractClient):
                                 # Merge context into args for logging visibility
                                 effective_args = dict(fc.args) if fc.args else {}
                                 effective_args.update(tool_context)
-                                
+
                                 self.logger.info(f"Executing tool: {fc.name} with args: {effective_args}")
 
-                                func_response, display_data = await adapter.execute_tool(
-                                    fc, 
-                                    context=tool_context
-                                )
+                                try:
+                                    func_response, display_data = await adapter.execute_tool(
+                                        fc,
+                                        context=tool_context
+                                    )
+                                except Exception as exc:
+                                    # adapter.execute_tool() already catches
+                                    # tool-execution errors internally and
+                                    # returns an error-shaped FunctionResponse;
+                                    # this is defense-in-depth so one failing
+                                    # tool never cancels its TaskGroup siblings
+                                    # (FEAT-416 TASK-2148 acceptance criterion).
+                                    func_response = types.FunctionResponse(
+                                        name=fc.name, id=fc.id,
+                                        response={"error": str(exc)},
+                                    )
+                                    display_data = None
                                 tool_call.execution_time_ms = (datetime.now() - start).total_seconds() * 1000
                                 tool_call.result = func_response.response
+                                return tool_call, func_response, display_data
 
+                            # FEAT-416 (TASK-2148): execute concurrently via
+                            # asyncio.TaskGroup when parallel_tool_execution
+                            # is set and there's more than one function call
+                            # in this turn; otherwise (default, or a single
+                            # call) behavior is exactly the previous
+                            # sequential await-in-a-loop.
+                            if parallel_tool_execution and len(function_calls) > 1:
+                                async with asyncio.TaskGroup() as tg:
+                                    tasks = [
+                                        tg.create_task(_run_one_tool_call(fc))
+                                        for fc in function_calls
+                                    ]
+                                tool_results = [t.result() for t in tasks]
+                            else:
+                                tool_results = [
+                                    await _run_one_tool_call(fc) for fc in function_calls
+                                ]
+
+                            # All tool results must reach the model before it
+                            # resumes — send them together in one call.
+                            await session.send_tool_response(
+                                function_responses=[
+                                    func_response for _, func_response, _ in tool_results
+                                ]
+                            )
+
+                            for tool_call, _func_response, display_data in tool_results:
                                 usage.tool_calls_executed += 1
                                 usage.tool_execution_time_ms += tool_call.execution_time_ms
 
-                                # Send response back to model
-                                await session.send_tool_response(
-                                    function_responses=[func_response]
-                                )
-                                
                                 # Reset text accumulator after tool call to capture only the final answer
                                 accumulated_text = ""
-                                
+
                                 # Inject tool output as initial part of the answer
                                 if isinstance(tool_call.result, dict) and "output" in tool_call.result:
                                     tool_output_text = str(tool_call.result["output"]) + "\n\n"
@@ -971,7 +1029,7 @@ class GeminiLiveClient(AbstractClient):
                                         turn_id=turn_id,
                                         user_id=user_id,
                                     )
-                                
+
                                 # Prepare metadata with display_data if present
                                 metadata = {}
                                 if display_data:
