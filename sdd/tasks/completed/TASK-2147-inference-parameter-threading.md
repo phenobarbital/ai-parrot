@@ -161,4 +161,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented exactly per spec §3 Module 3:
+
+- `packages/ai-parrot/src/parrot/clients/nova/audio.py` — the hardcoded
+  `sessionStart.inferenceConfiguration` dict now reads `temperature`,
+  `max_tokens`, `top_p` from `**kwargs` with defaults identical to the
+  previous hardcoded values (`1024`/`0.9`/`0.7`) — backward compatible.
+- `packages/ai-parrot/tests/clients/test_nova_inference_params.py` —
+  **path correction**: the task named this
+  `tests/clients/nova/test_nova_inference_params.py`, but no
+  `tests/clients/nova/` subpackage exists anywhere in the repo — every
+  sibling Nova test (`test_nova_protocol_frames.py`,
+  `test_nova_tool_configuration.py`, etc.) lives flat under
+  `tests/clients/`. Followed that established convention instead and
+  noted the correction in the test file's own docstring. Reused the
+  `_client()` / `_capture_opening_frames()` mock pattern from
+  `test_nova_protocol_frames.py` (patches `_open_stream`, `_send_event`,
+  `_iter_events`, `_close_stream`) to capture the `sessionStart` frame
+  without touching the real AWS SDK.
+
+Lint: `ruff check --select=E,F,W,C,B --ignore=E501,W293,C901` passes.
+`C901 stream_voice is too complex (23 > 10)` is pre-existing (verified via
+`git stash`/re-lint before my change — identical score) and not enforced
+by the project's actual `.flake8` config (no `max-complexity` is set
+there, so mccabe C901 never fires under real `flake8`; it's a ruff
+default-config artifact only).
+
+**Tests not executed** — same pre-existing, sandbox-wide broken-venv
+limitation as prior tasks; this time the import chain hit
+`navigator.types`/`asyncdb.utils.types` (also missing compiled
+extensions) via `tests/conftest.py`'s navigator stub installation, further
+confirming the breadth of the issue. Recommend running
+`pytest packages/ai-parrot/tests/clients/test_nova_inference_params.py -v`
+in a fully-provisioned environment before merge.
