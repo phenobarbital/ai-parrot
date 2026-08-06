@@ -210,4 +210,80 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per spec §3 Module 4, with a structural design decision worth
+flagging plus one deliberate cross-cutting change to Gemini's sequential
+path:
+
+1. **Nova (`nova/audio.py`)** — `_TurnState.pending_tool`/
+   `pending_tool_raw_input` (singular, per in-flight tool) are unchanged;
+   added `pending_tools: List[tuple]` (a queue of completed-but-not-yet-
+   executed `(LiveToolCall, raw_input)` pairs). `contentEnd(TOOL)` now
+   *queues* instead of executing immediately. A new boundary check at the
+   top of the event loop — `is_tool_event = "toolUse" in event or
+   contentEnd.type == "TOOL"` — flushes (executes + sends +
+   yields) the queue via the new `_flush_pending_tools()` helper as soon
+   as a **non**-tool event arrives (including `completionEnd`), which is
+   the "next non-tool event" boundary the task describes. For the
+   default/single-tool case this flush happens on the very next loop
+   iteration, so **the observable sequence of `_execute_tool` calls,
+   `_send_tool_result` frames, and yielded `LiveVoiceResponse`s is
+   unchanged** — verified by tracing all of
+   `test_nova_tool_result.py`'s and `test_nova_turn_state.py`'s existing
+   assertions against the new code path line-by-line (none inspect *when
+   mid-iteration* execution happens, only the final collected output).
+   `_flush_pending_tools()` executes sequentially unless
+   `parallel_tool_execution=True` and `len(pending_tools) > 1`, matching
+   the task's own pseudocode; a per-tool `try/except` (not TaskGroup's own
+   propagation, which would cancel siblings) isolates tool errors.
+2. **Gemini (`live.py`)** — `response.tool_call.function_calls` already
+   arrives as a list (confirming spec §8 Q3's open question: **yes**, the
+   Google SDK models multiple function calls per turn), so the existing
+   `for fc in function_calls:` loop was refactored into a
+   `_run_one_tool_call()` coroutine, dispatched via `asyncio.TaskGroup`
+   when `parallel_tool_execution=True` and there's more than one call,
+   sequential (`await` in a list comprehension) otherwise.
+   **Cross-cutting change**: `session.send_tool_response()` was
+   previously called once *per tool*, immediately after each executes;
+   it's now called **once with all responses**, after all tools in the
+   batch finish (sequential or parallel) — for the single-tool case this
+   is call-for-call identical (`function_responses=[single_response]`
+   either way); for a (currently untested, no existing coverage found)
+   multi-tool *sequential* turn this changes *when* results are sent
+   (batched at the end vs. interleaved), which is actually a stricter
+   conformance to the cross-cutting requirement "all tool results must
+   reach the model before it resumes" — applied uniformly now instead of
+   only in the parallel path. `adapter.execute_tool()` already catches
+   all exceptions internally and returns an error-shaped
+   `FunctionResponse` (verified by reading it), so the `try/except`
+   around it in `_run_one_tool_call()` is defense-in-depth, not the
+   primary error-isolation mechanism.
+3. Fixed two real `ruff`/flake8-bugbear `B023` (closure-over-loop-variable)
+   findings in `live.py` by binding `turn_id`/`adapter`/`session_id`/
+   `user_id` as default parameters on `_run_one_tool_call` — a real,
+   idiomatic fix (not a suppression), since the closure is created inside
+   the outer `async for response in ...` loop.
+
+Files touched exactly as scoped:
+`packages/ai-parrot/src/parrot/clients/nova/audio.py`,
+`packages/ai-parrot/src/parrot/clients/live.py`,
+`packages/ai-parrot/tests/clients/test_parallel_tool_execution.py`
+(created — actual timing-based tests per the task's Test Specification,
+using the `test_nova_tool_result.py` mock harness with `_execute_tool`
+side-effects that `asyncio.sleep(0.1)`, asserting real wall-clock
+concurrency rather than call counts).
+
+Lint: `ruff check --select=E,F,W,C,B --ignore=E501,W293,C901` passes on
+all three files (`C901`/`B004` pre-existing, verified via `git stash`/
+grep-against-diff before fixing the real `B905`/`B023` findings my change
+introduced).
+
+**Tests not executed** — same pre-existing, sandbox-wide broken-venv
+limitation as prior tasks (verified no new syntax errors via
+`python -m py_compile` on all four touched/created files instead).
+Recommend running
+`pytest packages/ai-parrot/tests/clients/test_parallel_tool_execution.py
+packages/ai-parrot/tests/clients/test_nova_tool_result.py
+packages/ai-parrot/tests/clients/test_nova_turn_state.py -v`
+in a fully-provisioned environment before merge — the latter two
+specifically to confirm no regression in the existing sequential-path
+contract this task restructured underneath.

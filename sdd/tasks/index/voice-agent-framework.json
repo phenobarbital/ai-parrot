@@ -70,7 +70,7 @@
       "feature_id": "FEAT-416",
       "feature": "voice-agent-framework",
       "spec": "sdd/specs/voice-agent-framework.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Modifies nova/audio.py and live.py; must follow TASK-2147 to avoid merge conflict",
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2148-parallel-tool-execution.md"
+      "completed_at": "2026-08-06T02:39:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2148-parallel-tool-execution.md"
     },
     {
       "id": "TASK-2149",
