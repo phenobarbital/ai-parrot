@@ -32,7 +32,7 @@
       "feature_id": "FEAT-416",
       "feature": "voice-agent-framework",
       "spec": "sdd/specs/voice-agent-framework.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Foundation config; all downstream tasks depend on unified VoiceConfig",
       "assigned_to": null,
       "started_at": "2026-08-06T01:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2146-voice-config-unification.md"
+      "completed_at": "2026-08-06T02:28:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2146-voice-config-unification.md"
     },
     {
       "id": "TASK-2147",

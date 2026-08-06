@@ -258,4 +258,57 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per spec §3 Module 2, with two decisions worth flagging:
+
+1. **`VoiceProvider(str, Enum)` instead of plain `Enum`.** The task's own
+   Codebase Contract shows the integrations `VoiceProvider` as a plain
+   `Enum`, but the pre-existing test
+   `packages/ai-parrot/tests/models/test_voice_config.py` asserts
+   `VoiceConfig().provider == "google_live"` (plain string equality)
+   *after* construction — which only holds post-`__post_init__` coercion
+   if `VoiceProvider` also inherits `str` (mirroring the existing
+   `GoogleVoiceModel(str, Enum)` pattern in `parrot/models/google.py`).
+   Verified this doesn't break `VoiceProvider` iteration/`.value` access
+   used by `packages/ai-parrot-integrations/tests/voice/test_nova_provider.py`.
+2. **`VoiceConfig.model` default → `None`** (per task's Key Constraint).
+   Flagging for TASK-2151: `VoiceBot._resolve_llm_config()`
+   (`bots/voice.py:180-184`) currently compares
+   `self.voice_config.model != GoogleVoiceModel.DEFAULT` to detect an
+   unconfigured Nova model and fall back to `"nova-2-sonic"`. With the
+   default now `None`, that comparison will incorrectly resolve to `None`
+   instead of falling back — this must be changed to a truthiness check
+   (`if self.voice_config.model else "nova-2-sonic"`) when TASK-2151
+   touches that file. (Tracked to be fixed then, in-scope for that task.)
+
+Files touched exactly as scoped:
+- `packages/ai-parrot/src/parrot/models/voice.py` — unified `VoiceConfig`
+  (22 fields) + promoted `VoiceProvider` enum + `__post_init__` coercion.
+- `packages/ai-parrot-integrations/src/parrot/voice/models.py` — removed
+  the local `VoiceConfig` dataclass (its `get_model()`/`to_gemini_config()`
+  methods had zero callers anywhere in the monorepo, verified via repo-wide
+  grep), replaced with the `__getattr__` deprecation shim exactly per the
+  task's pattern; `VoiceProvider` now imported from core and re-exported
+  (no warning — a move). `AudioFormat`/`VoiceChunk`/`VoiceMessage`/
+  `VoiceResponse`/`SessionState` in this module are untouched (out of
+  scope — task only asked to unify `VoiceConfig`/`VoiceProvider`).
+- `packages/ai-parrot/tests/models/test_voice_config.py` — merged the
+  task's new `TestVoiceConfigUnified` class into the existing file
+  (append, not overwrite) to preserve the pre-existing
+  `TestVoiceConfigProvider` regression coverage. Added one assertion
+  beyond the task's literal test scaffold (that a `DeprecationWarning`
+  was actually raised in `test_backward_compat_import`, since the given
+  scaffold captured warnings via `catch_warnings` but never asserted on
+  them) — this directly verifies the acceptance criterion "(with
+  deprecation warning)".
+
+Lint: `ruff check --select=E,F,W,C,B --ignore=E501,W293` passes on all
+three touched files (E501/W293 ignored only for pre-existing lines in
+`voice/models.py` outside my diff — `E501` is also in this project's own
+`.flake8` ignore list).
+
+**Tests not executed** — same pre-existing, sandbox-wide broken-venv
+limitation documented in TASK-2145's completion note (cascading missing
+native extensions: pydantic_core, datamodel, orjson, asyncpg, psycopg2,
+numpy/pandas, navconfig). Recommend running
+`pytest packages/ai-parrot/tests/models/test_voice_config.py -v` in a
+fully-provisioned environment before merge.
