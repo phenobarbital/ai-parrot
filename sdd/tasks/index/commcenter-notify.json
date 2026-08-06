@@ -68,7 +68,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -76,8 +76,8 @@
       "parallelism_notes": "Independent (spec Module 4): creates the services/comm_center package with its own models.py and ingest.py. TASK-2157/2159/2161 later extend models.py, so parallel runs must land this first.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2156-recipient-ingestion.md"
+      "completed_at": "2026-08-06T20:01:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2156-recipient-ingestion.md"
     },
     {
       "id": "TASK-2157",
