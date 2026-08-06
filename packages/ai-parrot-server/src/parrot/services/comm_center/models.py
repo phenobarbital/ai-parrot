@@ -109,3 +109,38 @@ class SenderResponse(BaseModel):
     resolved_functions: dict = Field(required=False, default_factory=dict)
     skipped_details: list = Field(required=False, default_factory=list)
     preview: Optional[str] = Field(required=False, default=None)
+
+
+class SingleMessageRequest(BaseModel):
+    """``POST /message`` request body — one recipient, one provider (spec G13).
+
+    ``provider`` is **required and explicit** — unlike ``SenderRequest``,
+    there is exactly one recipient, so there is no per-record override to
+    resolve. Exactly one of ``template_id``/``template_name``/``template``/
+    ``template_file`` must be provided, same resolution as the bulk
+    endpoint.
+    """
+
+    provider: str = Field(required=True)
+    recipient: RecipientIn = Field(required=True)
+    template_id: Optional[uuid.UUID] = Field(required=False, default=None)
+    template_name: Optional[str] = Field(required=False, default=None)
+    template: Optional[str] = Field(required=False, default=None)
+    template_file: Optional[str] = Field(required=False, default=None)
+    subject: Optional[str] = Field(required=False, default=None)
+    dry_run: bool = Field(required=False, default=False)
+
+
+class SingleMessageResponse(BaseModel):
+    """``POST /message`` response body (spec §2, G13).
+
+    ``status`` is one of ``queued``/``publish_failed``/``skipped``/
+    ``dry_run``; ``reason`` is populated for ``skipped``/``publish_failed``.
+    """
+
+    batch_id: Optional[uuid.UUID] = Field(required=False, default=None)
+    message_id: Optional[str] = Field(required=False, default=None)
+    status: str = Field(required=True)
+    reason: Optional[str] = Field(required=False, default=None)
+    resolved_functions: dict = Field(required=False, default_factory=dict)
+    preview: Optional[str] = Field(required=False, default=None)

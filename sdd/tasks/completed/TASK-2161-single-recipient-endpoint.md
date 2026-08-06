@@ -275,8 +275,39 @@ class TestSingleMessage:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `SingleMessageRequest`/`SingleMessageResponse` in
+`services/comm_center/models.py` and filled in `post_message()` on
+`CommCenterHandler` as a thin arity-1 caller: builds one `RecipientIn` +
+`SingleMessageRequest`, resolves the template via the same
+`_resolve_template_source()` the bulk endpoint uses, calls the same
+`prepare()` (TASK-2157) with a one-element recipient list, persists
+exactly one `NotificationBatchRecipient` row, and publishes synchronously
+via `publish_one()` (TASK-2158) — no background task, no `fan_out()`.
+Implemented the three deliberate divergences from the bulk endpoint (spec
+§3 Module 8): a validation failure raises `400` with the skip reason
+(never `202`+`skipped`), a missing `provider` raises `400` (no per-record
+override to fall back to), and a publish failure raises `502` with the
+row left in `publish_failed` (retryable via `/sender/{batch_id}/retry`).
+Added a `TestPayloadParity` test proving `post_message` and `post_sender`
+both route through the identical `prepare()` call for the same recipient
++ template + frozen `now`, producing a byte-identical wire payload — the
+concrete enforcement of the "one pipeline" requirement rather than a
+second implementation.
 
-**Deviations from spec**: none | describe if any
+Verified with a throwaway diagnostic harness (same pre-existing,
+unrelated environment stubs as TASK-2159/2160 — `navigator_session.vault`,
+`navigator_eventbus`, a duck-typed `NotificationBatchRecipient`) covering
+all seven scenarios from this task's Test Specification: single-xadd
+send, one-row persistence, invalid-recipient 400, missing-provider 400,
+publish-failure 502 with the row left retryable, missing-recipient 400,
+and payload parity. All passed on the first attempt — this task's
+implementation did not surface any new bug beyond the already-fixed
+`dumps=json_encoder` issue documented in TASK-2160 (this handler's
+`post_message` uses the same corrected `self.json_response(response.to_dict(),
+status=202)` call). Harness deleted after verification; `pytest` itself
+cannot collect this task's test file here for the same documented reasons.
+
+**Deviations from spec**: none.

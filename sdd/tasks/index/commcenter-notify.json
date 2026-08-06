@@ -172,7 +172,7 @@
       "feature_id": "FEAT-417",
       "feature": "commcenter-notify",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Sequential: fills the post_message stub in comm_center.py (2159) and calls publish_one (2158). Deliberately a thin arity-1 caller over the shared prepare(); a payload-parity test enforces that it does not fork the pipeline.",
       "assigned_to": null,
       "started_at": "2026-08-06T19:29:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2161-single-recipient-endpoint.md"
+      "completed_at": "2026-08-06T21:45:38+00:00",
+      "file": "sdd/tasks/completed/TASK-2161-single-recipient-endpoint.md"
     },
     {
       "id": "TASK-2162",

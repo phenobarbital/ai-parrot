@@ -13,9 +13,11 @@ Templates CRUD (``list_templates``/``get_template``/``create_template``/
 class per spec §8 — not a ``ModelView`` — backed by the
 ``NotificationTemplate`` model (TASK-2153).
 
-The single-recipient endpoint body (``post_message`` — TASK-2161) is
-registered here as an explicit ``NotImplementedError`` stub so routing is
-complete end-to-end; that task only needs to fill in the method body.
+``post_message`` (spec G13 / Module 8) is a thin arity-1 caller over the
+same shared :func:`~parrot.services.comm_center.render.prepare` the bulk
+endpoint uses, publishing synchronously via
+:func:`~parrot.services.comm_center.dispatch.publish_one` — no background
+task for a single ``xadd``.
 """
 import base64
 import uuid
@@ -36,6 +38,7 @@ from parrot.handlers.models import NotificationBatchRecipient, NotificationTempl
 from parrot.services.comm_center.dispatch import (
     aggregate_batch_status,
     launch_fan_out,
+    publish_one,
 )
 from parrot.services.comm_center.dispatch import retry_batch as dispatch_retry_batch
 from parrot.services.comm_center.ingest import (
@@ -44,7 +47,13 @@ from parrot.services.comm_center.ingest import (
     IngestionError,
     ingest_recipients,
 )
-from parrot.services.comm_center.models import SenderRequest, SenderResponse
+from parrot.services.comm_center.models import (
+    RecipientIn,
+    SenderRequest,
+    SenderResponse,
+    SingleMessageRequest,
+    SingleMessageResponse,
+)
 from parrot.services.comm_center.render import RenderError, prepare
 
 
@@ -407,16 +416,115 @@ class CommCenterHandler(BaseHandler):
         return self.json_response(self._placeholder_catalog, status=200)
 
     # ------------------------------------------------------------------
-    # Single-recipient send (TASK-2161) — stub
+    # Single-recipient send (spec G13 / Module 8)
     # ------------------------------------------------------------------
 
     @is_authenticated()
     async def post_message(self, request: web.Request) -> web.Response:
         """``POST /api/v1/comm_center/message`` — single-recipient send.
 
-        Stub — implemented by TASK-2161.
+        A thin arity-1 caller over the shared :func:`prepare` — it does
+        **not** re-implement template resolution, rendering, provider
+        resolution, or validation (spec §2 "Shared-core requirement").
+        Publishes synchronously via :func:`publish_one` (no background
+        task — a single ``xadd`` does not justify one) and persists
+        exactly one tracking row, so ``GET /sender/{batch_id}`` and
+        ``POST /sender/{batch_id}/retry`` work identically for it.
+
+        Deliberate divergence from the bulk endpoint (spec §3 Module 8):
+        an invalid recipient or a publish failure returns an error status
+        directly (``400``/``502``) instead of a `202` with a `skipped`/
+        `publish_failed` row — with one recipient there is no "rest of the
+        batch" to protect, so failing loudly is correct.
         """
-        raise NotImplementedError("post_message is implemented by TASK-2161")
+        try:
+            body = await self.get_json(request) or {}
+            if not body.get("recipient"):
+                raise ValueError("'recipient' is required")
+            recipient = RecipientIn(**body["recipient"])
+
+            message_request = SingleMessageRequest(
+                **{
+                    key: value
+                    for key, value in {
+                        "provider": body.get("provider"),
+                        "recipient": recipient,
+                        "template_id": body.get("template_id"),
+                        "template_name": body.get("template_name"),
+                        "template": body.get("template"),
+                        "template_file": body.get("template_file"),
+                        "subject": body.get("subject"),
+                        "dry_run": _as_bool(body.get("dry_run")),
+                    }.items()
+                    if value is not None
+                }
+            )
+            template_source, default_subject = await self._resolve_template_source(
+                message_request
+            )
+            subject = message_request.subject or default_subject
+
+            prepared = await prepare(
+                recipients=[recipient],
+                provider=message_request.provider,
+                template_source=template_source,
+                subject=subject,
+            )
+        except Exception as exc:  # noqa: BLE001 -- centralized error mapping
+            return self._map_error(exc)
+
+        if prepared.skipped:
+            # Deliberate divergence: 400 + reason, never 202/skipped (spec Module 8).
+            raise web.HTTPBadRequest(
+                text=json_encoder(
+                    {
+                        "reason": prepared.skipped[0].reason,
+                        "resolved_functions": prepared.resolved_functions,
+                    }
+                ),
+                content_type="application/json",
+            )
+
+        msg = prepared.queued[0]
+        batch_id = uuid.uuid4()
+        db = _get_db()
+        async with await db.connection() as conn:
+            NotificationBatchRecipient.Meta.connection = conn
+            row = NotificationBatchRecipient(
+                batch_id=batch_id,
+                row_number=0,
+                provider=msg.payload.get("provider"),
+                recipient_name=recipient.name,
+                recipient_address=(
+                    recipient.email or recipient.phone or recipient.address
+                ),
+                status="pending",
+                template_ref=template_source,
+                subject=subject,
+            )
+            await row.insert()
+
+        try:
+            message_id = await publish_one(batch_id, msg.payload, row.id)
+        except Exception as exc:
+            raise web.HTTPBadGateway(
+                text=json_encoder(
+                    {
+                        "batch_id": str(batch_id),
+                        "status": "publish_failed",
+                        "reason": str(exc),
+                    }
+                ),
+                content_type="application/json",
+            ) from exc
+
+        response = SingleMessageResponse(
+            batch_id=batch_id,
+            message_id=message_id,
+            status="queued",
+            resolved_functions=prepared.resolved_functions,
+        )
+        return self.json_response(response.to_dict(), status=202)
 
     # ------------------------------------------------------------------
     # Templates CRUD (spec §8 — hand-written on this class, not a ModelView)
