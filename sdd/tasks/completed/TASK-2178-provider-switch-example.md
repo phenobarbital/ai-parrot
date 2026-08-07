@@ -430,16 +430,58 @@ neither is FEAT-418-specific, both are universal `VoiceChatHandler`/
 session — this sandboxed environment has no browser, no Google API key,
 no AWS credentials; the same environment constraint documented in
 TASK-2177's note): an `aiohttp.test_utils.TestClient` end-to-end script
-confirmed (1) the index page serves and templates correctly (`__CONFIG__`
-fully replaced, provider toggle and capability table scaffolding present);
-(2) both `/ws/gemini` and `/ws/nova` handshake and coexist with distinct
-health routes; (3) `/ws/nova` degrades gracefully to a WS `error` frame
-(no crash) when the SDK is absent; (4) a **real** `/ws/gemini` session
-reaches `session_started` with a genuine `GeminiLiveClient`-backed
-`VoiceBot` (no mocks) and tears down cleanly — this is the path that
-surfaced fix #2 above. A human with a `GOOGLE_API_KEY` and AWS Bedrock
-credentials should still run the two-browser-tab manual check described
-in the Test Specification before treating this as demo-ready.
+confirmed (1) the index page serves and templates correctly; (2) both
+`/ws/gemini` and `/ws/nova` handshake and coexist with distinct health
+routes; (3) `/ws/nova` degrades gracefully to a WS `error` frame (no
+crash) when the SDK is absent; (4) a **real** `/ws/gemini` session reaches
+`session_started` with a genuine `GeminiLiveClient`-backed `VoiceBot` (no
+mocks) and tears down cleanly — this is the path that surfaced fix #2
+above.
+
+**Correction (post-adversarial-review, same day):** the first pass of
+this verification claimed "`__CONFIG__` fully replaced" as evidence the
+page was correct — that check only confirmed the literal placeholder
+string was gone from the HTTP response text, which `TestClient` never
+parses as JavaScript. A feature-level adversarial code review caught a
+CRITICAL bug this check could not: `index_handler()`'s
+`html.replace("__CONFIG__", json.dumps(cfg))` was a bare-token replace
+that ALSO rewrote the two later `window.__CONFIG__.providers`/
+`.capabilities` **property accesses** further down the same script (they
+legitimately contain the substring `"__CONFIG__"` as part of
+`window.__CONFIG__`) into invalid JavaScript — a `SyntaxError` that
+silently broke every inline `<script>` block on the page: no
+`VoiceChatClient` class was ever defined, so the provider toggle,
+capability panel, and usage strip could not have worked in any browser,
+despite every server-side/WebSocket-protocol check passing. Fixed by
+anchoring the substitution to the exact bootstrap statement
+(`"window.__CONFIG__ = __CONFIG__;"`, `count=1`) instead of the bare
+token, and **re-verified with an actual JavaScript syntax check** this
+time: both `<script>` blocks extracted from the real served page and
+checked with `node --check` (via temp files — `node --check /dev/stdin`
+is unreliable under this environment's event loop) now parse cleanly.
+That same review also caught that a prior edit had spliced the new
+`TestSystemPromptPropertyInitialized` test class into the middle of the
+pre-existing `TestMemoryFromRole` class, silently re-parenting 3 unrelated
+tests under the wrong class name (no functional breakage, pytest still
+ran everything — but misleading structure); restored both classes to
+their correct membership.
+
+A human with a `GOOGLE_API_KEY` and AWS Bedrock credentials should still
+run the two-browser-tab manual check described in the Test Specification
+before treating this as demo-ready — `node --check` proves the JS parses,
+not that the UI behaves correctly end to end in a real browser.
+
+**Known non-blocking observation** (also from the adversarial review, not
+fixed — noted for a future task): `VoiceChatHandler.setup_routes()`
+(`handler.py:675`) writes `app["voice_handler"] = self`; mounting two
+instances in one `web.Application` (as this example does) means the
+second call silently overwrites the first's entry. Nothing in the
+codebase currently reads that key (verified by grep), so it's inert
+today, not active — but it's a footgun for any future code that adds a
+reader. Worth namespacing the key (e.g. by `ws_route`) if this
+dual-mount pattern is reused elsewhere; out of scope to fix here since it
+would mean touching `handler.py` a third time for something with no
+current observable effect.
 
 **Deviations from spec** (all documented above, none silent):
 - Acceptance criterion #7 satisfied in intent, not literal file identity
