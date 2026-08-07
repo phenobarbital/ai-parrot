@@ -140,6 +140,22 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             **kwargs
         )
         self.system_prompt_template = system_prompt or self._default_voice_prompt() or self.system_prompt_template
+        # Code-review finding (FEAT-418, TASK-2178): AbstractBot.__init__()
+        # never initializes the ``system_prompt`` property's backing
+        # ``_system_prompt_template`` attribute (it only ever gets set via
+        # the ``system_prompt.setter`` — nothing in the synchronous
+        # construction path calls it, only ``system_prompt_template``, a
+        # separate legacy attribute). A freshly constructed VoiceBot (via
+        # ``VoiceBot(...)`` or ``create_voice_bot(...)``, INCLUDING
+        # VoiceChatHandler's default ``bot_factory``, which does not run
+        # the async ``configure()`` flow) raised ``AttributeError`` the
+        # moment anything read ``bot.system_prompt`` —
+        # ``VoiceChatHandler._run_voice_session()`` does exactly that
+        # (``handler.py``, ``system_prompt=bot.system_prompt``). Routing
+        # through the property setter here (not a new attribute
+        # assignment) closes the gap for every VoiceBot, not just this
+        # feature's dual-provider example.
+        self.system_prompt = self.system_prompt_template
         self.voice_config = voice_config or VoiceConfig()
         self._voice_tools = tools or []
         # Additional client configuration
