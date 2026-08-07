@@ -225,10 +225,47 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Threaded `options=self.voice_config.to_stream_options()` into
+the `stream_voice()` call inside `_run_turn()`'s `while True:` reconnect
+loop — recomputed on every iteration (not hoisted above the loop), so a
+reconnect that would silently drop the caller's options is structurally
+impossible, not just untested. Extracted `_relay()`'s entire frame-
+construction body (error/text/audio/tool_call/interrupted/turn_complete)
+verbatim into a new sync `build_frames(resp, turn_no) -> list[dict]`
+method; `_relay()` now just iterates `build_frames()`'s return value and
+calls `self._send()` on each. Preserved every FEAT-416 invariant
+call-for-call: relay-before-reconnect-check ordering (`build_frames()` is
+called from within `_relay()`, which is still awaited before the
+`reconnect_required` check), the early-return-on-error short-circuit
+(matches `_relay()`'s old `return` after the error frame), and
+`end_turn()`'s silence-pacing loop (untouched — confirmed unchanged with
+`git diff`). 9 new tests in `tests/voice/test_voice_session_options.py`,
+including an explicit `test_build_frames_is_sync` regression guard and a
+byte-for-byte frame-shape assertion in `test_default_frames_unchanged`.
+All 10 real pre-existing `tests/voice/` tests still pass unmodified
+(the file's 11th test, `test_no_aiohttp_import`, is the already-documented
+pre-existing unrelated failure).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+While running the FULL `tests/clients/` suite to verify no cross-file
+regressions from TASK-2170's landed changes, found two pre-existing test
+files that were missed when TASK-2170 was committed:
+`test_nova_inference_params.py::test_default_inference_params` (asserted
+the old `maxTokens == 1024`) and `test_nova_turn_state.py::TestRoleAttribution`
+(asserted uppercase `"USER"`/`"ASSISTANT"`). Both are direct, intentional
+consequences of TASK-2170's spec-mandated changes (§3 Module 4, §8
+resolved decisions), not new bugs — fixed in a separate preceding commit
+(`fix(...): update pre-existing Nova tests for TASK-2170's spec-mandated
+max_tokens/role changes`) to keep that fix distinctly attributable from
+TASK-2171's own scope. Confirmed via a targeted `dev`-branch run that
+`test_nova_protocol_frames.py::TestOpeningSequence` (4 tests) and
+`test_parallel_tool_execution.py::test_parallel_error_isolation` are
+pre-existing failures unrelated to any part of this feature — left
+untouched.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none for this task's own scope. One
+process note: TASK-2170 was completed/committed before this task ran the
+full-suite regression check that surfaced the two Nova test files above
+— worth doing a full-suite pass at the END of each task in future
+features, not just the domain-scoped subset the task names.
