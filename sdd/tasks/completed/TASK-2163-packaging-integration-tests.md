@@ -250,10 +250,109 @@ class TestPackaging:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Added the `comm-center` extra (`async-notify>=1.5.5`, `pandas>=2.2`,
+`openpyxl>=3.1.2,<=3.1.5`) to `packages/ai-parrot-server/pyproject.toml`
+and included it in the `all` aggregator; confirmed `async-notify` is not
+a base dependency. Wired `CommCenterHandler` into the real app via
+`BotManager.setup()` in `manager.py` (`CommCenterHandler().setup(self.app)`,
+alongside the existing `setup_credentials_routes`/`setup_mcp_helper_routes`
+calls — the same "instantiate, call `.setup(app)`" convention as
+`ScrapingInfoHandler`, verified live). Added `tests/fixtures/recipients.csv`
+and the matching `recipients.xlsx` (generated via pandas/openpyxl,
+verified round-tripping through `ingest_recipients` for both formats
+identically). Added `tests/handlers/conftest.py` with the shared
+`recipients_csv`/`recipients_xlsx`/`frozen_now`/`fake_notify_client`
+fixtures named in spec §4's Test Data section. Wrote
+`test_comm_center_integration.py` covering all 7 named integration tests
+plus the two `TestPackaging` tests from this task's own Test
+Specification — including the `test_smoke_template_file_path_real_notify`
+smoke test, which resolves a real file under `notify.conf.TEMPLATE_DIR`
+(this repo's own `templates/` directory) and round-trips it through a
+real `NotifyWrapper`, proving the wire contract independent of the
+unreleased string-template `async-notify` version (spec §7 gating).
+Wrote `docs/comm_center.md` covering the API, the per-provider recipient
+mapping table, both documented ceilings (no delivery confirmation;
+bare-placeholder limitation), the `{{username}}` fallback, and the
+reserved names.
 
-**Acceptance sweep result**: <criteria passed / total, and any that failed>
+Verified `manager.py`'s pre-existing lint state was unaffected: `uvx ruff
+check` reported the identical 95 pre-existing errors both before and
+after my two added lines (import + one `.setup(app)` call) — confirmed
+via a byte-for-byte before/after comparison, so no new debt was
+introduced into that large, already-imperfect file, and no unrelated
+line was touched or reformatted.
 
-**Deviations from spec**: none | describe if any
+**Acceptance sweep result** (spec §5 — executed via diagnostic harnesses
+per-task, as documented in every prior Completion Note; this sandbox
+cannot run `pytest` against this feature's real code at all, due to
+cascading pre-existing environment gaps unrelated to FEAT-417 —
+`navigator_session.vault` missing two different submodules,
+`navigator_eventbus` missing entirely, and
+`navigator.utils.file.FileManagerInterface` not exported by the installed
+`navigator` version. Every criterion below was exercised against the real
+shipped code through a stubbed-imports diagnostic, not assumed):
+
+- Endpoints & behavior: **14/14 verified** (route registration, all 3
+  transports, `202` shape, one-xadd-per-recipient, no-credentials,
+  per-provider shapes via real `NotifyWrapper`, provider override, skip
+  reporting, unknown-provider skip, aggregation + pagination, state
+  machine + `publishing` marker, retry semantics, dry-run on both
+  endpoints, preview fidelity).
+- Single-recipient endpoint (G13): **7/7 verified** (accepts
+  recipient+template+explicit provider, synchronous single xadd + `202`,
+  one tracking row, `400`/`400`/`502` divergent errors, payload parity,
+  `username` fallback, 10 000/50 MB caps existing and status-mapped).
+- Rendering: **4/4 verified** (functions resolve handler-side, malformed
+  template → `400` publishes nothing, `resolved_functions` matches,
+  deterministic under injected `now`).
+- Templates CRUD: **4/4 verified** (full CRUD, duplicate → `409`,
+  `updated_at` never set by app code — asserted via source inspection —,
+  `created_by`/`updated_by` from session, inactive template rejected).
+- Placeholders: **1/1 verified** (3 groups, 5/7/3 counts, disclosures).
+- Cross-cutting: **13/15 verified this way; 2 executed directly**:
+  `ruff check` (executed directly, clean modulo documented, deliberate
+  exceptions) and the `comm-center` extra/packaging assertions (executed
+  directly against the real `pyproject.toml`, not diagnosed). The
+  remaining two boxes — "`pytest tests/handlers/ -v` green" and "all
+  integration tests pass" via the real test runner — are **not ticked**:
+  they could not be executed in this sandbox for the reasons above. Every
+  behavior they would check was independently verified via the
+  diagnostic-harness method used throughout this feature.
+
+**Deviations from spec**: none in delivered behavior. Two spec §5
+checkboxes intentionally left unticked (real `pytest` execution) per the
+instruction "do not tick a box you did not execute" — flagged for
+verification by a maintainer with a complete environment (real
+`navigator_session.vault`/`navigator_eventbus`/`navigator` install and a
+live Postgres/Redis for the DB-touching suites).
+
+---
+
+### Addendum — 2026-08-07, first real test-suite execution
+
+The environment gaps flagged above were resolved (`navigator-api` 3.2.1,
+`navigator-session` 0.10.1, plus `navigator-eventbus`, `aioquic`,
+`async-notify` and `qworker` installed). The CommCenter suite executed for
+the first time: **124 passed, 0 failed**; `ruff check` clean.
+
+This task's tests needed repair before they could pass — the faults were in
+the test harness, not in the delivered behaviour:
+
+- `TestUnimplementedStubs` asserted `NotImplementedError` for six methods
+  that TASK-2160/TASK-2161 had since implemented (dead scaffolding).
+- DDL and `pyproject.toml` reads used CWD-relative paths and resolved
+  against the wrong tree; now anchored to `Path(__file__)`.
+- `test_updated_at_not_set_by_app` matched the substring `updated_at` in
+  the method's own docstring; it now parses the AST and asserts no
+  *assignment*.
+- The `handler` fixture patched `_get_db` on a module object obtained by
+  dotted import, which is not always the one `CommCenterHandler`'s methods
+  close over here; the patch silently no-opped and nine tests opened real
+  asyncpg connections. Resolved via `sys.modules[cls.__module__]`.
+
+Verified: the `comm-center` extra **is** correctly declared (this was
+briefly mis-diagnosed as missing while the path bug was in play). Fixed in
+`b0c7e383c`.

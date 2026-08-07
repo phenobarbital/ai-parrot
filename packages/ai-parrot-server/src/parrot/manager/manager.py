@@ -89,6 +89,9 @@ from ..conf import (
 )
 # Credentials handler
 from ..handlers.credentials import setup_credentials_routes
+# CommCenter bulk notification sender (FEAT-417) — method-based handler,
+# mirrors ScrapingInfoHandler's instantiate-then-.setup(app) convention.
+from ..handlers.comm_center import CommCenterHandler
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
 # FEAT-146: Web HITL response endpoint + bootstrap
@@ -2034,6 +2037,8 @@ class BotManager:
         setup_credentials_routes(self.app)
         # MCP helper routes (discovery, activation, management)
         setup_mcp_helper_routes(self.app)
+        # CommCenter bulk notification sender routes (FEAT-417)
+        CommCenterHandler().setup(self.app)
         if self.enable_swagger_api:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)

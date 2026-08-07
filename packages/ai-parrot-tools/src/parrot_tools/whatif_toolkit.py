@@ -12,6 +12,8 @@ Provides 6 focused tools for incremental scenario building:
 from typing import Dict, List, Optional, Any, Tuple, Type
 from dataclasses import dataclass, field
 from datetime import datetime
+import inspect
+import logging
 
 import pandas as pd
 import numpy as np
@@ -193,27 +195,213 @@ class WhatIfToolkit(AbstractToolkit):
     # Helper: resolve DataFrame from DM or parent agent
     # ------------------------------------------------------------------
 
+    def _dataset_managers(self) -> List[Any]:
+        """Return every DatasetManager this toolkit can consult.
+
+        The toolkit may be constructed with an explicit manager, but when it is
+        integrated into an agent the manager usually lives on the agent itself
+        (``PandasAgent`` keeps it in the private ``_dataset_manager``).
+
+        Returns:
+            The distinct managers found, most specific first.
+        """
+        managers: List[Any] = []
+        for candidate in (
+            self._dm,
+            getattr(self._parent_agent, "dataset_manager", None),
+            getattr(self._parent_agent, "_dataset_manager", None),
+        ):
+            if candidate is not None and not any(candidate is m for m in managers):
+                managers.append(candidate)
+        return managers
+
+    @staticmethod
+    def _ask_manager(manager: Any, method: str, *args: Any) -> Any:
+        """Call an optional method on a DatasetManager, tolerating its absence.
+
+        Managers are duck-typed here: the toolkit is handed whatever the host
+        agent owns, so a missing or failing accessor must degrade to "this
+        manager cannot answer" instead of breaking dataset resolution.
+
+        Args:
+            manager: The manager to query.
+            method: Method name to call.
+            *args: Positional arguments for the method.
+
+        Returns:
+            The method's return value, or ``None`` if it is unavailable
+            or raised.
+        """
+        func = getattr(manager, method, None)
+        if not callable(func):
+            return None
+        try:
+            return func(*args)
+        except Exception:  # noqa: BLE001 - optional integration, never fatal
+            return None
+
+    def _dataframe_registries(self) -> List[Dict[str, pd.DataFrame]]:
+        """Return the name -> DataFrame mappings the toolkit can search."""
+        registries: List[Dict[str, pd.DataFrame]] = []
+        for manager in self._dataset_managers():
+            active = self._ask_manager(manager, "get_active_dataframes")
+            if isinstance(active, dict) and active:
+                registries.append(active)
+        parent_frames = getattr(self._parent_agent, "dataframes", None)
+        if isinstance(parent_frames, dict) and parent_frames:
+            registries.append(parent_frames)
+        return registries
+
+    def _known_datasets(self) -> str:
+        """Describe the visible datasets and their aliases, for error messages."""
+        names: List[str] = []
+        for registry in self._dataframe_registries():
+            for name in registry:
+                if name not in names:
+                    names.append(name)
+        aliases: Dict[str, str] = {}
+        for manager in self._dataset_managers():
+            manager_aliases = self._ask_manager(manager, "_get_alias_map")
+            if isinstance(manager_aliases, dict):
+                aliases.update(manager_aliases)
+        if not names:
+            return "No datasets are loaded."
+        described = [
+            f"{name} (alias: {aliases[name]})" if name in aliases else name
+            for name in names
+        ]
+        return f"Available: {', '.join(described)}"
+
     async def _resolve_dataframe(self, df_name: str) -> Tuple[str, pd.DataFrame]:
-        """Resolve DataFrame by name or alias from DatasetManager or parent agent."""
-        if self._dm:
-            try:
-                result = await self._dm.get_dataframe(df_name)
-                if result and isinstance(result, dict) and "dataframe" in result:
-                    return df_name, result["dataframe"]
-                if isinstance(result, pd.DataFrame):
-                    return df_name, result
-            except Exception:
-                pass  # fall through to parent agent
-        # Fallback to parent agent
-        if self._parent_agent and hasattr(self._parent_agent, "dataframes"):
-            df = self._parent_agent.dataframes.get(df_name)
-            if df is not None:
-                return df_name, df
-        raise ValueError(f"Dataset '{df_name}' not found")
+        """Resolve a DataFrame by name or alias.
+
+        Every tool documents ``df_name`` as "name or alias", and PandasAgent
+        actively tells the LLM to refer to datasets by their alias (``df1``,
+        ``df2``...), so alias lookups must work: an LLM that follows the prompt
+        would otherwise always be told the dataset does not exist.
+
+        Resolution order is name first, then alias (via the DatasetManager,
+        which owns the alias map), then a case-insensitive match. Each source
+        is tried in turn: the managers' active datasets, then the parent
+        agent's own registry.
+
+        Args:
+            df_name: Dataset name, alias, or differently-cased name.
+
+        Returns:
+            A ``(canonical_name, dataframe)`` tuple. The name returned is
+            always the real dataset name, never the alias, so downstream
+            labels and registered result names stay consistent.
+
+        Raises:
+            ValueError: If nothing matches, with the visible datasets and
+                their aliases listed so the LLM can correct itself.
+        """
+        # Build the candidate names: what was asked for, plus whatever each
+        # manager resolves it to (DatasetManager._resolve_name handles both
+        # alias and case-insensitive lookups).
+        candidates: List[str] = [df_name]
+        for manager in self._dataset_managers():
+            canonical = self._ask_manager(manager, "_resolve_name", df_name)
+            if isinstance(canonical, str) and canonical not in candidates:
+                candidates.append(canonical)
+
+        for registry in self._dataframe_registries():
+            for candidate in candidates:
+                df = registry.get(candidate)
+                if df is not None:
+                    return candidate, df
+            # Last resort within this registry: case-insensitive match.
+            lowered = {str(key).lower(): key for key in registry}
+            for candidate in candidates:
+                key = lowered.get(candidate.lower())
+                if key is not None:
+                    return key, registry[key]
+
+        # Managers that hand back the frame itself rather than listing their
+        # catalog: get_dataframe() may return the DataFrame, or a payload with
+        # a "dataframe" key. DatasetManager returns metadata only (no such
+        # key), so this is a fallback, but it is the contract several
+        # duck-typed managers are written against.
+        for manager in self._dataset_managers():
+            fetch = getattr(manager, "get_dataframe", None)
+            if not callable(fetch):
+                continue
+            for candidate in candidates:
+                try:
+                    payload = fetch(candidate)
+                    if inspect.isawaitable(payload):
+                        payload = await payload
+                except Exception:  # noqa: BLE001 - try the next candidate
+                    continue
+                if isinstance(payload, pd.DataFrame):
+                    return candidate, payload
+                if isinstance(payload, dict) and isinstance(
+                    payload.get("dataframe"), pd.DataFrame
+                ):
+                    return candidate, payload["dataframe"]
+
+        raise ValueError(f"Dataset '{df_name}' not found. {self._known_datasets()}")
 
     # ------------------------------------------------------------------
     # Helper: formatting
     # ------------------------------------------------------------------
+
+    async def _register_result(
+        self,
+        name: str,
+        df: pd.DataFrame,
+        description: str,
+    ) -> bool:
+        """Publish a scenario's result DataFrame so follow-up queries can use it.
+
+        ``DatasetManager.add_dataframe`` is synchronous, but this used to be
+        awaited: the registration itself went through, then awaiting the
+        returned ``str`` raised ``TypeError`` into a blanket ``except:
+        pass``. The visible damage was small, but a real registration failure
+        would have been swallowed the same way while the caller still
+        announced success. Awaiting only what is actually awaitable keeps
+        duck-typed async managers working too.
+
+        Args:
+            name: Dataset name to register the result under.
+            df: The mutated DataFrame produced by the scenario.
+            description: Human-readable description for the catalog.
+
+        Returns:
+            True when the dataset was registered and is available by name.
+        """
+        register = getattr(self._dm, "add_dataframe", None)
+        if not callable(register):
+            return False
+
+        try:
+            outcome = register(name=name, df=df, description=description)
+            if inspect.isawaitable(outcome):
+                await outcome
+        except Exception as exc:  # noqa: BLE001 - reported, never fatal
+            self.logger.warning(
+                "WhatIfToolkit: could not register result dataset '%s': %s",
+                name,
+                exc,
+            )
+            return False
+
+        # Keep the pandas REPL's namespace in step, so a follow-up question
+        # about the simulated dataset can actually reach it.
+        if self._pandas is not None:
+            sync = getattr(self._pandas, "sync_from_manager", None)
+            if callable(sync):
+                try:
+                    sync()
+                except Exception as exc:  # noqa: BLE001 - reported, never fatal
+                    self.logger.warning(
+                        "WhatIfToolkit: registered '%s' but could not sync it "
+                        "into the pandas REPL: %s",
+                        name,
+                        exc,
+                    )
+        return True
 
     def _create_comparison_table(self, result: ScenarioResult) -> str:
         """Create comparison table in markdown format."""
@@ -551,20 +739,11 @@ class WhatIfToolkit(AbstractToolkit):
 
         # Register result in DatasetManager
         result_name = f"whatif_{scenario.id}_result"
-        if self._dm:
-            try:
-                await self._dm.add_dataframe(
-                    name=result_name,
-                    df=result.result_df,
-                    description=f"WhatIf result: {scenario.description}",
-                )
-            except Exception:
-                pass  # graceful degradation
-            if self._pandas:
-                try:
-                    self._pandas.sync_from_manager()
-                except Exception:
-                    pass
+        registered = await self._register_result(
+            result_name,
+            result.result_df,
+            f"WhatIf result: {scenario.description}",
+        )
 
         # Format output
         comparison_table = self._create_comparison_table(result)
@@ -584,7 +763,10 @@ class WhatIfToolkit(AbstractToolkit):
         lines.extend(actions_desc)
         lines.append("")
         lines.append(f"Verdict: {verdict}")
-        lines.append(f"Result DataFrame registered as: '{result_name}'")
+        # Only claim the dataset exists when it really does — an LLM that is
+        # told about a dataset it cannot then find wastes a turn on it.
+        if registered:
+            lines.append(f"Result DataFrame registered as: '{result_name}'")
         return "\n".join(lines)
 
     def _configure_dsl_actions(
@@ -721,15 +903,12 @@ class WhatIfToolkit(AbstractToolkit):
             return f"Error during simulation: {exc}"
 
         # Register result
-        if self._dm:
-            try:
-                await self._dm.add_dataframe(
-                    name=f"whatif_quick_{action_type_lower}_result",
-                    df=result.result_df,
-                    description=f"Quick impact: {action_description}",
-                )
-            except Exception:
-                pass
+        quick_name = f"whatif_quick_{action_type_lower}_result"
+        registered = await self._register_result(
+            quick_name,
+            result.result_df,
+            f"Quick impact: {action_description}",
+        )
 
         # Format
         comparison_table = self._create_comparison_table(result)
@@ -750,11 +929,87 @@ class WhatIfToolkit(AbstractToolkit):
             lines.extend(actions_desc)
             lines.append("")
         lines.append(f"Verdict: {verdict}")
+        # The mutated dataset was registered but its name was never reported,
+        # which made it unreachable for follow-up questions.
+        if registered:
+            lines.append(f"Result DataFrame registered as: '{quick_name}'")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Tool 6: compare_scenarios
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _metric_polarity(
+        scenarios: List[ScenarioState],
+    ) -> Dict[str, Tuple[str, Optional[float]]]:
+        """Work out what "better" means for each metric, from the objectives.
+
+        A metric has no inherent direction: more revenue is good, more expenses
+        is not. The only trustworthy source for that is what the caller
+        declared through ``set_constraints`` — guessing from the metric's name
+        would quietly mis-rank anything unusually named.
+
+        Objectives are pooled across the compared scenarios. A metric whose
+        objectives disagree (one scenario maximizes it, another minimizes it)
+        is treated as undirected rather than resolved arbitrarily.
+
+        Args:
+            scenarios: The scenarios being compared.
+
+        Returns:
+            Mapping of metric name to a ``(direction, target_value)`` pair,
+            where direction is ``"maximize"``, ``"minimize"`` or ``"target"``.
+            Metrics with no declared or no agreed direction are absent.
+        """
+        declared: Dict[str, set] = {}
+        for scenario in scenarios:
+            for objective in scenario.objectives:
+                direction = str(objective.type).lower()
+                if direction not in ("minimize", "maximize", "target"):
+                    continue
+                target = getattr(objective, "target_value", None)
+                declared.setdefault(objective.metric, set()).add(
+                    (direction, target if direction == "target" else None)
+                )
+
+        polarity: Dict[str, Tuple[str, Optional[float]]] = {}
+        for metric, options in declared.items():
+            # Contradictory intents leave the metric unranked on purpose.
+            if len(options) == 1:
+                polarity[metric] = next(iter(options))
+        return polarity
+
+    @staticmethod
+    def _best_scenario(
+        values: Dict[str, float],
+        polarity: Optional[Tuple[str, Optional[float]]],
+    ) -> Optional[str]:
+        """Pick the winning scenario for one metric, or None if undirected.
+
+        Args:
+            values: Metric value per scenario id.
+            polarity: The metric's ``(direction, target_value)``, or None.
+
+        Returns:
+            The winning scenario id, or ``None`` when no direction is known
+            or every scenario ties.
+        """
+        if not polarity or not values:
+            return None
+        direction, target = polarity
+        if direction == "maximize":
+            best = max(values, key=lambda sid: values[sid])
+        elif direction == "minimize":
+            best = min(values, key=lambda sid: values[sid])
+        elif direction == "target" and target is not None:
+            best = min(values, key=lambda sid: abs(values[sid] - target))
+        else:
+            return None
+        # A tie is not a winner; claiming one would be noise.
+        if list(values.values()).count(values[best]) == len(values) > 1:
+            return None
+        return best
 
     async def compare_scenarios(
         self,
@@ -762,7 +1017,10 @@ class WhatIfToolkit(AbstractToolkit):
     ) -> str:
         """Compare two or more simulated scenarios side by side.
         All scenarios must have been simulated (is_solved=True).
-        Returns a comparison matrix with best/worst highlighting per metric.
+        Returns a comparison matrix that marks the best scenario per metric,
+        ranking each metric by the objective declared for it (via
+        set_constraints). Metrics with no declared objective are shown but
+        left unranked, because "better" is not defined for them.
         """
         if len(scenario_ids) < 2:
             raise ValueError("At least 2 scenario IDs are required for comparison")
@@ -792,15 +1050,29 @@ class WhatIfToolkit(AbstractToolkit):
         header = "| Metric | " + " | ".join(header_ids) + " | Best |"
         separator = "|--------|" + "|".join(["--------"] * len(header_ids)) + "|------|"
 
+        polarity = self._metric_polarity(scenarios)
+
         rows = []
+        unranked: List[str] = []
         for metric, values in all_metrics.items():
-            best_id = max(values, key=values.get)
+            metric_polarity = polarity.get(metric)
+            best_id = self._best_scenario(values, metric_polarity)
+            if best_id is None:
+                unranked.append(metric)
             row_vals = []
             for sid in header_ids:
                 val = values.get(sid, 0)
-                marker = " ^" if sid == best_id else ""
+                marker = " ^" if best_id is not None and sid == best_id else ""
                 row_vals.append(f"{val:,.2f}{marker}")
-            rows.append(f"| {metric} | " + " | ".join(row_vals) + f" | {best_id} |")
+            if metric_polarity:
+                direction = metric_polarity[0]
+                goal = f" ({direction})"
+            else:
+                goal = ""
+            best_cell = best_id if best_id is not None else "n/a"
+            rows.append(
+                f"| {metric}{goal} | " + " | ".join(row_vals) + f" | {best_cell} |"
+            )
 
         lines = [
             "Scenario Comparison:",
@@ -810,6 +1082,16 @@ class WhatIfToolkit(AbstractToolkit):
         ]
         lines.extend(rows)
         lines.append("")
+
+        if unranked:
+            lines.append(
+                f"Not ranked ({', '.join(unranked)}): no objective declares "
+                f"whether higher or lower is better for these metrics, so no "
+                f"scenario is marked best. Lower is NOT assumed for costs. "
+                f"Use set_constraints to declare an objective (for example "
+                f"minimize expenses) if you need them ranked."
+            )
+            lines.append("")
 
         # Summary
         for scenario in scenarios:
@@ -822,6 +1104,70 @@ class WhatIfToolkit(AbstractToolkit):
 
 
 # ===== Integration Helper =====
+
+
+WHATIF_PROMPT_LAYER = "whatif_toolkit"
+
+
+def inject_whatif_system_prompt(
+    agent: Any,
+    prompt: str = WHATIF_TOOLKIT_SYSTEM_PROMPT,
+) -> Optional[str]:
+    """Put the toolkit's usage instructions into an agent's system prompt.
+
+    Without these instructions the model sees six tools with terse docstrings
+    and no guidance on how they chain, so it tends to fall back to whatever
+    general-purpose tool it already trusts.
+
+    Agents assemble their prompt in more than one way, and the mechanisms are
+    not interchangeable: bots driven by a ``PromptBuilder`` build from layers
+    and ignore ``system_prompt_template`` entirely, so appending to the latter
+    reaches nothing. Each mechanism is therefore tried in order of specificity
+    and the one that applied is reported back, so a caller can tell injection
+    apart from silent failure.
+
+    Args:
+        agent: The agent to inject into.
+        prompt: The instructions to add.
+
+    Returns:
+        The name of the mechanism used, or ``None`` if the agent exposes no
+        way to extend its system prompt.
+    """
+    # 1. An explicit API, if the agent offers one.
+    adder = getattr(agent, "add_system_prompt", None)
+    if callable(adder):
+        adder(prompt)
+        return "add_system_prompt"
+
+    # 2. The composable prompt builder — the path a modern bot actually
+    #    renders from. Imported lazily: parrot.bots imports this module, so a
+    #    module-level import would close a cycle.
+    builder = getattr(agent, "prompt_builder", None)
+    if builder is not None:
+        try:
+            from parrot.bots.prompts import LayerPriority, PromptLayer
+
+            if WHATIF_PROMPT_LAYER not in builder.layer_names:
+                builder.add(
+                    PromptLayer(
+                        name=WHATIF_PROMPT_LAYER,
+                        priority=LayerPriority.CUSTOM,
+                        template=prompt,
+                    )
+                )
+            return "prompt_builder"
+        except Exception:  # noqa: BLE001 - fall through to the legacy path
+            pass
+
+    # 3. Legacy template used by bots without a builder.
+    if hasattr(agent, "system_prompt_template"):
+        current = agent.system_prompt_template or ""
+        if prompt not in current:
+            agent.system_prompt_template = f"{current}\n\n{prompt}"
+        return "system_prompt_template"
+
+    return None
 
 
 def integrate_whatif_toolkit(
@@ -858,8 +1204,18 @@ def integrate_whatif_toolkit(
         if hasattr(agent, "tool_manager"):
             agent.tool_manager.register(tool)
 
-    # Add system prompt
-    if hasattr(agent, "add_system_prompt"):
-        agent.add_system_prompt(WHATIF_TOOLKIT_SYSTEM_PROMPT)
+    # Add system prompt. Failing to inject leaves the model without any
+    # guidance on how to drive the six tools, so say so rather than
+    # returning a toolkit that looks wired up but is not.
+    mechanism = inject_whatif_system_prompt(agent)
+    if mechanism is None:
+        logging.getLogger(__name__).warning(
+            "WhatIfToolkit: could not inject its system prompt into %s -- the "
+            "agent exposes neither add_system_prompt(), a prompt_builder, nor "
+            "system_prompt_template. The tools are registered but the model "
+            "has no instructions on how to use them; add "
+            "WHATIF_TOOLKIT_SYSTEM_PROMPT to the agent's prompt yourself.",
+            type(agent).__name__,
+        )
 
     return toolkit

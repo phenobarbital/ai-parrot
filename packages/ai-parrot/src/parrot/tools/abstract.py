@@ -645,6 +645,43 @@ class AbstractTool(EventEmitterMixin, ABC):
                 f"Invalid arguments for {self.name}: {e}"
             ) from e
 
+    @staticmethod
+    def _shallow_dump(validated: BaseModel) -> Dict[str, Any]:
+        """Turn validated args into kwargs while keeping nested models intact.
+
+        ``validate_args`` coerces the raw JSON an LLM emits into the types the
+        tool declared, so a field annotated ``List[DerivedMetric]`` really does
+        hold ``DerivedMetric`` instances afterwards. ``model_dump()`` would
+        immediately undo that: it serialises *recursively*, so every nested
+        model collapses back into a plain dict and the tool body then fails on
+        attribute access (``'dict' object has no attribute 'name'``).
+
+        Reading the fields straight off the validated instance keeps this a
+        one-level conversion: the result is a plain kwargs dict, but each value
+        stays the type the tool's signature asked for.
+
+        Args:
+            validated: The Pydantic instance returned by ``validate_args``.
+
+        Returns:
+            A kwargs dict mapping field names to their validated values,
+            including any extra fields the schema allowed.
+        """
+        model_cls = type(validated)
+        data = {
+            name: getattr(validated, name)
+            for name in model_cls.model_fields
+        }
+        # The two things model_dump() also included, kept for parity so this
+        # stays a drop-in replacement: computed fields, and the unknown keys
+        # that schemas declared with extra="allow" collect in model_extra.
+        for name in getattr(model_cls, "model_computed_fields", {}):
+            data[name] = getattr(validated, name)
+        extra = getattr(validated, "model_extra", None)
+        if extra:
+            data.update(extra)
+        return data
+
     # ── Sensitive-key redaction for logging ─────────────────────────────────
 
     _REDACT_PATTERNS = re.compile(
@@ -830,7 +867,7 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             # Resolve the kwargs dict that the tool actually receives.
             if hasattr(validated_args, 'model_dump'):
-                resolved_kwargs = validated_args.model_dump()
+                resolved_kwargs = self._shallow_dump(validated_args)
             else:
                 resolved_kwargs = dict(kwargs)
 
