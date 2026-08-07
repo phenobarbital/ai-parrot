@@ -89,7 +89,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "New standalone stdlib-only module. Needs 2186's facts contract settled, but shares no file with any other task.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2190-narrative-figure-guard.md"
+      "completed_at": "2026-08-07T14:08:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2190-narrative-figure-guard.md"
     },
     {
       "id": "TASK-2191",
