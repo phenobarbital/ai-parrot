@@ -32,7 +32,7 @@
       "feature_id": "FEAT-418",
       "feature": "googlelive-nova2-audiobot-homologation",
       "spec": "sdd/specs/googlelive-nova2-audiobot-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches the Protocol AND both clients atomically — cannot overlap with the provider lanes.",
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2165-voicecapable-protocol-extension.md"
+      "completed_at": "2026-08-07T00:22:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2165-voicecapable-protocol-extension.md"
     },
     {
       "id": "TASK-2166",
