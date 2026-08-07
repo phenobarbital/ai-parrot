@@ -246,4 +246,52 @@ pre-existing `packages/ai-parrot/tests/bots/flows/` suite (301 tests,
 unrelated to the crew hang above) still green after TASK-2180's fsm fix.
 `ruff check --select F,E9` clean.
 
+**Post-completion addendum — adversarial code review (feature-level, after
+all 7 tasks landed):** the `code-reviewer` agent (cross-checked against an
+independent `codex exec review --base dev`) found and both independently
+confirmed with live exploits/repros 4 CRITICAL issues, all fixed in a
+follow-up commit (`fix(execution-plan-tool): address code-review CRITICAL
+findings`) on top of this task's own commit:
+1. `plan_name` path traversal (`store.py::_resolve_path`) — an
+   LLM-controlled argument with no traversal guard let `plan_validate`
+   read and return verbatim any YAML/JSON file on disk. Fixed: reject any
+   `plan_name` containing a path separator or `..`, and verify the
+   resolved candidate's parent is exactly `plans_dir`.
+2. A malformed plan file crashed `plan_execute` with a raw uncaught
+   `JSONDecodeError`/`yaml.YAMLError` instead of the promised structural
+   `ToolResult` error. Fixed: `PlanFileStore._parse` now wraps both into
+   `PlanLoadError`.
+3. `AgentsFlow.from_definition`'s flow-level checkpointing defaults to
+   `True` (`PlanMetadata.checkpoint`), which requires a live Redis-backed
+   checkpoint store before the first node ever dispatches — silently
+   contradicting this feature's own "pure in-RAM v1, no persistent
+   backend" Non-Goal. All 133 tests passed only because this dev sandbox
+   happens to run `redis-server`. Fixed: `_run_plan` now passes
+   `checkpoint=False` explicitly to `AgentsFlow.from_definition`.
+4. A node's hard failure (not a `for_each` per-item failure) left its
+   downstream dependent neither in `ctx.results` nor `ctx.errors` (never
+   dispatched by the scheduler's AND-join gate) — silently vanishing from
+   the manifest instead of showing up as blocked. Fixed: `_execute_flow`
+   now synthesizes a `status="error"` `ArtifactRef` for any plan node in
+   neither bucket, so `nodes_total` accounting stays honest.
+
+Also fixed the accompanying 🟠 Important finding: `PlanFileStore`'s
+synchronous file I/O was called directly from an `async def` toolkit
+method (blocking-I/O-in-async-context violation) — now wrapped in
+`asyncio.to_thread`. Each of the 4 fixes has a dedicated regression test
+(`test_store.py::test_path_traversal_rejected`,
+`test_malformed_json_raises_plan_load_error_not_raw_exception`,
+`test_malformed_yaml_raises_plan_load_error`;
+`test_toolkit_core.py::test_hard_failed_node_downstream_dependent_shows_
+as_error`, `test_checkpoint_disabled_no_redis_dependency`). Full suite
+after the fix: 133 passed (up from 128); `ruff check --select F,E9`
+clean. Docs (`docs/toolkits/execution_plan_toolkit.md`) updated to note
+the checkpoint-disable decision under the v1 caveats.
+
+Findings NOT fixed (noted, not blocking): 🟠 "uninformative tool error on
+flow-level crash" was folded into fix #3/#4's `RunRecord.flow_error`
+field as a byproduct. All 🟡/💡 suggestions (nitpicks on comment
+placement, a redundant `.get(..., record)` fallback, `MAX_FACET_STR`
+double-duty naming) were left as-is — cosmetic, no functional risk.
+
 **Deviations from spec**: none
