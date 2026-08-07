@@ -385,10 +385,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Implemented `narrative_facts` in `library.py` right after `top_movers`,
+registered with `requires_columns={}`. Ported the headline three-way
+combination (`both_improving`/`both_worsening`/`diverging`), the four
+`division_reads` kinds (`on_track`/`spread`/`concentrated`/`offset_by`) with
+the materiality threshold (`-5000`, param-overridable) and max-2 cap, the
+top-driver recommendation urgency (`immediate`/`confirm_trend`/`check_timing`),
+and `watch`/`bright` lists carrying a `trend_basis` (`since_first` |
+`new_this_period` — no day-over-day label invented, since `top_movers` only
+exposes one `trend` field). Added `TestNarrativeFacts` (11 tests) to
+`test_library.py` covering registration, all four division-read branches,
+offsetter-only-for-offset_by, materiality cap, urgency branches, top_driver
+None case, single-snapshot pass-through, zero-budget non-raise, no-prose-leak,
+and purity/determinism. All 26 tests in `test_library.py` pass; `ruff check`
+and `mypy` clean on `library.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. `first_label`/`last_label` in `headline` were
+mapped to `variance_analysis`'s `first_snapshot`/`last_snapshot` string values
+(the spec's data-model sketch names them without defining their source
+explicitly; this is the only sensible source given the available inputs).

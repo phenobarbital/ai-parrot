@@ -14,7 +14,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only library.py + test_library.py. Shares no file with any other task in this spec.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2186-narrative-facts-transformer.md"
+      "completed_at": "2026-08-07T13:51:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2186-narrative-facts-transformer.md"
     },
     {
       "id": "TASK-2187",
