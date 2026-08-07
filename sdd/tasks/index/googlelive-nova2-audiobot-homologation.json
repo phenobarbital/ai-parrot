@@ -92,7 +92,7 @@
       "feature_id": "FEAT-418",
       "feature": "googlelive-nova2-audiobot-homologation",
       "spec": "sdd/specs/googlelive-nova2-audiobot-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Gemini lane — same file as TASK-2166/2167; disjoint from the Nova lane.",
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2168-gemini-session-resumption.md"
+      "completed_at": "2026-08-07T00:42:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2168-gemini-session-resumption.md"
     },
     {
       "id": "TASK-2169",
