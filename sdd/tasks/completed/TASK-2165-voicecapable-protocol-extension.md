@@ -110,7 +110,7 @@ if not isinstance(client, VoiceCapable):                      # line 273 — the
 ### Does NOT Exist
 
 - ~~`AbstractClient.voice_capabilities`~~ — do NOT add anything to `parrot/clients/base.py`; voice stays a Protocol-level capability (spec §7, CLAUDE.md).
-- ~~An enumerated Gemini voice catalog in the repo~~ — the prebuilt voice list is not written down anywhere in this codebase. Spec §8 leaves catalog completeness open; seed a documented subset and prefer warn-and-pass over hard rejection.
+- ~~An enumerated Gemini voice catalog in the repo~~ — **CORRECTED during implementation (2026-08-07)**: this claim was stale. `parrot/models/google.py:398` DOES define a full enumerated catalog, `ALL_VOICE_PROFILES: List[VoiceProfile]` (30 entries, including `"Puck"`, `"Charon"`, `"Kore"`, etc.), used verbatim here via `frozenset(p.voice_name for p in ALL_VOICE_PROFILES)`. Spec §8 catalog-completeness question is resolved by using this real source of truth instead of a hand-picked subset.
 - ~~A Nova voice catalog constant~~ — the only list is prose in a docstring at `clients/nova/audio.py:737` (`matthew`, `tiffany`, `amy`). TASK-2169 turns it into a constant; here just reference those three.
 - ~~`VoiceCapable` as an ABC~~ — it is a `typing.Protocol`; do not convert it or make clients inherit from it.
 
@@ -212,10 +212,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Added `options: Optional[VoiceStreamOptions] = None` and the
+`voice_capabilities` property to `VoiceCapable` in `protocols.py`; added
+`voice_capabilities` properties describing today's real behavior to both
+`GeminiLiveClient` (`clients/live.py`) and `NovaClient`
+(`clients/nova/client.py`), landed in the same commit as the Protocol
+change per the task's own warning about the `@runtime_checkable` gate.
+Corrected a stale "Does NOT Exist" contract claim: `parrot/models/google.py`
+DOES define a full 30-voice enumerated Gemini catalog
+(`ALL_VOICE_PROFILES`) — used it directly for `voice_catalog` instead of
+hand-picking a subset (see contract correction above, dated 2026-08-07).
+Nova's `voice_catalog` uses the three documented voices
+(`matthew`/`tiffany`/`amy`) per the task's instruction, pending TASK-2169's
+promotion to a shared constant. `max_output_tokens=1024` for Nova's
+descriptor reflects today's real hardcoded fallback (`nova/audio.py:790`),
+not the post-TASK-2170 value of 4096 — documented inline. Wrote 14 new
+tests in `tests/clients/test_voice_protocol.py`; all pass, plus the
+existing `test_voicebot_provider_switch.py` gate suite (24 tests) still
+passes unmodified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One unplanned file touched outside the task's
+table: `packages/ai-parrot/tests/bots/test_voice_capable_protocol.py`
+(pre-existing FEAT-416 test). Adding a non-method member
+(`voice_capabilities`, a `@property`) to a `@runtime_checkable` Protocol
+makes Python's `typing` module raise `TypeError: Protocols with
+non-method members don't support issubclass()` — an unavoidable language
+constraint of the exact Protocol shape this task's spec mandates, not a
+design choice made here. That pre-existing test used
+`issubclass(SomeClass, VoiceCapable)`; the actual runtime gate this task
+protects (`bots/voice.py:273`) already used `isinstance()`, not
+`issubclass()`. Converted the three assertions in that file from
+`issubclass(Class, ...)` to `isinstance(Class(), ...)` (and replaced the
+uninstantiable-abstract-class negative case with an equivalent minimal
+stub) — no behavioral coverage lost, and it now passes. Flagging this
+explicitly per Cardinal Rule 2 (file fidelity) since it was not in the
+task's Files table, but leaving it broken was not an option (STOP-worthy
+regression this task itself introduced).
