@@ -272,8 +272,52 @@ class TestIngest:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `RecipientIn`/`SkippedRow` (`services/comm_center/models.py`)
+and `ingest_recipients()` (`services/comm_center/ingest.py`) covering all
+three transports (inline JSON rows, multipart-uploaded file path, and
+base64-decoded bytes), column normalization with the alias map, the
+50MB/10 000-row caps (as `FileTooLargeError`/`RecipientCapExceededError`,
+both `IngestionError`/`ValueError` subclasses so the handler can map them
+to 413/400 respectively), empty-file/no-known-columns rejection, and
+reserved-column warnings. All pandas parsing is wrapped in a single
+`asyncio.to_thread` call per transport (asserted by
+`test_does_not_block_event_loop`). Added a `.xlsx` fixture/test
+(`test_ingest_xlsx_via_openpyxl`) beyond this task's own scaffold to match
+spec §4's Module 4 test list.
 
-**Deviations from spec**: none | describe if any
+**Important bug found and fixed during implementation** (not scope creep —
+a correctness bug in this task's own new code): `pandas.read_csv`/
+`read_excel` were letting pandas infer column dtypes, which silently
+coerced the `phone` column to a numeric type and stripped the leading `+`
+(e.g. `"+34600000000"` -> `"34600000000"`). Fixed by reading every column
+as `dtype=str` in both `_dataframe_from_path_sync` and
+`_dataframe_from_bytes_sync` — recipient fields must never be
+numeric-coerced.
+
+**Second, more far-reaching bug found and fixed**: while debugging a
+`TypeError: Expected type, got types.UnionType` raised by
+`datamodel`/`asyncdb.models.Model` field validation, confirmed live that
+this repo's installed `datamodel` package does **not** support PEP 604
+`X | None` union type annotations on `Field`-declared model attributes —
+only `typing.Optional[X]` works (verified with a minimal reproduction:
+`Optional[str]` field construction succeeds, an equivalent `str | None`
+field raises the same `TypeError` once a non-`None` value is actually
+assigned). This is a real regression I had introduced earlier in this
+session by "modernizing" `Optional[X]` to `X | None` per a ruff `UP045`
+suggestion on `NotificationTemplate` (TASK-2153) and
+`NotificationBatchRecipient` (TASK-2154), and it also affected this
+task's own `RecipientIn`/`SkippedRow`. **Reverted all three files back to
+`typing.Optional[X]`** and added a `# ruff: noqa: UP045` file-level
+directive with an explanatory comment on each of the three files so a
+future lint pass does not silently reintroduce the same runtime break.
+`pytest` on this task's own test file (`test_comm_center_ingest.py`) is
+unaffected by the pre-existing `navigator_session.vault`/
+`navigator_eventbus` environment gaps noted in TASK-2153-2155 and **passes
+in full: 10/10**.
+
+**Deviations from spec**: none in the delivered behavior. One added test
+(`test_ingest_xlsx_via_openpyxl`) beyond this task's own embedded Test
+Specification, matching the broader spec §4 test list.

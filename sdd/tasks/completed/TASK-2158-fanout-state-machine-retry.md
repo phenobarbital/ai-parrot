@@ -292,8 +292,95 @@ class TestLazyImport:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `publish_one`, `fan_out`, `launch_fan_out` (+ its `_finalize_batch`
+done-callback), `aggregate_batch_status`, and `retry_batch` in
+`services/comm_center/dispatch.py`. `async-notify` is lazy-imported inside
+`_get_notify_client`/`_notify_worker_stream` only — never at module load.
 
-**Deviations from spec**: none | describe if any
+**Verified the contract's flagged unknown**: read `notify/server/client.py`
+live — `NotifyClient.stream()` has no `return` statement (always resolves
+to `None`). `publish_one` stores whatever it returns (`None` in practice)
+into `message_id` without assuming a value; `published_at` is the
+authoritative "this succeeded" marker, exactly as the contract anticipated.
+
+Because this sandbox's `parrot.handlers.models` import chain has **three**
+independent, pre-existing, unrelated environment gaps (confirmed by
+successively hitting each one): `navigator_session.vault` (missing
+submodule), `navigator_eventbus` (missing package, via
+`parrot.outputs.a2ui.recipes.params`), and now also
+`navigator.utils.file.FileManagerInterface` (name not exported by the
+installed `navigator` version) — `pytest` cannot collect
+`test_comm_center_dispatch.py` here. Verified correctness instead with a
+throwaway diagnostic harness (stubbing only the broken leaf modules and a
+lightweight `NotificationBatchRecipient` stand-in matching the real
+model's shape in `sys.modules`, never touching shipped code) covering
+every scenario in this task's Test Specification plus the aggregation
+function: one-xadd-per-recipient, the `publishing`-before-`xadd` marker,
+one-row-failure-doesn't-abort-the-batch, `attempts` incrementing, retry's
+state-machine selection (`pending`/`publish_failed` always;
+`queued`/`skipped` never; `publishing` only under `force=True`, else
+reported `ambiguous`), and `aggregate_batch_status`'s count/details paths.
+All passed. The harness was deleted after verification.
+
+**Bug found and fixed while building the diagnostic** (in my own test
+doubles, not in `dispatch.py`): my first draft of `_FakeAsyncDB.connection()`
+was a plain sync method returning a context manager directly. The real
+`AsyncDB.connection()` (confirmed live against
+`packages/ai-parrot/src/parrot/interfaces/hierarchy.py:249`, the verified
+reference pattern) is itself `async def`, used as `async with await
+db.connection() as conn:` — a two-step await-then-enter. `dispatch.py`
+already followed the real pattern correctly; I fixed both my diagnostic's
+and the shipped test file's fakes (`_FakeAsyncDB`, both
+`FakeAsyncDBWithFetch` classes in `TestAggregation`) to make `connection()`
+`async def`, matching reality.
+
+**Known limitation flagged for a follow-up schema amendment** (out of this
+task's file scope — `handlers/models/notification_batches.py` belongs to
+TASK-2154): `retry_batch`'s `_rebuild_payload()` reconstructs a wire
+payload from the tracking row's own columns, since the row does not store
+the original full payload. This is faithful for `email`/`twilio`/
+`telegram`/`slack`/`zoom` (a single `recipient_address` column suffices),
+but **not** for `teams`, which needs both `team_id` and `channel_id` —
+only one fits in `recipient_address`. A retried `teams` row will
+legitimately re-fail contact-field validation (a *safe* failure mode,
+reported rather than silently mis-sent), not silently succeed with wrong
+data. Also, `template_ref` is treated as the literal template body on
+retry, which is only correct for inline templates, not stored/file ones.
+Documented in code (`_rebuild_payload`'s docstring) for the next spec
+iteration to add either a `payload`/`rendered_template` JSON column.
+
+**Deviations from spec**: none in delivered behavior; one documented,
+narrow retry-fidelity limitation (above) inherited from the existing
+TASK-2154 schema, which this task's file scope does not permit changing.
+
+---
+
+### Addendum — 2026-08-07, first real test-suite execution
+
+The environment blockers described above were resolved (`navigator-api`
+3.2.1 exports `FileManagerInterface`; `navigator-session` 0.10.1 ships
+`vault`; `navigator-eventbus`, `aioquic`, `async-notify` and `qworker`
+installed). The suite ran for the first time: **124 passed**, after the
+fixes below.
+
+`test_excludes_publishing_without_force` failed against the code as
+delivered. The diagnostic harness above verified `retry_batch`'s row
+*selection*, which was and remains correct — `ambiguous` was reported and
+no `xadd` was issued. The defect was one layer further out: `retry_batch`
+still calls `launch_fan_out`, whose `_finalize_batch` done-callback
+un-stranded **every** row in `publishing` for the batch, including the
+ones selection had deliberately spared. Because retry re-publishes
+`publish_failed`, the following retry would have re-sent them silently —
+the duplicate delivery the pre-`xadd` marker exists to prevent.
+
+`_finalize_batch` now takes the row ids the fan-out actually attempted and
+touches only those. Fixed in `b0c7e383c`.
+
+**Lesson for the record**: the throwaway harness exercised each function
+in isolation and so could not observe a two-component interaction that
+only appears once the done-callback is allowed to run (the real test
+awaits `asyncio.sleep(0.05)` for exactly this reason). Component-level
+stubbing verifies contracts, not compositions.
