@@ -368,9 +368,26 @@ class InfographicAuthoringMixin:
             return GapReport(gaps=gaps, covered=covered)
 
         # Full coverage → build + persist the recipe.
+        #
+        # FEAT-420 bugfix (discovered by TASK-2196's actual-execution
+        # requirement — see its Completion Note): a section's `datasets`
+        # entries are not always real DatasetManager aliases. The generic
+        # `narrative_facts` shape (FEAT-420 Module 1) declares its inputs as
+        # PRIOR STEPS' `output_key`s (e.g. `variance_analysis`), which are
+        # already `TransformStep.output_key`s above — NOT datasets to fetch.
+        # Building a `DataSourceSpec` for one of those would make the runner
+        # try to `fetch_dataset()` a name that was never registered (or,
+        # worse, shadow the real transform output with an unrelated fetched
+        # frame — `_run_transforms_or_raise` checks `alias in frames` BEFORE
+        # `alias in data_model`). Excluding any alias that is ALSO a declared
+        # output_key fixes both failure modes without touching the
+        # transformer-mapping/gap-report logic above.
+        declared_output_keys = {step.output_key for step in transforms}
         aliases: List[str] = []
         for section in descriptor.sections:
             for alias in section.datasets:
+                if alias in declared_output_keys:
+                    continue
                 if alias not in aliases:
                     aliases.append(alias)
         data_sources = [DataSourceSpec(dataset=alias, alias=alias) for alias in aliases]
