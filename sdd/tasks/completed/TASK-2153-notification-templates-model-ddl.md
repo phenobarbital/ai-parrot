@@ -230,8 +230,51 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `NotificationTemplate` model + DDL exactly per contract, copying
+the `UserPrompts`/`users_prompts_creation.sql` shape. Verified with
+`py_compile` and `uvx ruff check` (clean). `pytest` could not be executed
+successfully: importing `parrot.handlers.models` (via the pre-existing
+`users_bots.py` -> `_encrypted_field.py` -> `parrot.handlers.credentials_utils`
+-> `parrot.security` -> `parrot.security.vault_utils` -> `parrot.security.
+credentials_utils` chain) unconditionally imports `navigator_session.vault.
+crypto`, which does not exist in this sandbox's installed `navigator_session`
+package (confirmed: the installed package only ships `conf.py`, `data.py`,
+`middleware.py`, `session.py`, `storages`, `version.py` — no `vault`
+subpackage). This is a pre-existing environment/dependency-version mismatch
+entirely unrelated to this task's files (it reproduces on the unmodified
+`users_bots.py` import chain) and out of this task's scope to fix.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Test execution blocked by the pre-existing
+`navigator_session.vault` environment issue described above — flagging for
+maintainer attention; code and tests are otherwise complete and lint-clean.
+
+---
+
+### Addendum — 2026-08-07, first real test-suite execution
+
+The environment gaps flagged above were resolved (`navigator-api` 3.2.1,
+`navigator-session` 0.10.1, plus `navigator-eventbus`, `aioquic`,
+`async-notify` and `qworker` installed). The CommCenter suite executed for
+the first time: **124 passed, 0 failed**; `ruff check` clean.
+
+This task's tests needed repair before they could pass — the faults were in
+the test harness, not in the delivered behaviour:
+
+- `TestUnimplementedStubs` asserted `NotImplementedError` for six methods
+  that TASK-2160/TASK-2161 had since implemented (dead scaffolding).
+- DDL and `pyproject.toml` reads used CWD-relative paths and resolved
+  against the wrong tree; now anchored to `Path(__file__)`.
+- `test_updated_at_not_set_by_app` matched the substring `updated_at` in
+  the method's own docstring; it now parses the AST and asserts no
+  *assignment*.
+- The `handler` fixture patched `_get_db` on a module object obtained by
+  dotted import, which is not always the one `CommCenterHandler`'s methods
+  close over here; the patch silently no-opped and nine tests opened real
+  asyncpg connections. Resolved via `sys.modules[cls.__module__]`.
+
+Verified: the `comm-center` extra **is** correctly declared (this was
+briefly mis-diagnosed as missing while the path bug was in play). Fixed in
+`b0c7e383c`.

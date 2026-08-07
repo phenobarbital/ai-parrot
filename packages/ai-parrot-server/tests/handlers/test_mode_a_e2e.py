@@ -5,7 +5,26 @@ Tests the LITE avatar + text/voice flow against the real LiveAvatar API:
   2. Run a chat turn       (POST /api/v1/agents/chat/{agent_id}, stream)
   3. Stop the session      (POST /api/v1/agents/avatar/{agent_id}/stop)
 
-Required environment variables (all must be set for the tests to run):
+These tests are OPT-IN. They need a live ai-parrot-server *and* live
+third-party services, so they are skipped unless you explicitly ask for
+them:
+
+    RUN_MODE_A_E2E=1 pytest packages/ai-parrot-server/tests/handlers/test_mode_a_e2e.py
+
+They also carry ``@pytest.mark.live``, so ``-m "not live"`` deselects them
+alongside the rest of the suite's live tests.
+
+Why an explicit flag rather than "run when credentials are present": on a
+developer machine navconfig loads ``env/.env`` into ``os.environ`` as soon
+as any ``parrot.handlers.*`` module is imported. That injects real
+LiveAvatar/LiveKit credentials (including ``LIVEAVATAR_SANDBOX=False``)
+during collection, so the old credentials-only gate silently passed and
+the module then failed trying to reach ``localhost:8080``. It skipped
+correctly standalone and on CI, which made the failure look like a
+test-ordering bug rather than config injection. Credential presence is
+not a statement of intent — the flag is.
+
+Required environment variables (all must ALSO be set for the tests to run):
     LIVEAVATAR_API_KEY      API key for the LiveAvatar service
     LIVEAVATAR_AVATAR_ID    Avatar ID (use 5761a14c — production-only avatar)
     LIVEAVATAR_BASE_URL     Base URL (default: https://api.heygen.com)
@@ -14,8 +33,10 @@ Required environment variables (all must be set for the tests to run):
     LIVEKIT_URL             LiveKit server WebSocket URL
     LIVEKIT_API_KEY         LiveKit API key (for room token minting)
     LIVEKIT_API_SECRET      LiveKit API secret
+    SERVER_BASE_URL         Running ai-parrot-server (default: http://localhost:8080)
 
-If any of the above is missing the entire module is skipped with pytest.skip().
+If the opt-in flag is unset, or any of the above is missing, the entire
+module is skipped with pytest.skip().
 
 Note on the "mouth" path:
   AvatarTurnSpeaker is created per-turn by _maybe_start_avatar_speaker().
@@ -32,6 +53,28 @@ import uuid
 from typing import Any, Dict, Optional
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Opt-in gate — these tests hit live services, so they never run implicitly.
+#
+# This MUST come before the credential check below: navconfig injects real
+# credentials from env/.env during collection, so the credential check alone
+# cannot distinguish "the operator wants a live run" from "a config file
+# happens to be present". See this module's docstring.
+# ---------------------------------------------------------------------------
+
+pytestmark = pytest.mark.live
+
+_OPT_IN_VAR = "RUN_MODE_A_E2E"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+if os.environ.get(_OPT_IN_VAR, "").strip().lower() not in _TRUTHY:
+    pytest.skip(
+        f"Mode A e2e tests are opt-in: set {_OPT_IN_VAR}=1 to run them. "
+        "They require a live ai-parrot-server on SERVER_BASE_URL plus real "
+        "LiveAvatar/LiveKit credentials.",
+        allow_module_level=True,
+    )
 
 # ---------------------------------------------------------------------------
 # Environment gate — skip the entire module when credentials are absent

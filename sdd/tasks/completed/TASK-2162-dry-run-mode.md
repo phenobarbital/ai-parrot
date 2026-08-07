@@ -266,8 +266,67 @@ class TestFidelity:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Added `dry_run: bool` and `preview: Optional[str]` fields to `PreparedBatch`
+(`services/comm_center/models.py` — see deviation note below), a
+`build_preview(payload)` function and a `dry_run` parameter on `prepare()`
+in `render.py`, a defense-in-depth guard in `dispatch.fan_out()`, and
+`dry_run` handling in both `post_sender`/`post_message`
+(`comm_center.py`).
 
-**Deviations from spec**: none | describe if any
+`build_preview()` simulates `AbstractProvider._render_`'s pass-2 context
+(`{"recipient": to, "username": to, "message": message, "subject":
+subject, **kwargs}`, `notify/providers/base.py:177-183`) using the
+**same** `payload` dict `build_wire_payload()` produced — never a
+separately-built context — which is what makes the preview provably
+identical to a real send (verified via a fidelity diagnostic: dry-run
+preview vs. the actual published payload rendered the same way,
+byte-identical). Applied the same `enable_async` fix from TASK-2157 here
+too (omitted it — the same running-event-loop crash would otherwise
+apply).
+
+`fan_out()` now duck-types its second argument: a plain `(row_id,
+payload)` list (the real production path, unchanged) or a `PreparedBatch`
+directly (`hasattr(payloads, "dry_run")`), for the literal
+`fan_out(None, prepared)` call the spec's own
+`test_service_layer_refuses_to_publish` uses. A `dry_run=True` batch is
+refused unconditionally, independent of the handler.
+
+Both endpoints now check `prepared.dry_run` **before** any other
+divergent handling (in particular, on `/message`, before the "invalid
+recipient -> 400" check — a dry run must *report* a skip as data, not
+error on it) and, when true, skip all persistence and fan-out/publish_one
+entirely, returning `200` with `batch_id`/`message_id` `null` and
+`status="dry_run"`.
+
+**Deviation flagged**: this task's Files table lists only `render.py`,
+`dispatch.py`, `comm_center.py` — not `services/comm_center/models.py` —
+but the task's own contract explicitly requires `prepared.dry_run` (the
+`if prepared.dry_run: raise RuntimeError(...)` snippet) and a `preview`
+field, neither of which existed on `PreparedBatch` (added by TASK-2157).
+Added both fields as the minimal, necessary support change; this mirrors
+how TASK-2159/2161 also touched `models.py` despite an incomplete Files
+table, and is a strict, additive extension of an already-owned-by-render.py
+model, not a new file.
+
+Verified all of the above with a throwaway diagnostic harness (the same
+pre-existing environment stubs as TASK-2159/2160/2161). Found and fixed
+two issues in my own **test setup** (not shipped code) along the way:
+(1) `aiohttp.test_utils.make_mocked_request` defaults `content_type` to
+`"application/octet-stream"`, which `_ingest_from_request` correctly
+rejects — fixed by passing an explicit `Content-Type: application/json`
+header when a JSON body is used (this affects any test calling
+`post_sender`, including the shipped `test_comm_center_dryrun.py`, which
+was fixed the same way); (2) the fidelity test's "real send" assertion
+raced `launch_fan_out`'s background `asyncio.Task` — `post_sender`
+correctly does not await it (spec: "the request does not await it"), so
+the test must yield control (`await asyncio.sleep(0.05)`) before
+inspecting what was published. All 7 scenarios from this task's Test
+Specification passed after these fixes. `pytest` itself cannot collect
+this task's test file here for the same documented environment reasons.
+
+**Deviations from spec**: one file addition beyond the literal Files
+table (`services/comm_center/models.py`), explained and justified above;
+no deviation in dry-run behavior itself.

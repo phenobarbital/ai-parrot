@@ -351,8 +351,61 @@ class TestValidation:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `resolve_functions`, `partial_render`, `_contact_ok` (internal),
+`validate_and_resolve_provider`, `build_wire_payload`, and `prepare()` in
+`services/comm_center/render.py`, plus `PreparedMessage`/`PreparedBatch` in
+`services/comm_center/models.py`. `prepare()` performs no I/O and is a
+pure async function callable from a plain unit test (spec G12).
 
-**Deviations from spec**: none | describe if any
+Because this repo's sandbox has the same pre-existing `navigator_eventbus`
+import-chain gap noted in TASK-2155 (`parrot.outputs.a2ui.recipes.params`
+transitively pulls in `parrot.tools` -> `parrot.core.events.lifecycle` ->
+`navigator_eventbus`, not installed here), `pytest` cannot collect
+`test_comm_center_render.py` in this environment. To verify correctness
+anyway, I built a throwaway diagnostic harness (stubbing only the broken
+`parrot.outputs.a2ui.recipes.params` module in `sys.modules` with a
+faithful `resolve_date`/`DATE_RESOLVERS` reimplementation, never touching
+the shipped code) and exercised every scenario from this task's Test
+Specification directly, including the real `notify.server.wrapper.
+NotifyWrapper`/`notify.models` round-trips (email->Actor, teams->
+TeamsChannel, telegram->Chat, slack->Channel) — `notify` itself imports
+fine in this sandbox. All scenarios passed. The harness was deleted after
+verification; it is not part of the deliverable.
+
+**Two real bugs found and fixed during this verification** (not scope
+creep — correctness fixes to this task's own new code, required for the
+mandated API to actually work):
+
+1. **`enable_async=True` on the pass-1 `Environment` breaks the mandated
+   async `prepare()`.** The task/spec's Codebase Contract and
+   Implementation Notes explicitly specify
+   `Environment(undefined=DebugUndefined, autoescape=False,
+   enable_async=True)`. Reproduced live: Jinja2's synchronous
+   `Template.render()` internally calls `asyncio.run(self.render_async(...))`
+   when the Environment has `enable_async=True`; that raises `RuntimeError:
+   asyncio.run() cannot be called from a running event loop` whenever
+   `partial_render()` runs inside `prepare()` — which is `async def` and,
+   in real usage, is always awaited from inside the aiohttp handler's
+   already-running event loop. This is not an edge case; it is the
+   primary code path the task itself mandates (`async def prepare(...)`,
+   tested via `await prepare(...)`). Verified byte-for-byte identical
+   rendered output with and without `enable_async` for the spec §6
+   executed-verification string. **Fixed by omitting `enable_async=True`**
+   from the pass-1 `Environment` (kept `undefined=DebugUndefined,
+   autoescape=False`) — `partial_render` never calls `render_async`, so
+   the flag serves no purpose here and its removal changes no rendered
+   content. Documented in `partial_render`'s docstring with the full
+   reasoning so a future reader isn't tempted to "fix" it back per the
+   spec text without re-discovering this trap.
+2. Confirmed the `datamodel.BaseModel`/`Model` union-type limitation
+   (documented in TASK-2156's Completion Note) does not recur here —
+   `PreparedMessage`/`PreparedBatch` use `Optional[X]` from the start.
+
+**Deviations from spec**: one, explained above and only where the spec's
+literal `enable_async=True` demonstrably breaks the spec's own mandated
+`async def prepare()` API — every other detail (per-provider shapes, the
+three verified traps, provider resolution/validation semantics, `prepare()`
+signature and return shape) implemented exactly as specified.

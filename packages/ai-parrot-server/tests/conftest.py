@@ -152,6 +152,10 @@ def pytest_configure(config):
         "markers",
         "wheel_build: requires building the wheel (slow, needs uv)",
     )
+    config.addinivalue_line(
+        "markers",
+        "live: hits live external services; opt-in, deselect with -m 'not live'",
+    )
 
 
 def pytest_runtest_setup(item):

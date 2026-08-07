@@ -263,8 +263,103 @@ class TestPlaceholders:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-06
 **Notes**:
+Implemented `CommCenterHandler(BaseHandler)` with all 11 routes registered
+via `setup(app)`, `@is_authenticated()` on every endpoint method (verified
+live it must decorate each named method individually — `is_authenticated()`
+picks `_func_wrapper` vs `_method_wrapper` based on `inspect.isclass(handler)`,
+and for a plain function it reads the request from `args[-1]`, which works
+correctly for our `(self, request)` method style). Added `SenderRequest`/
+`SenderResponse` to `services/comm_center/models.py` and used both for
+real (request validation + response shape), not just declared-and-unused.
+Stubs for `post_message` (TASK-2161) and the five templates-CRUD methods
+(TASK-2160) raise `NotImplementedError`, all correctly routed.
 
-**Deviations from spec**: none | describe if any
+**Two significant bugs found and fixed** while verifying with a diagnostic
+harness (stubbing only the pre-existing broken import chains —
+`navigator_session.vault`, `navigator_eventbus`, described below — never
+the shipped code):
+
+1. **`BaseHandler.error()` silently coerces unsupported status codes to
+   400.** Read `navigator/views/base.py:179-223` live: `error()` only
+   recognizes a fixed whitelist (400/401/403/404/406/412/428) and falls
+   back to `HTTPBadRequest` for anything else — meaning my first draft's
+   `self.error(status=413)` and `self.error(status=503)` would both have
+   actually returned `400`, directly breaking two of this task's own
+   acceptance criteria (`>50MB → 413`, `async-notify missing → 503`).
+   **Fixed** by rewriting `_map_error` to raise the matching
+   `aiohttp.web.HTTPException` subclass directly
+   (`HTTPRequestEntityTooLarge`, `HTTPNotFound`, `HTTPServiceUnavailable`,
+   `HTTPBadRequest`) — `BaseHandler.error()` itself works this way
+   (raises, relies on aiohttp's dispatch to convert the exception to the
+   response), so this is idiomatic, not a workaround.
+2. **`KeyError`/`IndexError` are `LookupError` subclasses in the stdlib.**
+   My first draft mapped bare `LookupError` -> 404 (intended only for
+   "template not found"), which would have silently turned an unrelated
+   `KeyError` bug anywhere in the request path into a misleading 404
+   instead of surfacing it. **Fixed** by introducing a dedicated
+   `TemplateNotFoundError(LookupError)` raised specifically by
+   `_resolve_template_source`, and mapping on that instead of bare
+   `LookupError`. Added `test_bare_keyerror_does_not_leak_as_404` as a
+   regression guard.
+
+**Environment note**: this sandbox cannot import ANY handler that uses
+`@is_authenticated` at all — `navigator_auth/__init__.py` ->
+`navigator_auth/vault/integration.py` needs
+`navigator_session.vault.session_vault.SessionVault`, and the installed
+`navigator_session` package here has no `vault` subpackage whatsoever
+(same root cause as TASK-2153's `navigator_session.vault.crypto` gap, a
+different symbol). Combined with the previously-documented
+`navigator_eventbus` gap (TASK-2155) and one further discovery
+(`navigator.utils.file.FileManagerInterface` not exported by the
+installed `navigator` version, hit via `parrot.handlers.models` ->
+`_encrypted_field.py` -> ... -> `parrot.interfaces.file`), `pytest`
+cannot collect `test_comm_center_handler.py` here. Verified instead with
+a throwaway diagnostic (stubbing exactly these leaf modules in
+`sys.modules`, a fake `NotificationBatchRecipient`/`NotificationTemplate`,
+never touching shipped code) covering every scenario in this task's own
+tests: route registration (all 11), instantiability, catalog caching,
+`_as_bool`, full error mapping (including the `TemplateNotFoundError` vs.
+bare `KeyError` regression), template-source resolution (exactly-one-of-
+four, inline template, missing file), JSON-transport ingestion dispatch,
+unsupported content-type rejection, and every stub raising
+`NotImplementedError` (through the real `@is_authenticated()` decorator,
+using `aiohttp.test_utils.make_mocked_request` with `authenticated=True`
+pre-set, since the decorator requires an actual `web.Request` in the last
+positional argument — a `request=None` keyword call fails before ever
+reaching the stub body, verified live and fixed in the shipped test file
+too). All checks passed.
+
+**Deviations from spec**: none in the delivered route/model shapes. Two
+documented, verified correctness fixes (above) required for this task's
+own acceptance criteria to actually hold at runtime.
+
+---
+
+### Addendum — 2026-08-07, first real test-suite execution
+
+The environment gaps flagged above were resolved (`navigator-api` 3.2.1,
+`navigator-session` 0.10.1, plus `navigator-eventbus`, `aioquic`,
+`async-notify` and `qworker` installed). The CommCenter suite executed for
+the first time: **124 passed, 0 failed**; `ruff check` clean.
+
+This task's tests needed repair before they could pass — the faults were in
+the test harness, not in the delivered behaviour:
+
+- `TestUnimplementedStubs` asserted `NotImplementedError` for six methods
+  that TASK-2160/TASK-2161 had since implemented (dead scaffolding).
+- DDL and `pyproject.toml` reads used CWD-relative paths and resolved
+  against the wrong tree; now anchored to `Path(__file__)`.
+- `test_updated_at_not_set_by_app` matched the substring `updated_at` in
+  the method's own docstring; it now parses the AST and asserts no
+  *assignment*.
+- The `handler` fixture patched `_get_db` on a module object obtained by
+  dotted import, which is not always the one `CommCenterHandler`'s methods
+  close over here; the patch silently no-opped and nine tests opened real
+  asyncpg connections. Resolved via `sys.modules[cls.__module__]`.
+
+Verified: the `comm-center` extra **is** correctly declared (this was
+briefly mis-diagnosed as missing while the path bug was in play). Fixed in
+`b0c7e383c`.
