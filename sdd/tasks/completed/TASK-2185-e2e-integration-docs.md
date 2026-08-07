@@ -168,10 +168,82 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Implemented all five integration tests in
+`packages/ai-parrot/tests/tools/execution_plan/test_integration.py`:
 
-**Completed by**:
-**Date**:
-**Notes**:
+- `test_basicagent_end_to_end_zero_tokens_in_loop` — a REAL
+  `BasicAgent(name=...)` (not a lightweight harness), with the daily
+  security sweep example plan run through a canned `PlanPlanner` client
+  double + 4 fake tools registered on the agent's own real
+  `tool_manager` via `ToolManager.register_tool(name=..., description=...,
+  input_schema=..., function=...)`. `agent.client.ask` is replaced with an
+  `AsyncMock` that raises `AssertionError` if ever called — a hard,
+  fail-loud guard on the "zero LLM tokens during execution" claim, not a
+  log grep. Asserts exactly 1 planner call (no repair needed), manifest
+  <2 KB, no payload-body leakage (verified via a report *filename* marker
+  that only exists inside the fake tool's raw body, not any facet or
+  the plan's own `objective` text — see the two false-positive iterations
+  noted below), and `"plan_execute" not in type(agent).__dict__` proving
+  no monkeypatching of the class.
+- `test_300_item_fanout_resumable` — simulates a crash by pre-populating
+  150 of 300 expected WorkingMemory keys before calling `_run_plan`;
+  asserts exactly 150 `get_item` tool calls (not 300) and a complete
+  300-item manifest artifact, proving `for_each.skip_existing` recovery.
+- `test_no_payload_in_flowcontext_results` — every plan-node value in
+  `ctx.results` is an `ArtifactRef`.
+- `test_agentcrew_add_tool_node_regression` — after
+  `ensure_tool_node_registered(PlanToolNode)`, `AgentCrew.add_tool_node()`
+  still builds crew's own `ToolNode` (not `PlanToolNode`) and
+  `run_sequential()` still works.
+- `test_allowlist_blocks_before_execution` — a plan naming a
+  registered-but-not-allowlisted tool, run through the real
+  `plan_execute(plan_name=...)` entry point, never calls
+  `ToolManager.execute_tool` and registers no run.
+
+Documentation added at `docs/toolkits/execution_plan_toolkit.md`,
+following the repo's existing `docs/toolkits/<name>.md` convention (see
+`docs/toolkits/infographic_toolkit.md`): wiring snippet, all four tools,
+the `{params.<name>}` load-time-vs-runtime placeholder table, the
+soft-timeout/`run_id` flow, failure semantics, and every v1 caveat
+(in-RAM WorkingMemory with no guardrail, run registry lost on restart,
+recovery = re-issue + `skip_existing`, no `plan_resume`). Spec §5
+Acceptance Criteria checkboxes all flipped to `[x]` in this commit.
+
+**Debugging note** (test-writing artifact, not a code defect): two
+iterations of `test_basicagent_end_to_end_zero_tokens_in_loop`'s
+no-payload-leak assertion were themselves wrong before landing on the
+filename-marker check — `"findings" not in manifest_json` false-failed on
+the legitimate facet name `"n_findings"`, and `"critical" not in
+manifest_json` false-failed on the word "critical" inside the *plan's own
+`objective` field text* ("...map new critical findings..."), not a
+payload leak. Documented here so a future reader doesn't misread either
+assertion's history as evidence of a real leak.
+
+**Confirmed pre-existing, unrelated hang (not fixed — out of scope):**
+`packages/ai-parrot/tests/test_crew_tool_node_regression.py` (an
+existing FEAT-137 file, not owned by this feature) hangs indefinitely
+when its `TestSequentialToolNode`/`TestFlowToolNode`/
+`TestParallelToolNode`/`TestLoopToolNode` classes are run — reproduced
+identically on plain `dev` with zero FEAT-419 changes applied
+(`cd <main-repo-checkout> && pytest test_crew_tool_node_regression.py::
+TestSequentialToolNode::test_agent_tool_agent_pipeline` hangs there too).
+Confirmed NOT caused by TASK-2180's flow.py fsm fix — that fix only
+touches the definition-driven branch of `_materialize_nodes()`
+(`self._definition is not None`), and this crew suite exclusively uses
+the programmatic `add_node()`/`add_edge()` branch (`self._definition is
+None`), which was already correct and untouched. This feature's own
+regression coverage (`test_agentcrew_add_tool_node_regression` above)
+exercises the same `add_tool_node()` + `run_sequential()` path
+successfully in under a second, so the acceptance criterion is
+independently satisfied without needing that file to run. Flagging for a
+separate ticket.
+
+Full FEAT-419 suite: `pytest packages/ai-parrot/tests/bots/flows/plan/
+packages/ai-parrot/tests/tools/execution_plan/ -v` → 128 passed. Full
+pre-existing `packages/ai-parrot/tests/bots/flows/` suite (301 tests,
+unrelated to the crew hang above) still green after TASK-2180's fsm fix.
+`ruff check --select F,E9` clean.
 
 **Deviations from spec**: none
