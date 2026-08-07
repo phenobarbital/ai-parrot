@@ -355,3 +355,32 @@ iteration to add either a `payload`/`rendered_template` JSON column.
 **Deviations from spec**: none in delivered behavior; one documented,
 narrow retry-fidelity limitation (above) inherited from the existing
 TASK-2154 schema, which this task's file scope does not permit changing.
+
+---
+
+### Addendum — 2026-08-07, first real test-suite execution
+
+The environment blockers described above were resolved (`navigator-api`
+3.2.1 exports `FileManagerInterface`; `navigator-session` 0.10.1 ships
+`vault`; `navigator-eventbus`, `aioquic`, `async-notify` and `qworker`
+installed). The suite ran for the first time: **124 passed**, after the
+fixes below.
+
+`test_excludes_publishing_without_force` failed against the code as
+delivered. The diagnostic harness above verified `retry_batch`'s row
+*selection*, which was and remains correct — `ambiguous` was reported and
+no `xadd` was issued. The defect was one layer further out: `retry_batch`
+still calls `launch_fan_out`, whose `_finalize_batch` done-callback
+un-stranded **every** row in `publishing` for the batch, including the
+ones selection had deliberately spared. Because retry re-publishes
+`publish_failed`, the following retry would have re-sent them silently —
+the duplicate delivery the pre-`xadd` marker exists to prevent.
+
+`_finalize_batch` now takes the row ids the fan-out actually attempted and
+touches only those. Fixed in `b0c7e383c`.
+
+**Lesson for the record**: the throwaway harness exercised each function
+in isolation and so could not observe a two-component interaction that
+only appears once the done-callback is allowed to run (the real test
+awaits `asyncio.sleep(0.05)` for exactly this reason). Component-level
+stubbing verifies contracts, not compositions.
