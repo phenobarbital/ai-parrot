@@ -298,26 +298,51 @@ class TestSecurityAdvisorDailyTask:
         )
 
         advisor = _make_advisor_with_mocks(store)
+
+        # The structured ask must return a REAL RemediationReport — the agent
+        # type-checks structured_output before trusting it. `validated=True`
+        # survives _audit_citations because _remediation_tool is None here.
+        RemediationReport = _SECURITY_ADVISOR_MOD.RemediationReport
+        RemediationItem = _SECURITY_ADVISOR_MOD.RemediationItem
+        SourceRef = _SECURITY_ADVISOR_MOD.SourceRef
+        remediation = RemediationReport(
+            framework="soc2",
+            items=[
+                RemediationItem(
+                    title="Enable MFA for the root account",
+                    severity="critical",
+                    steps=["Enable a hardware MFA device for root"],
+                    references=[
+                        SourceRef(
+                            title="CIS AWS 1.5",
+                            source="https://kb.example/cis-1.5",
+                            snippet="Enable MFA for the root user",
+                        )
+                    ],
+                    validated=True,
+                )
+            ],
+        )
         mock_ask_response = MagicMock()
         mock_ask_response.response = "# Advisory"
+        mock_ask_response.structured_output = remediation
         advisor.ask = AsyncMock(return_value=mock_ask_response)
-        advisor.send_notification = AsyncMock()
+        advisor.send_notification = AsyncMock(
+            return_value={"status": "success"}
+        )
 
-        jira_calls: list[dict] = []
-
-        async def _mock_create_issue(**kwargs):
-            jira_calls.append(kwargs)
-            return "NAV-100"
-
-        mock_create = MagicMock(name="jira_create_issue")
-        mock_create.side_effect = _mock_create_issue
-        # Make it async callable
-        mock_create = AsyncMock(name="jira_create_issue", return_value="NAV-100")
+        # AbstractTool contract: tools are invoked via `await tool.execute()`
+        # and return a ToolResult whose payload lives in `.result`.
+        mock_create = MagicMock()
+        mock_create.name = "jira_create_issue"
+        mock_create.execute = AsyncMock(
+            return_value=MagicMock(
+                success=True, result={"key": "NAV-100"}, error=None
+            )
+        )
 
         mock_jira_toolkit = MagicMock()
         mock_jira_toolkit.get_tools.return_value = [mock_create]
-        # Patch the name attribute
-        mock_create.name = "jira_create_issue"
 
         with patch.object(advisor, "_build_jira", return_value=mock_jira_toolkit):
             result = await advisor.run_daily_soc2_advisory()
@@ -329,7 +354,12 @@ class TestSecurityAdvisorDailyTask:
         assert material_count > 0, (
             "Expected CRITICAL finding to produce at least one material recommendation"
         )
-        assert mock_create.called, "Material recommendations present but Jira was not called"
+        assert mock_create.execute.called, (
+            "Material recommendations present but Jira was not called"
+        )
+        assert soc2_result.get("jira_tickets") == ["NAV-100"], (
+            f"Expected NAV-100 ticket, got: {soc2_result.get('jira_tickets')}"
+        )
 
     async def test_daily_advisory_sends_email(self):
         """run_daily_soc2_advisory must always attempt to send an email."""
