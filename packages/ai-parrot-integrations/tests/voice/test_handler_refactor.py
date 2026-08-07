@@ -348,6 +348,61 @@ class TestEnvelopeMigration:
         assert 'get("assistant_transcription")' not in source
 
 
+class TestUsageInResponseComplete:
+    """FEAT-418, TASK-2178: the dual-provider example needs real per-turn
+    token/latency data to render its capability panel's usage counters —
+    previously ``response_complete`` carried no usage at all on the
+    streaming path (unlike ``_send_complete_voice_response()``'s
+    non-streaming ``voice_response``, which already had one). Sourced
+    directly from ``resp.usage`` (``LiveCompletionUsage``, already
+    computed by both providers), not fabricated."""
+
+    @pytest.mark.asyncio
+    async def test_usage_included_when_present(self, handler, connection):
+        from parrot.clients.live import LiveCompletionUsage
+
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        resp = LiveVoiceResponse(
+            text="It's sunny",
+            role="assistant",
+            is_complete=True,
+            usage=LiveCompletionUsage(
+                prompt_tokens=12, completion_tokens=34, total_tokens=46,
+                response_time_ms=850.0, first_token_time_ms=210.0,
+            ),
+        )
+        frames = session.build_frames(resp, turn_no=1)
+        complete_frame = next(f for f in frames if f["type"] == "response_complete")
+        assert complete_frame["usage"] == {
+            "input_tokens": 12,
+            "output_tokens": 34,
+            "total_tokens": 46,
+            "response_time_ms": 850.0,
+            "first_token_time_ms": 210.0,
+        }
+
+    @pytest.mark.asyncio
+    async def test_usage_key_omitted_when_absent(self, handler, connection):
+        """No usage object -> no 'usage' key at all, not a null/zeroed one."""
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        resp = LiveVoiceResponse(text="done", is_complete=True, usage=None)
+        frames = session.build_frames(resp, turn_no=1)
+        complete_frame = next(f for f in frames if f["type"] == "response_complete")
+        assert "usage" not in complete_frame
+
+
 class TestNamespacePackagingFix:
     """Regression guard for the packaging bug this task had to fix:
     ``parrot.voice`` is split across two installed distributions

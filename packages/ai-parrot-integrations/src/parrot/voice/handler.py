@@ -433,11 +433,28 @@ class _HandlerVoiceSession(VoiceSession):
                 final_text = resp.text
                 if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
                     final_text = ""
-                frames.append({
+                response_complete_frame = {
                     "type": "response_complete",
                     "text": final_text or "",
                     "is_interrupted": resp.is_interrupted,
-                })
+                }
+                # FEAT-418 (TASK-2178): surface per-turn token/latency
+                # counters on the streaming path — mirrors the shape
+                # _send_complete_voice_response() already sends on the
+                # non-streaming path (input_tokens/output_tokens/
+                # total_tokens), plus the timing fields LiveCompletionUsage
+                # already computes (response_time_ms/first_token_time_ms),
+                # so the dual-provider example can render a live counter
+                # per provider without fabricating data client-side.
+                if resp.usage:
+                    response_complete_frame["usage"] = {
+                        "input_tokens": resp.usage.prompt_tokens,
+                        "output_tokens": resp.usage.completion_tokens,
+                        "total_tokens": resp.usage.total_tokens,
+                        "response_time_ms": resp.usage.response_time_ms,
+                        "first_token_time_ms": resp.usage.first_token_time_ms,
+                    }
+                frames.append(response_complete_frame)
                 frames.append({
                     "type": "ready_to_speak",
                     "message": "Ready for new question",
