@@ -221,11 +221,85 @@ attempt to rewrite this test's flow. Flagging explicitly rather than
 silently leaving it red or silently "fixing" architecture this task
 doesn't own.
 
+---
+
+## Follow-up (2026-08-07) — the pre-existing failure is now FIXED
+
+The two `test_voice_ws_stt_only_integration.py` failures documented above
+are resolved; the file's `[done-with-issues]` state is cleared.
+
+**Root cause** (exactly as triaged above): since FEAT-416 (TASK-2152),
+`_run_voice_session()` no longer drives turns — it constructs
+`connection.voice_session` and idles until shutdown. The turn lifecycle is
+driven by the client frames `start_recording` → `audio_data` →
+`stop_recording`, which map onto `VoiceSession.start_turn()` /
+`push_audio()` / `end_turn()`. Both tests called only
+`_handle_start_session()`, so `bot.ask_stream` was never invoked and no
+frame was ever produced.
+
+**Fix** (test-only — no production code changed): added
+`_drive_one_turn()`, which sends the real client frame sequence, plus
+`_await_voice_session()` (waits for the voice task to construct the
+session) and `_await_voice_task()`. `_handle_stop_recording`'s 500 ms
+`MIN_DURATION_MS` guard is cleared by backdating
+`connection.recording_start_time` rather than sleeping. Both mocks now
+consume the audio iterator until the `None` end-of-turn sentinel, so they
+reply only after `end_turn()` — as a real provider does.
+
+**Assertions strengthened** (from an adversarial Codex review, which
+warned the repaired tests could still pass over real bugs). They now also
+assert that the mic audio actually reached the provider's iterator, that
+`stt_only` propagates through `_AskStreamVoiceClient.stream_voice()` into
+`ask_stream()`, that the voice task exits on its own rather than being
+cancelled, and that STT-only suppresses *every* model-output branch
+(assistant transcription / `display_data` / `tool_call` /
+`response_complete`), not just `response_chunk`.
+
+**Verified by mutation testing** — each of these breaks the suite:
+not driving the turn (the original bug), dropping the `push_audio()` call,
+and dropping `stt_only` propagation.
+
+Suite status: `ai-parrot-server/tests/handlers/` 227 passed,
+`ai-parrot-integrations/tests/voice/` 136 passed.
+
+**Two unrelated pre-existing failures found while verifying** (NOT caused
+by and NOT in scope for FEAT-418; both confirmed identical before the
+feature merge `8bc3a8fa4`):
+1. `ai-parrot-server/tests/handlers/test_mode_a_e2e.py::test_mode_a_start_chat_stop`
+   — **FIXED on 2026-08-07 at the user's request.** Its module-level env
+   gate ("skip unless LiveAvatar/LiveKit credentials are set") was
+   defeated on a developer machine because navconfig loads `env/.env`,
+   which supplies all five credentials plus `LIVEAVATAR_SANDBOX=False`, as
+   soon as any `parrot.handlers.*` module is imported. The gate then
+   passed and the test tried to reach a live server at `localhost:8080`.
+   It skipped correctly standalone and on CI, which made it look like a
+   test-ordering bug rather than config injection.
+
+   Fix: credential presence is not a statement of intent, so the module is
+   now gated on an explicit `RUN_MODE_A_E2E=1` opt-in evaluated *before*
+   the credential check, and carries `pytestmark = pytest.mark.live`
+   (marker registered in `ai-parrot-server`'s `pyproject.toml` and
+   `tests/conftest.py`, matching the repo's existing `@pytest.mark.live`
+   convention) so `-m "not live"` deselects it. Verified: full handlers
+   suite 227 passed + 1 skipped; standalone skips citing the opt-in;
+   `RUN_MODE_A_E2E=1` standalone skips citing missing credentials;
+   `RUN_MODE_A_E2E=1` on the full dir reaches the test (fails on connect,
+   correctly, with no server running); `-m "not live"` deselects it.
+2. `ai-parrot/tests/voice/test_voice_session.py::TestVoiceSession::test_no_aiohttp_import`
+   — asserts the literal string `aiohttp` is absent from `session.py`'s
+   source, but it appears in the class *docstring* added by FEAT-416
+   TASK-2149 (`git log -S` confirms; the mention count is 2 both at
+   `8bc3a8fa4^1` and `8bc3a8fa4`). The test should check imports, not grep
+   raw source.
+
+---
+
 **Deviations from spec**: none for the two fixture migrations that are
 this task's actual scope. The two collateral `_build_live_config()`
 attribute/stub fixes above were necessary to make
 `test_agent_voice_stt_only.py` (a file this task explicitly modifies)
 pass at all — not a scope violation, but flagged per the file-fidelity
-principle. The pre-existing integration-test failure above is
-NOT fixed — explicitly out of scope, explicitly documented, confirmed
-pre-existing via git history rather than assumed.
+principle. The pre-existing integration-test failure above was
+NOT fixed at the time — explicitly out of scope, explicitly documented,
+confirmed pre-existing via git history rather than assumed. It has since
+been fixed; see the Follow-up section above.

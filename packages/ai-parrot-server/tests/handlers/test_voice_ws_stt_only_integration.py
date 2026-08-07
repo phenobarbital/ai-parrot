@@ -1,8 +1,18 @@
 """Integration tests for the STT-only voice WebSocket session (FEAT-257, TASK-1632).
 
 These tests exercise the full session pipeline end-to-end (start_session →
-audio queue → _run_voice_session → message forwarding) with Gemini / VoiceBot
-fully mocked — no real network connections.
+start_recording → audio_data → stop_recording → message forwarding) with
+Gemini / VoiceBot fully mocked — no real network connections.
+
+Turn-lifecycle note (FEAT-416 TASK-2152, repaired in FEAT-418): since the
+``VoiceSession`` refactor, ``_run_voice_session()`` no longer drives turns —
+it constructs ``connection.voice_session`` and then idles until shutdown.
+The turn itself is driven by the client frames ``start_recording`` →
+``audio_data`` → ``stop_recording``, which map onto
+``VoiceSession.start_turn()`` / ``push_audio()`` / ``end_turn()``. A test
+that calls only ``_handle_start_session()`` therefore never invokes
+``bot.ask_stream`` at all and no frame is ever produced. Both tests below
+drive the full frame sequence via :func:`_drive_one_turn`.
 
 Tests:
 - ``test_voice_ws_stt_only_session``:
@@ -21,12 +31,14 @@ resolves the worktree's modified copies (same pattern as the unit tests).
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import importlib
 import sys
 import types
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -264,12 +276,139 @@ def _make_model_audio_response(audio: bytes = b"\x00" * 100) -> LiveVoiceRespons
 
 
 def _make_model_text_response(text: str = "Here is my answer.") -> LiveVoiceResponse:
-    """Return a LiveVoiceResponse carrying a model text chunk."""
+    """Return a LiveVoiceResponse carrying a model text chunk.
+
+    Carries the canonical ``role="assistant"`` (FEAT-418) so it exercises
+    ``build_frames``' assistant-transcription branch — the model-output
+    path the STT-only guard must suppress alongside ``response_chunk``.
+    """
     return LiveVoiceResponse(
         text=text,
+        role="assistant",
         is_complete=False,
         session_id="integration-test-session",
         turn_id="turn-1",
+    )
+
+
+async def _await_voice_session(
+    connection: WebSocketConnection,
+    timeout: float = 2.0,
+) -> None:
+    """Block until ``_run_voice_session`` has built ``connection.voice_session``.
+
+    ``_handle_start_session`` only *schedules* ``_run_voice_session`` as
+    ``connection.voice_task``; the session object it constructs is not
+    visible until that task gets its first slice of the event loop.
+
+    Args:
+        connection: The connection whose voice session to wait for.
+        timeout: Seconds to wait before failing.
+
+    Raises:
+        AssertionError: If the session is not constructed within *timeout*.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while connection.voice_session is None:
+        assert loop.time() < deadline, (
+            "connection.voice_session was never constructed by "
+            "_run_voice_session — the voice task may have died. "
+            f"voice_task={connection.voice_task!r}"
+        )
+        await asyncio.sleep(0.01)
+
+
+async def _consume_until_end_of_turn(
+    audio_input: Optional[AsyncIterator],
+    received: List[bytes],
+) -> None:
+    """Drain *audio_input* until the ``None`` end-of-turn sentinel.
+
+    Mirrors what a real provider's ``stream_voice()`` does: it does not
+    begin replying until the user's turn is closed. Without this, a mock
+    would answer before ``end_turn()`` ever ran and the test would not
+    actually exercise the turn lifecycle.
+
+    Args:
+        audio_input: The handler's per-turn PCM iterator, or None.
+        received: Mutable list every consumed PCM chunk is appended to, so
+            the test can assert the mic audio really reached the provider.
+    """
+    if audio_input is None:
+        return
+    async for chunk in audio_input:
+        if chunk is None:  # end-of-turn sentinel pushed by end_turn()
+            return
+        received.append(chunk)
+
+
+_MIC_AUDIO = b"\x01\x02" * 512
+
+
+async def _drive_one_turn(
+    handler: VoiceChatHandler,
+    connection: WebSocketConnection,
+    audio: bytes = _MIC_AUDIO,
+) -> None:
+    """Drive one complete mic turn through the handler's frame protocol.
+
+    Sends the ``start_recording`` → ``audio_data`` → ``stop_recording``
+    sequence a real client sends, which is what actually opens, feeds and
+    closes a ``VoiceSession`` turn (see this module's docstring).
+
+    Args:
+        handler: The handler under test.
+        connection: An already-started session's connection.
+        audio: Raw PCM bytes to push as one mic chunk.
+    """
+    await _await_voice_session(connection)
+
+    await handler._handle_start_recording(connection, {"type": "start_recording"})
+    await handler._handle_audio_data(connection, {
+        "type": "audio_data",
+        "data": base64.b64encode(audio).decode(),
+    })
+
+    # _handle_stop_recording discards any clip shorter than its
+    # MIN_DURATION_MS (500 ms) guard by cancelling the turn outright.
+    # Backdate the recording start so the guard passes without spending a
+    # real 500 ms in the test.
+    connection.recording_start_time = datetime.now() - timedelta(milliseconds=600)
+    await handler._handle_stop_recording(connection, {"type": "stop_recording"})
+
+
+async def _await_voice_task(connection: WebSocketConnection, timeout: float = 5.0) -> None:
+    """Wait for the connection's voice task to exit on its own.
+
+    The mock ``ask_stream`` sets ``shutdown_event`` once it has delivered
+    its responses, so ``_run_voice_session`` must leave its shutdown loop
+    and tear the session down unprompted. A task that has to be cancelled
+    is a failure, not a cleanup step — otherwise a broken shutdown path
+    would still pass on the frames sent before it hung.
+
+    Args:
+        connection: The connection whose ``voice_task`` to await.
+        timeout: Seconds to wait before declaring the shutdown broken.
+
+    Raises:
+        AssertionError: If the task does not finish within *timeout*.
+    """
+    assert connection.voice_task is not None, "start_session did not create a voice task."
+    try:
+        await asyncio.wait_for(asyncio.shield(connection.voice_task), timeout=timeout)
+    except asyncio.TimeoutError:
+        connection.shutdown_event.set()
+        connection.voice_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await connection.voice_task
+        raise AssertionError(
+            f"voice_task did not exit within {timeout}s after shutdown_event was "
+            "set — _run_voice_session's shutdown/teardown path is broken."
+        )
+    assert connection.shutdown_event.is_set(), (
+        "voice_task exited without shutdown_event being set — the mock never "
+        "reached the end of its response stream, so the turn did not run."
     )
 
 
@@ -284,15 +423,19 @@ async def test_voice_ws_stt_only_session() -> None:
 
     End-to-end integration scenario:
     1. Open a session via ``_handle_start_session`` with ``stt_only=True``.
-    2. The bot's ``ask_stream`` yields: one user transcription frame, then one
-       model audio frame (simulating Gemini firing despite STT-only config;
-       the handler must suppress this at the forwarding layer).
-    3. The voice session task runs until the mock signals shutdown.
-    4. Assertions: ``transcription`` (is_user=True) in output; no ``response_chunk``.
+    2. Drive a real mic turn (start_recording → audio_data → stop_recording).
+    3. The bot's ``ask_stream`` waits for end-of-turn, then yields: one user
+       transcription frame, then one model audio frame (simulating Gemini
+       firing despite STT-only config; the handler must suppress this at the
+       forwarding layer).
+    4. The voice session task runs until the mock signals shutdown.
+    5. Assertions: ``transcription`` (is_user=True) in output; no ``response_chunk``.
     """
     # Build a bot whose ask_stream yields one transcription + one model audio,
     # then signals shutdown so the outer voice loop exits cleanly.
     connection_ref: List[WebSocketConnection] = []  # populated after connection is created
+    received_audio: List[bytes] = []
+    seen_stt_only: List[bool] = []
 
     async def _mock_ask_stream(
         *args,
@@ -303,8 +446,14 @@ async def test_voice_ws_stt_only_session() -> None:
         **kwargs,
     ) -> AsyncIterator[LiveVoiceResponse]:
         """Yield canned responses then signal shutdown to exit the voice loop."""
+        seen_stt_only.append(stt_only)
+        await _consume_until_end_of_turn(audio_input, received_audio)
         yield _make_transcription_response("How are you?")
         yield _make_model_audio_response()  # must be suppressed in STT-only
+        # An assistant-role text frame — the other model-output branch the
+        # STT-only guard must also suppress (build_frames emits it as
+        # transcription/is_user=False when stt_only is off).
+        yield _make_model_text_response("I am well, thank you.")
         # Signal shutdown after delivering responses so _run_voice_session exits.
         if connection_ref:
             connection_ref[0].shutdown_event.set()
@@ -341,15 +490,9 @@ async def test_voice_ws_stt_only_session() -> None:
         "session_started must echo stt_only=True."
     )
 
-    # --- Wait for the voice task to complete (the mock sets shutdown after yields) ---
-    if connection.voice_task and not connection.voice_task.done():
-        try:
-            await asyncio.wait_for(connection.voice_task, timeout=5.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            connection.shutdown_event.set()
-            connection.voice_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await connection.voice_task
+    # --- Drive a real mic turn, then wait for the voice task to complete ---
+    await _drive_one_turn(handler, connection)
+    await _await_voice_task(connection)
 
     # --- Verify output: transcription present, no response_chunk ---
     all_types = _sent_types(connection)
@@ -374,6 +517,33 @@ async def test_voice_ws_stt_only_session() -> None:
         f"All sent types: {all_types}"
     )
 
+    # The double-brain guard covers every model-output branch, not just
+    # response_chunk: the assistant-role text frame yielded above must not
+    # surface as an is_user=False transcription either.
+    assert all(m.get("is_user") is True for m in transcription_msgs), (
+        "STT-only session leaked an assistant transcription (is_user=False). "
+        f"Transcription frames: {transcription_msgs}"
+    )
+    for leaked in ("display_data", "tool_call", "response_complete"):
+        assert leaked not in all_types, (
+            f"STT-only session must NOT emit '{leaked}' (double-brain guard). "
+            f"All sent types: {all_types}"
+        )
+
+    # The turn really carried the mic audio through
+    # _handle_audio_data → push_audio → the provider's audio iterator.
+    assert _MIC_AUDIO in received_audio, (
+        "The pushed mic audio never reached the provider's audio iterator — "
+        f"got {len(received_audio)} chunk(s) totalling "
+        f"{sum(len(c) for c in received_audio)} bytes."
+    )
+
+    # stt_only must propagate down to the bot, not merely gate the frames
+    # on the way back out (_AskStreamVoiceClient.stream_voice → ask_stream).
+    assert seen_stt_only == [True], (
+        f"ask_stream should have been called once with stt_only=True, got {seen_stt_only}."
+    )
+
 
 # ---------------------------------------------------------------------------
 # Integration test: full-duplex session — model response IS emitted
@@ -388,6 +558,8 @@ async def test_voice_ws_full_duplex_session() -> None:
     stt_only flag from start_session must still produce model audio frames.
     """
     connection_ref: List[WebSocketConnection] = []
+    received_audio: List[bytes] = []
+    seen_stt_only: List[bool] = []
 
     async def _mock_ask_stream(
         *args,
@@ -398,6 +570,8 @@ async def test_voice_ws_full_duplex_session() -> None:
         **kwargs,
     ) -> AsyncIterator[LiveVoiceResponse]:
         """Yield one model audio response then signal shutdown."""
+        seen_stt_only.append(stt_only)
+        await _consume_until_end_of_turn(audio_input, received_audio)
         yield _make_model_audio_response()
         if connection_ref:
             connection_ref[0].shutdown_event.set()
@@ -424,19 +598,24 @@ async def test_voice_ws_full_duplex_session() -> None:
         "connection.stt_only must default to False when absent from start_session."
     )
 
-    # Wait for voice task to process the model audio response.
-    if connection.voice_task and not connection.voice_task.done():
-        try:
-            await asyncio.wait_for(connection.voice_task, timeout=5.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            connection.shutdown_event.set()
-            connection.voice_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await connection.voice_task
+    # Drive a real mic turn, then wait for the voice task to process the
+    # model audio response.
+    await _drive_one_turn(handler, connection)
+    await _await_voice_task(connection)
 
     all_types = _sent_types(connection)
 
     assert "response_chunk" in all_types, (
         "Full-duplex session must emit 'response_chunk' for model audio. "
         f"All sent types: {all_types}"
+    )
+
+    assert _MIC_AUDIO in received_audio, (
+        "The pushed mic audio never reached the provider's audio iterator — "
+        f"got {len(received_audio)} chunk(s) totalling "
+        f"{sum(len(c) for c in received_audio)} bytes."
+    )
+
+    assert seen_stt_only == [False], (
+        f"ask_stream should have been called once with stt_only=False, got {seen_stt_only}."
     )
