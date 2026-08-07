@@ -177,10 +177,16 @@ async def run_scheduled_refresh(runner: Any, name: str, *, params=None,
 - ~~any existing LLM/async step inside `run()`~~ — lines 245-254 contain none.
 - ~~`_run_transforms_or_raise` being a coroutine~~ — it is **sync** (line 448).
   Do NOT `await` it and do NOT fold the narrative into its loop.
-- ~~a `narrative` stage value in `RecipeRunError`~~ — `stage` is a free string;
-  use `"narrative"` consistently if you must emit one, but note this step is
-  **best-effort and does not raise at run time**, so it should not normally
-  produce a `RecipeRunError` during `run()` — only during `dry_run()`.
+- ~~a `narrative` stage value in `RecipeRunError`~~ — **CORRECTED during
+  implementation (contract was stale)**: `RecipeRunError.stage` is actually a
+  strict `Literal["params", "data", "gate", "transform", "layout", "render"]`
+  (`models.py:283`), NOT a free string as this contract originally claimed.
+  `models.py` is out of scope for this task (not in Files to Create/Modify),
+  so the `dry_run` facts_key-mismatch diagnostic reuses `stage="layout"` —
+  it sits right next to the structurally identical `$bind`-vs-declared-
+  output-key check, which uses the same stage. Tests identify the diagnostic
+  by its `detail` text (`"narrative.facts_key"`) rather than a unique stage
+  value. This step is best-effort and does not raise at run time regardless.
 - ~~a skill registry reachable from `runner.py`~~ — there is none. Do not import
   `parrot.skills` here; validating the skill *name* is out of scope.
 - ~~`transformer_registry` containing narrative skills~~ — skills are not
@@ -377,10 +383,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Added keyword-only `narrator: Optional[Narrator] = None` to
+`RecipeRunner.__init__`, stored as `self.narrator`. Added
+`async def _apply_narrative_best_effort(recipe, data_model)` exactly per the
+task's pattern (no-op on missing narrator/spec/facts_key; try/except around
+`narrate()`; writes only a non-empty-after-strip string), inserted between
+`_run_transforms_or_raise` and `_check_bind_drift_or_raise` in `run()`.
+Extended `dry_run` to flag a `narrative.facts_key` that names no declared
+`output_key`. All 71 tests in `tests/tools/infographic_recipes/` pass
+(8 new `TestNarrativeStep` + 2 new `TestDryRunNarrative`, plus TASK-2187's
+`TestDriftCheckOptional` still green — no regression). `ruff check` only
+adds one `UP045` for the new `Optional[Narrator]` param, consistent with
+the file's pre-existing style; `mypy` shows the same single pre-existing
+unrelated error (line-shifted). `parrot/auth/system_account.py` unmodified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the Codebase Contract's "Does NOT Exist" section
+claimed `RecipeRunError.stage` is "a free string" — **verified false**:
+it is `Literal["params", "data", "gate", "transform", "layout", "render"]`
+(`models.py:283`), with no `"narrative"` member. Widening that Literal would
+touch `models.py`, which is not in this task's Files to Create/Modify.
+Corrected the contract in the active task file before implementing, and
+reused `stage="layout"` for the `dry_run` facts_key-mismatch diagnostic
+(it sits next to the structurally identical `$bind`-vs-declared-output-key
+check, which uses the same stage) — tests identify the diagnostic by its
+`detail` text rather than a unique stage value. No other deviation.

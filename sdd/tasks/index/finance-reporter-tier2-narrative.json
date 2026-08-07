@@ -68,7 +68,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,8 +79,8 @@
       "parallelism_notes": "Edits runner.py, the same file TASK-2187 changes (_check_bind_drift_or_raise). Must land after it and must not revert its changes.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2189-runner-narrative-step.md"
+      "completed_at": "2026-08-07T14:45:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2189-runner-narrative-step.md"
     },
     {
       "id": "TASK-2190",
