@@ -60,6 +60,53 @@ class Action:
     value: any
     cost: float = 0.0
     affects_derived: bool = False
+    # Actions sharing a group are mutually exclusive ALTERNATIVES, not steps
+    # that stack. `can_adjust_metric('expenses', -30, 0)` offers ten candidate
+    # percentages for one decision; applying several of them would compound
+    # past the declared bound (-30% then -27% is -48.7%, not -30%). Solvers
+    # therefore pick at most one action per group. Left None for genuinely
+    # independent actions such as excluding two different regions.
+    alternative_group: Optional[str] = None
+
+
+def _percentage_steps(
+    min_pct: float,
+    max_pct: float,
+    steps: int = 10
+) -> List[float]:
+    """Return the distinct, non-zero percentage candidates in a range.
+
+    ``np.linspace(15, 15, 10)`` yields the same value ten times, which used to
+    become ten identical actions; a solver allowed to take five of them applied
+    a "+15%" change as 1.15^5. Collapsing duplicates keeps a fixed percentage
+    exactly one action, which is what a single-change what-if question means.
+
+    Args:
+        min_pct: Lower bound of the range, as a percentage.
+        max_pct: Upper bound of the range, as a percentage.
+        steps: How many candidates to spread across a non-degenerate range.
+
+    Returns:
+        The candidate percentages, in order, without duplicates or zero
+        (a 0% change is a no-op, never a useful action).
+    """
+    if min_pct == max_pct:
+        candidates = [float(min_pct)]
+    else:
+        candidates = [float(pct) for pct in np.linspace(min_pct, max_pct, steps)]
+
+    seen = set()
+    result = []
+    for pct in candidates:
+        if pct == 0:
+            continue
+        # Guard against float noise producing near-identical duplicates.
+        key = round(pct, 6)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(pct)
+    return result
 
 
 @dataclass
@@ -519,29 +566,32 @@ class WhatIfDSL:
         if group_by and group_by in self.df.columns:
             groups = self.df[group_by].unique()
             for group in groups:
-                for pct in np.linspace(min_pct, max_pct, 10):
-                    if pct != 0:
-                        self.possible_actions.append(
-                            Action(
-                                name=f"adjust_{metric}_{group}_{pct:.0f}pct",
-                                column=metric,
-                                operation="scale_group",
-                                value={'group_col': group_by, 'group_val': group, 'scale': 1 + pct / 100},
-                                cost=abs(pct) / 100  # Cost proportional to change
-                            )
-                        )
-        else:
-            for pct in np.linspace(min_pct, max_pct, 10):
-                if pct != 0:
+                # One decision per group: the percentages are alternatives.
+                group_key = f"adjust:{metric}:{group_by}:{group}"
+                for pct in _percentage_steps(min_pct, max_pct):
                     self.possible_actions.append(
                         Action(
-                            name=f"adjust_{metric}_{pct:.0f}pct",
+                            name=f"adjust_{metric}_{group}_{pct:.0f}pct",
                             column=metric,
-                            operation="scale",
-                            value=1 + pct / 100,
-                            cost=abs(pct) / 100
+                            operation="scale_group",
+                            value={'group_col': group_by, 'group_val': group, 'scale': 1 + pct / 100},
+                            cost=abs(pct) / 100,  # Cost proportional to change
+                            alternative_group=group_key
                         )
                     )
+        else:
+            group_key = f"adjust:{metric}"
+            for pct in _percentage_steps(min_pct, max_pct):
+                self.possible_actions.append(
+                    Action(
+                        name=f"adjust_{metric}_{pct:.0f}pct",
+                        column=metric,
+                        operation="scale",
+                        value=1 + pct / 100,
+                        cost=abs(pct) / 100,
+                        alternative_group=group_key
+                    )
+                )
         return self
 
     def can_scale_proportional(
@@ -568,39 +618,41 @@ class WhatIfDSL:
         if group_by and group_by in self.df.columns:
             groups = self.df[group_by].unique()
             for group in groups:
-                for pct in np.linspace(min_pct, max_pct, 10):
-                    if pct != 0:
-                        self.possible_actions.append(
-                            Action(
-                                name=f"scale_{base_column}_{group}_{pct:.0f}pct",
-                                column=base_column,
-                                operation="scale_proportional_group",
-                                value={
-                                    'group_col': group_by,
-                                    'group_val': group,
-                                    'scale': 1 + pct / 100,
-                                    'affected': affected_columns
-                                },
-                                cost=abs(pct) / 50,
-                                affects_derived=True
-                            )
-                        )
-        else:
-            for pct in np.linspace(min_pct, max_pct, 10):
-                if pct != 0:
+                group_key = f"scale_proportional:{base_column}:{group_by}:{group}"
+                for pct in _percentage_steps(min_pct, max_pct):
                     self.possible_actions.append(
                         Action(
-                            name=f"scale_{base_column}_{pct:.0f}pct",
+                            name=f"scale_{base_column}_{group}_{pct:.0f}pct",
                             column=base_column,
-                            operation="scale_proportional",
+                            operation="scale_proportional_group",
                             value={
+                                'group_col': group_by,
+                                'group_val': group,
                                 'scale': 1 + pct / 100,
                                 'affected': affected_columns
                             },
                             cost=abs(pct) / 50,
-                            affects_derived=True
+                            affects_derived=True,
+                            alternative_group=group_key
                         )
                     )
+        else:
+            group_key = f"scale_proportional:{base_column}"
+            for pct in _percentage_steps(min_pct, max_pct):
+                self.possible_actions.append(
+                    Action(
+                        name=f"scale_{base_column}_{pct:.0f}pct",
+                        column=base_column,
+                        operation="scale_proportional",
+                        value={
+                            'scale': 1 + pct / 100,
+                            'affected': affected_columns
+                        },
+                        cost=abs(pct) / 50,
+                        affects_derived=True,
+                        alternative_group=group_key
+                    )
+                )
         return self
 
     def can_scale_entity(
@@ -631,22 +683,24 @@ class WhatIfDSL:
                 return self
 
         for entity in entities:
-            for pct in np.linspace(min_pct, max_pct, 10):
-                if pct != 0:
-                    self.possible_actions.append(
-                        Action(
-                            name=f"scale_{entity}_{pct:.0f}pct",
-                            column=entity_column,
-                            operation="scale_by_value",
-                            value={
-                                'filter_column': entity_column,
-                                'filter_value': entity,
-                                'scale': 1 + pct / 100,
-                                'affected_columns': target_columns
-                            },
-                            cost=abs(pct) / 100
-                        )
+            # One decision per entity; different entities stay independent.
+            group_key = f"scale_entity:{entity_column}:{entity}"
+            for pct in _percentage_steps(min_pct, max_pct):
+                self.possible_actions.append(
+                    Action(
+                        name=f"scale_{entity}_{pct:.0f}pct",
+                        column=entity_column,
+                        operation="scale_by_value",
+                        value={
+                            'filter_column': entity_column,
+                            'filter_value': entity,
+                            'scale': 1 + pct / 100,
+                            'affected_columns': target_columns
+                        },
+                        cost=abs(pct) / 100,
+                        alternative_group=group_key
                     )
+                )
         return self
 
     # ===== Apply Actions =====
@@ -755,6 +809,28 @@ class WhatIfDSL:
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
 
+    @staticmethod
+    def _conflicts(action: Action, selected: List[Action]) -> bool:
+        """Check whether *action* is an alternative to one already selected.
+
+        Two actions from the same ``alternative_group`` are competing answers
+        to a single decision (which percentage to apply to this metric/entity),
+        so taking both would compound them past the declared bound.
+
+        Args:
+            action: Candidate action.
+            selected: Actions already chosen for this scenario.
+
+        Returns:
+            True if the candidate must be skipped.
+        """
+        if action.alternative_group is None:
+            return False
+        return any(
+            chosen.alternative_group == action.alternative_group
+            for chosen in selected
+        )
+
     def _solve_greedy(self, max_actions: int) -> ScenarioResult:
         """Greedy algorithm: evaluate actions one by one"""
         # SPECIAL CASE: If no objectives, just apply actions directly
@@ -762,13 +838,16 @@ class WhatIfDSL:
             selected_actions = []
             current_df = self.df.copy()
 
-            for action in self.possible_actions[:max_actions]:
+            for action in self.possible_actions:
+                if len(selected_actions) >= max_actions:
+                    break
+                # Never stack two alternatives for the same decision.
+                if self._conflicts(action, selected_actions):
+                    continue
                 test_df = self._apply_action(action, current_df)
                 if not test_df.empty:
                     selected_actions.append(action)
                     current_df = test_df
-                    if len(selected_actions) >= max_actions:
-                        break
 
             self.applied_actions = selected_actions
             return ScenarioResult(
@@ -791,6 +870,12 @@ class WhatIfDSL:
             # Try each possible action
             for action in self.possible_actions:
                 if action in selected_actions:
+                    continue
+
+                # Skip alternatives to a decision already made, otherwise the
+                # optimizer stacks e.g. -30% and -27% on the same group and
+                # lands at -48.7%, outside the range the caller declared.
+                if self._conflicts(action, selected_actions):
                     continue
 
                 # Apply action
@@ -840,6 +925,16 @@ class WhatIfDSL:
         # Explore combinations of actions
         for r in range(1, min(max_actions + 1, len(self.possible_actions) + 1)):
             for action_combo in combinations(self.possible_actions, r):
+                # A combination may hold at most one alternative per decision,
+                # otherwise its members compound past their declared bounds.
+                groups = [
+                    a.alternative_group
+                    for a in action_combo
+                    if a.alternative_group is not None
+                ]
+                if len(groups) != len(set(groups)):
+                    continue
+
                 # Apply combination of actions
                 test_df = self.base_df.copy()
                 for action in action_combo:
