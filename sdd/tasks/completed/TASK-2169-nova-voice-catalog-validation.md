@@ -178,10 +178,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Added `NOVA_VOICE_CATALOG: frozenset = frozenset({"matthew",
+"tiffany", "amy"})` as a module-level constant in `clients/nova/audio.py`,
+promoting the previous docstring-only list. Added `NovaAudio._resolve_voice()`
+— validates a requested voice case-insensitively (`.strip().lower()`)
+against the catalog, warns and falls back to `self.voice_id` on a miss,
+never raises, never mutates `self.voice_id`. Wired it into
+`stream_voice()` at the exact line the contract identified
+(`resolved_voice_id = kwargs.get("voice_id") or self.voice_id` →
+`self._resolve_voice(kwargs.get("voice_id"))`). Updated
+`NovaClient.voice_capabilities` to source `voice_catalog` from the
+constant (`frozenset(NOVA_VOICE_CATALOG)`) and `default_voice` from
+`self.voice_id` (the instance's actual configured default, so
+`NovaClient(voice_id="tiffany").voice_capabilities.default_voice ==
+"tiffany"` — more accurate than a hardcoded `"matthew"` literal).
+12 new tests in `tests/clients/test_nova_voice_catalog.py`. Full
+Nova + voice-domain regression (104 tests) green except the one
+already-documented pre-existing `test_no_aiohttp_import` failure.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Catalog source (spec §8 open question)**: the three English-locale
+voices (`matthew`, `tiffany`, `amy`) are the only ones independently
+verifiable from this repository (the pre-existing docstring at
+`nova/audio.py:737`, now cross-referenced from the new constant's
+docstring). This sandboxed environment has no live network access to
+re-verify the complete current AWS Bedrock Nova Sonic voice catalog
+against AWS's documentation, so I did NOT invent additional voice names
+(e.g. multilingual locale voices) I could not verify against the
+codebase or a live source — doing so would violate the anti-hallucination
+mandate for an unverifiable external fact. This is intentionally
+conservative and safe: `_resolve_voice()`'s warn-and-fall-back design
+(never a hard reject, per spec §7 Known Risks) means an unlisted-but-real
+voice still works today, it just logs a warning and uses the client's
+configured default instead of the requested one — exactly the documented
+non-breaking failure mode. Left as an explicit open item for a human
+with AWS docs access to expand the catalog if broader validation
+(rather than fallback-only) becomes a goal.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — catalog completeness left conservative
+per the reasoning above; no scope items skipped.
