@@ -32,7 +32,7 @@
       "feature_id": "FEAT-419",
       "feature": "execution-plan-tool",
       "spec": "sdd/specs/execution-plan-tool.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Creates parrot/tools/execution_plan/ package (__init__, models, toolkit) that 2181/2182/2183/2184 all touch or import.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2180-executionplan-toolkit-core.md"
+      "completed_at": "2026-08-07T00:32:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2180-executionplan-toolkit-core.md"
     },
     {
       "id": "TASK-2181",

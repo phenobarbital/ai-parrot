@@ -207,10 +207,69 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Implemented `ExecutionPlanToolkit` core in
+`packages/ai-parrot/src/parrot/tools/execution_plan/{__init__,models,
+toolkit}.py`: constructor wiring (only `tool_manager`+`working_memory`
+required, spec defaults for the rest), `RunRecord`/`RunningSummary`
+(models.py, plain `BaseModel`, `extra="forbid"`; the live `asyncio.Task`
+handle is kept OUT of the pydantic model in a separate toolkit-internal
+dict per spec's "non-serialized runtime handle" note), `PlanStatusArgs`/
+`PlanArtifactsArgs` (`AbstractToolArgsSchema` subclasses), the
+`_run_plan()` executor path (`ensure_tool_node_registered` called lazily
+on first run only, `to_flow_definition` → `AgentsFlow.from_definition`
+with a lazily-created cached empty `AgentRegistry` + `node_factories=
+{"tool": make_tool_node_factory(...)}` → background `asyncio.Task` →
+`asyncio.wait(..., timeout=soft_timeout)` → full manifest or
+`RunningSummary`, never cancelling the task), an internal
+`on_node_event` progress listener updating `RunRecord.nodes_done`, and
+bounded run-registry eviction (oldest completed/failed beyond
+`max_completed_runs`, in-flight never evicted). `plan_status`/
+`plan_artifacts` tools implemented per spec. 9/9 new unit tests pass
+(`pytest packages/ai-parrot/tests/tools/execution_plan/ -v`); the
+relocated TASK-2179 plan/ suite (62 tests) still passes alongside it.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Found-and-fixed pre-existing bug (outside this task's declared file
+list — flagged for explicit review):**
+`packages/ai-parrot/src/parrot/bots/flows/flow/flow.py`'s
+`AgentsFlow._materialize_nodes()` definition-driven branch (used by
+`from_definition()`) constructs `StartNode`/`EndNode` via
+`cls(node_id=nid, dependencies=deps, successors=succs)` with no `fsm` —
+those classes declare no `fsm` field (only `AgentNode` does) — yet
+`_run_node()` unconditionally calls `node.fsm.schedule()/.start()/
+.succeed()/.fail()` for every dispatched node, crashing on
+`AttributeError: 'StartNode' object has no attribute 'fsm'` the instant
+any `from_definition()`-built flow with start/end sentinel nodes is
+actually `run_flow()`'d. Confirmed via `git grep` that NO existing test
+or production caller in the repo (dev_loop/dev_flow's own
+`from_definition()` usages use only "agent"/"decision" node types, never
+"start"/"end") ever combined `from_definition()` + `run_flow()` with
+start/end sentinels before — `plan/compile.py::to_flow_definition()`
+(FEAT-419, frozen module, cannot be changed) is the first caller to do
+so unconditionally. Fixed by mirroring the EXACT same
+`model_copy(update={"fsm": AgentTaskMachine(...)})` patch the
+programmatic (`add_node`) branch of `_materialize_nodes()` already
+applies, just applied to the definition-driven "start"/"end"
+construction too. Verified non-regressive: the full pre-existing
+`pytest packages/ai-parrot/tests/bots/flows/` suite (301 tests) still
+passes after the fix.
+
+**Unrelated, pre-existing test-isolation hazard observed (not fixed,
+out of scope):** running `packages/ai-parrot/tests/bots/flows/
+test_storage_parity.py::...test_no_legacy_storage_import_in_test_
+orchestrator` (which does `import tests.test_orchestrator_agent`) in the
+same pytest session BEFORE this feature's tests causes
+`sys.modules["parrot.bots.flows.core.node"]` (and the `flow.py` module
+that already cached a reference to its `Node` class) to end up bound to
+two different module/class objects, breaking `issubclass()` checks in
+`register_node()` for any class imported before that point. Reproduced
+and confirmed via `git blame`-free bisection that this is triggered by
+`test_orchestrator_agent.py`'s import chain / `packages/ai-parrot/tests/
+conftest.py`'s documented sys.modules stubbing (FEAT-268 note in that
+conftest), not by anything in FEAT-419. Does not affect either this
+task's or TASK-2179's own specified test commands (each scoped to its
+own package); only appears when combining unrelated test directories in
+one session. Flagging for a separate ticket rather than fixing here.
 
 **Deviations from spec**: none
