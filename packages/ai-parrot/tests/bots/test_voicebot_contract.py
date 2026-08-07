@@ -148,36 +148,6 @@ class TestMemoryFromRole:
         turn = await bot.conversation_memory.last_turn()
         assert turn.user_message == "what's the weather"
 
-
-class TestSystemPromptPropertyInitialized:
-    """Code-review finding (FEAT-418, TASK-2178): AbstractBot.__init__()
-    never routed construction through the ``system_prompt`` property
-    setter — only ``system_prompt_template`` (a separate legacy
-    attribute) was set, leaving the property's backing
-    ``_system_prompt_template`` uninitialized. Any code reading
-    ``bot.system_prompt`` on a freshly constructed VoiceBot (e.g.
-    ``VoiceChatHandler._run_voice_session()``, which never calls the
-    async ``configure()`` flow for bots built via ``bot_factory()``) hit
-    an ``AttributeError`` — reproduced against a plain ``VoiceBot()``
-    with no mocks involved, so this was not specific to any one
-    integration path."""
-
-    def test_system_prompt_property_readable_after_init(self):
-        bot = VoiceBot(name="x", system_prompt="hello world")
-        assert bot.system_prompt == "hello world"
-
-    def test_system_prompt_property_matches_template(self):
-        bot = VoiceBot(voice_config=VoiceConfig())
-        assert bot.system_prompt == bot.system_prompt_template
-
-    def test_create_voice_bot_factory_also_fixed(self):
-        """VoiceChatHandler's default bot_factory goes through
-        create_voice_bot(), not VoiceBot() directly — must be fixed too."""
-        from parrot.bots.voice import create_voice_bot
-
-        bot = create_voice_bot(name="y", system_prompt="hi there")
-        assert bot.system_prompt == "hi there"
-
     async def test_assistant_turn_persisted_from_role(self):
         bot = VoiceBot(voice_config=VoiceConfig())
         bot._llm = _RecordingClient()
@@ -216,3 +186,33 @@ class TestSystemPromptPropertyInitialized:
         turn = await bot.conversation_memory.last_turn()
         assert turn.user_message == "hello"
         assert turn.assistant_response == ""
+
+
+class TestSystemPromptPropertyInitialized:
+    """Code-review finding (FEAT-418, TASK-2178): AbstractBot.__init__()
+    never routed construction through the ``system_prompt`` property
+    setter — only ``system_prompt_template`` (a separate legacy
+    attribute) was set, leaving the property's backing
+    ``_system_prompt_template`` uninitialized. Any code reading
+    ``bot.system_prompt`` on a freshly constructed VoiceBot (e.g.
+    ``VoiceChatHandler._run_voice_session()``, which never calls the
+    async ``configure()`` flow for bots built via ``bot_factory()``) hit
+    an ``AttributeError`` — reproduced against a plain ``VoiceBot()``
+    with no mocks involved, so this was not specific to any one
+    integration path."""
+
+    def test_system_prompt_property_readable_after_init(self):
+        bot = VoiceBot(name="x", system_prompt="hello world")
+        assert bot.system_prompt == "hello world"
+
+    def test_system_prompt_property_matches_template(self):
+        bot = VoiceBot(voice_config=VoiceConfig())
+        assert bot.system_prompt == bot.system_prompt_template
+
+    def test_create_voice_bot_factory_also_fixed(self):
+        """VoiceChatHandler's default bot_factory goes through
+        create_voice_bot(), not VoiceBot() directly — must be fixed too."""
+        from parrot.bots.voice import create_voice_bot
+
+        bot = create_voice_bot(name="y", system_prompt="hi there")
+        assert bot.system_prompt == "hi there"

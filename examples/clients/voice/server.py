@@ -192,6 +192,13 @@ def build_capabilities() -> dict[str, Any]:
     needs ``aws_sdk_bedrock_runtime`` at construction time either — so the
     Nova descriptor is shown even when the Nova route itself is
     unavailable (spec: a descriptor that lies by omission is still a lie).
+
+    These two clients are throwaways, read once for ``voice_capabilities``
+    (a synchronous property) and never used again — deliberately not
+    ``.close()``d. Neither constructor opens a network resource (no HTTP
+    session, no socket); that only happens lazily inside ``stream_voice()``
+    (see ``_ensure_client()``/``_open_stream()`` in each client), which is
+    never called here.
     """
     gemini_client: VoiceCapable = GeminiLiveClient(voice_name="Puck")
     capabilities = {"gemini": _capabilities_to_json(gemini_client.voice_capabilities)}
@@ -229,7 +236,18 @@ async def index_handler(request: web.Request) -> web.Response:
         },
         "capabilities": request.app["capabilities"],
     }
-    html = INDEX_ASSET.read_text().replace("__CONFIG__", json.dumps(cfg))
+    # Anchored to the exact bootstrap statement (`window.__CONFIG__ =
+    # __CONFIG__;`), count=1 — a bare token-wide str.replace() would ALSO
+    # rewrite the two other `window.__CONFIG__.providers`/`.capabilities`
+    # *property accesses* further down the same script (they legitimately
+    # contain the substring "__CONFIG__" as part of `window.__CONFIG__`,
+    # not as the template placeholder) into invalid JavaScript, silently
+    # breaking every script block on the page (code-review finding).
+    html = INDEX_ASSET.read_text().replace(
+        "window.__CONFIG__ = __CONFIG__;",
+        f"window.__CONFIG__ = {json.dumps(cfg)};",
+        1,
+    )
     return web.Response(text=html, content_type="text/html")
 
 

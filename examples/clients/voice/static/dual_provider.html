@@ -803,9 +803,11 @@
     </aside>
 
     <script>
-        // Templated by server.py's index_handler(): replaces __CONFIG__ with
-        // a JSON object {"providers": {...}, "capabilities": {...}} built
-        // from each VoiceChatHandler's provider and each client's live
+        // server.py's index_handler() replaces this ENTIRE statement
+        // (anchored, not a bare token substitution — see its comment for
+        // why) with `window.__CONFIG__ = <json>;`, where <json> is
+        // {"providers": {...}, "capabilities": {...}} built from each
+        // VoiceChatHandler's provider and each client's live
         // voice_capabilities descriptor.
         window.__CONFIG__ = __CONFIG__;
     </script>
