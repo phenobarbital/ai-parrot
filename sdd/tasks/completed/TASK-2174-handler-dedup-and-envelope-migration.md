@@ -205,10 +205,73 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Deleted `_HandlerVoiceSession._run_turn()` entirely. Added a
+`build_frames()` override (sync, per TASK-2171's hook contract)
+reproducing `_send_voice_response()`'s real frame protocol byte-for-byte
+(response_chunk/transcription/display_data/tool_call/response_complete/
+ready_to_speak, STT-only gating, thought-text filtering via a new shared
+`_THOUGHT_FILTER_PATTERN` module constant, and the `go_away` ->
+`session_warning` + `reconnect_required` mutation). `_relay()` stays
+overridden, but now cooperatively (`await super()._relay(...)` — which
+runs `build_frames()` and sends its output — then the LiveAvatar audio
+tee, the one async side effect `build_frames()` cannot perform). Migrated
+both named call sites to canonical `role`: `_send_voice_response()`
+(`:1614→` in the old numbering) and the dead branch in
+`_send_complete_voice_response()` (`:1481→`, removed — see deviation
+below). Removed the legacy `message.user_transcription` branch in
+`chat.html` (only that branch; the main `transcription`/`is_user` path
+stays). Updated the frontend guide's `LiveVoiceResponse` field sketch
+(added `role`, removed `user_transcription` from the metadata comment)
+plus an explanatory note that the WS wire protocol
+(`transcription.is_user`) is unchanged — only the internal Python source
+of that data changed. 8 new tests (`TestDeduplication` +
+`TestEnvelopeMigration`) plus fixed 8 pre-existing tests in
+`test_handler_refactor.py` that constructed `_HandlerVoiceSession` with a
+bare `MagicMock()` client (TASK-2172's preflight now requires a real
+`voice_capabilities` descriptor) or asserted the old
+`metadata["user_transcription"]` scenario. Full
+`ai-parrot-integrations/tests/voice/` suite green (134 passed, 1 skipped).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec (both load-bearing, documented prominently in code
+comments too)**:
 
-**Deviations from spec**: none | describe if any
+1. **`_AskStreamVoiceClient` adapter (new class in `handler.py`, same
+   file, no new file created).** Deleting `_run_turn()` in favor of the
+   base class's inherited loop means `_run_turn()`'s
+   `self.client.stream_voice(...)` call now runs against whatever
+   `client=` was passed to `_HandlerVoiceSession.__init__`. The OLD
+   duplicated `_run_turn()` drove turns through `bot.ask_stream()`
+   specifically — NOT the raw client — because `VoiceChatHandler`
+   explicitly configures `conversation_memory` on the bot before starting
+   a session (`_handle_start_session()`'s own comment: "the bot factory
+   ... does NOT run the async configure() flow ... which means
+   ask_stream() silently skips loading/saving turns"). Passing the raw
+   `bot._llm` as `client=` (as `_run_voice_session()` did before this
+   task) would have made the now-inherited `_run_turn()` bypass
+   `VoiceBot.ask_stream()` entirely — silently breaking conversation
+   memory and dynamic (KB/vector/user-context) system-prompt building for
+   every streaming voice session, with no crash and no error log. This is
+   exactly the class of regression the spec is otherwise careful to guard
+   against (e.g. TASK-2173's memory-from-role fix), so I did not treat it
+   as acceptable collateral. `_AskStreamVoiceClient` is a ~20-line adapter
+   presenting `VoiceBot.ask_stream()` as `VoiceCapable.stream_voice()` so
+   the inherited loop drives turns through the bot exactly as before,
+   with zero duplicated reconnection logic. `stt_only` threads through
+   `VoiceSession.__init__`'s `stt_only` parameter (added in TASK-2172,
+   which — read together with this task — was very likely added
+   specifically to unblock this exact deletion).
+2. **`_send_complete_voice_response()`'s `user_transcription` branch
+   (`:1481` in the original contract) is REMOVED, not migrated to
+   `role`.** Unlike `_send_voice_response()` (the streaming path, which
+   receives individual role-tagged `LiveVoiceResponse` chunks and
+   migrates cleanly), this method receives an already-aggregated
+   `metadata` dict from `VoiceBot.ask_voice()`
+   (`bots/voice.py`, out of this task's file scope), whose aggregation
+   merges every chunk's `metadata`/`text` into one flat response without
+   preserving per-chunk `role`. There is no role-based replacement
+   available here without changing `ask_voice()` itself. Since the
+   original key can never fire again (TASK-2167 removed the producer),
+   the dead branch is deleted with an inline comment explaining why,
+   rather than left to silently never trigger.
