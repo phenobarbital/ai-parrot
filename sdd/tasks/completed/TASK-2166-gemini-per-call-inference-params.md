@@ -238,10 +238,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: `_build_live_config()` now accepts optional `temperature`,
+`max_tokens`, `top_p`, `enable_input_transcription`,
+`enable_output_transcription` — each falling back to the constructor value
+(inference params) or `True` (transcription flags, matching today's
+behavior) when omitted. Verified `top_p` exists as a real field on the
+installed `google-genai` 2.17.0 `types.LiveConnectConfig`
+(`model_fields['top_p']`, alias `topP`) before wiring it — confirmed per
+the task's explicit instruction to check rather than assume.
+`enable_input_transcription`/`enable_output_transcription` are real
+parameters now, closing the latent `TypeError` regression at
+`live.py:777-780` (old code forwarded them to a signature that didn't
+accept them). `stt_only=True` still forces `output_audio_transcription`
+to `None` regardless of `enable_output_transcription` (preserves
+`live.py:711` semantics). `stream_voice()` gained `options:
+Optional[VoiceStreamOptions] = None`; per-field precedence is explicit
+kwarg > `options` field > `_build_live_config`'s own constructor
+fallback. Flipped `supports_top_p` and `supports_per_call_inference` to
+`True` in Gemini's `voice_capabilities` descriptor (both now backed by
+real behavior) and updated the corresponding assertion in TASK-2165's
+`test_voice_protocol.py::test_descriptors_tell_current_truth` (that test
+explicitly anticipated this flip in a `# flipped by TASK-2166` comment).
+15 new tests in `tests/clients/test_live_inference_params.py`; full voice
+test domain (93 tests across `tests/clients`, `tests/bots`, `tests/voice`,
+`tests/models`) green except the one already-documented pre-existing
+`test_no_aiohttp_import` failure (unrelated file, reproduces on `dev`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — `top_p` field confirmed to exist in the
+installed SDK, so no fallback to `supports_top_p=False` was needed.
