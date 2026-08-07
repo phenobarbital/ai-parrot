@@ -214,7 +214,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -224,8 +224,8 @@
       "parallelism_notes": "Only test files, so no source conflict with TASK-2195 — but it closes out the deliberately-red FEAT-326 e2e suite, so it should not be deferred past 2195.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2196-e2e-integration-tests.md"
+      "completed_at": "2026-08-07T17:26:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2196-e2e-integration-tests.md"
     },
     {
       "id": "TASK-2197",
