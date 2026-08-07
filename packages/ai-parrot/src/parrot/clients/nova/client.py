@@ -24,7 +24,7 @@ from typing import Optional
 
 from ...models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from ..bedrock import BedrockConverseBase
-from .audio import NovaAudio
+from .audio import NOVA_VOICE_CATALOG, NovaAudio
 from .generation import NovaGeneration
 
 
@@ -135,9 +135,9 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
         generates a spoken response; ``stt_only`` is not yet an accepted
         parameter (TASK-2170 adds explicit, non-filtering acceptance).
         ``supports_per_call_voice``/``supports_top_p`` are already exercised
-        today, but voice-id *validation* against a catalog lands in
-        TASK-2169 — the value here is not optimistic, it describes the
-        parameter already being read from ``**kwargs`` today.
+        today, and as of TASK-2169 the requested voice is also validated
+        against :data:`~parrot.clients.nova.audio.NOVA_VOICE_CATALOG` (with
+        a warned fallback) instead of being passed through unchecked.
 
         Returns:
             A frozen ``VoiceCapabilities`` instance for
@@ -162,8 +162,6 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
             output_formats=frozenset({AudioFormat.PCM_24K}),
             input_sample_rates=frozenset({16000}),
             output_sample_rates=frozenset({24000}),
-            # Prose catalog from nova/audio.py:737; TASK-2169 promotes this
-            # to a shared constant.
-            voice_catalog=frozenset({"matthew", "tiffany", "amy"}),
-            default_voice="matthew",
+            voice_catalog=frozenset(NOVA_VOICE_CATALOG),
+            default_voice=self.voice_id,
         )

@@ -57,6 +57,24 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from ..live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
 from ...models.bedrock_models import translate as translate_bedrock_model
 
+# Nova Sonic / Nova 2 Sonic synthesis voice catalog (FEAT-418, TASK-2169).
+#
+# Promoted from the docstring-only list at ``stream_voice()``'s ``**kwargs``
+# documentation (below) into an actual validated constant. All entries are
+# lowercase — Bedrock voice ids are lowercase, and ``NovaAudio._resolve_voice``
+# normalizes any requested voice before comparing against this set.
+#
+# NOTE (spec §8 open question, unresolved): this repo has no prior
+# machine-readable Nova Sonic voice catalog; the docstring's three
+# English-locale voices (``matthew``, ``tiffany``, ``amy``) are the only
+# ones independently verifiable from the existing codebase in this sandbox
+# (no live network access to re-confirm the full multilingual catalog
+# against the current AWS Bedrock Nova Sonic documentation). If the true
+# catalog is larger, `_resolve_voice()`'s warn-and-fall-back behavior
+# (never a hard reject) means an unlisted-but-valid voice degrades to a
+# logged warning rather than breaking the call — see Completion Note.
+NOVA_VOICE_CATALOG: frozenset = frozenset({"matthew", "tiffany", "amy"})
+
 
 def _require_voice_sdk() -> None:
     """Raise an actionable ``ImportError`` if the Pre-Alpha voice SDK is missing.
@@ -279,6 +297,36 @@ class NovaAudio:
     # PCM format constants (spec §2/§7).
     INPUT_SAMPLE_RATE_HZ: int = 16000
     OUTPUT_SAMPLE_RATE_HZ: int = 24000
+
+    def _resolve_voice(self, requested: Optional[str]) -> str:
+        """Resolve and validate the effective Nova Sonic voice (FEAT-418).
+
+        Validates ``requested`` against :data:`NOVA_VOICE_CATALOG`
+        (case-insensitively — Bedrock voice ids are lowercase). An
+        out-of-catalog voice (e.g. ``"Puck"``, a Gemini voice sent here by
+        ``bots/voice.py:198`` before FEAT-418) warns and falls back to
+        ``self.voice_id`` rather than being passed through to Bedrock
+        unvalidated. Never mutates ``self.voice_id`` — resolved locally
+        per call, mirroring ``GeminiLiveClient._resolve_voice_name``.
+
+        Args:
+            requested: The per-call voice override
+                (``stream_voice(voice_id=...)``), or ``None`` to use the
+                constructor's default.
+
+        Returns:
+            The voice id to use for this call.
+        """
+        if requested is None:
+            return self.voice_id
+        normalized = requested.strip().lower()
+        if normalized in NOVA_VOICE_CATALOG:
+            return normalized
+        self.logger.warning(
+            "NovaAudio: voice %r is not in the known catalog; falling back to %r",
+            requested, self.voice_id,
+        )
+        return self.voice_id
 
     # ------------------------------------------------------------------
     # Thin SDK wrappers — isolate the Pre-Alpha bidirectional-stream API
@@ -758,7 +806,11 @@ class NovaAudio:
         resolved_model = translate_bedrock_model(
             self.model or self.default_model, region_prefix=None
         )
-        resolved_voice_id = kwargs.get("voice_id") or self.voice_id
+        # FEAT-418 (TASK-2169): validated against NOVA_VOICE_CATALOG with a
+        # warned fallback — previously passed straight to Bedrock
+        # unvalidated, so a Gemini voice like "Puck" (bots/voice.py:198)
+        # produced an opaque provider error instead of a graceful fallback.
+        resolved_voice_id = self._resolve_voice(kwargs.get("voice_id"))
         # FEAT-416 (TASK-2148): gate concurrent tool execution on the
         # VoiceConfig-derived flag (VoiceBot wires this in TASK-2151).
         # Default False preserves current sequential behavior exactly.
