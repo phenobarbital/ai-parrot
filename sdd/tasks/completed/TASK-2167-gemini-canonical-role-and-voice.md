@@ -102,7 +102,7 @@ class LiveVoiceResponse:
 - ~~`GeminiLiveClient.stream_voice` setting `role` today~~ — it does not; `role="user"` at `live.py:1266` is inside `ask()`, a different method.
 - ~~Uppercase roles on the Gemini side~~ — the canonical form is lowercase `"user"`/`"assistant"`. Nova's uppercase values are normalized separately by TASK-2170.
 - ~~An enumerated Gemini voice catalog in the repo~~ — not written down anywhere. Use the descriptor's `voice_catalog` from TASK-2165 and prefer warn-and-fallback over hard rejection (spec §8 leaves catalog completeness open).
-- ~~`metadata["assistant_transcription"]`~~ — no such key exists; do not invent a mirror of the key being removed.
+- ~~`metadata["assistant_transcription"]`~~ — **CORRECTED during implementation (2026-08-07)**: this claim was stale. `live.py` (output-transcription handler, ~line 1043 pre-task) DOES emit `metadata={"assistant_transcription": text}` for the model's own speech transcript — a separate frame from the `part.text` model-turn chunks. This task's scope only calls out `metadata["user_transcription"]` for removal; `assistant_transcription` was left untouched (out of scope for TASK-2167).
 
 ---
 
@@ -197,10 +197,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Model-originated `LiveVoiceResponse` frames (text chunks, audio
+chunks, and the interrupted-turn summary frame) now carry
+`role="assistant"`. User transcription is now yielded as
+`LiveVoiceResponse(text=<transcript>, role="user")` instead of
+`text="", metadata={"user_transcription": text}` — the metadata key is
+fully removed from `live.py` (confirmed via grep: zero remaining
+occurrences of `user_transcription` as a metadata key). Added
+`_resolve_voice_name()` helper and a `voice` parameter on
+`_build_live_config()`: resolves per-call override against
+`voice_capabilities.voice_catalog` (the real `ALL_VOICE_PROFILES`-backed
+catalog from TASK-2165), warns and falls back to `self.voice_name`
+on a miss, never mutates `self.voice_name`. Threaded `voice` through
+`stream_voice()`'s existing kwarg/options precedence resolution loop from
+TASK-2166. Flipped `supports_per_call_voice=True` in Gemini's descriptor
+and updated the corresponding `# flipped by TASK-2167` assertion in
+`test_voice_protocol.py`. Also corrected two stale doc comments in the
+same file while touching them: `LiveVoiceResponse.role`'s docstring
+(previously claimed Gemini never sets `role`, and used the old uppercase
+`"USER"/"ASSISTANT"` form) and the `stream_voice()` `stt_only` docstring
+(referenced the now-removed `user_transcription` frame name).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Found and corrected a second stale "Does NOT Exist" contract claim during
+implementation: the contract said `metadata["assistant_transcription"]`
+"no such key exists" — but `live.py` DOES emit that key today (a separate
+frame for the model's own speech transcription, distinct from the
+`part.text` model-turn chunks). Scope for this task only calls out
+`user_transcription` for removal, so `assistant_transcription` was left
+untouched (out of scope) — flagging the stale claim here rather than
+silently acting on it either way.
 
-**Deviations from spec**: none | describe if any
+11 new tests in `tests/clients/test_live_envelope.py`, including a
+hand-rolled mock harness for `stream_voice()`'s Live WebSocket session
+(no existing end-to-end mock fixture for this method existed in the
+codebase). Full voice-domain regression (104 tests) green except the
+one pre-existing, unrelated `test_no_aiohttp_import` failure (confirmed
+on `dev`).
+
+**Deviations from spec**: none.
