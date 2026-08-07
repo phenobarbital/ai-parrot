@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-420
 **Date**: 2026-08-07
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 **Prior exploration**: `sdd/proposals/finance-reporter-tier2-narrative.brainstorm.md`
@@ -1139,16 +1139,16 @@ async def run_scheduled_refresh(runner: Any, name: str, *, params=None,
 
 **Still open:**
 
-- [ ] Which LLM serves the narrator? `FinanceReporter.llm` is
+- [x] Which LLM serves the narrator? `FinanceReporter.llm` is
   `"google:gemini-3.5-flash"` (`finance_reporter.py:60`) — adequate for prose,
   but the figure guard's tolerance should be calibrated to whatever model
   actually runs. Deferrable to implementation: `NarrativeMixin` uses the agent's
   configured client, so this is a tuning decision, not a design blocker —
-  *Owner: Jesus*
+  *Owner: Jesus*: by default google:gemini-3.5-flash or amazon.nova-lite-v1:0
 - [ ] Should the figure guard's tolerance be configurable per recipe, or a fixed
   constant? A fixed constant is simpler and harder to weaken by accident;
   configurable helps if a division's magnitudes differ wildly. Decide during
-  Module 4 — *Owner: implementing agent*
+  Module 4 — *Owner: implementing agent*:
 
 ---
 
