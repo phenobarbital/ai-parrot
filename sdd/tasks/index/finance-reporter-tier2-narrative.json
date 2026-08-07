@@ -109,7 +109,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -119,8 +119,8 @@
       "parallelism_notes": "Data only — a new .agent/skills/ directory. Append-only, so it cannot collide with any other task.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2191-budget-narrative-skill.md"
+      "completed_at": "2026-08-07T14:34:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2191-budget-narrative-skill.md"
     },
     {
       "id": "TASK-2192",
