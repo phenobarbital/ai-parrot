@@ -186,10 +186,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Implemented `resolve_planner_client`/`PlanPlanner`/
+`PlanAuthoringError` in `packages/ai-parrot/src/parrot/tools/
+execution_plan/planner.py`. `resolve_planner_client` mirrors
+`ModelSwitchingMixin`'s `secondary_llm` resolution priority (instance
+passthrough, class instantiation, `model_config` dict, "provider:model"
+string) but adapted into a standalone function — the mixin's own
+`_resolve_llm_config`/`_parse_model_config`/`_create_llm_client` are all
+bound to a live `AbstractBot` instance (`self.logger`, `self._default_llm`,
+`self.tool_manager`, `self.conversation_memory`) and have no reusable
+free function, so the dict/string paths are built directly on
+`parrot.clients.factory.LLMFactory.create` (string case) and
+`SUPPORTED_CLIENTS` (dict case, mirroring `_parse_model_config`'s
+name/llm/provider extraction) rather than copying bot-bound code. No
+implicit default model anywhere in the module (verified by a dedicated
+test scanning the module source for provider:model literals).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Deliberately does NOT use `AbstractClient.ask(structured_output=...)`:
+that base-class path (`_parse_structured_output`) silently falls back to
+returning the raw response text on a parse/validation failure instead of
+raising, which would hide exactly the failure this task's AC requires
+surfacing ("malformed JSON or schema-invalid plan raises a typed error").
+Instead the `ExecutionPlan.model_json_schema()` is embedded directly in
+the prompt and the response is parsed (with markdown-fence stripping)
+and validated here, raising `PlanAuthoringError` on either failure.
+Confirmed via `client.ask(prompt=..., model=..., temperature=0.0)` inside
+`async with self.client as entered:` — matches the real calling
+convention used elsewhere in `bots/abstract.py` (client is an async
+context manager; `ask()` requires `model=` as a real kwarg, not
+`question=`). Exactly one `entered.ask()` call per `author()`/`repair()`.
+
+15/15 new tests pass (`pytest packages/ai-parrot/tests/tools/
+execution_plan/test_planner.py -v`), using a real `AbstractClient`
+subclass double (`_FakeClient`, all abstract methods stubbed) rather than
+a duck-typed fake, so `isinstance(planner_llm, AbstractClient)` passthrough
+is exercised for real; `resolve_planner_client("google:gemini-2.5-flash")`
+and `resolve_planner_client({"name": "openai", ...})` were smoke-tested
+against the real `GoogleGenAIClient`/`OpenAIClient` classes too (no
+network — client construction alone does not call any provider API).
+`ruff check --select F,E9` clean.
 
 **Deviations from spec**: none

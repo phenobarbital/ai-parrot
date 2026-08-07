@@ -172,10 +172,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Implemented `PlanFileStore`/`PlanLoadError` in
+`packages/ai-parrot/src/parrot/tools/execution_plan/store.py`.
+`_resolve_path` tries `yaml` > `yml` > `json` in that order; `_parse`
+dispatches on suffix (`json.loads` vs `yaml.safe_load`); `_substitute`
+walks the parsed document exactly like `models._iter_strings` (rebuilding
+structure) applying the same exact-match-native-value / embedded-string-
+interpolation convention `paths.render_key` uses for runtime placeholders,
+via a dedicated `{params.<name>}` regex distinct from the executor's own
+`ARTIFACT_REF_RE`/`NODE_REF_RE`/`_ITEM_VAR_RE`, so `{artifacts.x}`/
+`{item}`/`{item.field}`/`{index}` pass through completely untouched.
+Missing and unused params are collected in one pass and reported together
+in a single `PlanLoadError`. Migrated `sdd/artifacts/example_plan.json` to
+`examples/plans/daily_security_sweep.json` (`"date": "{input}"` →
+`"date": "{params.date}"`; verified not gitignored via `git check-ignore`
+before adding). 10/10 new tests pass (`pytest packages/ai-parrot/tests/
+tools/execution_plan/test_store.py -v`), including the migrated example
+loading through the real store and the mixed-placeholder test proving
+runtime placeholders survive substitution byte-for-byte. `ruff check
+--select F,E9` clean (full default ruleset reports only the same
+style-preference nits — `Optional`/`Dict`/`List` spellings — already
+present repo-wide with no `[tool.ruff]` config; see TASK-2179/2180
+Completion Notes for the baseline comparison).
 
 **Deviations from spec**: none

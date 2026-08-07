@@ -149,10 +149,48 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Verbatim drop-in of `sdd/artifacts/plan/{models,paths,guards,facets,
+validator,compile,node,__init__}.py` into
+`packages/ai-parrot/src/parrot/bots/flows/plan/`. `_shim.py` not shipped.
+Collapsed the `try/except ImportError` fallbacks in `node.py`
+(`Node`, `AgentTaskMachine`) and `compile.py` (`EdgeDefinition`,
+`FlowDefinition`, `FlowMetadata`, `NodeDefinition`) to plain
+`parrot.bots.flows.*` imports. Relocated `test_plan.py`/`test_node.py` to
+`packages/ai-parrot/tests/bots/flows/plan/` (with `__init__.py`, mirroring
+sibling `tests/bots/flows/` convention), rewriting `from plan.X import`
+to `from parrot.bots.flows.plan.X import`; no shim-based fixtures existed
+in the tests to begin with (they build their own fakes for
+`ToolManager`/`WorkingMemoryToolkit`/`FlowContext`), so nothing else
+changed there. Added the two extra tests from the task's Test
+Specification (`test_public_api_exports`, `test_tool_not_registered_on_import`)
+to `test_plan.py`. All 62 tests pass
+(`pytest packages/ai-parrot/tests/bots/flows/plan/ -v`): 60 relocated +
+2 new. `"tool" not in NODE_REGISTRY` verified after plain import.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Environment notes (not code changes): the shared dev venv's `ormsgpack`
+install was missing its compiled `.so` (broke `import
+parrot.bots.flows` repo-wide, unrelated to this feature) — fixed via
+`uv pip install --reinstall --no-deps ormsgpack==1.12.2`. The compiled
+`parrot/utils/types*.so` and `parrot/utils/parsers/toml*.so` build
+artifacts (gitignored, not present in a fresh worktree checkout) were
+copied from the main repo into this worktree purely to make the editable
+install resolve against the worktree's `packages/ai-parrot/src` (via
+`PYTHONPATH` prepended ahead of the main-repo editable-install path) for
+local test execution — neither is committed.
+
+`ruff check packages/ai-parrot/src/parrot/bots/flows/plan/` reports only
+style-modernization findings (`UP006`/`UP035`/`UP045` `Optional`/`List`/
+`Dict`/`Set` → PEP 604/585 spellings, `RUF022`/`RUF023` sort suggestions,
+one inherited `F401` unused `Tuple` import in `node.py`) — all inherited
+verbatim from the frozen `sdd/artifacts/plan/` source. The repo has no
+`[tool.ruff]` config, so `ruff check` runs under ruff 0.16's full default
+ruleset; the same ruleset reports comparable pre-existing findings against
+untouched sibling files (e.g. `bots/flows/core/node.py`, `bots/flows/flow/
+loader.py`), confirming this is not something introduced here. Per this
+task's own "verbatim drop-in: no renames, no 'improvements'" constraint
+and spec §7 ("the `plan/` module is frozen"), these were left unmodified
+rather than "fixed" — fixing them would violate Cardinal Rule 1.
 
 **Deviations from spec**: none
