@@ -9,6 +9,7 @@ from parrot.outputs.a2ui.recipes import (
     DataSourceSpec,
     InfographicRecipe,
     LayoutSpec,
+    NarrativeSpec,
     RecipeParam,
     RenderSpec,
     ScheduleSpec,
@@ -84,3 +85,43 @@ def test_recipe_rejects_unknown_fields():
             updated_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
             not_a_field="oops",
         )
+
+
+class TestNarrativeSpecAdditive:
+    """FEAT-420 Module 3: `NarrativeSpec` + `InfographicRecipe.narrative`."""
+
+    def test_recipe_without_narrative_still_validates(self):
+        r = InfographicRecipe(
+            name="n",
+            title="T",
+            layout=LayoutSpec(component="Report"),
+            updated_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
+        )
+        assert r.narrative is None
+        assert r.schema_version == 1
+
+    def test_recipe_with_narrative_roundtrips(self):
+        r = InfographicRecipe(
+            name="n",
+            title="T",
+            layout=LayoutSpec(component="Report"),
+            updated_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="narrative_facts"),
+        )
+        again = InfographicRecipe.model_validate(r.model_dump())
+        assert again.narrative.skill == "budget-narrative"
+        assert again.narrative.facts_key == "narrative_facts"
+        assert again.narrative.output_key == "narrative"
+        assert again.schema_version == 1
+
+    def test_narrative_spec_stores_no_code(self):
+        """G1: only a skill name — no prompt/template/model fields."""
+        forbidden = {"prompt", "template", "source", "code", "llm", "model", "provider"}
+        assert not (forbidden & set(NarrativeSpec.model_fields))
+
+    def test_existing_example_recipe_still_loads(self):
+        """Regression: the pre-feature YAML example must keep validating."""
+        from pathlib import Path
+
+        y = Path("examples/infographic_recipes/budget-variance-daily.yaml").read_text()
+        assert InfographicRecipe.from_yaml(y).schema_version == 1

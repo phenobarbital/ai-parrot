@@ -335,13 +335,88 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Created `test_finance_reporter_narrative_e2e.py` with all 8 required
+integration tests (plus one extra sanity test for
+`resolve_system_account_context`). `test_dataagent_infographic_e2e.py`
+needed **zero changes** — verified by direct inspection and by running it
+(6/6 pass unmodified): it never references `FinanceReporter`,
+`budget_variance_descriptor`, or `_build_section_payload` at all — it uses
+generic synthetic test doubles (`_AuthoringAgent`/`_MixinHolder`) with its
+own made-up section names, entirely independent of `agents/
+finance_reporter.py`. The task's own premise ("this file asserts the
+data-splice path for FinanceReporter... fails by design") does not hold for
+the file's CURRENT state — nothing to remove or rewrite. Used an in-memory
+dataset (alias `"snapshots"`, matching `FINANCE_DATASET`) registered
+directly on `wired_agent._dataset_manager`, bypassing
+`register_datasets()`'s live Postgres table — per this task's own Codebase
+Contract guidance. `test_infographic_data_splice.py` passes unmodified;
+`ai-parrot-visualizations` verified unmodified (`git status --porcelain`
+clean). All `run()`/`run_scheduled_refresh()` calls pass a real `pctx`; no
+live LLM call anywhere (`_FakeNarrator`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Defects found in dependency modules, and where fixed** (both explicitly
+authorized by this task's own text: "If a test reveals a bug, fix it in
+the owning module"):
 
-**Defects found in dependency modules** (if any) and where they were fixed: ...
-**Fixture approach**: in-memory dataset | seeded `troc.finance_projection` (and why).
+1. **`publish_recipe`'s `data_sources` construction bug**
+   (`parrot/bots/mixins/infographic_authoring.py`, owned by FEAT-324/
+   TASK-2193) — flagged as a known limitation in TASK-2194's AND
+   TASK-2195's Completion Notes, confirmed and FIXED here. The bug: every
+   unique alias across ALL sections' `datasets` became a
+   `DataSourceSpec(dataset=alias, alias=alias)`, with no check for whether
+   that alias was ALSO a declared `TransformStep.output_key` (i.e. a
+   prior-step's output, not a real dataset — exactly `narrative_facts`'s
+   generic shape). Two failure modes: (a) the runner tries to
+   `fetch_dataset()` a name that was never registered, aborting before any
+   transform runs; (b) even if that fetch somehow succeeded, `alias in
+   frames` is checked BEFORE `alias in data_model` in
+   `_run_transforms_or_raise`, so the fetched (wrong) frame would silently
+   SHADOW the real transform output. Fix: exclude any alias that is also a
+   declared output_key when building `data_sources`. Verified directly:
+   `FinanceReporter.report_descriptor()` published via `publish_recipe` now
+   saves `data_sources == [DataSourceSpec(dataset="snapshots",
+   alias="snapshots")]` (previously included 3 bogus entries for
+   `variance_analysis`/`top_movers`/`division_breakdown`). Zero regressions:
+   `test_publish_recipe.py` (30), `test_finance_reporter_descriptors.py`
+   (18), `test_infographic_authoring_mixin.py` all still pass; `ruff`/`mypy`
+   show the exact same pre-existing finding counts before/after (verified
+   via `git stash` diff).
+2. **`agents/finance_reporter.py`** — updated the stale in-line comment in
+   the example script's replay section (TASK-2195 had flagged the
+   data_sources bug there as unresolved; now resolved, comment corrected to
+   reflect the CURRENT state — the example's remaining blocker is now ONLY
+   the separate, deliberate `TableSource` SQL-requirement safety guardrail
+   against `SELECT *`, not a bug).
 
-**Deviations from spec**: none | describe if any
+**Fixture approach**: in-memory dataset (`DatasetManager.add_dataset`,
+alias `"snapshots"`) — a live `troc.finance_projection` table is explicitly
+NOT required per this task's own Codebase Contract, and a live DB is
+unavailable in CI. 3 snapshots x 2 divisions x 3 projects, mirroring
+TASK-2186's branch coverage (Retail/Alpha → `concentrated`;
+Wholesale/Beta+Gamma → `offset_by`; Gamma new-at-latest → `trend is None`).
+
+**Deviations from spec**: one, necessary and explicitly authorized (see
+"Defects found" above) — touched `infographic_authoring.py`, not listed in
+this task's own Files to Create/Modify table, to fix the `data_sources`
+bug this task's OWN tests exercise and that TASK-2194/2195 had already
+flagged as a cross-task-scoped risk. Also discovered (but correctly did
+NOT need to fix, since it's a working-as-intended safety guardrail, not a
+bug): `TableSource.fetch()`'s explicit-SQL requirement — sidestepped
+entirely by using an in-memory dataset for these tests, per the task's own
+explicit fixture guidance. `RecipeRunner.dry_run()`'s optional-narrative-
+bind gap (a related but DIFFERENT defect) was already fixed in TASK-2195,
+before this task started — not re-touched here.
+
+**Full-suite caveat**: `pytest packages/ai-parrot/tests/integration/ -v`
+(the literal acceptance-criterion command) is NOT fully green, but the
+failures are PRE-EXISTING and unrelated to FEAT-420 — verified via
+`git stash -u` baseline (same 36 failed / 15 errors with or without this
+task's changes, all in `test_apply_filters_mixed.py`/
+`test_dataset_filter_handler.py`, a known cross-test-pollution issue in
+that directory). This task's own new test file passes 100% cleanly both
+standalone and paired with every directly-related FEAT-324/FEAT-420 e2e
+file (31/31 passed together: `test_dataagent_infographic_e2e.py` +
+`test_finance_reporter_narrative_e2e.py` +
+`infographic_recipes/test_e2e.py` + `test_infographic_data_splice.py`).

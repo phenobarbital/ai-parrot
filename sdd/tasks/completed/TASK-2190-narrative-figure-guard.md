@@ -371,10 +371,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Created `figure_guard.py` (stdlib-only) with `extract_figures` (regex
+matching `$1.23M`/`$45.6K`/`$1,234.5K`/`+12.3%`/U+2212-negative/bare integers)
+and `figures_are_derivable` (recursively collects numeric leaves from facts,
+excluding `bool` FIRST since it's an `int` subclass, then checks each
+extracted figure against those leaves within a 1% relative tolerance —
+justified in a module comment covering both the facts' 2dp rounding and the
+prose's display rounding). Comparison is signed (not abs), so a sign flip
+(e.g. `+$42.0K` prose vs. a `-42000.0` fact) is correctly rejected — added an
+extra test (`test_sign_flip_is_not_derivable`) beyond the task's spec for
+this. All-or-nothing: `figures_are_derivable` returns `(False, [...])`
+listing every non-derivable figure; callers (TASK-2192) discard the whole
+narrative on any failure. 19 tests pass (16 from the task spec + 3 extra:
+prose-not-mutated, bare-integer-derivable, percent-matches-percent-fact).
+`ruff check` and `mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: had to reword one docstring sentence — it
+originally said "without dragging in pandas", which made the module's own
+source fail the `test_module_is_stdlib_only` self-referential substring
+check (`"pandas" not in src`). Reworded to "without dragging in a dataframe
+library" — same meaning, no behavior change, module still imports nothing
+beyond `logging`/`re`/`typing`.

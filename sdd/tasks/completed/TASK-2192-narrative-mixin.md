@@ -411,15 +411,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Created `NarrativeMixin(SkillRegistryMixin)` implementing
+`Narrator.narrate()` exactly per the task's degrade-on-failure control flow:
+resolve skill → build prompt (body + assets + facts JSON) → call LLM → apply
+`figures_are_derivable` → discard ALL prose on any guard failure. Exported
+from `parrot/bots/mixins/__init__.py`. 14 tests pass (11 from the task spec
++ 3 extra: `test_none_output_returns_none`, `test_no_skill_name_returns_none`,
+and the two `TestCooperativeMixinDiscipline` chaining tests, since the task's
+own harness bypasses `__init__`/`configure` entirely). `ruff check` only adds
+pre-existing-style `UP045`/`I001`/`RUF022` findings (verified via `git
+stash -u` diff before/after); `mypy` shows 7 findings, all in the SAME two
+categories as the pre-existing `InfographicAuthoringMixin` mypy errors
+("X undefined in superclass" / "no attribute Y") — inherent to the
+cooperative-mixin pattern already accepted elsewhere in this codebase, not a
+new problem. Full `tests/unit/bots/` regression: same 4 pre-existing
+failures with or without this task's changes (verified via `git stash -u`
+— NOT a regression; two are `test_pandasagent_stale_data_variables.py`
+cross-test-pollution failures, one is
+`test_infographic_authoring_mixin.py::test_validation_gate_blocks_before_render`
+which also fails standalone-in-suite before this task, passes in isolation).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Resolved verification points**:
+- **LLM call seam used**: `self.get_client()` entered via `async with`, then
+  `await self.execute_llm_call(entered, "ask", prompt=prompt)` — the exact
+  pattern `ModelSwitchingMixin` builds on and `bots/base.py` uses at its own
+  call sites (`llm = self.get_client(); async with llm as client: ... await
+  self.execute_llm_call(client, "ask", **llm_kwargs)`). Extracts text via
+  `response.response` falling back to `response.output` (`AIMessage`'s
+  fields, `models/responses.py`). No provider name is referenced anywhere.
+- **Skill retrieval path used**: `NarrativeMixin` inherits
+  `SkillRegistryMixin` directly (rather than requiring every composing
+  agent to add it separately) and calls `self._skill_file_registry.get_by_name(name)`
+  — the sync, internal registry/definition path — lazily triggering
+  `await self._configure_skill_registry()` first (idempotent) so narration
+  works even if the composing agent's own `configure()` never called it.
+  This also resolves the "`SkillRegistryMixin` not in FinanceReporter's
+  declared bases" gap in the spec's own class-signature sketch (§2 New
+  Public Interfaces) — `NarrativeMixin(SkillRegistryMixin)` makes the
+  capability self-sufficient wherever this mixin is composed, matching
+  criterion G-I ("a second domain could reuse them unchanged").
+- **Asset reading approach**: `definition.assets_dir` read directly as a
+  plain `Path` (glob `*.md`, skip `SKILL.md`) — the internal path.
+  `read_skill_asset` is a sandboxed *tool* returning a `ToolResult`, built
+  for LLM-facing tool-call dispatch; this is internal code building a
+  prompt, not a tool invocation.
 
-**Resolved verification points** (required — TASK-2194 depends on these):
-- LLM call seam used: ...
-- Skill retrieval path used: ...
-- Asset reading approach (`read_skill_asset` vs `assets_dir`) and why: ...
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: two, both necessary corrections discovered during
+implementation (documented here per the task's own instruction to resolve
+verification points and record the reasoning):
+1. `_build_narrative_prompt`/`_read_narrative_assets` read `definition` via
+   `getattr(..., default)` rather than direct attribute access — the task's
+   own test harness's default `definition=object()` (a bare `object()`,
+   used by `test_returns_derivable_prose` and others) would otherwise raise
+   `AttributeError` on `.template_body` before ever reaching the LLM-call
+   seam. Duck-typed access degrades gracefully instead.
+2. Corrected two of the task's own test-spec prose fixtures
+   (`test_returns_derivable_prose`, `test_guard_failure_discards_everything`,
+   `test_guard_failure_does_not_log_full_prose`) to use a real
+   U+2212-signed figure (`"−$42.0K"`) instead of an unsigned one
+   (`"$42.0K"`) for a fact whose value is `-42000.0`. TASK-2190's
+   `figure_guard.figures_are_derivable` does a SIGNED comparison by design
+   (verified/tested there — a sign flip must not be silently waved
+   through); an unsigned magnitude-only figure for a negative fact
+   therefore does not derive, matching the house style documented in
+   TASK-2191's `SKILL.md`/`reference.md` (fmt_money always signs
+   negatives). Fixed in this task's OWN new test file only —
+   `figure_guard.py` (a different, already-completed task) was correctly
+   left untouched.

@@ -208,3 +208,246 @@ def test_outputs_are_json_serializable(budget_variance_frames):
         fn = transformer_registry.get(name).func
         out = fn({"snapshots": budget_variance_frames}, {"snapshot_col": "snapshot"})
         json.dumps(out)  # must not raise
+
+
+@pytest.fixture
+def upstream_outputs():
+    """The three prior-step outputs `narrative_facts` consumes.
+
+    Shaped to exercise every `division_reads` branch:
+      - 'Retail'   : net negative with one project < -5000   -> concentrated
+      - 'Wholesale': net positive despite a negative project -> offset_by
+      - 'Services' : net positive, nothing material           -> on_track
+      - 'Thin'     : net negative, nothing material           -> spread
+    """
+    return {
+        "variance_analysis": {
+            "first_snapshot": "20260701",
+            "last_snapshot": "20260703",
+            "first_totals": {},
+            "last_totals": {},
+            "rev_pct_change": 1.5,
+            "ebitda_dollar_change": -20000.0,
+            "rev_direction": "narrowing",
+            "ebitda_direction": "worsened",
+            "rev_state": "behind",
+            "n_snapshots": 3,
+        },
+        "top_movers": {
+            "worst": [
+                {"division": "Retail", "project": "Alpha", "ebitda_variance": -42000.0, "trend": -8000.0}
+            ],
+            "best": [
+                {"division": "Wholesale", "project": "Zeta", "ebitda_variance": 31000.0, "trend": None}
+            ],
+        },
+        "division_breakdown": {
+            "Retail": {
+                "ebitda_variance": -6000.0,
+                "projects": [
+                    {"name": "Alpha", "rev_variance": -1000.0, "ebitda_variance": -42000.0},
+                    {"name": "Beta", "rev_variance": 500.0, "ebitda_variance": 36000.0},
+                ],
+            },
+            "Wholesale": {
+                "ebitda_variance": 22000.0,
+                "projects": [
+                    {"name": "Gamma", "rev_variance": -300.0, "ebitda_variance": -9000.0},
+                    {"name": "Zeta", "rev_variance": 700.0, "ebitda_variance": 31000.0},
+                ],
+            },
+            "Services": {
+                "ebitda_variance": 1000.0,
+                "projects": [
+                    {"name": "Delta", "rev_variance": 100.0, "ebitda_variance": 2000.0},
+                    {"name": "Epsilon", "rev_variance": -50.0, "ebitda_variance": -1000.0},
+                ],
+            },
+            "Thin": {
+                "ebitda_variance": -2500.0,
+                "projects": [
+                    {"name": "Iota", "rev_variance": -20.0, "ebitda_variance": -2000.0},
+                    {"name": "Kappa", "rev_variance": -10.0, "ebitda_variance": -500.0},
+                ],
+            },
+        },
+    }
+
+
+class TestNarrativeFacts:
+    """Tests for the `narrative_facts` transformer (FEAT-420 Module 1)."""
+
+    def test_registered_with_no_column_requirements(self):
+        """Prior-step dict inputs must not be column-gated."""
+        assert transformer_registry.manifest("narrative_facts").requires_columns == {}
+
+    def test_headline_flags_reuse_upstream_directions(self, upstream_outputs):
+        """rev_direction/ebitda_direction/rev_state come from variance_analysis."""
+        fn = transformer_registry.get("narrative_facts").func
+        out = fn(upstream_outputs, {})
+        assert out["headline"]["rev_direction"] == "narrowing"
+        assert out["headline"]["ebitda_direction"] == "worsened"
+        assert out["headline"]["rev_state"] == "behind"
+        assert out["headline"]["diverging"] is True
+        assert out["headline"]["both_improving"] is False
+        assert out["headline"]["both_worsening"] is False
+        assert out["headline"]["first_label"] == "20260701"
+        assert out["headline"]["last_label"] == "20260703"
+
+    def test_division_read_kinds(self, upstream_outputs):
+        """All four kinds are produced per the reference decision order."""
+        fn = transformer_registry.get("narrative_facts").func
+        out = fn(upstream_outputs, {})
+        kinds = {d["division"]: d["kind"] for d in out["division_reads"]}
+        assert kinds == {
+            "Retail": "concentrated",
+            "Wholesale": "offset_by",
+            "Services": "on_track",
+            "Thin": "spread",
+        }
+
+    def test_offsetter_only_for_offset_by(self, upstream_outputs):
+        fn = transformer_registry.get("narrative_facts").func
+        out = fn(upstream_outputs, {})
+        for read in out["division_reads"]:
+            if read["kind"] == "offset_by":
+                assert read["offsetter"] == "Zeta"
+            else:
+                assert read["offsetter"] is None
+
+    def test_materiality_threshold_and_cap(self):
+        """Only < -5000 projects are named, capped at max_named_per_division."""
+        fn = transformer_registry.get("narrative_facts").func
+        inputs = {
+            "variance_analysis": {
+                "first_snapshot": "a", "last_snapshot": "b", "first_totals": {},
+                "last_totals": {}, "rev_pct_change": 0.0, "ebitda_dollar_change": 0.0,
+                "rev_direction": "flat", "ebitda_direction": "held_steady",
+                "rev_state": "behind", "n_snapshots": 1,
+            },
+            "top_movers": {"worst": [], "best": []},
+            "division_breakdown": {
+                "MultiNeg": {
+                    "ebitda_variance": -80000.0,
+                    "projects": [
+                        {"name": "P1", "ebitda_variance": -10000.0},
+                        {"name": "P2", "ebitda_variance": -60000.0},
+                        {"name": "P3", "ebitda_variance": -20000.0},
+                    ],
+                }
+            },
+        }
+        out = fn(inputs, {})
+        read = out["division_reads"][0]
+        assert read["kind"] == "concentrated"
+        assert len(read["named"]) == 2
+        assert set(read["named"]) == {"P2", "P3"}  # the two most negative
+
+    def test_urgency_branches(self):
+        """trend<0 -> immediate; >0 -> confirm_trend; None/0 -> check_timing."""
+        fn = transformer_registry.get("narrative_facts").func
+        base = {
+            "variance_analysis": {
+                "first_snapshot": "a", "last_snapshot": "b", "first_totals": {},
+                "last_totals": {}, "rev_pct_change": 0.0, "ebitda_dollar_change": 0.0,
+                "rev_direction": "flat", "ebitda_direction": "held_steady",
+                "rev_state": "behind", "n_snapshots": 2,
+            },
+            "division_breakdown": {},
+        }
+        for trend, expected in ((-8000.0, "immediate"), (5000.0, "confirm_trend"),
+                                 (0.0, "check_timing"), (None, "check_timing")):
+            inputs = {
+                **base,
+                "top_movers": {
+                    "worst": [
+                        {"division": "D", "project": "P", "ebitda_variance": -1000.0, "trend": trend}
+                    ],
+                    "best": [],
+                },
+            }
+            out = fn(inputs, {})
+            assert out["top_driver"]["urgency"] == expected
+
+    def test_top_driver_none_when_no_negative_project(self):
+        """No negative project -> top_driver is None."""
+        fn = transformer_registry.get("narrative_facts").func
+        inputs = {
+            "variance_analysis": {
+                "first_snapshot": "a", "last_snapshot": "b", "first_totals": {},
+                "last_totals": {}, "rev_pct_change": 1.0, "ebitda_dollar_change": 1.0,
+                "rev_direction": "narrowing", "ebitda_direction": "improved",
+                "rev_state": "ahead", "n_snapshots": 2,
+            },
+            "top_movers": {"worst": [], "best": []},
+            "division_breakdown": {},
+        }
+        out = fn(inputs, {})
+        assert out["top_driver"] is None
+
+    def test_single_snapshot_claims_no_trend(self):
+        """n_snapshots == 1 -> pass-through flat/held_steady, trend labels are new_this_period."""
+        fn = transformer_registry.get("narrative_facts").func
+        inputs = {
+            "variance_analysis": {
+                "first_snapshot": "20260701", "last_snapshot": "20260701", "first_totals": {},
+                "last_totals": {}, "rev_pct_change": 0.0, "ebitda_dollar_change": 0.0,
+                "rev_direction": "flat", "ebitda_direction": "held_steady",
+                "rev_state": "behind", "n_snapshots": 1,
+            },
+            "top_movers": {
+                "worst": [{"division": "D", "project": "P", "ebitda_variance": -1000.0, "trend": None}],
+                "best": [{"division": "D", "project": "Q", "ebitda_variance": 500.0, "trend": None}],
+            },
+            "division_breakdown": {},
+        }
+        out = fn(inputs, {})
+        assert out["headline"]["rev_direction"] == "flat"
+        assert out["headline"]["ebitda_direction"] == "held_steady"
+        assert out["n_snapshots"] == 1
+        assert out["watch"][0]["trend_basis"] == "new_this_period"
+        assert out["bright"][0]["trend_basis"] == "new_this_period"
+
+    def test_zero_budget_division_does_not_raise(self):
+        """Mirrors the library.py:98 division-by-zero guard — no division here at all."""
+        fn = transformer_registry.get("narrative_facts").func
+        inputs = {
+            "variance_analysis": {
+                "first_snapshot": "a", "last_snapshot": "b", "first_totals": {},
+                "last_totals": {}, "rev_pct_change": 0.0, "ebitda_dollar_change": 0.0,
+                "rev_direction": "flat", "ebitda_direction": "held_steady",
+                "rev_state": "behind", "n_snapshots": 1,
+            },
+            "top_movers": {"worst": [], "best": []},
+            "division_breakdown": {
+                "ZeroBudget": {
+                    "ebitda_variance": 0.0,
+                    "projects": [{"name": "Z", "ebitda_variance": 0.0}],
+                },
+            },
+        }
+        out = fn(inputs, {})
+        assert out["division_reads"][0]["kind"] == "on_track"
+
+    def test_emits_no_prose(self, upstream_outputs):
+        """No output value may read as an English sentence."""
+        import re
+
+        fn = transformer_registry.get("narrative_facts").func
+        out = fn(upstream_outputs, {})
+
+        def walk(v):
+            if isinstance(v, str):
+                assert not re.search(r"\s\w+\s\w+\s\w+\s", v), f"prose leaked: {v!r}"
+            elif isinstance(v, dict):
+                for i in v.values():
+                    walk(i)
+            elif isinstance(v, list):
+                for i in v:
+                    walk(i)
+
+        walk(out)
+
+    def test_pure_and_deterministic(self, upstream_outputs):
+        fn = transformer_registry.get("narrative_facts").func
+        assert fn(upstream_outputs, {}) == fn(upstream_outputs, {})

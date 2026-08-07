@@ -1,10 +1,15 @@
-# budget-variance-daily.yaml — canonical FEAT-324 example recipe.
+# budget-variance-daily.yaml — canonical FEAT-324/FEAT-420 example recipe.
 #
 # Reproduces the reference `sdd/artifacts/budget_variance_dashboard_Template.html`
 # dashboard end-to-end through Modules 1-8: a KPI row, an actual-vs-budget
 # chart, and a "key drivers" ledger table, fed entirely by registered
 # transformers over a `DatasetManager` dataset — no hand-written HTML, no
-# LLM in the replay loop (spec G1/G3).
+# LLM in the DETERMINISTIC part of the replay loop (spec G1/G3). FEAT-420
+# adds one FENCED, OPTIONAL narrative step: `narrative_facts` derives
+# structured judgements from the three transforms below, and the top-level
+# `narrative:` block (see below) names a skill an injected `Narrator` may
+# render as prose — with no narrator configured, this recipe still replays
+# deterministically end-to-end (spec criterion G-E).
 #
 # Load + validate this file with:
 #   from parrot.outputs.a2ui.recipes import InfographicRecipe
@@ -88,6 +93,16 @@ transforms:
       n: 5
     output_key: top_movers
 
+  # FEAT-420 Module 1: structured narrative judgements (direction flags, top
+  # driver + urgency, per-division read kinds) derived from the THREE steps
+  # above — NOT raw dataset columns, so `requires_columns={}` and no
+  # `snapshot_col` param applies here. Inputs are prior-step `output_key`s
+  # (the "generic" narrative_facts shape). MUST come after all three, since
+  # `transforms` order is execution order.
+  - transformer: narrative_facts
+    inputs: [variance_analysis, top_movers, division_breakdown]
+    output_key: narrative_facts
+
   # Generic groupby (existing Module 3 transformer) reshapes the combined
   # multi-day frame into per-day revenue totals — a flat rows array the
   # Chart component can bind directly (day_totals' dict-of-dicts shape is
@@ -109,6 +124,12 @@ layout:
     subtitle: "In-month revenue & EBITDA projections vs budget"
     sections:
       - heading: "Snapshot"
+        # FEAT-420: optional narrative bind — `optional: true` means an
+        # absent/skipped narrator (no injected Narrator, or a figure-guard
+        # rejection) simply OMITS this text rather than aborting the replay
+        # (spec criterion G-E; Module 2's `_check_bind_drift_or_raise` and
+        # `_resolve_value` both honour the `optional` sibling key).
+        text: {$bind: "/narrative", optional: true}
         components:
           - component: KPICard
             properties:
@@ -159,6 +180,19 @@ render:
   profile: interactive-html
   theme: null
   delivery: null
+
+# FEAT-420 Module 3: declarative narrative step — a REFERENCE to a skill
+# name, never code (spec G1). `facts_key` names the data_model key holding
+# the deterministic facts (`narrative_facts`'s output_key above);
+# `output_key` (defaults to "narrative") is where the generated prose lands.
+# With no `narrator` injected into `RecipeRunner`, this step is SKIPPED
+# entirely — the recipe still replays deterministically (spec criterion
+# G-E). The model/provider is never named here: it comes from whichever
+# agent's `Narrator` is injected at run time.
+narrative:
+  skill: budget-narrative
+  facts_key: narrative_facts
+  output_key: narrative
 
 # Scheduled replays require an explicit principal (spec G8) — uncomment and
 # set a real principal before scheduling this recipe via the

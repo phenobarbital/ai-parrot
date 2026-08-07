@@ -298,6 +298,11 @@ class InfographicAuthoringMixin:
         Section → transformer resolution uses the section's name, normalised to
         a Python identifier, as the registry key.
 
+        FEAT-420: when ``descriptor.layout`` is set, it is used VERBATIM as the
+        saved recipe's ``layout`` instead of the template-based ``LayoutSpec``
+        below; absent means unchanged legacy behaviour. ``descriptor.narrative``
+        (if declared) is always carried through to the saved recipe.
+
         Args:
             name: Recipe name (scoped by ``owner``).
             descriptor: A :class:`SectionDescriptor` or its JSON string.
@@ -363,12 +368,37 @@ class InfographicAuthoringMixin:
             return GapReport(gaps=gaps, covered=covered)
 
         # Full coverage → build + persist the recipe.
+        #
+        # FEAT-420 bugfix (discovered by TASK-2196's actual-execution
+        # requirement — see its Completion Note): a section's `datasets`
+        # entries are not always real DatasetManager aliases. The generic
+        # `narrative_facts` shape (FEAT-420 Module 1) declares its inputs as
+        # PRIOR STEPS' `output_key`s (e.g. `variance_analysis`), which are
+        # already `TransformStep.output_key`s above — NOT datasets to fetch.
+        # Building a `DataSourceSpec` for one of those would make the runner
+        # try to `fetch_dataset()` a name that was never registered (or,
+        # worse, shadow the real transform output with an unrelated fetched
+        # frame — `_run_transforms_or_raise` checks `alias in frames` BEFORE
+        # `alias in data_model`). Excluding any alias that is ALSO a declared
+        # output_key fixes both failure modes without touching the
+        # transformer-mapping/gap-report logic above.
+        declared_output_keys = {step.output_key for step in transforms}
         aliases: List[str] = []
         for section in descriptor.sections:
             for alias in section.datasets:
+                if alias in declared_output_keys:
+                    continue
                 if alias not in aliases:
                     aliases.append(alias)
         data_sources = [DataSourceSpec(dataset=alias, alias=alias) for alias in aliases]
+
+        # FEAT-420 (Module 7): use the descriptor's declared A2UI layout
+        # verbatim when present; absent means today's template-based
+        # LayoutSpec, unchanged (spec criterion G-G).
+        layout = descriptor.layout or LayoutSpec(
+            component="Infographic",
+            properties={"template": descriptor.template},
+        )
 
         recipe = InfographicRecipe(
             name=name,
@@ -376,12 +406,10 @@ class InfographicAuthoringMixin:
             owner=owner,
             data_sources=data_sources,
             transforms=transforms,
-            layout=LayoutSpec(
-                component="Infographic",
-                properties={"template": descriptor.template},
-            ),
+            layout=layout,
             render=RenderSpec(delivery=delivery),
             section_descriptor=descriptor,
+            narrative=descriptor.narrative,
             updated_at=datetime.now(timezone.utc),
         )
         await store.save(recipe)

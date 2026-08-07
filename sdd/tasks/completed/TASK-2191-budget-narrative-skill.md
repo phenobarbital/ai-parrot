@@ -337,11 +337,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Created the composite skill at `.agent/skills/budget-narrative/`:
+`SKILL.md` (frontmatter with `name`/`description`/`triggers: []`/`category`/
+`version`, body covering hard rules — no invented figures, state direction
+and name entities, handle nulls honestly, house money/pct formatting — plus
+the four sections to produce), `facts-schema.md` (documents the exact
+`narrative_facts` contract TASK-2186 shipped, including the `trend_basis`
+field which the spec's draft shape didn't list — the transformer is the
+authority per the task's own instruction), and `reference.md` (phrasing
+exemplars per fact combination, all figures obviously-fake placeholders
+like `$X.XM`/`$XX.XK`, never plausible amounts). **`SKILL.md` body
+token_count = 676** (well under the 900-headroom target and the 1000 hard
+cap). 9 tests pass in `test_budget_narrative_skill.py`.
+`.agent/skills/data-storytelling/` untouched (verified by test).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-Record the final `token_count` of `SKILL.md`.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none functionally, but two environmental notes:
+(1) `.agent/` is excluded by this machine's local `.git/info/exclude` (not
+the repo's tracked `.gitignore` — many `.agent/skills/*` files are already
+tracked) — had to `git add -f` the three new skill files, same pattern
+CLAUDE.md documents for `sdd/templates/*.md`. (2) Discovered and fixed a
+worktree-testing hazard: importing `parrot.skills.*` transitively imports
+`navconfig.conf`, which runs `os.chdir(BASE_DIR)` at import time with
+`BASE_DIR` resolving to the MAIN REPO checkout, not this worktree — silently
+breaking any test using a repo-relative `Path("...")` for a worktree-local
+file. Anchored `SKILL_DIR` in the test to `Path(__file__).resolve().parents[4]`
+instead of a bare relative path, and saved a wiki lesson
+(`navconfig os.chdir breaks relative paths in worktree tests`) for future
+tasks in this feature (TASK-2195/2196 will touch `examples/` fixtures and
+should use the same anchoring).

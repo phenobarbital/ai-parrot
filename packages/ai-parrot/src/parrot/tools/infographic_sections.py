@@ -17,10 +17,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional, Tuple
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    # Forward-reference only (FEAT-420): `parrot.outputs.a2ui.recipes.models`
+    # already imports SectionDescriptor from THIS module (for its own
+    # `section_descriptor` field), so importing LayoutSpec/NarrativeSpec here
+    # at runtime would create a circular import. The annotations below are
+    # deferred (this module also has `from __future__ import annotations`)
+    # and resolved via `SectionDescriptor.model_rebuild()`, called from
+    # `recipes/models.py` after LayoutSpec/NarrativeSpec are defined there.
+    from parrot.outputs.a2ui.recipes.models import LayoutSpec, NarrativeSpec
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +88,14 @@ class SectionDescriptor(BaseModel):
             marker for data-splice mode (ignored for jinja mode).
         sections: The ordered list of section specs.
         params: Free-form descriptor-level parameters (e.g. snapshot date).
+        layout: Optional A2UI catalog-component layout (FEAT-420) with
+            ``$bind`` pointers into the assembled ``dataModel``. When set,
+            ``publish_recipe`` uses it VERBATIM instead of building today's
+            template-based ``LayoutSpec``; absent means unchanged legacy
+            behaviour (spec criterion G-G).
+        narrative: Optional declarative narrative step (FEAT-420) — a
+            reference to a skill name, never code (spec G1) — carried
+            through to the published ``InfographicRecipe`` unchanged.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -95,6 +113,20 @@ class SectionDescriptor(BaseModel):
     params: Dict[str, Any] = Field(
         default_factory=dict,
         description="Descriptor-level parameters.",
+    )
+    layout: Optional[LayoutSpec] = Field(
+        default=None,
+        description=(
+            "Optional A2UI component layout (FEAT-420); used verbatim by "
+            "publish_recipe when set."
+        ),
+    )
+    narrative: Optional[NarrativeSpec] = Field(
+        default=None,
+        description=(
+            "Optional declarative narrative step (FEAT-420), carried "
+            "through to the saved recipe."
+        ),
     )
 
 

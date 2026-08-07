@@ -96,3 +96,58 @@ class TestRenderedArtifact:
         import importlib
 
         importlib.import_module("parrot.outputs.a2ui.baking")
+
+
+def _surface(props: dict, data_model: dict) -> CreateSurface:
+    return CreateSurface(
+        surfaceId="s",
+        catalogId="c",
+        components=[Component(id="blk-000", component="Card", properties=props)],
+        dataModel=data_model,
+    )
+
+
+class TestOptionalBindings:
+    """FEAT-420 Module 2: optional `$bind` bindings never abort the bake pass."""
+
+    def test_optional_absent_omits_property(self):
+        baked = baking.bake_envelope(
+            _surface(
+                {"title": "T", "body": {"$bind": "/narrative/headline", "optional": True}},
+                {},
+            )
+        )
+        assert "body" not in baked[0]["properties"]
+        assert baked[0]["properties"]["title"] == "T"
+
+    def test_required_absent_still_raises(self):
+        with pytest.raises(baking.BakeError, match="Unresolvable data-model binding"):
+            baking.bake_envelope(_surface({"body": {"$bind": "/narrative/headline"}}, {}))
+
+    def test_optional_present_resolves(self):
+        baked = baking.bake_envelope(
+            _surface(
+                {"body": {"$bind": "/narrative/headline", "optional": True}},
+                {"narrative": {"headline": "Revenue is behind plan."}},
+            )
+        )
+        assert baked[0]["properties"]["body"] == "Revenue is behind plan."
+
+    def test_optional_marker_never_leaks(self):
+        baked = baking.bake_envelope(
+            _surface({"body": {"$bind": "/x", "optional": True}}, {"x": "v"})
+        )
+        assert "optional" not in str(baked)
+
+    def test_no_live_binding_survives_omission(self):
+        """`bake_envelope`'s own surviving-binding check (baking.py:120) still passes."""
+        baking.bake_envelope(_surface({"body": {"$bind": "/absent", "optional": True}}, {}))
+
+    def test_optional_absent_inside_list_is_dropped(self):
+        baked = baking.bake_envelope(
+            _surface(
+                {"items": [{"$bind": "/absent", "optional": True}, "kept"]},
+                {},
+            )
+        )
+        assert baked[0]["properties"]["items"] == ["kept"]

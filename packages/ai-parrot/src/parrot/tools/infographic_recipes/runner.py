@@ -78,6 +78,7 @@ from parrot.outputs.a2ui.recipes.store import AbstractRecipeStore
 from parrot.outputs.a2ui.recipes.transformers import transformer_registry, validate_inputs
 from parrot.outputs.a2ui.renderers import get_a2ui_renderer
 from parrot.tools.dataset_manager.tool import DatasetManager
+from parrot.tools.infographic_recipes.narrator import Narrator
 
 __all__ = ["RecipeRunException", "RecipeRunner"]
 
@@ -99,11 +100,17 @@ def _pointer_top_key(pointer: str) -> str:
     return segment.replace("~1", "/").replace("~0", "~")
 
 
-def _collect_bind_pointers(value: Any) -> list[str]:
-    """Recursively collect every ``{"$bind": "/pointer"}`` pointer in ``value``."""
-    pointers: list[str] = []
+def _collect_bind_pointers(value: Any) -> list[tuple[str, bool]]:
+    """Recursively collect every ``{"$bind": "/pointer", ...}`` binding in ``value``.
+
+    Returns:
+        A list of ``(pointer, optional)`` pairs. ``optional`` is `True` when
+        the binding carries a sibling ``optional: True`` key (FEAT-420
+        Module 2 — declared-optional narrative binds), else `False`.
+    """
+    pointers: list[tuple[str, bool]] = []
     if is_binding_expression(value):
-        pointers.append(value[BINDING_KEY])
+        pointers.append((value[BINDING_KEY], bool(value.get("optional"))))
     elif isinstance(value, dict):
         for item in value.values():
             pointers.extend(_collect_bind_pointers(item))
@@ -189,6 +196,13 @@ class RecipeRunner:
             docstring's Persistence NOTE).
         owner: Optional ``NotificationMixin``-bearing object (e.g. an agent)
             used as ``deliver_artifact``'s ``owner`` argument.
+        narrator: Optional :class:`Narrator` (FEAT-420) used to render a
+            recipe's declared ``narrative`` step as prose. ``None`` (the
+            default) means every recipe replays deterministically with no
+            narrative step attempted — a pure replay must never fail for
+            lack of an LLM (spec criterion G-E). Injected at construction
+            so ``run_scheduled_refresh`` (which takes a runner *instance*)
+            needs no change to support narration.
     """
 
     def __init__(
@@ -198,9 +212,11 @@ class RecipeRunner:
         *,
         artifact_store: Any = None,
         owner: Any = None,
+        narrator: Optional[Narrator] = None,
     ) -> None:
         self.store = store
         self.dataset_manager = dataset_manager
+        self.narrator = narrator
         self.artifact_store = artifact_store
         self.owner = owner
         self.logger = logging.getLogger(f"parrot.tools.infographic_recipes.{self.__class__.__name__}")
@@ -247,6 +263,7 @@ class RecipeRunner:
         frames = await self._fetch_frames(recipe, resolved_params, pctx)
         self._run_gate_or_raise(recipe, frames)
         data_model = self._run_transforms_or_raise(recipe, frames, resolved_params)
+        await self._apply_narrative_best_effort(recipe, data_model)
         self._check_bind_drift_or_raise(recipe, data_model)
         envelope = self._assemble_envelope_or_raise(recipe, data_model)
         artifact = await self._render_or_raise(recipe, envelope)
@@ -321,16 +338,25 @@ class RecipeRunner:
                         )
                     )
 
-        for pointer in _collect_bind_pointers(recipe.layout.properties):
+        # FEAT-420: a layout may $bind into the narrative step's output_key,
+        # which is not a TransformStep — declared via `recipe.narrative`
+        # instead. Include it here so a correctly-wired narrative bind is
+        # never flagged as "undeclared" (this set is layout-check-only; the
+        # facts_key check below still validates against transform-only keys).
+        bindable_output_keys = set(declared_output_keys)
+        if recipe.narrative is not None:
+            bindable_output_keys.add(recipe.narrative.output_key)
+
+        for pointer, _optional in _collect_bind_pointers(recipe.layout.properties):
             top_key = _pointer_top_key(pointer)
-            if top_key not in declared_output_keys:
+            if top_key not in bindable_output_keys:
                 errors.append(
                     RecipeRunError(
                         recipe=recipe.name,
                         stage="layout",
                         detail=(
                             f"$bind pointer {pointer!r} references undeclared output_key "
-                            f"{top_key!r}; declared output_keys: {sorted(declared_output_keys)!r}"
+                            f"{top_key!r}; declared output_keys: {sorted(bindable_output_keys)!r}"
                         ),
                     )
                 )
@@ -344,6 +370,26 @@ class RecipeRunner:
                         "render.delivery is set but missing required 'recipients' key "
                         "(deliver_artifact requires it) — this would currently fail "
                         "silently at run time (delivery is best-effort); catch it now."
+                    ),
+                )
+            )
+
+        if recipe.narrative is not None and recipe.narrative.facts_key not in declared_output_keys:
+            # NOTE: RecipeRunError.stage is a strict Literal with no "narrative"
+            # member (verified against models.py — the original task contract's
+            # claim that `stage` is "a free string" is stale/incorrect). Reusing
+            # "layout" here rather than widening the Literal keeps this task's
+            # change additive-only and confined to runner.py — it sits right
+            # alongside the structurally identical $bind-vs-declared-output-key
+            # check a few lines above, which uses the same stage.
+            errors.append(
+                RecipeRunError(
+                    recipe=recipe.name,
+                    stage="layout",
+                    detail=(
+                        f"narrative.facts_key {recipe.narrative.facts_key!r} references "
+                        f"undeclared output_key; declared output_keys: "
+                        f"{sorted(declared_output_keys)!r}"
                     ),
                 )
             )
@@ -487,23 +533,75 @@ class RecipeRunner:
             data_model[step.output_key] = result
         return data_model
 
+    async def _apply_narrative_best_effort(
+        self, recipe: InfographicRecipe, data_model: dict[str, Any]
+    ) -> None:
+        """Populate ``data_model`` with LLM prose, best-effort (spec criterion G-E).
+
+        Never raises: a missing narrator, a missing ``narrative`` declaration,
+        a missing facts key, or any narrator failure leaves ``data_model``
+        untouched so the replay still renders deterministically. Mirrors the
+        ``_deliver_best_effort`` posture (log-and-continue rather than abort).
+
+        Args:
+            recipe: The recipe being replayed.
+            data_model: The assembled transform-chain output. Mutated in
+                place with the prose at ``recipe.narrative.output_key`` when
+                narration succeeds; never touched otherwise.
+        """
+        spec = recipe.narrative
+        if spec is None or self.narrator is None:
+            return
+        if spec.facts_key not in data_model:
+            self.logger.warning(
+                "Recipe %r declares narrative facts_key %r, absent from the data_model "
+                "(keys: %s) — skipping narrative.",
+                recipe.name,
+                spec.facts_key,
+                sorted(data_model),
+            )
+            return
+        try:
+            prose = await self.narrator.narrate(data_model[spec.facts_key], spec.skill)
+        except Exception as exc:  # noqa: BLE001 - narrative is never fatal
+            self.logger.warning(
+                "Narrator failed for recipe %r (skill=%r): %s — rendering without prose.",
+                recipe.name,
+                spec.skill,
+                exc,
+            )
+            return
+        if isinstance(prose, str) and prose.strip():
+            data_model[spec.output_key] = prose
+        else:
+            self.logger.info(
+                "Narrator returned no prose for recipe %r — rendering without it.", recipe.name
+            )
+
     def _check_bind_drift_or_raise(
         self, recipe: InfographicRecipe, data_model: dict[str, Any]
     ) -> None:
-        missing = sorted(
-            {
-                pointer
-                for pointer in _collect_bind_pointers(recipe.layout.properties)
-                if _pointer_top_key(pointer) not in data_model
-            }
-        )
+        missing: set[str] = set()
+        for pointer, optional in _collect_bind_pointers(recipe.layout.properties):
+            if _pointer_top_key(pointer) in data_model:
+                continue
+            if optional:
+                self.logger.info(
+                    "Optional $bind pointer %r references a key absent from the "
+                    "assembled data_model for recipe %r; the corresponding section "
+                    "will be omitted rather than aborting the run.",
+                    pointer,
+                    recipe.name,
+                )
+                continue
+            missing.add(pointer)
         if missing:
             raise RecipeRunException(
                 RecipeRunError(
                     recipe=recipe.name,
                     stage="layout",
                     detail=(
-                        f"$bind pointer(s) {missing!r} reference key(s) absent from the "
+                        f"$bind pointer(s) {sorted(missing)!r} reference key(s) absent from the "
                         f"assembled data_model (keys present: {sorted(data_model)!r})."
                     ),
                 )

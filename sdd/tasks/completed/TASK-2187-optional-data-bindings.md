@@ -331,10 +331,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: `baking.py`'s `_resolve_value` now returns a module-private `_ABSENT`
+sentinel when an `optional: True` binding fails to resolve (logged at INFO);
+the dict/list branches filter `_ABSENT` out before returning, so it never
+leaks into baked output. A non-optional unresolved binding still raises
+`BakeError` with the unchanged message. `runner.py`'s `_collect_bind_pointers`
+now returns `(pointer, optional)` pairs; `_check_bind_drift_or_raise` excludes
+optional pointers from the fatal `missing` set (logging each at INFO via
+`self.logger`) while required pointers still raise with the unchanged
+diagnostic text. `dry_run`'s undeclared-output-key loop was updated to unpack
+the new tuple shape (behavior there is unchanged — optional does not exempt a
+pointer from that particular check, which is about declared `output_key`s,
+not runtime `data_model` presence). Added 6 tests to `test_artifacts.py`
+(`TestOptionalBindings`) and 3 to `test_runner.py`
+(`TestDriftCheckOptional`). All 32 tests across both files pass; `ruff check`
+and `mypy` show only pre-existing, unrelated issues (verified via `git
+stash` diff before/after). `parrot/outputs/a2ui/models.py` is unmodified
+(verified via `git diff --stat`); `ai-parrot-visualizations` untouched.
+Needed to copy two locally-built Cython `.so` artifacts
+(`parrot/utils/types*.so`, `parrot/utils/parsers/toml*.so`) from the main
+checkout into this worktree to get the test suite importable at all — these
+are gitignored build artifacts, not part of this task's diff.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

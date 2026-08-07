@@ -32,6 +32,12 @@ class BakeError(Exception):
     """Raised when an envelope cannot be fully baked (e.g. unresolvable pointer)."""
 
 
+#: Module-private sentinel for an omitted optional binding (FEAT-420 Module 2).
+#: Never leaves :func:`_resolve_value` — the dict/list branches filter it out
+#: before returning, so it is never stored as a property value.
+_ABSENT = object()
+
+
 def _import_jsonpointer():
     """Import ``jsonpointer`` (indirection point so tests can force failure)."""
     import jsonpointer  # noqa: PLC0415 — lazy by design (G8)
@@ -60,15 +66,23 @@ def _load_jsonpointer():
 def _resolve_value(value: Any, data_model: dict[str, Any]) -> Any:
     """Recursively resolve any binding expressions found in ``value``.
 
+    A binding carrying a sibling ``optional: True`` key (FEAT-420 Module 2)
+    that fails to resolve is OMITTED rather than raising — the enclosing
+    dict/list drops the entry entirely. A binding without that marker still
+    raises on an unresolvable pointer, unchanged.
+
     Args:
         value: A property value (possibly nested dict/list) to resolve.
         data_model: The envelope's data model (a nested JSON document).
 
     Returns:
-        ``value`` with every binding replaced by its resolved data-model value.
+        ``value`` with every binding replaced by its resolved data-model
+        value, or :data:`_ABSENT` if ``value`` itself is an optional binding
+        that did not resolve (callers must filter this out).
 
     Raises:
-        BakeError: If a binding points at a path absent from the data model.
+        BakeError: If a required (non-optional) binding points at a path
+            absent from the data model.
     """
     jsonpointer = _load_jsonpointer()
     if is_binding_expression(value):
@@ -76,13 +90,21 @@ def _resolve_value(value: Any, data_model: dict[str, Any]) -> Any:
         try:
             return jsonpointer.resolve_pointer(data_model, pointer)
         except jsonpointer.JsonPointerException as exc:
+            if value.get("optional"):
+                logger.info(
+                    "Optional data-model binding %r did not resolve; omitting.",
+                    pointer,
+                )
+                return _ABSENT
             raise BakeError(
                 f"Unresolvable data-model binding {pointer!r}: {exc}"
             ) from exc
     if isinstance(value, dict):
-        return {key: _resolve_value(item, data_model) for key, item in value.items()}
+        resolved = {key: _resolve_value(item, data_model) for key, item in value.items()}
+        return {key: item for key, item in resolved.items() if item is not _ABSENT}
     if isinstance(value, list):
-        return [_resolve_value(item, data_model) for item in value]
+        items = [_resolve_value(item, data_model) for item in value]
+        return [item for item in items if item is not _ABSENT]
     return value
 
 

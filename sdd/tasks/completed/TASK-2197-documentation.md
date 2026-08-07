@@ -276,13 +276,108 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Updated both documents per scope.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was documented, any deviations from scope, issues encountered.
+`docs/toolkits/infographic_authoring.md`:
+- Added a top-of-doc pointer to the new narrative layer and the
+  determinism-boundary contract.
+- Added a `### layout and narrative (FEAT-420, both optional)` subsection
+  under "The section descriptor contract" documenting `SectionDescriptor
+  .layout`/`.narrative` with a copy-pasteable example, both branches of
+  `layout` (present → verbatim; absent → legacy template `LayoutSpec`),
+  and `narrative`'s pass-through-unchanged behaviour.
+- Corrected the "override `_build_section_payload`" claim: scoped it
+  explicitly to the tier-1/data-splice path and added a paragraph naming
+  `SectionDescriptor.layout` as the first-class declarative alternative
+  for the tier-2/A2UI path.
+- Extended "Tier 2 — publication": explained that "full coverage" is a
+  per-section check keyed on the section's normalised `name`
+  (`re.sub(r"\W+", "_", name).strip("_")`), that there is no partial
+  save (one unmapped section anywhere downgrades the whole publish to a
+  `GapReport`), and how to reach full coverage. Documented that
+  `descriptor.layout`/`.narrative` are carried through unchanged on a
+  full-coverage publish, and the `data_sources` exclusion for aliases
+  that are actually prior transform steps' `output_key`s (TASK-2196's
+  bugfix).
+- Added a "Reference implementation" paragraph naming
+  `agents/finance_reporter.py`'s `FinanceReporter` and stating it is now
+  A2UI-only (no longer demonstrates tier-1/data-splice), while the
+  data-splice render mode itself remains fully supported.
+- Extended "Scheduled refresh — the system account" with a paragraph
+  confirming `run_scheduled_refresh` needs no change for narration (it
+  takes a `RecipeRunner` instance; injection happens once at
+  construction).
+- Extended "See also" with a cross-link to
+  `docs/outputs/infographic-recipes.md` §6 and the FEAT-420 spec path.
 
-**Divergences from the spec that the docs had to reflect** (from the dependency
-tasks' Completion Notes): ...
+`docs/outputs/infographic-recipes.md`:
+- Concepts (§1): added a `narrative` bullet to "A recipe is pure data";
+  extended the transformers table to eight rows (`narrative_facts`) with
+  a note on the prior-step-output_key columns-gate exemption.
+- Walkthrough (§2): inserted the `narrative_facts` transform block, the
+  `text: {$bind: "/narrative", optional: true}` layout example, and the
+  top-level `narrative:` block, each annotated in place, matching
+  `examples/infographic_recipes/budget-variance-daily.yaml` exactly
+  (verified line-by-line against the file as TASK-2195 left it).
+- §5 (`RecipeRunError`): documented that an `optional: true` pointer
+  never raises at `stage="layout"`, and that `dry_run` additionally
+  treats `narrative.output_key` as a valid bindable key.
+- Added new `## 6. Narrative (FEAT-420)` section (renumbering the old
+  §6/§7 to §7 Migration / §8 Testing) containing: a **Determinism
+  boundary** blockquote (numbers always deterministic, prose always
+  best-effort, never blocking a replay); the `narrative` block
+  (skill/facts_key/output_key, `schema_version` stays `1`); narrator
+  injection (`RecipeRunner(..., narrator=...)`, the `Narrator` protocol,
+  `NarrativeMixin`, and that `run_scheduled_refresh` needs no code
+  change); optional bindings (baking + drift-check degrade-not-fail
+  behaviour, opt-in per pointer); the figure guard (all-or-nothing) and
+  its stated limitation (invented figures vs. mis-characterised correct
+  ones — spec §7 Known Risks, not glossed over); skill discovery and the
+  1000-token cap with the silent-skip gotcha; the `snapshot_col` gotcha
+  (three of four finance transformers degrade silently,
+  `variance_analysis` raises); and a note that no
+  `ai-parrot-visualizations` change was needed.
 
-**Deviations from spec**: none | describe if any
+Verification performed (per the task's Test Specification):
+1. **Signature spot-check** — `RecipeRunner.__init__`, `Narrator.narrate`,
+   `NarrativeSpec`, `run_scheduled_refresh` all grep-verified against the
+   shipped code; every quoted signature matches exactly.
+2. **Link check** — the two documents' only relative links both target
+   `docs/toolkits/infographic_toolkit.md`, which exists; the two spec
+   paths referenced also exist.
+3. **YAML walkthrough check** — every walkthrough block reproduced
+   verbatim from `examples/infographic_recipes/budget-variance-daily.yaml`
+   (TASK-2195's final version); confirmed line-by-line, no drift.
+4. **Anti-claim check** — `grep -i` for `docx`, a `"days"` transformer
+   claim, an `a2ui` render *mode*, and deterministic-prose phrasing
+   across both files: no violations. (One pre-existing, out-of-scope
+   `SectionSpec(name="days", ...)` example remains in the tier-1
+   descriptor illustration — an arbitrary section *name* for a
+   `mode="data-splice"` example, not a claim that a `"days"` transformer
+   is registered; left untouched since it predates FEAT-420 and is not
+   part of this task's scope.)
+5. Code-fence balance verified even in both files (16 / 34 fences).
+
+**Divergences from the spec that the docs had to reflect** (from the
+dependency tasks' Completion Notes):
+- TASK-2189's `RecipeRunError.stage` Literal had no `"narrative"` member
+  (the spec's draft implied one); documented `stage="layout"` as the
+  actual home for narrative-adjacent errors, plus `dry_run`'s separate
+  `narrative.output_key` bindability check (TASK-2195's fix).
+- TASK-2196 discovered and fixed a `publish_recipe` bug where a
+  section's `datasets` naming a prior transform step's `output_key`
+  (the `narrative_facts` shape) produced a bogus `DataSourceSpec`;
+  documented the resulting exclusion rule directly, since it is now
+  load-bearing behaviour a reader needs to know about.
+- TASK-2194/2195 removed `FinanceReporter`'s tier-1 data-splice
+  demonstration entirely (previously its main documented example);
+  documented this as an explicit "now A2UI-only" note rather than
+  silently updating the reference without comment.
+- TASK-2195 discovered `InfographicToolkit`'s `TemplateEngine` eagerly
+  validates `template_dirs` at construction; not separately documented
+  here since it doesn't change any statement in either file (the docs
+  never claimed `template_dirs` was optional at construction time).
+
+**Deviations from spec**: none.
