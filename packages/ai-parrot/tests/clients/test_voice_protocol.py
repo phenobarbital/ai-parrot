@@ -42,7 +42,7 @@ def test_descriptors_tell_current_truth():
     assert gemini.native_stt_only is True
     assert gemini.supports_top_p is True            # flipped True by TASK-2166
     assert gemini.supports_per_call_voice is True   # flipped True by TASK-2167
-    assert gemini.emits_reconnect_signal is False   # flipped by TASK-2168
+    assert gemini.emits_reconnect_signal is True    # flipped True by TASK-2168
     assert nova.provider is VoiceProvider.NOVA
     assert nova.native_stt_only is False           # Nova always generates
     assert nova.emits_reconnect_signal is True     # 465 s limit

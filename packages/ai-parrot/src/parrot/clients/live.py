@@ -617,6 +617,12 @@ class GeminiLiveClient(AbstractClient):
         # Tool adapter (lazy initialization)
         self._tool_adapter: Optional[LiveToolAdapter] = None
 
+        # Session resumption handle (FEAT-418, TASK-2168). Retained across
+        # stream_voice() calls on this client instance so a reconnect can
+        # resume with context instead of a cold start. Cleared when a
+        # handle is rejected/expired by the server.
+        self._resumption_handle: Optional[str] = None
+
         # Silence websockets.client debug logs
         logging.getLogger("websockets.client").setLevel(logging.INFO)
 
@@ -631,10 +637,14 @@ class GeminiLiveClient(AbstractClient):
         ``top_p`` now reach ``_build_live_config()``); ``supports_per_call_voice``
         is ``True`` as of TASK-2167 (per-call voice override, validated
         against ``voice_catalog`` with a warned fallback) — canonical
-        ``role`` also lands in TASK-2167; reconnect signal + session
-        resumption in TASK-2168. The provider conformance kit (TASK-2176)
-        asserts descriptor-vs-behavior consistency, so this must never
-        claim a capability ahead of the code that provides it.
+        ``role`` also lands in TASK-2167; ``emits_reconnect_signal``/
+        ``supports_session_resumption`` are ``True`` as of TASK-2168
+        (``GoAway``/1008-close now also set
+        ``metadata["reconnect_required"]``, and a session-resumption
+        handle is requested on every connect and retained across
+        reconnects). The provider conformance kit (TASK-2176) asserts
+        descriptor-vs-behavior consistency, so this must never claim a
+        capability ahead of the code that provides it.
 
         Returns:
             A frozen ``VoiceCapabilities`` instance for
@@ -647,8 +657,15 @@ class GeminiLiveClient(AbstractClient):
             supports_per_call_voice=True,
             supports_per_call_inference=True,
             parallel_tool_execution=True,
-            emits_reconnect_signal=False,
-            supports_session_resumption=False,
+            emits_reconnect_signal=True,
+            supports_session_resumption=True,
+            # google-genai's own docs attribute the Live API's fixed
+            # session-length limit to NOT using context-window
+            # compression; this client's _build_live_config() always
+            # requests context_window_compression with a sliding window
+            # (unconditional, pre-dates this task), so no fixed ceiling
+            # applies here — None per spec §3 Module 5 ("or None if the
+            # provider documents none under context-window compression").
             max_session_seconds=None,
             max_output_tokens=self.max_tokens,
             input_formats=frozenset({AudioFormat.PCM_16K}),
@@ -834,6 +851,14 @@ class GeminiLiveClient(AbstractClient):
                 else types.AudioTranscriptionConfig()
             ),
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
+            # Session resumption (FEAT-418, TASK-2168): always requested so
+            # the server sends session_resumption_update messages; passing
+            # the retained handle (if any) lets a reconnect resume with
+            # context instead of starting cold. ``handle=None`` on the
+            # first connect starts a fresh, resumable session.
+            session_resumption=types.SessionResumptionConfig(
+                handle=self._resumption_handle,
+            ),
         )
 
         # System prompt
@@ -1228,13 +1253,37 @@ class GeminiLiveClient(AbstractClient):
                         if hasattr(response, 'usage_metadata') and response.usage_metadata:
                             usage = LiveCompletionUsage.from_gemini_usage(response.usage_metadata)
 
-                        # Handle GoAway (session ending)
+                        # Retain the session resumption handle (FEAT-418,
+                        # TASK-2168) so the NEXT stream_voice() call (a
+                        # reconnect, driven by VoiceSession's existing loop)
+                        # can resume with context instead of a cold start.
+                        if (
+                            hasattr(response, 'session_resumption_update')
+                            and response.session_resumption_update
+                        ):
+                            update = response.session_resumption_update
+                            if getattr(update, 'resumable', False) and getattr(update, 'new_handle', None):
+                                self._resumption_handle = update.new_handle
+                                self.logger.debug(
+                                    "Session resumption handle updated for %s", session_id
+                                )
+
+                        # Handle GoAway (session ending). FEAT-418: also set
+                        # metadata["reconnect_required"]=True (keeping
+                        # go_away for handler.py:298, which still reacts to
+                        # it) so VoiceSession's reconnect loop
+                        # (voice/session.py:196-199) fires for Gemini the
+                        # same way it already does for Nova.
                         if hasattr(response, 'go_away') and response.go_away:
                             self.logger.info("Received GoAway from server")
                             yield LiveVoiceResponse(
                                 text="",
                                 is_complete=True,
-                                metadata={"go_away": True, "reason": str(response.go_away)},
+                                metadata={
+                                    "go_away": True,
+                                    "reason": str(response.go_away),
+                                    "reconnect_required": True,
+                                },
                                 session_id=session_id,
                                 turn_id=turn_id,
                                 user_id=user_id,
@@ -1257,6 +1306,32 @@ class GeminiLiveClient(AbstractClient):
             is_language_error = "unsupported language" in error_str
             is_retryable = not is_language_error  # Language errors are not retryable
 
+            # FEAT-418 (TASK-2168): a rejected/expired session-resumption
+            # handle. The google-genai SDK does not expose a typed
+            # exception for this, so detection is heuristic — only
+            # triggered when a resumption was actually attempted (a handle
+            # was set for this connect). Clear the stale handle and signal
+            # a cold reconnect via the existing reconnect_required path
+            # (VoiceSession's loop calls stream_voice() again; the next
+            # _build_live_config() call passes handle=None).
+            if self._resumption_handle and any(
+                keyword in error_str for keyword in ("resumption", "handle", "expired")
+            ):
+                self.logger.warning(
+                    "GeminiLiveClient: session resumption handle rejected/expired "
+                    "(%s); clearing and falling back to a cold reconnect.", e,
+                )
+                self._resumption_handle = None
+                yield LiveVoiceResponse(
+                    text="",
+                    is_complete=True,
+                    metadata={"resumed": False, "reconnect_required": True},
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    user_id=user_id,
+                )
+                return
+
             # Check for WebSocket 1008 (Policy Violation) which Gemini sends on session close sometimes
             # or "Operation is not implemented" which can happen if session state is invalid
             if "1008" in error_str and ("policy violation" in error_str or "operation is not implemented" in error_str):
@@ -1264,7 +1339,11 @@ class GeminiLiveClient(AbstractClient):
                 yield LiveVoiceResponse(
                     text="",
                     is_complete=True,
-                    metadata={"go_away": True, "reason": "Server closed session (1008)"},
+                    metadata={
+                        "go_away": True,
+                        "reason": "Server closed session (1008)",
+                        "reconnect_required": True,
+                    },
                     session_id=session_id,
                     turn_id=turn_id,
                     user_id=user_id,
