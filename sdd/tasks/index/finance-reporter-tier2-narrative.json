@@ -129,7 +129,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -141,8 +141,8 @@
       "parallelism_notes": "Needs the protocol, the guard and the skill to exist. Must resolve three LLM/skill-seam verification points whose answers TASK-2194 then depends on.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2192-narrative-mixin.md"
+      "completed_at": "2026-08-07T16:23:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2192-narrative-mixin.md"
     },
     {
       "id": "TASK-2193",
