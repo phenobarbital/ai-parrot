@@ -235,39 +235,3 @@ class TestIngestFromRequest:
 
         with pytest.raises(IngestionError, match="Unsupported Content-Type"):
             await handler._ingest_from_request(FakeRequest())
-
-
-class TestUnimplementedStubs:
-    """Stubs left for TASK-2160 (templates CRUD) and TASK-2161 (post_message).
-
-    Every route method is wrapped in ``@is_authenticated()``, whose
-    ``_func_wrapper`` reads the request from the *last positional*
-    argument (``args[-1]``) and requires an actual ``web.Request``
-    instance — verified live, calling with a keyword ``request=None``
-    raises ``ValueError`` before ever reaching the stub body. A real
-    (``aiohttp.test_utils.make_mocked_request``) request is passed
-    positionally instead, with ``authenticated=True`` pre-set so the
-    decorator's own backend-authentication path is never exercised here
-    (that is ``navigator_auth``'s concern, not this handler's).
-    """
-
-    @pytest.mark.parametrize(
-        "method_name",
-        [
-            "post_message",
-            "list_templates",
-            "get_template",
-            "create_template",
-            "update_template",
-            "delete_template",
-        ],
-    )
-    async def test_stub_raises_not_implemented(self, method_name):
-        from aiohttp.test_utils import make_mocked_request
-
-        handler = CommCenterHandler()
-        method = getattr(handler, method_name)
-        request = make_mocked_request("GET", "/api/v1/comm_center/x")
-        request["authenticated"] = True
-        with pytest.raises(NotImplementedError):
-            await method(request)

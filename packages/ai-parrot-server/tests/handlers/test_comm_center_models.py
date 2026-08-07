@@ -9,6 +9,13 @@ from pathlib import Path
 from parrot.conf import PARROT_SCHEMA
 from parrot.handlers.models import NotificationBatchRecipient, NotificationTemplate
 
+# Anchor DDL lookups to THIS file, never to the process CWD: pytest may be
+# invoked from the repo root, from packages/ai-parrot-server, or (for a
+# feature branch) from inside a git worktree nested under the main repo.
+# A CWD-relative path silently resolves against the wrong tree in those
+# cases and the DDL assertions below fail with FileNotFoundError.
+_MODELS_DIR = Path(__file__).parents[2] / "src" / "parrot" / "handlers" / "models"
+
 
 class TestNotificationTemplate:
     """Tests for the NotificationTemplate asyncdb model."""
@@ -29,10 +36,7 @@ class TestNotificationTemplate:
         assert "user_id" not in NotificationTemplate.__annotations__
 
     def test_ddl_has_trigger_and_unique(self):
-        sql = Path(
-            "packages/ai-parrot-server/src/parrot/handlers/models/"
-            "notification_templates_creation.sql"
-        ).read_text()
+        sql = (_MODELS_DIR / "notification_templates_creation.sql").read_text()
         assert "update_notification_templates_updated_at" in sql
         assert "BEFORE UPDATE" in sql
         assert "UNIQUE" in sql and "name" in sql
@@ -56,20 +60,14 @@ class TestNotificationBatchRecipient:
         assert r.message_id is None
 
     def test_ddl_status_vocabulary(self):
-        sql = Path(
-            "packages/ai-parrot-server/src/parrot/handlers/models/"
-            "notification_batches_creation.sql"
-        ).read_text()
+        sql = (_MODELS_DIR / "notification_batches_creation.sql").read_text()
         for status in ("pending", "publishing", "queued", "skipped", "publish_failed"):
             assert status in sql
         assert "CHECK" in sql
         assert "delivered" not in sql  # not obtainable — see spec §1 Non-Goals
 
     def test_ddl_indexes_and_trigger(self):
-        sql = Path(
-            "packages/ai-parrot-server/src/parrot/handlers/models/"
-            "notification_batches_creation.sql"
-        ).read_text()
+        sql = (_MODELS_DIR / "notification_batches_creation.sql").read_text()
         assert "batch_id" in sql
         assert "update_notification_batch_recipients_updated_at" in sql
         assert "BEFORE UPDATE" in sql

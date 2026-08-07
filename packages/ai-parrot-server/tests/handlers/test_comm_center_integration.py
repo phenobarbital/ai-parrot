@@ -296,8 +296,10 @@ class TestPackaging:
         import pathlib
         import tomllib
 
+        # Anchored to this file, not the process CWD — see the same note in
+        # test_comm_center_models.py.
         pyproject = tomllib.loads(
-            pathlib.Path("packages/ai-parrot-server/pyproject.toml").read_text()
+            (pathlib.Path(__file__).parents[2] / "pyproject.toml").read_text()
         )
         extras = pyproject["project"]["optional-dependencies"]
         assert "comm-center" in extras

@@ -82,7 +82,17 @@ def template_store(monkeypatch):
 
 @pytest.fixture
 def handler(monkeypatch):
-    import parrot.handlers.comm_center as comm_center_module
+    # Resolve the module *through the class* rather than by importing the
+    # dotted path. Under this repo's sys.path juggling (root conftest.py
+    # makes worktree sources shadow the editable main-repo install) a plain
+    # `import parrot.handlers.comm_center` can hand back a different module
+    # object than the one CommCenterHandler's methods close over — the patch
+    # then silently no-ops and the handler opens a REAL asyncpg connection.
+    # That is invisible when this file runs alone and only bites once other
+    # test modules have imported parrot.* first.
+    import sys
+
+    comm_center_module = sys.modules[CommCenterHandler.__module__]
 
     class _FakeConnCtx:
         async def __aenter__(self):
@@ -185,11 +195,37 @@ class TestUpdateTemplate:
         assert template_store[row.template_id].template_string == "Hola"
 
     async def test_updated_at_not_set_by_app(self, handler, template_store):
-        """The DB trigger owns updated_at — application code must never set it."""
-        import inspect
+        """The DB trigger owns updated_at — application code must never set it.
 
-        source = inspect.getsource(handler.update_template)
-        assert "updated_at" not in source
+        Checks for an *assignment*, not a mention: the method's own docstring
+        documents that the trigger owns the column, so a bare substring search
+        matches the documentation and fails on a correct implementation.
+        """
+        import ast
+        import inspect
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(handler.update_template)))
+
+        assigned: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            elif isinstance(node, ast.keyword):
+                if node.arg:
+                    assigned.append(node.arg)
+                continue
+            else:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Attribute):
+                    assigned.append(target.attr)
+                elif isinstance(target, ast.Name):
+                    assigned.append(target.id)
+
+        assert "updated_at" not in assigned
 
     async def test_created_by_from_session(self, handler, template_store):
         await handler.create_template(

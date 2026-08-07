@@ -232,23 +232,37 @@ async def fan_out(batch_id: uuid.UUID, payloads: list) -> None:
         await client.close()
 
 
-async def _finalize_batch(batch_id: uuid.UUID, task) -> None:
+async def _finalize_batch(batch_id: uuid.UUID, task, attempted_ids: set) -> None:
     """Done-callback body: log any ``fan_out`` exception and un-strand rows.
 
     A bare ``asyncio.create_task`` swallows exceptions and can leave a
     batch stuck in ``publishing`` if the task itself crashes outside
     :func:`fan_out`'s own per-row try/except. This defensively marks any
-    row still ``publishing`` for this batch as ``publish_failed`` so it
-    becomes retry-eligible instead of stranded forever.
+    row still ``publishing`` **that this fan-out actually attempted** as
+    ``publish_failed`` so it becomes retry-eligible instead of stranded
+    forever.
+
+    Scoping to ``attempted_ids`` is what keeps the spec's duplicate
+    containment intact: a ``force=False`` :func:`retry_batch` deliberately
+    leaves pre-existing ``publishing`` rows alone and reports them as
+    ``ambiguous``. Sweeping the whole batch here would flip those to
+    ``publish_failed``, making the *next* retry re-publish them silently —
+    exactly the duplicate send the pre-``xadd`` marker exists to prevent.
 
     Args:
         batch_id: The batch that just finished fanning out.
         task: The completed ``fan_out`` :class:`asyncio.Task`.
+        attempted_ids: Row ids this fan-out was given. Rows outside this
+            set are never touched, however long they have been
+            ``publishing``.
     """
     if not task.cancelled():
         exc = task.exception()
         if exc:
             logger.error("fan_out raised for batch %s: %s", batch_id, exc)
+
+    if not attempted_ids:
+        return
 
     db = _get_db()
     async with await db.connection() as conn:
@@ -257,6 +271,8 @@ async def _finalize_batch(batch_id: uuid.UUID, task) -> None:
             batch_id=batch_id, status="publishing"
         )
         for row in stranded or []:
+            if row.id not in attempted_ids:
+                continue
             row.status = "publish_failed"
             row.reason = "Batch finalized while row was still publishing (possible crash)"
             await row.update()
@@ -277,9 +293,10 @@ def launch_fan_out(batch_id: uuid.UUID, payloads: list):
     Returns:
         The scheduled ``asyncio.Task`` running :func:`fan_out`.
     """
+    attempted_ids = {row_id for row_id, _ in payloads}
     task = asyncio.create_task(fan_out(batch_id, payloads))
     task.add_done_callback(
-        lambda t: asyncio.create_task(_finalize_batch(batch_id, t))
+        lambda t: asyncio.create_task(_finalize_batch(batch_id, t, attempted_ids))
     )
     return task
 
