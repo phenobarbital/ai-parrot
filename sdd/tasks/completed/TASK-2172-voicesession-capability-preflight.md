@@ -186,10 +186,60 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Added `_preflight_audio_formats()`, called from `__init__`
+(after `self.voice_config`/`self.client` are set) — compares
+`input_format`/`output_format`/`input_sample_rate`/`output_sample_rate`
+against `client.voice_capabilities`'s declared sets, raising a `ValueError`
+naming both the requested and supported side on any mismatch. Added
+`_check_capability_notices(options)`, called once per `_run_turn()` loop
+iteration (including reconnects) right after projecting `options` and
+right before `stream_voice()` — currently implements the one concrete
+mismatch case that exists today (`stt_only=True` requested against a
+provider with `native_stt_only=False`, i.e. Nova), tracked via a
+`self._notified_capabilities: set` so it fires at most once per session
+regardless of turn count. Structured as an extensible per-knob check
+(one `if` block per capability) rather than a generic loop, since only
+`stt_only` has an actual unsupported case among the 9
+`VoiceStreamOptions` fields today (both providers now support voice
+override, per-call inference, and top_p post TASK-2166-2170) — adding
+the next knob-mismatch case is a few lines, not a refactor.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviation from the task's literal scope, needed to make it testable**:
+neither `VoiceConfig` nor `VoiceSession` had any existing way to request
+`stt_only=True` for a turn — `VoiceConfig.to_stream_options()` always
+projects `stt_only=False` unless overridden by an explicit kwarg, and
+`VoiceSession._run_turn()` called `to_stream_options()` with zero
+overrides. The task's own test scaffold assumes this already works
+(`VoiceSession(nova_like_client, ..., voice_config=VoiceConfig(provider="nova"))`
+with no other stt_only signal, yet expects a notice). Since TASK-2172's
+file table authorizes ONLY `voice/session.py` (not `models/voice.py`),
+I added `stt_only: bool = False` as a new optional `VoiceSession.__init__`
+keyword parameter (backward compatible — verified the integrations
+handler's only call site uses keyword args) and thread it into
+`to_stream_options(stt_only=self.stt_only)` in `_run_turn()`. This is a
+minimal, additive constructor surface entirely within the authorized
+file, not a redesign — flagging it explicitly since it's an addition the
+task text didn't spell out verbatim.
 
-**Deviations from spec**: none | describe if any
+While running the full `tests/voice/` suite, found that TASK-2172's own
+preflight breaks EVERY pre-existing `VoiceCapable` test double across
+`test_voice_session.py`, `test_voice_reconnection.py`, and
+`test_voice_session_options.py` (from TASK-2171) — none of them defined
+`voice_capabilities`. Fixed in a separate preceding commit (adds a
+PCM-16k/24k `VoiceCapabilities` double to each mock class matching
+`VoiceConfig()`'s defaults; no assertions changed). 11 new tests in
+`tests/voice/test_voice_session_capabilities.py`. Full voice-domain
+regression green (30 tests in `tests/voice/`, plus the broader
+`tests/clients/`/`tests/bots/` voice suites) except the already-documented
+pre-existing failures (`test_no_aiohttp_import`,
+`test_nova_protocol_frames.py::TestOpeningSequence` ×4,
+`test_parallel_tool_execution.py::test_parallel_error_isolation`,
+3 unrelated prompt/preset tests) — all independently confirmed to
+reproduce on `dev`.
+
+**Deviations from spec**: the `VoiceSession.__init__(stt_only=...)`
+addition described above — needed to make the task's own acceptance
+criteria and test scaffold actually exercisable, entirely within the
+one file this task authorizes.
