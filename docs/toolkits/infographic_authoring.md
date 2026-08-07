@@ -11,6 +11,13 @@ This is the *authoring* half of the workflow that produced the standalone
 `RecipeRunner`. This feature adds one new render mode (**data-splice**) and does
 not build a parallel replay path.
 
+FEAT-420 layers an optional, declarative **narrative** step onto tier 2
+(`SectionDescriptor.narrative`) plus a first-class declarative **layout**
+(`SectionDescriptor.layout`) for the A2UI publish path — see the "Tier 2 —
+publication" section below and `docs/outputs/infographic-recipes.md` §6
+("Narrative (FEAT-420)") for the full determinism-boundary contract (numbers
+always deterministic, prose always best-effort and never blocking).
+
 ---
 
 ## Composition
@@ -75,6 +82,45 @@ descriptor = SectionDescriptor(
 
 Both raise a single `InfographicValidationError` listing all deficits.
 
+### `layout` and `narrative` (FEAT-420, both optional)
+
+Two additive fields target the **tier-2 publish path** specifically
+(`publish_recipe`, below) — neither affects tier-1 rendering:
+
+```python
+from parrot.outputs.a2ui.recipes.models import LayoutSpec, NarrativeSpec
+
+descriptor = SectionDescriptor(
+    template="budget_variance.html",
+    mode="data-splice",
+    sections=[...],
+    layout=LayoutSpec(                       # A2UI catalog-component tree
+        component="Infographic",
+        properties={"variance": {"$bind": "/variance_analysis"}},
+    ),
+    narrative=NarrativeSpec(                  # reference to a skill, never code
+        skill="budget-narrative",
+        facts_key="narrative_facts",          # a transform step's output_key
+        output_key="narrative",               # data_model key the prose lands in
+    ),
+)
+```
+
+- **`layout`** (`LayoutSpec`) — when set, `publish_recipe` saves it **verbatim**
+  as the recipe's `layout` instead of building today's template-based
+  `LayoutSpec` (`component="Infographic"`, `properties={"template": ...}`).
+  Absent → unchanged legacy behaviour (spec criterion G-G). This is the
+  first-class declarative alternative for the A2UI publish path — see
+  "Tier 1 — one-shot authoring" below for the equivalent tier-1/data-splice
+  override point.
+- **`narrative`** (`NarrativeSpec`) — always carried through to the saved
+  recipe unchanged (never interpreted or validated by
+  `InfographicAuthoringMixin` itself). `skill` is a registered skill *name*,
+  never a prompt or template string; `facts_key` must name a prior
+  transform step's `output_key` (typically the `narrative_facts`
+  transformer's output). See `docs/outputs/infographic-recipes.md` §6 for
+  how the saved recipe replays this at `RecipeRunner.run()` time.
+
 ---
 
 ## Tier 1 — one-shot authoring
@@ -99,7 +145,15 @@ Flow: **validate → build section data → render → persist → return proven
 
 The default programmatic build shapes each section's declared datasets/columns
 per `SectionSpec.shape`; override `_build_section_payload` (or drive the agent's
-pandas REPL tools conversationally) for richer transformations.
+pandas REPL tools conversationally) for richer transformations **on this
+tier-1/data-splice path**.
+
+This override point is tier-1-only. For the tier-2/A2UI publish path
+(`publish_recipe`, below), the first-class declarative alternative is
+`SectionDescriptor.layout` (a `LayoutSpec` used verbatim, with `$bind`
+pointers into the assembled `dataModel` — no python override needed) — see
+"The section descriptor contract" above and `docs/outputs/infographic-recipes.md`
+§2 for the full `$bind` walkthrough.
 
 ### Data-splice mode directly on the toolkit
 
@@ -143,8 +197,38 @@ recipe_or_gap = await agent.publish_recipe(
   registration** (never executed). The recipe is **not** saved.
 - A `(name, owner)` collision requires `overwrite=True`.
 
+"Full coverage" is a **per-section** check: every `SectionSpec.name` in
+`descriptor.sections` must resolve to a registered transformer (its name,
+normalised to a Python identifier via `re.sub(r"\W+", "_", name).strip("_")`
+— e.g. `"top-movers"` → `top_movers`). There is no partial-save; the first
+unmapped section anywhere in `descriptor.sections` downgrades the *entire*
+publish to a `GapReport`, even if every other section resolves. To reach
+full coverage, either name each section to match an already-registered
+transformer, or register the missing transformer (via
+`@infographic_transformer`, e.g. as `library.py` does for
+`narrative_facts`) and re-run `publish_recipe`.
+
+`descriptor.layout` and `descriptor.narrative` (FEAT-420, both optional —
+see "The section descriptor contract" above) are carried straight through
+to the saved `InfographicRecipe`'s `layout`/`narrative` fields, unchanged,
+on a full-coverage publish. A section whose `datasets` entries are actually
+prior transform steps' `output_key`s (as `narrative_facts` declares —
+`requires_columns={}`) is **excluded** from the saved recipe's
+`data_sources`, since it names a `TransformStep.output_key`, not a
+`DatasetManager` alias to fetch.
+
 The `section_descriptor` field is additive — the recipe `schema_version` stays
 `1` and pre-existing recipes still load.
+
+**Reference implementation** (FEAT-420): `agents/finance_reporter.py`'s
+`FinanceReporter` (`NarrativeMixin + InfographicAuthoringMixin + PandasAgent`)
+demonstrates the full tier-2/A2UI path — `report_descriptor()` and
+`dashboard_descriptor()` both declare `layout`/`narrative` and publish via
+`publish_recipe`. `FinanceReporter` is now **A2UI-only**: it no longer
+demonstrates the tier-1 data-splice path (`generate_infographic` +
+`_build_section_payload`), which its pre-FEAT-420 version did. The
+data-splice render mode itself is unaffected and remains fully supported —
+see "Tier 1 — one-shot authoring" above for a data-splice example.
 
 ---
 
@@ -172,10 +256,23 @@ await run_scheduled_refresh(recipe_runner, "budget-daily")
 `parrot.auth.permission.build_principal_context`; `run_scheduled_refresh` is the
 caller-side guard that passes it as `pctx`. `RecipeRunner` itself is unchanged.
 
+`run_scheduled_refresh` needs **no change** to support FEAT-420 narration
+either — it takes a `RecipeRunner` **instance**, and narrator injection
+happens once, at that instance's construction (`RecipeRunner(store,
+dataset_manager, narrator=...)`, see `docs/outputs/infographic-recipes.md`
+§6 "Injecting a narrator"). A `recipe_runner` built without a `narrator`
+still replays a recipe with a `narrative` block deterministically — the
+narrative step is simply skipped (spec criterion G-E).
+
 ---
 
 ## See also
 
 - [`InfographicToolkit`](infographic_toolkit.md) — render/validate/recipe tools.
 - FEAT-324 recipes: `docs/outputs/infographic-recipes.md`.
+- FEAT-420 narrative layer, full determinism-boundary contract (numbers
+  always deterministic, prose always best-effort and never blocking),
+  figure guard, and optional `$bind` bindings:
+  `docs/outputs/infographic-recipes.md` §6 ("Narrative (FEAT-420)").
 - Spec: `sdd/specs/dataagent-infographic.spec.md`.
+- Spec: `sdd/specs/finance-reporter-tier2-narrative.spec.md`.
