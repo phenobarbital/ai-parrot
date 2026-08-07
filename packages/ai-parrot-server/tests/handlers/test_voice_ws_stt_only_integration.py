@@ -31,7 +31,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Locate the worktree source directories.
 # File: packages/ai-parrot-server/tests/handlers/test_voice_ws_stt_only_integration.py
@@ -139,7 +138,17 @@ _inject_genai_stub()
 
 # Import from worktree versions.
 from parrot.clients.live import LiveVoiceResponse  # noqa: E402
-from parrot.voice.handler import BotConfig, VoiceChatHandler, WebSocketConnection  # noqa: E402
+from parrot.models.voice import (  # noqa: E402
+    AudioFormat,
+    VoiceCapabilities,
+    VoiceConfig,
+    VoiceProvider,
+)
+from parrot.voice.handler import (  # noqa: E402
+    BotConfig,
+    VoiceChatHandler,
+    WebSocketConnection,
+)
 
 # Sanity check: make sure we loaded the worktree's handler (not the main repo).
 _handler_mod = sys.modules.get("parrot.voice.handler", None)
@@ -160,6 +169,34 @@ def _make_mock_ws() -> MagicMock:
     ws = MagicMock()
     ws.send_json = AsyncMock()
     return ws
+
+
+def _make_mock_bot() -> MagicMock:
+    """Return a bot double with a real ``voice_config`` and a real
+    ``_llm.voice_capabilities`` descriptor.
+
+    FEAT-418 (TASK-2172) added a construction-time audio-format preflight
+    to ``VoiceSession.__init__``, which ``_run_voice_session()`` now
+    reaches via ``_AskStreamVoiceClient`` (FEAT-418, TASK-2174) wrapping
+    this bot — a bare ``MagicMock()``'s ``voice_config``/
+    ``_llm.voice_capabilities`` are themselves empty-iterable Mocks and
+    fail that preflight with a ``ValueError``.
+    """
+    bot = MagicMock()
+    bot.close = AsyncMock()
+    bot.voice_config = VoiceConfig()
+    bot._llm.voice_capabilities = VoiceCapabilities(
+        provider=VoiceProvider.GOOGLE_LIVE,
+        native_stt_only=True, supports_top_p=True, supports_per_call_voice=True,
+        supports_per_call_inference=True, parallel_tool_execution=True,
+        emits_reconnect_signal=True, supports_session_resumption=True,
+        max_session_seconds=None, max_output_tokens=4096,
+        input_formats=frozenset({AudioFormat.PCM_16K}),
+        output_formats=frozenset({AudioFormat.PCM_24K}),
+        input_sample_rates=frozenset({16000}), output_sample_rates=frozenset({24000}),
+        voice_catalog=frozenset({"Puck"}), default_voice="Puck",
+    )
+    return bot
 
 
 def _make_connection(stt_only: bool = False) -> WebSocketConnection:
@@ -200,11 +237,16 @@ def _sent_messages(connection: WebSocketConnection) -> List[dict]:
 
 
 def _make_transcription_response(text: str = "Hello world") -> LiveVoiceResponse:
-    """Return a LiveVoiceResponse carrying a user transcription."""
+    """Return a LiveVoiceResponse carrying a user transcription.
+
+    FEAT-418 (TASK-2175): the canonical envelope is a role="user" response
+    carrying the actual transcript text, not
+    metadata["user_transcription"] (removed, no deprecation window).
+    """
     return LiveVoiceResponse(
-        text="",
+        text=text,
+        role="user",
         is_complete=False,
-        metadata={"user_transcription": text},
         session_id="integration-test-session",
         turn_id="turn-1",
     )
@@ -267,8 +309,7 @@ async def test_voice_ws_stt_only_session() -> None:
         if connection_ref:
             connection_ref[0].shutdown_event.set()
 
-    bot = MagicMock()
-    bot.close = AsyncMock()
+    bot = _make_mock_bot()
     bot.ask_stream = _mock_ask_stream
 
     handler = VoiceChatHandler(
@@ -361,8 +402,7 @@ async def test_voice_ws_full_duplex_session() -> None:
         if connection_ref:
             connection_ref[0].shutdown_event.set()
 
-    bot = MagicMock()
-    bot.close = AsyncMock()
+    bot = _make_mock_bot()
     bot.ask_stream = _mock_ask_stream
 
     handler = VoiceChatHandler(
