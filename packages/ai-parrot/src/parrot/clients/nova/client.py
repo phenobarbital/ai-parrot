@@ -127,17 +127,19 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
 
         This descriptor reflects *current* behavior only. Nova already
         honors per-call ``temperature``/``max_tokens``/``top_p`` and
-        ``parallel_tool_execution`` via ``**kwargs`` (``nova/audio.py:765,
-        789-791``) and already emits ``metadata["reconnect_required"]`` at
-        its ``_CONNECTION_LIMIT_SECONDS`` session limit
-        (``nova/audio.py:860``) — so those flags are ``True`` from day one,
-        unlike Gemini's. ``native_stt_only`` is ``False``: Nova always
-        generates a spoken response; ``stt_only`` is not yet an accepted
-        parameter (TASK-2170 adds explicit, non-filtering acceptance).
-        ``supports_per_call_voice``/``supports_top_p`` are already exercised
-        today, and as of TASK-2169 the requested voice is also validated
-        against :data:`~parrot.clients.nova.audio.NOVA_VOICE_CATALOG` (with
-        a warned fallback) instead of being passed through unchecked.
+        ``parallel_tool_execution`` via ``**kwargs``/``options``
+        (``nova/audio.py``) and already emits
+        ``metadata["reconnect_required"]`` at its
+        ``_CONNECTION_LIMIT_SECONDS`` session limit (``nova/audio.py``) —
+        so those flags are ``True`` from day one, unlike Gemini's.
+        ``native_stt_only`` is ``False``: Nova always generates a spoken
+        response even when ``stt_only=True`` is requested — accepted
+        explicitly as of TASK-2170, never filtered (spec §8 resolved
+        decision). ``supports_per_call_voice``/``supports_top_p`` are
+        already exercised today, and as of TASK-2169 the requested voice
+        is also validated against
+        :data:`~parrot.clients.nova.audio.NOVA_VOICE_CATALOG` (with a
+        warned fallback) instead of being passed through unchecked.
 
         Returns:
             A frozen ``VoiceCapabilities`` instance for
@@ -153,11 +155,16 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
             emits_reconnect_signal=True,
             supports_session_resumption=False,
             max_session_seconds=self._CONNECTION_LIMIT_SECONDS,
-            # NOTE: today's real hardcoded fallback is 1024
-            # (nova/audio.py:790); TASK-2170 replaces it with the
-            # VoiceConfig default of 4096. Descriptor mirrors today's
-            # truth, not the post-TASK-2170 value.
-            max_output_tokens=1024,
+            # FEAT-418 (TASK-2170): the hardcoded 1024 fallback is gone —
+            # the shared VoiceConfig default is now 4096 (nova/audio.py),
+            # and 8192 is explicitly accepted (spec §8 resolved decision:
+            # "8192 explicitly supported, no voice-specific pin"). 8192 is
+            # used here as the descriptor's ceiling — this spec-level
+            # resolution is the verifiable source available in this
+            # sandboxed environment (no live access to re-confirm Nova 2
+            # Sonic's exact numeric ceiling against the current AWS
+            # Bedrock docs; see Completion Note for TASK-2170).
+            max_output_tokens=8192,
             input_formats=frozenset({AudioFormat.PCM_16K}),
             output_formats=frozenset({AudioFormat.PCM_24K}),
             input_sample_rates=frozenset({16000}),
