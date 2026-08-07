@@ -113,7 +113,7 @@
       "feature_id": "FEAT-419",
       "feature": "execution-plan-tool",
       "spec": "sdd/specs/execution-plan-tool.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Integration point: wires store, catalog and planner into the toolkit's entry tools.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2184-plan-execute-validate-wiring.md"
+      "completed_at": "2026-08-07T00:50:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2184-plan-execute-validate-wiring.md"
     },
     {
       "id": "TASK-2185",

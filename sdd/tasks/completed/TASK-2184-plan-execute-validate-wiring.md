@@ -190,10 +190,52 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Added `plan_execute`/`plan_validate` to
+`packages/ai-parrot/src/parrot/tools/execution_plan/toolkit.py`, plus
+`PlanExecuteArgs`/`PlanValidateArgs` in `models.py`. Shared
+`_acquire_and_validate`/`_check_arbitration`/`_acquire_from_file`/
+`_acquire_from_objective` helpers implement arbitration (both/neither/
+objective-without-planner/plan_name-without-plans_dir/params-with-
+objective, all checked BEFORE any acquisition or LLM call, via a private
+`_StructuralError` signal caught only at the two tool-method boundaries)
+then acquisition+validation (no repair in `plan_name` mode; exactly one
+`PlanPlanner.repair()` round in `objective` mode).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Key design decision beyond the task's literal wording** (flagged
+per spec Axis 4's actual scope, not a deviation from it): the shared
+acquisition helper does NOT raise when the validation report ends up
+`not ok` — it returns `(plan, plan_json, report, source)` regardless, so
+`report.ok=False` is DATA. `plan_execute` then converts a not-ok report
+into a tool error itself (satisfying "invalid plan after the repair round"
+as a structural failure — spec §2's Axis-4 paragraph, which is specifically
+about `plan_execute`'s manifest-vs-error framing). `plan_validate` never
+does that conversion — it always returns success with `{"plan":
+<verbatim JSON>, "ok": <bool>, "issues": [...]}`, because a dry-run whose
+entire purpose is "show me what's wrong so I can fix the file before
+promoting it" (spec's confirmed plan_validate decision) must be able to
+report `ok=False` as data, not swallow it into an opaque tool error.
+Verified with `test_dry_run_reports_invalid_plan_without_erroring`. A
+`PlanAuthoringError` from the planner (malformed JSON / schema-invalid
+response, TASK-2183's own error type) at either the authoring OR the
+repair call IS treated as structural (nothing to validate) — there is no
+second attempt at repairing a repair failure, consistent with "≤1 repair
+round" the spec allows, since a repair-round parse failure has no
+`ValidationReport` companion around which a THIRD call could be framed.
 
-**Deviations from spec**: none
+17/17 new tests pass (`pytest packages/ai-parrot/tests/tools/
+execution_plan/test_execute_validate.py -v`), covering the full
+arbitration matrix, plan_name happy/invalid/load-error paths, objective
+repair-succeeds/repair-exhausted paths (asserting exact LLM call counts:
+1 for a clean author, 2 for one repair round, never 3), the partial-
+manifest-is-success path (reusing TASK-2180's fan-out fixture), the
+soft-timeout-from-plan_execute path, and plan_validate's dry-run
+guarantees (verbatim plan JSON in both an ok and a not-ok case, zero
+`ToolManager.execute_tool` calls, zero run-registry entries). Full FEAT-419
+suite (`packages/ai-parrot/tests/bots/flows/plan/` + `packages/ai-parrot/
+tests/tools/execution_plan/`) — 123 tests — passes. `ruff check --select
+F,E9` clean.
+
+**Deviations from spec**: none (see design-decision note above — an
+elaboration within Axis 4's stated scope, not a departure from it).
