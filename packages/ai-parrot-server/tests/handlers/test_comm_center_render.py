@@ -76,6 +76,42 @@ class TestWirePayload:
         )
         assert isinstance(NotifyWrapper(**ch).recipients[0], Channel)
 
+    def test_extra_column_cannot_clobber_template(self):
+        """Regression guard (adversarial code review, FEAT-417): an ingested
+        column literally named 'template' must never silently replace the
+        real partially-rendered message body — verified structurally
+        against the merge order in build_wire_payload."""
+        p = build_wire_payload(
+            RecipientIn(
+                name="Ana", email="a@e.com", extra={"template": "MALICIOUS OVERRIDE"}
+            ),
+            "email",
+            "Hola {{ name }}",
+            None,
+        )
+        assert p["template"] == "Hola {{ name }}"
+
+    def test_extra_column_cannot_clobber_provider(self):
+        """Same guard, for the 'provider' structural key."""
+        p = build_wire_payload(
+            RecipientIn(name="Ana", email="a@e.com", extra={"provider": "sms"}),
+            "email",
+            "hi",
+            None,
+        )
+        assert p["provider"] == "email"
+
+    def test_extra_column_survives_when_not_protected(self):
+        """The filter is scoped to structural keys only -- ordinary extra
+        columns are still forwarded verbatim as pass-2 placeholders."""
+        p = build_wire_payload(
+            RecipientIn(name="Ana", email="a@e.com", extra={"department": "Sales"}),
+            "email",
+            "hi",
+            None,
+        )
+        assert p["department"] == "Sales"
+
 
 class TestValidation:
     """Provider resolution + contact-field validation via prepare()."""

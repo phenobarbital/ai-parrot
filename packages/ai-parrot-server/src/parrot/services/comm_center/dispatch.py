@@ -91,6 +91,7 @@ async def publish_one(
     row_id: uuid.UUID,
     *,
     client=None,
+    dry_run: bool = False,
 ) -> str | None:
     """Publish a single recipient, driving the row status state machine.
 
@@ -110,6 +111,15 @@ async def publish_one(
             what makes this function directly reusable by the
             single-recipient endpoint (TASK-2161) without any batch
             machinery.
+        dry_run: Defense-in-depth guard (spec §3 Module 9 — the dry-run
+            guard "must be enforced at the service layer, not only in the
+            handler, so no future caller of CommCenterService can bypass
+            it"). The real handler already never reaches this with
+            ``dry_run=True`` (both send endpoints short-circuit before
+            ever calling ``publish_one``/``fan_out``); this parameter
+            exists so a caller building a ``PreparedBatch`` directly and
+            passing one of its payloads to ``publish_one`` cannot publish
+            it either. Mirrors the equivalent guard in :func:`fan_out`.
 
     Returns:
         The Redis stream entry id returned by ``client.stream()``. Verified
@@ -118,12 +128,16 @@ async def publish_one(
         marker, not ``message_id``.
 
     Raises:
-        RuntimeError: ``async-notify`` is not installed.
+        RuntimeError: ``async-notify`` is not installed, or ``dry_run`` is
+            ``True``.
         Exception: Whatever ``client.stream()`` raised, re-raised after the
             row has been marked ``publish_failed`` — so :func:`fan_out` can
             catch it and continue with the rest of the batch, and the
             single-recipient endpoint can map it to ``502``.
     """
+    if dry_run:
+        raise RuntimeError("Refusing to publish a dry-run batch")
+
     own_client = client is None
     if own_client:
         client = _get_notify_client()
@@ -383,7 +397,13 @@ async def retry_batch(batch_id: uuid.UUID, *, force: bool = False) -> dict:
         force: When ``True``, also re-publish rows stuck in ``publishing``.
 
     Returns:
-        ``{"retried": <n>, "ambiguous": <n>}``.
+        ``{"retried": <n>, "ambiguous": <n>}``. Row *selection* (which
+        rows qualify) has already happened by the time this returns, but
+        the actual re-publishing is backgrounded via :func:`launch_fan_out`
+        — a batch stranded with thousands of retryable rows after an
+        outage must not block the HTTP response (and risk a client/gateway
+        timeout) while they are sequentially re-published, mirroring how
+        the initial send already backgrounds its own fan-out.
     """
     retry_statuses = list(_RETRYABLE_STATUSES)
     if force:
@@ -405,5 +425,5 @@ async def retry_batch(batch_id: uuid.UUID, *, force: bool = False) -> dict:
             ambiguous = len(still_publishing or [])
 
     payloads = [(row.id, _rebuild_payload(row)) for row in to_retry]
-    await fan_out(batch_id, payloads)
+    launch_fan_out(batch_id, payloads)
     return {"retried": len(to_retry), "ambiguous": ambiguous}

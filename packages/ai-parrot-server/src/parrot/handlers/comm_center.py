@@ -540,7 +540,13 @@ class CommCenterHandler(BaseHandler):
             await row.insert()
 
         try:
-            message_id = await publish_one(batch_id, msg.payload, row.id)
+            # dry_run is always False here (the dry-run branch above already
+            # returned) -- passed through explicitly anyway so publish_one's
+            # own defense-in-depth guard is exercised on this call site too,
+            # not just relied upon implicitly.
+            message_id = await publish_one(
+                batch_id, msg.payload, row.id, dry_run=prepared.dry_run
+            )
         except Exception as exc:
             raise web.HTTPBadGateway(
                 text=json_encoder(

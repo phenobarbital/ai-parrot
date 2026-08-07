@@ -6,6 +6,7 @@ monkeypatching ``NotificationBatchRecipient.get``/``filter`` onto an
 in-memory ``FakeRow`` store, since a live Postgres is not available to this
 test suite. No real Redis or Postgres connection is ever attempted.
 """
+import asyncio
 import uuid
 
 import pytest
@@ -199,9 +200,30 @@ class TestFanOut:
 
         assert row_store[row.id].attempts == 1
 
+    async def test_publish_one_refuses_dry_run(self, row_store, monkeypatch):
+        """Regression guard (adversarial code review, FEAT-417): the
+        dry-run guard must be enforced at this level too, not only in
+        fan_out -- a caller invoking publish_one directly with a
+        dry-run-derived payload must not be able to publish it."""
+        client = FakeNotifyClient()
+        monkeypatch.setattr(dispatch, "_get_notify_client", lambda: client)
+
+        with pytest.raises(RuntimeError, match="dry-run"):
+            await publish_one(
+                uuid.uuid4(), _payload(), uuid.uuid4(), client=client, dry_run=True
+            )
+        assert client.calls == []
+
 
 class TestRetry:
-    """Retry re-publishes only the states the state machine allows."""
+    """Retry re-publishes only the states the state machine allows.
+
+    ``retry_batch`` backgrounds the actual re-publishing via
+    ``launch_fan_out`` (an ``asyncio.Task``, not awaited) — every test
+    that expects a real publish attempt to have happened yields control
+    (``await asyncio.sleep(0.05)``) after calling ``retry_batch`` before
+    asserting on ``client.calls``/row status.
+    """
 
     async def test_never_retries_queued_or_skipped(self, row_store, monkeypatch):
         batch_id = uuid.uuid4()
@@ -212,6 +234,7 @@ class TestRetry:
         FakeRow(row_store, batch_id=batch_id, status="skipped")
 
         result = await retry_batch(batch_id)
+        await asyncio.sleep(0.05)
 
         assert client.calls == []
         assert result["retried"] == 0
@@ -227,6 +250,7 @@ class TestRetry:
         )
 
         result = await retry_batch(batch_id)
+        await asyncio.sleep(0.05)
 
         assert result["retried"] == 2
         assert len(client.calls) == 2
@@ -242,6 +266,7 @@ class TestRetry:
         stuck = FakeRow(row_store, batch_id=batch_id, status="publishing")
 
         result = await retry_batch(batch_id, force=False)
+        await asyncio.sleep(0.05)
 
         assert client.calls == []
         assert result["retried"] == 0
@@ -256,6 +281,7 @@ class TestRetry:
         stuck = FakeRow(row_store, batch_id=batch_id, status="publishing")
 
         result = await retry_batch(batch_id, force=True)
+        await asyncio.sleep(0.05)
 
         assert result["retried"] == 1
         assert len(client.calls) == 1

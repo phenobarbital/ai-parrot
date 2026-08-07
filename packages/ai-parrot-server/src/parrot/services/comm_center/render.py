@@ -53,6 +53,31 @@ _KNOWN_PROVIDERS = (
     | _CHANNEL_PROVIDERS
 )
 
+#: Wire-payload keys that are structural to the publish contract (spec §2's
+#: wire format + per-provider shape table). ``build_wire_payload`` must
+#: never let an ingested extra column silently overwrite one of these --
+#: e.g. a spreadsheet column literally named "template" would otherwise
+#: replace the real partially-rendered message body per-row with arbitrary
+#: cell content, with the batch still reporting every row as `queued`.
+#: Deliberately a superset of (and distinct from) the placeholder catalog's
+#: three *reserved template placeholders* (spec §3 Module 3 Group 3 —
+#: ``recipient``/``message``/``subject``, a closed, spec-approved list
+#: guarded separately in ``ingest._RESERVED_NAMES``): this set protects the
+#: wire payload's own structural keys, not template-placeholder bindings.
+_PROTECTED_PAYLOAD_KEYS = frozenset(
+    {
+        "provider",
+        "recipient",
+        "template",
+        "subject",
+        "name",
+        "username",
+        "email",
+        "phone",
+        "address",
+    }
+)
+
 
 class RenderError(ValueError):
     """Raised when the template body fails to parse (handler maps to 400).
@@ -263,8 +288,17 @@ def build_wire_payload(
         "email": recipient.email,
         "phone": recipient.phone,
         "address": recipient.address,
-        **recipient.extra,
     }
+    # Extra columns are forwarded as pass-2 placeholders (spec §3 Module 3),
+    # but never allowed to shadow a structural wire-payload key -- see
+    # _PROTECTED_PAYLOAD_KEYS. Applied *after* building `payload` so this
+    # filter is the definitive, order-independent guard.
+    safe_extra = {
+        key: value
+        for key, value in recipient.extra.items()
+        if key not in _PROTECTED_PAYLOAD_KEYS
+    }
+    payload.update(safe_extra)
     return payload
 
 

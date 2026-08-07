@@ -87,6 +87,25 @@ class TestIngest:
         with pytest.raises(ValueError, match="10000|10 000|cap"):
             await ingest_recipients(file_path=p)
 
+    async def test_row_missing_name_is_skipped_not_fatal(self):
+        """Regression guard (adversarial code review, FEAT-417): a single
+        row with no usable 'name' must be skipped, never abort ingestion
+        for the rest of the batch (RecipientIn.name is required, so
+        constructing it directly would otherwise raise)."""
+        rows = [
+            {"name": "Ana", "email": "ana@example.com"},
+            {"name": "", "email": "blank-name@example.com"},
+            {"email": "no-name-key@example.com"},
+        ]
+        recipients = await ingest_recipients(rows=rows)
+        assert len(recipients) == 1
+        assert recipients[0].name == "Ana"
+
+    async def test_all_rows_missing_name_raises(self):
+        rows = [{"email": "a@e.com"}, {"email": "b@e.com"}]
+        with pytest.raises(ValueError, match="name"):
+            await ingest_recipients(rows=rows)
+
     async def test_does_not_block_event_loop(self, messy_csv, monkeypatch):
         """pandas must be called via asyncio.to_thread."""
         called = {}

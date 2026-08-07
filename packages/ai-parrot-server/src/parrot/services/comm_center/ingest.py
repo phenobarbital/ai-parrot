@@ -12,6 +12,7 @@ becomes a valid pass-2 placeholder downstream. All ``pandas`` parsing runs
 off the event loop via ``asyncio.to_thread`` — never call it directly.
 """
 import asyncio
+import logging
 import math
 from io import BytesIO
 from pathlib import Path
@@ -19,6 +20,8 @@ from pathlib import Path
 import pandas as pd
 
 from .models import RecipientIn
+
+logger = logging.getLogger("Parrot.CommCenterIngest")
 
 #: Maximum accepted upload size, matching the repo convention
 #: (``handlers/datasets.py:40``, ``handlers/infographic_render.py:63``).
@@ -149,7 +152,7 @@ def _rows_from_bytes_sync(data: bytes, suffix: str) -> list[dict]:
     return _dataframe_from_bytes_sync(data, suffix).to_dict(orient="records")
 
 
-def _row_to_recipient(raw: dict, reserved_used: set) -> RecipientIn:
+def _row_to_recipient(raw: dict, reserved_used: set) -> RecipientIn | None:
     """Normalize one raw row dict into a :class:`RecipientIn`.
 
     Args:
@@ -158,7 +161,12 @@ def _row_to_recipient(raw: dict, reserved_used: set) -> RecipientIn:
             across the whole batch (mutated in place).
 
     Returns:
-        The normalized :class:`RecipientIn`.
+        The normalized :class:`RecipientIn`, or ``None`` when the row has
+        no usable ``name`` (the one mandatory canonical field — spec §3
+        Module 3) and therefore cannot become a valid recipient at all.
+        Callers MUST treat ``None`` as "skip this row", never propagate
+        the underlying validation error — one blank/malformed row must
+        never abort ingestion for the rest of the batch.
     """
     canonical: dict = {}
     extra: dict = {}
@@ -171,15 +179,22 @@ def _row_to_recipient(raw: dict, reserved_used: set) -> RecipientIn:
             canonical[norm] = cleaned
         else:
             extra[norm] = cleaned
-    return RecipientIn(
-        name=canonical.get("name"),
-        username=canonical.get("username"),
-        email=canonical.get("email"),
-        phone=canonical.get("phone"),
-        address=canonical.get("address"),
-        provider=canonical.get("provider"),
-        extra=extra,
-    )
+    try:
+        return RecipientIn(
+            name=canonical.get("name"),
+            username=canonical.get("username"),
+            email=canonical.get("email"),
+            phone=canonical.get("phone"),
+            address=canonical.get("address"),
+            provider=canonical.get("provider"),
+            extra=extra,
+        )
+    except ValueError:
+        # RecipientIn.name is required (spec: "the only mandatory column")
+        # -- a row with no name value cannot be constructed. Skipped, not
+        # fatal for the batch (spec §5: rows are reported, never silently
+        # dropped, and never abort the batch).
+        return None
 
 
 async def ingest_recipients(
@@ -209,13 +224,17 @@ async def ingest_recipients(
 
     Returns:
         The normalized recipients, or a ``(recipients, warnings)`` tuple
-        when ``return_warnings`` is ``True``.
+        when ``return_warnings`` is ``True``. Rows with no usable ``name``
+        (the one mandatory canonical field) are skipped rather than
+        raised — one malformed row must never abort ingestion for the
+        rest of the batch; the skip count is logged and included in
+        ``warnings``.
 
     Raises:
         FileTooLargeError: The payload exceeds :data:`MAX_FILE_SIZE`.
         RecipientCapExceededError: More than :data:`MAX_RECIPIENTS` rows.
-        IngestionError: The file is empty, or has none of the recognized
-            recipient columns.
+        IngestionError: The file is empty, has none of the recognized
+            recipient columns, or every row lacked a usable ``name``.
     """
     if rows is not None:
         raw_rows = list(rows)
@@ -254,13 +273,34 @@ async def ingest_recipients(
         )
 
     reserved_used: set = set()
-    recipients = [_row_to_recipient(row, reserved_used) for row in raw_rows]
+    recipients: list = []
+    skipped_rows = 0
+    for row_number, row in enumerate(raw_rows):
+        recipient = _row_to_recipient(row, reserved_used)
+        if recipient is None:
+            skipped_rows += 1
+            logger.warning(
+                "Row %s skipped during ingestion: missing required 'name' value",
+                row_number,
+            )
+            continue
+        recipients.append(recipient)
+
+    if not recipients:
+        raise IngestionError(
+            "0 recipients: no row had a usable 'name' value"
+        )
 
     warnings = [
         f"Column '{name}' shadows a reserved placeholder name and will not "
         "be applied as a recipient field."
         for name in sorted(reserved_used)
     ]
+    if skipped_rows:
+        warnings.append(
+            f"{skipped_rows} row(s) skipped during ingestion: missing "
+            "required 'name' value"
+        )
 
     if return_warnings:
         return recipients, warnings
