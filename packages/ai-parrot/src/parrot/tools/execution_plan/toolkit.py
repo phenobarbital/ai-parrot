@@ -193,6 +193,16 @@ class ExecutionPlanToolkit(AbstractToolkit):
             definition,
             agent_registry=agent_registry,
             node_factories={"tool": factory},
+            # FEAT-399 flow-level checkpointing defaults to
+            # PlanMetadata.checkpoint=True and would otherwise require a
+            # live checkpoint store (Redis by default) before the first
+            # node ever dispatches — silently contradicting this feature's
+            # own "pure in-RAM v1, no persistent backend" design (spec §1
+            # Non-Goals). The toolkit's RunRecord registry is the v1
+            # resumability story; explicitly disable flow-level
+            # checkpointing regardless of what a plan file's `metadata`
+            # block says.
+            checkpoint=False,
         )
 
         plan_node_ids: Set[str] = {node.id for node in plan.nodes}
@@ -230,12 +240,13 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 return ToolResult(
                     status="success", result=record.manifest.model_dump(mode="json")
                 )
+            reason = record.flow_error or (str(exc) if exc is not None else None)
             return ToolResult(
                 status="error",
                 success=False,
                 result=None,
                 error=f"Plan run {run_id!r} finished without a manifest"
-                + (f": {exc}" if exc is not None else ""),
+                + (f": {reason}" if reason else ""),
             )
 
         summary = RunningSummary(
@@ -293,6 +304,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
             if record is not None:
                 record.status = "failed"
                 record.finished_at = datetime.now(timezone.utc)
+                record.flow_error = str(exc)[:500]
             self._evict_completed_runs()
             return
 
@@ -311,6 +323,21 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 refs.append(
                     ArtifactRef(node_id=node.id, status="error", errors=[str(error)[:300]])
                 )
+                continue
+            # Neither a result nor a recorded error: the node was never
+            # dispatched at all — a hard upstream failure blocked it (the
+            # scheduler's AND-join gate only advances past a dependency
+            # that reached `completed`; a `mark_failed` dependency leaves
+            # dependents un-dispatched, with no "skipped"/"error" event of
+            # their own). Without this branch such a node would silently
+            # vanish from the manifest instead of showing up as blocked.
+            refs.append(
+                ArtifactRef(
+                    node_id=node.id,
+                    status="error",
+                    errors=["node never dispatched: blocked by a failed dependency"],
+                )
+            )
 
         duration = time.monotonic() - started_monotonic
         manifest = build_manifest(plan, refs, duration_seconds=duration)
@@ -527,8 +554,14 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 "plan_name mode requires the toolkit to be constructed with "
                 "plans_dir=<path>."
             )
+        def _load() -> ExecutionPlan:
+            # PlanFileStore (construction + load) is sync file I/O.
+            return PlanFileStore(self.plans_dir).load(plan_name, params)
+
         try:
-            plan = PlanFileStore(self.plans_dir).load(plan_name, params)
+            # This is an async method — offload the sync I/O to a worker
+            # thread rather than blocking the event loop.
+            plan = await asyncio.to_thread(_load)
         except PlanLoadError as exc:
             raise _StructuralError(str(exc)) from exc
 

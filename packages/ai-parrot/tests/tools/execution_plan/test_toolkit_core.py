@@ -135,6 +135,68 @@ class TestExecutorPath:
         assert result.status == "success"
         assert result.result["nodes_failed"] >= 1
 
+    async def test_hard_failed_node_downstream_dependent_shows_as_error(
+        self, wm_toolkit
+    ):
+        """A hard (non-`for_each`) node failure must not silently drop its
+        downstream dependent from the manifest — every plan node must be
+        accounted for, even one the scheduler never dispatched."""
+
+        def fail(_params: Dict[str, Any]) -> Dict[str, Any]:
+            raise RuntimeError("boom")
+
+        manager = _FakeToolManager({"fail_tool": fail, "ok_tool": {"ok": True}})
+        toolkit = ExecutionPlanToolkit(
+            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=5.0,
+        )
+        plan = ExecutionPlan(
+            name="linear-hard-failure",
+            objective="n1 fails hard; n2 depends on it",
+            nodes=[
+                PlanNode(id="n1", tool="fail_tool", store_as="k1"),
+                PlanNode(id="n2", tool="ok_tool", store_as="k2", depends_on=["n1"]),
+            ],
+        )
+
+        result = await toolkit._run_plan(plan, source="plan_name")
+
+        assert result.status == "success"
+        assert result.result["nodes_total"] == 2
+        node_ids = {ref["node_id"] for ref in result.result["artifacts"]}
+        assert node_ids == {"n1", "n2"}  # n2 must not vanish
+        n2_ref = next(r for r in result.result["artifacts"] if r["node_id"] == "n2")
+        assert n2_ref["status"] == "error"
+        assert result.result["nodes_failed"] == 2
+        # ok_tool (n2's tool) was never actually dispatched.
+        assert not any(c[0] == "ok_tool" for c in manager.calls)
+
+    async def test_checkpoint_disabled_no_redis_dependency(self, wm_toolkit):
+        """The toolkit must disable AgentsFlow's flow-level checkpointing —
+        it defaults to requiring a live checkpoint store (Redis) before the
+        first node ever dispatches, contradicting v1's pure-in-RAM design."""
+        from unittest.mock import patch
+
+        manager = _FakeToolManager({"fast": {"ok": True}})
+        toolkit = ExecutionPlanToolkit(
+            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=5.0,
+        )
+        plan = ExecutionPlan(
+            name="no-checkpoint-plan", objective="must not touch a checkpoint store",
+            nodes=[PlanNode(id="n1", tool="fast", store_as="k1")],
+        )
+
+        with patch(
+            "parrot.bots.flows.flow.flow.get_checkpoint_store",
+            side_effect=AssertionError(
+                "get_checkpoint_store must never be called — checkpointing "
+                "must be disabled for plan runs"
+            ),
+        ):
+            result = await toolkit._run_plan(plan, source="plan_name")
+
+        assert result.status == "success"
+        assert result.result["nodes_ok"] == 1
+
     async def test_payloads_only_in_working_memory(self, wm_toolkit):
         big_payload = {"findings": [{"id": i} for i in range(1000)]}
         manager = _FakeToolManager({"fast": big_payload})

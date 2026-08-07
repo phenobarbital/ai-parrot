@@ -193,7 +193,11 @@ with a normal per-tool-call timeout on the agent side.
 - **The run registry is lost on a process restart.** `RunRecord`s and the
   live `asyncio.Task`s behind them are toolkit-instance state, not
   persisted anywhere. There is **no `plan_resume(run_id)`** — do not build
-  workflows that assume one exists.
+  workflows that assume one exists. The toolkit explicitly disables
+  `AgentsFlow`'s own flow-level checkpointing (FEAT-399) for every plan
+  run — that mechanism defaults to a Redis-backed checkpoint store, which
+  would otherwise be a silent, undocumented external dependency
+  contradicting the "pure in-RAM, no persistent backend" design above.
 - **Recovery is re-issue + `skip_existing`, not resume.** If a process
   dies mid-run, re-issuing the *same* `plan_execute(plan_name=..., params=
   ...)` call redoes only the work that never got stored — every `for_each`

@@ -45,6 +45,10 @@ class RunRecord(BaseModel):
         nodes_total: Total plan nodes (bound for progress reporting).
         nodes_done: Nodes that have reached a terminal per-node status
             (``ok``/``skipped``/``partial``/``error``) so far.
+        flow_error: Set when the run failed at the FLOW level (before any
+            manifest could be built) — e.g. an infrastructure error, not a
+            per-node tool failure (those show up inside ``manifest``
+            instead). Bounded to 500 chars.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -58,6 +62,7 @@ class RunRecord(BaseModel):
     manifest: Optional[ExecutionManifest] = None
     nodes_total: int
     nodes_done: int = 0
+    flow_error: Optional[str] = None
 
 
 class RunningSummary(BaseModel):

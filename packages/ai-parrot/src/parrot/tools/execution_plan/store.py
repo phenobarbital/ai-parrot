@@ -107,11 +107,37 @@ class PlanFileStore:
     # ── Path resolution ──────────────────────────────────────────────────
 
     def _resolve_path(self, plan_name: str) -> Path:
-        """Resolve ``plan_name`` to a file, preferring yaml > yml > json."""
+        """Resolve ``plan_name`` to a file, preferring yaml > yml > json.
+
+        ``plan_name`` is an agent/LLM-controlled argument
+        (``PlanExecuteArgs``/``PlanValidateArgs``), so it is rejected
+        outright if it could ever escape ``plans_dir`` — no path
+        separators, no ``..``, and the resolved candidate must stay a
+        direct child of ``plans_dir``. Without this, a plan file naming
+        arbitrary local files (e.g. ``"../../etc/passwd"``) would be read
+        and, via ``plan_validate``, returned verbatim to the agent.
+
+        Raises:
+            PlanLoadError: If ``plan_name`` is not a bare filename stem,
+                or names no known plan.
+        """
+        if any(sep in plan_name for sep in ("/", "\\")) or ".." in plan_name:
+            raise PlanLoadError(
+                f"Invalid plan_name {plan_name!r}: must be a bare filename "
+                "stem (no path separators or '..')."
+            )
+
+        plans_dir_resolved = self.plans_dir.resolve()
         for ext in _EXTENSIONS:
             candidate = self.plans_dir / f"{plan_name}.{ext}"
-            if candidate.is_file():
-                return candidate
+            if not candidate.is_file():
+                continue
+            resolved = candidate.resolve()
+            if resolved.parent != plans_dir_resolved:
+                raise PlanLoadError(
+                    f"Invalid plan_name {plan_name!r}: resolves outside plans_dir."
+                )
+            return candidate
 
         available = sorted(
             {
@@ -126,11 +152,19 @@ class PlanFileStore:
         )
 
     def _parse(self, path: Path) -> Any:
-        """Parse a YAML or JSON plan document into a plain dict."""
+        """Parse a YAML or JSON plan document into a plain dict.
+
+        Raises:
+            PlanLoadError: If the file is not valid JSON/YAML — never lets
+                a raw parser exception escape the tool boundary.
+        """
         text = path.read_text(encoding="utf-8")
-        if path.suffix == ".json":
-            return json.loads(text)
-        return yaml.safe_load(text)
+        try:
+            if path.suffix == ".json":
+                return json.loads(text)
+            return yaml.safe_load(text)
+        except (json.JSONDecodeError, yaml.YAMLError) as exc:
+            raise PlanLoadError(f"Plan file {path} is not valid {path.suffix}: {exc}") from exc
 
     # ── {params.<name>} substitution ──────────────────────────────────────
 

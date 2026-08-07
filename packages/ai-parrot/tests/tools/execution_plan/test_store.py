@@ -152,3 +152,41 @@ class TestPlanFileStore:
     def test_nonexistent_plans_dir_raises(self, tmp_path: Path) -> None:
         with pytest.raises(PlanLoadError):
             PlanFileStore(tmp_path / "does-not-exist")
+
+    def test_path_traversal_rejected(self, tmp_path: Path) -> None:
+        """`plan_name` is agent/LLM-controlled — must never escape plans_dir."""
+        outside_dir = tmp_path.parent / "outside_dir_for_traversal_test"
+        outside_dir.mkdir(exist_ok=True)
+        secret_plan = {
+            "name": "leaked-plan", "objective": "outside plans_dir",
+            "nodes": [{"id": "n1", "tool": "t", "store_as": "k1"}],
+        }
+        (outside_dir / "secret.json").write_text(json.dumps(secret_plan))
+
+        plans_dir = tmp_path / "plans"
+        plans_dir.mkdir()
+        store = PlanFileStore(plans_dir)
+
+        for traversal_name in ("../outside_dir_for_traversal_test/secret", "../../etc/passwd", "sub/dir"):
+            with pytest.raises(PlanLoadError, match="Invalid plan_name"):
+                store.load(traversal_name)
+
+    def test_malformed_json_raises_plan_load_error_not_raw_exception(
+        self, tmp_path: Path
+    ) -> None:
+        """A corrupt plan file must surface as PlanLoadError, never a raw
+        JSONDecodeError/YAMLError escaping the store's public API."""
+        plans_dir = tmp_path
+        (plans_dir / "broken.json").write_text("{ this is not valid json !!")
+        store = PlanFileStore(plans_dir)
+
+        with pytest.raises(PlanLoadError, match="not valid"):
+            store.load("broken")
+
+    def test_malformed_yaml_raises_plan_load_error(self, tmp_path: Path) -> None:
+        plans_dir = tmp_path
+        (plans_dir / "broken.yaml").write_text("key: [unterminated\n  - nested: :::")
+        store = PlanFileStore(plans_dir)
+
+        with pytest.raises(PlanLoadError, match="not valid"):
+            store.load("broken")
