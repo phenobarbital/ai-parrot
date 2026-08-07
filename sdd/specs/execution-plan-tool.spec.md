@@ -384,44 +384,44 @@ def plans_dir(tmp_path):
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] The `plan/` module lives at
+- [x] The `plan/` module lives at
   `packages/ai-parrot/src/parrot/bots/flows/plan/`, `_shim.py` is not
   shipped, and all 60 attached tests pass against real imports.
-- [ ] `ExecutionPlanToolkit` exposes exactly `plan_execute`, `plan_status`,
+- [x] `ExecutionPlanToolkit` exposes exactly `plan_execute`, `plan_status`,
   `plan_artifacts`, `plan_validate`; response payloads are bounded (an
   `ExecutionManifest` for the 4-node example plan serializes to <2 KB).
-- [ ] No payload body ever appears in `FlowContext.results` or in any tool
+- [x] No payload body ever appears in `FlowContext.results` or in any tool
   response — asserted by integration test.
-- [ ] Zero LLM calls occur between validation success and manifest
+- [x] Zero LLM calls occur between validation success and manifest
   construction — asserted by integration test (planner mock call count ≤2:
   one authoring + at most one repair).
-- [ ] All plan-node dispatch goes through `ToolManager.execute_tool()` with
+- [x] All plan-node dispatch goes through `ToolManager.execute_tool()` with
   the constructor `permission_context` forwarded — never `tool.execute()`.
-- [ ] A plan with failing nodes returns a `partial` manifest as a
+- [x] A plan with failing nodes returns a `partial` manifest as a
   SUCCESSFUL tool call; structural failures (invalid plan, bad args,
   unknown `run_id`/`plan_name`, unconfigured planner) are tool errors.
-- [ ] `plan_execute` returns within `soft_timeout` (default 60 s): full
+- [x] `plan_execute` returns within `soft_timeout` (default 60 s): full
   manifest if done, else `run_id` summary with execution continuing;
   `plan_status(run_id)` returns the final manifest after completion.
-- [ ] An invalid plan fails at validation with ALL issues in one report —
+- [x] An invalid plan fails at validation with ALL issues in one report —
   including `tool_not_allowed` for tools outside `allowed_tools` — and no
   tool is ever executed.
-- [ ] `plan_validate` returns the acquired plan JSON verbatim (both modes)
+- [x] `plan_validate` returns the acquired plan JSON verbatim (both modes)
   plus the complete `ValidationReport`, and never calls
   `ToolManager.execute_tool`.
-- [ ] `plan_name` mode loads YAML/JSON from `plans_dir` with load-time
+- [x] `plan_name` mode loads YAML/JSON from `plans_dir` with load-time
   `{params.<name>}` substitution; missing or unused params fail the load;
   the executor's runtime placeholders are untouched.
-- [ ] `planner_llm` accepts `"provider:model"` | instance | dict; unset +
+- [x] `planner_llm` accepts `"provider:model"` | instance | dict; unset +
   `objective` yields a clear structural error; `plan_name` mode works
   without any planner configured.
-- [ ] Registering `"tool"` in `NODE_REGISTRY` breaks neither existing node
+- [x] Registering `"tool"` in `NODE_REGISTRY` breaks neither existing node
   types nor `AgentCrew.add_tool_node()` (regression test green).
-- [ ] The example plan ships as a valid `plans_dir` file using
+- [x] The example plan ships as a valid `plans_dir` file using
   `{params.date}` (no `{input}`).
-- [ ] All unit + integration tests pass (`pytest` on the touched packages);
+- [x] All unit + integration tests pass (`pytest` on the touched packages);
   no changes to `BasicAgent`'s class body.
-- [ ] Documentation updated in `docs/` (usage + the v1 RAM caveat for
+- [x] Documentation updated in `docs/` (usage + the v1 RAM caveat for
   WorkingMemory).
 
 ---
