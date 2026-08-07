@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-06T23:45:50+00:00",
-  "completed_at": "2026-08-07T08:36:59+00:00",
+  "completed_at": "2026-08-07T09:08:39+00:00",
   "tasks": [
     {
       "id": "TASK-2164",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T00:11:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2164-voice-contract-types.md"
+      "file": "sdd/tasks/completed/TASK-2164-voice-contract-types.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2165",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T00:22:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2165-voicecapable-protocol-extension.md"
+      "file": "sdd/tasks/completed/TASK-2165-voicecapable-protocol-extension.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2166",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T00:28:41+00:00",
-      "file": "sdd/tasks/completed/TASK-2166-gemini-per-call-inference-params.md"
+      "file": "sdd/tasks/completed/TASK-2166-gemini-per-call-inference-params.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2167",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T00:35:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2167-gemini-canonical-role-and-voice.md"
+      "file": "sdd/tasks/completed/TASK-2167-gemini-canonical-role-and-voice.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2168",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T00:42:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2168-gemini-session-resumption.md"
+      "file": "sdd/tasks/completed/TASK-2168-gemini-session-resumption.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2169",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T00:46:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2169-nova-voice-catalog-validation.md"
+      "file": "sdd/tasks/completed/TASK-2169-nova-voice-catalog-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2170",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T00:53:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2170-nova-envelope-stt-and-tokens.md"
+      "file": "sdd/tasks/completed/TASK-2170-nova-envelope-stt-and-tokens.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2171",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T01:00:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2171-voicesession-options-and-relay-hook.md"
+      "file": "sdd/tasks/completed/TASK-2171-voicesession-options-and-relay-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2172",
@@ -184,7 +192,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T01:08:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2172-voicesession-capability-preflight.md"
+      "file": "sdd/tasks/completed/TASK-2172-voicesession-capability-preflight.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2173",
@@ -206,7 +215,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T01:22:52+00:00",
-      "file": "sdd/tasks/completed/TASK-2173-voicebot-projection-and-memory.md"
+      "file": "sdd/tasks/completed/TASK-2173-voicebot-projection-and-memory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2174",
@@ -227,7 +237,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T01:43:02+00:00",
-      "file": "sdd/tasks/completed/TASK-2174-handler-dedup-and-envelope-migration.md"
+      "file": "sdd/tasks/completed/TASK-2174-handler-dedup-and-envelope-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2175",
@@ -247,7 +258,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T01:54:56+00:00",
-      "file": "sdd/tasks/completed/TASK-2175-cross-distribution-test-migration.md"
+      "file": "sdd/tasks/completed/TASK-2175-cross-distribution-test-migration.md",
+      "verification": "verified-with-issues"
     },
     {
       "id": "TASK-2176",
@@ -269,7 +281,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T02:03:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2176-provider-conformance-kit.md"
+      "file": "sdd/tasks/completed/TASK-2176-provider-conformance-kit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2177",
@@ -289,7 +302,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T02:10:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2177-extract-browser-voice-ui.md"
+      "file": "sdd/tasks/completed/TASK-2177-extract-browser-voice-ui.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2178",
@@ -310,7 +324,8 @@
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
       "completed_at": "2026-08-07T08:36:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2178-provider-switch-example.md"
+      "file": "sdd/tasks/completed/TASK-2178-provider-switch-example.md",
+      "verification": "verified"
     }
   ]
 }
