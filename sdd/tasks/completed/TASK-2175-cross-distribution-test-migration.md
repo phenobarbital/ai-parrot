@@ -162,10 +162,70 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: `test_handler_refactor.py`'s `test_user_transcription_still_forwarded`
+was already migrated to `role="user"` in TASK-2174 (it's the same
+`_HandlerVoiceSession._relay` test the handler-migration task itself
+needed to fix as part of that task's own scope) — no further change
+needed here for that file. Migrated `test_agent_voice_stt_only.py`'s
+`_transcription_response()` and `test_voice_ws_stt_only_integration.py`'s
+`_make_transcription_response()` fixtures from
+`metadata={"user_transcription": text}` to `LiveVoiceResponse(text=text,
+role="user")`. Updated the stale docstring on
+`test_stt_only_emits_user_transcription` (mentioned the old metadata key)
+— left the test's NAME unchanged since its body only ever asserted the
+output WIRE frame shape (`{"type": "transcription", "is_user": True}`),
+which is unaffected by the envelope change; only the docstring described
+the old internal representation. Final repo-wide grep (both a loose
+substring pass and a stricter functional-access-pattern pass for
+`metadata.get("user_transcription")`/`metadata["user_transcription"]`)
+confirms zero remaining functional reads outside `sdd/` — every surviving
+hit is a comment/docstring/identifier documenting the migration, or a
+historical `sdd/` artifact (including two unrelated older spec files,
+`nova-sonic-protocol-fidelity.spec.md` and
+`livekit-gemini-voice-input.spec.md`, from earlier features — untouched,
+out of this feature's scope).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Two collateral bugs found and fixed while running these test files**
+(both squarely inside the two files this task explicitly authorizes):
+1. `test_agent_voice_stt_only.py`'s two `_build_live_config()` unit tests
+   construct a `GeminiLiveClient.__new__(GeminiLiveClient)` bypassing
+   `__init__`, then manually set a handful of attributes. TASK-2166 added
+   a `self.top_p` fallback read and TASK-2168 added a
+   `self._resumption_handle` read inside `_build_live_config()` —  neither
+   attribute existed on these bypassed-`__init__` test doubles, causing
+   `AttributeError`. Added `client.top_p = None` and
+   `client._resumption_handle = None` to both tests' manual setup.
+2. Also added `"SessionResumptionConfig"` to this file's local
+   `google.genai.types` stub (TASK-2168 added
+   `types.SessionResumptionConfig(...)` to `_build_live_config()`'s
+   `LiveConnectConfig` construction; the stub previously lacked it).
 
-**Deviations from spec**: none | describe if any
+**Pre-existing, unrelated failure — confirmed NOT caused by this feature**:
+`test_voice_ws_stt_only_integration.py::test_voice_ws_stt_only_session`
+and `::test_voice_ws_full_duplex_session` fail both before and after this
+feature's changes (reproduced by checking out `handler.py` from the
+commit immediately preceding TASK-2174, `6f0f5bb5d`, and re-running —
+identical 2 failures). Root cause: the test only calls
+`_handle_start_session()` and then waits for `connection.voice_task` to
+finish — it never calls `start_turn()`/`push_audio()`/`end_turn()` (or
+equivalent), which has been required to drive a turn since TASK-2152's
+`VoiceSession`-based refactor (a prior, unrelated feature). The mocked
+`bot.ask_stream` is therefore never invoked at all, so no
+`response_chunk`/`transcription` frame is ever produced —
+architecturally unrelated to the envelope/role migration. Per Cardinal
+Rule 5 (no scope creep) and this task's own explicit scope (migrate the
+ONE fixture line, not the test's turn-lifecycle-driving logic), I did not
+attempt to rewrite this test's flow. Flagging explicitly rather than
+silently leaving it red or silently "fixing" architecture this task
+doesn't own.
+
+**Deviations from spec**: none for the two fixture migrations that are
+this task's actual scope. The two collateral `_build_live_config()`
+attribute/stub fixes above were necessary to make
+`test_agent_voice_stt_only.py` (a file this task explicitly modifies)
+pass at all — not a scope violation, but flagged per the file-fidelity
+principle. The pre-existing integration-test failure above is
+NOT fixed — explicitly out of scope, explicitly documented, confirmed
+pre-existing via git history rather than assumed.

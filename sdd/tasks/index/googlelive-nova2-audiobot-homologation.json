@@ -236,7 +236,7 @@
       "feature_id": "FEAT-418",
       "feature": "googlelive-nova2-audiobot-homologation",
       "spec": "sdd/specs/googlelive-nova2-audiobot-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -246,8 +246,8 @@
       "parallelism_notes": "Must follow the handler migration; touches two other distributions' test suites.",
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2175-cross-distribution-test-migration.md"
+      "completed_at": "2026-08-07T01:54:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2175-cross-distribution-test-migration.md"
     },
     {
       "id": "TASK-2176",
