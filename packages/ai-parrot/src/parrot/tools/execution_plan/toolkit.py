@@ -33,11 +33,29 @@ from parrot.tools.decorators import tool_schema
 from parrot.tools.toolkit import AbstractToolkit
 
 from ..abstract import ToolResult
-from .models import PlanArtifactsArgs, PlanStatusArgs, RunningSummary, RunRecord
+from .catalog import build_catalog, validate_with_allowlist
+from .models import (
+    PlanArtifactsArgs,
+    PlanExecuteArgs,
+    PlanStatusArgs,
+    PlanValidateArgs,
+    RunningSummary,
+    RunRecord,
+)
+from .planner import PlanAuthoringError, PlanPlanner
+from .store import PlanFileStore, PlanLoadError
 
 if TYPE_CHECKING:
     from parrot.auth.permission import PermissionContext
     from parrot.tools.working_memory.tool import WorkingMemoryToolkit
+
+
+class _StructuralError(Exception):
+    """Internal signal for a structural (non-manifest) tool-error condition.
+
+    Raised by the arbitration/acquisition helpers and caught at the
+    `plan_execute`/`plan_validate` tool boundary — never crosses it.
+    """
 
 
 class ExecutionPlanToolkit(AbstractToolkit):
@@ -382,3 +400,171 @@ class ExecutionPlanToolkit(AbstractToolkit):
             ]
 
         return ToolResult(status="success", result={"run_id": run_id, "artifacts": artifacts})
+
+    @tool_schema(PlanExecuteArgs)
+    async def plan_execute(
+        self,
+        objective: Optional[str] = None,
+        plan_name: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> ToolResult:
+        """Acquire, validate and run an ExecutionPlan.
+
+        Provide exactly one of `objective` (planner-authored) or
+        `plan_name` (versioned file). Returns the full manifest, or a
+        `run_id` summary if still running after `soft_timeout`.
+        """
+        try:
+            plan, _plan_json, report, source = await self._acquire_and_validate(
+                objective, plan_name, params
+            )
+        except _StructuralError as exc:
+            return ToolResult(status="error", success=False, result=None, error=str(exc))
+
+        if not report.ok:
+            return ToolResult(
+                status="error",
+                success=False,
+                result=None,
+                error=f"Plan {plan.name!r} is invalid — nothing executed:\n{report}",
+            )
+
+        return await self._run_plan(plan, source=source)
+
+    @tool_schema(PlanValidateArgs)
+    async def plan_validate(
+        self,
+        objective: Optional[str] = None,
+        plan_name: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> ToolResult:
+        """Dry-run: acquire and validate an ExecutionPlan without running it.
+
+        Returns the acquired plan JSON verbatim plus the full validation
+        report (`ok` + per-issue node_id/code/message/severity). Never
+        calls a tool.
+        """
+        try:
+            plan, plan_json, report, _source = await self._acquire_and_validate(
+                objective, plan_name, params
+            )
+        except _StructuralError as exc:
+            return ToolResult(status="error", success=False, result=None, error=str(exc))
+
+        return ToolResult(
+            status="success",
+            result={
+                "plan": plan_json,
+                "ok": report.ok,
+                "issues": [
+                    {
+                        "node_id": issue.node_id,
+                        "code": issue.code,
+                        "message": issue.message,
+                        "severity": issue.severity,
+                    }
+                    for issue in report.issues
+                ],
+            },
+        )
+
+    # ── Acquisition + validation (shared by plan_execute/plan_validate) ────
+
+    async def _acquire_and_validate(
+        self,
+        objective: Optional[str],
+        plan_name: Optional[str],
+        params: Optional[Dict[str, Any]],
+    ) -> "tuple[ExecutionPlan, Dict[str, Any], Any, str]":
+        """Arbitrate inputs, acquire the plan, and validate (+ repair once).
+
+        Never raises for "the plan is invalid" — that is data returned to
+        the caller (`report.ok=False`); `plan_execute` converts it into a
+        tool error itself, `plan_validate` returns it as its whole point.
+        Only genuine structural problems (bad arbitration, an unreadable
+        plan file, an unconfigured `planner_llm`/`plans_dir`, or a planner
+        response that never parses even after one repair round) raise
+        `_StructuralError`.
+
+        Returns:
+            ``(plan, plan_json, report, source)``.
+
+        Raises:
+            _StructuralError: On any structural acquisition failure.
+        """
+        self._check_arbitration(objective, plan_name, params)
+        if plan_name is not None:
+            return await self._acquire_from_file(plan_name, params)
+        return await self._acquire_from_objective(objective)
+
+    def _check_arbitration(
+        self,
+        objective: Optional[str],
+        plan_name: Optional[str],
+        params: Optional[Dict[str, Any]],
+    ) -> None:
+        """Enforce exactly one of objective/plan_name, and params only with plan_name."""
+        if objective is not None and plan_name is not None:
+            raise _StructuralError(
+                "Provide exactly one of 'objective' or 'plan_name', not both."
+            )
+        if objective is None and plan_name is None:
+            raise _StructuralError(
+                "Provide exactly one of 'objective' or 'plan_name'."
+            )
+        if objective is not None and params is not None:
+            raise _StructuralError(
+                "'params' is a plan_name-mode concept ({params.<name>} load-time "
+                "substitution) and cannot be combined with 'objective'."
+            )
+
+    async def _acquire_from_file(
+        self, plan_name: str, params: Optional[Dict[str, Any]]
+    ) -> "tuple[ExecutionPlan, Dict[str, Any], Any, str]":
+        """``plan_name`` mode: load from ``plans_dir``, validate, no repair."""
+        if self.plans_dir is None:
+            raise _StructuralError(
+                "plan_name mode requires the toolkit to be constructed with "
+                "plans_dir=<path>."
+            )
+        try:
+            plan = PlanFileStore(self.plans_dir).load(plan_name, params)
+        except PlanLoadError as exc:
+            raise _StructuralError(str(exc)) from exc
+
+        plan_json = plan.model_dump(mode="json")
+        report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools)
+        return plan, plan_json, report, "plan_name"
+
+    async def _acquire_from_objective(
+        self, objective: str
+    ) -> "tuple[ExecutionPlan, Dict[str, Any], Any, str]":
+        """``objective`` mode: author via the planner, validate, ≤1 repair."""
+        if self.planner_llm is None:
+            raise _StructuralError(
+                "objective mode requires the toolkit to be constructed with "
+                "planner_llm=<...>."
+            )
+        catalog = build_catalog(self._tool_manager, self.allowed_tools)
+        planner = PlanPlanner(self.planner_llm, catalog)
+
+        try:
+            plan = await planner.author(objective)
+        except PlanAuthoringError as exc:
+            raise _StructuralError(f"Planner failed to author a plan: {exc}") from exc
+
+        plan_json = plan.model_dump(mode="json")
+        report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools)
+
+        if not report.ok:
+            try:
+                plan = await planner.repair(plan_json, report)
+            except PlanAuthoringError as exc:
+                raise _StructuralError(
+                    "Planner repair round failed to produce a parseable plan: "
+                    f"{exc}\nOriginal validation report:\n{report}"
+                ) from exc
+            plan_json = plan.model_dump(mode="json")
+            report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools)
+
+        return plan, plan_json, report, "objective"

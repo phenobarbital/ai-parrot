@@ -6,15 +6,15 @@ is deliberately NOT a field here — it stays out-of-band in the toolkit's
 own internal dict so this model stays a plain, ``extra="forbid"``
 serializable record.
 
-Tool-argument schemas (``PlanStatusArgs``, ``PlanArtifactsArgs``) follow the
-repo's ``AbstractToolArgsSchema`` convention (see
-``.agent/workflows/create-parrot-tool.md``). ``PlanExecuteArgs`` /
-``PlanValidateArgs`` are added by TASK-2184, not here.
+Tool-argument schemas (``PlanStatusArgs``, ``PlanArtifactsArgs``,
+``PlanExecuteArgs``, ``PlanValidateArgs``) follow the repo's
+``AbstractToolArgsSchema`` convention (see
+``.agent/workflows/create-parrot-tool.md``).
 """
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,7 +23,9 @@ from parrot.bots.flows.plan import ExecutionManifest
 
 __all__ = (
     "PlanArtifactsArgs",
+    "PlanExecuteArgs",
     "PlanStatusArgs",
+    "PlanValidateArgs",
     "RunRecord",
     "RunningSummary",
 )
@@ -85,3 +87,47 @@ class PlanArtifactsArgs(AbstractToolArgsSchema):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str = Field(..., description="Run id returned by plan_execute.")
+
+
+class PlanExecuteArgs(AbstractToolArgsSchema):
+    """Arguments for the ``plan_execute`` tool.
+
+    Exactly one of ``objective``/``plan_name`` must be set.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    objective: Optional[str] = Field(
+        default=None,
+        description="Natural-language objective for objective mode (planner-authored).",
+    )
+    plan_name: Optional[str] = Field(
+        default=None,
+        description="Versioned plan filename (no extension) under plans_dir.",
+    )
+    params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="{params.<name>} values for plan_name mode; not valid with objective.",
+    )
+
+
+class PlanValidateArgs(AbstractToolArgsSchema):
+    """Arguments for the ``plan_validate`` tool.
+
+    Same shape as :class:`PlanExecuteArgs` — a dry run never executes.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    objective: Optional[str] = Field(
+        default=None,
+        description="Natural-language objective for objective mode (planner-authored).",
+    )
+    plan_name: Optional[str] = Field(
+        default=None,
+        description="Versioned plan filename (no extension) under plans_dir.",
+    )
+    params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="{params.<name>} values for plan_name mode; not valid with objective.",
+    )
