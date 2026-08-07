@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ...models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from ..bedrock import BedrockConverseBase
 from .audio import NovaAudio
 from .generation import NovaGeneration
@@ -118,4 +119,51 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):
             aws_secret_key=aws_secret_key,
             aws_session_token=aws_session_token,
             **kwargs,
+        )
+
+    @property
+    def voice_capabilities(self) -> VoiceCapabilities:
+        """Describe what Nova 2 Sonic natively supports today (FEAT-418).
+
+        This descriptor reflects *current* behavior only. Nova already
+        honors per-call ``temperature``/``max_tokens``/``top_p`` and
+        ``parallel_tool_execution`` via ``**kwargs`` (``nova/audio.py:765,
+        789-791``) and already emits ``metadata["reconnect_required"]`` at
+        its ``_CONNECTION_LIMIT_SECONDS`` session limit
+        (``nova/audio.py:860``) — so those flags are ``True`` from day one,
+        unlike Gemini's. ``native_stt_only`` is ``False``: Nova always
+        generates a spoken response; ``stt_only`` is not yet an accepted
+        parameter (TASK-2170 adds explicit, non-filtering acceptance).
+        ``supports_per_call_voice``/``supports_top_p`` are already exercised
+        today, but voice-id *validation* against a catalog lands in
+        TASK-2169 — the value here is not optimistic, it describes the
+        parameter already being read from ``**kwargs`` today.
+
+        Returns:
+            A frozen ``VoiceCapabilities`` instance for
+            ``VoiceProvider.NOVA``.
+        """
+        return VoiceCapabilities(
+            provider=VoiceProvider.NOVA,
+            native_stt_only=False,
+            supports_top_p=True,
+            supports_per_call_voice=True,
+            supports_per_call_inference=True,
+            parallel_tool_execution=True,
+            emits_reconnect_signal=True,
+            supports_session_resumption=False,
+            max_session_seconds=self._CONNECTION_LIMIT_SECONDS,
+            # NOTE: today's real hardcoded fallback is 1024
+            # (nova/audio.py:790); TASK-2170 replaces it with the
+            # VoiceConfig default of 4096. Descriptor mirrors today's
+            # truth, not the post-TASK-2170 value.
+            max_output_tokens=1024,
+            input_formats=frozenset({AudioFormat.PCM_16K}),
+            output_formats=frozenset({AudioFormat.PCM_24K}),
+            input_sample_rates=frozenset({16000}),
+            output_sample_rates=frozenset({24000}),
+            # Prose catalog from nova/audio.py:737; TASK-2169 promotes this
+            # to a shared constant.
+            voice_catalog=frozenset({"matthew", "tiffany", "amy"}),
+            default_voice="matthew",
         )

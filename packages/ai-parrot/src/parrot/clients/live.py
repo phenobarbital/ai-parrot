@@ -25,6 +25,16 @@ Usage:
 Location: parrot/clients/live.py
 """
 from __future__ import annotations
+
+import asyncio
+import base64
+import contextlib
+import inspect
+import logging
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 from typing import (
     Any,
     AsyncIterator,
@@ -33,25 +43,20 @@ from typing import (
     Optional,
     Union,
 )
-import uuid
-import asyncio
-import contextlib
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-import base64
-import inspect
-import logging
+
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 from navconfig import config
-# Import from parrot framework
-from .base import AbstractClient
+
+from ..memory import ConversationMemory
+from ..models.google import ALL_VOICE_PROFILES, GoogleVoiceModel
+from ..models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
-from ..memory import ConversationMemory
-from ..models.google import GoogleVoiceModel
+
+# Import from parrot framework
+from .base import AbstractClient
 
 # =============================================================================
 # Response Models with Usage Metadata
@@ -609,6 +614,43 @@ class GeminiLiveClient(AbstractClient):
 
         # Silence websockets.client debug logs
         logging.getLogger("websockets.client").setLevel(logging.INFO)
+
+    @property
+    def voice_capabilities(self) -> VoiceCapabilities:
+        """Describe what Gemini Live natively supports today (FEAT-418).
+
+        This descriptor reflects *current* behavior only — flags below are
+        flipped to ``True`` by later FEAT-418 tasks as each capability is
+        actually implemented (per-call inference params/``top_p``: TASK-2166;
+        per-call voice override + canonical role: TASK-2167; reconnect
+        signal + session resumption: TASK-2168). The provider conformance
+        kit (TASK-2176) asserts descriptor-vs-behavior consistency, so this
+        must never claim a capability ahead of the code that provides it.
+
+        Returns:
+            A frozen ``VoiceCapabilities`` instance for
+            ``VoiceProvider.GOOGLE_LIVE``.
+        """
+        return VoiceCapabilities(
+            provider=VoiceProvider.GOOGLE_LIVE,
+            native_stt_only=True,
+            supports_top_p=False,
+            supports_per_call_voice=False,
+            supports_per_call_inference=False,
+            parallel_tool_execution=True,
+            emits_reconnect_signal=False,
+            supports_session_resumption=False,
+            max_session_seconds=None,
+            max_output_tokens=self.max_tokens,
+            input_formats=frozenset({AudioFormat.PCM_16K}),
+            output_formats=frozenset({AudioFormat.PCM_24K}),
+            input_sample_rates=frozenset({16000}),
+            output_sample_rates=frozenset({24000}),
+            voice_catalog=frozenset(
+                profile.voice_name for profile in ALL_VOICE_PROFILES
+            ),
+            default_voice="Puck",
+        )
 
     async def get_client(self) -> genai.Client:
         """
