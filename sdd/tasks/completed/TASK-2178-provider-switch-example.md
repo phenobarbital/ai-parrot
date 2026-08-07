@@ -223,6 +223,16 @@ When you pick up this task:
 
 ## Completion Note
 
+**RESOLVED and implemented — option (c), by explicit user direction**
+("Go with option (c) for TASK-2178 — reuse chat.html instead"), after the
+initial STOP documented below. This note is kept in two parts: the
+original blocking analysis (unedited, for the record), followed by the
+resolution and what was actually built.
+
+---
+
+### Part 1 — the original STOP (2026-08-07, first pass)
+
 **STOPPED — not implemented.** Status left as `in-progress`, file left in
 `sdd/tasks/active/` (not moved to `completed/`), per Cardinal Rule 4
 ("WHEN IN DOUBT, STOP") and the STOP Conditions ("the task's
@@ -323,4 +333,127 @@ contract was written (`388`/`490` → `500`/`601`) — noted here since the
 contract should be corrected before this task is picked up again, but
 this drift is not itself the blocker; the protocol contradiction above is.
 
-**Deviations from spec**: N/A — task not implemented.
+**Deviations from spec**: N/A — task not implemented in this pass.
+
+---
+
+### Part 2 — resolution and implementation (2026-08-07, second pass)
+
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+
+**Resolution chosen**: option (c) from Part 1 — dropped the literal
+"reuse TASK-2177's static asset" framing of acceptance criterion #7 and
+instead reused `packages/ai-parrot-integrations/src/parrot/voice/ui/
+chat.html` (the shipped UI that already speaks `VoiceChatHandler`'s real
+protocol), adapted with a provider toggle, capability panel, and usage
+strip. This satisfies the *intent* of criterion #7 ("shared static asset,
+not inlined in a .py file") without inventing an unspec'd protocol
+translation layer or rewriting TASK-2177's `app.js` (which stays
+untouched and still serves `examples/clients/nova/audio.py` unmodified).
+
+**What was implemented**:
+- `examples/clients/voice/server.py` (force-added, `.gitignore` trap
+  confirmed and handled) — `build_app()` mounts two `VoiceChatHandler`
+  instances via `setup_routes()` (`ws_route`/`health_route` set to
+  `/ws/gemini`+`/health/gemini` and `/ws/nova`+`/health/nova` respectively
+  — verified empirically that two instances coexist in one `web.
+  Application` without route collisions, per the Codebase Contract's
+  explicit "verify before designing around it" note). `make_gemini_bot()`/
+  `make_nova_bot()` factories build a fresh `VoiceBot` per connection
+  (`bot_factory()` is called fresh by `_handle_start_session()` for every
+  new WebSocket) sharing `name`, `system_prompt`, and one `@tool`-decorated
+  `get_weather` function; only `VoiceConfig.provider`/default voice differ.
+  `_nova_sdk_available()` probes `aws_sdk_bedrock_runtime` once at import
+  time; when absent, the Nova route stays mounted (not removed) but
+  `make_nova_bot()` raises immediately with a clear message, caught by
+  `handle_websocket`'s existing blanket exception handler and reported as
+  a WS `error` frame — verified via `TestClient`, no crash. `build_
+  capabilities()` instantiates a bare `GeminiLiveClient()`/`NovaClient()`
+  (safe without credentials or the Nova SDK — both resolve lazily) purely
+  to read `.voice_capabilities` and serialize it to JSON for the
+  capability panel.
+- `examples/clients/voice/static/dual_provider.html` (force-added) — an
+  adapted copy of `chat.html` with: a provider-toggle button group in the
+  header (switches `wsUrl`, clears the transcript, calls `reconnect()` —
+  fresh session per switch, no memory replay, matching spec §1 Non-Goals);
+  a capability-panel table in the settings drawer rendered from
+  `CONFIG.capabilities[activeProvider]` (never hardcoded); a usage strip
+  updated from `response_complete.usage` (new field, see below). Templated
+  the same `__CONFIG__`-replace way as TASK-2177's asset.
+- **`packages/ai-parrot-integrations/src/parrot/voice/handler.py`** (NOT
+  in the original Files-to-Modify list — a documented, minimal deviation):
+  `_HandlerVoiceSession.build_frames()`'s `response_complete` frame
+  carried no usage data at all on the streaming path (unlike
+  `_send_complete_voice_response()`'s non-streaming `voice_response`,
+  which already had one) — there was no other place in the wire protocol
+  to source real per-turn token/latency data from for acceptance criterion
+  "Per-provider token/latency counters are shown". Added an optional
+  `usage` key (`input_tokens`/`output_tokens`/`total_tokens`/
+  `response_time_ms`/`first_token_time_ms`), sourced directly from
+  `resp.usage` (`LiveCompletionUsage`, already computed by both
+  providers) — omitted entirely when absent, not zeroed. 2 new regression
+  tests in `test_handler_refactor.py`.
+- `examples/clients/voice/README.md` (created) and `examples/voice/
+  README.md` (reconciled — no longer documents the never-built,
+  now-explicitly-out-of-scope `bot.py` hot-swap CLI; redirects to the real
+  example).
+
+**Two pre-existing bugs found and fixed during end-to-end verification**
+(both discovered by actually running the server against a real `VoiceBot`
+via `aiohttp.test_utils.TestClient`, not just unit-testing in isolation —
+neither is FEAT-418-specific, both are universal `VoiceChatHandler`/
+`VoiceBot` defects nothing had exercised before):
+1. **`VoiceSession._run_turn()` never forwarded `stt_only` as an explicit
+   kwarg** to `stream_voice()` (both real clients read it only from that
+   dedicated parameter, never from `options.stt_only`) — fixed in
+   `packages/ai-parrot/src/parrot/voice/session.py` with 3 regression
+   tests (flagged as CRITICAL by the feature-level adversarial code
+   review; fixed before this task resumed).
+2. **`VoiceBot.system_prompt` (the property) was never initialized** —
+   `AbstractBot.__init__()` only ever sets the separate
+   `system_prompt_template` attribute; nothing in the synchronous
+   construction path calls the `system_prompt` property setter that backs
+   `_system_prompt_template`. Any freshly constructed `VoiceBot` —
+   including via `VoiceChatHandler`'s default `bot_factory`, which never
+   runs the async `configure()` flow — raised `AttributeError` the moment
+   `_run_voice_session()` read `bot.system_prompt`. Reproduced against a
+   plain `VoiceBot()` with zero mocks. Fixed with two lines inside
+   `VoiceBot.__init__` (`packages/ai-parrot/src/parrot/bots/voice.py`,
+   routing through the existing property setter) — deliberately NOT
+   touching the shared `AbstractBot` foundation. 3 regression tests added.
+   Without this fix, no real end-to-end `VoiceChatHandler` session could
+   ever start, for any bot, on any provider — this task's own manual
+   verification step is what surfaced it.
+
+**Manual/automated verification performed** (in lieu of a literal browser
+session — this sandboxed environment has no browser, no Google API key,
+no AWS credentials; the same environment constraint documented in
+TASK-2177's note): an `aiohttp.test_utils.TestClient` end-to-end script
+confirmed (1) the index page serves and templates correctly (`__CONFIG__`
+fully replaced, provider toggle and capability table scaffolding present);
+(2) both `/ws/gemini` and `/ws/nova` handshake and coexist with distinct
+health routes; (3) `/ws/nova` degrades gracefully to a WS `error` frame
+(no crash) when the SDK is absent; (4) a **real** `/ws/gemini` session
+reaches `session_started` with a genuine `GeminiLiveClient`-backed
+`VoiceBot` (no mocks) and tears down cleanly — this is the path that
+surfaced fix #2 above. A human with a `GOOGLE_API_KEY` and AWS Bedrock
+credentials should still run the two-browser-tab manual check described
+in the Test Specification before treating this as demo-ready.
+
+**Deviations from spec** (all documented above, none silent):
+- Acceptance criterion #7 satisfied in intent, not literal file identity
+  (chat.html-derived asset, not TASK-2177's asset) — per explicit user
+  direction (option c).
+- `handler.py` touched despite not being in the original Files table (the
+  `usage` field addition) — minimal, additive, necessary for the
+  token/latency counters criterion; documented in its own commit message.
+- `bots/voice.py` touched despite not being in the original Files table
+  (the `system_prompt` property fix) — a pre-existing, universal bug this
+  task's own verification requirement (manual end-to-end run) surfaced;
+  without it the example cannot start any real session at all.
+- `examples/voice/README.md`'s reconciliation removes the hot-swap
+  CLI documentation wholesale rather than writing the never-specified
+  `bot.py` script — that script's runtime `switch_provider()` design is
+  explicitly out of scope per this task's own NOT-in-scope line and the
+  Codebase Contract's "Does NOT Exist" section.

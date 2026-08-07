@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-06T23:45:50+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-07T08:36:59+00:00",
   "tasks": [
     {
       "id": "TASK-2164",
@@ -298,7 +298,7 @@
       "feature_id": "FEAT-418",
       "feature": "googlelive-nova2-audiobot-homologation",
       "spec": "sdd/specs/googlelive-nova2-audiobot-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -309,8 +309,8 @@
       "parallelism_notes": "Final integration surface — needs the migrated handler and the extracted UI asset.",
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2178-provider-switch-example.md"
+      "completed_at": "2026-08-07T08:36:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2178-provider-switch-example.md"
     }
   ]
 }
