@@ -338,16 +338,25 @@ class RecipeRunner:
                         )
                     )
 
+        # FEAT-420: a layout may $bind into the narrative step's output_key,
+        # which is not a TransformStep — declared via `recipe.narrative`
+        # instead. Include it here so a correctly-wired narrative bind is
+        # never flagged as "undeclared" (this set is layout-check-only; the
+        # facts_key check below still validates against transform-only keys).
+        bindable_output_keys = set(declared_output_keys)
+        if recipe.narrative is not None:
+            bindable_output_keys.add(recipe.narrative.output_key)
+
         for pointer, _optional in _collect_bind_pointers(recipe.layout.properties):
             top_key = _pointer_top_key(pointer)
-            if top_key not in declared_output_keys:
+            if top_key not in bindable_output_keys:
                 errors.append(
                     RecipeRunError(
                         recipe=recipe.name,
                         stage="layout",
                         detail=(
                             f"$bind pointer {pointer!r} references undeclared output_key "
-                            f"{top_key!r}; declared output_keys: {sorted(declared_output_keys)!r}"
+                            f"{top_key!r}; declared output_keys: {sorted(bindable_output_keys)!r}"
                         ),
                     )
                 )

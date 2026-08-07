@@ -94,8 +94,20 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
     _SNAPSHOT_PARAMS: ClassVar[dict] = {"snapshot_col": "snapshot_date"}
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Default the data-splice template registry to the reference dashboard dir."""
-        kwargs.setdefault("template_dirs", [str(DEFAULT_TEMPLATE_DIR)])
+        """Configure the agent's LLM default.
+
+        FEAT-420: no longer defaults ``template_dirs`` to
+        ``DEFAULT_TEMPLATE_DIR`` — ``InfographicToolkit``'s ``TemplateEngine``
+        validates every entry in ``template_dirs`` EAGERLY at construction
+        time (raises if the directory is absent), and the tier-2 A2UI
+        profiles below no longer render via a data-splice/jinja template at
+        all. ``sdd/artifacts/`` is also a gitignored, non-portable local
+        directory (verified: zero git history), so defaulting to it would
+        make agent instantiation fail on any checkout that lacks it — as
+        discovered by TASK-2195 actually running this agent. Callers that
+        DO want the legacy tier-1 template path may still pass
+        ``template_dirs=`` explicitly.
+        """
         super().__init__(
             *args,
             llm=kwargs.pop("llm", None) or self.llm,

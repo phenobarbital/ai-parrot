@@ -710,3 +710,25 @@ class TestDryRunNarrative:
         errors = await runner.dry_run(recipe)
 
         assert not any("narrative.facts_key" in e.detail for e in errors)
+
+    async def test_dry_run_tolerates_optional_narrative_layout_bind(self, dataset_manager):
+        """A layout $bind into the narrative step's output_key is NOT a
+        TransformStep — it must not be flagged as an undeclared output_key
+        (discovered via FEAT-420 TASK-2195's actual-execution requirement)."""
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"),
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={
+                    "title": {"$bind": "/result"},
+                    "summary": {"$bind": "/narrative", "optional": True},
+                    "sections": [],
+                },
+            ),
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        errors = await runner.dry_run(recipe)
+
+        assert not any("undeclared output_key" in e.detail for e in errors)
