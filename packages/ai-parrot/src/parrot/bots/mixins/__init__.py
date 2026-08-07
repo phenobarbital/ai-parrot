@@ -5,11 +5,14 @@ Provides optional mix-in classes that add capabilities to bots:
 - IdentityMixin: file-based identity injection + hot reload (FEAT-321).
 - ModelSwitchingMixin: dual-LLM switching — cross-provider fallback on error
   or contrastive dual-model answers with per-model attribution.
+- NarrativeMixin: reusable `Narrator` implementation over skills (FEAT-420) —
+  renders deterministic facts as figure-guarded prose.
 """
 from .intent_router import IntentRouterMixin
 from .identity import IdentityMixin
 from .model_switching import ModelSwitchingMixin, ModelSwitchMode
 from .infographic_authoring import InfographicAuthoringMixin
+from .narrative import NarrativeMixin
 
 __all__ = [
     "IntentRouterMixin",
@@ -17,4 +20,5 @@ __all__ = [
     "ModelSwitchingMixin",
     "ModelSwitchMode",
     "InfographicAuthoringMixin",
+    "NarrativeMixin",
 ]
