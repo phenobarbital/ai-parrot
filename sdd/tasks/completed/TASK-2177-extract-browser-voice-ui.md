@@ -208,10 +208,69 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Extracted the ~560-line inline `INDEX_HTML` string into
+`examples/clients/voice/static/index.html` (markup/CSS unchanged) +
+`examples/clients/voice/static/app.js` (all JS logic, including the
+`WORKLET_SRC` AudioWorklet source). `examples/clients/nova/audio.py`'s
+`index_handler` now reads `index.html` from `STATIC_DIR`
+(`examples/clients/voice/static/`) and does the same `__CONFIG__` string
+replace as before; `build_app()` adds an `app.router.add_static("/static/",
+...)` route to serve `app.js`. Deleted `NovaVoiceSession` (was
+`audio.py:116-338`) entirely — `websocket_handler` now constructs the core
+`parrot.voice.session.VoiceSession` directly (no subclass needed: its
+default `build_frames()`/`_relay()` output is byte-identical to
+`NovaVoiceSession._relay()`'s — same frame shapes, same
+`self.voice_config.output_sample_rate` == `NovaClient.OUTPUT_SAMPLE_RATE_HZ`
+== 24000, verified against `models/voice.py` defaults and
+`NovaClient.voice_capabilities`) — with a `send_fn` adapter wrapping
+`ws.send_json`, exactly the `handler.py` pattern named in the task's
+Implementation Notes. The example still constructs and drives `NovaClient`
+directly; no `VoiceBot`/`VoiceChatHandler` involved.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Two required reusability fixes surfaced during extraction, both within the
+extraction's own scope (not new features): (1) role comparisons in the UI
+JS were still the legacy uppercase `"USER"` — updated to the canonical
+lowercase `"user"`/`"assistant"` envelope this same feature already
+shipped in `NovaAudio.stream_voice()` (`nova/audio.py:1045`,
+`role=role.lower()`), or the extracted UI would have silently broken
+role-based bubbling for both examples. (2) The UI copy (title, status
+strings) had "Nova" hardcoded in six places — genericized to a
+`CONFIG.providerLabel` field (added to `index_handler`'s `cfg` dict, value
+`"Nova 2 Sonic"`) so `app.js`/`index.html` carry zero provider-specific
+branches and are reusable by TASK-2178 unmodified, per this task's own
+acceptance criterion.
 
-**Deviations from spec**: none | describe if any
+`.gitignore` trap (flagged in the task) confirmed and handled:
+`examples/clients/voice/static/index.html` matched `examples/**/*.html`
+and required `git add -f`; `app.js` and the modified `audio.py` did not
+need it.
+
+Verification performed: `ruff check examples/clients/nova/audio.py` clean;
+`ast.parse` + the task's own guard assertions
+(`"from parrot.voice.session import VoiceSession" in src`,
+`"class NovaVoiceSession" not in src`) pass; `python
+examples/clients/nova/audio.py --help` imports and parses args cleanly;
+an `aiohttp.test_utils.TestClient` end-to-end check confirmed `GET /`
+serves the templated `index.html` (no leftover `__CONFIG__` placeholder,
+`providerLabel` rendered) and `GET /static/app.js` serves the JS asset;
+constructing `VoiceSession(client=<built NovaClient>, ...)` directly
+passes the core class's audio-format preflight without error.
+
+**Real browser + live AWS Bedrock push-to-talk was NOT verified** — this
+sandboxed, non-interactive environment has no browser and no AWS
+credentials/network access to Bedrock, so the manual verification step
+in the Test Specification (hold the button, confirm audio in/out) could
+not be performed. This is an environment constraint, not an ambiguity in
+the task; flagging per the anti-hallucination/no-guessing discipline
+rather than claiming a check that didn't happen. A human with AWS
+credentials should run `python examples/clients/nova/audio.py --voice
+tiffany` and confirm push-to-talk before relying on this for a live demo.
+
+**Deviations from spec**: none from the task's Scope/Files/Codebase
+Contract. The `providerLabel` config field is an addition beyond the
+literal `Codebase Contract` listing, made to satisfy this task's own
+acceptance criterion ("reusable by TASK-2178 without modification") —
+not a redesign, a minimal generalization of the UI copy this same task
+extracted.

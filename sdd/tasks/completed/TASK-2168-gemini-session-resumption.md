@@ -193,10 +193,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Verified the exact `google-genai` 2.17.0 SDK surface before coding
+(per the task's explicit instruction): `LiveConnectConfig.session_resumption:
+Optional[SessionResumptionConfig]` (`types.py:21532`),
+`SessionResumptionConfig(handle: Optional[str], transparent: Optional[bool])`
+(`types.py:20719`), and `LiveServerMessage.session_resumption_update:
+Optional[LiveServerSessionResumptionUpdate]` (`types.py:20598`) with fields
+`new_handle`/`resumable`/`last_consumed_client_message_index`
+(`types.py:20481`). Added `self._resumption_handle` instance state
+(`None` initially); `_build_live_config()` now always requests session
+resumption (`session_resumption=types.SessionResumptionConfig(handle=
+self._resumption_handle)`), so the first connect starts fresh and a
+resumable session's handle rides into the next `stream_voice()` call
+unmodified. The receive loop retains `new_handle` whenever
+`resumable=True`. Both `GoAway` (`live.py` ~1246) and the 1008
+server-close path now additionally set
+`metadata["reconnect_required"]=True` while keeping `metadata["go_away"]`
+(handler.py:298 still reacts to it, per the task's explicit constraint).
+A rejected/expired handle is detected heuristically (the SDK exposes no
+typed exception for this) in the outer `except Exception` handler: only
+triggered when `self._resumption_handle` was actually set for the
+attempt AND the error text mentions "resumption"/"handle"/"expired" —
+clears the handle and yields `metadata={"resumed": False,
+"reconnect_required": True}`, relying on `VoiceSession`'s existing
+reconnect loop (unmodified, per scope) to call `stream_voice()` again,
+which then connects cold. Flipped `emits_reconnect_signal=True` and
+`supports_session_resumption=True`; set `max_session_seconds=None` with
+an inline comment explaining why: `_build_live_config()` already
+requests `context_window_compression` unconditionally (pre-existing,
+sliding window), which is documented as removing the Live API's fixed
+session-length ceiling — so `None` reflects "no documented limit under
+this configuration" rather than an unverified guess. 13 new tests in
+`tests/clients/test_live_resumption.py`, including coverage for the
+non-resumable-update and generic-error-not-misclassified edge cases.
+`tests/voice/test_voice_reconnection.py` (5 tests, unmodified) still
+green — confirms the existing `VoiceSession` loop needed no changes.
+Full voice-domain regression (117 tests) green except the one
+already-documented pre-existing `test_no_aiohttp_import` failure.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

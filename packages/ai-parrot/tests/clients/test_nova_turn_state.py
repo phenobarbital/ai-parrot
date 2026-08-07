@@ -48,14 +48,18 @@ END = {"completionEnd": {}}
 class TestRoleAttribution:
     @pytest.mark.asyncio
     async def test_user_text_attributed_to_user(self):
+        """FEAT-418 (TASK-2170): role is canonicalized to lowercase on the
+        yielded LiveVoiceResponse — was "USER" before TASK-2170."""
         out = await _run([USER, {"textOutput": {"content": "weather?"}}, END])
-        assert [r.role for r in out if r.text] == ["USER"]
+        assert [r.role for r in out if r.text] == ["user"]
 
     @pytest.mark.asyncio
     async def test_assistant_speculative_text_emitted(self):
+        """FEAT-418 (TASK-2170): role is canonicalized to lowercase — was
+        "ASSISTANT" before TASK-2170."""
         out = await _run([SPECULATIVE, {"textOutput": {"content": "Sunny."}}, END])
         texts = [(r.role, r.text) for r in out if r.text]
-        assert texts == [("ASSISTANT", "Sunny.")]
+        assert texts == [("assistant", "Sunny.")]
 
     @pytest.mark.asyncio
     async def test_assistant_non_speculative_text_suppressed(self):

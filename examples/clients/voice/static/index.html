@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Chat</title>
+<style>
+  :root {
+    --bg: #0b1020; --panel: #141a2e; --panel-2: #1c2440; --line: #2a3454;
+    --text: #e8ecf8; --muted: #8b96b8; --accent: #6c8cff; --accent-2: #40d6b0;
+    --danger: #ff6b81;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .app {
+    width: 100%; max-width: 720px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
+    display: flex; flex-direction: column; height: min(88vh, 780px);
+    box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  }
+  header {
+    padding: 16px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px; background: var(--panel-2);
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: .2px; }
+  .meta { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    background: rgba(108,140,255,.14); color: #b9c6ff; border: 1px solid rgba(108,140,255,.3);
+    font-variant-numeric: tabular-nums;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); flex: 0 0 auto; }
+  .dot.on { background: var(--accent-2); box-shadow: 0 0 10px var(--accent-2); }
+
+  #log {
+    flex: 1; overflow-y: auto; padding: 20px; display: flex;
+    flex-direction: column; gap: 12px; scroll-behavior: smooth;
+  }
+  .bubble {
+    max-width: 78%; padding: 10px 14px; border-radius: 14px;
+    white-space: pre-wrap; word-wrap: break-word; animation: rise .18s ease-out;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .bubble.assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); }
+  .bubble.you { align-self: flex-end; background: rgba(108,140,255,.18); border: 1px solid rgba(108,140,255,.36); }
+  .bubble.system {
+    align-self: center; max-width: 92%; background: transparent; color: var(--muted);
+    font-size: 12.5px; text-align: center; padding: 4px 8px;
+  }
+  .bubble.error {
+    align-self: center; max-width: 92%; color: var(--danger); font-size: 13px;
+    background: rgba(255,107,129,.1); border: 1px solid rgba(255,107,129,.32);
+  }
+  .bubble .who { display: block; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+
+  footer {
+    padding: 18px 20px 22px; border-top: 1px solid var(--line); background: var(--panel-2);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  #ptt {
+    width: 106px; height: 106px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(160deg, var(--accent), #4a63d8); color: #fff;
+    font-size: 12px; font-weight: 650; letter-spacing: .5px; text-transform: uppercase;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+    box-shadow: 0 8px 26px rgba(108,140,255,.35); user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  #ptt svg { width: 26px; height: 26px; }
+  #ptt:disabled { background: #39415e; box-shadow: none; cursor: not-allowed; color: var(--muted); }
+  #ptt.recording {
+    background: linear-gradient(160deg, var(--danger), #d8425a);
+    transform: scale(1.06); box-shadow: 0 0 0 10px rgba(255,107,129,.16), 0 8px 30px rgba(255,107,129,.45);
+  }
+  #ptt.thinking { background: linear-gradient(160deg, var(--accent-2), #2ba98b); box-shadow: 0 8px 26px rgba(64,214,176,.35); }
+  #status { font-size: 12.5px; color: var(--muted); min-height: 18px; text-align: center; }
+  kbd {
+    font: inherit; font-size: 11px; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  }
+  #disconnectBtn {
+    font: inherit; font-size: 11px; font-weight: 600; padding: 5px 14px;
+    border-radius: 999px; border: 1px solid rgba(255,107,129,.4); cursor: pointer;
+    background: rgba(255,107,129,.12); color: var(--danger);
+    transition: background .15s, border-color .15s;
+  }
+  #disconnectBtn:hover { background: rgba(255,107,129,.22); border-color: var(--danger); }
+  #disconnectBtn.off {
+    border-color: rgba(64,214,176,.4); background: rgba(64,214,176,.12);
+    color: var(--accent-2);
+  }
+  #disconnectBtn.off:hover { background: rgba(64,214,176,.22); border-color: var(--accent-2); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <span class="dot" id="dot"></span>
+    <h1 id="appTitle">Voice Chat</h1>
+    <div class="meta">
+      <span class="tag" id="tagModel"></span>
+      <span class="tag" id="tagVoice"></span>
+      <span class="tag" id="tagRate"></span>
+      <button id="disconnectBtn">Disconnect</button>
+    </div>
+  </header>
+
+  <div id="log"></div>
+
+  <footer>
+    <button id="ptt" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+      </svg>
+      <span id="pttLabel">Connecting</span>
+    </button>
+    <div id="status">Hold the button or <kbd>space</kbd> to talk.</div>
+  </footer>
+</div>
+
+<script>
+  // Templated by the Python server: index_handler() replaces __CONFIG__ with
+  // a JSON object (model, voice, region, inputSampleRate, outputSampleRate,
+  // providerLabel — see examples/clients/nova/audio.py::index_handler).
+  // Shared as-is across every example that serves this asset (FEAT-418,
+  // TASK-2177/TASK-2178) — no per-provider markup lives in this file.
+  window.__CONFIG__ = __CONFIG__;
+</script>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -68,9 +68,14 @@ class TestNovaInferenceParams:
 
     @pytest.mark.asyncio
     async def test_default_inference_params(self):
-        """stream_voice() uses 1024/0.9/0.7 when no kwargs given."""
+        """stream_voice() uses 4096/0.9/0.7 when no kwargs given.
+
+        FEAT-418 (TASK-2170): the hardcoded max_tokens fallback of 1024
+        was replaced with the shared VoiceConfig default of 4096 (spec §8
+        resolved decision) — this was 1024 before TASK-2170.
+        """
         sent = await _capture_opening_frames(_client())
         inference_config = _session_start(sent)["inferenceConfiguration"]
-        assert inference_config["maxTokens"] == 1024
+        assert inference_config["maxTokens"] == 4096
         assert inference_config["topP"] == 0.9
         assert inference_config["temperature"] == 0.7

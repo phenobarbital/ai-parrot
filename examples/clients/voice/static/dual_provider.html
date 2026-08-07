@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parrot Voice-Powered Chat</title>
+    <title>Parrot Voice-Powered Chat — Provider Switch</title>
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -94,6 +94,8 @@
             justify-content: space-between;
             padding: 24px 0;
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            gap: 16px;
+            flex-wrap: wrap;
         }
 
         .logo {
@@ -121,6 +123,45 @@
 
         .logo-text span {
             color: var(--accent-primary);
+        }
+
+        /* Provider Toggle (FEAT-418, TASK-2178) */
+        .provider-toggle {
+            display: flex;
+            gap: 6px;
+            padding: 3px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 999px;
+        }
+
+        .provider-btn {
+            font: inherit;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 500;
+            padding: 7px 16px;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: var(--transition-fast);
+        }
+
+        .provider-btn:hover:not(.unavailable) {
+            color: var(--text-primary);
+        }
+
+        .provider-btn.active {
+            background: rgba(0, 212, 170, 0.16);
+            border-color: rgba(0, 212, 170, 0.35);
+            color: var(--accent-primary);
+        }
+
+        .provider-btn.unavailable {
+            opacity: 0.4;
+            cursor: not-allowed;
+            text-decoration: line-through;
         }
 
         .connection-status {
@@ -293,44 +334,6 @@
             }
         }
 
-        /* Replay Button on Assistant Messages */
-        .replay-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            border-radius: 50%;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            margin-top: 8px;
-            font-size: 16px;
-            transition: all 0.2s ease;
-        }
-
-        .replay-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: scale(1.1);
-        }
-
-        .replay-btn.playing {
-            background: var(--accent-primary);
-            animation: pulse 1s infinite;
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.7;
-            }
-        }
-
         /* Audio Player in Message */
         .audio-player {
             display: flex;
@@ -340,64 +343,6 @@
             padding: 10px 14px;
             background: rgba(0, 0, 0, 0.2);
             border-radius: 12px;
-        }
-
-        .audio-play-btn {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            border: none;
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: var(--transition-fast);
-        }
-
-        .audio-play-btn:hover {
-            transform: scale(1.1);
-            box-shadow: var(--wave-glow);
-        }
-
-        .audio-waveform {
-            flex: 1;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            gap: 2px;
-        }
-
-        .audio-waveform .bar {
-            width: 3px;
-            background: var(--accent-primary);
-            border-radius: 2px;
-            opacity: 0.5;
-            transition: var(--transition-fast);
-        }
-
-        .audio-waveform.playing .bar {
-            opacity: 1;
-            animation: waveAnimation 0.5s ease-in-out infinite;
-        }
-
-        @keyframes waveAnimation {
-
-            0%,
-            100% {
-                transform: scaleY(0.5);
-            }
-
-            50% {
-                transform: scaleY(1);
-            }
-        }
-
-        .audio-duration {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--text-muted);
         }
 
         /* Voice Input Area */
@@ -542,6 +487,22 @@
             color: var(--accent-primary);
         }
 
+        /* Usage strip (FEAT-418, TASK-2178) */
+        .usage-strip {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            padding-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .usage-strip .usage-item span {
+            color: var(--accent-primary);
+        }
+
         /* Settings Panel */
         .settings-panel {
             position: fixed;
@@ -634,6 +595,35 @@
             border-color: var(--accent-primary);
         }
 
+        /* Capability panel (FEAT-418, TASK-2178) */
+        .capability-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+        }
+
+        .capability-table td {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            vertical-align: top;
+        }
+
+        .capability-table td.value {
+            color: var(--text-primary);
+            text-align: right;
+            max-width: 190px;
+            word-break: break-word;
+        }
+
+        .capability-note {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
         /* Overlay */
         .overlay {
             position: fixed;
@@ -722,6 +712,11 @@
                 <div class="logo-icon">🦜</div>
                 <div class="logo-text">AI<span>-Parrot</span> Voice</div>
             </div>
+
+            <div class="provider-toggle" id="providerToggle">
+                <!-- Buttons injected by JS from CONFIG.providers -->
+            </div>
+
             <div class="connection-status">
                 <button id="connectBtn" class="connect-toggle-btn" title="Toggle Connection">
                     <span class="icon">🔌</span>
@@ -740,13 +735,14 @@
                 <h2 class="empty-title">Start a Conversation</h2>
                 <p class="empty-description">
                     Press the microphone button to start speaking.
-                    I'll listen and respond with both text and voice.
+                    Switch providers above — same agent, same tools, only the voice differs.
                 </p>
             </div>
         </main>
 
         <!-- Input Area -->
         <footer class="input-area">
+            <div class="usage-strip" id="usageStrip"></div>
             <div class="status-bar" id="statusBar">Press to speak</div>
 
             <div class="voice-controls">
@@ -778,17 +774,6 @@
         </div>
 
         <div class="setting-group">
-            <label class="setting-label">Voice</label>
-            <select class="setting-select" id="voiceSelect">
-                <option value="Puck">Puck (Friendly)</option>
-                <option value="Aoede">Aoede (Warm)</option>
-                <option value="Charon">Charon (Deep)</option>
-                <option value="Fenrir">Fenrir (Strong)</option>
-                <option value="Kore">Kore (Gentle)</option>
-            </select>
-        </div>
-
-        <div class="setting-group">
             <label class="setting-label">Language</label>
             <select class="setting-select" id="languageSelect">
                 <option value="en-US">English (US)</option>
@@ -801,21 +786,52 @@
         </div>
 
         <div class="setting-group">
-            <label class="setting-label">WebSocket URL</label>
-            <input type="text" class="setting-input" id="wsUrl" value="ws://localhost:8765/ws/voice"
-                placeholder="ws://localhost:8765/ws/voice">
+            <label class="setting-label">System Prompt (Optional Override)</label>
+            <textarea class="setting-input" id="systemPrompt" rows="4"
+                placeholder="Custom instructions for the assistant..."></textarea>
         </div>
 
         <div class="setting-group">
-            <label class="setting-label">System Prompt (Optional)</label>
-            <textarea class="setting-input" id="systemPrompt" rows="4"
-                placeholder="Custom instructions for the assistant..."></textarea>
+            <label class="setting-label">Provider Capabilities — <span id="capabilityProviderLabel"></span></label>
+            <table class="capability-table" id="capabilityTable"></table>
+            <p class="capability-note">
+                Sourced live from each client's <code>voice_capabilities</code> descriptor
+                (FEAT-418) — not a hardcoded table, so it can never drift from what the
+                provider actually does.
+            </p>
         </div>
     </aside>
 
     <script>
+        // server.py's index_handler() replaces this ENTIRE statement
+        // (anchored, not a bare token substitution — see its comment for
+        // why) with `window.__CONFIG__ = <json>;`, where <json> is
+        // {"providers": {...}, "capabilities": {...}} built from each
+        // VoiceChatHandler's provider and each client's live
+        // voice_capabilities descriptor.
+        window.__CONFIG__ = __CONFIG__;
+    </script>
+    <script>
         // =====================================
-        // AI-Parrot Voice Chat Client
+        // AI-Parrot Voice Chat Client — Provider Switch (FEAT-418, TASK-2178)
+        //
+        // Adapted from packages/ai-parrot-integrations/src/parrot/voice/ui/chat.html
+        // (the shipped, protocol-correct VoiceChatHandler UI) rather than the
+        // raw-client static asset from TASK-2177 (examples/clients/voice/static/
+        // index.html + app.js), which speaks a deliberately different, simpler
+        // wire protocol built for examples/clients/nova/audio.py's direct
+        // NovaClient demo. VoiceChatHandler's real protocol (start_session /
+        // audio_data / response_chunk / transcription / response_complete /
+        // ready_to_speak) is NOT compatible with that simpler protocol — see
+        // sdd/tasks/completed/TASK-2178-provider-switch-example.md's Completion
+        // Note for the full analysis of why chat.html was reused here instead.
+        //
+        // Additions over chat.html: a provider toggle (switches the WebSocket
+        // route and starts a fresh session — no memory replay), a capability
+        // panel rendered from each client's live voice_capabilities descriptor,
+        // and a per-turn usage strip (tokens/latency) sourced from
+        // response_complete's usage field (FEAT-418, TASK-2178 handler.py
+        // addition).
         // =====================================
 
         class VoiceChatClient {
@@ -831,6 +847,10 @@
                 this.settingsPanel = document.getElementById('settingsPanel');
                 this.overlay = document.getElementById('overlay');
                 this.connectBtn = document.getElementById('connectBtn');
+                this.providerToggle = document.getElementById('providerToggle');
+                this.usageStrip = document.getElementById('usageStrip');
+                this.capabilityTable = document.getElementById('capabilityTable');
+                this.capabilityProviderLabel = document.getElementById('capabilityProviderLabel');
 
                 // State
                 this.ws = null;
@@ -840,17 +860,24 @@
                 this.mediaStream = null;
                 this.audioContext = null;
                 this.analyser = null;
-                this.workletNode = null;
                 this.audioQueue = [];
                 this.isPlaying = false;
                 this.canSpeak = true;  // Controls when user can start speaking
                 this.currentMessageId = null;
+                this.usageByProvider = {};  // last known usage per provider key
 
-                // Configuration
+                // Server-rendered config (providers + capabilities), templated
+                // by server.py's index_handler.
+                this.providers = window.__CONFIG__.providers;
+                this.capabilities = window.__CONFIG__.capabilities;
+                const wsBase = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host;
+                this.activeProvider = Object.keys(this.providers).find(
+                    (key) => this.providers[key].available
+                ) || Object.keys(this.providers)[0];
+
                 this.config = {
-                    voiceName: 'Puck',
                     language: 'en-US',
-                    wsUrl: 'ws://localhost:8765/ws/voice',
+                    wsUrl: wsBase + this.providers[this.activeProvider].wsPath,
                     systemPrompt: ''
                 };
 
@@ -862,6 +889,9 @@
                 this.createVisualizerBars();
                 this.bindEvents();
                 this.loadSettings();
+                this.renderProviderButtons();
+                this.renderCapabilityPanel();
+                this.renderUsageStrip();
             }
 
             createVisualizerBars() {
@@ -878,10 +908,8 @@
                 this.recordBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     if (this.isRecording) {
-                        console.log('Click to STOP', Date.now());
                         this.stopRecording();
                     } else {
-                        console.log('Click to START', Date.now());
                         this.startRecording();
                     }
                 });
@@ -890,10 +918,8 @@
                 this.recordBtn.addEventListener('touchend', (e) => {
                     e.preventDefault();
                     if (this.isRecording) {
-                        console.log('Touch to STOP', Date.now());
                         this.stopRecording();
                     } else {
-                        console.log('Touch to START', Date.now());
                         this.startRecording();
                     }
                 });
@@ -910,23 +936,109 @@
                 this.connectBtn.addEventListener('click', () => this.toggleConnection());
 
                 // Settings inputs
-                document.getElementById('voiceSelect').addEventListener('change', (e) => {
-                    this.config.voiceName = e.target.value;
-                    this.saveSettings();
-                });
                 document.getElementById('languageSelect').addEventListener('change', (e) => {
                     this.config.language = e.target.value;
                     this.saveSettings();
-                });
-                document.getElementById('wsUrl').addEventListener('change', (e) => {
-                    this.config.wsUrl = e.target.value;
-                    this.saveSettings();
-                    this.reconnect();
                 });
                 document.getElementById('systemPrompt').addEventListener('change', (e) => {
                     this.config.systemPrompt = e.target.value;
                     this.saveSettings();
                 });
+            }
+
+            // =====================================
+            // Provider Switching (FEAT-418, TASK-2178)
+            // =====================================
+
+            renderProviderButtons() {
+                this.providerToggle.innerHTML = '';
+                for (const [key, provider] of Object.entries(this.providers)) {
+                    const btn = document.createElement('button');
+                    btn.className = 'provider-btn' + (key === this.activeProvider ? ' active' : '');
+                    btn.textContent = provider.label;
+                    btn.title = provider.available
+                        ? 'Switch to ' + provider.label
+                        : (provider.label + ' unavailable: ' + (provider.unavailableReason || 'missing dependency'));
+                    if (!provider.available) {
+                        btn.classList.add('unavailable');
+                    }
+                    btn.addEventListener('click', () => this.switchProvider(key));
+                    this.providerToggle.appendChild(btn);
+                }
+            }
+
+            switchProvider(key) {
+                const provider = this.providers[key];
+                if (!provider) return;
+
+                if (!provider.available) {
+                    this.updateStatusBar(
+                        provider.label + ' is unavailable: ' + (provider.unavailableReason || 'missing dependency')
+                    );
+                    return;
+                }
+                if (key === this.activeProvider && this.isConnected) return;
+
+                this.activeProvider = key;
+                const wsBase = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host;
+                this.config.wsUrl = wsBase + provider.wsPath;
+                this.saveSettings();
+
+                this.renderProviderButtons();
+                this.renderCapabilityPanel();
+
+                // Provider switch = fresh session (resolved decision, spec §1
+                // Non-Goals): close the old socket, clear the transcript, and
+                // let a brand-new WebSocket connection start a brand-new
+                // session_id + VoiceBot via bot_factory(). No memory replay,
+                // no transcript migration.
+                this.clearChat();
+                this.updateStatusBar('Switching to ' + provider.label + '…');
+                this.reconnect();
+            }
+
+            renderCapabilityPanel() {
+                const caps = this.capabilities[this.activeProvider];
+                this.capabilityProviderLabel.textContent = this.providers[this.activeProvider].label;
+                if (!caps) {
+                    this.capabilityTable.innerHTML = '<tr><td colspan="2">No descriptor available.</td></tr>';
+                    return;
+                }
+                const rows = [
+                    ['Native STT-only', caps.native_stt_only],
+                    ['Per-call temperature/top_p', caps.supports_top_p],
+                    ['Per-call voice override', caps.supports_per_call_voice],
+                    ['Per-call inference params', caps.supports_per_call_inference],
+                    ['Parallel tool execution', caps.parallel_tool_execution],
+                    ['Emits reconnect signal', caps.emits_reconnect_signal],
+                    ['Session resumption', caps.supports_session_resumption],
+                    ['Max session length', caps.max_session_seconds ? caps.max_session_seconds + 's' : 'unbounded'],
+                    ['Max output tokens', caps.max_output_tokens],
+                    ['Input formats', caps.input_formats.join(', ')],
+                    ['Output formats', caps.output_formats.join(', ')],
+                    ['Input sample rates', caps.input_sample_rates.join(', ') + ' Hz'],
+                    ['Output sample rates', caps.output_sample_rates.join(', ') + ' Hz'],
+                    ['Default voice', caps.default_voice],
+                    ['Voice catalog', caps.voice_catalog.join(', ')],
+                ];
+                this.capabilityTable.innerHTML = rows.map(([label, value]) => {
+                    const display = typeof value === 'boolean' ? (value ? '✓ yes' : '✗ no') : value;
+                    return '<tr><td>' + label + '</td><td class="value">' + display + '</td></tr>';
+                }).join('');
+            }
+
+            renderUsageStrip() {
+                const usage = this.usageByProvider[this.activeProvider];
+                if (!usage) {
+                    this.usageStrip.innerHTML = '';
+                    return;
+                }
+                this.usageStrip.innerHTML =
+                    '<span class="usage-item">tokens: <span>' + usage.total_tokens + '</span></span>' +
+                    '<span class="usage-item">in/out: <span>' + usage.input_tokens + '/' + usage.output_tokens + '</span></span>' +
+                    (usage.response_time_ms
+                        ? '<span class="usage-item">latency: <span>' + Math.round(usage.response_time_ms) + 'ms</span></span>'
+                        : '');
             }
 
             // =====================================
@@ -945,8 +1057,7 @@
 
                     this.ws.onopen = () => {
                         this.isConnected = true;
-                        this.updateStatus('Connected', 'connected');
-                        console.log('WebSocket connected');
+                        this.updateStatus('Connected (' + this.providers[this.activeProvider].label + ')', 'connected');
                     };
 
                     this.ws.onmessage = (event) => {
@@ -957,9 +1068,7 @@
                         this.isConnected = false;
                         this.sessionStarted = false;
                         this.updateStatus('Disconnected', 'disconnected');
-                        console.log('WebSocket closed');
 
-                        // Reset button state
                         this.connectBtn.classList.remove('active');
                         this.connectBtn.title = 'Connect';
                     };
@@ -975,7 +1084,6 @@
                 }
             }
 
-            // Toggle connection manually
             toggleConnection() {
                 if (this.isConnected) {
                     this.disconnect();
@@ -984,10 +1092,9 @@
                 }
             }
 
-            // Manually disconnect
             disconnect() {
                 if (this.ws) {
-                    this.manualDisconnect = true; // Prevent auto-reconnect logic if we add it later
+                    this.manualDisconnect = true;
                     this.ws.close();
                     this.ws = null;
                 }
@@ -997,12 +1104,10 @@
                 if (this.ws) {
                     this.ws.close();
                 }
-                setTimeout(() => this.connect(), 500);
+                setTimeout(() => this.connect(), 300);
             }
 
             handleMessage(message) {
-                console.log('Received:', message.type, message);
-
                 switch (message.type) {
                     case 'connected':
                         this.isConnected = true;
@@ -1013,41 +1118,11 @@
 
                     case 'session_started':
                         this.sessionStarted = true;
-                        this.updateStatusBar('Session ready. Hold to speak.');
-                        break;
-
-                    case 'recording_stopped':
-                        this.updateStatusBar('Processing...');
-                        // Set a timeout fallback in case Gemini doesn't respond
-                        if (this.responseTimeout) clearTimeout(this.responseTimeout);
-                        this.responseTimeout = setTimeout(() => {
-                            console.warn('Response timeout - no response from Gemini');
-                            this.finalizeUserMessage();
-                            this.updateStatusBar('No response received. Resetting session...');
-                            // Request session reset from server
-                            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                                this.ws.send(JSON.stringify({ type: 'reset_session' }));
-                            }
-                        }, 30000);  // 30 second timeout
-                        break;
-
-                    case 'session_reset':
-                        console.log('Session reset:', message.message);
-                        this.updateStatusBar('Session reset. Click to speak.');
-                        this.currentMessageId = null;
-                        this.currentUserMessageId = null;
-                        this.lastUserTranscription = null;
-                        // Re-enable speak button after reset
-                        this.canSpeak = true;
-                        this.recordBtn.disabled = false;
-                        this.recordBtn.classList.remove('disabled');
+                        this.updateStatusBar('Session ready. Click to speak.');
                         break;
 
                     case 'response_chunk':
-                        // If we're still recording when Gemini starts responding (VAD detected end of speech),
-                        // stop the recording UI without sending stop_recording to backend
                         if (this.isRecording) {
-                            console.log('Gemini started responding - auto-stopping recording UI');
                             this.stopRecordingUI();
                         }
                         this.handleResponseChunk(message);
@@ -1058,7 +1133,6 @@
                         break;
 
                     case 'ready_to_speak':
-                        console.log('Ready to speak:', message.message);
                         this.canSpeak = true;
                         this.recordBtn.disabled = false;
                         this.recordBtn.classList.remove('disabled');
@@ -1068,25 +1142,15 @@
                     case 'error':
                         console.error('Server error:', message.message);
                         this.updateStatusBar(`Error: ${message.message}`);
-                        // Re-enable speak button on error
                         this.canSpeak = true;
                         this.recordBtn.disabled = false;
                         this.recordBtn.classList.remove('disabled');
-                        if (this.responseTimeout) {
-                            clearTimeout(this.responseTimeout);
-                            this.responseTimeout = null;
-                        }
                         break;
 
                     case 'transcription':
-                        // Handle both user and model transcription
                         if (message.is_user) {
-                            console.log('User said:', message.text);
-                            // Accumulate user transcription into one message
                             this.appendToUserMessage(message.text);
                         } else {
-                            console.log('Model said:', message.text);
-                            // Accumulate model transcription to current message
                             this.appendToCurrentMessage(message.text);
                         }
                         break;
@@ -1099,7 +1163,7 @@
                 this.ws.send(JSON.stringify({
                     type: 'start_session',
                     config: {
-                        voice_name: this.config.voiceName,
+                        voice_name: this.providers[this.activeProvider].voice,
                         language: this.config.language,
                         system_prompt: this.config.systemPrompt || undefined
                     }
@@ -1112,17 +1176,10 @@
 
             async startRecording() {
                 if (this.isRecording) return;
+                if (!this.canSpeak) return;
 
-                // Don't start if we're not allowed to speak (e.g., agent is responding)
-                if (!this.canSpeak) {
-                    console.log('Cannot start recording - canSpeak is false');
-                    return;
-                }
-
-                // Ensure connection
                 if (!this.isConnected) {
                     await this.connect();
-                    // Wait for session
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
@@ -1132,7 +1189,6 @@
                 }
 
                 try {
-                    // Get microphone access
                     this.mediaStream = await navigator.mediaDevices.getUserMedia({
                         audio: {
                             channelCount: 1,
@@ -1142,24 +1198,14 @@
                         }
                     });
 
-                    // Use native sample rate for AudioContext - ScriptProcessorNode
-                    // doesn't work properly with forced non-native sample rates!
-                    // We'll resample to 16kHz in JavaScript instead.
                     this.audioContext = new AudioContext();
-                    console.log(`AudioContext created at native ${this.audioContext.sampleRate}Hz (will resample to 16000Hz)`)
-
-                    // Load AudioWorklet for processing
                     await this.setupAudioProcessing();
 
                     this.isRecording = true;
                     this.recordBtn.classList.add('recording');
                     this.visualizer.classList.add('active');
                     this.updateStatusBar('Listening...');
-
-                    // Start visualization
                     this.updateVisualization();
-
-                    // Hide empty state
                     this.emptyState.style.display = 'none';
 
                 } catch (error) {
@@ -1174,50 +1220,22 @@
                 const targetSampleRate = 16000;
                 const resampleRatio = nativeSampleRate / targetSampleRate;
 
-                console.log(`Audio capture: native=${nativeSampleRate}Hz, target=${targetSampleRate}Hz, ratio=${resampleRatio}`);
-
-                // Create analyser for visualization
                 this.analyser = this.audioContext.createAnalyser();
                 this.analyser.fftSize = 64;
                 source.connect(this.analyser);
 
-                // Create ScriptProcessor for audio capture
                 const bufferSize = 4096;
                 const processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
-
-                // Buffer for accumulating samples for resampling
-                let resampleBuffer = [];
 
                 processor.onaudioprocess = (e) => {
                     if (!this.isRecording) return;
 
                     const inputData = e.inputBuffer.getChannelData(0);
 
-                    // Check if we have actual audio data - log every 10th call
-                    let maxVal = 0;
-                    for (let i = 0; i < inputData.length; i++) {
-                        maxVal = Math.max(maxVal, Math.abs(inputData[i]));
-                    }
-
-                    // Log audio stats periodically
-                    if (!this._audioChunkCount) this._audioChunkCount = 0;
-                    this._audioChunkCount++;
-                    if (this._audioChunkCount % 10 === 1) {
-                        console.log(`Audio chunk #${this._audioChunkCount}: length=${inputData.length}, maxVal=${maxVal.toFixed(4)}`);
-                    }
-
-                    // Warn if silence
-                    if (maxVal < 0.001 && this._audioChunkCount <= 3) {
-                        console.warn(`SILENCE DETECTED in chunk #${this._audioChunkCount}. Possible microphone issue.`);
-                    }
-
-                    // Resample if necessary
                     let outputData;
                     if (Math.abs(resampleRatio - 1) < 0.01) {
-                        // No resampling needed
                         outputData = inputData;
                     } else {
-                        // Simple linear resampling
                         const outputLength = Math.floor(inputData.length / resampleRatio);
                         outputData = new Float32Array(outputLength);
                         for (let i = 0; i < outputLength; i++) {
@@ -1229,13 +1247,11 @@
                         }
                     }
 
-                    // Convert to 16-bit PCM
                     const pcmData = new Int16Array(outputData.length);
                     for (let i = 0; i < outputData.length; i++) {
                         pcmData[i] = Math.max(-32768, Math.min(32767, Math.round(outputData[i] * 32768)));
                     }
 
-                    // Send to server
                     this.sendAudioChunk(pcmData.buffer);
                 };
 
@@ -1253,72 +1269,51 @@
                 }));
             }
 
-            // Stop recording UI only (when Gemini VAD triggers response while user is recording)
-            // Does NOT send stop_recording to backend since Gemini already knows to respond
             stopRecordingUI() {
                 if (!this.isRecording) return;
-
-                console.log('stopRecordingUI called - Gemini VAD triggered response');
 
                 this.isRecording = false;
                 this.recordBtn.classList.remove('recording');
                 this.visualizer.classList.remove('active');
 
-                // Stop media stream
                 if (this.mediaStream) {
                     this.mediaStream.getTracks().forEach(track => track.stop());
                     this.mediaStream = null;
                 }
-
-                // Close audio context
                 if (this.audioContext) {
                     this.audioContext.close();
                     this.audioContext = null;
                 }
 
-                // Disable speak button until backend signals ready
                 this.canSpeak = false;
                 this.recordBtn.disabled = true;
                 this.recordBtn.classList.add('disabled');
-
                 this.updateStatusBar('Agent responding...');
             }
 
             stopRecording() {
                 if (!this.isRecording) return;
 
-                // Debug: log what triggered stop
-                console.log('stopRecording called', new Error().stack);
-
                 this.isRecording = false;
                 this.recordBtn.classList.remove('recording');
                 this.visualizer.classList.remove('active');
 
-                // Stop media stream
                 if (this.mediaStream) {
                     this.mediaStream.getTracks().forEach(track => track.stop());
                     this.mediaStream = null;
                 }
-
-                // Close audio context
                 if (this.audioContext) {
                     this.audioContext.close();
                     this.audioContext = null;
                 }
 
-                // Notify server
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                     this.ws.send(JSON.stringify({ type: 'stop_recording' }));
                 }
 
-                // Disable speak button until backend signals ready
                 this.canSpeak = false;
                 this.recordBtn.disabled = true;
                 this.recordBtn.classList.add('disabled');
-
-                // Don't finalize user message here - wait for response_complete
-                // so that late-arriving transcriptions can still update the message
-
                 this.updateStatusBar('Processing...');
             }
 
@@ -1343,17 +1338,9 @@
             // =====================================
 
             handleResponseChunk(message) {
-                // Clear timeout - we're getting a response
-                if (this.responseTimeout) {
-                    clearTimeout(this.responseTimeout);
-                    this.responseTimeout = null;
-                }
-
                 if (message.text) {
                     this.appendToCurrentMessage(message.text);
                 }
-
-                // Queue audio for streaming playback - play immediately as chunks arrive
                 if (message.audio_base64) {
                     this.queueAudioChunk(message.audio_base64);
                 }
@@ -1363,49 +1350,30 @@
                 if (message.text && this.currentMessageId) {
                     this.finalizeMessage(this.currentMessageId, message.text);
                 }
-
-                // Add any final audio from response_complete
                 if (message.audio_base64 && message.audio_base64.length > 0) {
                     this.queueAudioChunk(message.audio_base64);
                 }
 
-                // Clear response timeout if set
-                if (this.responseTimeout) {
-                    clearTimeout(this.responseTimeout);
-                    this.responseTimeout = null;
-                }
-
-                // Finalize user message now that response is complete
                 this.finalizeUserMessage();
 
-                // Add play button to assistant message with stored audio
-                if (this.currentMessageId && this.currentResponseAudio && this.currentResponseAudio.length > 0) {
-                    this.addReplayButton(this.currentMessageId, this.currentResponseAudio);
+                // Per-provider token/latency counters (FEAT-418, TASK-2178).
+                if (message.usage) {
+                    this.usageByProvider[this.activeProvider] = message.usage;
+                    this.renderUsageStrip();
                 }
 
-                // Reset audio storage for next response
                 this.currentResponseAudio = null;
                 this.currentMessageId = null;
                 this.updateStatusBar('Click to speak');
             }
 
-            // Streaming audio playback - uses a single AudioContext and plays chunks in sequence
             queueAudioChunk(base64Data) {
                 if (!this.audioPlaybackQueue) {
                     this.audioPlaybackQueue = [];
                 }
-
-                // Decode and add to queue
                 const pcmData = this.base64ToArrayBuffer(base64Data);
                 this.audioPlaybackQueue.push(pcmData);
 
-                // Also store for replay
-                if (!this.currentResponseAudio) {
-                    this.currentResponseAudio = [];
-                }
-                this.currentResponseAudio.push(pcmData);
-
-                // Start playback if not already playing
                 if (!this.isStreamingAudio) {
                     this.playStreamingAudio();
                 }
@@ -1415,17 +1383,10 @@
                 if (this.isStreamingAudio) return;
                 this.isStreamingAudio = true;
 
-                console.log('Starting streaming audio playback...');
-
-                // Create a single AudioContext for all playback
                 const audioContext = new AudioContext({ sampleRate: 24000 });
-
-                // Resume if suspended (browsers block autoplay)
                 if (audioContext.state === 'suspended') {
-                    console.log('AudioContext suspended, attempting to resume...');
                     try {
                         await audioContext.resume();
-                        console.log('AudioContext resumed successfully');
                     } catch (e) {
                         console.error('Failed to resume AudioContext:', e);
                     }
@@ -1433,23 +1394,17 @@
 
                 while (this.audioPlaybackQueue && this.audioPlaybackQueue.length > 0) {
                     const pcmData = this.audioPlaybackQueue.shift();
-
                     try {
-                        // Convert PCM to Float32
                         const int16Array = new Int16Array(pcmData);
                         const float32Array = new Float32Array(int16Array.length);
                         for (let i = 0; i < int16Array.length; i++) {
                             float32Array[i] = int16Array[i] / 32768;
                         }
-
-                        // Create and play buffer
                         const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
                         audioBuffer.getChannelData(0).set(float32Array);
-
                         const source = audioContext.createBufferSource();
                         source.buffer = audioBuffer;
                         source.connect(audioContext.destination);
-
                         await new Promise((resolve) => {
                             source.onended = resolve;
                             source.start();
@@ -1459,7 +1414,6 @@
                     }
                 }
 
-                console.log('Streaming audio playback finished');
                 audioContext.close();
                 this.isStreamingAudio = false;
             }
@@ -1475,23 +1429,17 @@
                 }
             }
 
-            // Update user transcription - handles both cumulative updates and new segments
             appendToUserMessage(text) {
                 if (!this.currentUserMessageId) {
-                    // Create a new user message
                     this.currentUserMessageId = this.addMessage('user', text, true);
                     this.lastUserTranscription = text;
                 } else {
                     const bubble = document.querySelector(`#${this.currentUserMessageId} .message-bubble`);
                     if (bubble) {
-                        // Check if this is a cumulative update (new text contains old text)
-                        // or a new segment (VAD detected pause and started fresh)
                         if (text.includes(this.lastUserTranscription) ||
                             this.lastUserTranscription.includes(text.substring(0, 5))) {
-                            // Cumulative update - replace
                             bubble.textContent = text;
                         } else {
-                            // New segment after pause - append with space
                             bubble.textContent = bubble.textContent + ' ' + text;
                         }
                         this.lastUserTranscription = text;
@@ -1499,7 +1447,6 @@
                 }
             }
 
-            // Clear user message when recording stops (called from stopRecording)
             finalizeUserMessage() {
                 if (this.currentUserMessageId) {
                     const bubble = document.querySelector(`#${this.currentUserMessageId} .message-bubble`);
@@ -1507,7 +1454,7 @@
                         bubble.classList.remove('streaming');
                     }
                     this.currentUserMessageId = null;
-                    this.lastUserTranscription = null;  // Reset for next recording
+                    this.lastUserTranscription = null;
                 }
             }
 
@@ -1517,50 +1464,6 @@
                     bubble.classList.remove('streaming');
                     bubble.textContent = fullText;
                 }
-            }
-
-            // Add a replay button to an assistant message
-            addReplayButton(messageId, audioChunks) {
-                const messageContent = document.querySelector(`#${messageId} .message-content`);
-                if (!messageContent) return;
-
-                // Concatenate all audio chunks
-                const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-                const fullAudio = new Uint8Array(totalLength);
-                let offset = 0;
-                for (const chunk of audioChunks) {
-                    fullAudio.set(new Uint8Array(chunk), offset);
-                    offset += chunk.byteLength;
-                }
-
-                // Create play button
-                const playBtn = document.createElement('button');
-                playBtn.className = 'replay-btn';
-                playBtn.innerHTML = '🔊';
-                playBtn.title = 'Play audio';
-
-                // Store audio data on the button
-                playBtn.audioData = fullAudio.buffer;
-
-                playBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const btn = e.currentTarget;
-                    if (btn.classList.contains('playing')) return;
-
-                    btn.classList.add('playing');
-                    btn.innerHTML = '⏸️';
-
-                    try {
-                        await this.playPCMAudio(btn.audioData);
-                    } catch (error) {
-                        console.error('Replay error:', error);
-                    }
-
-                    btn.classList.remove('playing');
-                    btn.innerHTML = '🔊';
-                });
-
-                messageContent.appendChild(playBtn);
             }
 
             addMessage(role, text, isStreaming = false) {
@@ -1583,95 +1486,6 @@
                 this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
 
                 return messageId;
-            }
-
-            addAudioPlayer(messageId, audioData) {
-                const messageContent = document.querySelector(`#${messageId} .message-content`);
-                if (!messageContent) return;
-
-                const playerDiv = document.createElement('div');
-                playerDiv.className = 'audio-player';
-                playerDiv.innerHTML = `
-                    <button class="audio-play-btn">▶</button>
-                    <div class="audio-waveform">
-                        ${Array(20).fill('<div class="bar" style="height: 8px;"></div>').join('')}
-                    </div>
-                    <span class="audio-duration">0:00</span>
-                `;
-
-                messageContent.appendChild(playerDiv);
-
-                // Setup play button
-                const playBtn = playerDiv.querySelector('.audio-play-btn');
-                playBtn.addEventListener('click', () => this.playAudioData(audioData, playerDiv));
-            }
-
-            // =====================================
-            // Audio Playback
-            // =====================================
-
-            queueAudio(base64Data) {
-                this.audioQueue.push(base64Data);
-                if (!this.isPlaying) {
-                    this.playNextAudio();
-                }
-            }
-
-            async playNextAudio() {
-                if (this.audioQueue.length === 0) {
-                    this.isPlaying = false;
-                    return;
-                }
-
-                this.isPlaying = true;
-                const base64Data = this.audioQueue.shift();
-
-                try {
-                    const audioData = this.base64ToArrayBuffer(base64Data);
-                    await this.playPCMAudio(audioData);
-                } catch (error) {
-                    console.error('Audio playback error:', error);
-                }
-
-                // Play next in queue
-                this.playNextAudio();
-            }
-
-            async playPCMAudio(pcmData) {
-                const audioContext = new AudioContext({ sampleRate: 24000 });
-
-                // Convert PCM to Float32
-                const int16Array = new Int16Array(pcmData);
-                const float32Array = new Float32Array(int16Array.length);
-                for (let i = 0; i < int16Array.length; i++) {
-                    float32Array[i] = int16Array[i] / 32768;
-                }
-
-                // Create audio buffer
-                const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
-                audioBuffer.getChannelData(0).set(float32Array);
-
-                // Play
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContext.destination);
-
-                return new Promise((resolve) => {
-                    source.onended = () => {
-                        audioContext.close();
-                        resolve();
-                    };
-                    source.start();
-                });
-            }
-
-            async playAudioData(audioData, playerDiv) {
-                const waveform = playerDiv.querySelector('.audio-waveform');
-                waveform.classList.add('playing');
-
-                await this.playPCMAudio(audioData);
-
-                waveform.classList.remove('playing');
             }
 
             // =====================================
@@ -1721,6 +1535,9 @@
                 this.chatContainer.innerHTML = '';
                 this.chatContainer.appendChild(this.emptyState);
                 this.emptyState.style.display = 'flex';
+                this.currentMessageId = null;
+                this.currentUserMessageId = null;
+                this.lastUserTranscription = null;
             }
 
             // =====================================
@@ -1728,15 +1545,13 @@
             // =====================================
 
             loadSettings() {
-                const saved = localStorage.getItem('voiceChatSettings');
+                const saved = localStorage.getItem('voiceChatProviderSwitchSettings');
                 if (saved) {
                     try {
                         const settings = JSON.parse(saved);
                         Object.assign(this.config, settings);
 
-                        document.getElementById('voiceSelect').value = this.config.voiceName;
                         document.getElementById('languageSelect').value = this.config.language;
-                        document.getElementById('wsUrl').value = this.config.wsUrl;
                         document.getElementById('systemPrompt').value = this.config.systemPrompt || '';
                     } catch (e) {
                         console.error('Failed to load settings:', e);
@@ -1745,7 +1560,7 @@
             }
 
             saveSettings() {
-                localStorage.setItem('voiceChatSettings', JSON.stringify(this.config));
+                localStorage.setItem('voiceChatProviderSwitchSettings', JSON.stringify(this.config));
             }
 
             openSettings() {

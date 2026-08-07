@@ -210,10 +210,51 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Removed `'voice_id': kwargs.get('voice_id', self.voice_config.voice_name)`
+from `_resolve_llm_config()`'s Nova branch `extra` dict — this was the
+constructor-time path that bypassed `NovaAudio._resolve_voice()`'s
+catalog validation entirely (only per-call overrides get validated;
+`_resolve_voice(None)` returns `self.voice_id` unfiltered). An explicit
+`voice_id` kwarg to `_resolve_llm_config()` still flows through via the
+existing `**kwargs` spread. `ask_stream()` now builds
+`options = self.voice_config.to_stream_options(**option_overrides)`
+where `option_overrides` is `kwargs` filtered to just the field names
+`dataclasses.fields(VoiceStreamOptions)` declares (introspected, not
+hardcoded, so it can't silently drift) — arbitrary extra kwargs already
+consumed earlier in `ask_stream()` (`initial_context`/`use_vectors`/`ctx`)
+must NOT reach `to_stream_options()`, which raises `TypeError` on an
+unrecognized field name; the full original `**kwargs` is still forwarded
+to `stream_voice()` alongside `options=options`, since both clients
+already implement "explicit kwarg > options field" precedence
+internally (TASK-2166/2170) — preserves "explicit kwargs win" exactly.
+Migrated the memory-accumulation block from
+`"user_transcription"/"assistant_transcription" in response.metadata` to
+`response.role == "user"`/`"assistant"` with `response.text` — this ALSO
+fixes a latent divergence found while reading the code: the OLD
+`assistant_transcription` read only ever populated from Gemini's
+separate output-transcription frames (never from Nova, which has no such
+key, and duplicated Gemini's own `role="assistant"` text chunks) — Nova
+conversations were silently never persisting assistant turns before this
+change. 13 new tests in `tests/bots/test_voicebot_contract.py`, using
+real `VoiceBot()` construction (the Cython `parrot.utils.types` extension
+IS built in this worktree, built manually for TASK-2164 — confirmed live
+imports work, unlike the "blocked by Cython" caveat some pre-existing
+test files in this directory document for a fresh/unbuilt environment).
+The one-time ~8s HuggingFace guardrail-model load happens once per pytest
+process, not per test. All 56 bots/ voice-domain tests pass, including
+one pre-existing test
+(`test_voicebot_refinements.py::test_inference_params_threaded_from_voice_config`)
+updated in a preceding commit — it asserted the literal old
+`voice_stream_kwargs` dict pattern this task replaces.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none for the module's own scope. Extended the
+memory migration slightly beyond the literal `:583-584` anchor to also
+migrate the adjacent `:585-586` `assistant_transcription` read (not
+explicitly named in the codebase contract, but covered by the acceptance
+criterion "Assistant turns persist via `role == \"assistant\"`" and the
+scope bullet "accumulate ... the assistant transcript from
+`role == \"assistant\"`") — leaving it on the old key would have left
+Nova's assistant turns silently unpersisted, the exact class of bug this
+task exists to close.

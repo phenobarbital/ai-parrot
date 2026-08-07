@@ -210,10 +210,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Created `packages/ai-parrot/tests/voice/conftest.py` and
+`test_provider_conformance.py`. Mocks live at the provider-SDK boundary:
+a fake `google.genai` Live WebSocket session chain (`_FakeGeminiSession`
+/ `_FakeConnectCM` / `_FakeGeminiLiveNamespace` / `_FakeGeminiAio` /
+`_FakeGeminiSdkClient`, with `captured_configs` exposing the
+per-call `LiveConnectConfig` for options-honored assertions) for
+Gemini, and monkeypatched `_open_stream`/`_send_event`/`_iter_events`
+wrappers for Nova (`nova_session_start_config`/`nova_prompt_start_voice_id`
+parse the mocked `_send_event` call log). `PROVIDER_BUILDERS` +
+`PROVIDERS` + the `provider` fixture are the single extension point.
+26 tests across `TestOptionsHonored`, `TestCanonicalEnvelope`,
+`TestReconnectSignal`, `TestDescriptorHonesty`, and
+`TestDropInEquivalence` — all pass. Full `tests/voice/` suite: 56
+passed, 1 pre-existing unrelated failure
+(`test_voice_session.py::test_no_aiohttp_import`, reproduces
+identically on pre-feature commits — see TASK-2171/2172/2175 notes).
+`ruff check` clean after auto-fixing 4 import-order/typing-import
+findings (I001, UP035).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. `MockVoiceClient`/`ReconnectingMockClient`
+(the "Pattern to Follow" doubles) mock `stream_voice()` itself and were
+not reused directly — this task's own constraint ("mocking `stream_voice()`
+itself would test nothing about drop-in parity") required SDK-boundary
+doubles instead; the existing doubles remain in place, unmodified, serving
+their original session-layer tests.

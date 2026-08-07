@@ -207,10 +207,51 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Normalized `role` to lowercase at the single existing emission
+point (`role=role.lower() if role else None`), leaving `turn_state.role`
+and the local `role` variable holding Nova's raw uppercase value for the
+existing protocol-level comparisons (`role == "ASSISTANT"`) untouched, per
+the task's explicit key constraint. Added `stt_only: bool = False` as an
+explicit `stream_voice()` parameter; when `True`, logs once (guarded by
+the `if stt_only:` check running once per call, before the event loop)
+that Nova has no native STT-only mode and the response is still generated
+and billed — never filters or suppresses any frame. Replaced the
+hardcoded `max_tokens` fallback of `1024` with `4096`; `8192` flows
+through unchanged when explicitly requested. Added
+`options: Optional[VoiceStreamOptions] = None`, deriving
+`temperature`/`max_tokens`/`top_p`/`voice`/`parallel_tool_execution` from
+it via the same `kwargs.get(name, options.field if options else default)`
+precedence pattern already used inline in this file for temperature/
+max_tokens/top_p — explicit kwargs always win. `voice` from `options`
+feeds into the existing `_resolve_voice()` validation from TASK-2169 (no
+new voice-handling logic duplicated). Updated `NovaClient.voice_capabilities`:
+`max_output_tokens` is now `8192` (see below) with `native_stt_only`
+staying `False` (already correct pre-task). Interruption handling
+(`nova/audio.py` `_is_interruption_payload`/`was_interrupted`) untouched,
+confirmed by re-reading it before and after. 15 new tests in
+`tests/clients/test_nova_envelope.py`, following the exact
+`sys.modules['aws_sdk_bedrock_runtime']`-stubbing mock pattern already
+established in `test_nova.py` (discovered by reading that file's own
+module docstring, which documents the pattern). All existing Nova tests
+(`test_nova.py`, `test_nova_audio_guard.py`, `test_nova_voice_catalog.py`
+— 35 tests) still pass unmodified. Full voice-domain regression
+(167 tests) green except the one already-documented pre-existing
+`test_no_aiohttp_import` failure.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**`max_output_tokens` source (spec §8 open question, same constraint as
+TASK-2169)**: this sandboxed environment has no live network access to
+re-verify Nova 2 Sonic's exact numeric ceiling against the current AWS
+Bedrock documentation. Rather than inventing an unverified number, I used
+`8192` — the value the spec ITSELF resolves as explicitly supported
+(spec §3 Module 4: "`max_tokens` hardcoded fallback `1024` ... replaced by
+the `VoiceConfig` default of `4096`" plus §8: "`8192` explicitly supported,
+no voice-specific pin"). This is a verifiable-from-the-spec-document
+value, not a guess. Flagging this explicitly, matching TASK-2169's
+same-shaped open item, for a human with AWS docs access to confirm or
+correct.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — `max_output_tokens` sourced from the
+spec's own resolved decision per the reasoning above, not a live docs
+fetch (unavailable in this sandbox).

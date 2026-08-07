@@ -226,10 +226,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-07
+**Notes**: Added `VoiceStreamOptions` (9 fields, frozen) and `VoiceCapabilities`
+(frozen) dataclasses to `parrot/models/voice.py`, plus
+`VoiceConfig.to_stream_options(**overrides)`. `voice` defaults to `None`
+(not `"Puck"`) per the explicit anti-regression note in the task. Wrote 17
+unit tests in `tests/models/test_voice_contract.py` covering defaults,
+frozen-ness, projection, override precedence, and that
+`VoiceConfig`'s existing fields/defaults are untouched. All pass.
+Confirmed the one pre-existing `ruff` UP045 finding on `model: Optional[str]`
+(`voice.py:72`) predates this task (reproduced on `dev`) and left it alone —
+out of scope. Also confirmed `test_no_aiohttp_import` in
+`test_voice_session.py` fails independently on `dev` (unrelated file,
+pre-existing docstring wording) — not a regression from this task. Had to
+run `python setup.py build_ext --inplace` once in the worktree to produce
+the gitignored Cython `.so` build artifacts (`parrot.utils.types`,
+`parrot.utils.parsers.toml`) that the fresh worktree checkout doesn't carry;
+this is a local build-environment step, not a tracked file change.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
