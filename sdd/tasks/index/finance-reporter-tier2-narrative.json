@@ -151,7 +151,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -161,8 +161,8 @@
       "parallelism_notes": "Touches infographic_sections.py + infographic_authoring.py, which no other task in this spec edits. Must resolve a circular-import risk between infographic_sections and recipes/models.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2193-descriptor-layout-publish-recipe.md"
+      "completed_at": "2026-08-07T15:03:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2193-descriptor-layout-publish-recipe.md"
     },
     {
       "id": "TASK-2194",
