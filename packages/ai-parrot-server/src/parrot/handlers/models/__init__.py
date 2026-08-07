@@ -1,36 +1,40 @@
 """Handler models package."""
-from .credentials import CredentialPayload, CredentialDocument, CredentialResponse
 from .bots import (
     BotModel,
-    ChatbotUsage,
     ChatbotFeedback,
+    ChatbotUsage,
     FeedbackType,
-    PromptLibrary,
     PromptCategory,
+    PromptLibrary,
     create_bot,
 )
-from .users_bots import UserBotModel
-from .users_prompts import UserPrompts
+from .credentials import CredentialDocument, CredentialPayload, CredentialResponse
+from .notification_batches import NotificationBatchRecipient
+from .notification_templates import NotificationTemplate
 from .understanding import (
     UnderstandingRequest,
     UnderstandingResponse,
     media_type_from_filename,
 )
+from .users_bots import UserBotModel
+from .users_prompts import UserPrompts
 
 __all__ = [
-    "CredentialPayload",
-    "CredentialDocument",
-    "CredentialResponse",
     "BotModel",
-    "ChatbotUsage",
     "ChatbotFeedback",
+    "ChatbotUsage",
+    "CredentialDocument",
+    "CredentialPayload",
+    "CredentialResponse",
     "FeedbackType",
-    "PromptLibrary",
+    "NotificationBatchRecipient",
+    "NotificationTemplate",
     "PromptCategory",
-    "create_bot",
-    "UserBotModel",
-    "UserPrompts",
+    "PromptLibrary",
     "UnderstandingRequest",
     "UnderstandingResponse",
+    "UserBotModel",
+    "UserPrompts",
+    "create_bot",
     "media_type_from_filename",
 ]
