@@ -476,3 +476,63 @@ class TestRecipeRunner:
         monkeypatch.setattr(runner_module, "deliver_artifact", _fake_deliver)
         await runner.run(recipe.name)
         assert called == []
+
+
+class TestDriftCheckOptional:
+    """FEAT-420 Module 2: `_check_bind_drift_or_raise` honours `optional` binds."""
+
+    async def test_drift_tolerates_optional(self, dataset_manager):
+        """A layout binding marked optional does not abort the run."""
+        recipe = _make_recipe(
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={
+                    "title": {"$bind": "/result"},
+                    "narrative": {"$bind": "/narrative/headline", "optional": True},
+                    "sections": [],
+                },
+            )
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        artifact = await runner.run(recipe.name)
+
+        assert isinstance(artifact, RenderedArtifact)
+
+    async def test_drift_still_fails_required(self, dataset_manager):
+        """A missing required pointer raises RecipeRunException, stage='layout'."""
+        recipe = _make_recipe(
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={"title": {"$bind": "/does_not_exist"}, "sections": []},
+            )
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        with pytest.raises(RecipeRunException) as exc_info:
+            await runner.run(recipe.name)
+
+        assert exc_info.value.error.stage == "layout"
+        assert "does_not_exist" in exc_info.value.error.detail
+
+    async def test_absent_optional_logged_at_info(self, dataset_manager, caplog):
+        """Operator-visible: the absent optional pointer appears in INFO logs."""
+        recipe = _make_recipe(
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={
+                    "title": {"$bind": "/result"},
+                    "narrative": {"$bind": "/narrative/headline", "optional": True},
+                    "sections": [],
+                },
+            )
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        with caplog.at_level("INFO"):
+            await runner.run(recipe.name)
+
+        assert any("/narrative/headline" in record.getMessage() for record in caplog.records)

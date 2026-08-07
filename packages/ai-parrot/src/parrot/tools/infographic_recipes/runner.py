@@ -99,11 +99,17 @@ def _pointer_top_key(pointer: str) -> str:
     return segment.replace("~1", "/").replace("~0", "~")
 
 
-def _collect_bind_pointers(value: Any) -> list[str]:
-    """Recursively collect every ``{"$bind": "/pointer"}`` pointer in ``value``."""
-    pointers: list[str] = []
+def _collect_bind_pointers(value: Any) -> list[tuple[str, bool]]:
+    """Recursively collect every ``{"$bind": "/pointer", ...}`` binding in ``value``.
+
+    Returns:
+        A list of ``(pointer, optional)`` pairs. ``optional`` is `True` when
+        the binding carries a sibling ``optional: True`` key (FEAT-420
+        Module 2 — declared-optional narrative binds), else `False`.
+    """
+    pointers: list[tuple[str, bool]] = []
     if is_binding_expression(value):
-        pointers.append(value[BINDING_KEY])
+        pointers.append((value[BINDING_KEY], bool(value.get("optional"))))
     elif isinstance(value, dict):
         for item in value.values():
             pointers.extend(_collect_bind_pointers(item))
@@ -321,7 +327,7 @@ class RecipeRunner:
                         )
                     )
 
-        for pointer in _collect_bind_pointers(recipe.layout.properties):
+        for pointer, _optional in _collect_bind_pointers(recipe.layout.properties):
             top_key = _pointer_top_key(pointer)
             if top_key not in declared_output_keys:
                 errors.append(
@@ -490,20 +496,27 @@ class RecipeRunner:
     def _check_bind_drift_or_raise(
         self, recipe: InfographicRecipe, data_model: dict[str, Any]
     ) -> None:
-        missing = sorted(
-            {
-                pointer
-                for pointer in _collect_bind_pointers(recipe.layout.properties)
-                if _pointer_top_key(pointer) not in data_model
-            }
-        )
+        missing: set[str] = set()
+        for pointer, optional in _collect_bind_pointers(recipe.layout.properties):
+            if _pointer_top_key(pointer) in data_model:
+                continue
+            if optional:
+                self.logger.info(
+                    "Optional $bind pointer %r references a key absent from the "
+                    "assembled data_model for recipe %r; the corresponding section "
+                    "will be omitted rather than aborting the run.",
+                    pointer,
+                    recipe.name,
+                )
+                continue
+            missing.add(pointer)
         if missing:
             raise RecipeRunException(
                 RecipeRunError(
                     recipe=recipe.name,
                     stage="layout",
                     detail=(
-                        f"$bind pointer(s) {missing!r} reference key(s) absent from the "
+                        f"$bind pointer(s) {sorted(missing)!r} reference key(s) absent from the "
                         f"assembled data_model (keys present: {sorted(data_model)!r})."
                     ),
                 )
