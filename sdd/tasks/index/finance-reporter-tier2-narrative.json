@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T13:51:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2186-narrative-facts-transformer.md"
+      "file": "sdd/tasks/completed/TASK-2186-narrative-facts-transformer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2187",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T13:52:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2187-optional-data-bindings.md"
+      "file": "sdd/tasks/completed/TASK-2187-optional-data-bindings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2188",
@@ -59,7 +61,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T13:58:38+00:00",
-      "file": "sdd/tasks/completed/TASK-2188-narrativespec-and-narrator-protocol.md"
+      "file": "sdd/tasks/completed/TASK-2188-narrativespec-and-narrator-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2189",
@@ -80,7 +83,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T14:45:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2189-runner-narrative-step.md"
+      "file": "sdd/tasks/completed/TASK-2189-runner-narrative-step.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2190",
@@ -100,7 +104,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T14:08:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2190-narrative-figure-guard.md"
+      "file": "sdd/tasks/completed/TASK-2190-narrative-figure-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2191",
@@ -120,7 +125,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T14:34:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2191-budget-narrative-skill.md"
+      "file": "sdd/tasks/completed/TASK-2191-budget-narrative-skill.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2192",
@@ -142,7 +148,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T16:23:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2192-narrative-mixin.md"
+      "file": "sdd/tasks/completed/TASK-2192-narrative-mixin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2193",
@@ -162,7 +169,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T15:03:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2193-descriptor-layout-publish-recipe.md"
+      "file": "sdd/tasks/completed/TASK-2193-descriptor-layout-publish-recipe.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2194",
@@ -185,7 +193,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T16:45:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2194-finance-reporter-a2ui-migration.md"
+      "file": "sdd/tasks/completed/TASK-2194-finance-reporter-a2ui-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2195",
@@ -205,7 +214,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T17:08:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2195-examples-and-recipe-yaml.md"
+      "file": "sdd/tasks/completed/TASK-2195-examples-and-recipe-yaml.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2196",
@@ -225,7 +235,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T17:26:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2196-e2e-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-2196-e2e-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2197",
@@ -255,7 +266,8 @@
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
       "completed_at": "2026-08-07T17:36:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2197-documentation.md"
+      "file": "sdd/tasks/completed/TASK-2197-documentation.md",
+      "verification": "verified"
     }
   ]
 }
