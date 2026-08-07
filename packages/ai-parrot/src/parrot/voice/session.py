@@ -286,6 +286,7 @@ class VoiceSession:
                     self._audio_iterator(queue),
                     system_prompt=self.system_prompt,
                     session_id=self.session_id,
+                    stt_only=self.stt_only,
                     options=options,
                 )
                 try:

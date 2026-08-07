@@ -36,13 +36,21 @@ class _Client:
 
     def __init__(self, capabilities: VoiceCapabilities):
         self._capabilities = capabilities
+        # Records each stream_voice() call's stt_only/options so tests can
+        # assert what VoiceSession actually forwards, not just how it
+        # behaves — both real clients (GeminiLiveClient, NovaAudio) read
+        # stt_only ONLY from this dedicated kwarg, never from `options`
+        # (code-review finding, FEAT-418).
+        self.stream_voice_calls: list = []
 
     @property
     def voice_capabilities(self) -> VoiceCapabilities:
         return self._capabilities
 
     async def stream_voice(self, audio_iterator, system_prompt=None,
-                            session_id=None, user_id=None, options=None, **kwargs):
+                            session_id=None, user_id=None, stt_only=False,
+                            options=None, **kwargs):
+        self.stream_voice_calls.append({"stt_only": stt_only, "options": options})
         async for chunk in audio_iterator:
             if chunk is None:
                 break
@@ -202,3 +210,59 @@ class TestCapabilityNotices:
         await session.end_turn()
         await asyncio.sleep(0.5)
         assert not [f for f in mock_send_fn.frames if f["type"] == "error"]
+
+
+class TestSttOnlyForwardedToClient:
+    """Regression coverage for a code-review finding (FEAT-418): both real
+    clients (``GeminiLiveClient.stream_voice``, ``NovaAudio.stream_voice``)
+    read ``stt_only`` ONLY from their dedicated keyword argument — never
+    from ``options.stt_only`` — so ``VoiceSession._run_turn()`` must pass
+    ``stt_only=self.stt_only`` explicitly on every call, not rely on it
+    being folded into the projected ``VoiceStreamOptions``. Before this
+    fix, a bare ``VoiceSession`` wrapping a real client directly (e.g.
+    ``examples/clients/nova/audio.py``'s pattern) silently ran full-duplex
+    regardless of the ``stt_only=True`` constructor argument.
+    """
+
+    @pytest.mark.asyncio
+    async def test_stt_only_true_reaches_dedicated_kwarg(self, mock_send_fn, standard_client):
+        session = VoiceSession(
+            standard_client, send_fn=mock_send_fn, system_prompt="x",
+            stt_only=True,
+        )
+        await session.start_turn()
+        await session.end_turn()
+        await asyncio.sleep(0.5)
+        assert standard_client.stream_voice_calls
+        assert all(
+            call["stt_only"] is True for call in standard_client.stream_voice_calls
+        )
+
+    @pytest.mark.asyncio
+    async def test_stt_only_false_reaches_dedicated_kwarg(self, mock_send_fn, standard_client):
+        session = VoiceSession(
+            standard_client, send_fn=mock_send_fn, system_prompt="x",
+        )
+        await session.start_turn()
+        await session.end_turn()
+        await asyncio.sleep(0.5)
+        assert standard_client.stream_voice_calls
+        assert all(
+            call["stt_only"] is False for call in standard_client.stream_voice_calls
+        )
+
+    @pytest.mark.asyncio
+    async def test_options_stt_only_still_consistent_with_kwarg(self, mock_send_fn, standard_client):
+        """Both the dedicated kwarg AND the projected options object must
+        agree — a future client that reads either one gets the right
+        answer."""
+        session = VoiceSession(
+            standard_client, send_fn=mock_send_fn, system_prompt="x",
+            stt_only=True,
+        )
+        await session.start_turn()
+        await session.end_turn()
+        await asyncio.sleep(0.5)
+        call = standard_client.stream_voice_calls[0]
+        assert call["stt_only"] is True
+        assert call["options"].stt_only is True
