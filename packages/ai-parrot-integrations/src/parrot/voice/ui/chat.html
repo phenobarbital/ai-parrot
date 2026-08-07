@@ -1091,11 +1091,6 @@
                         }
                         break;
                 }
-
-                // Handle user transcription (backwards compatibility)
-                if (message.user_transcription) {
-                    this.appendToUserMessage(message.user_transcription);
-                }
             }
 
             startSession() {

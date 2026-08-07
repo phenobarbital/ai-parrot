@@ -55,6 +55,15 @@ except ImportError:
     create_voice_bot = None
 
 
+# Filters internal "thinking" text that sometimes leaks into the model's
+# output (e.g. "**Clarifying...**", "**Show Product Image**"). Shared by
+# _send_voice_response() and _HandlerVoiceSession.build_frames() so both
+# frame-construction paths filter identically (FEAT-418, TASK-2174).
+_THOUGHT_FILTER_PATTERN = re.compile(
+    r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])'
+)
+
+
 # =============================================================================
 # Authentication
 # =============================================================================
@@ -233,34 +242,99 @@ class WebSocketConnection:
 
 
 # =============================================================================
-# VoiceSession relay adapter (FEAT-416, TASK-2152)
+# VoiceSession relay adapter (FEAT-416 TASK-2152; re-based on the
+# build_frames() hook, FEAT-418 TASK-2174)
 # =============================================================================
-# VoiceSession's own _relay() (parrot.voice.session, TASK-2149) builds a
-# generic, minimal frame vocabulary (text/audio/tool_call/interrupted/
-# turn_complete/error/reconnect). VoiceChatHandler's existing
-# _send_voice_response() implements a much richer, ALREADY-SHIPPED
-# WebSocket protocol that real browser clients depend on
-# (response_chunk/transcription/response_complete/ready_to_speak/
-# display_data/session_warning, STT-only gating, "thought" text
-# filtering, and the LiveAvatar audio tee) — none of which VoiceSession's
-# generic relay can reproduce without dropping information (its frames
-# don't carry user_transcription/assistant_transcription/display_data/
-# turn_metadata/go_away separately). Modifying VoiceSession itself is
-# explicitly out of this task's scope (and would mean changing a
-# just-shipped core class for one integrations-side caller).
+# VoiceSession's own _relay() (parrot.voice.session, TASK-2149) used to
+# build a generic, minimal frame vocabulary the handler's real,
+# ALREADY-SHIPPED WebSocket protocol (response_chunk/transcription/
+# response_complete/ready_to_speak/display_data/session_warning, STT-only
+# gating, "thought" text filtering, the LiveAvatar audio tee) couldn't
+# reproduce without dropping information. TASK-2152 worked around that by
+# overriding BOTH `_relay()` (delegating to `_send_voice_response()`) AND
+# duplicating `_run_turn()`'s entire reconnection loop, purely so the turn
+# could be driven through `VoiceBot.ask_stream()` (conversation-memory
+# persistence, dynamic system-prompt building, `stt_only` — all
+# VoiceBot-level features `VoiceSession.client.stream_voice()` alone
+# cannot provide) instead of `self.client.stream_voice()` directly.
 #
-# Resolution: subclass VoiceSession, overriding ONLY _relay() to delegate
-# to the handler's existing _send_voice_response() — preserving the full,
-# real wire protocol byte-for-byte — while inheriting every turn-lifecycle
-# method (start_turn/push_audio/end_turn/close/_cancel_turn/
-# _audio_iterator/_run_turn, INCLUDING TASK-2150's reconnection loop)
-# unchanged. This is real delegation (no inlined turn lifecycle here) with
-# zero regression to the existing protocol. See TASK-2152 Completion Note
-# for the full analysis, including the one accepted gap: VoiceSession's
-# reconnection only reacts to `reconnect_required` — Gemini's separate
-# `go_away` signal (handled here, replicated below) does not by itself
-# trigger a VoiceSession-managed reconnect, only the same informational
-# `session_warning` frame the original inlined code sent.
+# FEAT-418 (TASK-2174) removes both workarounds:
+#   1. `build_frames()` (TASK-2171's relay extension hook) now reproduces
+#      the handler's real frame protocol directly, so `_run_turn()` no
+#      longer needs re-implementing to reach a custom `_relay()` — this
+#      class overrides `build_frames()` (sync) instead. The LiveAvatar
+#      audio tee is async, so it stays in a (now cooperative, calling
+#      `super()._relay()`) `_relay()` override — `build_frames()` cannot
+#      `await` it.
+#   2. `client` is now `_AskStreamVoiceClient` (below), a tiny adapter
+#      presenting `VoiceBot.ask_stream()` as `VoiceCapable.stream_voice()`
+#      so the now-INHERITED `_run_turn()` (TASK-2150's reconnection loop,
+#      unmodified) drives turns through the bot — preserving conversation
+#      memory and dynamic system-prompt building without needing its own
+#      copy of the reconnection loop. `stt_only` threads through
+#      `VoiceSession.__init__`'s `stt_only` parameter (TASK-2172), which
+#      `to_stream_options()` projects into `options.stt_only`.
+#
+# Net result: `_HandlerVoiceSession` no longer defines `_run_turn` at
+# all — `voice/session.py`'s loop is the only reconnection loop in the
+# codebase, satisfied literally, not just in spirit.
+class _AskStreamVoiceClient:
+    """Adapts ``VoiceBot.ask_stream()`` to the ``VoiceCapable.stream_voice()``
+    shape (FEAT-418, TASK-2174).
+
+    ``VoiceSession``'s inherited ``_run_turn()`` calls
+    ``self.client.stream_voice(...)``. Passing the raw provider client
+    (``bot._llm``) there would bypass ``VoiceBot`` entirely — losing
+    conversation-memory persistence and dynamic system-prompt building
+    (KB/vector/user context), both of which ``VoiceChatHandler`` relies on
+    today (it explicitly configures ``conversation_memory`` on the bot
+    before starting a session — see ``_handle_start_session()`` — *because*
+    ``ask_stream()`` is what persists turns). This adapter is the glue that
+    lets the turn still flow through the bot while ``VoiceSession`` itself
+    stays a thin, provider-agnostic lifecycle manager.
+    """
+
+    def __init__(self, bot: "VoiceBot", user_id: Optional[str] = None):
+        self._bot = bot
+        self._user_id = user_id
+
+    @property
+    def voice_capabilities(self):
+        """Delegates to the underlying raw client's descriptor — required
+        by ``VoiceSession.__init__``'s capability preflight (TASK-2172)."""
+        return self._bot._llm.voice_capabilities
+
+    async def stream_voice(
+        self,
+        audio_iterator,
+        system_prompt=None,
+        session_id=None,
+        user_id=None,
+        options=None,
+        **kwargs,
+    ):
+        """Delegates to ``VoiceBot.ask_stream()``.
+
+        ``VoiceBot`` builds its own dynamic ``system_prompt`` internally
+        (KB/vector/conversation context) — the ``system_prompt`` argument
+        here (``VoiceSession.system_prompt``, a static value) is
+        intentionally NOT forwarded, matching the pre-TASK-2174 behavior
+        where the duplicated ``_run_turn()`` called ``bot.ask_stream()``
+        the same way. ``stt_only`` is read off ``options`` (projected by
+        ``VoiceSession`` from its own ``stt_only`` constructor parameter,
+        TASK-2172) since ``ask_stream()`` takes it as a dedicated
+        parameter, not part of an options object.
+        """
+        stt_only = options.stt_only if options is not None else False
+        async for response in self._bot.ask_stream(
+            audio_input=audio_iterator,
+            session_id=session_id,
+            user_id=user_id or self._user_id,
+            stt_only=stt_only,
+        ):
+            yield response
+
+
 class _HandlerVoiceSession(VoiceSession):
     """VoiceSession that relays through VoiceChatHandler's existing,
     richer WebSocket frame protocol instead of VoiceSession's own."""
@@ -274,111 +348,149 @@ class _HandlerVoiceSession(VoiceSession):
         # Code-review fix: route through the handler's own _send_message()
         # (blanket try/except + logged failure) instead of the inherited
         # VoiceSession._send(), which only suppresses ConnectionResetError
-        # — keeps error/reconnect frames (sent via self._send() from
-        # _run_turn(), overridden below) on the exact same safety net as
+        # — keeps error/reconnect frames on the exact same safety net as
         # every other frame this handler sends.
         await self._handler._send_message(self._connection.ws, payload)
 
-    async def _relay(self, resp, turn_no: int) -> None:  # noqa: ARG002 — turn_no kept for signature parity
-        await self._handler._send_voice_response(self._connection, resp)
+    def build_frames(self, resp, turn_no: int) -> list:  # noqa: ARG002 — turn_no kept for signature parity
+        """Reproduce VoiceChatHandler's real WebSocket frame protocol
+        (FEAT-418, TASK-2174).
 
-        # Gemini's GoAway signal is distinct from reconnect_required and is
-        # not, by itself, understood by VoiceSession's (inherited,
-        # unmodified) reconnection loop in _run_turn(). The original
-        # inlined code sent this same informational frame and then
-        # unconditionally restarted its outer ask_stream() loop. Since
-        # _run_turn() reads resp.metadata AFTER awaiting _relay() (this
-        # method), mutating it here — rather than modifying VoiceSession
-        # itself, out of scope — lets go_away piggyback on the exact same
-        # inherited reconnect path Nova's 8-minute limit uses. One
-        # accepted behavior change: this now also respects
-        # `voice_config.reconnect_on_limit` (defaults True), whereas the
-        # original go_away handling had no such gate — arguably more
-        # consistent (one reconnection policy, not two).
+        Mirrors ``_send_voice_response()``'s frame construction (STT-only
+        gating, "thought" text filtering, ``response_chunk``/
+        ``transcription``/``display_data``/``tool_call``/
+        ``response_complete``/``ready_to_speak``) plus the ``go_away`` ->
+        ``session_warning`` mapping the old ``_relay()`` override did.
+        Duplicated rather than delegating to the async
+        ``_send_voice_response()`` — this method must stay sync (the base
+        ``VoiceSession._relay()`` calls it without awaiting, per the
+        ``build_frames()`` contract from TASK-2171) — the LiveAvatar audio
+        tee (the one genuinely async side effect) is handled by the
+        ``_relay()`` override below instead.
+
+        Transcription frames now come from canonical ``role`` (FEAT-418)
+        instead of the removed ``metadata["user_transcription"]``/
+        ``metadata["assistant_transcription"]`` keys.
+        """
+        frames: list = []
+        connection = self._connection
+
+        if not connection.stt_only:
+            is_thought = bool(resp.text and _THOUGHT_FILTER_PATTERN.match(resp.text))
+            text_to_send = "" if is_thought else resp.text
+            if (resp.audio_data or text_to_send) and not resp.is_complete:
+                frames.append({
+                    "type": "response_chunk",
+                    "text": text_to_send or "",
+                    "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
+                    "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
+                    "is_interrupted": resp.is_interrupted,
+                })
+
+        # User transcription is always forwarded (both modes) — canonical
+        # role replaces the removed metadata["user_transcription"] key.
+        if resp.role == "user" and resp.text:
+            frames.append({
+                "type": "transcription",
+                "text": resp.text,
+                "is_user": True,
+            })
+
+        # Everything below this point is model-response output — skip in
+        # STT-only mode (matches _send_voice_response()'s early return).
+        if not connection.stt_only:
+            # Forward the assistant's spoken text as the display bubble.
+            # canonical role="assistant" replaces the removed
+            # metadata["assistant_transcription"] key; turn_metadata's own
+            # output_transcription remains as a fallback for a frame that
+            # carries no text of its own (e.g. an audio-only chunk).
+            assistant_text = resp.text if resp.role == "assistant" else None
+            if not assistant_text and resp.turn_metadata:
+                assistant_text = resp.turn_metadata.output_transcription
+            if assistant_text:
+                frames.append({
+                    "type": "transcription",
+                    "text": assistant_text,
+                    "is_user": False,
+                })
+
+            if resp.metadata.get("display_data"):
+                frames.append({
+                    "type": "display_data",
+                    "data": resp.metadata["display_data"],
+                })
+
+            for tc in resp.tool_calls:
+                frames.append({
+                    "type": "tool_call",
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                    "result": tc.result,
+                    "execution_time_ms": tc.execution_time_ms,
+                })
+
+            if resp.is_complete:
+                final_text = resp.text
+                if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
+                    final_text = ""
+                frames.append({
+                    "type": "response_complete",
+                    "text": final_text or "",
+                    "is_interrupted": resp.is_interrupted,
+                })
+                frames.append({
+                    "type": "ready_to_speak",
+                    "message": "Ready for new question",
+                })
+
+        # Gemini's GoAway signal is distinct from reconnect_required and,
+        # by itself, is not understood by VoiceSession's (inherited,
+        # unmodified) reconnection loop. Mutating resp.metadata here is
+        # safe: build_frames() runs (via _relay()) BEFORE _run_turn()
+        # checks resp.metadata.get("reconnect_required") (spec §7 relay-
+        # before-reconnect ordering). As of TASK-2168, Gemini's own
+        # producer already sets reconnect_required alongside go_away — this
+        # mutation is now a defensive no-op for Gemini and a safety net for
+        # any future provider that emits go_away without it.
         if resp.metadata.get("go_away"):
-            await self._handler._send_message(self._connection.ws, {
+            frames.append({
                 "type": "session_warning",
                 "message": "Session reconnecting...",
             })
             resp.metadata["reconnect_required"] = True
 
-    async def _run_turn(self, turn_no: int) -> None:
-        """Delegates audio-queue creation/iteration to the base
-        :class:`VoiceSession` (``self._audio_iterator(queue)``), but
-        drives the turn through ``VoiceBot.ask_stream()`` — not the raw
-        client's ``stream_voice()`` — so conversation-memory persistence,
-        ``stt_only``, and VoiceConfig inference-parameter threading (all
-        ``VoiceBot``-level features, TASK-2151) are preserved. Otherwise
-        this mirrors ``VoiceSession._run_turn()``'s reconnection loop
-        (TASK-2150) exactly — duplicated here (not inherited unchanged)
-        because reusing it would require calling
-        ``self.client.stream_voice()`` directly, bypassing ``VoiceBot``
-        entirely. See the class docstring / TASK-2152 Completion Note.
+        return frames
+
+    async def _relay(self, resp, turn_no: int) -> None:
+        """Send build_frames()'s output, then run the LiveAvatar audio tee.
+
+        The tee is async (awaits connection.avatar_session.speak()/
+        interrupt()/finish_turn()) so it cannot live in the sync
+        build_frames() — kept here, cooperating with the base class via
+        super()._relay() rather than re-implementing frame sending.
         """
-        queue = self._queue
-        assert queue is not None  # set by start_turn() before the task starts
+        await super()._relay(resp, turn_no)
 
-        bot = self._connection.bot
-        self.logger.info(
-            "Turn %d starting (session=%s)", turn_no, self.session_id,
-        )
+        # ── Avatar audio tee (FEAT-245) ───────────────────────────────
+        # Best-effort: exceptions are caught and logged; the browser audio
+        # path MUST NOT be interrupted by an avatar hiccup (dual audio).
+        # Skipped in STT-only mode, matching _send_voice_response()'s
+        # early return (the avatar tee is unreachable there too).
+        connection = self._connection
+        if connection.stt_only or connection.avatar_session is None:
+            return
         try:
-            while True:
-                reconnecting = False
-                stream = bot.ask_stream(
-                    audio_input=self._audio_iterator(queue),
-                    session_id=self.session_id,
-                    user_id=self._connection.user_id,
-                    stt_only=self._connection.stt_only,
-                )
-                try:
-                    async for resp in stream:
-                        await self._relay(resp, turn_no)
-
-                        if not (
-                            resp.metadata.get("reconnect_required")
-                            and self.voice_config.reconnect_on_limit
-                        ):
-                            continue
-
-                        if self._reconnect_count >= self.voice_config.max_reconnects:
-                            await self._send({
-                                "type": "error",
-                                "message": "max reconnections reached",
-                                "session_id": self.session_id,
-                            })
-                            if self._task is asyncio.current_task():
-                                self._queue = None
-                                self._task = None
-                            return
-
-                        self._reconnect_count += 1
-                        await self._send({
-                            "type": "reconnect",
-                            "session_id": self.session_id,
-                            "reconnect_count": self._reconnect_count,
-                        })
-                        reconnecting = True
-                        break
-                finally:
-                    with contextlib.suppress(Exception):
-                        await stream.aclose()
-
-                if not reconnecting:
-                    break
-        except asyncio.CancelledError:
-            self.logger.info("Turn %d cancelled", turn_no)
-            raise
-        except Exception as exc:
-            self.logger.exception("Turn %d failed", turn_no)
-            await self._send({
-                "type": "error",
-                "turn": turn_no,
-                "message": f"{type(exc).__name__}: {exc}",
-            })
-        finally:
-            if self._task is asyncio.current_task():
-                self._queue = None
+            if resp.is_interrupted:
+                await connection.avatar_session.interrupt()
+            else:
+                if resp.audio_data:
+                    await connection.avatar_session.speak(resp.audio_data)
+                if resp.is_complete:
+                    await connection.avatar_session.finish_turn()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "VoiceChatHandler: avatar tee error (voice stream unaffected): %s", exc
+            )
 
 
 # =============================================================================
@@ -1474,17 +1586,19 @@ class VoiceChatHandler:
         Send complete voice response (non-streaming).
 
         Used by ask_voice and non-streaming text-to-speech.
+
+        Note (FEAT-418, TASK-2174): this used to forward a
+        ``metadata["user_transcription"]`` key as a ``transcription``
+        frame. That key is removed from the producer (TASK-2167) and,
+        unlike the streaming path (``_send_voice_response()``, migrated to
+        canonical ``role``), ``VoiceBot.ask_voice()``'s aggregation
+        (``bots/voice.py``, out of this task's file scope) merges all
+        chunks' ``metadata``/``text`` into one flat response without
+        preserving per-chunk ``role`` — so there is no role-based
+        replacement available here without changing ``ask_voice()``
+        itself. The dead branch is removed rather than left silently
+        never firing.
         """
-        metadata = metadata or {}
-
-        # Send user transcription if available
-        if metadata.get("user_transcription"):
-            await self._send_message(connection.ws, {
-                "type": "transcription",
-                "text": metadata["user_transcription"],
-                "is_user": True,
-            })
-
         # Send tool calls
         for tc in (tool_calls or []):
             await self._send_message(connection.ws, {
@@ -1550,7 +1664,14 @@ class VoiceChatHandler:
         if bot._llm is None:
             config = bot._resolve_llm_config()
             bot._llm = bot._create_llm_client(config, bot.conversation_memory)
-        client = bot._llm
+
+        # FEAT-418 (TASK-2174): wrap the raw client so the now-INHERITED
+        # VoiceSession._run_turn() (no more duplicated reconnection loop)
+        # drives turns through VoiceBot.ask_stream() — preserving
+        # conversation-memory persistence and dynamic system-prompt
+        # building, which the raw client's stream_voice() alone cannot
+        # provide. See _AskStreamVoiceClient's docstring above.
+        client = _AskStreamVoiceClient(bot, user_id=connection.user_id)
 
         async def send_fn(payload: dict) -> None:
             if not connection.ws.closed:
@@ -1562,6 +1683,7 @@ class VoiceChatHandler:
             system_prompt=bot.system_prompt,
             voice_config=bot.voice_config,
             session_id=connection.session_id,
+            stt_only=connection.stt_only,
             handler=self,
             connection=connection,
         )
@@ -1588,13 +1710,8 @@ class VoiceChatHandler:
         if not connection.stt_only:
             # Send response_chunk for audio OR text (not just audio)
             # FILTER: Skip internal thought processes that leak into output
-            # Generic pattern:
-            # 1. Bold/Header followed by a Gerund (Verb-ing) -> **Clarifying...**
-            # 2. Bold/Header followed by "Show [Capital]" -> **Show Product Image**
-            is_thought = response.text and re.match(
-                r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])',
-                response.text
-            )
+            # (see _THOUGHT_FILTER_PATTERN's docstring for the two patterns).
+            is_thought = bool(response.text and _THOUGHT_FILTER_PATTERN.match(response.text))
 
             # Determine strict text to send (suppress if thought)
             text_to_send = response.text
@@ -1610,11 +1727,13 @@ class VoiceChatHandler:
                     "is_interrupted": response.is_interrupted,
                 })
 
-        # User transcription is always forwarded (both modes).
-        if response.metadata.get("user_transcription"):
+        # User transcription is always forwarded (both modes). FEAT-418:
+        # canonical role="user" replaces the removed
+        # metadata["user_transcription"] key.
+        if response.role == "user" and response.text:
             await self._send_message(connection.ws, {
                 "type": "transcription",
-                "text": response.metadata["user_transcription"],
+                "text": response.text,
                 "is_user": True,
             })
 
@@ -1622,13 +1741,17 @@ class VoiceChatHandler:
         if connection.stt_only:
             return
 
-        # Forward the assistant's SPOKEN transcription (output_transcription) as
-        # the display text. In audio mode Gemini's model_turn TEXT modality is
-        # generated separately from the audio — it diverges from what's actually
-        # spoken (and leaks "thinking" headers), so the transcription is the
-        # source of truth for the bubble. The front shows this and ignores the
+        # Forward the assistant's spoken text as the display bubble.
+        # FEAT-418: canonical role="assistant" replaces the removed
+        # metadata["assistant_transcription"] key; turn_metadata's own
+        # output_transcription remains as a fallback for a frame that
+        # carries no text of its own (e.g. an audio-only chunk). In audio
+        # mode Gemini's model_turn TEXT modality is generated separately
+        # from the audio — it diverges from what's actually spoken (and
+        # leaks "thinking" headers), so the transcription is the source of
+        # truth for the bubble. The front shows this and ignores the
         # response_chunk text (audio only).
-        assistant_text = response.metadata.get("assistant_transcription")
+        assistant_text = response.text if response.role == "assistant" else None
         if not assistant_text and response.turn_metadata:
             assistant_text = response.turn_metadata.output_transcription
         if assistant_text:
@@ -1656,7 +1779,7 @@ class VoiceChatHandler:
         if response.is_complete:
             # Re-check filter for the final text payload
             final_text = response.text
-            if final_text and re.match(r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])', final_text):
+            if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
                 final_text = ""
 
             await self._send_message(connection.ws, {

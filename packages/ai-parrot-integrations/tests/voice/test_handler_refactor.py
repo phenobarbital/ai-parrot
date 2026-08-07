@@ -14,14 +14,38 @@ import inspect
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from parrot.clients.live import LiveVoiceResponse
+from parrot.models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
 from parrot.voice.handler import (
     BotConfig,
     VoiceChatHandler,
     WebSocketConnection,
     _HandlerVoiceSession,
 )
+
+
+def _capable_mock_client() -> MagicMock:
+    """A MagicMock VoiceCapable client with a real ``voice_capabilities``
+    descriptor matching ``VoiceConfig()``'s PCM defaults.
+
+    FEAT-418 (TASK-2172) added a construction-time audio-format preflight
+    to ``VoiceSession.__init__`` — a bare ``MagicMock()`` (whose
+    ``voice_capabilities.input_formats`` etc. are themselves empty-iterable
+    Mocks) now fails that preflight with a ``ValueError``.
+    """
+    client = MagicMock()
+    client.voice_capabilities = VoiceCapabilities(
+        provider=VoiceProvider.GOOGLE_LIVE,
+        native_stt_only=True, supports_top_p=True, supports_per_call_voice=True,
+        supports_per_call_inference=True, parallel_tool_execution=True,
+        emits_reconnect_signal=True, supports_session_resumption=True,
+        max_session_seconds=None, max_output_tokens=4096,
+        input_formats=frozenset({AudioFormat.PCM_16K}),
+        output_formats=frozenset({AudioFormat.PCM_24K}),
+        input_sample_rates=frozenset({16000}), output_sample_rates=frozenset({24000}),
+        voice_catalog=frozenset({"Puck"}), default_voice="Puck",
+    )
+    return client
 
 
 @pytest.fixture
@@ -122,7 +146,7 @@ class TestFrameProtocolUnchanged:
     @pytest.mark.asyncio
     async def test_text_response_uses_response_chunk_not_text(self, handler, connection):
         session = _HandlerVoiceSession(
-            client=MagicMock(),
+            client=_capable_mock_client(),
             send_fn=AsyncMock(),
             system_prompt="hi",
             handler=handler,
@@ -138,7 +162,7 @@ class TestFrameProtocolUnchanged:
     @pytest.mark.asyncio
     async def test_completion_uses_response_complete_not_turn_complete(self, handler, connection):
         session = _HandlerVoiceSession(
-            client=MagicMock(),
+            client=_capable_mock_client(),
             send_fn=AsyncMock(),
             system_prompt="hi",
             handler=handler,
@@ -154,20 +178,19 @@ class TestFrameProtocolUnchanged:
 
     @pytest.mark.asyncio
     async def test_user_transcription_still_forwarded(self, handler, connection):
-        """Verifies the richer metadata VoiceSession's own _relay would
-        have dropped (user_transcription) is preserved."""
+        """Verifies the richer transcription frame VoiceSession's own
+        _relay would have dropped is preserved — now driven by canonical
+        role="user" (FEAT-418, TASK-2174) instead of the removed
+        metadata["user_transcription"] key."""
         session = _HandlerVoiceSession(
-            client=MagicMock(),
+            client=_capable_mock_client(),
             send_fn=AsyncMock(),
             system_prompt="hi",
             handler=handler,
             connection=connection,
         )
         await session._relay(
-            LiveVoiceResponse(
-                text="",
-                metadata={"user_transcription": "what's the weather"},
-            ),
+            LiveVoiceResponse(text="what's the weather", role="user"),
             turn_no=1,
         )
         types = _sent_types(connection)
@@ -180,7 +203,7 @@ class TestFrameProtocolUnchanged:
         about; must still work here."""
         connection.stt_only = True
         session = _HandlerVoiceSession(
-            client=MagicMock(),
+            client=_capable_mock_client(),
             send_fn=AsyncMock(),
             system_prompt="hi",
             handler=handler,
@@ -197,7 +220,7 @@ class TestGoAwayReconnectBridge:
     @pytest.mark.asyncio
     async def test_go_away_sends_session_warning(self, handler, connection):
         session = _HandlerVoiceSession(
-            client=MagicMock(),
+            client=_capable_mock_client(),
             send_fn=AsyncMock(),
             system_prompt="hi",
             handler=handler,
@@ -214,7 +237,7 @@ class TestGoAwayReconnectBridge:
         verified by checking the mutation _relay makes on the response
         object _run_turn() reads immediately afterward."""
         session = _HandlerVoiceSession(
-            client=MagicMock(),
+            client=_capable_mock_client(),
             send_fn=AsyncMock(),
             system_prompt="hi",
             handler=handler,
@@ -227,7 +250,7 @@ class TestGoAwayReconnectBridge:
     @pytest.mark.asyncio
     async def test_no_go_away_does_not_set_reconnect_required(self, handler, connection):
         session = _HandlerVoiceSession(
-            client=MagicMock(),
+            client=_capable_mock_client(),
             send_fn=AsyncMock(),
             system_prompt="hi",
             handler=handler,
@@ -238,6 +261,93 @@ class TestGoAwayReconnectBridge:
         assert "reconnect_required" not in resp.metadata
 
 
+class TestDeduplication:
+    """FEAT-418, TASK-2174: _run_turn() is gone — VoiceSession's inherited
+    reconnection loop (voice/session.py) is the only one in the codebase."""
+
+    def test_run_turn_not_overridden(self):
+        """The duplicated loop (handler.py, pre-TASK-2174) must be gone."""
+        assert "_run_turn" not in _HandlerVoiceSession.__dict__
+
+    def test_build_frames_overridden(self):
+        assert "build_frames" in _HandlerVoiceSession.__dict__
+
+    def test_relay_still_overridden_for_avatar_tee(self):
+        """_relay() stays overridden (cooperatively, via super()._relay())
+        only for the LiveAvatar audio tee — the one genuinely async side
+        effect build_frames() (sync) cannot perform."""
+        assert "_relay" in _HandlerVoiceSession.__dict__
+
+    def test_inherits_run_turn_from_voice_session(self):
+        from parrot.voice.session import VoiceSession
+        assert _HandlerVoiceSession._run_turn is VoiceSession._run_turn
+
+
+class TestEnvelopeMigration:
+    """FEAT-418, TASK-2174: no user_transcription/assistant_transcription
+    metadata reads remain — canonical role drives every transcription
+    frame."""
+
+    @pytest.mark.asyncio
+    async def test_transcription_frame_from_role(self, handler, connection):
+        """Replaces test_user_transcription_still_forwarded's old
+        metadata-key-based scenario with a direct role-based one."""
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        resp = LiveVoiceResponse(text="what's the weather", role="user")
+        frames = session.build_frames(resp, turn_no=1)
+        assert {"type": "transcription", "text": "what's the weather", "is_user": True} in frames
+
+    @pytest.mark.asyncio
+    async def test_assistant_transcription_frame_from_role(self, handler, connection):
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        resp = LiveVoiceResponse(text="It's sunny", role="assistant", is_complete=False)
+        frames = session.build_frames(resp, turn_no=1)
+        assert {"type": "transcription", "text": "It's sunny", "is_user": False} in frames
+
+    @pytest.mark.asyncio
+    async def test_stt_only_suppresses_assistant(self, handler, connection):
+        connection.stt_only = True
+        session = _HandlerVoiceSession(
+            client=_capable_mock_client(),
+            send_fn=AsyncMock(),
+            system_prompt="hi",
+            handler=handler,
+            connection=connection,
+        )
+        frames = session.build_frames(
+            LiveVoiceResponse(text="hi", role="assistant"), turn_no=1,
+        )
+        assert not any(f.get("is_user") is False for f in frames)
+        assert not any(f["type"] == "response_chunk" for f in frames)
+
+    def test_no_user_transcription_reference_in_handler(self):
+        """No functional read of the removed metadata key remains — every
+        original call site used ``.metadata.get("user_transcription")``.
+        Explanatory comments naming the OLD key (e.g. "replaces the
+        removed metadata['user_transcription'] key", using bracket
+        notation, not ``.get(...)``) are expected and intentional."""
+        import parrot.voice.handler as h
+        source = inspect.getsource(h)
+        assert 'get("user_transcription")' not in source
+
+    def test_no_assistant_transcription_reference_in_handler(self):
+        import parrot.voice.handler as h
+        source = inspect.getsource(h)
+        assert 'get("assistant_transcription")' not in source
+
+
 class TestNamespacePackagingFix:
     """Regression guard for the packaging bug this task had to fix:
     ``parrot.voice`` is split across two installed distributions
@@ -246,8 +356,8 @@ class TestNamespacePackagingFix:
 
     def test_core_and_integrations_voice_submodules_coexist(self):
         import parrot.voice.handler  # noqa: F401 — this file, via its canonical path
-        import parrot.voice.session  # noqa: F401 — core, TASK-2149
         import parrot.voice.models  # noqa: F401 — integrations
+        import parrot.voice.session  # noqa: F401 — core, TASK-2149
 
     def test_voice_synthesizer_convenience_reexport_still_works(self):
         """The one real __init__.py content (TTS convenience re-export)
@@ -260,6 +370,7 @@ class TestNamespacePackagingFix:
         """Core's parrot/voice/ must stay a bare PEP 420 namespace
         directory (no __init__.py) — that's the other half of the fix."""
         import os
+
         import parrot.voice.session as core_session
         core_voice_dir = os.path.dirname(core_session.__file__)
         assert not os.path.exists(os.path.join(core_voice_dir, "__init__.py"))
