@@ -50,7 +50,7 @@
       "feature_id": "FEAT-420",
       "feature": "finance-reporter-tier2-narrative",
       "spec": "sdd/specs/finance-reporter-tier2-narrative.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Additive model field + a new pure-typing module. No overlap with 2186/2187.",
       "assigned_to": null,
       "started_at": "2026-08-07T13:23:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2188-narrativespec-and-narrator-protocol.md"
+      "completed_at": "2026-08-07T13:58:38+00:00",
+      "file": "sdd/tasks/completed/TASK-2188-narrativespec-and-narrator-protocol.md"
     },
     {
       "id": "TASK-2189",
