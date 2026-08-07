@@ -78,7 +78,11 @@ from parrot.core.events.lifecycle.events import (
 # wired globally.
 from navigator_eventbus.lifecycle.global_registry import get_global_registry
 # FEAT-228: per-agent cost/usage metrics — read invoking agent's identity at event build time
-from parrot.observability.context import current_agent_name
+from parrot.observability.context import (
+    current_agent_name,
+    current_session_id,
+    current_user_id,
+)
 
 
 LLM_PRESETS = {
@@ -476,6 +480,8 @@ $backstory
             # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
             # captured before the event leaves the calling coroutine.
             agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -553,6 +559,8 @@ $backstory
             # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
             # captured before the event leaves the calling coroutine.
             agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -599,6 +607,8 @@ $backstory
             # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
             # captured before the event leaves the calling coroutine.
             agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -639,6 +649,8 @@ $backstory
             # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
             # captured before the event leaves the calling coroutine.
             agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
         )
         await self.events.emit(event)
         # Forward to global so error counters on the global registry observe

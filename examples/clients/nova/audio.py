@@ -131,8 +131,14 @@ async def index_handler(request: web.Request) -> web.Response:
         # active provider.
         "providerLabel": "Nova 2 Sonic",
     }
+    # Anchored to the exact bootstrap statement — a bare
+    # str.replace("__CONFIG__", ...) also rewrites the substring inside
+    # `window.__CONFIG__` (the JS global), producing `window.{...}` which
+    # is a syntax error. Match the full statement instead (count=1).
     html = (STATIC_DIR / "index.html").read_text().replace(
-        "__CONFIG__", json.dumps(cfg)
+        "window.__CONFIG__ = __CONFIG__;",
+        f"window.__CONFIG__ = {json.dumps(cfg)};",
+        1,
     )
     return web.Response(text=html, content_type="text/html")
 

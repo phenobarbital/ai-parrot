@@ -160,7 +160,7 @@ nav:
   - Tools, Loaders & RAG:
       - Overview: chapters/tools-rag.md
       - Tools Reference: tools.md
-      - What-If Tool: whatif_tool.md
+      - What-If Scenarios: whatif_scenarios.md
       - Sandbox Tool: sandbox_tool.md
       - REPL Worker Sandbox: repl-worker-sandbox.md
       - Hierarchy Tool: hierarchy_tool.md

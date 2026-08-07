@@ -956,6 +956,16 @@ class GeminiLiveClient(AbstractClient):
             **live_config_overrides,
         )
 
+        # In AUDIO mode, model_turn.parts text is the model's internal
+        # reasoning ("thinking"), NOT the spoken words.  The actual spoken
+        # transcript arrives via output_transcription frames.  We must
+        # suppress the thinking text from LiveVoiceResponse.text so that
+        # downstream consumers (VoiceBot.ask_stream, memory, frontend)
+        # see the real spoken words.
+        is_audio_mode = not stt_only and "AUDIO" in (
+            live_config.response_modalities or []
+        )
+
         # Tracking
         turn_metadata = VoiceTurnMetadata(turn_id=turn_id)
         usage = LiveCompletionUsage()
@@ -1011,15 +1021,38 @@ class GeminiLiveClient(AbstractClient):
                                 for part in server_content.model_turn.parts:
                                     # Text
                                     if hasattr(part, 'text') and part.text:
-                                        accumulated_text += part.text
-                                        yield LiveVoiceResponse(
-                                            text=part.text,
-                                            is_complete=False,
-                                            session_id=session_id,
-                                            turn_id=turn_id,
-                                            user_id=user_id,
-                                            role="assistant",
-                                        )
+                                        if is_audio_mode:
+                                            # In AUDIO mode, model_turn text
+                                            # is the model's internal reasoning
+                                            # ("thinking"), NOT the spoken
+                                            # response.  The actual spoken text
+                                            # arrives via output_transcription
+                                            # frames.  Expose as metadata so
+                                            # consumers can optionally display
+                                            # it, but keep text="" to prevent
+                                            # it from being persisted as the
+                                            # assistant's reply.
+                                            yield LiveVoiceResponse(
+                                                text="",
+                                                is_complete=False,
+                                                metadata={"thinking": part.text},
+                                                session_id=session_id,
+                                                turn_id=turn_id,
+                                                user_id=user_id,
+                                                role="assistant",
+                                            )
+                                        else:
+                                            # TEXT mode — model_turn text IS
+                                            # the actual response.
+                                            accumulated_text += part.text
+                                            yield LiveVoiceResponse(
+                                                text=part.text,
+                                                is_complete=False,
+                                                session_id=session_id,
+                                                turn_id=turn_id,
+                                                user_id=user_id,
+                                                role="assistant",
+                                            )
 
                                     # Audio (inline_data)
                                     if hasattr(part, 'inline_data') and part.inline_data:
@@ -1069,15 +1102,26 @@ class GeminiLiveClient(AbstractClient):
                                 text = getattr(server_content.output_transcription, 'text', '')
                                 if text:
                                     self.logger.info(f"Model transcription: {text}")
-                                    turn_metadata.output_transcription = text
-                                    # Yield immediately so frontend receives it
+                                    # Accumulate (not overwrite) — Gemini
+                                    # sends multi-chunk transcriptions.
+                                    if turn_metadata.output_transcription:
+                                        turn_metadata.output_transcription += text
+                                    else:
+                                        turn_metadata.output_transcription = text
+                                    # Also accumulate into accumulated_text so
+                                    # interruption responses carry the spoken
+                                    # words (not thinking text).
+                                    accumulated_text += text
+                                    # Yield as canonical assistant text so
+                                    # VoiceBot.ask_stream and downstream
+                                    # consumers receive the actual spoken words.
                                     yield LiveVoiceResponse(
-                                        text="",
+                                        text=text,
                                         is_complete=False,
-                                        metadata={"assistant_transcription": text},
                                         session_id=session_id,
                                         turn_id=turn_id,
                                         user_id=user_id,
+                                        role="assistant",
                                     )
 
                             # Check for turn complete (After processing content)

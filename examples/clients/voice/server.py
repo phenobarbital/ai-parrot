@@ -59,8 +59,24 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
+import os
 from pathlib import Path
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Load env/.env so AWS_NOVA_SONIC_* vars are available as os.environ defaults
+# (same pattern as examples/clients/nova/audio.py — without this, VoiceBot's
+# Nova credential resolution via navconfig.get() finds nothing).
+# ---------------------------------------------------------------------------
+_ENV_FILE = Path(__file__).resolve().parents[3] / "env" / ".env"
+if _ENV_FILE.is_file():
+    with open(_ENV_FILE) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _key, _, _val = _line.partition("=")
+            os.environ.setdefault(_key.strip(), _val.strip())
 
 from aiohttp import web
 from parrot.bots import VoiceBot

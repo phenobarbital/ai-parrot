@@ -113,16 +113,34 @@ def test_before_client_includes_temperature_when_set() -> None:
     assert attrs["gen_ai.request.temperature"] == 0.7
 
 
-def test_before_client_excludes_pii() -> None:
-    """No PII (user_id, session_id, question) in builder output."""
+def test_before_client_excludes_raw_pii_keys() -> None:
+    """Raw PII field names never leak as attribute keys; user_id/session_id
+    are exposed under OTel-standard keys (enduser.id, session.id) when set."""
+    e = BeforeClientCallEvent(
+        trace_context=TraceContext.new_root(),
+        client_name="openai",
+        model="gpt-4o",
+        user_id="u-42",
+        session_id="s-99",
+    )
+    attrs = build_before_client_attrs(e)
+    for key in attrs:
+        assert key not in {"user_id", "session_id", "question"}
+    # user_id/session_id present under OTel-standard attribute names
+    assert attrs["enduser.id"] == "u-42"
+    assert attrs["session.id"] == "s-99"
+
+
+def test_before_client_omits_user_when_none() -> None:
+    """enduser.id and session.id omitted when user_id/session_id are None."""
     e = BeforeClientCallEvent(
         trace_context=TraceContext.new_root(),
         client_name="openai",
         model="gpt-4o",
     )
     attrs = build_before_client_attrs(e)
-    for key in attrs:
-        assert key not in {"user_id", "session_id", "question"}
+    assert "enduser.id" not in attrs
+    assert "session.id" not in attrs
 
 
 # ---------------------------------------------------------------------------
@@ -167,8 +185,9 @@ def test_after_client_no_cost_when_none() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_before_invoke_excludes_pii() -> None:
-    """PII fields (question, user_id, session_id) must not appear in attrs."""
+def test_before_invoke_excludes_prompt_content() -> None:
+    """Prompt content (question) must not appear in attrs; user_id/session_id
+    ARE included as span attributes for per-user usage tracking (OpenLIT)."""
     e = BeforeInvokeEvent(
         trace_context=TraceContext.new_root(),
         agent_name="bot",
@@ -179,10 +198,24 @@ def test_before_invoke_excludes_pii() -> None:
     )
     attrs = build_before_invoke_attrs(e)
     attrs_str = str(attrs)
+    # Prompt content is never included (PII)
     assert "question" not in attrs_str
-    assert "u-123" not in attrs_str
-    assert "s-456" not in attrs_str
     assert "my private question" not in attrs_str
+    # user_id and session_id ARE included for per-user usage tracking
+    assert attrs["enduser.id"] == "u-123"
+    assert attrs["session.id"] == "s-456"
+
+
+def test_before_invoke_omits_user_when_none() -> None:
+    """user_id and session_id omitted when None (no empty-string pollution)."""
+    e = BeforeInvokeEvent(
+        trace_context=TraceContext.new_root(),
+        agent_name="bot",
+        method="ask",
+    )
+    attrs = build_before_invoke_attrs(e)
+    assert "enduser.id" not in attrs
+    assert "session.id" not in attrs
 
 
 def test_before_invoke_contains_agent_name_and_method() -> None:
@@ -195,3 +228,99 @@ def test_before_invoke_contains_agent_name_and_method() -> None:
     attrs = build_before_invoke_attrs(e)
     assert attrs["parrot.agent.name"] == "my-bot"
     assert attrs["parrot.invoke.method"] == "ask"
+
+
+# ---------------------------------------------------------------------------
+# AfterClientCallEvent / ClientCallFailedEvent — user_id in spans
+# ---------------------------------------------------------------------------
+
+
+def test_after_client_includes_user_when_set() -> None:
+    """enduser.id and session.id appear on after-client span attrs."""
+    e = AfterClientCallEvent(
+        trace_context=TraceContext.new_root(),
+        client_name="anthropic",
+        model="claude-sonnet-4-20250514",
+        duration_ms=120.0,
+        input_tokens=100,
+        output_tokens=50,
+        user_id="u-77",
+        session_id="s-88",
+    )
+    attrs = build_after_client_attrs(e)
+    assert attrs["enduser.id"] == "u-77"
+    assert attrs["session.id"] == "s-88"
+
+
+def test_after_client_omits_user_when_none() -> None:
+    """enduser.id and session.id absent when not provided."""
+    e = AfterClientCallEvent(
+        trace_context=TraceContext.new_root(),
+        client_name="openai",
+        model="gpt-4o",
+        duration_ms=50.0,
+    )
+    attrs = build_after_client_attrs(e)
+    assert "enduser.id" not in attrs
+    assert "session.id" not in attrs
+
+
+def test_client_failed_includes_user_when_set() -> None:
+    """enduser.id and session.id on error span attrs."""
+    from parrot.core.events.lifecycle.events import ClientCallFailedEvent
+    from parrot.observability.attributes import build_client_failed_attrs
+
+    e = ClientCallFailedEvent(
+        trace_context=TraceContext.new_root(),
+        client_name="openai",
+        model="gpt-4o",
+        duration_ms=10.0,
+        error_type="Timeout",
+        error_message="timed out",
+        user_id="u-fail",
+        session_id="s-fail",
+    )
+    attrs = build_client_failed_attrs(e)
+    assert attrs["enduser.id"] == "u-fail"
+    assert attrs["session.id"] == "s-fail"
+
+
+# ---------------------------------------------------------------------------
+# invocation_context — ContextVar helper
+# ---------------------------------------------------------------------------
+
+
+def test_invocation_context_sets_and_restores() -> None:
+    """invocation_context binds all three ContextVars and restores on exit."""
+    from parrot.observability.context import (
+        current_agent_name,
+        current_session_id,
+        current_user_id,
+        invocation_context,
+    )
+
+    # Precondition: all None
+    assert current_agent_name.get() is None
+    assert current_user_id.get() is None
+    assert current_session_id.get() is None
+
+    with invocation_context("bot-x", user_id="u-1", session_id="s-2"):
+        assert current_agent_name.get() == "bot-x"
+        assert current_user_id.get() == "u-1"
+        assert current_session_id.get() == "s-2"
+
+        # Nested invocation overrides and restores
+        with invocation_context("inner", user_id="u-inner"):
+            assert current_agent_name.get() == "inner"
+            assert current_user_id.get() == "u-inner"
+            assert current_session_id.get() is None  # not set in inner
+
+        # Outer values restored
+        assert current_agent_name.get() == "bot-x"
+        assert current_user_id.get() == "u-1"
+        assert current_session_id.get() == "s-2"
+
+    # All restored to None
+    assert current_agent_name.get() is None
+    assert current_user_id.get() is None
+    assert current_session_id.get() is None

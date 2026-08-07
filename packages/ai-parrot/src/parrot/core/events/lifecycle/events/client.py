@@ -37,6 +37,8 @@ class BeforeClientCallEvent(LifecycleEvent):
     system_prompt_hash: str = ""     # SHA-256, never the prompt itself
     has_tools: bool = False
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
+    user_id: Optional[str] = None      # per-user usage attribution (spans only, never metric labels)
+    session_id: Optional[str] = None   # per-session correlation (spans only, never metric labels)
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,11 @@ class AfterClientCallEvent(LifecycleEvent):
         agent_name: ``AbstractBot.name`` of the invoking agent, or ``None``
             when called outside a bot invocation scope.  Set by the client
             from the ``current_agent_name`` ContextVar (FEAT-228).
-            NEVER contains PII (user_id, session_id, prompt content).
+        user_id: Optional user identifier for per-user usage attribution.
+            Set from the ``current_user_id`` ContextVar. Included in span
+            attributes only — NEVER in metric labels.
+        session_id: Optional session identifier. Set from the
+            ``current_session_id`` ContextVar. Spans only.
     """
 
     client_name: str = ""
@@ -66,6 +72,8 @@ class AfterClientCallEvent(LifecycleEvent):
     output_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
+    user_id: Optional[str] = None      # per-user usage attribution (spans only)
+    session_id: Optional[str] = None   # per-session correlation (spans only)
 
 
 @dataclass(frozen=True)
@@ -83,7 +91,9 @@ class ClientCallFailedEvent(LifecycleEvent):
         agent_name: ``AbstractBot.name`` of the invoking agent, or ``None``
             when called outside a bot invocation scope.  Set by the client
             from the ``current_agent_name`` ContextVar (FEAT-228).
-            NEVER contains PII (user_id, session_id, prompt content).
+        user_id: Optional user identifier for per-user usage attribution.
+            Spans only — NEVER in metric labels.
+        session_id: Optional session identifier. Spans only.
     """
 
     client_name: str = ""
@@ -92,6 +102,8 @@ class ClientCallFailedEvent(LifecycleEvent):
     error_type: str = ""
     error_message: str = ""
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
+    user_id: Optional[str] = None      # per-user usage attribution (spans only)
+    session_id: Optional[str] = None   # per-session correlation (spans only)
 
 
 @dataclass(frozen=True)
@@ -201,7 +213,11 @@ class ClientRoundEvent(LifecycleEvent):
         agent_name: ``AbstractBot.name`` of the invoking agent, or ``None``
             when called outside a bot invocation scope.  Set by the client
             from the ``current_agent_name`` ContextVar (FEAT-228).
-            NEVER contains PII (user_id, session_id, prompt content).
+        user_id: Optional user identifier for per-user usage attribution.
+            Set from the ``current_user_id`` ContextVar. Included in span
+            attributes only — NEVER in metric labels.
+        session_id: Optional session identifier. Set from the
+            ``current_session_id`` ContextVar. Spans only.
     """
 
     client_name: str = ""
@@ -215,3 +231,5 @@ class ClientRoundEvent(LifecycleEvent):
     duration_ms: float = 0.0
     raw_usage: Optional[dict] = None
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
+    user_id: Optional[str] = None      # per-user usage attribution (spans only)
+    session_id: Optional[str] = None   # per-session correlation (spans only)

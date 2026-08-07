@@ -20,6 +20,7 @@ plugins/*
 /outputs/dev_loop_runs/
 examples/**/*.py
 !examples/autonomous_analyst/**/*.py
+!examples/data/whatif_scenario_e2e.py
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
