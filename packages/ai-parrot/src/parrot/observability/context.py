@@ -1,18 +1,28 @@
-"""Agent-identity ContextVar for per-agent cost and usage metrics.
+"""Agent-identity and user-context ContextVars for observability.
 
-FEAT-228 TASK-1499. Provides a task-local carrier that the bot sets around
+FEAT-228 TASK-1499. Provides task-local carriers that the bot sets around
 each public invocation and the LLM client reads when building its lifecycle
 events. Because ``ContextVar`` values are copied into tasks spawned via
 ``asyncio.create_task``, any LLM client call made within the invocation
-observes the correct agent name. Nested invocations push/pop their own
-token, so an inner agent's calls are attributed to the inner agent and the
-outer value is restored on exit.
+observes the correct values. Nested invocations push/pop their own
+tokens, so an inner agent's calls are attributed to the inner agent and the
+outer values are restored on exit.
 
 Public surface:
   * ``current_agent_name`` — module-level ``ContextVar[Optional[str]]`` with
     default ``None``.
+  * ``current_user_id`` — module-level ``ContextVar[Optional[str]]`` with
+    default ``None``. Carries the ``user_id`` from the bot invocation scope
+    so OTEL span attributes can include per-user identity for usage tracking
+    (e.g. OpenLIT per-user dashboards). NEVER used in metric labels
+    (cardinality explosion).
+  * ``current_session_id`` — module-level ``ContextVar[Optional[str]]`` with
+    default ``None``. Same rationale as ``current_user_id``.
   * ``agent_identity(name)`` — context-manager helper that does a token-based
     ``set()`` / ``reset()`` so nested scopes restore the prior value.
+  * ``invocation_context(agent_name, user_id, session_id)`` — context-manager
+    that binds all three ContextVars atomically. Preferred over setting them
+    individually.
 
 Stdlib only — no third-party dependency.
 """
@@ -21,10 +31,24 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Iterator, Optional
 
-__all__ = ["current_agent_name", "agent_identity"]
+__all__ = [
+    "current_agent_name",
+    "current_user_id",
+    "current_session_id",
+    "agent_identity",
+    "invocation_context",
+]
 
 current_agent_name: ContextVar[Optional[str]] = ContextVar(
     "parrot_current_agent_name", default=None
+)
+
+current_user_id: ContextVar[Optional[str]] = ContextVar(
+    "parrot_current_user_id", default=None
+)
+
+current_session_id: ContextVar[Optional[str]] = ContextVar(
+    "parrot_current_session_id", default=None
 )
 
 
@@ -54,3 +78,38 @@ def agent_identity(name: Optional[str]) -> Iterator[None]:
         yield
     finally:
         current_agent_name.reset(token)
+
+
+@contextmanager
+def invocation_context(
+    agent_name: Optional[str],
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> Iterator[None]:
+    """Bind agent name, user_id, and session_id for the duration of the block.
+
+    Uses token-based ``set()`` / ``reset()`` on all three ContextVars so
+    nested invocations restore the prior values correctly on exit.
+
+    Args:
+        agent_name: The ``AbstractBot.name`` of the invoking agent.
+        user_id: The user identifier from the invocation scope.
+        session_id: The session identifier from the invocation scope.
+
+    Example::
+
+        with invocation_context("porygon", user_id="u-42", session_id="s-7"):
+            # current_agent_name.get() == "porygon"
+            # current_user_id.get() == "u-42"
+            # current_session_id.get() == "s-7"
+        # all three restored to their prior values
+    """
+    tok_agent = current_agent_name.set(agent_name)
+    tok_user = current_user_id.set(user_id)
+    tok_session = current_session_id.set(session_id)
+    try:
+        yield
+    finally:
+        current_session_id.reset(tok_session)
+        current_user_id.reset(tok_user)
+        current_agent_name.reset(tok_agent)

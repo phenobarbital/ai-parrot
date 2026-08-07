@@ -158,13 +158,25 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         self.system_prompt = self.system_prompt_template
         self.voice_config = voice_config or VoiceConfig()
         self._voice_tools = tools or []
-        # Additional client configuration
+        # Additional client configuration — provider-agnostic: captures
+        # both Gemini/VertexAI and Nova/Bedrock credentials so
+        # _resolve_llm_config() can forward them to the appropriate client.
         self._client_config = {
+            # Gemini / VertexAI
             'api_key': kwargs.get('api_key'),
             'vertexai': kwargs.get('vertexai', False),
             'project': kwargs.get('project'),
             'location': kwargs.get('location'),
             'credentials_file': kwargs.get('credentials_file'),
+            # Nova / Bedrock (FEAT-315 — previously missing, so NovaClient
+            # never received explicit AWS credentials from VoiceBot and fell
+            # back to the SDK's default chain, which could resolve to a
+            # different identity than the one the caller intended).
+            'aws_access_key': kwargs.get('aws_access_key'),
+            'aws_secret_key': kwargs.get('aws_secret_key'),
+            'aws_id': kwargs.get('aws_id'),
+            'region': kwargs.get('region'),
+            'region_prefix': kwargs.get('region_prefix'),
         }
 
     def _default_voice_prompt(self) -> str:
@@ -209,6 +221,24 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             # for the new None default, incorrectly resolving to None
             # instead of falling back to "nova-2-sonic".
             resolved_model = model or self.voice_config.model or "nova-2-sonic"
+
+            # Resolve Nova-Sonic-specific credentials from navconfig/env
+            # when the caller didn't pass them explicitly.  This mirrors
+            # the standalone example (examples/clients/nova/audio.py) which
+            # reads AWS_NOVA_SONIC_KEY_ID / _SECRET_KEY / _REGION and
+            # passes them to NovaClient — without this fallback,
+            # VoiceBot-created NovaClients never see those vars and fall
+            # through to the SDK default chain (which may resolve to an
+            # identity without Bedrock access → AccessDeniedException).
+            nova_config = dict(self._client_config)
+            if not nova_config.get('aws_access_key'):
+                from navconfig import config as _navconfig
+                nova_config['aws_access_key'] = _navconfig.get("AWS_NOVA_SONIC_KEY_ID")
+                if not nova_config.get('aws_secret_key'):
+                    nova_config['aws_secret_key'] = _navconfig.get("AWS_NOVA_SONIC_SECRET_KEY")
+                if not nova_config.get('region'):
+                    nova_config['region'] = _navconfig.get("AWS_NOVA_SONIC_REGION")
+
             return LLMConfig(
                 provider='nova',
                 client_class=NovaClient,
@@ -226,7 +256,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 # An explicit voice_id kwarg to _resolve_llm_config() still
                 # flows through via **kwargs below.
                 extra={
-                    **{k: v for k, v in self._client_config.items() if v is not None},
+                    **{k: v for k, v in nova_config.items() if v is not None},
                     **kwargs
                 }
             )

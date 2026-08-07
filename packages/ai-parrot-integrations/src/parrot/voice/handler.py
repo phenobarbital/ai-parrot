@@ -134,12 +134,21 @@ class BotConfig:
     tools: Optional[List[Any]] = None
     voice_config: Optional[VoiceConfig] = None
 
-    # Additional client configuration
+    # Additional client configuration — Gemini / VertexAI
     api_key: Optional[str] = None
     vertexai: bool = False
     project: Optional[str] = None
     location: Optional[str] = None
     credentials_file: Optional[str] = None
+
+    # Nova / Bedrock (FEAT-315 — required for VoiceBot to forward AWS
+    # credentials to NovaClient; without these the SDK falls back to its
+    # default credential chain which may resolve to the wrong identity).
+    aws_access_key: Optional[str] = None
+    aws_secret_key: Optional[str] = None
+    aws_id: Optional[str] = None
+    region: Optional[str] = None
+    region_prefix: Optional[str] = None
 
     def as_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""

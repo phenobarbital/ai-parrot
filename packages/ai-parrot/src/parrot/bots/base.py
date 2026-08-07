@@ -53,7 +53,12 @@ from parrot.core.events.lifecycle.events import (
     InvokeFailedEvent,
 )
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
-from parrot.observability.context import current_agent_name
+# user_id/session_id ContextVars: per-user usage attribution in OTEL span attributes
+from parrot.observability.context import (
+    current_agent_name,
+    current_session_id,
+    current_user_id,
+)
 
 # FEAT-252 (TASK-1612): the module-level egress scrubber singleton that used
 # to live here was removed in FEAT-396 (TASK-2029) — the unified OUTPUT
@@ -195,7 +200,10 @@ class BaseBot(AbstractBot):
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
         # Token-based set/reset is nested-safe (inner agents restore outer value).
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
         try:
             return await self._conversation_body(
                 question=question,
@@ -219,6 +227,8 @@ class BaseBot(AbstractBot):
                 **kwargs,
             )
         finally:
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)
 
     async def _conversation_body(
@@ -608,7 +618,10 @@ class BaseBot(AbstractBot):
             AIMessage: The response from the LLM
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -785,6 +798,8 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     # ── ask() lifecycle hooks (overridden by mixins) ──
@@ -977,7 +992,10 @@ class BaseBot(AbstractBot):
             AIMessage or formatted output based on output_mode
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1605,6 +1623,8 @@ class BaseBot(AbstractBot):
         finally:
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     async def ask_stream(
@@ -1630,7 +1650,10 @@ class BaseBot(AbstractBot):
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1957,4 +1980,6 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self._current_trace_context = None
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
