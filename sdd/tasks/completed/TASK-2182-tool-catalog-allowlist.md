@@ -163,10 +163,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-07
+**Notes**: Implemented `ArgSummary`/`ToolCatalogEntry`/`build_catalog`/
+`check_allowlist`/`validate_with_allowlist` in
+`packages/ai-parrot/src/parrot/tools/execution_plan/catalog.py`.
+`build_catalog` preserves `tool_manager.list_tools()` order (not
+allowlist order) for a stable catalog; unregistered allowlisted names
+raise `ValueError` naming them. `check_allowlist` layers one
+`tool_not_allowed` `ValidationIssue` per offending node on top of the
+frozen validator (never patches `validator.py`). `validate_with_allowlist`
+calls `validate_plan()` then appends into the SAME `report.issues` list
+(mutates the dataclass in place, per the task's "do not subclass"
+constraint) so the combined report is genuinely one pass. `args_summary`
+is bounded (120-char description cap per arg, no JSON-schema dumps) and
+empty for both `args_schema=None` and the default
+`AbstractToolArgsSchema`. 10/10 new tests pass (`pytest packages/ai-
+parrot/tests/tools/execution_plan/test_catalog.py -v`), including the
+shared-ToolManager scenario (tool registered but not allowlisted → error
+pre-execution) and the combined-report single-pass test (`unknown_tool` +
+`tool_not_allowed` together). `ruff check --select F,E9` clean.
 
 **Deviations from spec**: none
