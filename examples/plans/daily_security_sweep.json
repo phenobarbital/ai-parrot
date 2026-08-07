@@ -1,0 +1,90 @@
+{
+  "name": "daily_security_sweep",
+  "objective": "Ingest yesterday's Prowler reports, diff against the previous scan, and map new critical findings to SOC2 controls.",
+  "nodes": [
+    {
+      "id": "listing",
+      "tool": "s3_filter_reports",
+      "args": {
+        "scanner": "prowler",
+        "date": "{params.date}"
+      },
+      "store_as": "listing",
+      "facets": {
+        "counts": {
+          "n_reports": "keys[]"
+        }
+      },
+      "description": "Catalog yesterday's report objects"
+    },
+    {
+      "id": "fetch",
+      "tool": "s3_get_latest_report",
+      "args": {
+        "key": "{item}"
+      },
+      "store_as": "report_{index}",
+      "depends_on": [
+        "listing"
+      ],
+      "when": "ctx.artifacts.listing.n_reports > 0",
+      "for_each": {
+        "source": "{artifacts.listing}",
+        "select": "keys[]",
+        "max_concurrency": 16
+      },
+      "facets": {
+        "counts": {
+          "n_findings": "findings[]"
+        },
+        "group_counts": {
+          "by_severity": "findings[].severity"
+        }
+      },
+      "timeout": 120.0,
+      "description": "Fetch every report body into working memory"
+    },
+    {
+      "id": "diff",
+      "tool": "compare_scans",
+      "args": {
+        "current": "{artifacts.fetch}",
+        "window_days": 1
+      },
+      "store_as": "deltas",
+      "depends_on": [
+        "fetch"
+      ],
+      "when": "ctx.status.fetch != \"error\"",
+      "facets": {
+        "counts": {
+          "n_new": "new[]",
+          "n_resolved": "resolved[]"
+        }
+      },
+      "description": "Deterministic drift between scans"
+    },
+    {
+      "id": "soc2",
+      "tool": "map_report_to_soc2",
+      "args": {
+        "findings": "{artifacts.diff}"
+      },
+      "store_as": "soc2_mapping",
+      "depends_on": [
+        "diff"
+      ],
+      "when": "ctx.artifacts.diff.n_new > 0",
+      "facets": {
+        "group_counts": {
+          "by_control": "mappings[].control_id"
+        }
+      },
+      "description": "Map new findings to TSC controls (no LLM)"
+    }
+  ],
+  "metadata": {
+    "max_parallel_tasks": 16,
+    "durable": true
+  }
+}

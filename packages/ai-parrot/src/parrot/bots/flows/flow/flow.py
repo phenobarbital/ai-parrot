@@ -732,10 +732,26 @@ class AgentsFlow(PersistenceMixin):
                     successors=succs,
                 )
             elif node_type in ("start", "end"):
-                fresh[nid] = cls(
+                # StartNode/EndNode declare no `fsm` field (only AgentNode
+                # does), yet `_run_node()` unconditionally calls
+                # `node.fsm.schedule()/.start()/.succeed()/.fail()` for
+                # EVERY dispatched node. The programmatic branch above
+                # (`self._definition is None`) already papers over this via
+                # `node.model_copy(update={"fsm": new_fsm})`; the
+                # definition-driven branch never did, because no existing
+                # FlowDefinition-based flow in this codebase used "start"/
+                # "end" node types before FEAT-419's `plan/compile.py::
+                # to_flow_definition()` started emitting `__start__`/
+                # `__end__` sentinels unconditionally. Mirror the same
+                # model_copy patch here so a defined-then-run flow with
+                # start/end sentinels does not crash on its first dispatch.
+                start_end_node = cls(
                     node_id=nid,
                     dependencies=deps,
                     successors=succs,
+                )
+                fresh[nid] = start_end_node.model_copy(
+                    update={"fsm": AgentTaskMachine(agent_name=nid)}
                 )
             else:
                 # Custom node type: prefer a registered factory so the node can

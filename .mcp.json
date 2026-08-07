@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "wikitoolkit": {
-      "command": "wikitoolkit",
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit",
       "args": [
         "mcp"
       ],

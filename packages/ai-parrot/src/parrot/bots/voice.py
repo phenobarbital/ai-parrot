@@ -5,38 +5,43 @@ Extends BaseBot to support voice input/output using native speech-to-speech
 models like Gemini Live API.
 """
 from __future__ import annotations
-from typing import (
-    Optional,
-    Union,
-    List,
-    Dict,
-    Any,
-    AsyncIterator,
-    Type,
-    Callable,
-)
+
 import asyncio
 import uuid
-from ..tools import AbstractTool
-from ..tools.manager import ToolDefinition
+from dataclasses import fields
+from datetime import datetime
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    Union,
+)
+
+# Mixin imports for A2A and MCP support
+from ..a2a.server import A2AEnabledMixin
 from ..clients.base import AbstractClient
 from ..clients.live import (
     GeminiLiveClient,
-    LiveVoiceResponse,
     LiveCompletionUsage,
+    LiveVoiceResponse,
 )
+
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
 # _create_llm_client()'s return value (spec §3 Module 7).
 from ..clients.protocols import VoiceCapable
+from ..mcp import MCPEnabledMixin, MCPServerConfig
+from ..memory import ConversationTurn
+
+# Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
+from ..models.voice import AudioFormat, VoiceConfig, VoiceStreamOptions
+from ..tools import AbstractTool
+from ..tools.manager import ToolDefinition
 from .base import BaseBot
 from .prompts.builder import PromptBuilder
-# Mixin imports for A2A and MCP support
-from ..a2a.server import A2AEnabledMixin
-from ..mcp import MCPEnabledMixin, MCPServerConfig
-# Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
-from ..models.voice import VoiceConfig, AudioFormat
-from datetime import datetime
-from ..memory import ConversationTurn
 
 BASIC_VOICE_PROMPT_TEMPLATE = """Your name is $name Agent.
 <system_instructions>
@@ -135,6 +140,22 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             **kwargs
         )
         self.system_prompt_template = system_prompt or self._default_voice_prompt() or self.system_prompt_template
+        # Code-review finding (FEAT-418, TASK-2178): AbstractBot.__init__()
+        # never initializes the ``system_prompt`` property's backing
+        # ``_system_prompt_template`` attribute (it only ever gets set via
+        # the ``system_prompt.setter`` — nothing in the synchronous
+        # construction path calls it, only ``system_prompt_template``, a
+        # separate legacy attribute). A freshly constructed VoiceBot (via
+        # ``VoiceBot(...)`` or ``create_voice_bot(...)``, INCLUDING
+        # VoiceChatHandler's default ``bot_factory``, which does not run
+        # the async ``configure()`` flow) raised ``AttributeError`` the
+        # moment anything read ``bot.system_prompt`` —
+        # ``VoiceChatHandler._run_voice_session()`` does exactly that
+        # (``handler.py``, ``system_prompt=bot.system_prompt``). Routing
+        # through the property setter here (not a new attribute
+        # assignment) closes the gap for every VoiceBot, not just this
+        # feature's dual-provider example.
+        self.system_prompt = self.system_prompt_template
         self.voice_config = voice_config or VoiceConfig()
         self._voice_tools = tools or []
         # Additional client configuration
@@ -194,8 +215,17 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 model=resolved_model,
                 temperature=kwargs.get('temperature', self.voice_config.temperature),
                 max_tokens=kwargs.get('max_tokens', self.voice_config.max_tokens),
+                # FEAT-418 (TASK-2173): no longer forces
+                # self.voice_config.voice_name (default "Puck", a Gemini
+                # voice) into Nova's constructor-level voice_id — that
+                # bypassed NovaAudio._resolve_voice()'s catalog validation
+                # entirely (only per-call overrides get validated). The
+                # native voice now flows through the per-call
+                # VoiceStreamOptions.voice field (ask_stream() below),
+                # which NovaAudio validates on every call (TASK-2169/2170).
+                # An explicit voice_id kwarg to _resolve_llm_config() still
+                # flows through via **kwargs below.
                 extra={
-                    'voice_id': kwargs.get('voice_id', self.voice_config.voice_name),
                     **{k: v for k, v in self._client_config.items() if v is not None},
                     **kwargs
                 }
@@ -531,18 +561,23 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             assistant_transcript = ""
             started_at = None
 
-            # FEAT-416 (TASK-2151): thread VoiceConfig inference/parallel-
-            # tool-execution parameters through to stream_voice() — any of
-            # these explicitly present in **kwargs win over the
-            # VoiceConfig-derived default (dict-literal unpacking: later
-            # keys override earlier ones).
-            voice_stream_kwargs = {
-                'temperature': self.voice_config.temperature,
-                'max_tokens': self.voice_config.max_tokens,
-                'top_p': self.voice_config.top_p,
-                'parallel_tool_execution': self.voice_config.parallel_tool_execution,
-                **kwargs,
+            # FEAT-418 (TASK-2173): project VoiceConfig into the single
+            # per-call VoiceStreamOptions object instead of an ad-hoc dict
+            # (spec §3 Module 7) — collapses this, VoiceSession's, and
+            # VoiceChatHandler's three divergent threading paths into one.
+            # Only forward the subset of **kwargs that VoiceStreamOptions
+            # actually declares as overrides (introspected via
+            # dataclasses.fields, not hardcoded, so it can't drift) —
+            # arbitrary extra kwargs (e.g. initial_context/use_vectors/ctx,
+            # consumed above) must NOT be passed to to_stream_options(),
+            # which raises on unknown fields. Preserves today's precedence
+            # exactly: explicit kwargs win over the VoiceConfig-derived
+            # default.
+            option_field_names = {f.name for f in fields(VoiceStreamOptions)}
+            option_overrides = {
+                k: v for k, v in kwargs.items() if k in option_field_names
             }
+            options = self.voice_config.to_stream_options(**option_overrides)
 
             async with self._llm as client:
                 async for response in client.stream_voice(
@@ -551,7 +586,8 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                     session_id=session_id,
                     user_id=user_id,
                     stt_only=stt_only,
-                    **voice_stream_kwargs
+                    options=options,
+                    **kwargs,
                 ):
                     # Handle memory persistence if enabled
                     if self.conversation_memory:
@@ -578,12 +614,23 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                             assistant_transcript = ""
                             started_at = datetime.now()
 
-                        # Accumulate transcripts
-                        if response.metadata:
-                            if "user_transcription" in response.metadata:
-                                user_transcript += " " + response.metadata["user_transcription"]
-                            if "assistant_transcription" in response.metadata:
-                                assistant_transcript += " " + response.metadata["assistant_transcription"]
+                        # FEAT-418 (TASK-2173): accumulate transcripts from
+                        # the canonical role attribute instead of the
+                        # provider-specific metadata["user_transcription"]/
+                        # metadata["assistant_transcription"] keys — the
+                        # former is REMOVED by TASK-2167 (reading it here
+                        # after that lands would silently persist empty
+                        # user turns, spec §7 Known Risks); the latter only
+                        # ever populated from Gemini's separate
+                        # output-transcription frames (never from Nova,
+                        # and duplicated Gemini's own role="assistant" text
+                        # chunks). role is lowercase "user"/"assistant" on
+                        # both providers as of TASK-2167/2170.
+                        if response.text:
+                            if response.role == "user":
+                                user_transcript += " " + response.text
+                            elif response.role == "assistant":
+                                assistant_transcript += " " + response.text
                     
                     yield response
 

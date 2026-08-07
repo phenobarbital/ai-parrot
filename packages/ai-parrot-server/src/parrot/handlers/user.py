@@ -477,7 +477,7 @@ class UserSocketManager(WebSocketManager):
             # Set TTL of 1 hour for location data
             await self.redis.expire(key, 3600)
 
-            self.logger.info(f'📍 Location received for {username}: lat={latitude}, lon={longitude}')
+            self.logger.info('📍 Location update received for %s', username)
         except Exception as e:
             self.logger.error(f'Error storing geolocation: {e}')
 

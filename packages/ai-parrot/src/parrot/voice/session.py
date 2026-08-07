@@ -24,11 +24,11 @@ import base64
 import contextlib
 import logging
 import uuid
-from typing import AsyncIterator, Awaitable, Callable, Optional
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from ..clients.live import LiveVoiceResponse
 from ..clients.protocols import VoiceCapable
-from ..models.voice import VoiceConfig
+from ..models.voice import VoiceConfig, VoiceStreamOptions
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,18 @@ class VoiceSession:
         voice_config: Voice configuration; defaults to ``VoiceConfig()``.
         session_id: Stable identifier reported back to the caller and
             passed to ``stream_voice()`` for tracking.
+        stt_only: Request speech-to-text-only behavior on every turn
+            (FEAT-418, TASK-2172). Forwarded into the projected
+            ``VoiceStreamOptions`` on every ``stream_voice()`` call. If
+            ``client.voice_capabilities.native_stt_only`` is ``False``
+            (e.g. Nova, which always generates a spoken response), this
+            never raises — it emits one ``capability_notice`` frame per
+            session instead (spec §7: never filter, never fail).
+
+    Raises:
+        ValueError: At construction, if ``voice_config``'s audio formats
+            or sample rates are not declared as supported by
+            ``client.voice_capabilities`` (FEAT-418, TASK-2172 preflight).
     """
 
     def __init__(
@@ -55,22 +67,100 @@ class VoiceSession:
         client: VoiceCapable,
         send_fn: Callable[[dict], Awaitable[None]],
         system_prompt: str,
-        voice_config: Optional[VoiceConfig] = None,
-        session_id: Optional[str] = None,
+        voice_config: VoiceConfig | None = None,
+        session_id: str | None = None,
+        stt_only: bool = False,
     ) -> None:
         self.client = client
         self.send_fn = send_fn
         self.system_prompt = system_prompt
         self.voice_config = voice_config or VoiceConfig()
         self.session_id = session_id or str(uuid.uuid4())
+        self.stt_only = stt_only
         self.logger = logger.getChild("session")
 
-        self._queue: Optional[asyncio.Queue] = None
-        self._task: Optional[asyncio.Task] = None
+        self._queue: asyncio.Queue | None = None
+        self._task: asyncio.Task | None = None
         self._turn_no = 0
         # FEAT-416 (TASK-2150): lifetime reconnection counter — resets
         # only on __init__, not per-turn (spec §3 Module 6 Key Constraints).
         self._reconnect_count = 0
+        # FEAT-418 (TASK-2172): capability names already notified this
+        # session — a notice fires at most once per session, not per turn.
+        self._notified_capabilities: set = set()
+
+        # FEAT-418 (TASK-2172): audio-format preflight. Raises at
+        # construction (fail fast) rather than mid-stream; the knob-level
+        # check (stt_only, etc.) is intentionally NOT here — it must never
+        # raise (spec §7) and happens per-turn in _run_turn() instead.
+        self._preflight_audio_formats()
+
+    # -- capability checks (FEAT-418, TASK-2172) -----------------------
+
+    def _preflight_audio_formats(self) -> None:
+        """Validate ``voice_config``'s audio formats/sample rates against
+        ``client.voice_capabilities`` at construction time.
+
+        Raises:
+            ValueError: Naming both the requested and the supported side,
+                so the mismatch is immediately actionable. Both current
+                providers (Gemini, Nova) declare identical formats
+                (PCM 16k in / 24k out) — this is descriptive today, but
+                becomes load-bearing the moment a non-PCM provider lands.
+        """
+        caps = self.client.voice_capabilities
+        checks = (
+            ("input_format", self.voice_config.input_format, caps.input_formats),
+            ("output_format", self.voice_config.output_format, caps.output_formats),
+            ("input_sample_rate", self.voice_config.input_sample_rate, caps.input_sample_rates),
+            ("output_sample_rate", self.voice_config.output_sample_rate, caps.output_sample_rates),
+        )
+        for name, requested, supported in checks:
+            if requested not in supported:
+                raise ValueError(
+                    f"VoiceConfig.{name}={requested!r} is not supported by "
+                    f"{caps.provider.value} (supports: {sorted(map(str, supported))})"
+                )
+
+    def _check_capability_notices(self, options: VoiceStreamOptions) -> list[dict]:
+        """Compare the projected *options* against the client's declared
+        capabilities, returning any new ``capability_notice`` frames.
+
+        Never raises — an unsupported-but-requested knob is reported, not
+        rejected (spec §7: e.g. ``stt_only=True`` on Nova must still
+        proceed and still generate a spoken response). Each capability
+        name notifies at most once per session (tracked in
+        ``self._notified_capabilities``), not per turn and not per frame.
+
+        Args:
+            options: The per-call options projected for this turn.
+
+        Returns:
+            A list of ``capability_notice`` frame dicts (usually 0 or 1).
+        """
+        notices: list[dict] = []
+        caps = self.client.voice_capabilities
+
+        if (
+            options.stt_only
+            and not caps.native_stt_only
+            and "stt_only" not in self._notified_capabilities
+        ):
+            self._notified_capabilities.add("stt_only")
+            message = (
+                f"{caps.provider.value} does not natively support "
+                f"stt_only — the model response is still generated."
+            )
+            self.logger.warning("VoiceSession: %s", message)
+            notices.append({
+                "type": "capability_notice",
+                "session_id": self.session_id,
+                "capability": "stt_only",
+                "provider": caps.provider.value,
+                "message": message,
+            })
+
+        return notices
 
     # -- turn lifecycle -----------------------------------------------------
 
@@ -150,7 +240,7 @@ class VoiceSession:
     async def _audio_iterator(
         self,
         queue: asyncio.Queue,
-    ) -> AsyncIterator[Optional[bytes]]:
+    ) -> AsyncIterator[bytes | None]:
         """Yield queued PCM chunks forever, until the turn task is cancelled.
 
         Deliberately does **not** stop on the ``None`` sentinel: ``None``
@@ -179,10 +269,25 @@ class VoiceSession:
             # from the same (still-live) audio queue (spec §3 Module 6).
             while True:
                 reconnecting = False
+                # FEAT-418 (TASK-2171): project VoiceConfig into per-call
+                # options on EVERY iteration of this loop — including
+                # reconnects — so a reconnect that silently drops the
+                # caller's temperature/max_tokens/voice/etc. (the bug this
+                # task fixes) cannot happen. Recomputed each iteration
+                # rather than hoisted above the loop, in case a subclass
+                # mutates ``self.voice_config`` between reconnects.
+                # FEAT-418 (TASK-2172): self.stt_only is folded in as an
+                # explicit override, since VoiceConfig itself carries no
+                # stt_only field.
+                options = self.voice_config.to_stream_options(stt_only=self.stt_only)
+                for notice in self._check_capability_notices(options):
+                    await self._send(notice)
                 stream = self.client.stream_voice(
                     self._audio_iterator(queue),
                     system_prompt=self.system_prompt,
                     session_id=self.session_id,
+                    stt_only=self.stt_only,
+                    options=options,
                 )
                 try:
                     async for resp in stream:
@@ -250,21 +355,42 @@ class VoiceSession:
             if self._task is asyncio.current_task():
                 self._queue = None
 
-    async def _relay(self, resp: LiveVoiceResponse, turn_no: int) -> None:
-        """Translate one :class:`LiveVoiceResponse` into transport frames."""
+    def build_frames(self, resp: LiveVoiceResponse, turn_no: int) -> list[dict]:
+        """Translate one :class:`LiveVoiceResponse` into transport frames.
+
+        Relay extension hook (FEAT-418, spec §3 Module 6, G5). Subclasses
+        override THIS method to emit a richer/different frame protocol —
+        e.g. ``_HandlerVoiceSession`` in ai-parrot-integrations — without
+        re-implementing the turn loop or reconnection logic in
+        ``_run_turn()``. ``_relay()`` calls this and sends whatever it
+        returns, in order; it never needs to know about ``_send()``.
+
+        The default implementation reproduces the frame construction that
+        previously lived directly in ``_relay()``, byte-for-byte, so
+        existing frontends and tests see no change.
+
+        Args:
+            resp: The provider response to translate.
+            turn_no: The current turn number.
+
+        Returns:
+            A list of JSON-serializable frame dicts, in send order.
+        """
+        frames: list[dict] = []
+
         # Membership, not truthiness: a modelled provider error can carry an
         # empty message, and treating that as "no error" silently reports
         # the turn as complete.
         if "error" in resp.metadata:
-            await self._send({
+            frames.append({
                 "type": "error",
                 "turn": turn_no,
                 "message": resp.metadata["error"] or "Unknown voice provider error",
             })
-            return
+            return frames
 
         if resp.text:
-            await self._send({
+            frames.append({
                 "type": "text",
                 "turn": turn_no,
                 "text": resp.text,
@@ -272,7 +398,7 @@ class VoiceSession:
             })
 
         if resp.audio_data:
-            await self._send({
+            frames.append({
                 "type": "audio",
                 "turn": turn_no,
                 "audio_base64": base64.b64encode(resp.audio_data).decode("ascii"),
@@ -281,7 +407,7 @@ class VoiceSession:
             })
 
         for call in resp.tool_calls:
-            await self._send({
+            frames.append({
                 "type": "tool_call",
                 "turn": turn_no,
                 "name": call.name,
@@ -291,7 +417,7 @@ class VoiceSession:
             })
 
         if resp.is_interrupted:
-            await self._send({"type": "interrupted", "turn": turn_no})
+            frames.append({"type": "interrupted", "turn": turn_no})
 
         if resp.is_complete:
             usage = resp.usage
@@ -303,7 +429,7 @@ class VoiceSession:
                     f" ({usage.tool_calls_executed} tool call(s))"
                     if usage.tool_calls_executed else "",
                 )
-            await self._send({
+            frames.append({
                 "type": "turn_complete",
                 "turn": turn_no,
                 "reconnect_required": bool(resp.metadata.get("reconnect_required")),
@@ -314,6 +440,13 @@ class VoiceSession:
                     "tool_calls_executed": usage.tool_calls_executed,
                 } if usage else None,
             })
+
+        return frames
+
+    async def _relay(self, resp: LiveVoiceResponse, turn_no: int) -> None:
+        """Send every frame :meth:`build_frames` produces for *resp*."""
+        for frame in self.build_frames(resp, turn_no):
+            await self._send(frame)
 
     async def _send(self, payload: dict) -> None:
         """Relay one frame via the injected ``send_fn``.

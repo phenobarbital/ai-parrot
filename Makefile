@@ -3,7 +3,7 @@
 
 .PHONY: venv install install-core install-tools install-loaders install-codex-sdk-editable \
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
-		generate-registry check-registry build-codec-rs \
+		generate-registry check-registry build-codec-rs build-navrules-rs build-rust \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
 		install-supertonic docker-tool-worker docker-integrations docker-dev
@@ -134,6 +134,7 @@ install-whisperx: install-system-deps
 # Install production: core + tools (base deps only, no extras)
 install:
 	uv sync --frozen --no-dev --all-packages
+	$(MAKE) build-rust
 	@echo "Production dependencies installed (core + tools + loaders, base deps)."
 	@echo "Use 'make install-tools' or 'make install-loaders' for extras."
 
@@ -175,7 +176,7 @@ install-loaders-all:
 install-all:
 	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
 	uv pip install querysource
-	$(MAKE) build-codec-rs
+	$(MAKE) build-rust
 	@echo "All packages installed with ALL extras (except gemma4)."
 
 # Generate lock files (uv only)
@@ -198,7 +199,7 @@ endif
 develop:
 	uv sync --all-packages --all-extras --no-extra gemma4
 	$(MAKE) build-inplace
-	$(MAKE) build-codec-rs
+	$(MAKE) build-rust
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 
 # Fast dev install: all packages but skip heavy ML deps
@@ -207,7 +208,7 @@ develop-fast:
 	uv pip install "Cython==3.0.11" "setuptools>=67.6.1" "wheel>=0.44.0"
 	uv sync --all-packages
 	$(MAKE) build-inplace
-	$(MAKE) build-codec-rs
+	$(MAKE) build-rust
 	@echo "Fast dev environment ready (no heavy ML deps)."
 
 # Full ML stack (slow install, requires GPU for optimal performance)
@@ -293,7 +294,7 @@ install-supertonic:
 	@echo "   works out of the box. Voices: M1-M5, F1-F5 (TTSConfig(voice='F1'), default M1)."
 
 # Build and publish all packages
-release: lint test clean check-registry build-codec-rs
+release: lint test clean check-registry build-rust
 	uv build --package ai-parrot
 	uv build --package ai-parrot-tools
 	uv build --package ai-parrot-loaders
@@ -306,6 +307,7 @@ release: lint test clean check-registry build-codec-rs
 	uv build --package ai-parrot-advisors
 	uv build --package navrules
 	cd packages/ai-parrot/src/parrot/codec-rs && maturin build --release --out $(CURDIR)/dist
+	cd packages/navrules && maturin build --release --out $(CURDIR)/dist
 	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
 	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
 	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
@@ -377,6 +379,20 @@ build-codec-rs:
 		echo "⚠  maturin not found — skipping parrot_codec (optional)."; \
 	fi
 
+# Build navrules Rust backend (PyO3 + rayon native matcher).
+# Requires: maturin + Rust toolchain. Skips gracefully if maturin is absent.
+build-navrules-rs:
+	@if command -v maturin >/dev/null 2>&1; then \
+		echo "Building navrules Rust backend..."; \
+		cd packages/navrules && maturin develop --release; \
+		echo "✅ navrules Rust backend installed."; \
+	else \
+		echo "⚠  maturin not found — skipping navrules Rust backend (optional)."; \
+	fi
+
+# Build all Rust extensions (parrot_codec + navrules)
+build-rust: build-codec-rs build-navrules-rs
+
 # Full build using uv (builds all workspace packages)
 build: clean
 	@echo "Building all workspace packages with uv..."
@@ -393,6 +409,7 @@ build: clean
 	uv build --package navrules
 	@if command -v maturin >/dev/null 2>&1; then \
 		cd packages/ai-parrot/src/parrot/codec-rs && maturin build --release --out $(CURDIR)/dist; \
+		cd $(CURDIR)/packages/navrules && maturin build --release --out $(CURDIR)/dist; \
 	fi
 
 # ============================================================
@@ -840,7 +857,9 @@ help:
 	@echo "    generate-registry   - Regenerate TOOL_REGISTRY from source"
 	@echo "    check-registry      - Check if TOOL_REGISTRY is up to date (CI)"
 	@echo "    build               - Build all workspace packages"
+	@echo "    build-rust          - Build all Rust extensions (parrot_codec + navrules)"
 	@echo "    build-codec-rs      - Build optional parrot_codec Rust extension"
+	@echo "    build-navrules-rs   - Build navrules Rust backend"
 	@echo "    release             - Build and publish all packages to PyPI"
 	@echo ""
 	@echo "  Quality:"

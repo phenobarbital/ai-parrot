@@ -16,12 +16,16 @@ from __future__ import annotations
 
 import functools
 import logging
+import re
 from pathlib import Path
 from typing import Union
 
 from .layers import PromptLayer, RenderPhase
 
 _logger = logging.getLogger(__name__)
+
+# Regex for safe agent identifiers — blocks path-traversal sequences.
+_SAFE_AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 # Import AGENT_CONTEXT_DIR at module level so tests can patch it.
 # The lazy import inside load_agent_context() is kept as a fallback comment
@@ -96,6 +100,12 @@ def load_agent_context(agent_id: str) -> str:
     Returns:
         File content as a string, or ``""`` if the file does not exist.
     """
+    # Guard against path-traversal via crafted agent_id values.
+    if not _SAFE_AGENT_ID.match(agent_id):
+        _logger.warning(
+            "Rejected unsafe agent_id for context lookup: %r", agent_id
+        )
+        return ""
     context_dir = Path(AGENT_CONTEXT_DIR)
     # Lazy directory creation: only attempt when the directory is absent.
     if not context_dir.exists():

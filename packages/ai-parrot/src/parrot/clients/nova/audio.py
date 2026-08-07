@@ -56,6 +56,25 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..live import LiveCompletionUsage, LiveToolCall, LiveVoiceResponse, VoiceTurnMetadata
 from ...models.bedrock_models import translate as translate_bedrock_model
+from ...models.voice import VoiceStreamOptions
+
+# Nova Sonic / Nova 2 Sonic synthesis voice catalog (FEAT-418, TASK-2169).
+#
+# Promoted from the docstring-only list at ``stream_voice()``'s ``**kwargs``
+# documentation (below) into an actual validated constant. All entries are
+# lowercase — Bedrock voice ids are lowercase, and ``NovaAudio._resolve_voice``
+# normalizes any requested voice before comparing against this set.
+#
+# NOTE (spec §8 open question, unresolved): this repo has no prior
+# machine-readable Nova Sonic voice catalog; the docstring's three
+# English-locale voices (``matthew``, ``tiffany``, ``amy``) are the only
+# ones independently verifiable from the existing codebase in this sandbox
+# (no live network access to re-confirm the full multilingual catalog
+# against the current AWS Bedrock Nova Sonic documentation). If the true
+# catalog is larger, `_resolve_voice()`'s warn-and-fall-back behavior
+# (never a hard reject) means an unlisted-but-valid voice degrades to a
+# logged warning rather than breaking the call — see Completion Note.
+NOVA_VOICE_CATALOG: frozenset = frozenset({"matthew", "tiffany", "amy"})
 
 
 def _require_voice_sdk() -> None:
@@ -279,6 +298,36 @@ class NovaAudio:
     # PCM format constants (spec §2/§7).
     INPUT_SAMPLE_RATE_HZ: int = 16000
     OUTPUT_SAMPLE_RATE_HZ: int = 24000
+
+    def _resolve_voice(self, requested: Optional[str]) -> str:
+        """Resolve and validate the effective Nova Sonic voice (FEAT-418).
+
+        Validates ``requested`` against :data:`NOVA_VOICE_CATALOG`
+        (case-insensitively — Bedrock voice ids are lowercase). An
+        out-of-catalog voice (e.g. ``"Puck"``, a Gemini voice sent here by
+        ``bots/voice.py:198`` before FEAT-418) warns and falls back to
+        ``self.voice_id`` rather than being passed through to Bedrock
+        unvalidated. Never mutates ``self.voice_id`` — resolved locally
+        per call, mirroring ``GeminiLiveClient._resolve_voice_name``.
+
+        Args:
+            requested: The per-call voice override
+                (``stream_voice(voice_id=...)``), or ``None`` to use the
+                constructor's default.
+
+        Returns:
+            The voice id to use for this call.
+        """
+        if requested is None:
+            return self.voice_id
+        normalized = requested.strip().lower()
+        if normalized in NOVA_VOICE_CATALOG:
+            return normalized
+        self.logger.warning(
+            "NovaAudio: voice %r is not in the known catalog; falling back to %r",
+            requested, self.voice_id,
+        )
+        return self.voice_id
 
     # ------------------------------------------------------------------
     # Thin SDK wrappers — isolate the Pre-Alpha bidirectional-stream API
@@ -715,6 +764,8 @@ class NovaAudio:
         system_prompt: Optional[str] = None,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        stt_only: bool = False,
+        options: Optional[VoiceStreamOptions] = None,
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """Stream bidirectional voice interaction via Nova Sonic.
@@ -733,11 +784,28 @@ class NovaAudio:
             system_prompt: Optional system instructions for the session.
             session_id: Session identifier for tracking.
             user_id: User identifier.
+            stt_only: Requests speech-to-text-only behavior (FEAT-418).
+                Nova Sonic has NO native STT-only mode — accepted without
+                raising, logged once (not per frame), and the model
+                response is still generated and still billed (resolved
+                decision, spec §8; see
+                :attr:`~parrot.models.voice.VoiceCapabilities.native_stt_only`
+                = ``False`` on this client's descriptor). This is honest,
+                not equivalent — do NOT filter the response to fake
+                STT-only.
+            options: Optional ``VoiceStreamOptions`` projection (FEAT-418).
+                ``temperature``/``max_tokens``/``top_p``/``voice``/
+                ``parallel_tool_execution`` are derived from it when not
+                explicitly present in ``**kwargs`` — an explicit kwarg
+                always wins over ``options``.
             **kwargs: ``voice_id`` (per-call synthesis voice override, e.g.
                 ``"matthew"``, ``"tiffany"``, ``"amy"`` — falls back to the
                 ``voice_id`` passed to the client's constructor; spec §8
-                resolved: expose ``voice_id`` per-call too) plus reserved
-                slots for future configuration (tool overrides, etc.).
+                resolved: expose ``voice_id`` per-call too),
+                ``temperature``/``max_tokens``/``top_p``/
+                ``parallel_tool_execution`` (take precedence over
+                ``options``, FEAT-418) plus reserved slots for future
+                configuration (tool overrides, etc.).
 
         Yields:
             :class:`LiveVoiceResponse` objects with audio, text, tool-call,
@@ -748,6 +816,18 @@ class NovaAudio:
 
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
+
+        # FEAT-418 (TASK-2170): Nova cannot suppress generation — accept
+        # stt_only without raising or filtering, and say so once per
+        # session (this call), not per frame.
+        if stt_only:
+            self.logger.info(
+                "NovaAudio: stt_only requested for session %s, but Nova "
+                "Sonic has no native STT-only mode — the model response "
+                "is still generated and still billed (native_stt_only="
+                "False; spec §8 resolved decision).",
+                session_id,
+            )
         # Code-review fix (FEAT-315): Nova Sonic / Nova 2 Sonic have NO
         # cross-region inference profiles (spec §6 "Verified AWS Facts") —
         # unlike the text/Converse path, the voice model ID must NEVER be
@@ -758,11 +838,24 @@ class NovaAudio:
         resolved_model = translate_bedrock_model(
             self.model or self.default_model, region_prefix=None
         )
-        resolved_voice_id = kwargs.get("voice_id") or self.voice_id
+        # FEAT-418 (TASK-2169/2170): explicit kwarg > options.voice >
+        # constructor default (_resolve_voice(None) falls back to
+        # self.voice_id). Validated against NOVA_VOICE_CATALOG with a
+        # warned fallback — previously passed straight to Bedrock
+        # unvalidated, so a Gemini voice like "Puck" (bots/voice.py:198)
+        # produced an opaque provider error instead of a graceful fallback.
+        requested_voice = kwargs["voice_id"] if "voice_id" in kwargs else (
+            options.voice if options is not None else None
+        )
+        resolved_voice_id = self._resolve_voice(requested_voice)
         # FEAT-416 (TASK-2148): gate concurrent tool execution on the
         # VoiceConfig-derived flag (VoiceBot wires this in TASK-2151).
         # Default False preserves current sequential behavior exactly.
-        parallel_tool_execution = kwargs.get("parallel_tool_execution", False)
+        # FEAT-418 (TASK-2170): explicit kwarg > options.parallel_tool_execution > False.
+        parallel_tool_execution = kwargs.get(
+            "parallel_tool_execution",
+            options.parallel_tool_execution if options is not None else False,
+        )
         prompt_name = str(uuid.uuid4())
         content_name = str(uuid.uuid4())
 
@@ -782,13 +875,20 @@ class NovaAudio:
 
         # FEAT-416 (TASK-2147): thread VoiceConfig inference parameters
         # through to the Nova Sonic sessionStart event instead of hardcoding
-        # them. Defaults match the previous hardcoded values exactly, so
-        # callers that don't pass these kwargs see no behavior change.
-        # VoiceBot wires these from VoiceConfig (TASK-2151); this task just
-        # opens the door.
-        temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 1024)
-        top_p = kwargs.get("top_p", 0.9)
+        # them. VoiceBot wires these from VoiceConfig (TASK-2151).
+        # FEAT-418 (TASK-2170): explicit kwarg > options field > hardcoded
+        # default. max_tokens default changed 1024 -> 4096 (the shared
+        # VoiceConfig default, spec §8 resolved decision); 8192 is
+        # accepted as an explicit override.
+        temperature = kwargs.get(
+            "temperature", options.temperature if options is not None else 0.7
+        )
+        max_tokens = kwargs.get(
+            "max_tokens", options.max_tokens if options is not None else 4096
+        )
+        top_p = kwargs.get(
+            "top_p", options.top_p if options is not None else 0.9
+        )
 
         await self._send_event(stream, {"event": {"sessionStart": {
             "inferenceConfiguration": {
@@ -937,7 +1037,12 @@ class NovaAudio:
                             accumulated_text += chunk_text
                         yield LiveVoiceResponse(
                             text=chunk_text,
-                            role=role,
+                            # FEAT-418 (TASK-2170): canonical lowercase
+                            # role at this single emission point only —
+                            # `role`/`turn_state.role` above keep Nova's
+                            # raw "USER"/"ASSISTANT" for the protocol-level
+                            # comparisons already in this function.
+                            role=role.lower() if role else None,
                             is_complete=False,
                             session_id=session_id,
                             turn_id=turn_id,

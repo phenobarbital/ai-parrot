@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime
 import asyncio
+import re
 import time
 import traceback
 from urllib.parse import urlparse, urlunparse
@@ -633,7 +634,9 @@ class AbstractTool(EventEmitterMixin, ABC):
             result = self.args_schema(**kwargs)
             if not result:
                 self.logger.warning(
-                    "Validation failed for %s with args: %s", self.name, kwargs
+                    "Validation failed for %s with args: %s",
+                    self.name,
+                    self._redact_keys(kwargs),
                 )
             return result
         except Exception as e:
@@ -641,6 +644,25 @@ class AbstractTool(EventEmitterMixin, ABC):
             raise ValueError(
                 f"Invalid arguments for {self.name}: {e}"
             ) from e
+
+    # ── Sensitive-key redaction for logging ─────────────────────────────────
+
+    _REDACT_PATTERNS = re.compile(
+        r"password|passwd|secret|token|api_key|apikey|credential|auth",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _redact_keys(cls, kwargs: dict) -> dict:
+        """Return a shallow copy of *kwargs* with sensitive-looking values masked.
+
+        Keys whose names match common credential patterns are replaced with
+        ``'***'`` so the dict is safe for logging without leaking secrets.
+        """
+        return {
+            k: "***" if cls._REDACT_PATTERNS.search(k) else v
+            for k, v in kwargs.items()
+        }
 
     # ── FEAT-176 lifecycle helpers ────────────────────────────────────────────
 

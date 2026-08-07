@@ -25,6 +25,16 @@ Usage:
 Location: parrot/clients/live.py
 """
 from __future__ import annotations
+
+import asyncio
+import base64
+import contextlib
+import inspect
+import logging
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 from typing import (
     Any,
     AsyncIterator,
@@ -33,25 +43,22 @@ from typing import (
     Optional,
     Union,
 )
-import uuid
-import asyncio
-import contextlib
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-import base64
-import inspect
-import logging
+
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 from navconfig import config
-# Import from parrot framework
-from .base import AbstractClient
+
+from ..memory import ConversationMemory
+from ..models.google import ALL_VOICE_PROFILES, GoogleVoiceModel
+from ..models.voice import (
+    AudioFormat, VoiceCapabilities, VoiceProvider, VoiceStreamOptions,
+)
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
-from ..memory import ConversationMemory
-from ..models.google import GoogleVoiceModel
+
+# Import from parrot framework
+from .base import AbstractClient
 
 # =============================================================================
 # Response Models with Usage Metadata
@@ -183,10 +190,13 @@ class LiveVoiceResponse:
     turn_id: Optional[str] = None
     user_id: Optional[str] = None
 
-    # Speaker attribution (FEAT-408)
+    # Speaker attribution (FEAT-408, canonicalized lowercase in FEAT-418)
     role: Optional[str] = None
-    """Speaker this frame is attributed to: "USER", "ASSISTANT", "TOOL", or
-    None when the provider does not report one (e.g. GeminiLiveClient)."""
+    """Speaker this frame is attributed to: "user" or "assistant" (canonical
+    lowercase form, FEAT-418). GeminiLiveClient sets this on every
+    model-originated and user-transcription frame as of FEAT-418
+    (previously always None here; user transcription instead traveled via
+    the now-removed metadata["user_transcription"])."""
 
     # Extra metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -607,8 +617,66 @@ class GeminiLiveClient(AbstractClient):
         # Tool adapter (lazy initialization)
         self._tool_adapter: Optional[LiveToolAdapter] = None
 
+        # Session resumption handle (FEAT-418, TASK-2168). Retained across
+        # stream_voice() calls on this client instance so a reconnect can
+        # resume with context instead of a cold start. Cleared when a
+        # handle is rejected/expired by the server.
+        self._resumption_handle: Optional[str] = None
+
         # Silence websockets.client debug logs
         logging.getLogger("websockets.client").setLevel(logging.INFO)
+
+    @property
+    def voice_capabilities(self) -> VoiceCapabilities:
+        """Describe what Gemini Live natively supports today (FEAT-418).
+
+        This descriptor reflects *current* behavior only — flags below are
+        flipped to ``True`` by later FEAT-418 tasks as each capability is
+        actually implemented. ``supports_top_p``/``supports_per_call_inference``
+        are ``True`` as of TASK-2166 (per-call ``temperature``/``max_tokens``/
+        ``top_p`` now reach ``_build_live_config()``); ``supports_per_call_voice``
+        is ``True`` as of TASK-2167 (per-call voice override, validated
+        against ``voice_catalog`` with a warned fallback) — canonical
+        ``role`` also lands in TASK-2167; ``emits_reconnect_signal``/
+        ``supports_session_resumption`` are ``True`` as of TASK-2168
+        (``GoAway``/1008-close now also set
+        ``metadata["reconnect_required"]``, and a session-resumption
+        handle is requested on every connect and retained across
+        reconnects). The provider conformance kit (TASK-2176) asserts
+        descriptor-vs-behavior consistency, so this must never claim a
+        capability ahead of the code that provides it.
+
+        Returns:
+            A frozen ``VoiceCapabilities`` instance for
+            ``VoiceProvider.GOOGLE_LIVE``.
+        """
+        return VoiceCapabilities(
+            provider=VoiceProvider.GOOGLE_LIVE,
+            native_stt_only=True,
+            supports_top_p=True,
+            supports_per_call_voice=True,
+            supports_per_call_inference=True,
+            parallel_tool_execution=True,
+            emits_reconnect_signal=True,
+            supports_session_resumption=True,
+            # google-genai's own docs attribute the Live API's fixed
+            # session-length limit to NOT using context-window
+            # compression; this client's _build_live_config() always
+            # requests context_window_compression with a sliding window
+            # (unconditional, pre-dates this task), so no fixed ceiling
+            # applies here — None per spec §3 Module 5 ("or None if the
+            # provider documents none under context-window compression").
+            max_session_seconds=None,
+            max_output_tokens=self.max_tokens,
+            input_formats=frozenset({AudioFormat.PCM_16K}),
+            output_formats=frozenset({AudioFormat.PCM_24K}),
+            input_sample_rates=frozenset({16000}),
+            output_sample_rates=frozenset({24000}),
+            voice_catalog=frozenset(
+                profile.voice_name for profile in ALL_VOICE_PROFILES
+            ),
+            default_voice="Puck",
+        )
 
     async def get_client(self) -> genai.Client:
         """
@@ -649,11 +717,45 @@ class GeminiLiveClient(AbstractClient):
             )
         return self._tool_adapter
 
+    def _resolve_voice_name(self, requested: Optional[str]) -> str:
+        """Resolve the effective voice name for a call (FEAT-418).
+
+        Validates ``requested`` against ``voice_capabilities.voice_catalog``
+        (seeded from ``parrot.models.google.ALL_VOICE_PROFILES``). An
+        out-of-catalog name warns once and falls back to the constructor's
+        ``self.voice_name`` rather than being passed through to the Live
+        API unvalidated — never mutates ``self.voice_name``, so concurrent
+        sessions on this client cannot interfere with each other.
+
+        Args:
+            requested: The per-call voice override, or ``None`` to use the
+                constructor's default.
+
+        Returns:
+            The voice name to use for this call.
+        """
+        if requested is None:
+            return self.voice_name
+        if requested in self.voice_capabilities.voice_catalog:
+            return requested
+        self.logger.warning(
+            "GeminiLiveClient: voice %r is not in the known catalog; "
+            "falling back to %r",
+            requested, self.voice_name,
+        )
+        return self.voice_name
+
     def _build_live_config(
         self,
         system_prompt: Optional[str] = None,
         response_modalities: Optional[List[str]] = None,
         stt_only: bool = False,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        enable_input_transcription: bool = True,
+        enable_output_transcription: bool = True,
+        voice: Optional[str] = None,
     ) -> types.LiveConnectConfig:
         """Build the LiveConnectConfig for a session.
 
@@ -664,13 +766,45 @@ class GeminiLiveClient(AbstractClient):
                 input transcription is enabled but no model response is
                 generated (response_modalities set to empty list so Gemini
                 transcribes without answering).  Default False = full-duplex.
+            temperature: Per-call sampling temperature. Falls back to the
+                constructor's ``self.temperature`` when ``None`` (FEAT-418
+                — previously this method always used the constructor
+                value, ignoring any per-call override).
+            max_tokens: Per-call max output tokens. Falls back to the
+                constructor's ``self.max_tokens`` when ``None`` (FEAT-418).
+            top_p: Per-call nucleus-sampling value. Falls back to the
+                constructor's ``self.top_p`` when ``None``. Previously
+                ``top_p`` never reached ``LiveConnectConfig`` at all
+                (FEAT-418).
+            enable_input_transcription: Whether to request input audio
+                transcription. Default ``True`` matches today's
+                unconditional behavior (FEAT-418 — previously this method
+                had no such parameter; ``stream_voice()`` forwarding it
+                raised ``TypeError``).
+            enable_output_transcription: Whether to request output audio
+                transcription. Default ``True`` matches today's behavior.
+                ``stt_only=True`` still wins over this flag: output
+                transcription stays disabled in STT-only mode regardless
+                of this value (preserves ``live.py:711`` semantics).
+            voice: Per-call voice name override (FEAT-418). Falls back to
+                the constructor's ``self.voice_name`` when ``None`` and
+                does NOT mutate ``self.voice_name`` — resolved locally so
+                concurrent sessions on one client don't interfere.
+                Validated against ``voice_capabilities.voice_catalog``; an
+                out-of-catalog name warns and falls back to
+                ``self.voice_name`` rather than being passed through
+                unvalidated.
         """
+        temperature = temperature if temperature is not None else self.temperature
+        max_tokens = max_tokens if max_tokens is not None else self.max_tokens
+        top_p = top_p if top_p is not None else self.top_p
+        resolved_voice_name = self._resolve_voice_name(voice)
         # Speech configuration
         speech_config = types.SpeechConfig(
             language_code=self.language,
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name=self.voice_name
+                    voice_name=resolved_voice_name
                 )
             )
         )
@@ -689,8 +823,9 @@ class GeminiLiveClient(AbstractClient):
         live_config = types.LiveConnectConfig(
             response_modalities=modalities,
             speech_config=speech_config,
-            temperature=self.temperature,
-            max_output_tokens=self.max_tokens,
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+            top_p=top_p,
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow()
             ),
@@ -703,13 +838,27 @@ class GeminiLiveClient(AbstractClient):
                     silence_duration_ms=500,
                 )
             ),
-            # Enable input transcription regardless of mode.
-            # In STT-only mode this is the only output; in full-duplex it runs
-            # alongside the model response.
-            input_audio_transcription=types.AudioTranscriptionConfig(),
-            # Output transcription only makes sense in full-duplex.
-            output_audio_transcription=None if stt_only else types.AudioTranscriptionConfig(),
+            # Input transcription, gated by enable_input_transcription
+            # (FEAT-418 — previously unconditional regardless of mode).
+            input_audio_transcription=(
+                types.AudioTranscriptionConfig() if enable_input_transcription else None
+            ),
+            # Output transcription only makes sense in full-duplex, and
+            # stt_only still wins over enable_output_transcription
+            # (preserves live.py:711 semantics — FEAT-418).
+            output_audio_transcription=(
+                None if stt_only or not enable_output_transcription
+                else types.AudioTranscriptionConfig()
+            ),
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
+            # Session resumption (FEAT-418, TASK-2168): always requested so
+            # the server sends session_resumption_update messages; passing
+            # the retained handle (if any) lets a reconnect resume with
+            # context instead of starting cold. ``handle=None`` on the
+            # first connect starts a fresh, resumable session.
+            session_resumption=types.SessionResumptionConfig(
+                handle=self._resumption_handle,
+            ),
         )
 
         # System prompt
@@ -733,6 +882,7 @@ class GeminiLiveClient(AbstractClient):
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         stt_only: bool = False,
+        options: Optional[VoiceStreamOptions] = None,
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
@@ -751,9 +901,22 @@ class GeminiLiveClient(AbstractClient):
             user_id: User identifier
             stt_only: When True, run in STT-only mode: Gemini transcribes input
                 but does NOT generate a model response (no response_chunk, no audio
-                output).  Only ``user_transcription`` frames are emitted.
+                output).  Only ``role="user"`` transcription frames are emitted
+                (FEAT-418 — previously carried in
+                ``metadata["user_transcription"]``, now removed).
                 Default False = full-duplex (unchanged behavior).
-            **kwargs: Additional configuration
+            options: Optional ``VoiceStreamOptions`` projection (FEAT-418).
+                ``temperature``/``max_tokens``/``top_p``/``voice``/
+                ``enable_input_transcription``/``enable_output_transcription``
+                are derived from it when not explicitly present in
+                ``**kwargs`` — an explicit kwarg always wins over
+                ``options``.
+            **kwargs: Additional configuration. ``temperature``,
+                ``max_tokens``, ``top_p``, ``voice`` (per-call voice
+                override, validated against the descriptor's
+                ``voice_catalog``), ``enable_input_transcription``,
+                ``enable_output_transcription`` are recognized here and
+                take precedence over ``options`` (FEAT-418).
 
         Yields:
             LiveVoiceResponse objects with audio, text, and usage metadata.
@@ -771,12 +934,26 @@ class GeminiLiveClient(AbstractClient):
         # guard below) — correct either way (spec §8 Q3).
         parallel_tool_execution = kwargs.get("parallel_tool_execution", False)
 
+        # FEAT-418: resolve per-call inference/transcription/voice overrides.
+        # Precedence: explicit kwarg > options field > _build_live_config's
+        # own fallback to the constructor value (temperature/max_tokens/
+        # top_p/voice) or default True (transcription flags).
+        live_config_overrides: Dict[str, Any] = {}
+        for field_name in (
+            "temperature", "max_tokens", "top_p",
+            "enable_input_transcription", "enable_output_transcription",
+            "voice",
+        ):
+            if field_name in kwargs:
+                live_config_overrides[field_name] = kwargs[field_name]
+            elif options is not None:
+                live_config_overrides[field_name] = getattr(options, field_name)
+
         live_config = self._build_live_config(
             system_prompt=system_prompt,
             stt_only=stt_only,
-            **{k: v for k, v in kwargs.items() if k in (
-                'response_modalities', 'enable_input_transcription', 'enable_output_transcription'
-            )}
+            response_modalities=kwargs.get('response_modalities'),
+            **live_config_overrides,
         )
 
         # Tracking
@@ -818,6 +995,7 @@ class GeminiLiveClient(AbstractClient):
                                     session_id=session_id,
                                     turn_id=turn_id,
                                     user_id=user_id,
+                                    role="assistant",
                                 )
                                 continue
 
@@ -840,6 +1018,7 @@ class GeminiLiveClient(AbstractClient):
                                             session_id=session_id,
                                             turn_id=turn_id,
                                             user_id=user_id,
+                                            role="assistant",
                                         )
 
                                     # Audio (inline_data)
@@ -856,6 +1035,7 @@ class GeminiLiveClient(AbstractClient):
                                             session_id=session_id,
                                             turn_id=turn_id,
                                             user_id=user_id,
+                                            role="assistant",
                                         )
                             elif stt_only and hasattr(server_content, 'model_turn') and server_content.model_turn:
                                 self.logger.debug(
@@ -864,18 +1044,23 @@ class GeminiLiveClient(AbstractClient):
 
                             # Handle input transcription (user's speech)
                             # It's in server_content, not at response level!
+                            #
+                            # FEAT-418: emit the transcript as a canonical
+                            # role="user" text response instead of the
+                            # provider-specific metadata["user_transcription"]
+                            # key (removed — no deprecation window, spec §5).
                             if hasattr(server_content, 'input_transcription') and server_content.input_transcription:
                                 text = getattr(server_content.input_transcription, 'text', '')
                                 if text:
                                     self.logger.info(f"User transcription: {text}")
                                     turn_metadata.input_transcription = text
                                     yield LiveVoiceResponse(
-                                        text="",
+                                        text=text,
                                         is_complete=False,
-                                        metadata={"user_transcription": text},
                                         session_id=session_id,
                                         turn_id=turn_id,
                                         user_id=user_id,
+                                        role="user",
                                     )
 
                             # Handle output transcription (model's speech)
@@ -1068,13 +1253,37 @@ class GeminiLiveClient(AbstractClient):
                         if hasattr(response, 'usage_metadata') and response.usage_metadata:
                             usage = LiveCompletionUsage.from_gemini_usage(response.usage_metadata)
 
-                        # Handle GoAway (session ending)
+                        # Retain the session resumption handle (FEAT-418,
+                        # TASK-2168) so the NEXT stream_voice() call (a
+                        # reconnect, driven by VoiceSession's existing loop)
+                        # can resume with context instead of a cold start.
+                        if (
+                            hasattr(response, 'session_resumption_update')
+                            and response.session_resumption_update
+                        ):
+                            update = response.session_resumption_update
+                            if getattr(update, 'resumable', False) and getattr(update, 'new_handle', None):
+                                self._resumption_handle = update.new_handle
+                                self.logger.debug(
+                                    "Session resumption handle updated for %s", session_id
+                                )
+
+                        # Handle GoAway (session ending). FEAT-418: also set
+                        # metadata["reconnect_required"]=True (keeping
+                        # go_away for handler.py:298, which still reacts to
+                        # it) so VoiceSession's reconnect loop
+                        # (voice/session.py:196-199) fires for Gemini the
+                        # same way it already does for Nova.
                         if hasattr(response, 'go_away') and response.go_away:
                             self.logger.info("Received GoAway from server")
                             yield LiveVoiceResponse(
                                 text="",
                                 is_complete=True,
-                                metadata={"go_away": True, "reason": str(response.go_away)},
+                                metadata={
+                                    "go_away": True,
+                                    "reason": str(response.go_away),
+                                    "reconnect_required": True,
+                                },
                                 session_id=session_id,
                                 turn_id=turn_id,
                                 user_id=user_id,
@@ -1097,6 +1306,32 @@ class GeminiLiveClient(AbstractClient):
             is_language_error = "unsupported language" in error_str
             is_retryable = not is_language_error  # Language errors are not retryable
 
+            # FEAT-418 (TASK-2168): a rejected/expired session-resumption
+            # handle. The google-genai SDK does not expose a typed
+            # exception for this, so detection is heuristic — only
+            # triggered when a resumption was actually attempted (a handle
+            # was set for this connect). Clear the stale handle and signal
+            # a cold reconnect via the existing reconnect_required path
+            # (VoiceSession's loop calls stream_voice() again; the next
+            # _build_live_config() call passes handle=None).
+            if self._resumption_handle and any(
+                keyword in error_str for keyword in ("resumption", "handle", "expired")
+            ):
+                self.logger.warning(
+                    "GeminiLiveClient: session resumption handle rejected/expired "
+                    "(%s); clearing and falling back to a cold reconnect.", e,
+                )
+                self._resumption_handle = None
+                yield LiveVoiceResponse(
+                    text="",
+                    is_complete=True,
+                    metadata={"resumed": False, "reconnect_required": True},
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    user_id=user_id,
+                )
+                return
+
             # Check for WebSocket 1008 (Policy Violation) which Gemini sends on session close sometimes
             # or "Operation is not implemented" which can happen if session state is invalid
             if "1008" in error_str and ("policy violation" in error_str or "operation is not implemented" in error_str):
@@ -1104,7 +1339,11 @@ class GeminiLiveClient(AbstractClient):
                 yield LiveVoiceResponse(
                     text="",
                     is_complete=True,
-                    metadata={"go_away": True, "reason": "Server closed session (1008)"},
+                    metadata={
+                        "go_away": True,
+                        "reason": "Server closed session (1008)",
+                        "reconnect_required": True,
+                    },
                     session_id=session_id,
                     turn_id=turn_id,
                     user_id=user_id,

@@ -540,8 +540,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
 
+    _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
     def _get_default_tools(self, tools: list = None, use_tools: bool = True) -> List[AbstractTool]:
         """Return Agent-specific tools."""
+        if not self._SAFE_ID.match(self.agent_id):
+            raise ValueError(f"Unsafe agent_id for path construction: {self.agent_id!r}")
         report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         report_dir.mkdir(parents=True, exist_ok=True)
         if not tools:

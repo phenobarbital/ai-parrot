@@ -109,8 +109,6 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
             user_id,
             kwargs
         )
-        print('HERE > ', employee_id)
-
         if not employee_id:
             return []
 

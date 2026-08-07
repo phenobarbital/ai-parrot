@@ -127,9 +127,9 @@ class TimeBlockReportType(WorkdayTypeBase):
                     "Set WORKDAY_REPORT_USERNAME and WORKDAY_REPORT_PASSWORD"
                 )
 
-            # Debug: Log credentials being used (partially masked)
-            self._logger.debug(f"REST API Username: {username}")
-            self._logger.debug(f"REST API Password: {password[:3]}...{password[-3:]} (len: {len(password)})")
+            # Debug: Log credentials being used (masked)
+            self._logger.debug("REST API Username: %s", username)
+            self._logger.debug("REST API Password: configured (len=%d)", len(password))
 
             # Create HTTP client with Basic Auth
             self._http_client = HTTPService(

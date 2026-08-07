@@ -19,6 +19,7 @@ T = TypeVar('T')
 
 
 logging.getLogger('arangoasync').setLevel(logging.WARNING)
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -121,12 +122,10 @@ class EmployeeHierarchyManager(CacheMixin):
         # 1. Create Employees collection (vertices)
         if not await self.db.has_collection(self.employees_collection):
             await self.db.create_collection(self.employees_collection)
-            print(f"✓ Collection '{self.employees_collection}' created")
 
         # 2. Create ReportsTo collection (edges)
         if not await self.db.has_collection(self.reports_to_collection):
             await self.db.create_collection(self.reports_to_collection, edge=True)
-            print(f"✓ Collection of edges '{self.reports_to_collection}' created")
 
         # 3. Create the graph
         if not await self.db.has_graph(self.graph_name):
@@ -322,14 +321,10 @@ ORDER BY reports_to_associate_id NULLS FIRST
                 await reports_to_collection.insert(edge_doc)
                 edges_created += 1
 
-        print(f"✓ {edges_created} 'reports_to' edges created")
-        print(
-            f"✓ {await self.db.collection(name=self.reports_to_collection).count()} total 'reports_to' edges"
-        )
-
         if skipped_edges > 0:
-            print(f"⚠ {skipped_edges} edges skipped (boss not found)")
-            print(f"⚠ Missing boss IDs: {missing_bosses}")
+            _logger.warning(
+                "%d edges skipped (boss not found)", skipped_edges
+            )
 
         # Setup collections and graph
         await self._setup_collections()

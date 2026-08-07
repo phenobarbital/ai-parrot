@@ -57,12 +57,15 @@ class TestVoiceBotSttOnly:
 
     def test_inference_params_threaded_from_voice_config(self):
         """VoiceConfig temperature/max_tokens/top_p/parallel_tool_execution
-        are threaded to stream_voice(), overridable via **kwargs."""
+        are threaded to stream_voice() via the single VoiceStreamOptions
+        projection (FEAT-418, TASK-2173 — spec §3 Module 7), overridable
+        via **kwargs. Was an ad-hoc voice_stream_kwargs dict with four
+        explicit VoiceConfig reads before TASK-2173; to_stream_options()
+        now covers ALL nine VoiceStreamOptions fields (including
+        temperature/max_tokens/top_p/parallel_tool_execution) internally."""
         src = _get_method_source("ask_stream")
-        assert "self.voice_config.temperature" in src
-        assert "self.voice_config.max_tokens" in src
-        assert "self.voice_config.top_p" in src
-        assert "self.voice_config.parallel_tool_execution" in src
+        assert "self.voice_config.to_stream_options(" in src
+        assert "options=options" in src
 
 
 class TestVoiceBotVoiceCapableCheck:
