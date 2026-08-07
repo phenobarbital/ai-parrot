@@ -223,10 +223,104 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**STOPPED — not implemented.** Status left as `in-progress`, file left in
+`sdd/tasks/active/` (not moved to `completed/`), per Cardinal Rule 4
+("WHEN IN DOUBT, STOP") and the STOP Conditions ("the task's
+specification contradicts the spec"). No code was written for this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Attempted by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
 
-**Deviations from spec**: none | describe if any
+**The contradiction (verified against the current codebase, not assumed):**
+
+This task requires BOTH of the following, and they are mutually
+exclusive as literally scoped:
+
+1. **Acceptance criterion #1**: "One aiohttp app serves `/ws/gemini` and
+   `/ws/nova`, each with its own `VoiceChatHandler` + `VoiceBot`" — read
+   together with the Codebase Contract's reference to
+   `VoiceChatHandler.handle_websocket` (`handler.py:739`) as the mounting
+   precedent (`manager.py:1528-1550` mounts exactly this method at a
+   route), this means the browser must speak `VoiceChatHandler`'s actual
+   WebSocket wire protocol. Verified directly from
+   `handle_websocket()`'s own docstring (`handler.py:743-762`) and
+   `_handle_message()`'s dispatch table (`handler.py:901-913`):
+   client -> server requires `start_session` before any audio, then
+   `start_recording` / `audio_data` (or `audio_chunk`) / `stop_recording`
+   (not a single continuous `audio_iterator`); server -> client responses
+   are wrapped as `voice_response` frames whose sub-`type` vocabulary is
+   `response_chunk` / `transcription` / `display_data` / `tool_call` /
+   `response_complete` / `ready_to_speak` / `session_warning`
+   (`_HandlerVoiceSession.build_frames()`, `handler.py:355-462` — TASK-2174
+   of this same feature). Auth handshake (`connected`/`auth_success`) and
+   `ping`/`pong` keepalive are also part of this protocol.
+
+2. **Scope** ("Serve the extracted UI (TASK-2177) with a provider
+   toggle") and **acceptance criterion #7** ("The UI is the shared static
+   asset from TASK-2177, not an inlined string") — but TASK-2177's
+   `examples/clients/voice/static/app.js` speaks a **different, simpler**
+   wire protocol by design (documented in its own header comment): client
+   -> server `start_turn` / `audio` / `end_turn` / `cancel_turn`; server
+   -> client `ready` / `turn_started` / `text` / `audio` / `tool_call` /
+   `interrupted` / `turn_complete` / `error` / `capability_notice` — this
+   is the **raw-client** protocol (`VoiceSession.build_frames()`'s
+   default, core, `parrot/voice/session.py:357-443`), deliberately NOT
+   `VoiceChatHandler`'s protocol. TASK-2176's own "Does NOT Exist" section
+   already flags the two UIs as distinct and warns against merging them:
+   `packages/ai-parrot-integrations/src/parrot/voice/ui/chat.html` is "a
+   *different*, shipped UI for `VoiceChatHandler` — do not confuse the two
+   or merge them."
+
+Making the reused `app.js` actually functional against `VoiceChatHandler`
+requires rewriting its entire WebSocket message layer (session handshake,
+turn shape, response parsing) — not a cosmetic tweak. But `app.js` is
+**not listed** in this task's "Files to Create / Modify" table (only
+`server.py` CREATE, `static/index.html` MODIFY, and two READMEs are). Per
+Cardinal Rule 2 (File Fidelity), touching an unlisted file is a
+divergence; per Cardinal Rule 1, redesigning `app.js`'s protocol to
+invent a translation layer the task never specified is architecture the
+task doesn't authorize. Implementing acceptance criterion #1 correctly
+and acceptance criterion #7 literally are not simultaneously satisfiable
+without one of:
+
+- **(a)** Add `app.js` to this task's file list and accept a real rewrite
+  of its WS message layer to speak `VoiceChatHandler`'s protocol (keeping
+  its visual/DOM layer, `PROVIDER_LABEL` genericization, and AudioWorklet
+  capture code intact) — the most literal reading of "reuse the UI,"
+  reinterpreted as "reuse the presentation layer."
+- **(b)** Have `server.py` implement a protocol-translating bridge in
+  front of `VoiceChatHandler` (a custom WS route that speaks the
+  raw-client protocol to the browser and drives `VoiceChatHandler`
+  internals — e.g. `_run_voice_session` — underneath) so `app.js` needs
+  zero changes — but this means the two example routes are no longer
+  literally `app.router.add_get(path, handler.handle_websocket)` as
+  acceptance criterion #1 and the mounting precedent imply, and invents
+  an unspec'd adapter class.
+- **(c)** Drop acceptance criterion #7 and serve the existing, protocol-
+  correct `packages/ai-parrot-integrations/src/parrot/voice/ui/chat.html`
+  instead (with a provider-toggle addition), since it already speaks
+  `VoiceChatHandler`'s real protocol — the technically simplest path, but
+  directly contradicts an explicit, numbered acceptance criterion rather
+  than a soft preference.
+
+Each of (a)/(b)/(c) is a legitimate design decision, but it IS a design
+decision — not a detail this task leaves to the implementer's judgment
+(the Files table and the acceptance criteria are both explicit and both
+verified accurate against the current code, so neither can be dismissed
+as stale). Flagging for the spec owner rather than guessing.
+
+**What was verified before stopping (no code changes made)**:
+`VoiceChatHandler` (`handler.py:500`), `resolve_provider_client`
+(`handler.py:601-610`), `handle_websocket` (`handler.py:739`), `BotConfig`
+(`handler.py:127-162`), `WebSocketConnection` (`handler.py:169-241`),
+`_HandlerVoiceSession.build_frames()` (`handler.py:355-462`), the
+`manager.py:1528-1550` mounting precedent, and
+`examples/clients/voice/static/app.js`'s protocol (created in TASK-2177,
+completed immediately prior to this task in this same run) were all read
+directly, not assumed. Line numbers in the Codebase Contract for
+`VoiceChatHandler`/`resolve_provider_client` had drifted since the
+contract was written (`388`/`490` → `500`/`601`) — noted here since the
+contract should be corrected before this task is picked up again, but
+this drift is not itself the blocker; the protocol contradiction above is.
+
+**Deviations from spec**: N/A — task not implemented.
