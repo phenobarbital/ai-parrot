@@ -298,6 +298,11 @@ class InfographicAuthoringMixin:
         Section → transformer resolution uses the section's name, normalised to
         a Python identifier, as the registry key.
 
+        FEAT-420: when ``descriptor.layout`` is set, it is used VERBATIM as the
+        saved recipe's ``layout`` instead of the template-based ``LayoutSpec``
+        below; absent means unchanged legacy behaviour. ``descriptor.narrative``
+        (if declared) is always carried through to the saved recipe.
+
         Args:
             name: Recipe name (scoped by ``owner``).
             descriptor: A :class:`SectionDescriptor` or its JSON string.
@@ -370,18 +375,24 @@ class InfographicAuthoringMixin:
                     aliases.append(alias)
         data_sources = [DataSourceSpec(dataset=alias, alias=alias) for alias in aliases]
 
+        # FEAT-420 (Module 7): use the descriptor's declared A2UI layout
+        # verbatim when present; absent means today's template-based
+        # LayoutSpec, unchanged (spec criterion G-G).
+        layout = descriptor.layout or LayoutSpec(
+            component="Infographic",
+            properties={"template": descriptor.template},
+        )
+
         recipe = InfographicRecipe(
             name=name,
             title=name,
             owner=owner,
             data_sources=data_sources,
             transforms=transforms,
-            layout=LayoutSpec(
-                component="Infographic",
-                properties={"template": descriptor.template},
-            ),
+            layout=layout,
             render=RenderSpec(delivery=delivery),
             section_descriptor=descriptor,
+            narrative=descriptor.narrative,
             updated_at=datetime.now(timezone.utc),
         )
         await store.save(recipe)

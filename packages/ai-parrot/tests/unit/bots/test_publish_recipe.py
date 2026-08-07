@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from parrot.bots.data import PandasAgent
 from parrot.bots.mixins import InfographicAuthoringMixin
-from parrot.outputs.a2ui.recipes.models import InfographicRecipe
+from parrot.outputs.a2ui.recipes.models import InfographicRecipe, LayoutSpec, NarrativeSpec
 from parrot.outputs.a2ui.recipes.store import FileRecipeStore
 from parrot.outputs.a2ui.recipes.transformers import (
     infographic_transformer,
@@ -126,3 +126,58 @@ class TestPublishRecipe:
     def test_registry_read_only_transformers_present(self):
         # publication only READS the registry.
         assert transformer_registry.get("feat326_totals") is not None
+
+
+_REPORT_LAYOUT = LayoutSpec(
+    component="Report",
+    properties={
+        "title": "Budget Variance",
+        "summary": {"$bind": "/narrative/headline", "optional": True},
+        "sections": [{"heading": "Snapshot", "components": []}],
+    },
+)
+
+
+class TestPublishRecipeLayout:
+    """FEAT-420 Module 7: `descriptor.layout`/`descriptor.narrative` carry-through."""
+
+    async def test_descriptor_layout_used_verbatim(self, agent):
+        descriptor = _covered_descriptor().model_copy(update={"layout": _REPORT_LAYOUT})
+        recipe = await agent.publish_recipe("r-layout", descriptor)
+        assert isinstance(recipe, InfographicRecipe)
+        assert recipe.layout == _REPORT_LAYOUT
+
+    async def test_absent_layout_preserves_legacy_shape(self, agent):
+        """Regression: identical to pre-feature behaviour."""
+        recipe = await agent.publish_recipe("r-legacy", _covered_descriptor())
+        assert isinstance(recipe, InfographicRecipe)
+        assert recipe.layout.component == "Infographic"
+        assert recipe.layout.properties == {"template": "budget.html"}
+
+    async def test_narrative_carried_through(self, agent):
+        descriptor = _covered_descriptor().model_copy(
+            update={
+                "layout": _REPORT_LAYOUT,
+                "narrative": NarrativeSpec(
+                    skill="budget-narrative", facts_key="narrative_facts"
+                ),
+            }
+        )
+        recipe = await agent.publish_recipe("r-narr", descriptor)
+        assert isinstance(recipe, InfographicRecipe)
+        assert recipe.narrative.skill == "budget-narrative"
+        assert recipe.narrative.facts_key == "narrative_facts"
+
+    async def test_narrative_absent_by_default(self, agent):
+        recipe = await agent.publish_recipe("r-no-narr", _covered_descriptor())
+        assert isinstance(recipe, InfographicRecipe)
+        assert recipe.narrative is None
+
+    async def test_gap_report_still_wins_over_layout(self, agent):
+        """An unmapped section must still block the save, layout notwithstanding."""
+        descriptor = _gap_descriptor().model_copy(update={"layout": _REPORT_LAYOUT})
+        store = agent._require_recipe_store()
+        store.save = AsyncMock(side_effect=AssertionError("must not save"))
+        result = await agent.publish_recipe("r-gap", descriptor)
+        assert isinstance(result, GapReport)
+        store.save.assert_not_called()

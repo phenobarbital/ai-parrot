@@ -285,3 +285,14 @@ class RecipeRunError(BaseModel):
     dataset: Optional[str] = None
     missing_columns: list[str] = Field(default_factory=list)
     detail: str
+
+
+# FEAT-420 (Module 7): resolve SectionDescriptor's forward-referenced
+# `layout`/`narrative` fields now that LayoutSpec/NarrativeSpec are defined
+# in THIS module. Deferred rebuild avoids a circular import —
+# `infographic_sections.py` cannot import LayoutSpec/NarrativeSpec from here
+# at runtime, since this module already imports SectionDescriptor from
+# there (for its own `section_descriptor` field, above). `model_rebuild()`
+# resolves the string-annotated forward references using this call site's
+# module globals, which now contain both classes.
+SectionDescriptor.model_rebuild()
