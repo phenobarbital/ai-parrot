@@ -278,7 +278,7 @@
       "feature_id": "FEAT-418",
       "feature": "googlelive-nova2-audiobot-homologation",
       "spec": "sdd/specs/googlelive-nova2-audiobot-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -288,8 +288,8 @@
       "parallelism_notes": "Touches only examples/; shares no source files with the core or integrations tasks.",
       "assigned_to": null,
       "started_at": "2026-08-06T23:59:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2177-extract-browser-voice-ui.md"
+      "completed_at": "2026-08-07T02:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2177-extract-browser-voice-ui.md"
     },
     {
       "id": "TASK-2178",
