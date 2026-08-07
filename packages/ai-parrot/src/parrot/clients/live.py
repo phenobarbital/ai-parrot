@@ -51,7 +51,9 @@ from navconfig import config
 
 from ..memory import ConversationMemory
 from ..models.google import ALL_VOICE_PROFILES, GoogleVoiceModel
-from ..models.voice import AudioFormat, VoiceCapabilities, VoiceProvider
+from ..models.voice import (
+    AudioFormat, VoiceCapabilities, VoiceProvider, VoiceStreamOptions,
+)
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
 
@@ -621,10 +623,12 @@ class GeminiLiveClient(AbstractClient):
 
         This descriptor reflects *current* behavior only — flags below are
         flipped to ``True`` by later FEAT-418 tasks as each capability is
-        actually implemented (per-call inference params/``top_p``: TASK-2166;
-        per-call voice override + canonical role: TASK-2167; reconnect
-        signal + session resumption: TASK-2168). The provider conformance
-        kit (TASK-2176) asserts descriptor-vs-behavior consistency, so this
+        actually implemented. ``supports_top_p``/``supports_per_call_inference``
+        are ``True`` as of TASK-2166 (per-call ``temperature``/``max_tokens``/
+        ``top_p`` now reach ``_build_live_config()``); per-call voice
+        override + canonical role land in TASK-2167; reconnect signal +
+        session resumption in TASK-2168. The provider conformance kit
+        (TASK-2176) asserts descriptor-vs-behavior consistency, so this
         must never claim a capability ahead of the code that provides it.
 
         Returns:
@@ -634,9 +638,9 @@ class GeminiLiveClient(AbstractClient):
         return VoiceCapabilities(
             provider=VoiceProvider.GOOGLE_LIVE,
             native_stt_only=True,
-            supports_top_p=False,
+            supports_top_p=True,
             supports_per_call_voice=False,
-            supports_per_call_inference=False,
+            supports_per_call_inference=True,
             parallel_tool_execution=True,
             emits_reconnect_signal=False,
             supports_session_resumption=False,
@@ -696,6 +700,11 @@ class GeminiLiveClient(AbstractClient):
         system_prompt: Optional[str] = None,
         response_modalities: Optional[List[str]] = None,
         stt_only: bool = False,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        enable_input_transcription: bool = True,
+        enable_output_transcription: bool = True,
     ) -> types.LiveConnectConfig:
         """Build the LiveConnectConfig for a session.
 
@@ -706,7 +715,30 @@ class GeminiLiveClient(AbstractClient):
                 input transcription is enabled but no model response is
                 generated (response_modalities set to empty list so Gemini
                 transcribes without answering).  Default False = full-duplex.
+            temperature: Per-call sampling temperature. Falls back to the
+                constructor's ``self.temperature`` when ``None`` (FEAT-418
+                — previously this method always used the constructor
+                value, ignoring any per-call override).
+            max_tokens: Per-call max output tokens. Falls back to the
+                constructor's ``self.max_tokens`` when ``None`` (FEAT-418).
+            top_p: Per-call nucleus-sampling value. Falls back to the
+                constructor's ``self.top_p`` when ``None``. Previously
+                ``top_p`` never reached ``LiveConnectConfig`` at all
+                (FEAT-418).
+            enable_input_transcription: Whether to request input audio
+                transcription. Default ``True`` matches today's
+                unconditional behavior (FEAT-418 — previously this method
+                had no such parameter; ``stream_voice()`` forwarding it
+                raised ``TypeError``).
+            enable_output_transcription: Whether to request output audio
+                transcription. Default ``True`` matches today's behavior.
+                ``stt_only=True`` still wins over this flag: output
+                transcription stays disabled in STT-only mode regardless
+                of this value (preserves ``live.py:711`` semantics).
         """
+        temperature = temperature if temperature is not None else self.temperature
+        max_tokens = max_tokens if max_tokens is not None else self.max_tokens
+        top_p = top_p if top_p is not None else self.top_p
         # Speech configuration
         speech_config = types.SpeechConfig(
             language_code=self.language,
@@ -731,8 +763,9 @@ class GeminiLiveClient(AbstractClient):
         live_config = types.LiveConnectConfig(
             response_modalities=modalities,
             speech_config=speech_config,
-            temperature=self.temperature,
-            max_output_tokens=self.max_tokens,
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+            top_p=top_p,
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow()
             ),
@@ -745,12 +778,18 @@ class GeminiLiveClient(AbstractClient):
                     silence_duration_ms=500,
                 )
             ),
-            # Enable input transcription regardless of mode.
-            # In STT-only mode this is the only output; in full-duplex it runs
-            # alongside the model response.
-            input_audio_transcription=types.AudioTranscriptionConfig(),
-            # Output transcription only makes sense in full-duplex.
-            output_audio_transcription=None if stt_only else types.AudioTranscriptionConfig(),
+            # Input transcription, gated by enable_input_transcription
+            # (FEAT-418 — previously unconditional regardless of mode).
+            input_audio_transcription=(
+                types.AudioTranscriptionConfig() if enable_input_transcription else None
+            ),
+            # Output transcription only makes sense in full-duplex, and
+            # stt_only still wins over enable_output_transcription
+            # (preserves live.py:711 semantics — FEAT-418).
+            output_audio_transcription=(
+                None if stt_only or not enable_output_transcription
+                else types.AudioTranscriptionConfig()
+            ),
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
         )
 
@@ -775,6 +814,7 @@ class GeminiLiveClient(AbstractClient):
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         stt_only: bool = False,
+        options: Optional[VoiceStreamOptions] = None,
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
@@ -795,7 +835,16 @@ class GeminiLiveClient(AbstractClient):
                 but does NOT generate a model response (no response_chunk, no audio
                 output).  Only ``user_transcription`` frames are emitted.
                 Default False = full-duplex (unchanged behavior).
-            **kwargs: Additional configuration
+            options: Optional ``VoiceStreamOptions`` projection (FEAT-418).
+                ``temperature``/``max_tokens``/``top_p``/
+                ``enable_input_transcription``/``enable_output_transcription``
+                are derived from it when not explicitly present in
+                ``**kwargs`` — an explicit kwarg always wins over
+                ``options``.
+            **kwargs: Additional configuration. ``temperature``,
+                ``max_tokens``, ``top_p``, ``enable_input_transcription``,
+                ``enable_output_transcription`` are recognized here and
+                take precedence over ``options`` (FEAT-418).
 
         Yields:
             LiveVoiceResponse objects with audio, text, and usage metadata.
@@ -813,12 +862,25 @@ class GeminiLiveClient(AbstractClient):
         # guard below) — correct either way (spec §8 Q3).
         parallel_tool_execution = kwargs.get("parallel_tool_execution", False)
 
+        # FEAT-418: resolve per-call inference/transcription overrides.
+        # Precedence: explicit kwarg > options field > _build_live_config's
+        # own fallback to the constructor value (temperature/max_tokens/
+        # top_p) or default True (transcription flags).
+        live_config_overrides: Dict[str, Any] = {}
+        for field_name in (
+            "temperature", "max_tokens", "top_p",
+            "enable_input_transcription", "enable_output_transcription",
+        ):
+            if field_name in kwargs:
+                live_config_overrides[field_name] = kwargs[field_name]
+            elif options is not None:
+                live_config_overrides[field_name] = getattr(options, field_name)
+
         live_config = self._build_live_config(
             system_prompt=system_prompt,
             stt_only=stt_only,
-            **{k: v for k, v in kwargs.items() if k in (
-                'response_modalities', 'enable_input_transcription', 'enable_output_transcription'
-            )}
+            response_modalities=kwargs.get('response_modalities'),
+            **live_config_overrides,
         )
 
         # Tracking
