@@ -4,14 +4,43 @@ import asyncio
 
 import pytest
 from parrot.clients.live import LiveVoiceResponse
-from parrot.models.voice import VoiceConfig
+from parrot.models.voice import (
+    AudioFormat,
+    VoiceCapabilities,
+    VoiceConfig,
+    VoiceProvider,
+)
 from parrot.voice.session import VoiceSession
+
+
+def _default_voice_capabilities() -> VoiceCapabilities:
+    """A VoiceCapabilities double matching VoiceConfig()'s PCM defaults.
+
+    FEAT-418 (TASK-2172) added a construction-time audio-format preflight
+    to VoiceSession — every VoiceCapable test double now needs a
+    voice_capabilities property for that preflight to pass.
+    """
+    return VoiceCapabilities(
+        provider=VoiceProvider.GOOGLE_LIVE,
+        native_stt_only=True, supports_top_p=True, supports_per_call_voice=True,
+        supports_per_call_inference=True, parallel_tool_execution=True,
+        emits_reconnect_signal=True, supports_session_resumption=True,
+        max_session_seconds=None, max_output_tokens=4096,
+        input_formats=frozenset({AudioFormat.PCM_16K}),
+        output_formats=frozenset({AudioFormat.PCM_24K}),
+        input_sample_rates=frozenset({16000}), output_sample_rates=frozenset({24000}),
+        voice_catalog=frozenset({"Puck"}), default_voice="Puck",
+    )
 
 
 class ReconnectingMockClient:
     """Mock that signals reconnect_required on first turn."""
     def __init__(self):
         self.call_count = 0
+
+    @property
+    def voice_capabilities(self) -> VoiceCapabilities:
+        return _default_voice_capabilities()
 
     async def stream_voice(self, audio_iterator, **kwargs):
         self.call_count += 1
@@ -29,6 +58,10 @@ class AlwaysReconnectMockClient:
     """Mock that always signals reconnect_required."""
     def __init__(self):
         self.call_count = 0
+
+    @property
+    def voice_capabilities(self) -> VoiceCapabilities:
+        return _default_voice_capabilities()
 
     async def stream_voice(self, audio_iterator, **kwargs):
         self.call_count += 1
