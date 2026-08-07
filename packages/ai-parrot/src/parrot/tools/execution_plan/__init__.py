@@ -12,6 +12,7 @@ from .catalog import (
     validate_with_allowlist,
 )
 from .models import PlanArtifactsArgs, PlanStatusArgs, RunningSummary, RunRecord
+from .planner import PlanAuthoringError, PlanPlanner, resolve_planner_client
 from .store import PlanFileStore, PlanLoadError
 from .toolkit import ExecutionPlanToolkit
 
@@ -19,13 +20,16 @@ __all__ = (
     "ArgSummary",
     "ExecutionPlanToolkit",
     "PlanArtifactsArgs",
+    "PlanAuthoringError",
     "PlanFileStore",
     "PlanLoadError",
+    "PlanPlanner",
     "PlanStatusArgs",
     "RunRecord",
     "RunningSummary",
     "ToolCatalogEntry",
     "build_catalog",
     "check_allowlist",
+    "resolve_planner_client",
     "validate_with_allowlist",
 )
