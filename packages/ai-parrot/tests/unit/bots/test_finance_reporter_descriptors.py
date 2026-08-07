@@ -132,3 +132,28 @@ class TestFinanceReporterDescriptors:
             "top_movers",
             "division_breakdown",
         }
+
+    @pytest.mark.asyncio
+    async def test_skill_paths_discovers_the_real_budget_narrative_skill(self):
+        """Code-review regression: `SkillRegistryMixin.skill_paths` defaults
+        to `[]` (directory discovery is opt-in), and `NarrativeMixin` never
+        sets it itself (criterion G-I: no domain wiring in the reusable
+        mixin) — the COMPOSING agent must declare it, the same pattern as
+        `agents/security_advisor.py`. Without `FinanceReporter.skill_paths`
+        pointing at `.agent/skills/`, `narrate("budget-narrative")` would
+        always return `None` in production, narrator or no narrator. This
+        exercises the real `SkillsDirectoryLoader` against the real
+        `skill_paths` class attribute — no test double for the registry.
+        """
+        from parrot.skills.loader import SkillsDirectoryLoader
+
+        FinanceReporter = _load_finance_reporter().FinanceReporter
+        assert FinanceReporter.skill_paths, "skill_paths must be non-empty"
+
+        loader = SkillsDirectoryLoader(paths=FinanceReporter.skill_paths)
+        discovered = await loader.discover()
+        names = {skill.name for skill in discovered}
+        assert "budget-narrative" in names, (
+            f"budget-narrative not discovered via FinanceReporter.skill_paths "
+            f"({FinanceReporter.skill_paths}); found: {names}"
+        )

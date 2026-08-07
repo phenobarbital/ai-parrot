@@ -34,10 +34,9 @@ See ``examples/budget_variance_infographic.py`` for the end-to-end runner and
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar, List, Union
+from typing import Any, ClassVar, List, Optional, Union
 
 from aiohttp import web
-
 from parrot.bots.data import PandasAgent
 from parrot.bots.mixins import InfographicAuthoringMixin, NarrativeMixin
 from parrot.outputs.a2ui.recipes.models import LayoutSpec, NarrativeSpec
@@ -48,6 +47,18 @@ from parrot.tools.infographic_sections import SectionDescriptor, SectionSpec
 # data-splice/jinja template; kept as the reference dashboard's fixed
 # location in case a tier-1 caller ever wants it (see Completion Note).
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "sdd" / "artifacts"
+
+# FEAT-420 code-review fix: anchored to this file's location (not process
+# cwd, matching `DEFAULT_TEMPLATE_DIR` above) — `SkillRegistryMixin
+# .skill_paths` defaults to `[]` (directory discovery is opt-in), and
+# `NarrativeMixin` deliberately never sets it itself (criterion G-I: no
+# domain-specific wiring baked into the reusable mixin). Without the
+# composing agent declaring `skill_paths`, `SkillsDirectoryLoader` never
+# scans `.agent/skills/`, `.agent/skills/budget-narrative/` is never
+# registered, and `narrate("budget-narrative")` always returns `None` —
+# even with a real narrator/LLM configured. Same pattern as
+# `agents/security_advisor.py`'s `_SKILLS_DIR`/`skill_paths`.
+SKILLS_DIR = Path(__file__).resolve().parents[1] / ".agent" / "skills"
 
 # FEAT-420: renamed from "finance_projection" to "snapshots" — the registered
 # DatasetManager alias, NOT the SQL table (`table="troc.finance_projection"`,
@@ -77,6 +88,11 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
     agent_id: str = "finance_reporter"
     llm = "google:gemini-3.5-flash"
     narrative_skill = "budget-narrative"
+
+    #: Directory-discovery opt-in (FEAT-420 code-review fix) — see
+    #: `SKILLS_DIR`'s comment above for why this is required for
+    #: `narrate("budget-narrative")` to ever find the skill in production.
+    skill_paths: List[Path] = [SKILLS_DIR]
 
     TEMPLATE_NAME = "budget_variance_dashboard_Template.html"
 
@@ -142,8 +158,8 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
 
     async def configure(
         self,
-        app: web.Application = None,
-        queries: Union[List[str], dict] = None,
+        app: Optional[web.Application] = None,
+        queries: Optional[Union[List[str], dict]] = None,
     ) -> None:
         """Register datasets before base configuration."""
         await self.register_datasets()

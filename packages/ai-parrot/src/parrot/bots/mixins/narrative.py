@@ -76,10 +76,16 @@ class NarrativeMixin(SkillRegistryMixin):
                 return None
             prompt = self._build_narrative_prompt(definition, facts)
             prose = await self._call_llm_for_narrative(prompt)
+            # `.strip()` stays INSIDE this try (code-review fix): `prose` is
+            # only a str by convention (`_call_llm_for_narrative`'s return is
+            # an unchecked `getattr(...) or getattr(...)`), and this method's
+            # own contract promises it NEVER raises — an unexpected truthy
+            # non-string LLM response must degrade the same way any other
+            # narrative failure does, not raise past the caller.
+            if not prose or not prose.strip():
+                return None
         except Exception as exc:  # noqa: BLE001 — narrative is never fatal
             self.logger.warning("Narrative generation failed (%s); skipping.", exc)
-            return None
-        if not prose or not prose.strip():
             return None
         ok, offending = figures_are_derivable(prose, facts)
         if not ok:
