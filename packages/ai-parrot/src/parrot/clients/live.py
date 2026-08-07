@@ -190,10 +190,13 @@ class LiveVoiceResponse:
     turn_id: Optional[str] = None
     user_id: Optional[str] = None
 
-    # Speaker attribution (FEAT-408)
+    # Speaker attribution (FEAT-408, canonicalized lowercase in FEAT-418)
     role: Optional[str] = None
-    """Speaker this frame is attributed to: "USER", "ASSISTANT", "TOOL", or
-    None when the provider does not report one (e.g. GeminiLiveClient)."""
+    """Speaker this frame is attributed to: "user" or "assistant" (canonical
+    lowercase form, FEAT-418). GeminiLiveClient sets this on every
+    model-originated and user-transcription frame as of FEAT-418
+    (previously always None here; user transcription instead traveled via
+    the now-removed metadata["user_transcription"])."""
 
     # Extra metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -625,11 +628,13 @@ class GeminiLiveClient(AbstractClient):
         flipped to ``True`` by later FEAT-418 tasks as each capability is
         actually implemented. ``supports_top_p``/``supports_per_call_inference``
         are ``True`` as of TASK-2166 (per-call ``temperature``/``max_tokens``/
-        ``top_p`` now reach ``_build_live_config()``); per-call voice
-        override + canonical role land in TASK-2167; reconnect signal +
-        session resumption in TASK-2168. The provider conformance kit
-        (TASK-2176) asserts descriptor-vs-behavior consistency, so this
-        must never claim a capability ahead of the code that provides it.
+        ``top_p`` now reach ``_build_live_config()``); ``supports_per_call_voice``
+        is ``True`` as of TASK-2167 (per-call voice override, validated
+        against ``voice_catalog`` with a warned fallback) — canonical
+        ``role`` also lands in TASK-2167; reconnect signal + session
+        resumption in TASK-2168. The provider conformance kit (TASK-2176)
+        asserts descriptor-vs-behavior consistency, so this must never
+        claim a capability ahead of the code that provides it.
 
         Returns:
             A frozen ``VoiceCapabilities`` instance for
@@ -639,7 +644,7 @@ class GeminiLiveClient(AbstractClient):
             provider=VoiceProvider.GOOGLE_LIVE,
             native_stt_only=True,
             supports_top_p=True,
-            supports_per_call_voice=False,
+            supports_per_call_voice=True,
             supports_per_call_inference=True,
             parallel_tool_execution=True,
             emits_reconnect_signal=False,
@@ -695,6 +700,34 @@ class GeminiLiveClient(AbstractClient):
             )
         return self._tool_adapter
 
+    def _resolve_voice_name(self, requested: Optional[str]) -> str:
+        """Resolve the effective voice name for a call (FEAT-418).
+
+        Validates ``requested`` against ``voice_capabilities.voice_catalog``
+        (seeded from ``parrot.models.google.ALL_VOICE_PROFILES``). An
+        out-of-catalog name warns once and falls back to the constructor's
+        ``self.voice_name`` rather than being passed through to the Live
+        API unvalidated — never mutates ``self.voice_name``, so concurrent
+        sessions on this client cannot interfere with each other.
+
+        Args:
+            requested: The per-call voice override, or ``None`` to use the
+                constructor's default.
+
+        Returns:
+            The voice name to use for this call.
+        """
+        if requested is None:
+            return self.voice_name
+        if requested in self.voice_capabilities.voice_catalog:
+            return requested
+        self.logger.warning(
+            "GeminiLiveClient: voice %r is not in the known catalog; "
+            "falling back to %r",
+            requested, self.voice_name,
+        )
+        return self.voice_name
+
     def _build_live_config(
         self,
         system_prompt: Optional[str] = None,
@@ -705,6 +738,7 @@ class GeminiLiveClient(AbstractClient):
         top_p: Optional[float] = None,
         enable_input_transcription: bool = True,
         enable_output_transcription: bool = True,
+        voice: Optional[str] = None,
     ) -> types.LiveConnectConfig:
         """Build the LiveConnectConfig for a session.
 
@@ -735,16 +769,25 @@ class GeminiLiveClient(AbstractClient):
                 ``stt_only=True`` still wins over this flag: output
                 transcription stays disabled in STT-only mode regardless
                 of this value (preserves ``live.py:711`` semantics).
+            voice: Per-call voice name override (FEAT-418). Falls back to
+                the constructor's ``self.voice_name`` when ``None`` and
+                does NOT mutate ``self.voice_name`` — resolved locally so
+                concurrent sessions on one client don't interfere.
+                Validated against ``voice_capabilities.voice_catalog``; an
+                out-of-catalog name warns and falls back to
+                ``self.voice_name`` rather than being passed through
+                unvalidated.
         """
         temperature = temperature if temperature is not None else self.temperature
         max_tokens = max_tokens if max_tokens is not None else self.max_tokens
         top_p = top_p if top_p is not None else self.top_p
+        resolved_voice_name = self._resolve_voice_name(voice)
         # Speech configuration
         speech_config = types.SpeechConfig(
             language_code=self.language,
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name=self.voice_name
+                    voice_name=resolved_voice_name
                 )
             )
         )
@@ -833,16 +876,20 @@ class GeminiLiveClient(AbstractClient):
             user_id: User identifier
             stt_only: When True, run in STT-only mode: Gemini transcribes input
                 but does NOT generate a model response (no response_chunk, no audio
-                output).  Only ``user_transcription`` frames are emitted.
+                output).  Only ``role="user"`` transcription frames are emitted
+                (FEAT-418 — previously carried in
+                ``metadata["user_transcription"]``, now removed).
                 Default False = full-duplex (unchanged behavior).
             options: Optional ``VoiceStreamOptions`` projection (FEAT-418).
-                ``temperature``/``max_tokens``/``top_p``/
+                ``temperature``/``max_tokens``/``top_p``/``voice``/
                 ``enable_input_transcription``/``enable_output_transcription``
                 are derived from it when not explicitly present in
                 ``**kwargs`` — an explicit kwarg always wins over
                 ``options``.
             **kwargs: Additional configuration. ``temperature``,
-                ``max_tokens``, ``top_p``, ``enable_input_transcription``,
+                ``max_tokens``, ``top_p``, ``voice`` (per-call voice
+                override, validated against the descriptor's
+                ``voice_catalog``), ``enable_input_transcription``,
                 ``enable_output_transcription`` are recognized here and
                 take precedence over ``options`` (FEAT-418).
 
@@ -862,14 +909,15 @@ class GeminiLiveClient(AbstractClient):
         # guard below) — correct either way (spec §8 Q3).
         parallel_tool_execution = kwargs.get("parallel_tool_execution", False)
 
-        # FEAT-418: resolve per-call inference/transcription overrides.
+        # FEAT-418: resolve per-call inference/transcription/voice overrides.
         # Precedence: explicit kwarg > options field > _build_live_config's
         # own fallback to the constructor value (temperature/max_tokens/
-        # top_p) or default True (transcription flags).
+        # top_p/voice) or default True (transcription flags).
         live_config_overrides: Dict[str, Any] = {}
         for field_name in (
             "temperature", "max_tokens", "top_p",
             "enable_input_transcription", "enable_output_transcription",
+            "voice",
         ):
             if field_name in kwargs:
                 live_config_overrides[field_name] = kwargs[field_name]
@@ -922,6 +970,7 @@ class GeminiLiveClient(AbstractClient):
                                     session_id=session_id,
                                     turn_id=turn_id,
                                     user_id=user_id,
+                                    role="assistant",
                                 )
                                 continue
 
@@ -944,6 +993,7 @@ class GeminiLiveClient(AbstractClient):
                                             session_id=session_id,
                                             turn_id=turn_id,
                                             user_id=user_id,
+                                            role="assistant",
                                         )
 
                                     # Audio (inline_data)
@@ -960,6 +1010,7 @@ class GeminiLiveClient(AbstractClient):
                                             session_id=session_id,
                                             turn_id=turn_id,
                                             user_id=user_id,
+                                            role="assistant",
                                         )
                             elif stt_only and hasattr(server_content, 'model_turn') and server_content.model_turn:
                                 self.logger.debug(
@@ -968,18 +1019,23 @@ class GeminiLiveClient(AbstractClient):
 
                             # Handle input transcription (user's speech)
                             # It's in server_content, not at response level!
+                            #
+                            # FEAT-418: emit the transcript as a canonical
+                            # role="user" text response instead of the
+                            # provider-specific metadata["user_transcription"]
+                            # key (removed — no deprecation window, spec §5).
                             if hasattr(server_content, 'input_transcription') and server_content.input_transcription:
                                 text = getattr(server_content.input_transcription, 'text', '')
                                 if text:
                                     self.logger.info(f"User transcription: {text}")
                                     turn_metadata.input_transcription = text
                                     yield LiveVoiceResponse(
-                                        text="",
+                                        text=text,
                                         is_complete=False,
-                                        metadata={"user_transcription": text},
                                         session_id=session_id,
                                         turn_id=turn_id,
                                         user_id=user_id,
+                                        role="user",
                                     )
 
                             # Handle output transcription (model's speech)
