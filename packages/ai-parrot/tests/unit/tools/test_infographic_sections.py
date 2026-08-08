@@ -213,3 +213,49 @@ class TestGapReport:
         )
         assert report.gaps[0].section == "hero"
         assert report.covered == ["footer"]
+
+
+class TestSectionDescriptorLayoutField:
+    """FEAT-420 Module 7: `SectionDescriptor.layout` / `.narrative`."""
+
+    def test_layout_optional(self):
+        d = SectionDescriptor(template="t.html", mode="jinja")
+        assert d.layout is None and d.narrative is None
+
+    def test_layout_and_narrative_validate(self):
+        from parrot.outputs.a2ui.recipes.models import LayoutSpec, NarrativeSpec
+
+        d = SectionDescriptor(
+            template="t.html",
+            mode="jinja",
+            layout=LayoutSpec(component="Report", properties={}),
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="facts"),
+        )
+        assert d.layout.component == "Report"
+        assert d.narrative.skill == "budget-narrative"
+
+    def test_extra_still_forbidden(self):
+        with pytest.raises(ValidationError):
+            SectionDescriptor(template="t.html", mode="jinja", bogus=1)
+
+    def test_mode_literal_unchanged(self):
+        with pytest.raises(ValidationError):
+            SectionDescriptor(template="t.html", mode="a2ui")
+
+    def test_no_circular_import(self):
+        """Both modules must import cleanly in either order."""
+        import importlib
+        import sys
+
+        for order in (
+            ["parrot.tools.infographic_sections", "parrot.outputs.a2ui.recipes.models"],
+            ["parrot.outputs.a2ui.recipes.models", "parrot.tools.infographic_sections"],
+        ):
+            for mod_name in list(sys.modules):
+                if mod_name in (
+                    "parrot.tools.infographic_sections",
+                    "parrot.outputs.a2ui.recipes.models",
+                ):
+                    del sys.modules[mod_name]
+            for mod in order:
+                importlib.import_module(mod)

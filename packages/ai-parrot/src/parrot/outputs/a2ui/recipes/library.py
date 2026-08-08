@@ -19,7 +19,7 @@ Money-metric outputs are rounded to 2 decimal places (matching the reference
 artifact's display conventions); the generic tabular helpers preserve full
 float precision since they have no notion of "money".
 
-Importing this module registers all 7 transformers on the shared
+Importing this module registers all 8 transformers on the shared
 :data:`~parrot.outputs.a2ui.recipes.transformers.transformer_registry` as an
 import side effect — mirrored by ``recipes/__init__.py`` importing this
 module.
@@ -313,6 +313,133 @@ def top_movers(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[
         (e for e in entries if e["ebitda_variance"] > 0), key=lambda e: -e["ebitda_variance"]
     )[:n]
     return {"worst": worst, "best": best}
+
+
+def _trend_basis(trend: float | None) -> str:
+    """Classify a `top_movers` entry's ``trend`` field for narrative use.
+
+    `top_movers` exposes a single first-vs-latest ``trend`` field, never a
+    day-over-day value — so the only two labels this can ever emit are
+    whether a trend exists at all (``"since_first"``) or the project is new
+    at the latest snapshot (``"new_this_period"``, ``trend is None``).
+    """
+    return "new_this_period" if trend is None else "since_first"
+
+
+def _urgency(trend: float | None) -> str:
+    """Recommendation urgency from a top driver's ``trend`` sign.
+
+    Port of the recommendation urgency branching (spec §Codebase Contract):
+    a worsening trend is ``"immediate"``, an improving trend just needs
+    confirmation (``"confirm_trend"``), and a flat/absent trend means the
+    timing (not the direction) is the open question (``"check_timing"``).
+    """
+    if trend is None or trend == 0:
+        return "check_timing"
+    return "immediate" if trend < 0 else "confirm_trend"
+
+
+@infographic_transformer(
+    "narrative_facts",
+    requires_columns={},  # inputs are prior-step dict outputs, not frames
+    description=(
+        "Structured narrative judgements derived from the outputs of "
+        "variance_analysis, top_movers and division_breakdown (port of the "
+        "BRANCHING in executive_summary.headline_text / division_read / "
+        "trend_clause / recommendation-urgency, WITHOUT any English "
+        "sentence generation — a downstream skill renders these flags as "
+        "prose). Generic shape: any dataset that can feed those three "
+        "transformers can feed this one."
+    ),
+    params_schema={
+        "materiality_threshold": {"type": "number", "default": -5000},
+        "max_named_per_division": {"type": "integer", "default": 2},
+    },
+)
+def narrative_facts(inputs: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+    """See the ``@infographic_transformer`` description above."""
+    variance = inputs["variance_analysis"]
+    movers = inputs["top_movers"]
+    divisions = inputs["division_breakdown"]
+
+    materiality_threshold = params.get("materiality_threshold", -5000)
+    max_named = int(params.get("max_named_per_division", 2))
+
+    rev_pct_change = variance["rev_pct_change"]
+    ebitda_dollar_change = variance["ebitda_dollar_change"]
+    both_improving = rev_pct_change > 0 and ebitda_dollar_change > 0
+    both_worsening = rev_pct_change < 0 and ebitda_dollar_change < 0
+    diverging = not both_improving and not both_worsening
+
+    headline = {
+        "rev_state": variance["rev_state"],
+        "rev_direction": variance["rev_direction"],
+        "ebitda_direction": variance["ebitda_direction"],
+        "both_improving": both_improving,
+        "both_worsening": both_worsening,
+        "diverging": diverging,
+        "first_label": variance["first_snapshot"],
+        "last_label": variance["last_snapshot"],
+    }
+
+    worst = movers.get("worst", [])
+    top_driver: dict[str, Any] | None = None
+    if worst:
+        driver = worst[0]
+        driver_trend = driver.get("trend")
+        top_driver = {
+            "division": driver["division"],
+            "project": driver["project"],
+            "ebitda_variance": driver["ebitda_variance"],
+            "trend": driver_trend,
+            "urgency": _urgency(driver_trend),
+        }
+
+    division_reads: list[dict[str, Any]] = []
+    for division_name, breakdown in divisions.items():
+        projects = breakdown.get("projects", [])
+        materially_negative = sorted(
+            (p for p in projects if p["ebitda_variance"] < materiality_threshold),
+            key=lambda p: p["ebitda_variance"],
+        )[:max_named]
+        named = [p["name"] for p in materially_negative]
+        net_negative = breakdown["ebitda_variance"] < 0
+
+        offsetter: str | None = None
+        if not materially_negative:
+            kind = "spread" if net_negative else "on_track"
+        elif net_negative:
+            kind = "concentrated"
+        else:
+            kind = "offset_by"
+            offsetter = max(projects, key=lambda p: p["ebitda_variance"])["name"]
+
+        division_reads.append(
+            {
+                "division": division_name,
+                "kind": kind,
+                "named": named,
+                "offsetter": offsetter,
+            }
+        )
+
+    watch = [
+        {**entry, "trend_basis": _trend_basis(entry.get("trend"))}
+        for entry in movers.get("worst", [])
+    ]
+    bright = [
+        {**entry, "trend_basis": _trend_basis(entry.get("trend"))}
+        for entry in movers.get("best", [])
+    ]
+
+    return {
+        "headline": headline,
+        "top_driver": top_driver,
+        "division_reads": division_reads,
+        "watch": watch,
+        "bright": bright,
+        "n_snapshots": variance["n_snapshots"],
+    }
 
 
 @infographic_transformer(

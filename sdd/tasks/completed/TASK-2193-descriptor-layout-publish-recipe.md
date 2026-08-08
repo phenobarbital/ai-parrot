@@ -428,13 +428,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Added `layout: Optional[LayoutSpec] = None` and
+`narrative: Optional[NarrativeSpec] = None` to `SectionDescriptor`
+(`infographic_sections.py`, `extra="forbid"` so both had to be declared
+fields). Changed `publish_recipe` to `layout = descriptor.layout or
+LayoutSpec(component="Infographic", properties={"template": descriptor.template})`
+and pass `narrative=descriptor.narrative` into the saved `InfographicRecipe` —
+the gap-report path (returned BEFORE the layout/recipe construction) is
+completely untouched, so an unmapped section still blocks the save
+regardless of `layout`. 30 tests pass across both test files (9 new:
+5 `TestPublishRecipeLayout` + 4 `TestSectionDescriptorLayoutField`,
+including a dedicated circular-import round-trip test in both directions).
+Broader regression check (`tests/outputs/a2ui/`,
+`tests/tools/infographic_recipes/`, both modified test files): 301 passed,
+4 skipped (pre-existing, unrelated). `ruff check` adds only 2 `UP045`
+findings for the 2 new `Optional[...]` fields (same established style as
+every other field in this file); `mypy` shows the same 4 pre-existing
+unrelated errors, unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Circular-import approach used**: forward reference + `model_rebuild()`.
+`infographic_sections.py` gained a `TYPE_CHECKING`-only import of
+`LayoutSpec`/`NarrativeSpec` from `parrot.outputs.a2ui.recipes.models` (the
+module already has `from __future__ import annotations`, so the field
+annotations are deferred strings at runtime). `recipes/models.py` calls
+`SectionDescriptor.model_rebuild()` once, right after `RecipeRunError`
+(i.e. after every class `models.py` defines, including `LayoutSpec` and
+`NarrativeSpec`, is in that module's globals) — `model_rebuild()`'s default
+namespace resolution walks the caller's frame, which at that call site is
+`models.py` itself, so both forward refs resolve. Verified both import
+orders work cleanly (`test_no_circular_import`) and that validation/defaults
+behave correctly in both directions via a standalone repro before writing
+any tests.
 
-**Circular-import approach used** (required — TASK-2194 depends on the resulting
-field types): forward reference + `model_rebuild()` | structural dict | other: ...
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. One test-fixture-naming note: the task's own
+Test Specification assumed a fixture named `agent_with_store`, but the
+actual existing fixture in `test_publish_recipe.py` is named `agent` — used
+the real fixture name (it already wires a `FileRecipeStore`).

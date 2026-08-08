@@ -20,6 +20,7 @@ from parrot.outputs.a2ui.recipes.models import (
     DataSourceSpec,
     InfographicRecipe,
     LayoutSpec,
+    NarrativeSpec,
     RecipeParam,
     RenderSpec,
     TransformStep,
@@ -476,3 +477,258 @@ class TestRecipeRunner:
         monkeypatch.setattr(runner_module, "deliver_artifact", _fake_deliver)
         await runner.run(recipe.name)
         assert called == []
+
+
+class TestDriftCheckOptional:
+    """FEAT-420 Module 2: `_check_bind_drift_or_raise` honours `optional` binds."""
+
+    async def test_drift_tolerates_optional(self, dataset_manager):
+        """A layout binding marked optional does not abort the run."""
+        recipe = _make_recipe(
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={
+                    "title": {"$bind": "/result"},
+                    "narrative": {"$bind": "/narrative/headline", "optional": True},
+                    "sections": [],
+                },
+            )
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        artifact = await runner.run(recipe.name)
+
+        assert isinstance(artifact, RenderedArtifact)
+
+    async def test_drift_still_fails_required(self, dataset_manager):
+        """A missing required pointer raises RecipeRunException, stage='layout'."""
+        recipe = _make_recipe(
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={"title": {"$bind": "/does_not_exist"}, "sections": []},
+            )
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        with pytest.raises(RecipeRunException) as exc_info:
+            await runner.run(recipe.name)
+
+        assert exc_info.value.error.stage == "layout"
+        assert "does_not_exist" in exc_info.value.error.detail
+
+    async def test_absent_optional_logged_at_info(self, dataset_manager, caplog):
+        """Operator-visible: the absent optional pointer appears in INFO logs."""
+        recipe = _make_recipe(
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={
+                    "title": {"$bind": "/result"},
+                    "narrative": {"$bind": "/narrative/headline", "optional": True},
+                    "sections": [],
+                },
+            )
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        with caplog.at_level("INFO"):
+            await runner.run(recipe.name)
+
+        assert any("/narrative/headline" in record.getMessage() for record in caplog.records)
+
+
+class _OkNarrator:
+    """Fake `Narrator` that always returns fixed prose and records its calls."""
+
+    def __init__(self, prose: str = "Revenue is running behind budget, with the gap narrowing."):
+        self.calls = []
+        self.prose = prose
+
+    async def narrate(self, facts, skill):
+        self.calls.append((facts, skill))
+        return self.prose
+
+
+class _RaisingNarrator:
+    async def narrate(self, facts, skill):
+        raise RuntimeError("LLM exploded")
+
+
+class _EmptyNarrator:
+    async def narrate(self, facts, skill):
+        return None
+
+
+class TestNarrativeStep:
+    """FEAT-420 Module 3: the runner's async, best-effort narrative step."""
+
+    async def test_no_narrator_skips_and_succeeds(self, dataset_manager):
+        """G-E: pure replay never fails for lack of an LLM."""
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)  # narrator=None
+
+        artifact = await runner.run(recipe.name)
+
+        assert isinstance(artifact, RenderedArtifact)
+        envelope = _RENDERED_ENVELOPES[-1]
+        assert "narrative" not in envelope.data_model
+
+    async def test_narrator_populates_output_key(self, dataset_manager):
+        """Prose lands at narrative.output_key."""
+        narrator = _OkNarrator()
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager, narrator=narrator)
+
+        await runner.run(recipe.name)
+
+        envelope = _RENDERED_ENVELOPES[-1]
+        assert envelope.data_model["narrative"] == narrator.prose
+        assert narrator.calls == [(envelope.data_model["result"], "budget-narrative")]
+
+    async def test_narrator_not_called_without_narrative_spec(self, dataset_manager):
+        narrator = _OkNarrator()
+        recipe = _make_recipe()  # narrative is None by default
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager, narrator=narrator)
+
+        await runner.run(recipe.name)
+
+        assert narrator.calls == []
+
+    async def test_narrator_exception_degrades(self, dataset_manager, caplog):
+        """WARNING logged; run still returns an artifact."""
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager, narrator=_RaisingNarrator())
+
+        with caplog.at_level("WARNING"):
+            artifact = await runner.run(recipe.name)
+
+        assert isinstance(artifact, RenderedArtifact)
+        assert any("Narrator failed" in r.getMessage() for r in caplog.records)
+        envelope = _RENDERED_ENVELOPES[-1]
+        assert "narrative" not in envelope.data_model
+
+    async def test_empty_prose_writes_nothing(self, dataset_manager):
+        """None/blank result must not create the key."""
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager, narrator=_EmptyNarrator())
+
+        await runner.run(recipe.name)
+
+        envelope = _RENDERED_ENVELOPES[-1]
+        assert "narrative" not in envelope.data_model
+
+    async def test_missing_facts_key_warns_and_skips(self, dataset_manager, caplog):
+        """Narrator is not called when facts_key is absent from the data_model."""
+        narrator = _OkNarrator()
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="does_not_exist")
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager, narrator=narrator)
+
+        with caplog.at_level("WARNING"):
+            await runner.run(recipe.name)
+
+        assert narrator.calls == []
+        assert any("does_not_exist" in r.getMessage() for r in caplog.records)
+
+    async def test_narrative_runs_before_drift_check(self, dataset_manager):
+        """An optional narrative bind resolves when prose was produced."""
+        narrator = _OkNarrator()
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"),
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={
+                    "title": {"$bind": "/result"},
+                    "summary": {"$bind": "/narrative", "optional": True},
+                    "sections": [],
+                },
+            ),
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager, narrator=narrator)
+
+        artifact = await runner.run(recipe.name)
+
+        assert isinstance(artifact, RenderedArtifact)
+        envelope = _RENDERED_ENVELOPES[-1]
+        assert envelope.data_model["narrative"] == narrator.prose
+
+    def test_backwards_compatible_ctor(self, store, dataset_manager):
+        """`RecipeRunner(store, dm)` still works."""
+        runner = RecipeRunner(store, dataset_manager)
+        assert runner.narrator is None
+
+
+class TestDryRunNarrative:
+    """FEAT-420 Module 3: `dry_run` flags a `narrative.facts_key` mismatch."""
+
+    async def test_dry_run_flags_facts_key_mismatch(self, dataset_manager):
+        """facts_key naming no declared output_key -> a RecipeRunError.
+
+        `RecipeRunError.stage` has no dedicated "narrative" Literal member
+        (verified against models.py), so this reuses "layout" — identify the
+        diagnostic by its `detail` text instead of a unique stage value.
+        """
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="does_not_exist")
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        errors = await runner.dry_run(recipe)
+
+        assert any(
+            "narrative.facts_key" in e.detail and "does_not_exist" in e.detail
+            for e in errors
+        )
+
+    async def test_dry_run_clean_for_wired_narrative(self, dataset_manager):
+        """Correctly wired narrative produces no narrative-related error."""
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        errors = await runner.dry_run(recipe)
+
+        assert not any("narrative.facts_key" in e.detail for e in errors)
+
+    async def test_dry_run_tolerates_optional_narrative_layout_bind(self, dataset_manager):
+        """A layout $bind into the narrative step's output_key is NOT a
+        TransformStep — it must not be flagged as an undeclared output_key
+        (discovered via FEAT-420 TASK-2195's actual-execution requirement)."""
+        recipe = _make_recipe(
+            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"),
+            layout=LayoutSpec(
+                component="Infographic",
+                properties={
+                    "title": {"$bind": "/result"},
+                    "summary": {"$bind": "/narrative", "optional": True},
+                    "sections": [],
+                },
+            ),
+        )
+        store = _FakeStore({recipe.name: recipe})
+        runner = RecipeRunner(store, dataset_manager)
+
+        errors = await runner.dry_run(recipe)
+
+        assert not any("undeclared output_key" in e.detail for e in errors)

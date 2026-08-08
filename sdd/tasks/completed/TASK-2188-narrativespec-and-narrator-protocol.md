@@ -339,10 +339,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-07
+**Notes**: Added `NarrativeSpec(skill, facts_key, output_key="narrative")` to
+`models.py`, mirroring the `section_descriptor` additive precedent exactly
+(new `Attributes:` docstring entry, no `schema_version` bump). Added
+`InfographicRecipe.narrative: Optional[NarrativeSpec] = None`. Exported
+`NarrativeSpec` from both `__all__` lists and the `recipes/__init__.py`
+import block (also corrected its stale "7 built-in transformers" docstring
+comment to 8, matching TASK-2186's `narrative_facts` addition — same file,
+same accuracy fix). Created `parrot/tools/infographic_recipes/narrator.py`
+with a `@runtime_checkable Narrator` protocol
+(`async def narrate(facts, skill) -> Optional[str]`), G8-safe: verified by a
+dedicated test that the module's source contains no `parrot` import. Added
+`TestNarrativeSpecAdditive` (4 tests) to `test_models.py` and created
+`test_narrator_protocol.py` (3 tests). Full
+`tests/outputs/a2ui/recipes/ tests/tools/infographic_recipes/` suite: 127
+passed. `mypy` clean on both changed/created source files; `ruff check`
+shows only pre-existing `UP045`/`RUF022`/`I001`/`UP037` findings consistent
+with this file's established `Optional[X]` style (verified via `git stash`
+diff before/after — no new rule categories, counts increase only
+proportionally to the fields added).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

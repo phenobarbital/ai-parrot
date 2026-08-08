@@ -31,6 +31,7 @@ __all__ = [
     "LayoutSpec",
     "RenderSpec",
     "ScheduleSpec",
+    "NarrativeSpec",
     "InfographicRecipe",
     "TransformerManifest",
     "RecipeRunError",
@@ -151,6 +152,26 @@ class ScheduleSpec(BaseModel):
     roles: list[str] = Field(default_factory=list)
 
 
+class NarrativeSpec(BaseModel):
+    """Declarative narrative step: a REFERENCE to a skill, never code (spec G1).
+
+    Attributes:
+        skill: Registered skill name that teaches an LLM to render the facts
+            as prose (e.g. ``"budget-narrative"``). Never a prompt or template
+            string — resolving the skill's content is the narrator's job.
+        facts_key: ``data_model`` key holding the deterministic facts to
+            render (typically a transform step's ``output_key``, e.g.
+            ``"narrative_facts"``).
+        output_key: ``data_model`` key the generated prose is written to.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    skill: str = Field(..., description="Skill name resolvable in the skill registry.")
+    facts_key: str = Field(..., description="data_model key holding the facts to render.")
+    output_key: str = Field(default="narrative", description="data_model key for the prose.")
+
+
 class InfographicRecipe(BaseModel):
     """The persisted, replayable construction instructions for an infographic.
 
@@ -177,6 +198,12 @@ class InfographicRecipe(BaseModel):
             still load. NOT a schema-version bump (the store gate is a strict
             equality on ``SUPPORTED_SCHEMA_VERSION``, so a bump would refuse
             every legacy recipe).
+        narrative: Optional declarative narrative step (FEAT-420) — a
+            REFERENCE to a skill name, never code (spec G1). Additive/optional
+            — pre-existing recipes (field absent) still load; a `None`
+            narrator injected into the runner also skips the step entirely
+            (spec criterion G-E). NOT a schema-version bump, same rationale
+            as `section_descriptor`.
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
@@ -194,6 +221,7 @@ class InfographicRecipe(BaseModel):
     schedule: Optional[ScheduleSpec] = None
     updated_at: datetime
     section_descriptor: Optional[SectionDescriptor] = None
+    narrative: Optional[NarrativeSpec] = None
 
     def to_yaml(self) -> str:
         """Serialize this recipe to a YAML document.
@@ -257,3 +285,14 @@ class RecipeRunError(BaseModel):
     dataset: Optional[str] = None
     missing_columns: list[str] = Field(default_factory=list)
     detail: str
+
+
+# FEAT-420 (Module 7): resolve SectionDescriptor's forward-referenced
+# `layout`/`narrative` fields now that LayoutSpec/NarrativeSpec are defined
+# in THIS module. Deferred rebuild avoids a circular import —
+# `infographic_sections.py` cannot import LayoutSpec/NarrativeSpec from here
+# at runtime, since this module already imports SectionDescriptor from
+# there (for its own `section_descriptor` field, above). `model_rebuild()`
+# resolves the string-annotated forward references using this call site's
+# module globals, which now contain both classes.
+SectionDescriptor.model_rebuild()

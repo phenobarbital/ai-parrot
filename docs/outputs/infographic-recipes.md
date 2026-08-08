@@ -27,17 +27,20 @@ Pydantic model, never stored/executed code (spec G1):
   (name + params + `output_key`); every value in the layout traces back to
   one of these.
 - **`layout`** — a catalog component tree (`Infographic`, `Chart`,
-  `KPICard`, `DataTable`, ...) whose data-carrying properties are
+  `KPICard`, `DataTable`, `Report`, ...) whose data-carrying properties are
   `{"$bind": "/pointer"}` bindings into the assembled `dataModel`.
 - **`render`** — the renderer profile (`interactive-html`, `ssr_html`,
   `pdf`, ...) plus optional delivery config.
 - **`schedule`** — optional; `principal` is REQUIRED before a recipe can be
   scheduled (spec G8 — see §4).
+- **`narrative`** (FEAT-420, optional, additive — see §6) — a *reference* to
+  a skill name that renders deterministic facts as prose. Never code; the
+  recipe's `schema_version` stays `1`.
 
 ### Transformers
 
 Registered via `@infographic_transformer` (`parrot.outputs.a2ui.recipes.transformers`):
-pure `(inputs: dict[str, DataFrame], params: dict) -> dict` functions. Seven
+pure `(inputs: dict, params: dict) -> dict` functions. Eight
 ship built-in (`parrot.outputs.a2ui.recipes.library`):
 
 | Transformer | Purpose |
@@ -45,13 +48,18 @@ ship built-in (`parrot.outputs.a2ui.recipes.library`):
 | `day_totals` | Per-snapshot revenue/EBITDA totals + variance (dynamic per-snapshot-date keys) |
 | `division_breakdown` | Per-division rollup + per-project variances (latest snapshot) |
 | `variance_analysis` | First-vs-latest comparison with STABLE keys (`first_totals`/`last_totals`) — the layout-friendly equivalent of `day_totals` |
-| `top_movers` | Worst/best N projects by EBITDA variance, with day-over-day trend |
+| `top_movers` | Worst/best N projects by EBITDA variance, with a first-vs-latest trend |
 | `groupby_aggregate` | Generic group-by + named aggregation (reshapes multi-day data into flat, chartable rows) |
 | `pivot` | Generic pivot table |
 | `latest_vs_baseline` | Generic baseline-vs-latest delta join |
+| `narrative_facts` (FEAT-420) | Structured narrative judgements (direction flags, top driver + urgency, per-division read kind) derived from `variance_analysis`/`top_movers`/`division_breakdown`'s outputs — see §6. Takes prior-step `output_key`s as input, not raw dataset columns (`requires_columns={}`) |
 
 Every transformer declares `requires_columns` (checked by the fail-fast gate,
 §3) and a `params_schema` (discoverable via `infographic_get_recipe_contract`).
+An input alias referencing a PRIOR step's `output_key` (rather than a
+`data_sources` alias) is exempt from the columns gate — it has no columns to
+check, and is validated instead at transform-execution time. This is what
+lets `narrative_facts` take other transformers' OUTPUTS as its inputs.
 
 ### Stores
 
@@ -133,11 +141,22 @@ The layout's KPICards bind to `variance_analysis`'s STABLE
 keys, which change every day and would break a fixed `$bind` pointer.
 
 ```yaml
+  - transformer: narrative_facts
+    inputs: [variance_analysis, top_movers, division_breakdown]
+    output_key: narrative_facts
+```
+FEAT-420: `narrative_facts` derives structured judgements (direction flags,
+top driver + urgency, per-division read kind) from the THREE steps above —
+its inputs are their `output_key`s, not raw dataset columns, so it MUST come
+after all three (`transforms` order is execution order). See §6.
+
+```yaml
 layout:
   component: Infographic
   properties:
     sections:
       - heading: Snapshot
+        text: {$bind: "/narrative", optional: true}
         components:
           - component: KPICard
             properties:
@@ -146,7 +165,22 @@ layout:
 Every data-carrying property is a `$bind` pointer into the assembled
 `dataModel` — never a literal value. The runner cross-checks every pointer's
 top-level key against the transform chain's `output_key`s BEFORE rendering
-(spec §7's documented "`$bind` drift" risk).
+(spec §7's documented "`$bind` drift" risk). The section's `text` carries a
+sibling `optional: true` (FEAT-420, §6) — with no narrator injected, `/narrative`
+is never populated and this property is simply OMITTED from the baked
+output rather than aborting the run.
+
+```yaml
+narrative:
+  skill: budget-narrative
+  facts_key: narrative_facts
+  output_key: narrative
+```
+A top-level, recipe-level field (a sibling of `transforms`, NOT a transform
+step): `skill` names a skill registered under `.agent/skills/`; `facts_key`
+is the `data_model` key holding the facts to render (`narrative_facts`'s
+`output_key` above); `output_key` (default `"narrative"`) is where the
+generated prose lands. See §6 for the full narrative contract.
 
 ```yaml
 render:
@@ -297,7 +331,12 @@ class RecipeRunError(BaseModel):
   alias that is neither a data-source alias nor a prior step's `output_key`.
 - **`stage="layout"`** — a `$bind` pointer's top-level key is absent from
   the assembled `dataModel` (an `output_key` was renamed without updating
-  the layout), or the assembled envelope fails catalog validation.
+  the layout), or the assembled envelope fails catalog validation. A
+  pointer marked `optional: true` (FEAT-420, §6) never raises here even
+  when absent — see the Determinism Boundary section. `dry_run`'s
+  equivalent static check additionally treats a recipe's `narrative.output_key`
+  as a valid bindable key (it is not a `TransformStep`, but it is a
+  legitimate `data_model` key once a narrator populates it).
 - **`stage="render"`** — the resolved renderer's `render()` call itself
   raised. (An UNKNOWN/uninstalled renderer profile instead raises the
   existing actionable `ImportError` naming the pip extra — it never reaches
@@ -309,7 +348,158 @@ replayability before scheduling it.
 
 ---
 
-## 6. Migration from `daily_report.py`
+## 6. Narrative (FEAT-420)
+
+A recipe may declare an optional, **fenced** narrative step that renders
+deterministic facts as prose — the only non-deterministic part of an
+otherwise fully deterministic replay.
+
+### Determinism boundary
+
+> **Every number in a rendered artifact traces to a registered transformer.
+> Prose is best-effort.** No narrator configured, a missing skill, an LLM
+> error, or a figure-guard rejection all degrade the SAME way: the narrative
+> section is simply absent, and the run still succeeds. A pure replay
+> **never fails for lack of an LLM** (spec criterion G-E). Narrative
+> generation is never retried, never blocks, and is never guaranteed
+> byte-identical across replays — only the DATA is deterministic; the
+> WORDING is not.
+
+This is the one thing to internalize before reading further: nothing below
+changes what is guaranteed. It only adds a best-effort layer on top.
+
+### The `narrative` block
+
+```yaml
+narrative:
+  skill: budget-narrative
+  facts_key: narrative_facts
+  output_key: narrative     # default
+```
+
+`NarrativeSpec` (`parrot.outputs.a2ui.recipes.models`) — a *reference* to a
+skill name, **never code** (spec G1, same principle as `transforms`
+referencing registered transformer *names*). `skill` must resolve in the
+skill registry at narration time (`dry_run` flags an unresolvable
+`facts_key` statically; the skill *name* itself is only checked live, since
+the runner has no registry handle). `InfographicRecipe.schema_version`
+stays `1` — this is an additive field, exactly like `section_descriptor`
+before it.
+
+### Injecting a narrator
+
+```python
+from parrot.tools.infographic_recipes.runner import RecipeRunner
+
+# No narrator -> the step is skipped entirely; recipes with a `narrative`
+# block still replay deterministically.
+runner = RecipeRunner(recipe_store, dataset_manager)
+
+# A narrator -> prose lands at data_model[narrative.output_key].
+runner = RecipeRunner(recipe_store, dataset_manager, narrator=my_narrator)
+```
+
+`narrator` implements the `Narrator` protocol
+(`parrot.tools.infographic_recipes.narrator`):
+
+```python
+@runtime_checkable
+class Narrator(Protocol):
+    async def narrate(self, facts: dict[str, Any], skill: str) -> Optional[str]: ...
+```
+
+`parrot.bots.mixins.NarrativeMixin` is the reusable implementation — mix it
+onto any `SkillRegistryMixin`-composing agent and pass `narrator=<that
+agent>` (it satisfies the protocol). It carries **no domain vocabulary** —
+any facts dict and any skill name work (spec criterion G-I).
+`run_scheduled_refresh` needs **no change** to support narration: it takes
+a `RecipeRunner` **instance**, so injection happens once, at construction —
+whoever builds the runner decides whether it can narrate.
+
+### Optional bindings
+
+```yaml
+text: {$bind: "/narrative", optional: true}
+```
+
+A `$bind` expression carrying a sibling `optional: true` degrades instead
+of aborting when its pointer does not resolve:
+
+- **Baking** (`parrot.outputs.a2ui.baking._resolve_value`) omits the
+  property entirely rather than raising `BakeError`.
+- **The runner's drift check** (`_check_bind_drift_or_raise`) logs the
+  absent pointer at INFO instead of aborting the run.
+- A binding **without** `optional` is unaffected — still raises/aborts on
+  an unresolved pointer, exactly as before this feature. Optional bindings
+  are opt-in per pointer, not a global relaxation.
+
+Mark **every** narrative-bound property `optional: true` — a recipe that
+binds into `/narrative` without it will abort on any no-narrator replay,
+defeating the determinism guarantee above.
+
+### The figure guard — and its limitation
+
+Before a narrator's prose reaches `data_model`, every numeric literal in it
+is checked for derivability from the facts
+(`parrot.tools.infographic_recipes.figure_guard.figures_are_derivable`).
+**All-or-nothing**: a single non-derivable figure discards the WHOLE
+narrative, never just the offending sentence — a partially-scrubbed
+paragraph is a new artifact nobody reviewed. This degrades to the exact
+same "no narrative" state as a missing narrator (spec criterion G-H); there
+is one fallback path, not two. Guard enforcement is the *narrator
+implementation's* responsibility (`NarrativeMixin` applies it internally)
+— `RecipeRunner` itself trusts whatever a `Narrator` returns.
+
+**Stated limitation** (spec §7 Known Risks, not silently glossed over): the
+guard catches invented *figures*, not a fluent mis-*characterisation* of a
+correct one — e.g. it cannot tell "EBITDA improved by $42.0K" from "EBITDA
+worsened by $42.0K" when both figures are individually derivable. This is
+the residual risk the fence does not close; review of the narrating skill's
+phrasing rules is what keeps it in check, not the guard.
+
+### Skill discovery and the 1000-token cap
+
+Narrative skills live as data in `.agent/skills/<name>/` (composite:
+`SKILL.md` + asset files), discovered by
+`parrot.skills.loader.SkillsDirectoryLoader`. `SkillDefinition.MAX_TOKENS`
+caps the `SKILL.md` **body** at 1000 `cl100k_base` tokens
+(frontmatter excluded from the count) — a composite skill moves the facts
+contract and reference phrasing into assets to stay under it.
+
+**Gotcha**: the cap is enforced at **discovery**, not at authoring time. An
+over-cap or otherwise unparseable `SKILL.md` is logged as a warning and
+**silently skipped** — the skill registry simply does not contain it, which
+looks exactly like "the narrative stopped working" with no error anywhere
+obvious. Keep the `SKILL.md` body lean and measure its token count before
+committing a change to it.
+
+### The `snapshot_col` gotcha
+
+The finance transformers default to `snapshot_col="snapshot"`
+(`library.py`); a real table may expose a differently-named column (e.g.
+`snapshot_date`). **Three of the four finance transformers degrade
+silently** on a wrong/missing `snapshot_col` — `day_totals` and
+`top_movers` fall back to treating the whole frame as one snapshot,
+`division_breakdown` just uses whatever rows are present — while
+`variance_analysis` is the ONE that **raises** outright without the
+column. A silent single-snapshot read is easy to miss in review (the
+numbers still look plausible), so treat the params entry as load-bearing:
+pass `snapshot_col` **explicitly and consistently** on every step that
+needs it, never rely on the default when the real column name differs.
+
+### `ai-parrot-visualizations` — verified unaffected
+
+No satellite renderer change was needed for narrative (verified during
+FEAT-420 research): `Report`-rooted envelopes and per-section `text` were
+already rendered by `interactive-html`
+(`ReportComponent.lower` already omits an absent `text`/`summary`;
+`interactive_html._render_infographic` already omits an absent section
+`text`) — the `optional`-binding mechanism above builds entirely on that
+pre-existing graceful-omission behaviour.
+
+---
+
+## 7. Migration from `daily_report.py`
 
 The reference artifacts (`sdd/artifacts/daily_report.py`,
 `executive_summary.py`, `budget_variance_dashboard_Template.html` —
@@ -333,7 +523,7 @@ now declarative, replayable, and schema-drift-safe.
 
 ---
 
-## 7. Testing
+## 8. Testing
 
 `packages/ai-parrot/tests/integration/infographic_recipes/test_e2e.py`
 exercises the full pipeline against synthetic fixture CSVs (derived from

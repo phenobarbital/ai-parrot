@@ -1549,7 +1549,22 @@
                 if (saved) {
                     try {
                         const settings = JSON.parse(saved);
-                        Object.assign(this.config, settings);
+
+                        // Restore only user-controlled preferences — never
+                        // wsUrl (must be derived from the server-rendered
+                        // provider config, not persisted directly).
+                        if (settings.language) this.config.language = settings.language;
+                        if (settings.systemPrompt) this.config.systemPrompt = settings.systemPrompt;
+
+                        // Restore last-used provider (recompute wsUrl from
+                        // the live server config so it can never go stale).
+                        if (settings.activeProvider
+                            && this.providers[settings.activeProvider]
+                            && this.providers[settings.activeProvider].available) {
+                            this.activeProvider = settings.activeProvider;
+                            const wsBase = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host;
+                            this.config.wsUrl = wsBase + this.providers[this.activeProvider].wsPath;
+                        }
 
                         document.getElementById('languageSelect').value = this.config.language;
                         document.getElementById('systemPrompt').value = this.config.systemPrompt || '';
@@ -1560,7 +1575,15 @@
             }
 
             saveSettings() {
-                localStorage.setItem('voiceChatProviderSwitchSettings', JSON.stringify(this.config));
+                // Persist only user-controlled preferences + provider key.
+                // wsUrl is always derived from the server-rendered provider
+                // config — persisting it caused the "always Nova" bug where
+                // a stale URL overrode the visually-active provider on reload.
+                localStorage.setItem('voiceChatProviderSwitchSettings', JSON.stringify({
+                    language: this.config.language,
+                    systemPrompt: this.config.systemPrompt,
+                    activeProvider: this.activeProvider,
+                }));
             }
 
             openSettings() {
