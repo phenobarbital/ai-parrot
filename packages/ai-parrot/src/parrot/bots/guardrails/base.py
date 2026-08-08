@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class GuardrailStage(str, Enum):
@@ -84,6 +84,14 @@ class GuardrailContext(BaseModel):
     method: str = ""
     tool_name: str | None = None
     extras: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("user_id", "session_id", mode="before")
+    @classmethod
+    def _coerce_to_str(cls, v: Any) -> str | None:
+        """Accept int/str identifiers — always store as str."""
+        if v is None:
+            return None
+        return str(v)
 
 
 class Guardrail(ABC):

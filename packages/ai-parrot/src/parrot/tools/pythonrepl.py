@@ -21,14 +21,30 @@ from contextlib import redirect_stdout
 from io import StringIO, BytesIO
 import pandas as pd
 import numpy as np
-import matplotlib
 
-# Force matplotlib to use non-interactive backend
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+# ---------------------------------------------------------------------------
+# Lazy matplotlib initialisation — deferred until first PythonREPLTool use so
+# that ``from parrot.bots import Agent`` does NOT pay the ~400 ms matplotlib
+# style-parsing cost (and the associated pyparsing deprecation warnings).
+# ---------------------------------------------------------------------------
+matplotlib = None  # type: ignore[assignment]
+plt = None         # type: ignore[assignment]
+_pylab_helpers = None  # type: ignore[assignment]
 
-# Import these for proper cleanup handling
-from matplotlib import _pylab_helpers
+
+def _ensure_matplotlib():
+    """Import and configure matplotlib on first call (idempotent)."""
+    global matplotlib, plt, _pylab_helpers  # noqa: PLW0603
+    if matplotlib is not None:
+        return
+    import matplotlib as _mpl
+    _mpl.use("Agg")
+    import matplotlib.pyplot as _plt
+    from matplotlib import _pylab_helpers as _ph
+    matplotlib = _mpl
+    plt = _plt
+    _pylab_helpers = _ph
+
 
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
@@ -300,6 +316,8 @@ class PythonREPLTool(AbstractTool):
         # Debug:
         self.debug = debug
 
+        # Lazy-init matplotlib on first PythonREPLTool instantiation
+        _ensure_matplotlib()
         # Bootstrap the environment if not already done
         self._bootstrap()
 

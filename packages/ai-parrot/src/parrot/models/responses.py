@@ -489,7 +489,7 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.dict() if hasattr(response, 'dict') else response.__dict__
+            raw_response=response.model_dump() if hasattr(response, 'model_dump') else (response.dict() if hasattr(response, 'dict') else response.__dict__)
         )
 
     @staticmethod
@@ -535,7 +535,7 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.dict() if hasattr(response, 'dict') else response.__dict__,
+            raw_response=response.model_dump() if hasattr(response, 'model_dump') else (response.dict() if hasattr(response, 'dict') else response.__dict__),
             response=message.content
         )
 
@@ -914,10 +914,10 @@ class AIMessageFactory:
             return [AIMessageFactory._sanitize_for_json(item) for item in data]
         elif isinstance(data, (str, int, float, bool, type(None))):
             return data
-        elif hasattr(data, 'dict'):
-            return AIMessageFactory._sanitize_for_json(data.dict())
         elif hasattr(data, 'model_dump'):
             return AIMessageFactory._sanitize_for_json(data.model_dump())
+        elif hasattr(data, 'dict'):
+            return AIMessageFactory._sanitize_for_json(data.dict())
         elif hasattr(data, '__dict__'):
             return AIMessageFactory._sanitize_for_json(data.__dict__)
         else:
