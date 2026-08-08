@@ -16,7 +16,7 @@ from .registry import FunctionRegistry, default_registry, register_function
 from .ruleset import RuleSet
 from ._native import HAS_RUST
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 __all__ = (
     "AbstractRule",

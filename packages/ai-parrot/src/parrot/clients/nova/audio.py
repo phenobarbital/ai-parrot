@@ -423,10 +423,27 @@ class NovaAudio:
             InvokeModelWithBidirectionalStreamInputChunk,
         )
 
+        payload_bytes = json.dumps(event).encode("utf-8")
+        # --- DIAG: log every non-audio event so we can see what Nova rejects ---
+        inner = event.get("event", event)
+        event_type = next(
+            (k for k in inner if k not in ("promptName", "contentName")),
+            "unknown",
+        )
+        if event_type != "audioInput":
+            self.logger.debug(
+                "→ _send_event [%s] (%d bytes): %s",
+                event_type, len(payload_bytes), payload_bytes.decode("utf-8"),
+            )
+        else:
+            self.logger.debug(
+                "→ _send_event [audioInput] (%d bytes)", len(payload_bytes),
+            )
+        # --- /DIAG ---
         await stream.input_stream.send(
             InvokeModelWithBidirectionalStreamInputChunk(
                 value=BidirectionalInputPayloadPart(
-                    bytes_=json.dumps(event).encode("utf-8")
+                    bytes_=payload_bytes
                 )
             )
         )
@@ -496,20 +513,39 @@ class NovaAudio:
         with contextlib.suppress(Exception):
             await stream.close()
 
-    async def _end_session(self, stream: Any, prompt_name: str) -> None:
+    async def _end_session(
+        self,
+        stream: Any,
+        prompt_name: str,
+        content_name: str | None = None,
+    ) -> None:
         """Tell Nova Sonic the prompt and session are finished.
 
-        Sends ``promptEnd`` then ``sessionEnd`` so the service can settle the
-        turn before the transport closes. Best-effort: called from
-        :meth:`stream_voice`'s ``finally``, where the stream may already be
-        half-closed by the service, and where raising would mask the real
-        error.
+        Sends the complete shutdown sequence that the AWS reference sample
+        uses::
+
+            contentEnd  (closes the user-audio content block)
+            promptEnd   (tells the model this prompt is done)
+            sessionEnd  (tears down the session)
+
+        ``contentEnd`` is only sent when *content_name* is provided (it is
+        ``None`` in error paths where the audio content block was never
+        opened).  Best-effort: called from :meth:`stream_voice`'s
+        ``finally``, where the stream may already be half-closed by the
+        service, and where raising would mask the real error.
 
         Args:
             stream: The handle returned by :meth:`_open_stream`.
             prompt_name: The turn's prompt identifier.
+            content_name: The user-audio content block identifier. When
+                provided, a ``contentEnd`` frame is sent before
+                ``promptEnd`` to close the content block cleanly.
         """
         try:
+            if content_name is not None:
+                await self._send_event(stream, {"event": {"contentEnd": {
+                    "promptName": prompt_name, "contentName": content_name,
+                }}})
             await self._send_event(
                 stream, {"event": {"promptEnd": {"promptName": prompt_name}}}
             )
@@ -578,10 +614,19 @@ class NovaAudio:
             except Exception:            # a broken tool must not kill the turn
                 self.logger.warning("Skipping tool with unreadable schema: %r", tool)
                 continue
+            # Nova Sonic's bidirectional streaming protocol expects
+            # inputSchema.json to be a **JSON string** (double-serialized),
+            # NOT a nested dict — verified against the AWS reference sample
+            # (nova_sonic_tool_use.py:345-366). Passing a dict causes
+            # "Unable to parse input chunk" (ValidationException).
+            schema_value = (
+                json.dumps(parameters) if isinstance(parameters, dict)
+                else parameters
+            )
             specs.append({"toolSpec": {
                 "name": name,
                 "description": description,
-                "inputSchema": {"json": parameters},
+                "inputSchema": {"json": schema_value},
             }})
         return {"tools": specs} if specs else None
 
@@ -605,6 +650,10 @@ class NovaAudio:
                 "channelCount": 1,
                 "voiceId": voice_id,
                 "encoding": "base64",
+                # FEAT-408 Module 2 (gap 10): the AWS sample includes
+                # audioType; without it Nova may not recognise the output
+                # as speech synthesis.
+                "audioType": "SPEECH",
             },
         }
         tool_configuration = self._build_tool_configuration()
@@ -901,10 +950,13 @@ class NovaAudio:
             stream, self._build_prompt_start(prompt_name, resolved_voice_id)
         )
         if system_prompt:
+            # FEAT-408 Module 2 (gap 10): the AWS sample marks SYSTEM
+            # content as interactive=False — it's context for the model,
+            # not user-interactive content that triggers generation.
             await self._send_event(stream, {"event": {"contentStart": {
                 "promptName": prompt_name, "contentName": f"{content_name}-sys",
                 "type": "TEXT", "role": "SYSTEM",
-                "interactive": True,
+                "interactive": False,
                 "textInputConfiguration": {"mediaType": "text/plain"},
             }}})
             await self._send_event(stream, {"event": {"textInput": {
@@ -915,15 +967,22 @@ class NovaAudio:
                 "promptName": prompt_name, "contentName": f"{content_name}-sys",
             }}})
 
+        # FEAT-408 Module 2 (gap 10): the AWS sample marks the user's
+        # AUDIO contentStart as interactive=True (tells Nova this content
+        # triggers model generation — required when tools are declared;
+        # without it Nova waits indefinitely for "interactive content")
+        # and includes audioType:"SPEECH" in the input configuration.
         await self._send_event(stream, {"event": {"contentStart": {
             "promptName": prompt_name, "contentName": content_name,
             "type": "AUDIO", "role": "USER",
+            "interactive": True,
             "audioInputConfiguration": {
                 "mediaType": "audio/lpcm",
                 "sampleRateHertz": self.INPUT_SAMPLE_RATE_HZ,
                 "sampleSizeBits": 16,
                 "channelCount": 1,
                 "encoding": "base64",
+                "audioType": "SPEECH",
             },
         }}})
 
@@ -1217,7 +1276,10 @@ class NovaAudio:
                 await sender_task
             # Tell Nova the prompt/session are over before the transport
             # closes — best-effort, must never mask the turn's own error.
-            await self._end_session(stream, prompt_name)
+            # content_name closes the user-audio content block that was
+            # intentionally left open during the turn (VAD-driven
+            # end-of-speech, matching the AWS reference sample).
+            await self._end_session(stream, prompt_name, content_name)
             # One stream_voice() call == one turn, so the stream opened above
             # must be released here or every turn leaks its connection.
             await self._close_stream(stream)
@@ -1230,27 +1292,33 @@ class NovaAudio:
         content_name: str,
     ) -> None:
         """Forward PCM audio chunks from *audio_iterator* as ``audioInput``
-        event frames. A ``None`` sentinel marks end-of-turn (mirrors
-        ``GeminiLiveClient._audio_sender``'s multi-turn convention) and
-        triggers a ``contentEnd`` frame without closing the sender task.
+        event frames.  A ``None`` sentinel marks end-of-turn and exits the
+        sender — it does **not** send ``contentEnd``.
+
+        Why no ``contentEnd`` here:  the AWS reference samples
+        (``nova_sonic_simple.py``) keep the user-audio content block open
+        for the full session and rely on Nova's server-side VAD to detect
+        end-of-speech from the trailing silence injected by
+        ``VoiceSession.end_turn()``.  Sending ``contentEnd`` mid-session
+        takes Nova out of "listening" mode; without a follow-up
+        ``promptEnd`` the model never starts generating — a deadlock that
+        surfaces as a 55-second idle timeout.
+
+        ``contentEnd`` → ``promptEnd`` → ``sessionEnd`` are sent as a
+        single shutdown sequence by :meth:`_end_session`, called from
+        :meth:`stream_voice`'s ``finally`` block after the model has
+        finished responding (or the turn timed out / errored).
         """
         chunks_sent = 0
         try:
             async for chunk in audio_iterator:
                 if chunk is None:
-                    self.logger.debug(
-                        "Audio sender: received None sentinel (chunks_sent=%d)",
+                    self.logger.info(
+                        "Audio sender: end-of-turn after %d chunks "
+                        "(no contentEnd — VAD handles end-of-speech)",
                         chunks_sent,
                     )
-                    if chunks_sent > 0:
-                        await self._send_event(stream, {"event": {"contentEnd": {
-                            "promptName": prompt_name, "contentName": content_name,
-                        }}})
-                        self.logger.info(
-                            "Audio sender: contentEnd sent after %d chunks",
-                            chunks_sent,
-                        )
-                    continue
+                    break
                 # Code-review fix: audioInputConfiguration declares
                 # "encoding": "base64" (see stream_voice()'s contentStart
                 # event above), so raw PCM bytes must be base64-text-encoded
