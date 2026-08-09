@@ -67,24 +67,35 @@ Hallazgos que condicionan cualquier opción:
    (`PostgresFormStorage._resolve_schema` + `services/_identifiers.py:validate_identifier`),
    con el tenant sacado de `session[AUTH_SESSION_OBJECT]['programs'][0]`
    (`parrot_formdesigner/api/_utils.py:_get_request_tenant`).
-2. **Agujeros de seguridad que bloquean cualquier venta multi-tenant.** Ninguna ruta
-   `/api/v1/crew*` ni `/api/v1/crews*` lleva `@is_authenticated()`, y el `tenant` llega en
-   el **body/query** (`handlers/crew/execution_history_handler.py:111`,
-   `handlers/crew/execution_handler.py:590`) → lectura/replay cross-tenant. Fuera de auth
-   además: `/bots/*/stream/{sse,ndjson,chunked,ws}` (`handlers/stream.py:383` se auto-añade
-   al `exclude_list` de nav-auth), `/ws/userinfo`, `/v1/chat/completions/{session_id}`,
+2. **Agujeros de seguridad que bloquean cualquier venta multi-tenant.** Los tres ficheros
+   de handler con rutas de crew — `handlers/crew/{handler,execution_handler,execution_history_handler}.py`
+   — **no llevan `@is_authenticated()`** (`special_nodes.py` y `tool_catalog.py` sí lo
+   llevan). Y el `tenant` llega en el **body/query**, sin contraste contra la sesión:
+   `execution_handler.py:590` sí exige tenant (400 si falta) pero no valida propiedad;
+   `handler.py:412,512` y `execution_history_handler.py:144` **hacen default a `"global"`**
+   → lectura/replay cross-tenant. Fuera de auth además:
+   `/bots/*/stream/{sse,ndjson,chunked,ws}` (`handlers/stream.py:383` se auto-añade al
+   `exclude_list` de nav-auth), `/ws/userinfo`, `/v1/chat/completions/{session_id}`,
    `/v1/models`.
 3. **PBAC falla abierto.** `setup_pbac()` (`parrot/auth/pbac.py`) degrada a
    `(None, None, None)` ante cualquier error y los checks (`handlers/agent.py:135`) hacen
    `except → allow`. `RlsRegistry`, `DataPlanePolicyGuard` y `DatasetPolicyGuard` están
    implementados pero **nunca se instancian**.
-4. **`AgentsFlow` no está a la altura de `AgentCrew`.** En `bots/flows/flow/flow.py:836-850`,
-   `_aggregate_result()` pasa a `build_node_metadata()` el **dict** que devuelve
-   `AgentNode.execute()` (`core/node.py:310` → `{"response","output","execution_time","prompt"}`)
-   en vez del `AgentResponse`. En `core/result.py:680` eso cae en la rama genérica →
-   **`tool_calls` siempre vacío y `usage` siempre `None`** en runs de `AgentsFlow`. Tampoco
-   tiene execution wiki, ni hook de infografía, ni llama a `_save_agent_result`, ni tiene
-   campo `tenant` (`CrewDefinition.tenant` sí existe; `FlowDefinition` no).
+4. **`AgentsFlow` no está a la altura de `AgentCrew`, y el fallo tiene dos sitios.**
+   `AgentNode.execute()` (`core/node.py:310`) devuelve el envoltorio
+   `{"response","output","execution_time","prompt"}`. El scheduler lo guarda tal cual y en
+   **`flow.py:1734`** llama `ctx.mark_completed(nid, result=event.result)` **sin pasar
+   `response=`** → `FlowContext.responses` queda permanentemente vacío. Después, en
+   **`flow.py:841`**, `_aggregate_result()` pasa ese mismo dict como `response=` a
+   `build_node_metadata()`, que solo introspecciona `AgentResponse`/`AIMessage`
+   (`core/result.py:680`) → cae en la rama genérica y **`tool_calls`, `usage` y `model`
+   salen vacíos** en todo run de `AgentsFlow`. La pérdida de `usage` es tan grave como la
+   de contenido: es un agujero de facturación.
+   Además `AgentsFlow` **no tiene `ExecutionMemory` en absoluto** (cero referencias en
+   `flow.py`, frente a 60 en `crew.py`), lo que significa que la paridad de infografía no
+   es "conectar un hook": `build_deterministic_tabs()` consume `execution_memory`, así que
+   hay que construir ese plano primero. Tampoco llama a `_save_agent_result`, ni tiene
+   execution wiki, ni campo `tenant` (`CrewDefinition.tenant` sí existe; `FlowDefinition` no).
 5. **El contenido de las tools sí se captura hoy**, pero solo en la ruta crew:
    `ToolCall(id,name,arguments,result,error,execution_time)` (`parrot/models/basic.py:23`)
    sobre `AIMessage.tool_calls`, y las páginas `tool_result` del `ExecutionWikiRecorder`
@@ -222,11 +233,24 @@ cualificar: mutar `search_path` sobre una conexión compartida entre tenants con
 es un riesgo cross-tenant real. En su lugar:
 
 - Promover `parrot_formdesigner/services/_identifiers.py` (`validate_identifier`,
-  `qualified_table`) a `parrot/tenancy/identifiers.py` y usarlo en ambos sitios.
-- `PostgresResultStorage.__init__` acepta `schema: str | None`; DDL y DML se cualifican
-  `"<schema>"."<table>"`. Denylist de slugs: `public`, `navigator`, `pg_*`, `parrot_saas`.
-- `TenantProvisioner.create_schema()` hace `CREATE SCHEMA IF NOT EXISTS` y ejecuta el
-  bootstrap DDL idempotente existente por colección más las tablas SaaS.
+  `qualified_table`) a `parrot/storage/identifiers.py` — en core, no en `parrot_saas`, para
+  que el paquete SaaS no dependa de formdesigner; formdesigner pasa a importarlo de ahí.
+- Nombre de schema `t_<slug>` derivado **siempre del registro `Tenant`, nunca de un valor
+  de la request**, truncado a 60 chars, validado, con unicidad en la tabla de tenants para
+  que el truncado no pueda colisionar. Denylist: `public`, `navigator`, `pg_*`, `saas`.
+- **Excepción, `PostgresResultStorage`**: su `_TABLE_RE = ^[a-z_][a-z0-9_]*$` **rechaza
+  puntos**, así que no se le puede pasar `"t_x.crew_executions"` como colección. Dos
+  salidas viables; se elige la segunda por ser menos invasiva:
+  (i) añadirle un parámetro `schema` y cualificar DDL/DML internamente; o
+  (ii) subclasarlo como `TenantPostgresResultStorage` con un LRU pequeño de conexiones
+  `AsyncDB` por tenant, abiertas con `server_settings={'search_path': schema}` en el
+  connect. Como usa un DSN dedicado propio (`CREW_RESULT_STORAGE_PG_DSN`) y escribe
+  fire-and-forget, ahí no hay pool compartido que contaminar. La columna `tenant` se sigue
+  poblando como contraste detectable.
+- `TenantProvisioner.provision()` es idempotente: `CREATE SCHEMA IF NOT EXISTS`, rol por
+  tenant con `GRANT USAGE` solo sobre su schema y `REVOKE ALL ON SCHEMA public`, migraciones
+  versionadas en `<schema>.schema_migrations`, y seed de entitlements. Un console script
+  `saas-migrate --all-tenants` itera el registro de tenants.
 
 **PBAC tenant-aware:** consolidar las tres copias de `_build_eval_context()`
 (`handlers/agent.py:415`, `handlers/chat.py:47`, `handlers/bots.py:57`) en
@@ -273,14 +297,27 @@ tenants es una colisión garantizada).
 
 **Paridad de `AgentsFlow` (obligatorio; sin esto el modo `flow` no se puede vender):**
 
-- a. `_aggregate_result()`: desenvolver `resp["response"]` antes de `build_node_metadata()`
-  → restaura `tool_calls` **y** `usage`.
-- b. Añadir `tenant` a `FlowDefinition`/`FlowMetadata` y a `AgentsFlow.__init__`.
-- c. Llamar a `_save_agent_result()` desde la ruta de nodo completado.
+- a. Añadir `unwrap_node_response(value)` a `core/result.py` y llamarlo en **los dos**
+  sitios: `flow.py:1734` (`mark_completed(..., response=env["response"], result=env["output"])`)
+  y `flow.py:841` (`build_node_metadata(response=<desenvuelto>)`). Un solo helper cubre
+  también `CrewAgentNode` y cualquier nodo custom que devuelva el mismo envoltorio. Esto
+  restaura `tool_calls`, `model` **y** `usage`, y rellena `FlowContext.responses`.
+  **Es el arreglo de mayor valor unitario de todo el plan.**
+- b. Dar a `AgentsFlow` una `ExecutionMemory` (misma construcción que `crew.py:232`),
+  poblada con un `NodeResult` en cada completación. Es **prerrequisito** de (d) y de la
+  persistencia por agente, no un extra.
+- c. Añadir `tenant`, `generate_infographic`, `result_agent_name`, `enable_execution_wiki`
+  y `execution_wiki_path` al ctor, espejando `AgentCrew`; y `tenant` a `FlowMetadata` para
+  que `from_definition` lo recoja.
 - d. Extraer `AgentCrew._finalize_infographic` + `build_deterministic_tabs` a un
-  `parrot/bots/flows/core/infographic.py` compartido por crew y flow, y **dejar de tragarse
-  las excepciones en silencio** — que se registren en `dossier.errors`.
-- e. Usar `synthesize_results` como `on_complete` por defecto cuando `generate_summary=True`.
+  `InfographicMixin` en `bots/flows/core/`, compartido por crew y flow, y **dejar de
+  tragarse las excepciones en silencio** — que se registren en `dossier.errors`.
+- e. Llamar a `_save_result`/`_save_agent_result` (heredados pero nunca invocados),
+  estampando `tenant=`.
+- f. **No** añadir `SynthesisMixin` a `AgentsFlow`: su docstring dice que la omisión es
+  deliberada. El executive summary lo genera el `FlowRunner` del SaaS sobre el `FlowResult`,
+  usando el `summary_agent` declarado en el manifiesto del flow o un `ResultAgent` por
+  defecto. Mantiene mínima la superficie de cambio en el core.
 
 ### 3. Catálogo y entitlements
 
@@ -324,15 +361,35 @@ tokens in/out/cached, cost_usd, billable, mode, ts), `run_records`, `tenant_quot
 `tenant_subscription`, `invoice_lines`.
 
 `TenantUsageRecorder(AbstractLogger)` registrado extendiendo `build_recorders_from_config`.
-`UsageRecordingSubscriber` desecha la identidad por contrato de PII — **no peleamos contra
-eso**: el recorder lee `tenant_id`/`run_id` de los ContextVars (`current_tenant`,
-`current_run_id`) que fija el `RunService`. Si `current_tenant` está vacío se escribe
-`tenant_id='unattributed'` con una métrica WARN; **nunca se descarta un evento**.
+Encola en un `asyncio.Queue` y un flusher de fondo escribe INSERTs multi-fila cada 1 s o
+200 filas, honrando el contrato "MUST be cheap and non-blocking" del docstring de
+`AbstractLogger` y espejando el patrón del `AuditSubscriber` de navigator-eventbus.
 
-> Riesgo a validar con test antes de comprometerse: `AfterClientCallEvent` se emite desde
-> código que lee ContextVars **en construcción**. Si el ContextVar no propaga hasta el
-> recorder, el plan B es añadir `tenant_id` al dataclass del evento (ya lleva
-> `user_id`/`session_id`, así que no rompe su contrato) y a un subtipo de `UsageRecord`.
+**Cómo llega el `tenant_id` — captura en construcción del evento, no lectura en el
+recorder.** Se añaden `current_tenant_id`/`current_run_id` a
+`parrot/observability/context.py` (junto a los tres que ya existen) y campos
+`tenant_id`/`run_id` a `AfterClientCallEvent`, `ClientRoundEvent` y
+`ClientCallFailedEvent`, poblados en `clients/base.py` **en las mismas líneas que ya leen
+los otros ContextVars** (`_emit_before_call:482`, `_emit_round_event:561`,
+`_emit_after_call:609`); y a `UsageRecord`, poblado en `UsageRecordingSubscriber`.
+
+> Se descartó la alternativa de que el recorder leyera el ContextVar por su cuenta. El
+> propio código ya documenta por qué, tres veces, con este comentario literal en
+> `clients/base.py:479`, `:558` y `:606`:
+> *"FEAT-228: read here (construction time, bot's task context) not at emit time —
+> `_emit_*` dispatches fire-and-forget via `emit_nowait` so the ContextVar must be captured
+> before the event leaves the calling coroutine."*
+> Para cuando corre la corutina del recorder, el contexto puede pertenecer a otra tarea.
+
+Esto **no viola el contrato de PII**: `tenant_id` es un identificador de organización y una
+dimensión de facturación, no un identificador de usuario final. Se mantiene fuera de las
+etiquetas de métricas (solo spans y records, el mismo trato que `user_id`), y hay que
+**enmendar explícitamente `observability/README.md`** para que un revisor futuro no lo
+revierta con razón. `user_id`/`session_id` siguen descartándose.
+
+`cumulative_cost_usd` es un total global de proceso y carece de sentido multi-tenant: se
+conserva por compatibilidad pero `TenantUsageRecorder` lo ignora y calcula el acumulado por
+run desde `run_meters`.
 
 Cuotas: **admisión previa al run** (navrules) + **corte en caliente** con un `BudgetGuard`
 suscrito a `AfterClientCallEvent` que acumula coste por run y cancela la tarea al superar
@@ -348,19 +405,41 @@ proceso de gobernanza de ese repo):
 `saas.run.{queued,started,node_started,node_completed,tool_completed,summary_ready,infographic_ready,completed,failed,budget_exceeded}`,
 `saas.tenant.{provisioned,suspended}`, `saas.usage.recorded`, `saas.webhook.{delivered,failed}`.
 
-Backend: **`RedisStreamsBackend`** (durable, consumer groups, dedup, retention) sobre el
-Redis compartido — necesario para que un SSE que reconecta pueda reproducir y para que los
-webhooks sean at-least-once. El `tenant_id` viaja **en el payload, no en el topic** (el
-registro de TOPICS se mantiene limpio), pero se usa `stream_key_fn` para shardear streams
-por tenant de cara a retención y escala.
+Backend: **`CompositeBackend(RedisStreamsBackend, RedisPubSubBackend)`** sobre el Redis
+compartido. Streams (durable, consumer groups, dedup, retention) para lo que no se puede
+perder — `saas.run.completed`, `saas.usage.recorded`, `saas.billing.*` y la entrada del
+dispatcher de webhooks. Pub/Sub para el tráfico alto y desechable de UI
+(`saas.run.node.*`, `saas.run.progress`), para que un cliente SSE lento no engorde un
+stream. Prefijo de canal `parrot:saas:`, distinto del `parrot:events:` que ya usa
+`orchestrator.py:245`, para poder separar políticas de retención.
 
-`GET /api/v1/saas/runs/{run_id}/stream` (SSE/WS) se suscribe a `saas.run.*` con `filter_fn`
-sobre `run_id` + `tenant_id`. Reutiliza la forma de `handlers/stream.py` pero
-**autenticado** — no se replica su truco de `exclude_list`.
+`saas.usage.recorded` se emite **agregado (~1/s por run), no por llamada LLM**. Los payloads
+llevan metadatos y referencias — nunca cuerpos de dossier ni contenido de tools. El
+`tenant_id` viaja **en el payload, no en el topic** (el registro de TOPICS se mantiene
+limpio), pero se usa `stream_key_fn` para shardear streams por tenant de cara a retención.
 
-`WebhookDispatcher` suscrito a `saas.run.completed|failed`: HMAC-SHA256
-`X-Parrot-Signature: t=<ts>,v1=<hex>` sobre `f"{ts}.{body}"`, 5 reintentos con backoff
-exponencial, fallos al DLQ del bus (`navigator.evb_dlq` ya existe) + `saas.webhook.failed`.
+`GET /api/v1/saas/runs/{run_id}/events` (SSE/WS): autentica por el middleware SaaS,
+**verifica en `run_meters` que el `run_id` pertenece al tenant — nunca se confía en el
+path**, y se suscribe a `saas.run.*` con `filter_fn`. Al conectar drena primero el Redis
+Stream de ese run desde `0-0` para que un cliente que reconecta no pierda eventos, y luego
+pasa a vivo. Heartbeat cada 15 s. Reutiliza los helpers de framing SSE de
+`handlers/stream.py` pero **no `StreamHandler`** — ese se auto-excluye de nav-auth.
+
+`WebhookDispatcher`: consumer group durable sobre el stream de `saas.run.completed|failed`,
+para que un reinicio no pierda entregas.
+- Firma HMAC-SHA256 `X-Parrot-Signature: t=<ts>,v1=<hex>` sobre `f"{ts}.{body}"` (esquema
+  Stripe), más `X-Parrot-Event-Id` y `X-Parrot-Delivery-Attempt`; ventana de replay 5 min;
+  secreto por endpoint cifrado con `encrypt_credential`; dos secretos activos durante
+  rotación.
+- Reintentos: 8 intentos con backoff exponencial y jitter (1 s → ~6 h), solo en
+  5xx/timeout/429; el resto de 4xx son terminales.
+- **Guardia SSRF**: la URL la controla el tenant. Resolver DNS y rechazar RFC1918,
+  link-local y direcciones de metadatos; exigir https en producción.
+- Agotados los intentos → `saas.webhook.dead` + DLQ (`navigator.evb_dlq` ya existe) y
+  `POST /api/v1/saas/webhooks/{id}/redeliver`.
+
+La misma implementación de firma HMAC sirve para los webhooks salientes y para el
+phone-home del data plane — una implementación, dos usos.
 
 ### 7. Provisioning enterprise
 
@@ -374,19 +453,43 @@ local + replay).
 
 Trabajo Pulumi necesario:
 
-1. **Arreglar `config_values`** en `parrot_tools/pulumi/executor.py`: emitir
-   `pulumi config set --stack <s> [--secret] k v` antes de `preview`/`up`. Hoy se descarta
-   en silencio — es un bug real, no una limitación de diseño.
-2. **Honrar `state_backend`**: `pulumi login <backend>` (bucket S3/GCS) para estado durable
-   y compartido.
-3. **Escribir el programa**: `packages/ai-parrot-saas/pulumi/tenant-dataplane/` en Pulumi
-   **Python** (no YAML, para reutilizar config pydantic): contenedor de la app del tenant,
-   **base de datos** en el servidor Postgres existente vía el provider `postgresql`
-   (`CREATE DATABASE`, rol, grants), inyección de secretos, DNS/ruta, y outputs
-   `{endpoint, database, instance_id, instance_token}`.
-4. `TenantProvisioner` orquesta: plan → aprobación humana → apply → registrar outputs →
-   health check → tenant `active`. Usa el sistema de grants acotados existente
-   (`tool:pulumi_apply` es literalmente el ejemplo canónico en `parrot/auth/grants.py:53`).
+1. **Arreglar `config_values`** en `parrot_tools/pulumi/executor.py`: un
+   `pulumi config set-all --stack <s> --plaintext k=v ... --secret k=v ...` antes de
+   `preview`/`up`. `toolkit.py:124,184` ya lo pasan hacia abajo; solo falta el executor. Con
+   un parámetro `secret_keys: set[str]` para que passwords de DB y tokens de enrolamiento
+   queden cifrados en el stack config y no en claro.
+2. **Honrar `state_backend`**: `_ensure_login()` con `pulumi login <backend>` antes de
+   cualquier comando. **Backend S3** (`s3://.../<env>`) con la passphrase desde el vault —
+   evita depender de Pulumi Cloud y reutiliza las credenciales AWS que ya trae
+   `BaseExecutorConfig`. `PULUMI_CONFIG_PASSPHRASE` ya está cableado.
+3. **Escribir el programa**: uno solo, parametrizado, en
+   `packages/ai-parrot-saas/src/parrot_saas/provisioning/pulumi_programs/enterprise_flows/`,
+   en Pulumi **Python** (no YAML, para reutilizar config pydantic), stack por tenant
+   (`enterprise-<slug>`). Recursos: servicio **ECS Fargate** + task def, ALB + ACM +
+   Route53, security groups, log group, Secrets Manager, y `postgresql.Database` + rol
+   **sobre la instancia RDS compartida**. Sin Redis. Outputs:
+   `{endpointUrl, serviceArn, dbName, taskRoleArn}`.
+   *Fargate y no EKS*: no hay manifiestos k8s ni Helm en el repo y `KubernetesToolkit` solo
+   hace `k8s_apply_manifest`; levantar EKS para un proceso aiohttp de larga vida es mucho
+   más trabajo sin beneficio proporcional.
+4. **`StackManager`** (`provisioning/stack.py`): envoltorio fino y **no agéntico** que llama
+   a `PulumiExecutor` directamente. Un LLM no debe conducir `pulumi up` en provisioning —
+   `PulumiToolkit` existe para uso agéntico, el plano de control no pasa por ahí. Nombrado
+   determinista de stacks, ensamblado de config desde el registro `Tenant`,
+   `up`/`destroy`/`refresh`, parseo de outputs a `saas.tenant_stacks`, y lock en Redis que
+   serializa operaciones por tenant. Corre en el `BackgroundQueue`/`JobManager` existente,
+   nunca en un handler HTTP — `pulumi up` tarda minutos. La aprobación humana usa el sistema
+   de grants acotados existente (`tool:pulumi_apply` es literalmente el ejemplo canónico en
+   `parrot/auth/grants.py:53`).
+
+**Enrolamiento y degradación:** el provisioning escribe un `enrollmentToken` de un solo uso
+en el stack config → env del contenedor. Al arrancar, el data plane hace `POST
+/api/v1/saas/internal/enroll` y recibe `{tenant_id, api_key, plan, entitlements,
+catalog_sync_url}`. Después baja deltas de catálogo/entitlements cada 60 s y empuja uso
+batcheado cada 60 s con clave de idempotencia. **Si el control plane no responde, el data
+plane sigue sirviendo** con los últimos entitlements conocidos durante
+`SAAS_OFFLINE_GRACE` (72 h), bufferizando uso localmente, y solo entonces rechaza runs
+nuevos. Nunca se tumba a un cliente enterprise porque nuestro control plane parpadee.
 
 ---
 
@@ -431,8 +534,12 @@ Trabajo Pulumi necesario:
 - `S2 tenant-schema-provisioning` [dep: S1]
 
 **Fase 2 — Contrato de resultado**
-- `S3 agentsflow-parity` [independiente — puede ir en paralelo desde el día 1]
-- `S4 research-dossier` [dep: S2, S3]
+- `S3a agentsflow-result-fidelity` — solo `unwrap_node_response()` y los dos sitios de
+  llamada. **El arreglo de mayor valor unitario del plan y el más barato**; independiente,
+  puede ir en paralelo desde el día 1.
+- `S3b agentsflow-parity` — `ExecutionMemory`, args de ctor, `InfographicMixin`,
+  persistencia por agente [dep: S3a]
+- `S4 research-dossier` [dep: S2, S3b]
 
 **Fase 3 — Plano comercial**
 - `S5 flow-catalog-and-entitlements` [dep: S1]
@@ -460,17 +567,20 @@ Trabajo Pulumi necesario:
   401/403; test que envía `tenant` en el body y verifica que se ignora.
 - **S1/S2**: dos tenants, mismo flow, misma tabla — el tenant A no ve filas de B. Test de
   inyección con slugs maliciosos (`../`, `public`, `pg_catalog`).
-- **S3**: regresión que corre el mismo grafo como `AgentCrew` y como `AgentsFlow` y afirma
-  que `FlowResult.nodes[].tool_calls` y `.usage` son **no vacíos e iguales** en ambos. Este
-  test hoy falla.
+- **S3a**: regresión que corre el mismo grafo como `AgentCrew` y como `AgentsFlow` y afirma
+  que `FlowResult.nodes[].tool_calls`, `.usage` y `.model` son **no vacíos e iguales** en
+  ambos, y que `FlowContext.responses` está poblado. Este test hoy falla en los tres campos.
 - **S4**: `ResearchDossier` round-trip, incluyendo un tool result >32 KiB que debe salir por
   `result_ref` y resolverse de vuelta.
 - **S6**: test de fuga — correr un flow con una clave BYOK conocida y hacer grep del log
   completo, de los spans OTEL y de las filas de DB buscando el secreto; debe aparecer solo
   el fingerprint.
-- **S7**: **validar primero la propagación del ContextVar** (test aislado antes de escribir
-  el recorder); luego, un run con N llamadas LLM debe producir N `usage_events` con el
-  `tenant_id` correcto y un `cost_usd` que cuadre con `CostCalculator`.
+- **S7**: un run con N llamadas LLM debe producir N `usage_events` con el `tenant_id`
+  correcto y un `cost_usd` que cuadre con `CostCalculator`. Test específico de
+  **concurrencia**: dos runs de tenants distintos solapados en el tiempo no deben mezclar
+  atribución (es exactamente el fallo que evita capturar el ContextVar en construcción).
+  Y un test de que `RunUsage` del dossier cuadra con el store de metering — ojo, sin S3a ese
+  contraste siempre discrepa, porque el `usage` del lado AgentsFlow viene vacío.
 - **S8/S9**: end-to-end contra el servidor real — `POST /api/v1/saas/runs` de un flow del
   catálogo, seguir el SSE hasta `saas.run.completed`, `GET` del dossier, abrir la URL
   firmada de la infografía, y comprobar la entrega del webhook con firma HMAC válida.
@@ -484,21 +594,44 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
 
 ## Open Questions
 
-1. **Propagación del ContextVar hasta el usage recorder** — condiciona todo el diseño de
-   metering. Probarlo en S7 antes de escribir código encima.
-2. **`ArtifactStore` sin tenant y con URL pública firmada no autenticada** — las infografías
-   del tenant A no pueden ser adivinables por B. Hay que meter el tenant en la clave del
-   artefacto y en el payload de la firma, y poner TTL corto.
+1. **Enmienda al contrato de PII documentado**: añadir `tenant_id` a
+   `AfterClientCallEvent`/`UsageRecord` toca un contrato que `observability/README.md`
+   declara explícitamente. Hace falta visto bueno y actualizar el README, o un revisor
+   futuro lo revertirá — con razón.
+2. **`ArtifactStore` sin tenant y con URL firmada no autenticada** — clave de partición
+   `(user_id, agent_id, session_id)`, firma sigv4 de hasta **7 días**, y autorización *solo*
+   por firma. Las infografías del tenant A no pueden ser alcanzables por B: hay que meter el
+   tenant en la clave y en el payload de la firma, y acortar el TTL. Además
+   **`get_public_url()` lanza `ValueError` para artefactos inline** (los pequeños, que no
+   pasan por S3) — así que el dossier y la infografía deben escribirse con offload forzado
+   si queremos URL firmada siempre.
 3. **`PostgresResultStorage` usa `CREW_RESULT_STORAGE_PG_DSN`**, una conexión distinta de
-   `app['database']`. Dos rutas de conexión que hay que reconciliar (o documentar
-   explícitamente que el storage de resultados vive aparte).
-4. **Frescura de las tablas de precios** (avisan a los 90 días): facturar claves gestionadas
+   `app['database']`, y **se traga todos los errores de `save()`** en un `logger.warning`.
+   En un producto facturable, un registro de ejecución perdido en silencio es un ticket de
+   soporte. Decisión a tomar: que la escritura del **dossier** sea la autoritativa y
+   transaccional con el estado del run, dejando `crew_executions` como telemetría
+   best-effort.
+4. **`CREW_RESULT_STORAGE` por defecto es `documentdb`**, no postgres (`conf.py:309`). Toda
+   la historia de schema-per-tenant asume postgres: hay que confirmar que el despliegue
+   compartido fija `CREW_RESULT_STORAGE=postgres`, o los datos de todos los tenants acaban
+   en una colección DocumentDB compartida distinguida solo por un campo `tenant`.
+5. **Concentración de privilegio en el Postgres compartido**: "mismo servidor, base de datos
+   distinta" implica que el control plane necesita `CREATE DATABASE` y que cada data plane
+   enterprise tiene un DSN a ese servidor. Un contenedor comprometido queda a un error de
+   `pg_hba`/rol de los demás tenants. Innegociable: rol por base de datos con `CONNECT`
+   revocado en el resto, `pg_hba` por rol, y ningún DSN de superusuario en un data plane.
+   Merece escalarse como decisión de arquitectura frente a instancias separadas.
+6. **Vecinos ruidosos en modo shared**: un solo proceso aiohttp sirviendo los flows de todos
+   los tenants. Hay caps de concurrencia por tenant en el plan, pero no aislamiento de
+   CPU/memoria: una tool de pandas o de código puede bloquear el event loop. En shared, todo
+   lo que ejecute código debe ir al executor docker/qworker.
+7. **Frescura de las tablas de precios** (avisan a los 90 días): facturar claves gestionadas
    con precios rancios es riesgo de ingresos. Necesita un proceso de refresco.
-5. **Límite de escala del schema-per-tenant**: Postgres se degrada con miles de schemas
+8. **Límite de escala del schema-per-tenant**: Postgres se degrada con miles de schemas
    (bloat de catálogo, coste de `pg_dump`). Bien para cientos; hay que marcar la ruta de
    migración (tablas particionadas por tenant + RLS — `RlsRegistry` ya existe sin usar)
    antes de pasar de ~1–2k tenants.
-6. **Decisión de producto a confirmar**: en modo shared se prohíben las definiciones de flow
+9. **Decisión de producto a confirmar**: en modo shared se prohíben las definiciones de flow
    propias del cliente. Si comercialmente hace falta permitirlas, el coste es un sandbox de
    ejecución real (`parrot/tools/executors/{docker,k8s}.py` ya existen y serían la base), y
    eso es una feature en sí misma.
@@ -507,7 +640,13 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
 
 ## Next Steps
 
-1. `/sdd-spec saas-auth-hardening` — es el bloqueante duro; nada de lo demás es vendible
-   hasta que esté cerrado.
-2. `/sdd-spec agentsflow-parity` en paralelo (no depende de nada).
-3. Validar el riesgo nº 1 (ContextVar) con un test aislado antes de especificar S7.
+1. `/sdd-spec saas-auth-hardening` (S0) — es el bloqueante duro; nada de lo demás es
+   vendible hasta que esté cerrado.
+2. `/sdd-spec agentsflow-result-fidelity` (S3a) en paralelo — no depende de nada, es un
+   helper más dos líneas de llamada, y desbloquea a la vez el dossier y la facturación.
+3. Conseguir el visto bueno para enmendar el contrato de PII de `observability/README.md`
+   (riesgo nº 1) antes de especificar S7.
+4. Confirmar la decisión de producto sobre definiciones propias en modo shared
+   (pregunta abierta nº 7), porque determina si S12/`sandbox.py` entra en el camino crítico.
+
+**Camino crítico: S0 → S3a/S3b → S1/S2 → S4 → S8.** Todo lo demás cuelga de esa espina.
