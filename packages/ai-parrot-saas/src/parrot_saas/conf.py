@@ -66,21 +66,32 @@ SAAS_TENANT_MAX_CONCURRENT_RUNS: int = int(
 # ---------------------------------------------------------------------------
 # Secrets (envelope encryption)
 # ---------------------------------------------------------------------------
-#: Base64-encoded 32-byte master key encrypting per-tenant DEKs. Absent or
-#: malformed values make the encrypted store refuse to construct — it must
-#: never silently generate an ephemeral key.
-PARROT_SECRETS_MASTER_KEY: str = config.get(
-    "PARROT_SECRETS_MASTER_KEY", fallback=""
+# Key *material* is deliberately NOT configured here. The encrypted secret
+# store reuses the key management already established in this repository —
+# ``VAULT_MASTER_KEY_v{N}`` (base64, 32 bytes) plus ``VAULT_ACTIVE_KEY_ID``,
+# read through ``navigator_session.vault.config`` — so a deployment has one
+# set of master keys to escrow, back up and rotate rather than two.
+#
+# What the SaaS store adds on top is the envelope: a per-tenant data key
+# wrapped by that master key, and AAD binding so a ciphertext row cannot be
+# relocated to another tenant or another key name and still decrypt. The
+# upstream ``encrypt_for_db`` helper passes ``aad=None``, which is why the
+# envelope lives in ``parrot.security.secrets.postgres`` rather than reusing
+# it wholesale.
+
+#: Table holding wrapped per-tenant data-encryption keys.
+SAAS_SECRETS_DEK_TABLE: str = config.get(
+    "SAAS_SECRETS_DEK_TABLE", fallback="tenant_deks"
 )
-#: Label recorded alongside every wrapped DEK, so a rotation can tell which
-#: KEK produced a given wrapping.
-PARROT_SECRETS_KEK_ID: str = config.get("PARROT_SECRETS_KEK_ID", fallback="kek-1")
-#: Previous KEK, kept readable during a rotation window.
-PARROT_SECRETS_MASTER_KEY_PREVIOUS: str = config.get(
-    "PARROT_SECRETS_MASTER_KEY_PREVIOUS", fallback=""
+#: Table holding encrypted secret values.
+SAAS_SECRETS_TABLE: str = config.get(
+    "SAAS_SECRETS_TABLE", fallback="tenant_secrets"
 )
-PARROT_SECRETS_KEK_ID_PREVIOUS: str = config.get(
-    "PARROT_SECRETS_KEK_ID_PREVIOUS", fallback=""
+#: Seconds an unwrapped data key may be cached in process. Bounds the window
+#: in which key material is resident without forcing a master-key unwrap on
+#: every read.
+SAAS_SECRETS_DEK_CACHE_TTL: int = int(
+    config.get("SAAS_SECRETS_DEK_CACHE_TTL", fallback=300)
 )
 
 # ---------------------------------------------------------------------------
@@ -142,10 +153,6 @@ SAAS_TENANT_PORT_MAX: int = int(config.get("SAAS_TENANT_PORT_MAX", fallback=1899
 SAAS_PULUMI_TIMEOUT: int = int(config.get("SAAS_PULUMI_TIMEOUT", fallback=900))
 
 __all__ = (
-    "PARROT_SECRETS_KEK_ID",
-    "PARROT_SECRETS_KEK_ID_PREVIOUS",
-    "PARROT_SECRETS_MASTER_KEY",
-    "PARROT_SECRETS_MASTER_KEY_PREVIOUS",
     "SAAS_CM_MAX_REVISE_ROUNDS",
     "SAAS_CM_NODE_TIMEOUT",
     "SAAS_CM_REPLY_MODEL",
@@ -158,6 +165,9 @@ __all__ = (
     "SAAS_PULUMI_STATE_DIR",
     "SAAS_PULUMI_TIMEOUT",
     "SAAS_REDIS_URL",
+    "SAAS_SECRETS_DEK_CACHE_TTL",
+    "SAAS_SECRETS_DEK_TABLE",
+    "SAAS_SECRETS_TABLE",
     "SAAS_TENANT_IMAGE",
     "SAAS_TENANT_MAX_CONCURRENT_RUNS",
     "SAAS_TENANT_PORT_MAX",

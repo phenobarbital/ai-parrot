@@ -76,6 +76,10 @@ dependencies = [
     # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
     # native Pydantic/datetime/UUID serialization; never pickle.
     "ormsgpack>=1.5",
+    # Envelope encryption for parrot.security.secrets (per-tenant DEK wrapped
+    # by the vault master key, AES-GCM with AAD binding). Previously only a
+    # transitive dependency; the secret store makes it a direct one.
+    "cryptography>=41.0.7",
     # HTTP / networking
     "rich>=13.0",
     # requests is otherwise transitive; pin to the 2.33 series — the intersection
