@@ -49,6 +49,11 @@ _EXTRA_PATHS = [
     # ai-parrot-integrations: FEAT-261 adds auth.py — prepend worktree src
     # so the new module is discoverable by tests.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-integrations", "src"),
+    # ai-parrot-saas: the SaaS control plane and Community Manager flow. Its
+    # top-level module is `parrot_saas` (deliberately NOT a contributor to the
+    # `parrot.*` namespace), so it needs no __path__ surgery below — only this
+    # sys.path entry.
+    os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-saas", "src"),
 ]
 for _p in reversed(_EXTRA_PATHS):
     if _p not in sys.path:
