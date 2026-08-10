@@ -24,22 +24,30 @@ if TYPE_CHECKING:  # pragma: no cover - import only for type checkers
 __all__ = (
     "TENANT_ID_PATTERN",
     "InvalidTenantId",
+    "Tenant",
     "TenantAgentRegistry",
     "TenantContext",
+    "TenantCreate",
     "TenantMode",
     "TenantRepository",
     "TenantRuntime",
     "TenantRuntimeCache",
     "TenantStatus",
+    "TenantUpdate",
+    "clone_tool_manager",
     "tenant_resolution_middleware",
     "validate_tenant_id",
 )
 
 _LAZY_EXPORTS = {
+    "Tenant": ("parrot_saas.tenancy.models", "Tenant"),
     "TenantAgentRegistry": ("parrot_saas.tenancy.registry", "TenantAgentRegistry"),
+    "TenantCreate": ("parrot_saas.tenancy.models", "TenantCreate"),
     "TenantRepository": ("parrot_saas.tenancy.repository", "TenantRepository"),
     "TenantRuntime": ("parrot_saas.tenancy.runtime", "TenantRuntime"),
     "TenantRuntimeCache": ("parrot_saas.tenancy.runtime", "TenantRuntimeCache"),
+    "TenantUpdate": ("parrot_saas.tenancy.models", "TenantUpdate"),
+    "clone_tool_manager": ("parrot_saas.tenancy.runtime", "clone_tool_manager"),
     "tenant_resolution_middleware": (
         "parrot_saas.tenancy.middleware",
         "tenant_resolution_middleware",
