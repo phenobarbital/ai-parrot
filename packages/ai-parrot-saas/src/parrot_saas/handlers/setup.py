@@ -33,6 +33,13 @@ from ..tenancy.middleware import (
 )
 from ..tenancy.repository import TenantRepository
 from ..tenancy.runtime import TenantRuntime, TenantRuntimeCache
+from .secrets import (
+    APP_SECRET_STORE_FACTORY,
+    SecretCollectionView,
+    SecretItemView,
+    SecretRotateView,
+    setup_secret_routes,
+)
 from .tenants import (
     APP_TENANT_REPOSITORY,
     APP_TENANT_RUNTIMES,
@@ -41,13 +48,10 @@ from .tenants import (
     setup_tenant_routes,
 )
 
-#: Key under which the secret store is published.
+#: Key under which the secret store is published. Absent until the store has
+#: actually been built — handlers should go through ``APP_SECRET_STORE_FACTORY``
+#: (defined alongside the views that use it, in :mod:`.secrets`).
 APP_SECRET_STORE = "saas_secret_store"
-
-#: Key under which the memoising secret-store factory is published. Handlers
-#: that need a store should call this rather than reading ``APP_SECRET_STORE``,
-#: which is absent until the store has actually been built.
-APP_SECRET_STORE_FACTORY = "saas_secret_store_factory"
 
 logger = logging.getLogger("parrot_saas.handlers.setup")
 
@@ -236,7 +240,13 @@ def setup_saas_api(
         _app[APP_SECRET_STORE] = secret_store
 
     if require_auth:
-        _apply_auth(TenantCollectionView, TenantItemView)
+        _apply_auth(
+            TenantCollectionView,
+            TenantItemView,
+            SecretCollectionView,
+            SecretItemView,
+            SecretRotateView,
+        )
 
     if install_middleware:
         _app.middlewares.append(
@@ -250,6 +260,7 @@ def setup_saas_api(
         )
 
     setup_tenant_routes(_app)
+    setup_secret_routes(_app)
 
     async def _on_startup(application: web.Application) -> None:
         """Create the SaaS schema if it does not exist."""
