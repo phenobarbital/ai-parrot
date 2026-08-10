@@ -44,28 +44,99 @@ from .tenants import (
 #: Key under which the secret store is published.
 APP_SECRET_STORE = "saas_secret_store"
 
+#: Key under which the memoising secret-store factory is published. Handlers
+#: that need a store should call this rather than reading ``APP_SECRET_STORE``,
+#: which is absent until the store has actually been built.
+APP_SECRET_STORE_FACTORY = "saas_secret_store_factory"
+
 logger = logging.getLogger("parrot_saas.handlers.setup")
 
 
-async def _default_runtime_builder(tenant) -> TenantRuntime:
-    """Build a bare runtime for a tenant.
+def _make_runtime_builder(
+    secret_store_factory: Any,
+    tool_manager_template: Optional[Any] = None,
+):
+    """Build the default per-tenant runtime builder.
 
-    Deliberately minimal at this stage: the agents (BYOK) and the compiled
-    coupon ruleset are wired in by their own features. What already matters is
-    the concurrency bound, because the flow scheduler enforces none of its own.
+    The secret store arrives as a *factory* rather than an instance so that a
+    deployment without vault keys still starts: the store is only constructed
+    when a tenant actually needs its credentials.
 
     Args:
-        tenant: The tenant to serve.
+        secret_store_factory: Zero-argument callable returning the store, or
+            ``None`` when no store is configured.
+        tool_manager_template: Template manager cloned per tenant, if any.
 
     Returns:
-        A runtime with a per-tenant concurrency semaphore.
+        A coroutine function suitable for :class:`TenantRuntimeCache`.
     """
-    import asyncio
 
-    return TenantRuntime(
-        tenant=tenant,
-        semaphore=asyncio.Semaphore(conf.SAAS_TENANT_MAX_CONCURRENT_RUNS),
-    )
+    async def _build(tenant) -> TenantRuntime:
+        """Build a tenant's runtime, agents included.
+
+        Agent construction is **tolerant** here. This runs inside the tenant
+        middleware, on the way to serving a request — including the request a
+        freshly onboarded tenant makes to upload its very first API key. If a
+        missing credential were fatal at this point, that tenant would be
+        trapped behind a 500 with no way to fix it. Roles whose credential is
+        absent are simply left out, and the flow's LLM nodes fall back to
+        their deterministic paths. The ingest path builds with ``strict=True``
+        instead, because it is about to run the flow for real.
+
+        Args:
+            tenant: The tenant to serve.
+
+        Returns:
+            A runtime with a per-tenant concurrency semaphore and whatever
+            agents the tenant's stored credentials allow.
+        """
+        import asyncio
+
+        from ..tenancy.runtime import clone_tool_manager
+
+        tool_manager = (
+            clone_tool_manager(tool_manager_template)
+            if tool_manager_template is not None
+            else None
+        )
+
+        agents: dict = {}
+        store = None
+        if secret_store_factory is not None:
+            try:
+                store = secret_store_factory()
+            except Exception as exc:  # noqa: BLE001 - misconfiguration, not a bug
+                # No vault master key, unreachable database, and so on. This
+                # must not take the request down: the runtime is built on the
+                # way to serving *any* tenant-scoped route, so a deployment
+                # with no KEK configured would otherwise 500 on all of them
+                # rather than only where secrets are actually touched. Loud,
+                # because running without a secret store is a real problem.
+                logger.error(
+                    "no secret store available for tenant %s (%s); its agents "
+                    "cannot be built and its flow will use the deterministic "
+                    "fallbacks",
+                    tenant.tenant_id,
+                    exc,
+                )
+        if store is not None:
+            from ..llm.builder import build_tenant_agents
+
+            agents = await build_tenant_agents(
+                tenant=tenant,
+                secret_store=store,
+                tool_manager=tool_manager,
+                strict=False,
+            )
+
+        return TenantRuntime(
+            tenant=tenant,
+            tool_manager=tool_manager,
+            agents=agents,
+            semaphore=asyncio.Semaphore(conf.SAAS_TENANT_MAX_CONCURRENT_RUNS),
+        )
+
+    return _build
 
 
 def _apply_auth(*views: type) -> None:
@@ -89,6 +160,7 @@ def setup_saas_api(
     schema: Optional[str] = None,
     secret_store: Optional[Any] = None,
     runtime_builder: Optional[Any] = None,
+    tool_manager_template: Optional[Any] = None,
     strategies: Sequence[str] = DEFAULT_STRATEGIES,
     exempt_prefixes: Iterable[str] = DEFAULT_EXEMPT_PREFIXES,
     exempt_patterns: Iterable[str] = (),
@@ -106,7 +178,11 @@ def setup_saas_api(
             Postgres store is constructed lazily on first use, so a
             deployment without vault keys still starts and fails only where
             secrets are actually touched.
-        runtime_builder: Coroutine building a per-tenant runtime.
+        runtime_builder: Coroutine building a per-tenant runtime. Overrides the
+            default builder entirely, including its BYOK agent construction.
+        tool_manager_template: Process-wide ``ToolManager`` cloned per tenant
+            by the default builder. Omitted, tenants run without tools — which
+            is all the Community Manager flow needs today.
         strategies: Tenant resolution strategies, in order.
         exempt_prefixes: Path prefixes skipping tenant resolution.
         exempt_patterns: Glob patterns skipping tenant resolution — for
@@ -125,14 +201,37 @@ def setup_saas_api(
     resolved_schema = schema or conf.SAAS_PG_SCHEMA
 
     repository = TenantRepository(resolved_dsn, schema=resolved_schema)
+
+    # The store is resolved through a memoising factory rather than built here.
+    # ``EnvelopeCipher.from_environment()`` raises when no master key is
+    # configured — correct behaviour, but it must not stop the application
+    # booting, since the control plane has plenty to do without touching a
+    # secret. This defers the failure to the first request that needs one.
+    _store_holder: dict = {"store": secret_store}
+
+    def _secret_store() -> Any:
+        """Return the secret store, constructing it on first use."""
+        if _store_holder["store"] is None:
+            from parrot.security.secrets.postgres import (
+                EncryptedPostgresSecretStore,
+            )
+
+            _store_holder["store"] = EncryptedPostgresSecretStore(
+                resolved_dsn, schema=resolved_schema
+            )
+            _app[APP_SECRET_STORE] = _store_holder["store"]
+        return _store_holder["store"]
+
     runtimes = TenantRuntimeCache(
-        runtime_builder or _default_runtime_builder,
+        runtime_builder
+        or _make_runtime_builder(_secret_store, tool_manager_template),
         max_size=conf.SAAS_TENANT_RUNTIME_MAX,
         ttl=conf.SAAS_TENANT_RUNTIME_TTL,
     )
 
     _app[APP_TENANT_REPOSITORY] = repository
     _app[APP_TENANT_RUNTIMES] = runtimes
+    _app[APP_SECRET_STORE_FACTORY] = _secret_store
     if secret_store is not None:
         _app[APP_SECRET_STORE] = secret_store
 
@@ -179,4 +278,4 @@ def setup_saas_api(
     return _app
 
 
-__all__ = ("APP_SECRET_STORE", "setup_saas_api")
+__all__ = ("APP_SECRET_STORE", "APP_SECRET_STORE_FACTORY", "setup_saas_api")

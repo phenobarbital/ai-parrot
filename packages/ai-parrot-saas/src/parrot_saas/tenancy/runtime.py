@@ -126,13 +126,21 @@ class TenantRuntime:
 
         Idempotent: eviction, shutdown and an explicit invalidate can all
         reach it, and a second call must not raise.
+
+        ``cleanup`` is tried first and is the one that matters. Bots have no
+        ``aclose`` or ``close`` at all, and ``AbstractBot.shutdown`` is an
+        empty stub (``BasicAgent`` overrides it only to disconnect MCP), so a
+        teardown that stopped at ``shutdown`` would leak the tenant's LLM
+        connection pool on every eviction. ``AbstractBot.cleanup`` closes the
+        client and its session, the vector store and the knowledge bases, and
+        disconnects MCP as well — a strict superset.
         """
         if self._closed:
             return
         self._closed = True
 
         for name, agent in list(self.agents.items()):
-            for method in ("aclose", "close", "shutdown"):
+            for method in ("cleanup", "aclose", "close", "shutdown"):
                 closer = getattr(agent, method, None)
                 if closer is None:
                     continue

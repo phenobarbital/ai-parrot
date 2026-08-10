@@ -276,3 +276,29 @@ async def test_control_plane_is_exempt_from_tenant_resolution(client) -> None:
     resp = await client.get(CONTROL)
 
     assert resp.status == 200
+
+
+async def test_routes_still_serve_without_a_vault_master_key(client, caplog) -> None:
+    """A deployment with no KEK configured must degrade, not 500.
+
+    The per-tenant runtime is built on the way to every tenant-scoped route,
+    and building it now reaches for the secret store to construct that
+    tenant's BYOK agents. ``EnvelopeCipher.from_environment()`` raises when no
+    ``VAULT_MASTER_KEY_v{N}`` is set — as it is not, here — so without the
+    guard in the runtime builder every one of those routes would fail.
+    """
+    import logging
+
+    caplog.set_level(logging.ERROR)
+    await client.post(CONTROL, json={"tenant_id": "bar-pepe", "name": "A"})
+
+    resp = await client.get(
+        "/api/v1/saas/echo", headers={TENANT_HEADER: "bar-pepe"}
+    )
+
+    assert resp.status == 200
+    runtime = await client.app[APP_TENANT_RUNTIMES].get(
+        (await client.app[APP_TENANT_REPOSITORY].get("bar-pepe")).to_context()
+    )
+    assert runtime.agents == {}
+    assert any("no secret store available" in r.getMessage() for r in caplog.records)

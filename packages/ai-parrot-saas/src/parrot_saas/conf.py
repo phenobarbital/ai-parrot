@@ -110,12 +110,15 @@ SAAS_CM_NODE_TIMEOUT: float = float(
     config.get("SAAS_CM_NODE_TIMEOUT", fallback=120.0)
 )
 
-#: Default models used when a tenant does not override them in its settings.
+#: Default models used when a tenant does not override them in its settings
+#: (``settings["triage_model"]`` / ``settings["reply_model"]``).
 SAAS_CM_TRIAGE_MODEL: str = config.get(
     "SAAS_CM_TRIAGE_MODEL", fallback="gemini-2.5-flash"
 )
+#: Sonnet rather than Opus because this is the high-volume path — one call per
+#: review — and a tenant that wants more can raise it in its own settings.
 SAAS_CM_REPLY_MODEL: str = config.get(
-    "SAAS_CM_REPLY_MODEL", fallback="claude-sonnet-4-5-20250929"
+    "SAAS_CM_REPLY_MODEL", fallback="claude-sonnet-5"
 )
 
 # ---------------------------------------------------------------------------

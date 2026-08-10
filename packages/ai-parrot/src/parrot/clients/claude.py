@@ -244,6 +244,9 @@ class AnthropicClient(AbstractClient):
     # ``GoogleGenAIClient._requires_thinking``.
     _ADAPTIVE_ONLY_PREFIXES: tuple = (
         "claude-fable-5",
+        "claude-mythos-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
     )
@@ -259,8 +262,13 @@ class AnthropicClient(AbstractClient):
     def _rejects_sampling_params(cls, model) -> bool:
         """Whether the model 400s on ``temperature`` / ``top_p`` / ``top_k``.
 
-        True for adaptive-thinking-only models (Fable 5, Opus 4.7, Opus 4.8),
-        which removed the sampling parameters.
+        True for adaptive-thinking-only models (Fable 5, Mythos 5, Opus 5,
+        Sonnet 5, Opus 4.7, Opus 4.8), which removed the sampling parameters.
+
+        Note this matters even when the caller never asked for sampling: the
+        bot layer's ``_create_llm_client`` always passes ``temperature`` /
+        ``top_k`` / ``top_p`` (defaulting to 0.1 / 41 / 0.9), so without this
+        guard the first request on one of these models returns a 400.
         """
         m = cls._model_str(model)
         return any(m.startswith(p) for p in cls._ADAPTIVE_ONLY_PREFIXES)
