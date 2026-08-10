@@ -229,6 +229,35 @@ async def test_node_error_routes_to_failure_handler(tenant) -> None:
 
 
 # ---------------------------------------------------------------------------
+# The review source port, wired into the real graph
+# ---------------------------------------------------------------------------
+
+
+async def test_a_wired_review_source_actually_publishes(tenant) -> None:
+    """The port has to fit its consumer, not just its own tests.
+
+    Every other path test runs with ``review_source=None`` and the publish
+    node's no-op fallback, so nothing else would notice if the adapter's
+    ``reply`` signature drifted from the call the node makes.
+    """
+    from parrot_saas.reviews.mock import MockReviewSource
+    from parrot_saas.reviews.port import ReviewEvent
+
+    source = MockReviewSource(seed_demo=False)
+    source.seed("bar-pepe", ReviewEvent(source="mock", external_id="ext-1"))
+
+    result, executed = await _run(
+        tenant, {"review": _review()}, review_source=source
+    )
+
+    assert topo.PUBLISH_REPLY in executed
+    published = result.responses[topo.PUBLISH_REPLY]
+    assert published.published is True
+    assert published.external_reply_id == "mock-reply-1"
+    assert source.published[0][:2] == ("bar-pepe", "ext-1")
+
+
+# ---------------------------------------------------------------------------
 # Checkpointing stays available
 # ---------------------------------------------------------------------------
 

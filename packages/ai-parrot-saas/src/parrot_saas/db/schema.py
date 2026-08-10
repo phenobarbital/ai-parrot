@@ -63,6 +63,99 @@ def _statements(schema: str) -> Sequence[str]:
         CREATE INDEX IF NOT EXISTS tenants_mode_idx
             ON {schema}.tenants (mode)
         """,
+        # -- guests --------------------------------------------------------
+        # People a tenant may contact with an offer. Created before reviews
+        # because a review references one.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.guests (
+            guest_id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id         text        NOT NULL
+                                          REFERENCES {schema}.tenants (tenant_id),
+            email             text        NOT NULL DEFAULT '',
+            phone             text        NOT NULL DEFAULT '',
+            display_name      text        NOT NULL DEFAULT '',
+            consent_marketing boolean     NOT NULL DEFAULT false,
+            lifetime_visits   integer     NOT NULL DEFAULT 0,
+            created_at        timestamptz NOT NULL DEFAULT now(),
+            updated_at        timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        # Partial uniques, not plain ones: most guests have exactly one of the
+        # two contact fields, and a NOT NULL DEFAULT '' would otherwise make
+        # every contactless guest collide with every other.
+        f"""
+        CREATE UNIQUE INDEX IF NOT EXISTS guests_email_idx
+            ON {schema}.guests (tenant_id, email) WHERE email <> ''
+        """,
+        f"""
+        CREATE UNIQUE INDEX IF NOT EXISTS guests_phone_idx
+            ON {schema}.guests (tenant_id, phone) WHERE phone <> ''
+        """,
+        # -- reviews -------------------------------------------------------
+        # ``body`` rather than ``text``: the latter is a type name and reads
+        # badly in a select list. ``location_ref`` is deliberately a free
+        # string and not a foreign key — a review can arrive for a venue the
+        # tenant has not configured yet, and refusing it would lose data the
+        # platform will not resend.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.reviews (
+            review_id    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id    text        NOT NULL
+                                     REFERENCES {schema}.tenants (tenant_id),
+            source       text        NOT NULL,
+            external_id  text        NOT NULL,
+            location_ref text        NOT NULL DEFAULT '',
+            guest_id     uuid        REFERENCES {schema}.guests (guest_id),
+            rating       integer     NOT NULL DEFAULT 0,
+            body         text        NOT NULL DEFAULT '',
+            language     text        NOT NULL DEFAULT 'en',
+            author_name  text        NOT NULL DEFAULT '',
+            status       text        NOT NULL DEFAULT 'received',
+            posted_at    timestamptz NOT NULL DEFAULT now(),
+            received_at  timestamptz NOT NULL DEFAULT now(),
+            raw          jsonb       NOT NULL DEFAULT '{{}}'::jsonb,
+            CONSTRAINT reviews_source_uniq UNIQUE (tenant_id, source, external_id)
+        )
+        """,
+        # This constraint is the whole de-duplication story: a webhook replay
+        # is an ON CONFLICT rather than a second run, a second reply and a
+        # second coupon.
+        f"""
+        CREATE INDEX IF NOT EXISTS reviews_tenant_status_idx
+            ON {schema}.reviews (tenant_id, status)
+        """,
+        f"""
+        CREATE INDEX IF NOT EXISTS reviews_tenant_posted_idx
+            ON {schema}.reviews (tenant_id, posted_at DESC)
+        """,
+        # -- review replies ------------------------------------------------
+        # Every drafting attempt is a row, published or not: the repair loop
+        # can produce several drafts for one review, and keeping only the
+        # published one erases the evidence for why it reads as it does.
+        #
+        # ``tenant_id`` is denormalised here on purpose. It is reachable
+        # through ``review_id``, but BaseRepository refuses any statement that
+        # does not name it, and a join is a poor place to put the isolation
+        # predicate.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.review_replies (
+            reply_id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id         text        NOT NULL,
+            review_id         uuid        NOT NULL
+                                          REFERENCES {schema}.reviews (review_id)
+                                          ON DELETE CASCADE,
+            body              text        NOT NULL DEFAULT '',
+            status            text        NOT NULL DEFAULT 'draft',
+            external_reply_id text        NOT NULL DEFAULT '',
+            attempt           integer     NOT NULL DEFAULT 1,
+            reason            text        NOT NULL DEFAULT '',
+            created_at        timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        f"""
+        CREATE INDEX IF NOT EXISTS review_replies_review_idx
+            ON {schema}.review_replies (tenant_id, review_id, created_at DESC)
+        """,
     )
 
 
