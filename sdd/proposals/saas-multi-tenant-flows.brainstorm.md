@@ -330,11 +330,22 @@ carga y publica; el catálogo es global y los **entitlements son por tenant**:
 La **puerta de admisión** antes de cada run evalúa entitlement + cuota + modo con un
 `navrules.RuleSet` — declarativo, y por fin le da a `navrules` un consumidor real.
 
-**Definiciones propias (enterprise):** `POST /api/v1/saas/flows`, validadas contra un
-allowlist de tools derivado del plan; agentes resueltos vía `AgentRegistry` y tools vía
-`ToolManager` filtrado por PBAC/`ExecutionPolicy`. **Solo se aceptan en modos
-`enterprise*`.** En modo shared solo corren flows del catálogo: ejecutar tools arbitrarias
-definidas por el cliente en el servidor compartido no es un radio de impacto aceptable.
+**Definiciones propias: prohibidas en shared — decidido.** No es una recomendación
+revisable: en modo shared el catálogo es la **única** superficie de ejecución. El allowlist
+de tools sale siempre del manifiesto del flow publicado, nunca de input del tenant, de modo
+que la admisión no tiene que validar definiciones arbitrarias en el camino caliente.
+`POST /api/v1/saas/flows` queda hard-gated a `tenant.mode != "shared"` y devuelve 403 con un
+motivo legible que apunta al upgrade a enterprise; la comprobación vive en la admisión, no
+solo en el handler, para que no exista una segunda vía de entrada.
+
+**Definiciones propias en enterprise:** validadas contra un allowlist de tools derivado del
+plan; agentes resueltos vía `AgentRegistry` y tools vía `ToolManager` filtrado por
+PBAC/`ExecutionPolicy`.
+
+> Lo que esta decisión **no** resuelve: un flow *del catálogo* también puede llevar tools que
+> ejecutan código (pandas agent, sandbox tool). En shared esas siguen teniendo que ir al
+> executor docker/qworker. La restricción cierra la superficie de definiciones arbitrarias,
+> no el riesgo de vecinos ruidosos (pregunta abierta nº 5).
 
 ### 4. BYOK
 
@@ -381,11 +392,18 @@ los otros ContextVars** (`_emit_before_call:482`, `_emit_round_event:561`,
 > before the event leaves the calling coroutine."*
 > Para cuando corre la corutina del recorder, el contexto puede pertenecer a otra tarea.
 
-Esto **no viola el contrato de PII**: `tenant_id` es un identificador de organización y una
-dimensión de facturación, no un identificador de usuario final. Se mantiene fuera de las
-etiquetas de métricas (solo spans y records, el mismo trato que `user_id`), y hay que
-**enmendar explícitamente `observability/README.md`** para que un revisor futuro no lo
-revierta con razón. `user_id`/`session_id` siguen descartándose.
+**Enmienda del contrato de observabilidad — aprobada, y es entregable de la feature.**
+`packages/ai-parrot/src/parrot/observability/README.md` documenta hoy un contrato de PII que
+esta feature toca, así que la enmienda es criterio de aceptación de S7, no un apéndice. Debe
+decir, explicando el porqué para que un revisor futuro no la revierta con razón:
+
+- `tenant_id` y `run_id` son identificadores de **organización y de correlación**, no de
+  usuario final. Permitidos en spans y en `UsageRecord`.
+- **Prohibidos como etiquetas de métrica.** La whitelist de labels de
+  `observability/subscribers/metrics.py` no se toca: añadirlos dispararía la cardinalidad y
+  `run_id` es directamente ilimitado.
+- `user_id`/`session_id` mantienen su trato actual — solo spans, descartados del
+  `UsageRecord`.
 
 `cumulative_cost_usd` es un total global de proceso y carece de sentido multi-tenant: se
 conserva por compatibilidad pero `TenantUsageRecorder` lo ignora y calcula el acumulado por
@@ -542,9 +560,11 @@ nuevos. Nunca se tumba a un cliente enterprise porque nuestro control plane parp
 - `S4 research-dossier` [dep: S2, S3b]
 
 **Fase 3 — Plano comercial**
-- `S5 flow-catalog-and-entitlements` [dep: S1]
+- `S5 flow-catalog-and-entitlements` [dep: S1] — incluye el gate de
+  `POST /api/v1/saas/flows` a `mode != shared`
 - `S6 byok-llm-credentials` [dep: S1]
-- `S7 usage-metering-store` [dep: S1]
+- `S7 usage-metering-store` [dep: S1] — **incluye la enmienda de
+  `observability/README.md` como criterio de aceptación**
 
 **Fase 4 — Entrega**
 - `S8 run-service-and-api` [dep: S4, S5, S6, S7]
@@ -558,6 +578,11 @@ nuevos. Nunca se tumba a un cliente enterprise porque nuestro control plane parp
 **Fase 6 — Claves gestionadas y facturación**
 - `S13 managed-key-pool-and-rating` [dep: S6, S7, S12]
 - `S14 tenant-portal` (SvelteKit, fuera del scope backend) [dep: S8, S9]
+- `S15 custom-definitions-sandbox` — **enterprise-only, fuera del camino crítico**
+  [dep: S5, S11]. Validación estática de definiciones, `ExecutionPolicy` enrutada al
+  executor docker/qworker, PBAC por tool. Al quedar prohibidas las definiciones propias en
+  shared, esta feature **ya no bloquea nada del modo compartido** y puede llegar cuando haya
+  demanda enterprise real.
 
 ---
 
@@ -572,6 +597,9 @@ nuevos. Nunca se tumba a un cliente enterprise porque nuestro control plane parp
   ambos, y que `FlowContext.responses` está poblado. Este test hoy falla en los tres campos.
 - **S4**: `ResearchDossier` round-trip, incluyendo un tool result >32 KiB que debe salir por
   `result_ref` y resolverse de vuelta.
+- **S5**: un tenant en modo shared **no puede registrar ni ejecutar** una definición fuera
+  del catálogo — `POST /api/v1/saas/flows` devuelve 403, y un intento de run con una
+  definición inline es rechazado en la admisión, no solo en el handler.
 - **S6**: test de fuga — correr un flow con una clave BYOK conocida y hacer grep del log
   completo, de los spans OTEL y de las filas de DB buscando el secreto; debe aparecer solo
   el fingerprint.
@@ -592,49 +620,50 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
 
 ---
 
+## Decisiones cerradas
+
+- **Definiciones de flow propias del cliente: prohibidas en modo shared.** El catálogo es la
+  única superficie de ejecución en shared; las definiciones propias son exclusivas de
+  enterprise. Saca a `S15 custom-definitions-sandbox` del camino crítico.
+- **Enmienda del contrato de PII de observabilidad: aprobada.** `tenant_id`/`run_id` entran
+  en spans y `UsageRecord`, nunca en etiquetas de métrica, y
+  `observability/README.md` se actualiza como parte de S7.
+
 ## Open Questions
 
-1. **Enmienda al contrato de PII documentado**: añadir `tenant_id` a
-   `AfterClientCallEvent`/`UsageRecord` toca un contrato que `observability/README.md`
-   declara explícitamente. Hace falta visto bueno y actualizar el README, o un revisor
-   futuro lo revertirá — con razón.
-2. **`ArtifactStore` sin tenant y con URL firmada no autenticada** — clave de partición
+1. **`ArtifactStore` sin tenant y con URL firmada no autenticada** — clave de partición
    `(user_id, agent_id, session_id)`, firma sigv4 de hasta **7 días**, y autorización *solo*
    por firma. Las infografías del tenant A no pueden ser alcanzables por B: hay que meter el
    tenant en la clave y en el payload de la firma, y acortar el TTL. Además
    **`get_public_url()` lanza `ValueError` para artefactos inline** (los pequeños, que no
    pasan por S3) — así que el dossier y la infografía deben escribirse con offload forzado
    si queremos URL firmada siempre.
-3. **`PostgresResultStorage` usa `CREW_RESULT_STORAGE_PG_DSN`**, una conexión distinta de
+2. **`PostgresResultStorage` usa `CREW_RESULT_STORAGE_PG_DSN`**, una conexión distinta de
    `app['database']`, y **se traga todos los errores de `save()`** en un `logger.warning`.
    En un producto facturable, un registro de ejecución perdido en silencio es un ticket de
    soporte. Decisión a tomar: que la escritura del **dossier** sea la autoritativa y
    transaccional con el estado del run, dejando `crew_executions` como telemetría
    best-effort.
-4. **`CREW_RESULT_STORAGE` por defecto es `documentdb`**, no postgres (`conf.py:309`). Toda
+3. **`CREW_RESULT_STORAGE` por defecto es `documentdb`**, no postgres (`conf.py:309`). Toda
    la historia de schema-per-tenant asume postgres: hay que confirmar que el despliegue
    compartido fija `CREW_RESULT_STORAGE=postgres`, o los datos de todos los tenants acaban
    en una colección DocumentDB compartida distinguida solo por un campo `tenant`.
-5. **Concentración de privilegio en el Postgres compartido**: "mismo servidor, base de datos
+4. **Concentración de privilegio en el Postgres compartido**: "mismo servidor, base de datos
    distinta" implica que el control plane necesita `CREATE DATABASE` y que cada data plane
    enterprise tiene un DSN a ese servidor. Un contenedor comprometido queda a un error de
    `pg_hba`/rol de los demás tenants. Innegociable: rol por base de datos con `CONNECT`
    revocado en el resto, `pg_hba` por rol, y ningún DSN de superusuario en un data plane.
    Merece escalarse como decisión de arquitectura frente a instancias separadas.
-6. **Vecinos ruidosos en modo shared**: un solo proceso aiohttp sirviendo los flows de todos
+5. **Vecinos ruidosos en modo shared**: un solo proceso aiohttp sirviendo los flows de todos
    los tenants. Hay caps de concurrencia por tenant en el plan, pero no aislamiento de
    CPU/memoria: una tool de pandas o de código puede bloquear el event loop. En shared, todo
    lo que ejecute código debe ir al executor docker/qworker.
-7. **Frescura de las tablas de precios** (avisan a los 90 días): facturar claves gestionadas
+6. **Frescura de las tablas de precios** (avisan a los 90 días): facturar claves gestionadas
    con precios rancios es riesgo de ingresos. Necesita un proceso de refresco.
-8. **Límite de escala del schema-per-tenant**: Postgres se degrada con miles de schemas
+7. **Límite de escala del schema-per-tenant**: Postgres se degrada con miles de schemas
    (bloat de catálogo, coste de `pg_dump`). Bien para cientos; hay que marcar la ruta de
    migración (tablas particionadas por tenant + RLS — `RlsRegistry` ya existe sin usar)
    antes de pasar de ~1–2k tenants.
-9. **Decisión de producto a confirmar**: en modo shared se prohíben las definiciones de flow
-   propias del cliente. Si comercialmente hace falta permitirlas, el coste es un sandbox de
-   ejecución real (`parrot/tools/executors/{docker,k8s}.py` ya existen y serían la base), y
-   eso es una feature en sí misma.
 
 ---
 
@@ -644,9 +673,8 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
    vendible hasta que esté cerrado.
 2. `/sdd-spec agentsflow-result-fidelity` (S3a) en paralelo — no depende de nada, es un
    helper más dos líneas de llamada, y desbloquea a la vez el dossier y la facturación.
-3. Conseguir el visto bueno para enmendar el contrato de PII de `observability/README.md`
-   (riesgo nº 1) antes de especificar S7.
-4. Confirmar la decisión de producto sobre definiciones propias en modo shared
-   (pregunta abierta nº 7), porque determina si S12/`sandbox.py` entra en el camino crítico.
+3. Al especificar S7, incluir la enmienda de `observability/README.md` como criterio de
+   aceptación (decisión ya cerrada, no un pendiente).
+4. Al especificar S5, incluir el gate de shared y su test de rechazo.
 
 **Camino crítico: S0 → S3a/S3b → S1/S2 → S4 → S8.** Todo lo demás cuelga de esa espina.
