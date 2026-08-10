@@ -33,7 +33,11 @@ from parrot.knowledge.graphindex.communities import (
 )
 from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
 from parrot.knowledge.graphindex.extractors.code import CodeExtractor
-from parrot.knowledge.graphindex.extractors.loader import LoaderExtractor
+from parrot.knowledge.graphindex.extractors.loader import (
+    PLAIN_TEXT_EXTENSIONS,
+    LoaderExtractor,
+    PlainTextLoader,
+)
 from parrot.knowledge.graphindex.extractors.skill import SkillExtractor
 from parrot.knowledge.graphindex.inter_community import compute_inter_community_graph
 from parrot.knowledge.graphindex.persist import GraphIndexPersistence
@@ -158,19 +162,22 @@ class GraphIndexBuilder:
         """
         errors: list[str] = []
 
-        # Stage 1: Extract concurrently
-        try:
-            code_result, loader_result, skill_result = await asyncio.gather(
-                self._extract_code(sources),
-                self._extract_loaders(sources),
-                self._extract_skills(sources),
-            )
-        except Exception as exc:
-            logger.error("Extraction stage failed: %s", exc)
-            errors.append(f"Extraction failed: {exc}")
-            code_result = ([], [])
-            loader_result = ([], [])
-            skill_result = ([], [])
+        # Stage 1: Extract concurrently. Each extractor is isolated: a corpus
+        # of Markdown must still index when tree-sitter is unavailable, and a
+        # code tree must still index when a document loader backend is not
+        # installed. A shared try/except discarded all three on any one
+        # failure, which is how a missing optional parser produced an empty
+        # graph with no obvious cause.
+        outcomes = await asyncio.gather(
+            self._extract_code(sources),
+            self._extract_loaders(sources),
+            self._extract_skills(sources),
+            return_exceptions=True,
+        )
+        code_result, loader_result, skill_result = [
+            self._extraction_result(name, outcome, errors)
+            for name, outcome in zip(("code", "loader", "skill"), outcomes)
+        ]
 
         all_nodes: list[UniversalNode] = (
             code_result[0] + loader_result[0] + skill_result[0]
@@ -534,12 +541,11 @@ class GraphIndexBuilder:
             if self._is_ignored(uri):
                 logger.debug("Ignoring loader source: %s", uri)
                 continue
+            loader = self._loader_for(uri)
+            if loader is None:
+                continue
             try:
-                # For each URI, create a minimal loader and extract
-                # The loader is passed as a source string; LoaderExtractor
-                # accepts a loader instance and a source string.
-                # For the builder we create a placeholder that passes the URI.
-                n, e = await extractor.extract(None, uri)
+                n, e = await extractor.extract(loader, uri)
                 nodes.extend(n)
                 edges.extend(e)
             except Exception as exc:
@@ -624,12 +630,79 @@ class GraphIndexBuilder:
         """
         if self._is_ignored(uri):
             return [], []
+        loader = self._loader_for(uri)
+        if loader is None:
+            return [], []
         try:
             extractor = LoaderExtractor(toolkit=self.pageindex_toolkit)
-            return await extractor.extract(None, uri)
+            return await extractor.extract(loader, uri)
         except Exception as exc:
             logger.warning("Loader extraction for %s failed: %s", uri, exc)
             return [], []
+
+    @staticmethod
+    def _extraction_result(
+        name: str,
+        outcome: object,
+        errors: list[str],
+    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+        """Unwrap one ``asyncio.gather(return_exceptions=True)`` outcome.
+
+        Args:
+            name: Extractor name, for the log line and the error entry.
+            outcome: Either the extractor's ``(nodes, edges)`` tuple or the
+                exception it raised.
+            errors: Build error list, appended to in place on failure.
+
+        Returns:
+            The extractor's ``(nodes, edges)``, or two empty lists when it
+            failed — the remaining extractors still contribute.
+        """
+        if isinstance(outcome, BaseException):
+            logger.error("%s extraction failed: %s", name, outcome)
+            errors.append(f"{name} extraction failed: {outcome}")
+            return [], []
+        return outcome  # type: ignore[return-value]
+
+    @staticmethod
+    def _loader_for(uri: str) -> object | None:
+        """Resolve a document loader for *uri*, by extension.
+
+        ``LoaderExtractor.extract`` calls ``loader._load(source)``, so it needs
+        a loader instance. Resolution order:
+
+        1. :class:`PlainTextLoader` for Markdown/plain-text extensions — a
+           direct file read, so a documentation or knowledge corpus is
+           ingestable with no optional dependency installed.
+        2. ``parrot_loaders.factory.get_loader_class`` for everything else
+           (PDF, DOCX, HTML, …), which needs ai-parrot-loaders.
+
+        Args:
+            uri: Path of the document to load.
+
+        Returns:
+            A loader instance, or ``None`` when no loader can serve this
+            extension — the caller skips the source rather than failing the
+            whole build.
+        """
+        suffix = Path(uri).suffix.lower()
+        if suffix in PLAIN_TEXT_EXTENSIONS:
+            return PlainTextLoader(uri)
+        try:
+            from parrot_loaders.factory import get_loader_class
+        except ImportError:
+            logger.warning(
+                "No loader for %s: ai-parrot-loaders is not installed "
+                "(only %s are readable without it)",
+                uri,
+                ", ".join(sorted(PLAIN_TEXT_EXTENSIONS)),
+            )
+            return None
+        try:
+            return get_loader_class(suffix)(uri)
+        except Exception as exc:  # noqa: BLE001 — one bad source must not
+            logger.warning("Could not build a loader for %s: %s", uri, exc)
+            return None
 
     async def _extract_skill_for_uri(
         self, uri: str

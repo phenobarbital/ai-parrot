@@ -29,14 +29,56 @@ logger = logging.getLogger("parrot.knowledge.pageindex.utils")
 
 # --- Token Counting ---
 
+# Mean characters per token for English prose under the cl100k/o200k BPEs.
+# Used only when tiktoken cannot supply a real encoder.
+_CHARS_PER_TOKEN = 4
+
+
+def get_encoder(model: str = "gpt-4o") -> Any | None:
+    """Return a tiktoken encoder for *model*, or ``None`` if unavailable.
+
+    tiktoken downloads its BPE file on first use, so an offline or
+    proxy-restricted host raises here. Callers must treat ``None`` as "count
+    approximately" rather than propagating: a token *estimate* is never worth
+    failing a document parse over.
+
+    Args:
+        model: Model name whose encoding is wanted.
+
+    Returns:
+        A tiktoken ``Encoding``, or ``None`` when none could be loaded.
+    """
+    for load in (
+        lambda: tiktoken.encoding_for_model(model),
+        lambda: tiktoken.get_encoding("cl100k_base"),
+    ):
+        try:
+            return load()
+        except Exception:  # noqa: BLE001 — KeyError, network, cache errors
+            continue
+    logger.warning(
+        "tiktoken encoding unavailable (offline?) — falling back to a "
+        "character-based token estimate",
+    )
+    return None
+
+
 def count_tokens(text: str, model: str = "gpt-4o") -> int:
-    """Count tokens using tiktoken (approximation for non-OpenAI models)."""
+    """Count tokens using tiktoken (approximation for non-OpenAI models).
+
+    Args:
+        text: The text to measure.
+        model: Model whose encoding to use.
+
+    Returns:
+        The token count, or a character-based estimate when tiktoken cannot
+        load an encoding.
+    """
     if not text:
         return 0
-    try:
-        enc = tiktoken.encoding_for_model(model)
-    except KeyError:
-        enc = tiktoken.get_encoding("cl100k_base")
+    enc = get_encoder(model)
+    if enc is None:
+        return max(1, len(text) // _CHARS_PER_TOKEN)
     return len(enc.encode(text))
 
 
@@ -91,10 +133,13 @@ def get_page_tokens(
     pdf_parser: str = "PyMuPDF",
 ) -> list[tuple[str, int]]:
     """Extract page text and token counts from a PDF."""
-    try:
-        enc = tiktoken.encoding_for_model(model)
-    except KeyError:
-        enc = tiktoken.get_encoding("cl100k_base")
+    enc = get_encoder(model)
+
+    def measure(text: str) -> int:
+        """Token length of *text*, estimated when no encoder is available."""
+        if enc is None:
+            return max(1, len(text) // _CHARS_PER_TOKEN) if text else 0
+        return len(enc.encode(text))
 
     if pdf_parser == "PyPDF2":
         if PyPDF2 is None:
@@ -103,7 +148,7 @@ def get_page_tokens(
         page_list: list[tuple[str, int]] = []
         for page in pdf_reader.pages:
             page_text = page.extract_text() or ""
-            token_length = len(enc.encode(page_text))
+            token_length = measure(page_text)
             page_list.append((page_text, token_length))
         return page_list
     elif pdf_parser == "PyMuPDF":
@@ -118,7 +163,7 @@ def get_page_tokens(
         page_list = []
         for page in doc:
             page_text = page.get_text()
-            token_length = len(enc.encode(page_text))
+            token_length = measure(page_text)
             page_list.append((page_text, token_length))
         return page_list
     else:

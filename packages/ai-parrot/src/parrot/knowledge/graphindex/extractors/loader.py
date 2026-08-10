@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from parrot.knowledge.graphindex.schema import (
@@ -34,6 +35,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalEdge,
     UniversalNode,
 )
+from parrot.stores.models import Document
 
 if TYPE_CHECKING:
     from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
@@ -48,7 +50,63 @@ HIERARCHICAL_LOADERS: set[str] = {
     "EpubLoader",
     "DocxLoader",
     "PdfLoader",
+    "PlainTextLoader",
 }
+
+# Extensions :class:`PlainTextLoader` can read on its own, with no backend.
+PLAIN_TEXT_EXTENSIONS: set[str] = {
+    ".md", ".markdown", ".txt", ".text", ".rst", ".mdx",
+}
+
+
+class PlainTextLoader:
+    """Read a text-like file straight off disk, with no loader backend.
+
+    ``LoaderExtractor`` only needs an object exposing
+    ``async _load(source) -> list[Document]``. For Markdown and plain text
+    that is a file read, so GraphIndex can ingest a documentation or
+    knowledge corpus without ai-parrot-loaders (and its markitdown/OCR
+    dependency chain) being installed. Richer formats — PDF, DOCX, HTML —
+    still route through the real loaders.
+
+    It is listed in :data:`HIERARCHICAL_LOADERS` so Markdown headings become
+    ``SECTION`` nodes; a file with no headings falls back to a single
+    ``DOCUMENT`` node on its own.
+
+    Args:
+        source: Accepted for signature parity with ai-parrot loaders; the
+            path actually read is the one passed to :meth:`_load`.
+        encoding: Text encoding. Undecodable bytes are replaced, never fatal.
+    """
+
+    def __init__(self, source: object = None, *, encoding: str = "utf-8") -> None:
+        self.source = source
+        self.encoding = encoding
+
+    async def _load(self, source: str | Path, **kwargs: object) -> list[Document]:
+        """Return the file's contents as a single :class:`Document`.
+
+        Args:
+            source: Path to the file to read.
+            **kwargs: Ignored; accepted for loader-signature compatibility.
+
+        Returns:
+            One ``Document``, or an empty list when the file is empty.
+        """
+        path = Path(source)
+        text = path.read_text(encoding=self.encoding, errors="replace")
+        if not text.strip():
+            return []
+        return [
+            Document(
+                page_content=text,
+                metadata={
+                    "source": str(path),
+                    "filename": path.name,
+                    "doctype": "text",
+                },
+            )
+        ]
 
 
 def _make_node_id(source_uri: str, suffix: str) -> str:
@@ -350,7 +408,9 @@ class LoaderExtractor:
         try:
             from parrot.knowledge.pageindex import md_to_tree
 
-            tree = await md_to_tree(full_text, self.llm_adapter)
+            tree = await md_to_tree(
+                full_text, self.llm_adapter, doc_name=source_uri
+            )
             page_index_nodes = tree.get("structure") or tree.get("nodes") or []
         except Exception as exc:
             logger.warning(
