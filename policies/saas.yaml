@@ -1,0 +1,133 @@
+version: "1.0"
+
+# ---------------------------------------------------------------------------
+# Multi-tenant SaaS plane.
+#
+# IMPORTANT: these policies are defence in depth, not the isolation boundary.
+# `setup_pbac()` degrades to no policy engine at all when the policy directory
+# is missing, and `abac_middleware` lets unauthenticated requests through — so
+# neither can be the thing that keeps one tenant's data away from another.
+# That job belongs to `tenant_resolution_middleware` (which fails closed) and
+# to `BaseRepository`, whose data helpers refuse SQL without a tenant
+# predicate. What these policies add is *who may do what* once the tenant is
+# already known.
+#
+# Resource namespaces introduced here:
+#   saas:control   — tenant lifecycle (platform staff only)
+#   saas:secrets   — a tenant's own BYOK credentials
+#   saas:reviews   — review ingest and reply management
+#   saas:coupons   — offers, rules, issuance and redemption
+# ---------------------------------------------------------------------------
+
+defaults:
+  effect: deny
+
+policies:
+  # -------------------------------------------------------------------------
+  # Platform staff: the control plane.
+  # -------------------------------------------------------------------------
+  - name: saas_control_plane_platform_admin
+    effect: allow
+    description: >
+      Onboard, amend, suspend and provision tenants. Restricted to platform
+      staff: these routes are exempt from tenant resolution by design (they
+      carry the tenant in the path), so they are the one surface that
+      legitimately spans tenants.
+    resources:
+      - "saas:control"
+      - "saas:control:*"
+    actions:
+      - "saas:tenant:create"
+      - "saas:tenant:read"
+      - "saas:tenant:update"
+      - "saas:tenant:delete"
+      - "saas:tenant:provision"
+    subjects:
+      groups:
+        - platform_admin
+    priority: 100
+
+  # -------------------------------------------------------------------------
+  # Tenant administrators: their own configuration.
+  # -------------------------------------------------------------------------
+  - name: saas_tenant_admin_secrets
+    effect: allow
+    description: >
+      Manage the tenant's own BYOK credentials. Values are write-only through
+      the API — the listing endpoint returns fingerprints only, and SecretMeta
+      has no field capable of carrying a secret — so "read" here means reading
+      metadata, never material.
+    resources:
+      - "saas:secrets"
+    actions:
+      - "saas:secret:write"
+      - "saas:secret:list"
+      - "saas:secret:delete"
+      - "saas:secret:rotate"
+    subjects:
+      groups:
+        - tenant_admin
+    priority: 90
+
+  - name: saas_tenant_admin_configuration
+    effect: allow
+    description: >
+      Manage coupon offers and the navrules eligibility ruleset. Rule writes
+      are restricted because a rule that is not a declarative ConditionRule
+      makes evaluate_sync() raise at run time, which would break the flow for
+      every review that tenant receives.
+    resources:
+      - "saas:coupons"
+      - "saas:rules"
+    actions:
+      - "saas:offer:write"
+      - "saas:rule:write"
+      - "saas:rule:delete"
+    subjects:
+      groups:
+        - tenant_admin
+    priority: 90
+
+  # -------------------------------------------------------------------------
+  # Tenant operators: day-to-day use.
+  # -------------------------------------------------------------------------
+  - name: saas_tenant_operator
+    effect: allow
+    description: >
+      Read reviews and runs, and redeem coupons at the point of sale. No
+      configuration rights: an operator must not be able to change the rules
+      that decide who gets an offer.
+    resources:
+      - "saas:reviews"
+      - "saas:coupons"
+    actions:
+      - "saas:review:read"
+      - "saas:run:read"
+      - "saas:coupon:read"
+      - "saas:coupon:redeem"
+    subjects:
+      groups:
+        - tenant_admin
+        - tenant_operator
+    priority: 80
+
+  # -------------------------------------------------------------------------
+  # Explicit denial for the destructive paths.
+  # -------------------------------------------------------------------------
+  - name: saas_deny_provisioning_to_tenants
+    effect: deny
+    description: >
+      A tenant may never provision or destroy infrastructure, even its own
+      dedicated stack — that spends real money and is irreversible. At equal
+      priority DENY beats ALLOW, and this sits above the tenant-admin rules
+      so it wins regardless.
+    resources:
+      - "saas:control:*"
+    actions:
+      - "saas:tenant:provision"
+      - "saas:tenant:delete"
+    subjects:
+      groups:
+        - tenant_admin
+        - tenant_operator
+    priority: 95

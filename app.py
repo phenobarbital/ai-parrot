@@ -10,6 +10,7 @@ from parrot.manager import BotManager
 from parrot.conf import STATIC_DIR
 from parrot.auth.pbac import setup_pbac
 from parrot.auth.resolver import PBACPermissionResolver
+from parrot_saas.handlers.setup import setup_saas_api
 from parrot.handlers.bots import (
     FeedbackTypeHandler,
     ChatbotFeedbackHandler,
@@ -332,6 +333,19 @@ class Main(AppHandler):
         auth.add_exclude_list('/a2a')
         auth.add_exclude_list('/a2a/*')
         auth.add_exclude_list('/.well-known/*')
+
+        # ------------------------------------------------------------------
+        # Multi-tenant SaaS plane.
+        #
+        # Position matters. setup_pbac() below appends abac_middleware last,
+        # and aiohttp runs middlewares first-registered-outermost, so anything
+        # registered AFTER it executes *inside* ABAC — after the authorization
+        # decision has already been made. Registering here puts tenant
+        # resolution outside ABAC (so a policy can read request['tenant']) and
+        # inside authentication (so the optional session-claim strategy has a
+        # session to read).
+        # ------------------------------------------------------------------
+        setup_saas_api(self.app)
 
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
         # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that
