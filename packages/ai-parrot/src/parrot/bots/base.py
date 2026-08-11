@@ -996,6 +996,13 @@ class BaseBot(AbstractBot):
         _agent_token = current_agent_name.set(self.name)
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
+        # FEAT-176 bookkeeping, bound BEFORE the try because every `except`
+        # branch below reads both. Anything that raises earlier than their
+        # original in-try assignment — the input guardrail pipeline, for one —
+        # would otherwise make the handler itself raise UnboundLocalError and
+        # replace the real exception with a misleading one.
+        _trace_ctx = trace_context or TraceContext.new_root()
+        _ask_started_ms = time.perf_counter()
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1054,10 +1061,9 @@ class BaseBot(AbstractBot):
                 )
             prompt_for_llm = _input_outcome.content
 
-            # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
-            _trace_ctx = trace_context or TraceContext.new_root()
+            # FEAT-176: publish the trace context resolved above and emit
+            # BeforeInvokeEvent.
             self._current_trace_context = _trace_ctx
-            _ask_started_ms = time.perf_counter()
             await self.events.emit(BeforeInvokeEvent(
                 trace_context=_trace_ctx,
                 agent_name=self.name,
