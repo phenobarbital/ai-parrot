@@ -316,13 +316,19 @@ class PythonREPLTool(AbstractTool):
         # Debug:
         self.debug = debug
 
-        # Lazy-init matplotlib on first PythonREPLTool instantiation
-        _ensure_matplotlib()
+        # matplotlib is already bound at this point: _setup_charts() above
+        # calls _ensure_matplotlib() before touching the module globals.
         # Bootstrap the environment if not already done
         self._bootstrap()
 
     def _setup_charts(self):
         """Configure matplotlib, Altair, and Bokeh for non-interactive use."""
+        # This method is the earliest consumer of the lazily-bound module
+        # globals, so it owns the import. Binding here (rather than at a
+        # single call site) also covers `reset()`, which calls this method
+        # again on an instance whose construction may have failed.
+        _ensure_matplotlib()
+
         # Bokeh configuration:
 
         # Store the original backend
