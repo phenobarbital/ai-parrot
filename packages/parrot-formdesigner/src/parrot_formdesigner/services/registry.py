@@ -312,6 +312,58 @@ class FormRegistry:
     # Public API — write paths
     # ------------------------------------------------------------------
 
+    async def _next_free_slug(
+        self, base: str, tenant: str, form_uid: uuid.UUID
+    ) -> str:
+        """Return ``base``, or the first free ``base-N`` in ``tenant``.
+
+        A slug is TAKEN when it maps to a DIFFERENT ``form_uid`` — in the
+        in-memory index, or (when a storage backend is configured) in the
+        persisted table, probed via ``load_by_slug``. The storage probe is
+        what makes this hold on a cold cache: the in-memory slug index
+        starts empty every boot, and a memory-only check would let the
+        collision fall through to the database's per-tenant unique
+        constraint as a raw error.
+
+        Args:
+            base: The requested slug.
+            tenant: The resolved tenant scope.
+            form_uid: The registering form's identity — its OWN existing
+                row/registration never counts as a collision.
+
+        Returns:
+            ``base`` when free, else ``base-2``, ``base-3``, ...
+
+        Raises:
+            FormAlreadyExistsError: When no free slug is found within a
+                pathological number of attempts.
+        """
+        candidate = base
+        for suffix in range(2, 202):
+            owner = self._slug_index.get(self._make_slug_key(tenant, candidate))
+            taken = owner is not None and owner != form_uid
+            if not taken and self._storage is not None:
+                try:
+                    persisted = await self._storage.load_by_slug(candidate, tenant)
+                except Exception:  # noqa: BLE001 — probe only; register's
+                    # own persist path will surface real storage faults
+                    persisted = None
+                # isinstance guard: a stub/mock storage returns truthy
+                # non-FormSchema objects whose `.form_uid` is not a UUID —
+                # those must never read as a collision (they would suffix
+                # forever). A real backend returns FormSchema | None.
+                persisted_uid = getattr(persisted, "form_uid", None)
+                taken = (
+                    isinstance(persisted_uid, uuid.UUID)
+                    and persisted_uid != form_uid
+                )
+            if not taken:
+                return candidate
+            candidate = f"{base}-{suffix}"
+        raise FormAlreadyExistsError(
+            f"No free slug found for {base!r} in tenant {tenant!r}"
+        )
+
     async def register(
         self,
         form: FormSchema,
@@ -363,6 +415,16 @@ class FormRegistry:
                 this form_uid's own prior registration. Subclasses
                 ``ValueError`` so existing ``except ValueError`` call sites
                 keep working.
+
+                EXCEPTION (2026-08-12): a BRAND-NEW form (a ``form_uid``
+                this registry has never seen) registering with
+                ``persist=True`` does not raise — its slug is numerically
+                suffixed to the first free one instead
+                (``bug-report-form`` → ``bug-report-form-2``), probing
+                BOTH the in-memory index and the storage backend, and
+                ``form.form_id`` is updated in place so the caller returns
+                the real slug. Create-from-template mints canonical slugs
+                on purpose; only RENAMES of existing forms keep the error.
         """
         # Determine whether resolution would fall all the way to default_tenant
         # because no explicit information was provided.
@@ -390,6 +452,32 @@ class FormRegistry:
                 form.form_id,
                 resolved,
             )
+
+        # Create-from-template friendliness (2026-08-12): a BRAND-NEW form
+        # (this registry has never seen its form_uid) whose slug is already
+        # owned by ANOTHER form in the tenant gets a numeric suffix
+        # (`bug-report-form-2`) instead of an error. The quick-start
+        # templates deterministically re-mint canonical slugs, and every
+        # click is meant to create an INDEPENDENT form — erroring made the
+        # feature unusable, and the historical alternative (piling creates
+        # up as fake "versions" of one form_id) predates form_uid identity
+        # and corrupts version lineage. Renames of EXISTING forms keep
+        # raising FormAlreadyExistsError below: silently renaming an
+        # explicit user choice would be surprising. Gated on ``persist``
+        # so pure in-memory registration (hydration) never probes storage.
+        if persist and self._uid_to_slug.get(form.form_uid) is None:
+            free_slug = await self._next_free_slug(
+                form.form_id, resolved, form.form_uid
+            )
+            if free_slug != form.form_id:
+                self.logger.info(
+                    "FormRegistry.register: slug %r already taken in tenant "
+                    "%r — creating as %r",
+                    form.form_id,
+                    resolved,
+                    free_slug,
+                )
+                form.form_id = free_slug
 
         slug_key = self._make_slug_key(resolved, form.form_id)
 
