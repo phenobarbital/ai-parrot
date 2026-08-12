@@ -212,9 +212,12 @@ class RBACContext(BaseModel):
 # SQL constants
 # ---------------------------------------------------------------------------
 
+# `$2::text::jsonb`: the param is JSON TEXT (json.dumps). See
+# PostgresFormStorage._upsert_sql for why a bare `::jsonb` double-encodes
+# on a host pool that registers a json/jsonb codec.
 _INSERT_POLICY_SQL = """
 INSERT INTO fieldsync.auth_policies (name, policy, tenant, priority, enforcing)
-VALUES ($1, $2::jsonb, $3, $4, $5)
+VALUES ($1, $2::text::jsonb, $3, $4, $5)
 ON CONFLICT (name) DO UPDATE
     SET policy    = EXCLUDED.policy,
         tenant    = EXCLUDED.tenant,
