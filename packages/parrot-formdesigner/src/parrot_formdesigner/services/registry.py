@@ -858,19 +858,30 @@ class FormRegistry:
     async def get(self, form_uid: uuid.UUID, *, tenant: str | None = None) -> FormSchema | None:
         """Get a form schema by ``form_uid`` (primary key) within a tenant.
 
+        Read-through (2026-08-13): on a cache miss, when a storage backend
+        is attached, the form is loaded from storage and admitted into the
+        cache — see :meth:`_read_through`. The in-memory index alone made
+        every uid-gated handler (delete/update/validate/render/clone) 404
+        on any persisted form the boot-time hydration did not cover, and a
+        restart was required before a form created by another process (or
+        seeded directly) became visible at all.
+
         Args:
             form_uid: The form's immutable ``form_uid`` (UUID). NOT
                 ``form_id`` — use :meth:`get_by_slug` for slug-based lookups.
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            FormSchema if found under the resolved tenant, ``None`` otherwise.
-            A form registered under ``"epson"`` is invisible to
-            ``get(form_uid, tenant="pokemon")``.
+            FormSchema if found under the resolved tenant (cache first,
+            then storage), ``None`` otherwise. A form registered under
+            ``"epson"`` is invisible to ``get(form_uid, tenant="pokemon")``.
         """
         resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            return self._forms.get(resolved, {}).get(form_uid)
+            cached = self._forms.get(resolved, {}).get(form_uid)
+        if cached is not None:
+            return cached
+        return await self._read_through(resolved, form_uid=form_uid)
 
     async def get_by_slug(
         self, form_id: str, *, tenant: str | None = None
@@ -878,23 +889,97 @@ class FormRegistry:
         """Get a form schema by its slug (``form_id``) within a tenant.
 
         Resolves ``form_id`` → ``tenant_form_slug`` → ``form_uid`` via
-        ``_slug_index``, then looks up the primary index (FEAT-389).
+        ``_slug_index``, then looks up the primary index (FEAT-389). On a
+        cache miss, falls through to storage (:meth:`_read_through`) —
+        same rationale as :meth:`get`.
 
         Args:
             form_id: The form's human-readable slug.
             tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            FormSchema if a form with this slug is registered under the
-            resolved tenant, ``None`` otherwise.
+            FormSchema if a form with this slug exists under the resolved
+            tenant (cache first, then storage), ``None`` otherwise.
         """
         resolved = self._resolve_tenant(tenant)
         slug_key = self._make_slug_key(resolved, form_id)
         async with self._lock:
             form_uid = self._slug_index.get(slug_key)
-            if form_uid is None:
-                return None
-            return self._forms.get(resolved, {}).get(form_uid)
+            cached = (
+                self._forms.get(resolved, {}).get(form_uid)
+                if form_uid is not None
+                else None
+            )
+        if cached is not None:
+            return cached
+        return await self._read_through(resolved, form_id=form_id)
+
+    async def _read_through(
+        self,
+        resolved: str,
+        *,
+        form_uid: uuid.UUID | None = None,
+        form_id: str | None = None,
+    ) -> FormSchema | None:
+        """Load a cache-missed form from storage and admit it to the cache.
+
+        Fail-soft by design: a lookup must degrade to ``None`` (the
+        pre-read-through answer), never raise — storage faults are logged
+        and swallowed HERE because every caller of :meth:`get` /
+        :meth:`get_by_slug` already treats ``None`` as "not found".
+
+        Admission reuses :meth:`register` with ``persist=False`` (never a
+        re-save, never the new-form slug-suffix probe — that path is gated
+        on ``persist=True``) and ``overwrite=False`` (a racing admission of
+        the same uid wins harmlessly). The one register() failure mode a
+        STORAGE row can trigger is a slug already claimed by a DIFFERENT
+        cached form_uid (``FormAlreadyExistsError``): the loaded form is
+        then served UNCACHED with a warning — refusing the lookup because
+        the cache is inconsistent would turn a bookkeeping conflict into a
+        user-facing 404.
+
+        Args:
+            resolved: The already-resolved tenant (never ``None``).
+            form_uid: Lookup by immutable uid — exactly one of
+                ``form_uid``/``form_id`` is provided by the two callers.
+            form_id: Lookup by mutable slug.
+
+        Returns:
+            The loaded FormSchema, or ``None`` (no storage attached, no
+            such row, or a storage fault — logged).
+        """
+        if self._storage is None:
+            return None
+        try:
+            if form_uid is not None:
+                loaded = await self._storage.load(form_uid, tenant=resolved)
+            else:
+                loaded = await self._storage.load_by_slug(form_id, resolved)
+        except Exception as exc:  # noqa: BLE001 — lookups degrade, never raise
+            self.logger.warning(
+                "FormRegistry read-through: storage load failed "
+                "(tenant=%r form_uid=%r form_id=%r): %s",
+                resolved,
+                form_uid,
+                form_id,
+                exc,
+            )
+            return None
+        if loaded is None:
+            return None
+        try:
+            await self.register(
+                loaded, tenant=resolved, overwrite=False, persist=False
+            )
+        except FormAlreadyExistsError as exc:
+            self.logger.warning(
+                "FormRegistry read-through: slug %r conflicts with a cached "
+                "form under tenant=%r — serving the storage row uncached: %s",
+                loaded.form_id,
+                resolved,
+                exc,
+            )
+        return loaded
 
     async def list_forms(self, *, tenant: str | None = None) -> list[FormSchema]:
         """List all registered form schemas for a specific tenant.
