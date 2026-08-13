@@ -390,3 +390,11 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # Every release builds ALL 12 packages, but only the ones whose
+          # version moved since the last release can be uploaded — PyPI
+          # rejects re-uploads of an existing version, and without this
+          # flag ONE unchanged sibling fails the WHOLE deploy (observed:
+          # the 0.25.34 and 0.25.32 releases both failed exactly here
+          # while all 12 build jobs were green). With it, unchanged
+          # packages are skipped and only the bumped ones publish.
+          skip-existing: true

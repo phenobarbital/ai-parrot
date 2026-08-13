@@ -256,11 +256,18 @@ class FormAPIHandler:
     def _get_tenant(self, request: web.Request) -> str:
         """Extract the effective tenant for this request.
 
-        Returns the first program slug from the navigator-auth session (as set
-        by :meth:`_get_programs`). When no programs are present — anonymous
-        requests, sessions without program scope, or test setups without
-        navigator-auth — falls back to the registry's configured
-        ``default_tenant`` so write paths don't crash on
+        Prefers ``request["tenant_context"]`` — a tenant the HOST
+        APPLICATION resolved, authorized and declared for this request
+        (see ``_utils._get_request_tenant``'s step 0 for the full
+        rationale: authorization cannot be this library's job, and the
+        session's ``programs[0]`` is an arbitrarily ordered default, not
+        a statement of which programme the request is about).
+
+        Otherwise returns the first program slug from the navigator-auth
+        session (as set by :meth:`_get_programs`). When no programs are
+        present — anonymous requests, sessions without program scope, or
+        test setups without navigator-auth — falls back to the registry's
+        configured ``default_tenant`` so write paths don't crash on
         ``require_tenant=True``.
 
         Args:
@@ -270,6 +277,9 @@ class FormAPIHandler:
         Returns:
             A tenant slug string — never ``None``.
         """
+        declared = request.get("tenant_context")
+        if declared:
+            return str(declared)
         programs = self._get_programs(request)
         if programs:
             return programs[0]
