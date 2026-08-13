@@ -515,6 +515,20 @@ class AbstractBot(
         elif prompt_preset:
             from .prompts.presets import get_preset
             self._prompt_builder = get_preset(prompt_preset)
+        elif self._prompt_builder is not None:
+            # Subclasses declare their builder as a CLASS attribute evaluated
+            # once at class-definition time (e.g. PandasAgent._prompt_builder,
+            # data.py:376), so every instance of every subclass would otherwise
+            # share one object. `configure()` mutates it in place and flips
+            # `is_configured`, and the caller guard is
+            # `if not self._prompt_builder.is_configured` — so only the FIRST
+            # agent to configure ever renders the CONFIGURE-phase layers, and
+            # every later agent silently inherits that agent's baked identity
+            # ($name, $role, $goal, $backstory).
+            # Cloning per instance keeps the class attribute pristine: it is
+            # never the object that gets configured, so each clone starts
+            # unconfigured with its $-templates intact.
+            self._prompt_builder = self._prompt_builder.clone()
         # FEAT-181: Provider-Agnostic Prompt Caching
         self._prompt_caching: bool = kwargs.get('prompt_caching', False)
         if self._prompt_caching and self._prompt_builder is not None:
