@@ -92,9 +92,12 @@ CREATE TABLE IF NOT EXISTS {table} (
 );
 """
 
+# `$2::text::jsonb`: the param is JSON TEXT (json.dumps). See
+# PostgresFormStorage._upsert_sql for why a bare `::jsonb` double-encodes
+# on a host pool that registers a json/jsonb codec.
 _INSERT_SQL = """
 INSERT INTO {table} (question_id, definition_json, tenant)
-VALUES ($1, $2::jsonb, $3)
+VALUES ($1, $2::text::jsonb, $3)
 ON CONFLICT (question_id, tenant) DO NOTHING
 """
 

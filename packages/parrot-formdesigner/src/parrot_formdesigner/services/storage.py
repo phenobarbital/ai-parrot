@@ -172,9 +172,18 @@ class PostgresFormStorage(FormStorage):
 
     def _upsert_sql(self, tenant: str | None) -> str:
         qt = self._qualified(tenant)
+        # `$n::text::jsonb`, NOT `$n::jsonb`: the params are JSON TEXT
+        # (model_dump_json()). On a plain pool both casts behave the same,
+        # but a HOST-provided pool may register a json/jsonb type codec
+        # (encoder=json.dumps) — and a `::jsonb`-typed parameter is then
+        # re-encoded by that codec, storing a double-encoded jsonb STRING
+        # instead of an object (`jsonb_typeof = 'string'`, every
+        # `->>'key'` read returns NULL). Typing the parameter as TEXT
+        # keeps any codec out of the way; the explicit cast then parses
+        # the JSON server-side, identically under both pool regimes.
         return f"""
         INSERT INTO {qt} (form_uid, form_id, version, schema_json, style_json, tenant, created_by)
-        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7)
+        VALUES ($1, $2, $3, $4::text::jsonb, $5::text::jsonb, $6, $7)
         ON CONFLICT (form_uid, version)
         DO UPDATE SET
             form_id = EXCLUDED.form_id,
