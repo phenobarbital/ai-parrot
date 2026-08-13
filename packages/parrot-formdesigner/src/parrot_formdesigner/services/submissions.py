@@ -451,3 +451,35 @@ class FormSubmissionStorage:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(sql, root_submission_id)
         return [self._row_to_submission(row) for row in rows]
+
+    async def has_submissions(
+        self,
+        form_uid: uuid.UUID,
+        *,
+        tenant: str | None = None,
+    ) -> bool:
+        """Return ``True`` when at least one submission exists for a form.
+
+        Existence probe for the delete guard described in FEAT-300 §8: a
+        form with one or more responses must never be deleted, only
+        deactivated. ``FormVersionService`` consumes this method through its
+        ``has_responses`` hook, so the invariant it documents becomes
+        enforceable by a consumer that configures a submission storage.
+
+        Counts every revision of every submission, including rows marked
+        ``is_valid = FALSE``. An invalid submission is still a response, and
+        deleting the form it belongs to would orphan it.
+
+        Args:
+            form_uid: ``form_uid`` (immutable UUID) of the parent form.
+                NOT ``form_id`` — the slug is not stable across a rename.
+            tenant: Optional per-call tenant override (schema resolution).
+
+        Returns:
+            ``True`` if the form has at least one submission row.
+        """
+        qt = self._qualified(tenant)
+        sql = f"SELECT 1 FROM {qt} WHERE form_uid = $1 LIMIT 1"
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(sql, form_uid)
+        return row is not None

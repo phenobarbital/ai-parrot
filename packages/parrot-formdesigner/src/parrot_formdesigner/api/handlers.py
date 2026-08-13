@@ -83,6 +83,8 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
         )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from parrot.clients.base import AbstractClient
 
     from ..core.partial import PartialFormData
@@ -127,6 +129,14 @@ class FormAPIHandler:
             form endpoints runs in **shadow mode** — it logs permission checks
             but never blocks requests. Set to ``True`` only when nav-auth
             policies are fully configured. Consistent with ``Policy.enforcing=False``.
+        has_responses: Optional async ``(form_uid, tenant) -> bool`` hook that
+            reports whether a form has responses; it gates ``DELETE
+            /forms/{form_uid}`` (FEAT-300 §8). Overrides the default hook,
+            which is derived from ``submission_storage`` when one is given.
+            Pass this to apply a policy wider than "has submissions" — for
+            example a reference check against consumer-owned tables. When
+            this is ``None`` and no ``submission_storage`` is configured,
+            deletion stays unguarded.
     """
 
     def __init__(
@@ -142,10 +152,12 @@ class FormAPIHandler:
         workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
         venue_service: "VenueService | None" = None,
         rbac_enforcing: bool = False,
+        has_responses: "Callable[[_uuid.UUID, str], Awaitable[bool]] | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
         self._submission_storage = submission_storage
+        self._has_responses = has_responses
         self._forwarder = forwarder
         self._partial_store = partial_store
         # FEAT-302 — Org Graph services
@@ -1263,11 +1275,18 @@ class FormAPIHandler:
     async def delete_form(self, request: web.Request) -> web.Response:
         """DELETE /api/v1/forms/{form_uid} — Remove a registered form.
 
-        Unregisters the form from the in-memory registry and, when a
-        ``FormStorage`` backend is configured, deletes the persisted row as
-        well (scoped by the form's tenant so per-tenant Postgres schemas
-        resolve correctly). Returns ``204 No Content`` on success, ``404``
-        when no form with the given id exists.
+        When a ``FormStorage`` backend is configured, deletes the persisted
+        row first (scoped by the form's tenant so per-tenant Postgres schemas
+        resolve correctly), then unregisters the form from the in-memory
+        registry. The order matters: the registry is memory-only, so a
+        failed storage delete must leave it untouched.
+
+        Returns:
+            ``204 No Content`` on success; ``404`` when no form with the
+            given ``form_uid`` exists; ``409`` when the form has responses
+            and a ``has_responses`` hook is active (FEAT-300 §8 — deactivate
+            it instead); ``500`` when the storage delete fails, in which
+            case the form stays registered.
         """
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "delete_form")
@@ -1296,16 +1315,26 @@ class FormAPIHandler:
                 status=409,
             )
 
-        await self.registry.unregister(form_uid, tenant=tenant)
-
+        # Durable store first, memory second. ``registry.unregister()`` is
+        # memory-only, so unregistering before a failed DELETE would report
+        # success for a form that reappears on the next restart or
+        # hydration. Persist the deletion, or change nothing at all.
         storage = self.registry.storage
         if storage is not None:
             try:
                 await storage.delete(form_uid, tenant=existing.tenant)
             except Exception as exc:
-                self.logger.warning(
-                    "FormStorage.delete failed for %s: %s", form_uid, exc
+                self.logger.error(
+                    "FormStorage.delete failed for %s: %s — form retained",
+                    form_uid,
+                    exc,
                 )
+                return JSONResponse(
+                    {"error": f"Failed to delete form '{form_uid}'"},
+                    status=500,
+                )
+
+        await self.registry.unregister(form_uid, tenant=tenant)
 
         self.logger.info("DELETE form_uid=%s", form_uid)
         return web.Response(status=204)
@@ -1660,15 +1689,55 @@ class FormAPIHandler:
     # FEAT-300 helpers — version service + question bank
     # ------------------------------------------------------------------
 
+    def _build_has_responses_hook(
+        self,
+    ) -> "Callable[[_uuid.UUID, str], Awaitable[bool]] | None":
+        """Return the ``has_responses`` hook for ``FormVersionService``.
+
+        Resolution order:
+
+        1. An explicit ``has_responses=`` passed at construction wins — a
+           consumer may implement any policy it likes (for example a
+           reference check against its own tables).
+        2. Otherwise, when a ``submission_storage`` is configured, the hook
+           is derived from :meth:`FormSubmissionStorage.has_submissions`.
+        3. Otherwise ``None``, which leaves ``can_delete()`` permissive —
+           the pre-existing behaviour for consumers that configure no
+           submission storage.
+
+        Returns:
+            An async ``(form_uid, tenant) -> bool`` callable, or ``None``
+            when this handler has no way to answer the question.
+        """
+        if self._has_responses is not None:
+            return self._has_responses
+        storage = self._submission_storage
+        if storage is None:
+            return None
+
+        async def _has_responses(form_uid: _uuid.UUID, tenant: str) -> bool:
+            return await storage.has_submissions(form_uid, tenant=tenant)
+
+        return _has_responses
+
     def _get_version_service(self) -> "FormVersionService":
         """Return the shared FormVersionService, initialising it lazily.
+
+        The service is wired with a ``has_responses`` hook whenever this
+        handler can answer the question (see
+        :meth:`_build_has_responses_hook`), which is what makes the FEAT-300
+        §8 delete guard reachable through the public ``setup_form_api``
+        seam rather than only by patching a private attribute.
 
         Returns:
             Configured ``FormVersionService`` instance.
         """
         if self._version_service is None:
             from ..services.form_version import FormVersionService
-            self._version_service = FormVersionService(self.registry)
+            self._version_service = FormVersionService(
+                self.registry,
+                has_responses=self._build_has_responses_hook(),
+            )
         return self._version_service
 
     def _make_question_bank(self, tenant: str) -> "QuestionBankService":

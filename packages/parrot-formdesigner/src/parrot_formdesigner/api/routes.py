@@ -43,6 +43,8 @@ from .handlers import FormAPIHandler
 
 
 if TYPE_CHECKING:
+    import uuid
+
     from parrot.clients.base import AbstractClient
     from parrot.core.ws_auth import TokenValidator
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
@@ -111,6 +113,7 @@ def setup_form_api(
     workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
     venue_service: "VenueService | None" = None,
     rbac_enforcing: bool = False,
+    has_responses: "Callable[[uuid.UUID, str], Awaitable[bool]] | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -155,6 +158,13 @@ def setup_form_api(
             ``POST /org/sync/workday``.
         rbac_enforcing: When ``False`` (default), RBAC gate-keeping on existing
             form endpoints runs in shadow mode (log only, never block).
+        has_responses: Optional async ``(form_uid, tenant) -> bool`` hook that
+            gates ``DELETE /forms/{form_uid}`` (FEAT-300 §8: a form with
+            responses is deactivated, never deleted). Leave it unset to get
+            the default hook, which reports whether ``submission_storage``
+            holds any submission for the form. Pass it to apply a wider
+            policy, such as a reference check against consumer-owned tables.
+            With no hook and no ``submission_storage``, deletion is unguarded.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -199,6 +209,7 @@ def setup_form_api(
         workday_adapter=workday_adapter,
         venue_service=venue_service,
         rbac_enforcing=rbac_enforcing,
+        has_responses=has_responses,
     )
 
     bp = base_path.rstrip("/")

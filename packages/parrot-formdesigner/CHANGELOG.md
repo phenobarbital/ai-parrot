@@ -31,6 +31,40 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
     deployments, replace `_STORE` with a shared backend such as Redis.
     A module-level warning is logged at import time to surface this limitation.
 
+- **`FormSubmissionStorage.has_submissions(form_uid, *, tenant=None)`** —
+  existence probe that reports whether a form has at least one submission.
+  Counts every revision, including rows with `is_valid = FALSE`: an invalid
+  submission is still a response.
+- **`has_responses=` hook on `setup_form_api()` and `FormAPIHandler`** — makes
+  the FEAT-300 §8 delete guard ("a form with ≥1 response can never be
+  deleted") reachable from the public API. Previously `FormVersionService`
+  accepted the hook but no consumer could supply one through
+  `setup_form_api`, so `can_delete()` always returned `True`. The parameter is
+  optional and overrides the default hook; pass it to enforce a policy wider
+  than "has submissions".
+
+### Changed
+
+- **`DELETE /api/v1/forms/{form_uid}` now enforces the delete guard when a
+  `submission_storage` is configured.** The default `has_responses` hook is
+  derived from `submission_storage.has_submissions`, so a consumer that
+  passes `submission_storage=` to `setup_form_api()` starts receiving `409`
+  for forms that have submissions where it previously received `204`. This is
+  the FEAT-300 §8 invariant taking effect. Consumers that configure no
+  `submission_storage` are unaffected — deletion stays unguarded. To keep the
+  old behaviour with a submission storage configured, pass a permissive hook:
+  `has_responses=lambda form_uid, tenant: False` (as a coroutine function).
+
+### Fixed
+
+- **`DELETE /api/v1/forms/{form_uid}` no longer reports success for a failed
+  storage delete.** The handler unregistered the form from the in-memory
+  registry *before* deleting the persisted row, and swallowed any storage
+  exception, so a failed database delete returned `204` while the form
+  reappeared on the next restart or registry hydration. The storage delete
+  now runs first and returns `500` on failure, leaving the registry untouched
+  so memory and database cannot diverge.
+
 ## [0.2.0] — 2026-05-07 — Structural Refactor (FEAT-152)
 
 ### Breaking Changes
