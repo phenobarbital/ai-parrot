@@ -1,4 +1,5 @@
 from pathlib import Path
+from aiohttp import web
 from navconfig import config
 from navigator.handlers.types import AppHandler
 # Tasker:
@@ -61,6 +62,38 @@ from parrot_formdesigner.services.storage import PostgresFormStorage
 from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
 from parrot.core.ws_auth import TokenValidator
 from parrot_pipelines.handlers import PlanogramComplianceHandler
+
+
+@web.middleware
+async def forms_tenant_context_middleware(request: web.Request, handler):
+    """FEAT-421 — declare the browsed programme as the form request's tenant.
+
+    parrot-formdesigner's ``_get_tenant`` honors ``request["tenant_context"]``
+    (a tenant the HOST resolves AND authorizes) over the session's arbitrarily
+    ordered ``programs[0]`` (see ``parrot_formdesigner.api._utils`` step 0).
+    navigator-svelte sends the browsed programme as ``?program_slug=`` on every
+    forms call; here — the host, which owns the entitlement model — we validate
+    that claim against the caller's session (a member of the programme, or a
+    superuser) and, ONLY if authorized, declare it as ``tenant_context``.
+
+    A non-member's claim is ignored (no cross-tenant access) and parrot falls
+    back to its existing behavior. Runs after ``AuthHandler`` so
+    ``request.session`` is populated.
+
+    Fixes AI-created/edited forms landing under the user's first program
+    (``navigator``) instead of the browsed programme — the 404s in NAV-9372
+    (create) and NAV-9370 (edit/save).
+    """
+    program_slug = request.query.get("program_slug")
+    if program_slug:
+        session = getattr(request, "session", None)
+        if session is not None:
+            userinfo = session.get("session", {}) or {}
+            programs = userinfo.get("programs", []) or []
+            is_superuser = bool(userinfo.get("superuser", False))
+            if is_superuser or program_slug in programs:
+                request["tenant_context"] = program_slug
+    return await handler(request)
 
 
 class Main(AppHandler):
@@ -332,6 +365,12 @@ class Main(AppHandler):
         auth.add_exclude_list('/a2a')
         auth.add_exclude_list('/a2a/*')
         auth.add_exclude_list('/.well-known/*')
+
+        # FEAT-421: declare the browsed programme (?program_slug=), authorized
+        # against the caller's session, as request["tenant_context"] so
+        # parrot-formdesigner scopes forms to it (honored by _get_tenant).
+        # Appended AFTER auth.setup so request.session is populated when it runs.
+        self.app.middlewares.append(forms_tenant_context_middleware)
 
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
         # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that

@@ -1,0 +1,24 @@
+{
+  "feature": "FEAT-421",
+  "feature_id": "FEAT-421",
+  "spec": "sdd/specs/FEAT-421-form-tenant-program-slug-scoping.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2198",
+      "slug": "form-tenant-program-slug-scoping",
+      "title": "Host middleware declares browsed programme as form tenant_context",
+      "feature": "FEAT-421",
+      "spec": "sdd/specs/FEAT-421-form-tenant-program-slug-scoping.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-2198-form-tenant-program-slug-scoping.md"
+    }
+  ]
+}
