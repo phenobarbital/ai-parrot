@@ -502,8 +502,10 @@ class InfographicToolkit(AbstractToolkit):
 
         a2ui_envelope = None
         if self._emit_a2ui:
+            # Same response object the HTML renderer consumed, so both surfaces
+            # describe identical content.
             a2ui_envelope = self._build_a2ui_envelope(
-                coerced_blocks, template.name, validated_theme, artifact_id,
+                infographic_response, artifact_id,
             )
 
         return InfographicRenderResult(
@@ -603,12 +605,25 @@ class InfographicToolkit(AbstractToolkit):
 
         a2ui_envelope = None
         if self._emit_a2ui:
-            sections = [{"heading": title or template_name}]
-            if data:
-                sections[0]["text"] = str(list(data.keys()))
+            # The Jinja lane has no typed blocks — the template owns the layout.
+            # Model what IS known semantically: the heading, plus the payload keys
+            # the template was given. Anything richer would be fabricated.
+            synthetic_blocks: List[Dict[str, Any]] = [
+                {"type": "title", "title": title or template_name}
+            ]
+            if isinstance(data, dict) and data:
+                synthetic_blocks.append(
+                    {
+                        "type": "summary",
+                        "content": "Data: " + ", ".join(sorted(map(str, data))),
+                    }
+                )
             a2ui_envelope = self._build_a2ui_envelope(
-                [], template_name, theme, artifact_id, title=title,
-                extra_sections=sections,
+                InfographicResponse(
+                    template=template_name, theme=theme, blocks=synthetic_blocks
+                ),
+                artifact_id,
+                title=title,
             )
 
         return InfographicRenderResult(
@@ -827,32 +842,36 @@ class InfographicToolkit(AbstractToolkit):
 
     def _build_a2ui_envelope(
         self,
-        blocks: List[Dict[str, Any]],
-        template_name: str,
-        theme: Optional[str],
+        response: InfographicResponse,
         artifact_id: str,
         *,
         title: Optional[str] = None,
-        extra_sections: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Build a validated A2UI Infographic envelope from the render data."""
-        from parrot.outputs.a2ui.builders import build_infographic
+        """Build a validated A2UI Infographic envelope from an ``InfographicResponse``.
 
-        sections = extra_sections or []
-        if not sections:
-            for i, block in enumerate(blocks):
-                heading = block.get("title") or block.get("type") or f"Block {i + 1}"
-                sections.append({"heading": heading})
-        if not sections:
-            sections = [{"heading": template_name}]
+        Delegates the whole mapping to the deterministic adapter
+        (``parrot.outputs.a2ui.adapters``), which turns each typed block into a
+        real catalog component and routes chart/table rows through data-model
+        bindings. The toolkit only owns the surface id and the failure policy.
+
+        Args:
+            response: The same ``InfographicResponse`` handed to the HTML renderer,
+                so the envelope and the HTML always describe identical content.
+            artifact_id: Persisted artifact id, used to derive the surface id.
+            title: Optional explicit surface title, overriding the response's own.
+
+        Returns:
+            The serialised envelope, or ``None`` when the build fails — the A2UI
+            lane is additive (spec G7), so a failure degrades to an HTML-only
+            result instead of breaking the render.
+        """
+        from parrot.outputs.a2ui.adapters import infographic_response_to_envelope
 
         try:
-            envelope = build_infographic(
-                title=title or template_name,
-                sections=sections,
-                theme=theme,
+            envelope = infographic_response_to_envelope(
+                response,
                 surface_id=f"infographic-{artifact_id}",
-                data_model={"blocks": blocks} if blocks else None,
+                title=title,
             )
             return envelope.model_dump(mode="json")
         except Exception:
