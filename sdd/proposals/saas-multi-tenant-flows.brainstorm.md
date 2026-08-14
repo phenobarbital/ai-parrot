@@ -345,7 +345,7 @@ PBAC/`ExecutionPolicy`.
 > Lo que esta decisión **no** resuelve: un flow *del catálogo* también puede llevar tools que
 > ejecutan código (pandas agent, sandbox tool). En shared esas siguen teniendo que ir al
 > executor docker/qworker. La restricción cierra la superficie de definiciones arbitrarias,
-> no el riesgo de vecinos ruidosos (pregunta abierta nº 5).
+> no el riesgo de vecinos ruidosos (pregunta abierta nº 4).
 
 ### 4. BYOK
 
@@ -490,6 +490,35 @@ Trabajo Pulumi necesario:
    *Fargate y no EKS*: no hay manifiestos k8s ni Helm en el repo y `KubernetesToolkit` solo
    hace `k8s_apply_manifest`; levantar EKS para un proceso aiohttp de larga vida es mucho
    más trabajo sin beneficio proporcional.
+
+   **Endurecimiento del aislamiento lógico — criterio de aceptación de S11, no prosa.**
+   Al haberse decidido cluster compartido, esto es lo único que separa a un tenant de otro,
+   así que el programa debe emitirlo y el test negativo debe comprobarlo:
+   - `REVOKE CONNECT ON DATABASE <db> FROM PUBLIC` en **cada** base provisionada. Es el
+     default que muerde: sin esto, cualquier rol capaz de autenticarse contra el cluster
+     puede conectarse a la base recién creada, porque las bases nuevas heredan el `CONNECT`
+     de `PUBLIC` desde `template1`.
+   - Rol por base, con `CONNECT` revocado en las demás.
+   - Reglas `pg_hba` por (rol, base, CIDR de origen).
+   - Rol de provisioning con `CREATEDB`, **separado del rol de aplicación**, y ningún DSN de
+     superusuario en ningún data plane.
+   - `ALTER ROLE ... CONNECTION LIMIT n` y `ALTER ROLE ... SET statement_timeout` por
+     tenant: baratos, y acotan al vecino ruidoso en el propio motor.
+   - **Nombres de base opacos** (id del tenant, nunca la razón social): `pg_database` es un
+     catálogo compartido legible por cualquier rol autenticado, así que todo tenant puede
+     **listar los nombres de todas las bases** aunque no pueda conectarse a ellas. Con
+     nombres de cliente, eso filtra la cartera comercial a cualquier cliente.
+   - **Fijar y documentar la versión del servidor**: dos defaults dependen de ella — el
+     `CREATE` de `PUBLIC` sobre el esquema `public` (retirado en PG 15) y el agujero
+     histórico de `CREATEROLE`, que permitía a ese rol concederse pertenencia a otros roles
+     no-superusuario (endurecido en PG 16).
+
+   **Lo que el aislamiento lógico no cubre**, a documentar para no sobrevenderlo:
+   - **El PITR es de cluster completo.** Restaurar un tenant a un punto en el tiempo exige
+     dumps lógicos por base; hay que decidir el SLA de recuperación por tenant **antes** de
+     venderlo.
+   - **Recursos compartidos** (`max_connections`, WAL, autovacuum): acotados por los límites
+     por rol de arriba, no eliminados.
 4. **`StackManager`** (`provisioning/stack.py`): envoltorio fino y **no agéntico** que llama
    a `PulumiExecutor` directamente. Un LLM no debe conducir `pulumi up` en provisioning —
    `PulumiToolkit` existe para uso agéntico, el plano de control no pasa por ahí. Nombrado
@@ -614,6 +643,10 @@ nuevos. Nunca se tumba a un cliente enterprise porque nuestro control plane parp
   firmada de la infografía, y comprobar la entrega del webhook con firma HMAC válida.
 - **S10/S11**: `pulumi preview` contra el programa del data-plane con `config_values`
   distintos por tenant, verificando que **llegan** al stack (hoy no llegan).
+- **S11 — test negativo de aislamiento**, el que sostiene la decisión de cluster compartido:
+  el rol del tenant A **no puede conectarse** a la base del tenant B, y `PUBLIC` no tiene
+  `CONNECT` sobre ninguna base provisionada. Sin este test, el aislamiento descansa en que
+  nadie se equivoque escribiendo un `GRANT`.
 
 Global: `pytest` en cada paquete tocado tras cualquier cambio de lógica, y un smoke de dos
 tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK distintas.
@@ -628,6 +661,22 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
 - **Enmienda del contrato de PII de observabilidad: aprobada.** `tenant_id`/`run_id` entran
   en spans y `UsageRecord`, nunca en etiquetas de métrica, y
   `observability/README.md` se actualiza como parte de S7.
+- **Aislamiento lógico sobre el Postgres compartido, no instancias dedicadas.** Enterprise
+  va a ser poco frecuente al principio; el coste de una instancia por tenant no está
+  justificado todavía. Todos los tenants enterprise comparten cluster, con base de datos
+  propia y aislamiento impuesto por roles y `pg_hba`.
+
+  La contrapartida hay que asumirla con los ojos abiertos: **lo único que separa a un tenant
+  de otro es la corrección de esa configuración**. Por eso el endurecimiento de §7 deja de
+  ser buena práctica y pasa a ser criterio de aceptación verificable de S11, con un test
+  negativo que lo demuestre.
+
+  **Disparadores para revisar la decisión** — para que no caduque en silencio: un cliente
+  regulado que exija instancia dedicada por contrato; un tenant cuyo consumo degrade de
+  forma medible al resto; o el punto en que el volumen enterprise haga que el coste deje de
+  ser el factor dominante. La vía de escape es barata y no toca el diseño: mover un tenant a
+  instancia dedicada es **cambiar el DSN que recibe su data plane**. Eso es justamente lo
+  que hace defendible empezar por lo compartido.
 
 ## Open Questions
 
@@ -648,19 +697,13 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
    la historia de schema-per-tenant asume postgres: hay que confirmar que el despliegue
    compartido fija `CREW_RESULT_STORAGE=postgres`, o los datos de todos los tenants acaban
    en una colección DocumentDB compartida distinguida solo por un campo `tenant`.
-4. **Concentración de privilegio en el Postgres compartido**: "mismo servidor, base de datos
-   distinta" implica que el control plane necesita `CREATE DATABASE` y que cada data plane
-   enterprise tiene un DSN a ese servidor. Un contenedor comprometido queda a un error de
-   `pg_hba`/rol de los demás tenants. Innegociable: rol por base de datos con `CONNECT`
-   revocado en el resto, `pg_hba` por rol, y ningún DSN de superusuario en un data plane.
-   Merece escalarse como decisión de arquitectura frente a instancias separadas.
-5. **Vecinos ruidosos en modo shared**: un solo proceso aiohttp sirviendo los flows de todos
+4. **Vecinos ruidosos en modo shared**: un solo proceso aiohttp sirviendo los flows de todos
    los tenants. Hay caps de concurrencia por tenant en el plan, pero no aislamiento de
    CPU/memoria: una tool de pandas o de código puede bloquear el event loop. En shared, todo
    lo que ejecute código debe ir al executor docker/qworker.
-6. **Frescura de las tablas de precios** (avisan a los 90 días): facturar claves gestionadas
+5. **Frescura de las tablas de precios** (avisan a los 90 días): facturar claves gestionadas
    con precios rancios es riesgo de ingresos. Necesita un proceso de refresco.
-7. **Límite de escala del schema-per-tenant**: Postgres se degrada con miles de schemas
+6. **Límite de escala del schema-per-tenant**: Postgres se degrada con miles de schemas
    (bloat de catálogo, coste de `pg_dump`). Bien para cientos; hay que marcar la ruta de
    migración (tablas particionadas por tenant + RLS — `RlsRegistry` ya existe sin usar)
    antes de pasar de ~1–2k tenants.
