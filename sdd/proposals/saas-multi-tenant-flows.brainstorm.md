@@ -235,9 +235,27 @@ es un riesgo cross-tenant real. En su lugar:
 - Promover `parrot_formdesigner/services/_identifiers.py` (`validate_identifier`,
   `qualified_table`) a `parrot/storage/identifiers.py` — en core, no en `parrot_saas`, para
   que el paquete SaaS no dependa de formdesigner; formdesigner pasa a importarlo de ahí.
-- Nombre de schema `t_<slug>` derivado **siempre del registro `Tenant`, nunca de un valor
-  de la request**, truncado a 60 chars, validado, con unicidad en la tabla de tenants para
-  que el truncado no pueda colisionar. Denylist: `public`, `navigator`, `pg_*`, `saas`.
+- **Regla de naming — `client_slug` aleatorio, una sola para schema y base.** El slug se
+  genera con un **CSPRNG en el alta del tenant**; no se deriva del nombre del cliente ni de
+  su id, y no se recalcula nunca: es un dato almacenado, no una función. Esa es la
+  propiedad que importa — un identificador derivado sigue siendo **enlazable** (quien lo vea
+  puede confirmar una hipótesis probando candidatos), uno aleatorio no lo es sin la tabla de
+  mapeo.
+  - Formato: prefijo `t_` + alfabeto restringido a minúsculas y dígitos — Postgres pliega a
+    minúsculas los identificadores sin comillar — dentro del límite de 63 caracteres de
+    `NAMEDATALEN`. `t_` + ~26 caracteres base32 da entropía de sobra sin acercarse al límite.
+  - El prefijo fijo garantiza además que nunca colisiona con el espacio reservado `pg_*`.
+  - Unicidad por constraint en la tabla de tenants, con reintento ante colisión.
+  - Se aplica con el **mismo generador** al schema en modo shared y al nombre de base en
+    enterprise. Nunca se deriva de un valor de la request: sale siempre del registro `Tenant`.
+  - Denylist (`public`, `navigator`, `pg_*`, `saas`) y validación de identificador se
+    mantienen como defensa en profundidad, aunque un slug con prefijo no pueda infringirlas.
+- **El mapeo `cliente ↔ client_slug` vive solo en el plano de control.** `saas.tenants`
+  guarda `tenant_id`, `client_name` y `client_slug` (único). Un data plane conoce únicamente
+  su propio slug y nunca necesita la tabla. Eso es lo que hace que el esfuerzo valga la pena:
+  aunque un contenedor de tenant quede comprometido y liste `pg_database`, lo que ve no
+  significa nada. **Corolario: esa tabla pasa a ser el activo sensible del plano de
+  control**, porque es lo único que de-anonimiza todo lo demás.
 - **Excepción, `PostgresResultStorage`**: su `_TABLE_RE = ^[a-z_][a-z0-9_]*$` **rechaza
   puntos**, así que no se le puede pasar `"t_x.crew_executions"` como colección. Dos
   salidas viables; se elige la segunda por ser menos invasiva:
@@ -504,10 +522,27 @@ Trabajo Pulumi necesario:
      superusuario en ningún data plane.
    - `ALTER ROLE ... CONNECTION LIMIT n` y `ALTER ROLE ... SET statement_timeout` por
      tenant: baratos, y acotan al vecino ruidoso en el propio motor.
-   - **Nombres de base opacos** (id del tenant, nunca la razón social): `pg_database` es un
-     catálogo compartido legible por cualquier rol autenticado, así que todo tenant puede
-     **listar los nombres de todas las bases** aunque no pueda conectarse a ellas. Con
-     nombres de cliente, eso filtra la cartera comercial a cualquier cliente.
+   - **Nombre de base = `client_slug`**, según la regla de naming de §2 (slug aleatorio de
+     CSPRNG, jamás la razón social ni nada derivado de ella). El motivo vive aquí:
+     `pg_database` es un catálogo compartido legible por cualquier rol autenticado, así que
+     todo tenant puede **listar los nombres de todas las bases** aunque no pueda conectarse
+     a ellas. Con nombres de cliente, eso filtra la cartera comercial a cualquier cliente.
+   - **El slug debe llegar a todo lo que nombra recursos**, no solo a la base. Si el stack de
+     Pulumi, los tags de AWS, los log groups o los nombres de recursos siguen llevando la
+     razón social, el nombre reaparece en el bucket de estado y en la consola cloud y la
+     opacidad no sirve de nada. El `enterprise-<slug>` del punto 3 es ese mismo `client_slug`.
+     *Excepción deliberada*: el **hostname de cara al cliente sí puede ser legible** — el
+     cliente espera su propio dominio y solo él lo ve. La opacidad protege frente a *otros*
+     tenants y frente a los catálogos compartidos, no frente al dueño del dato.
+   - **Prohibido `COMMENT ON DATABASE` con el nombre del cliente.** Es el atajo que alguien
+     añadirá con buena intención para facilitar la operación, y **deshace la decisión
+     entera**: los comentarios de objetos compartidos son legibles con `shobj_description()`
+     por cualquier rol autenticado.
+   - **Coste operativo, y cómo se paga**: con nombres aleatorios, quien esté de guardia
+     mirando `pg_stat_activity` o un log de queries lentas ya no sabe de quién es lo que ve.
+     Se compensa con una vía de resolución `slug → cliente` en el plano de control, y con
+     `tenant_id` presente en logs y trazas de la aplicación — la correlación se hace en la
+     capa que ya lo tiene, sin bajar el nombre del cliente a la capa de datos.
    - **Fijar y documentar la versión del servidor**: dos defaults dependen de ella — el
      `CREATE` de `PUBLIC` sobre el esquema `public` (retirado en PG 15) y el agujero
      histórico de `CREATEROLE`, que permitía a ese rol concederse pertenencia a otros roles
@@ -647,6 +682,10 @@ nuevos. Nunca se tumba a un cliente enterprise porque nuestro control plane parp
   el rol del tenant A **no puede conectarse** a la base del tenant B, y `PUBLIC` no tiene
   `CONNECT` sobre ninguna base provisionada. Sin este test, el aislamiento descansa en que
   nadie se equivoque escribiendo un `GRANT`.
+- **S11 — opacidad del naming**: dos tenants provisionados no comparten `client_slug`; **dos
+  altas con el mismo nombre de cliente producen slugs distintos** (es lo que demuestra que el
+  slug no se deriva); y ni el nombre de base, ni el de schema, ni el del stack, ni el del log
+  group contienen la razón social.
 
 Global: `pytest` en cada paquete tocado tras cualquier cambio de lógica, y un smoke de dos
 tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK distintas.
@@ -670,6 +709,10 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
   de otro es la corrección de esa configuración**. Por eso el endurecimiento de §7 deja de
   ser buena práctica y pasa a ser criterio de aceptación verificable de S11, con un test
   negativo que lo demuestre.
+
+  **Naming**: schemas y bases se nombran con un `client_slug` **aleatorio** (CSPRNG), unido
+  al cliente por una relación `cliente ↔ client_slug` que solo existe en el plano de control.
+  Regla completa en §2; el slug se propaga también a stacks, tags y log groups.
 
   **Disparadores para revisar la decisión** — para que no caduque en silencio: un cliente
   regulado que exija instancia dedicada por contrato; un tenant cuyo consumo degrade de
