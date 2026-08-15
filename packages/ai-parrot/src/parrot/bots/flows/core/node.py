@@ -99,6 +99,17 @@ class Node(BaseModel):
 
     node_id: str
 
+    max_retries: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Retry budget for this node. ``AgentsFlow`` reads it off the node "
+            "instance; ``_materialize_nodes`` mirrors ``NodeDefinition."
+            "max_retries`` onto it. Defaults to 0 so programmatically built "
+            "graphs keep their previous no-retry behaviour."
+        ),
+    )
+
     # Private mutable state (survives frozen=True because PrivateAttr is
     # initialised via __init__ and not subject to the frozen constraint).
     _pre_actions: list = PrivateAttr(default_factory=list)
