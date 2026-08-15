@@ -253,6 +253,22 @@ class FormSubmissionStorage:
 
     def _insert_sql(self, tenant: str | None) -> str:
         qt = self._qualified(tenant)
+        # `$n::text::jsonb`, NOT a bare `$n`: `data` ($5) and `context` ($21)
+        # are JSON TEXT (`json.dumps`) by the time they reach here. On a plain
+        # pool a bare parameter is fine, but a HOST-provided pool may register
+        # a json/jsonb codec (encoder=json.dumps) — which then re-encodes the
+        # value, storing a double-encoded jsonb STRING instead of an object
+        # (`jsonb_typeof = 'string'`). Typing the parameter as TEXT keeps any
+        # codec out of the way; the explicit cast parses it server-side,
+        # identically under both pool regimes.
+        #
+        # Same defect and same fix as `PostgresFormStorage._upsert_sql`
+        # (storage.py) — that pass covered form_schemas, rbac and the question
+        # bank but missed this table. Measured 2026-08-14 against a FieldSync
+        # (codec-registered) pool: both live submissions stored `data` and
+        # `context` as strings, and `get_submission` then raised
+        # `ValidationError: Input should be a valid dictionary` reading back
+        # its own rows — the write and the read of this module disagreed.
         return f"""
         INSERT INTO {qt} (
             submission_id, form_uid, form_id, form_version, data,
@@ -261,9 +277,9 @@ class FormSubmissionStorage:
             user_id, username, org_id, submitted_at, ip, user_agent, locale,
             root_submission_id, revision, context
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $1, $2, $3, $4, $5::text::jsonb, $6, $7, $8, $9, $10, $11,
             $12, $13, $14, $15, $16, $17, $18,
-            $19, $20, $21
+            $19, $20, $21::text::jsonb
         )
         """
 
