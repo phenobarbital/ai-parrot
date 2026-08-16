@@ -192,10 +192,28 @@ class TestModuleLevelHandlers:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Deleted `_get_request_tenant` and its now-unused `TYPE_CHECKING`/
+`web` import surface from `api/_utils.py`; the three surviving helpers
+(`_deep_merge`, `_loc_to_str`, `_bump_version`) are untouched. Swapped all
+three call sites (`operations.py:551`, `render.py:131`, `uploads.py:247`,
+pre-edit line numbers) to `declared_tenant(request)` from `.tenant`; none
+had a dead `if tenant is None:` branch to remove (all three went straight
+to `registry.get(form_uid, tenant=tenant)`). `grep -rn
+"_get_request_tenant" .../src` now returns only `ui/telegram.py` (TASK-2204's
+scope); `grep -rn "tenant_context" .../api/` returns nothing.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Full `tests/unit/` suite: 5 new failures beyond the post-TASK-2202
+baseline, all confirmed (by inspecting the traceback) to be the intended
+fail-loud hard-cut: `test_render_dispatcher.py` (3) and
+`test_blob_uid_keys.py` (2) register `handle_render`/`handle_rest_upload`
+directly on a bare router without ever declaring a tenant, so
+`declared_tenant()` now raises `RuntimeError` instead of the old code
+silently defaulting — exactly the AC2/§7 "fail-loud backstop" this task
+implements. Deferred to TASK-2206 per this task's own scope note. New test
+file: 7/7 passing. Lint diff-count unchanged for all four touched source
+files (pre-existing, unrelated debt in `render.py`/`uploads.py`;
+`_utils.py` and `operations.py` clean before and after).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
