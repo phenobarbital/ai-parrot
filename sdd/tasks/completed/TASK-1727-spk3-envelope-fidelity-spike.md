@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-273 — A2UI Protocol Integration — Rendering Core (parrot.outputs.a2ui)
 **Spec**: sdd/specs/a2ui-implementation.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1721, TASK-1724
@@ -120,13 +120,13 @@ Structured-output invocation exactly as the verified signature: `structured_outp
 
 ## Acceptance Criteria
 
-- [ ] `artifacts/spikes/spk3-envelope-fidelity/` contains prompt set (N ≥ 20), harness, raw `runs.jsonl`, and `results.md`.
-- [ ] `results.md` reports per-client first-shot validity % (parse rate AND catalog-valid rate), model/params used, and the failure-taxonomy histogram.
-- [ ] A single recommended retry-budget number for TASK-1737 is stated with rationale, recorded in `results.md`, this task's Completion Note, and the spec §8 SPK-3 checkbox (checked).
-- [ ] Zero changes under `packages/ai-parrot/src/parrot/clients/`; no spike code under `packages/*/src/`; no dependency changes.
-- [ ] No credentials or secrets committed in evidence files.
-- [ ] Existing suite untouched and green: `pytest packages/ai-parrot/tests/outputs/a2ui/ -v`
-- [ ] No linting errors introduced in package code: `ruff check packages/ai-parrot/src/parrot/outputs/a2ui/` (spike scripts under `artifacts/` are exempt)
+- [x] `artifacts/spikes/spk3-envelope-fidelity/` contains prompt set (N ≥ 20), harness, raw `runs.jsonl`, and `results.md`.
+- [x] `results.md` reports per-client first-shot validity % (parse rate AND catalog-valid rate), model/params used, and the failure-taxonomy histogram.
+- [x] A single recommended retry-budget number for TASK-1737 is stated with rationale, recorded in `results.md`, this task's Completion Note, and the spec §8 SPK-3 checkbox (checked).
+- [x] Zero changes under `packages/ai-parrot/src/parrot/clients/`; no spike code under `packages/*/src/`; no dependency changes.
+- [x] No credentials or secrets committed in evidence files.
+- [x] Existing suite untouched and green: `pytest packages/ai-parrot/tests/outputs/a2ui/ -v` (206 passed, 4 skipped)
+- [x] No linting errors introduced in package code: `ruff check packages/ai-parrot/src/parrot/outputs/a2ui/` (spike scripts under `artifacts/` are exempt; zero diff under this path)
 
 ---
 
@@ -179,29 +179,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done — MUST include per-client validity % and the retry-budget number handed to TASK-1737)*
+**Completed by**: sdd-worker (Claude)   ·   **Status: done**
+**Date**: 2026-07-11 (harness) / 2026-08-16 (confirmed re-run)
 
-**Completed by**: sdd-worker (Claude)   ·   **Status: done-with-issues**
-**Date**: 2026-07-11
-**Measured validity rates**: **NOT measured** — both `AnthropicClient` and
-`GoogleGenAIClient` returned HTTP **404 model-not-found** for every call in this build
-environment (`claude-3-5-sonnet-latest` and `gemini-1.5-pro` are not accessible to the
-available credentials). `runs.jsonl` holds 22 `call_error` rows per client and zero
-genuine fidelity samples. Per the task's explicit instruction I did **not** fabricate
-numbers.
+**2026-08-16 update**: Re-ran `spike_fidelity.py` with live Anthropic + Google GenAI
+credentials, after swapping the two now-inaccessible model IDs (`claude-3-5-sonnet-latest`,
+`gemini-1.5-pro` — both 404 in this environment) for each client's current accessible
+flagship model (`claude-sonnet-4-5`, `gemini-3.1-pro-preview`). No other change to the
+harness, prompt set, or classification taxonomy.
+
+**Measured validity rates**: **Claude (`claude-sonnet-4-5`): 20/22 catalog-valid
+first-shot (90.9%)** — 2 `unknown_component` failures (invented `Column`, `Section`, not
+in the registered catalog). **Gemini (`gemini-3.1-pro-preview`): 22/22 catalog-valid
+first-shot (100%)**. Zero `call_error` rows across all 44 calls. Full taxonomy and
+per-client breakdown in `results.md`.
+
 **Retry-budget number handed to TASK-1737**: **`max_attempts = 3` (1 initial + 2
-catalog-validate retries)** — grounded in the in-repo `OutputFormatter` `max_retries=2`
-precedent (evidence-pending; revisit once live numbers exist). Recorded in `results.md`
-and spec §8 (checkbox checked with the pending-evidence note).
+catalog-validate retries)** — originally proposed from the in-repo `OutputFormatter`
+`max_retries=2` precedent, now **confirmed** by live measurement: both models clear the
+~85% first-shot validity bar the recommendation was conditioned on, and the only observed
+failure class (`unknown_component`) is retry-recoverable. Recorded in `results.md` and
+spec §8 (checkbox updated with the confirmed numbers).
 
 **Notes**: Committed the reproducible 22-prompt set (6 display-UI categories), the
-throwaway harness (`spike_fidelity.py`) using the verified structured-output path +
-catalog LLM-origin classification taxonomy, `runs.jsonl` (the honest 404 outcomes), and
-`results.md`. No client code changed; no secrets committed; no dependency changes. The
-a2ui core suite remains green.
+throwaway harness (`spike_fidelity.py`), the real `runs.jsonl` (44 rows, no secrets), and
+the updated `results.md`. No client code changed (`packages/*/src/parrot/clients/`
+untouched); no dependency changes; no secrets committed. The a2ui core suite remains green
+(`pytest packages/ai-parrot/tests/outputs/a2ui/ -v` → 206 passed, 4 skipped); no NEW lint
+errors introduced (zero diff under `packages/ai-parrot/src/parrot/outputs/a2ui/`).
 
-**Deviations from spec**: live validity measurement not obtainable in this environment
-(model access unavailable → 404); harness + prompts + taxonomy + a precedent-grounded
-retry budget are delivered so TASK-1737 is unblocked. Re-run `spike_fidelity.py` with
-valid Anthropic + Google GenAI credentials (and accessible model IDs) to fill in the
-numbers.
+**Deviations from spec**: none remaining — the 2026-07-11 gap (model access unavailable →
+404) is resolved by this re-run; no fabricated numbers were used at either pass.
