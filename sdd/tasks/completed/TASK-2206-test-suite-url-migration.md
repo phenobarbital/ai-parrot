@@ -197,10 +197,106 @@ def test_no_test_uses_a_legacy_forms_url():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+**Methodology**: established a TRUE pre-FEAT-421 baseline by running the
+full suite against a `git worktree` at the merge-base commit
+(`eb0b8a322`, before any FEAT-421 code changes), then diffed every
+subsequent run against it — isolating exactly what this feature (not
+pre-existing, unrelated debt) broke. True baseline: 38 failures. After
+TASK-2201-2205: 153 failures (115 FEAT-421-caused, across 21 files —
+more than the task's own 26-file/17-file survey anticipated, since that
+survey predated TASK-2202's `_assert_form_tenant` defense-in-depth
+addition, which also trips on `MagicMock`-based fake requests that don't
+configure `.get("tenant")`). After this task: 39 failures — the 38 true
+baseline + exactly 1 flagged item (below). Zero tests newly broken,
+zero `/org/*` files touched, zero `src/` files touched.
+
+**Files migrated** (21, plus deletion of
+`test_tenant_context_resolution.py` per explicit instruction):
+`test_setup_form_api.py`, `test_setup_form_api_rest.py`,
+`test_exclude_provider.py`, `test_render_dispatcher.py`,
+`test_blob_uid_keys.py`, `test_setup_form_ui_routes.py`,
+`test_setup_form_ui_protect_pages.py`, `test_registry_multi_tenancy_e2e.py`,
+`test_field_uid_flows.py`, `test_render_pdf.py`, `test_render_xml.py`,
+`test_operations_e2e.py`, `test_upload_rest.py`,
+`test_lifecycle_events_get.py`, `test_lifecycle_events_remote.py`,
+`test_lifecycle_events_submit.py`, `test_lifecycle_events_e2e.py`,
+`test_partial_saves_integration.py`, `test_submit_merge.py`,
+`test_audio_integration.py` (+ its shared `conftest.py`),
+`test_clone_rest.py`, `test_audio_models.py` (cosmetic literals only).
+
+**Tests whose ASSERTION changed (not just URL), per Agent Instructions #9**:
+1. `test_registry_multi_tenancy_e2e.py::test_handlers_pass_tenant_to_registry`
+   — rewritten from asserting session-`programs[0]` → tenant propagation
+   (the exact NAV-9370/9372 inference this feature removes) to asserting
+   URL-declared-tenant → tenant propagation. `_make_session_middleware`
+   replaced with `_make_tenant_middleware`.
+2. `test_setup_form_ui_protect_pages.py::test_protect_pages_false_passes_through`
+   — rewritten from "unprotected page = untouched bound method" (the exact
+   gap TASK-2200 closes) to "unprotected page still gets the tenant layer,
+   just not navigator-auth" — asserts `not hasattr(handler, "__self__")`
+   and `getattr(handler, "_requires_tenant", False) is True` instead.
+
+All other changes were URL re-prefixing (`/api/v1/forms/...` →
+`/api/v1/t/{tenant}/forms/...`) plus, where a test builds a `MagicMock`
+request directly (not a real aiohttp request that a decorator would have
+processed), adding a `request.get("tenant")` stub returning a fixed
+tenant value AND setting the corresponding `FormSchema.tenant` field to
+the same value — the minimal fixture change needed for
+`declared_tenant()`/`_assert_form_tenant()` to resolve consistently
+without asserting anything about tenant *enforcement* (already covered
+by TASK-2199/2200's dedicated decorator tests). Introduced a small
+`_tenant_wrapped_*` helper pattern (stash `request["tenant"]` from
+`match_info` before calling the real handler) for tests that register
+routes directly without going through `_wrap_auth`/`requires_tenant`.
+
+**Flagged for spec-owner visibility — 1 pre-existing failure NOT fixed**:
+`test_ui_imports.py::test_importing_ui_does_not_pull_api`. Traced (via the
+true-baseline diff) to **TASK-2200**, not this task: `ui/routes.py`
+importing `from ..api.tenant import requires_tenant` forces Python to
+execute `api/__init__.py` first (parent-package import semantics), which
+seeds the controls registry and hard-imports `navigator_auth` via
+`api/routes.py` — breaking the documented "`ui` is independently
+importable without `api`" invariant. This is a direct, unavoidable
+consequence of the spec's own Module 3 design and cannot be fixed without
+a `src/` change (e.g. relocating `tenant.py`/`errors.py` to a neutral,
+dependency-light location both packages could import) — explicitly out of
+scope per this task's own instruction ("report it rather than patching
+around it here"). Already flagged in TASK-2204's completion note; leaving
+the test itself unmodified (still correctly describes the intended
+invariant) rather than deleting or weakening it.
+
+**CRITICAL — flagged for spec-owner/reviewer, discovered during
+migration, NOT fixed (source change, explicitly out of scope for this
+task)**: several **client-facing URL generators** in `src/` still
+hardcode the pre-FEAT-421 unprefixed `/api/v1/forms/...` shape, meaning
+the actual browser/WS-client-facing artifacts this feature's backend now
+requires a tenant segment for will 404 in production once deployed:
+- `renderers/html5.py:404` — the remote-event dispatch JS embedded in
+  every rendered HTML form (`'/api/v1/forms/' + FORM_UID + '/events/' +
+  eventName`).
+- `renderers/html5.py:1091` and `renderers/jsonschema.py:463` — REST
+  field upload URLs embedded in rendered form JS.
+- `renderers/audio.py:405` and `api/audio_ws.py:510` — the
+  `ws_endpoint` field returned in the `AudioFormManifest`, telling audio
+  clients where to open the WebSocket.
+- `ui/templates.py:324,341` — the create-form/load-from-db `fetch()`
+  calls in the UI's own landing page.
+
+None of TASK-2198 through TASK-2207 lists any of these files in scope.
+`test_html5_lifecycle.py` (which asserts the exact hardcoded string
+above) was deliberately left UNCHANGED — it correctly documents current,
+not-yet-fixed behavior; rewriting it to expect the new contract would
+make it fail until the corresponding `src/` files are fixed, which is
+not this task's job. **Strongly recommend a dedicated, urgent follow-up
+task** (this is a functional regression that would ship silently: the
+backend enforces a URL-declared tenant while several of its own generated
+client artifacts don't declare one).
+
+**Deviations from spec**: none in intent — see the two assertion
+rewrites, the one pre-existing-and-out-of-scope test failure, and the
+critical client-URL-generation gap above, all documented for reviewer
+visibility rather than silently patched or silently dropped.
