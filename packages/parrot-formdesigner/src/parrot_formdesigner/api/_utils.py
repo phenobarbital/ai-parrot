@@ -7,64 +7,6 @@ effects.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from aiohttp import web
-
-
-def _get_request_tenant(request: "web.Request") -> str | None:
-    """Extract the effective tenant from an aiohttp request.
-
-    Resolution order:
-
-    0. ``request["tenant_context"]`` — a tenant the HOST APPLICATION
-       resolved, authorized and declared for this request (e.g. a
-       navigator middleware validating a ``?program_slug=`` claim
-       against the caller's entitlements before setting the key).
-       Declaring the tenant is the host's job precisely because
-       AUTHORIZING it cannot be this library's: parrot knows nothing
-       about the host's entitlement model. When set, it wins over the
-       session inference below — ``programs[0]`` is an arbitrarily
-       ordered default (a caller with eleven programmes is a member of
-       all eleven), never a statement of which programme this request
-       is about.
-    1. First program slug from the navigator-auth session
-       (``request.session["session"]["programs"][0]``).
-    2. ``request.app["form_registry"].default_tenant`` when the registry
-       has self-registered (FEAT-185) — covers anonymous and session-less
-       paths so ``register(require_tenant=True)`` doesn't bite.
-    3. ``None`` only when both sources are absent (unusual test setups).
-
-    This is the shared implementation of the pattern established by
-    ``FormAPIHandler._get_tenant`` (TASK-1243) for use in module-level
-    handlers that do not inherit from ``FormAPIHandler``.
-
-    Args:
-        request: Incoming aiohttp web.Request.
-
-    Returns:
-        Tenant slug string, or ``None`` if neither the host context, the
-        session nor the application registry can provide one.
-    """
-    declared = request.get("tenant_context")
-    if declared:
-        return str(declared)
-
-    session = getattr(request, "session", None)
-    if session is not None:
-        userinfo = session.get("session", {})
-        programs: list[str] = userinfo.get("programs", [])
-        if programs:
-            return programs[0]
-
-    registry = request.app.get("form_registry") if request.app is not None else None
-    if registry is not None:
-        default = getattr(registry, "default_tenant", None)
-        if default is not None:
-            return default
-    return None
-
 
 def _deep_merge(base: dict, patch: dict) -> dict:
     """RFC 7396 JSON merge-patch: recursively merge patch onto base.
