@@ -541,26 +541,26 @@ from navconfig.logging import logging                    # logger
 
 ## Open Questions
 
-- [ ] **Which Python SDK approach for World Bank?** `wbgapi` is the most
+- [x] **Which Python SDK approach for World Bank?** `wbgapi` is the most
   maintained Python client but is sync-only. Alternative: direct aiohttp
   calls to `api.worldbank.org/v2/` (JSON format, no dependency). Trade-off:
   `wbgapi` has indicator search/resolution built in; raw aiohttp needs manual
-  URL construction. — *Owner: implementer*
-- [ ] **OECD API version**: OECD is transitioning from `stats.oecd.org`
+  URL construction. — *Owner: implementer*: uses wbgapi, run to avoid blocking the event-loop.
+- [x] **OECD API version**: OECD is transitioning from `stats.oecd.org`
   (SDMX 2.0) to `data-explorer.oecd.org` (SDMX 3.0 / REST). The `sdmx1`
-  library supports both. Which endpoint to target? — *Owner: implementer*
-- [ ] **Semantic Scholar API key**: Free tier is 100 requests/5min. The
+  library supports both. Which endpoint to target? — *Owner: implementer*: preferable SDMX 3.0
+- [x] **Semantic Scholar API key**: Free tier is 100 requests/5min. The
   `semanticscholar` Python package supports API keys for higher limits.
   Should the toolkit require a key or default to free tier with backoff? —
-  *Owner: Jesus*
+  *Owner: Jesus*: default free tier with backoff retry.
 - [ ] **Gallup/Gartner scraping feasibility**: Both sites may have
   anti-bot protections. Should the initial implementation include these
   sources or stub them with clear interfaces for later? Need to verify
   during implementation. — *Owner: implementer*
-- [ ] **ArxivTool integration**: Should `ArxivTool` be migrated into
+- [x] **ArxivTool integration**: Should `ArxivTool` be migrated into
   `AcademicResearchToolkit` (becoming a method) or left standalone and
-  simply referenced by the `ResearchRouter`? — *Owner: Jesus*
-- [ ] **ResearchRouter query classification**: How should the router
+  simply referenced by the `ResearchRouter`? — *Owner: Jesus*: migrated into AcademicResearchToolkit
+- [x] **ResearchRouter query classification**: How should the router
   determine which category to dispatch to? Options: keyword-based heuristics,
   LLM-based intent classification, or always query all categories. —
-  *Owner: implementer*
+  *Owner: implementer*: LLM-based intent classification
