@@ -231,19 +231,6 @@ class FirefliesObsidianAgent(BasicAgent):
                     self.logger.info(f"✅ Synced: {note_title}")
                     report["synced"] += 1
 
-                    # Phase 2: Generate LLM summary for each synced transcript
-                    self.logger.info(f"Generating summary for {note_title}...")
-                    summary_result = await self.summarize_transcript(
-                        note_title=note_title,
-                        granularity="standard"
-                    )
-
-                    if summary_result.get("updated"):
-                        self.logger.info(f"✅ Analysis added: {note_title}")
-                    else:
-                        if summary_result.get("status") == "error":
-                            self.logger.warning(f"Summary failed for {note_title}: {summary_result.get('error')}")
-
                 except Exception as e:
                     error_msg = f"Failed to sync {transcript.get('id', 'unknown')}: {e}"
                     self.logger.error(error_msg)
