@@ -1,6 +1,6 @@
 {
   "next_task_id": 2218,
-  "next_feature_id": 423,
-  "updated_at": "2026-08-16T17:13:35+00:00",
-  "updated_by": "agent-cli-daemon"
+  "next_feature_id": 424,
+  "updated_at": "2026-08-16T17:14:06+00:00",
+  "updated_by": "purge-matplotlib-renderer-libs"
 }
