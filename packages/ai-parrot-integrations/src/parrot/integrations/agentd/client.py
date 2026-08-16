@@ -184,12 +184,24 @@ class AgentDaemonClient:
             f"'systemctl --user status parrot-<name>' ({last_exc})."
         )
 
-    async def call(self, method: str, **params: Any) -> Any:
+    async def call(
+        self,
+        method: str,
+        *,
+        params: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
         """Issue a request and await its response.
 
         Args:
             method: RPC method name.
-            **params: Method parameters.
+            params: Explicit params mapping. Merged with `**kwargs` (kwargs
+                win on key collision) -- use this when a param key would
+                otherwise collide with this method's own `method`/`params`
+                argument names (e.g. `agent.invoke`'s own `"method"` param:
+                `call("agent.invoke", params={"method": "some_method"})`).
+            **kwargs: Method parameters, for the common case where no
+                param name collides with `call()`'s own signature.
 
         Returns:
             The response `result`.
@@ -199,13 +211,14 @@ class AgentDaemonClient:
             ConnectionClosed: If the connection closes before a response
                 arrives.
         """
+        merged_params = {**(params or {}), **kwargs}
         request_id = next(self._id_counter)
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending[request_id] = future
         try:
             write_message(
                 self._writer,
-                RpcRequest(id=request_id, method=method, params=params),
+                RpcRequest(id=request_id, method=method, params=merged_params),
             )
             await self._writer.drain()
             response: RpcResponse = await future
