@@ -301,10 +301,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Implemented per the reference `_generate_altair()` design in
+Implementation Notes, plus the two helper methods it implies
+(`_data_to_dataframe()`, `_build_altair_chart()`) covering all 8 `ChartType`
+values per the spec's Chart Type Mapping table. Backend validation moved
+into `__init__` (raises `ValueError` for anything other than
+`"altair"`/`"plotly"`) to satisfy AC2 literally (task's own test expects
+construction-time rejection, not a deferred `_execute()`-time error).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Fixed the vl-convert-python fallback to catch `ValueError` in addition to
+`ImportError` — altair 5.5 actually raises `ValueError` (message names
+vl-convert-python) when the optional PNG/SVG export engine is missing, not
+`ImportError` as the task's reference code assumed. Guarded the fallback to
+only trigger on that specific message so real chart-spec errors aren't
+masked. Verified BOTH code paths for real: ran the full suite with
+vl-convert-python absent (fallback path) and then `uv pip install
+vl-convert-python` and re-ran (real PNG export path) — 12/12 pass both ways.
 
-**Deviations from spec**: none | describe if any
+Also fixed `_execute()`'s `metadata["format"]` and the base64-encoding guard
+to check the chart's ACTUAL output file suffix rather than the originally
+requested `format_enum` — needed so the PNG→JSON fallback is reported
+honestly instead of claiming "png" while the file on disk is `.json`.
+
+`ruff check` on `chart.py`: 37 errors vs. 39 on `dev` baseline (net
+reduction; zero new error categories — confirmed via code-frequency diff).
+New test file: 1 pre-existing-pattern nitpick (`ASYNC230` blocking `open()`
+in an async test — same pattern already present in `chart.py` itself,
+left as-is). No other callers of `ChartTool(...)` found elsewhere in the
+codebase (grepped `packages/ai-parrot*/src` and `tests/`).
+
+**Deviations from spec**: `ValueError` (not just `ImportError`) is now the
+caught exception for the vl-convert-python fallback — see Notes above;
+this is a correction, not a design change, matching AC-intended behavior
+(graceful fallback, never a hard failure) more accurately than the task's
+literal reference snippet.
