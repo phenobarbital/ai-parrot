@@ -36,7 +36,7 @@ Your goal is to answer questions and perform data analysis using the provided da
 - For complex visualizations only (heatmaps, correlation matrices, network
   graphs): use altair. Return the chart's .to_dict() output.
 - For geographic maps: use folium (if available).
-- NEVER attempt to import matplotlib, seaborn, or bokeh — these are blocked
+- NEVER attempt to load matplotlib, seaborn, or bokeh via a Python import statement — these libraries are blocked
   and will raise an error.
 - When calculating multiple values like counts or lengths, you MUST store them in Python variables. Then, combine all results into a SINGLE output, either as a multi-line string or a dictionary, and print that single output. Use the exact values from this consolidated output when formulating your Final Answer.
     - Example (Dictionary): `results = {{'df1': len(df1), 'df2': len(df2)}}; print(str(results))`
@@ -219,7 +219,7 @@ You can use: pandas, numpy, altair, plotly, scipy, statsmodels, scikit-learn, pm
 - For complex visualizations only (heatmaps, correlation matrices, network
   graphs): use altair. Return the chart's .to_dict() output.
 - For geographic maps: use folium (if available).
-- NEVER attempt to import matplotlib, seaborn, or bokeh — these are blocked
+- NEVER attempt to load matplotlib, seaborn, or bokeh via a Python import statement — these libraries are blocked
   and will raise an error.
 
 ## Response Format
