@@ -201,10 +201,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Rewrote all 3 areas as scoped. Also found and fixed the module
+appears to be currently unwired into the live `DataBot` prompt-building path
+(`DataBot` uses `PromptBuilder`/`domain_layers`, not these legacy string
+constants) — confirmed via a repo-wide grep that `REACT_PROMPT_PREFIX`/
+`TOOL_CALLING_PROMPT_PREFIX` are not imported anywhere else. Updated them
+anyway per the task/spec's explicit instruction and because the task's own
+Test Specification imports and asserts on them directly. Also fixed one
+additional stale reference not itemized in the task's line list but in the
+same file/scope: a `plt.savefig()` example under `TOOL_CALLING_PROMPT_PREFIX`'s
+"PYTHON CODE GUIDELINES" section (Saving Files bullet).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verified all `$variable` template placeholders preserved in both prompts.
+`ruff check` on the two modified source files: pre-existing debt only (177
+errors, all present before this task's edits per line-number correlation
+with `dev`); the new test file is clean. New test suite
+(`tests/bots/test_data_prompts_no_matplotlib.py`): 7/7 pass.
 
-**Deviations from spec**: none | describe if any
+Found and confirmed PRE-EXISTING (unrelated) test failures in
+`tests/unit/bots/test_pandasagent_stale_data_variables.py` (3 tests,
+`AttributeError: 'types.SimpleNamespace' object has no attribute
+'_assignment_target_names'`) — reproduced identically via `git stash` back
+to the TASK-2218 commit, confirming they are not a regression from this
+task or TASK-2218. Left untouched (out of scope).
+
+**Deviations from spec**: Fixed the un-itemized `plt.savefig()` reference
+noted above (same file already in scope, not a new file/class).

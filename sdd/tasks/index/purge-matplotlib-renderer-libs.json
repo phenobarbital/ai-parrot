@@ -32,7 +32,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "System prompts reference libraries loaded in PythonREPLTool — must be consistent with TASK-2218.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2219-system-prompt-rewrite.md"
+      "completed_at": "2026-08-16T18:33:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2219-system-prompt-rewrite.md"
     },
     {
       "id": "TASK-2220",
