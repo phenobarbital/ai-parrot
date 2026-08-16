@@ -31,6 +31,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# FEAT-422 — Agent CLI Daemon. Marker extra: rich/prompt_toolkit/click/
+# pydantic/pyyaml all come from ai-parrot core already; this extra exists
+# so the core CLI's missing-module error can name a concrete `pip install`
+# target. Scheduler support is via the separate optional `ai-parrot-server`
+# install (lazily imported, degrades with a warning when absent).
+agentd = []
 slack = [
     "slack-sdk>=3.27",
     "slack-bolt>=1.18",
