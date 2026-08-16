@@ -103,6 +103,44 @@ with contextlib.suppress(ImportError):
     _ScheduledEchoAgent.tick = schedule(ScheduleType.INTERVAL, seconds=1)(_tick)
 
 
+class _FakeAIMessage:
+    """Minimal AIMessage-like object (mirrors the real `AIMessage`'s
+    `.output`/`.response` fields, and its lack of a custom `__str__`) --
+    used to prove agentd extracts clean text rather than a full-object
+    dump. `EchoAgentResponse` (the default fake) has a clean `__str__`
+    that masks this class of bug; this one deliberately does not.
+    """
+
+    def __init__(self, output: str, response: str | None = None) -> None:
+        self.output = output
+        self.response = response if response is not None else output
+
+    def __str__(self) -> str:
+        # Reproduces AIMessage's default Pydantic __str__ (a full field
+        # dump) -- a regression back to `str(response)` would show up as
+        # this text leaking into the RPC `output`.
+        return f"input=... output={self.output!r} response={self.response!r} data=None"
+
+
+class _RealisticBot(EchoAgent):
+    """Agent whose `ask()`/`ask_stream()` mirror `AbstractBot`'s REAL
+    contract: `ask()` returns an `AIMessage`-like object (not a bare
+    string-friendly wrapper like `EchoAgentResponse`), and `ask_stream()`
+    yields text deltas followed by a trailing `AIMessage`-like sentinel --
+    exactly the shape that exposed two response-handling bugs in code
+    review (both masked by `EchoAgent`'s clean `__str__`/sentinel-free
+    streaming).
+    """
+
+    async def ask(self, question: str, **kwargs):
+        return _FakeAIMessage(output=f"real: {question}")
+
+    async def ask_stream(self, question: str, **kwargs):
+        for token in f"real: {question}".split():
+            yield token
+        yield _FakeAIMessage(output=f"real: {question}")
+
+
 @pytest.fixture
 async def echo_daemon(tmp_path):
     """AgentDaemon running EchoAgent on a tmp socket; yields (daemon, socket_path)."""
@@ -214,6 +252,75 @@ class TestDaemonRpc:
         assert status["pid"] == os.getpid()
         assert status["scheduler"]["available"] is False
         assert status["active_connections"] >= 1
+
+
+class TestRealisticResponseShapes:
+    """Regression coverage (code review) for two response-shape bugs that
+    `EchoAgent`'s clean `__str__`/sentinel-free streaming masked:
+    `chat.send` stringifying a whole `AIMessage`-like object instead of
+    extracting `.output`/`.response`, and `chat.stream` sending the
+    trailing `AIMessage`-like sentinel as if it were a text delta.
+    """
+
+    async def test_chat_send_extracts_output_not_full_dump(self, tmp_path):
+        socket_path = tmp_path / "realistic.sock"
+        config = AgentServiceConfig(
+            name="realistic-daemon",
+            agent=AgentTargetConfig(target="tests.agentd.test_service:_RealisticBot"),
+            socket=socket_path,
+            scheduler=SchedulerConfig(enabled=False),
+        )
+        daemon, run_task = await _run_daemon(config)
+        try:
+            reader, writer = await asyncio.open_unix_connection(path=str(socket_path))
+            try:
+                response = await _call(reader, writer, "chat.send", prompt="hello")
+            finally:
+                writer.close()
+        finally:
+            await _stop_daemon(daemon, run_task)
+
+        assert response.get("error") is None
+        assert response["result"]["output"] == "real: hello"
+        # Must NOT be the full-object str() dump (would contain "input=").
+        assert "input=" not in response["result"]["output"]
+
+    async def test_chat_stream_final_sentinel_not_sent_as_delta(self, tmp_path):
+        socket_path = tmp_path / "realistic_stream.sock"
+        config = AgentServiceConfig(
+            name="realistic-stream-daemon",
+            agent=AgentTargetConfig(target="tests.agentd.test_service:_RealisticBot"),
+            socket=socket_path,
+            scheduler=SchedulerConfig(enabled=False),
+        )
+        daemon, run_task = await _run_daemon(config)
+        try:
+            reader, writer = await asyncio.open_unix_connection(path=str(socket_path))
+            try:
+                ack = await _call(
+                    reader, writer, "chat.send", prompt="hi there", stream=True
+                )
+                stream_id = ack["result"]["stream_id"]
+
+                deltas = []
+                while True:
+                    note = await _recv(reader)
+                    assert note["params"]["stream_id"] == stream_id
+                    if note["method"] == "chat.delta":
+                        deltas.append(note["params"]["text"])
+                    elif note["method"] == "chat.complete":
+                        assert note["params"]["response"] == "real: hi there"
+                        break
+                    else:
+                        pytest.fail(f"Unexpected notification: {note['method']}")
+            finally:
+                writer.close()
+        finally:
+            await _stop_daemon(daemon, run_task)
+
+        # The trailing AIMessage-like sentinel must never appear as a delta.
+        assert deltas == ["real:", "hi", "there"]
+        assert not any("input=" in d for d in deltas)
 
 
 class TestDegradation:

@@ -125,6 +125,15 @@ def _serialize_for_rpc(value: Any) -> Any:
 def _agent_response_to_rpc(response: Any) -> dict[str, Any]:
     """Convert an agent's `ask()` response into the minimal RPC shape.
 
+    Prefers the canonical text fields -- `.output`, falling back to
+    `.response` -- mirroring `ResponseRenderer.render()`'s own extraction
+    (`parrot.cli.renderer`) for a real `AIMessage`. A bare `str()` of an
+    `AIMessage` would otherwise dump every Pydantic field (input, output,
+    response, data, code, images, ...) into `output`, since `AIMessage`
+    has no custom `__str__`. Falls back to `str(response)` only when
+    neither attribute is present (e.g. a plain object with no `.output`/
+    `.response`, such as a bare string response).
+
     Args:
         response: Whatever `agent.ask()` returned.
 
@@ -139,7 +148,16 @@ def _agent_response_to_rpc(response: Any) -> dict[str, Any]:
     elif hasattr(response, "to_dict"):
         with contextlib.suppress(Exception):
             metadata = response.to_dict()
-    return {"output": str(response), "metadata": metadata}
+
+    output = getattr(response, "output", None)
+    if output is None:
+        output = getattr(response, "response", None)
+    if output is None:
+        output = str(response)
+    elif not isinstance(output, str):
+        output = str(output)
+
+    return {"output": output, "metadata": metadata}
 
 
 class SingleAgentManager:
@@ -209,6 +227,12 @@ class AgentDaemon:
         """
         self._configure_logging()
 
+        # Install signal handlers FIRST, before the socket is bound and
+        # advertised (sd_notify) -- a SIGTERM arriving in that window would
+        # otherwise hit Python's default disposition (immediate kill)
+        # instead of the graceful shutdown path.
+        await self._install_signal_handlers()
+
         self.agent = await resolve_agent(self.config.agent)
 
         await self._start_scheduler()
@@ -228,7 +252,6 @@ class AgentDaemon:
         )
         sd_notify("READY=1")
 
-        await self._install_signal_handlers()
         await self._shutdown_event.wait()
         await self._shutdown()
 
@@ -356,7 +379,15 @@ class AgentDaemon:
         }
 
     async def _handle_chat_send(self, session: Session, params: dict[str, Any]) -> Any:
-        """Handle `chat.send`: one-shot response, or ack + streamed deltas."""
+        """Handle `chat.send`: one-shot response, or ack + streamed deltas.
+
+        `stream_id` may be supplied by the caller (e.g. `AgentDaemonClient.
+        stream()` generates it up front and registers its queue before
+        even sending this request, to avoid a race where the daemon's
+        first `chat.delta` arrives before the client is listening for
+        it). Falls back to generating one server-side for callers that
+        don't supply it (e.g. a raw NDJSON client).
+        """
         prompt = params.get("prompt", "")
         stream = bool(params.get("stream", False))
         metadata = params.get("metadata") or {}
@@ -367,7 +398,7 @@ class AgentDaemon:
             )
             return _agent_response_to_rpc(response)
 
-        stream_id = uuid.uuid4().hex
+        stream_id = params.get("stream_id") or uuid.uuid4().hex
         session.stream_ids.add(stream_id)
         task = asyncio.create_task(
             self._run_stream(session, stream_id, prompt, metadata)
@@ -379,22 +410,52 @@ class AgentDaemon:
     async def _run_stream(
         self, session: Session, stream_id: str, prompt: str, metadata: dict[str, Any]
     ) -> None:
-        """Iterate `agent.ask_stream()`, emitting `chat.delta`/`chat.complete`."""
+        """Iterate `agent.ask_stream()`, emitting `chat.delta`/`chat.complete`.
+
+        `AbstractBot.ask_stream()`'s real contract yields text deltas
+        (`str`, or an object with `.text`/`.content`) followed by a
+        trailing `AIMessage`-shaped sentinel (identified by `.output`) --
+        mirrors the exact chunk-shape handling `AgentREPL.send_stream()`
+        already uses (`parrot.cli.repl`). The sentinel is NOT itself a
+        text delta -- treating it as one would `str()`-dump every
+        Pydantic field into the stream.
+        """
         accumulated: list[str] = []
+        final_response: Any = None
         try:
             async for chunk in self.agent.ask_stream(
                 prompt, session_id=session.session_id, **metadata
             ):
-                text = str(chunk)
+                if isinstance(chunk, str):
+                    text = chunk
+                elif hasattr(chunk, "text"):
+                    text = chunk.text
+                elif hasattr(chunk, "content"):
+                    text = chunk.content
+                elif hasattr(chunk, "output"):
+                    # Final AIMessage-like sentinel -- not a text delta.
+                    final_response = chunk
+                    break
+                else:
+                    text = str(chunk)
                 accumulated.append(text)
                 await session.notify(
                     METHOD_CHAT_DELTA, {"stream_id": stream_id, "text": text}
                 )
+
+            response_text = "".join(accumulated)
+            if final_response is not None:
+                output = getattr(final_response, "output", None)
+                if output is None:
+                    output = getattr(final_response, "response", None)
+                if output is not None:
+                    response_text = output if isinstance(output, str) else str(output)
+
             await session.notify(
                 METHOD_CHAT_COMPLETE,
                 {
                     "stream_id": stream_id,
-                    "response": "".join(accumulated),
+                    "response": response_text,
                     "usage": {},
                 },
             )

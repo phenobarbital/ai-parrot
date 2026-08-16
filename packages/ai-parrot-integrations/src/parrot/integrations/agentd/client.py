@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import itertools
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -240,12 +241,31 @@ class AgentDaemonClient:
             Zero or more `kind="delta"` events, followed by exactly one
             terminal `kind="complete"` or `kind="error"` event.
         """
-        ack = await self.call(
-            METHOD_CHAT_SEND, prompt=prompt, stream=True, metadata=metadata
-        )
-        stream_id = ack["stream_id"]
+        # The stream_id is generated CLIENT-side and the queue registered
+        # BEFORE the request is even sent (rather than waiting for the
+        # daemon's ack to hand one back). `_read_loop()` is a single task
+        # processing the wire strictly in order, but it does not yield
+        # back to this coroutine between processing the ack and the very
+        # next buffered line -- for a fast/local daemon, `chat.delta`
+        # notifications can already be queued up behind the ack by the
+        # time it resumes. Registering the queue first closes that race:
+        # any notification for this stream_id always finds its queue.
+        stream_id = uuid.uuid4().hex
         queue: asyncio.Queue = asyncio.Queue(maxsize=_STREAM_QUEUE_MAXSIZE)
         self._streams[stream_id] = queue
+
+        try:
+            ack = await self.call(
+                METHOD_CHAT_SEND,
+                prompt=prompt,
+                stream=True,
+                stream_id=stream_id,
+                metadata=metadata,
+            )
+            assert ack.get("stream_id", stream_id) == stream_id
+        except Exception:
+            self._streams.pop(stream_id, None)
+            raise
 
         try:
             while True:

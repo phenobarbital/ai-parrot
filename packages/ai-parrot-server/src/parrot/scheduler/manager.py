@@ -1501,15 +1501,20 @@ class AgentSchedulerManager:
             pass
 
     async def start_headless(
-        self, *, dsn: Optional[str] = None, use_redis: bool = False
+        self,
+        *,
+        dsn: Optional[str] = None,
+        use_redis: bool = False,
+        register_listeners: bool = True,
     ) -> None:
         """Boot the scheduler without an aiohttp application.
 
         Only requires a running asyncio event loop. Builds/attaches the
         Redis jobstore only when requested, creates a Postgres connection
-        pool only when a `dsn` is given (and none is already set), wires
-        the APScheduler event listeners, starts the scheduler, and loads
-        persisted schedules from the database only when a pool exists.
+        pool only when a `dsn` is given (and none is already set),
+        optionally wires the APScheduler event listeners, starts the
+        scheduler, and loads persisted schedules from the database only
+        when a pool exists.
 
         Args:
             dsn: Postgres DSN to build a connection pool from. When
@@ -1517,6 +1522,14 @@ class AgentSchedulerManager:
                 the scheduler runs with decorator-registered schedules only.
             use_redis: When True, attach a Redis-backed jobstore under the
                 `'redis'` alias. Defaults to `False` (MemoryJobStore only).
+            register_listeners: When True (default), call
+                `define_listeners()`. `on_startup()` passes `False` to stay
+                strictly behaviour-preserving for the aiohttp path, where
+                these listeners were never wired before FEAT-422 (this
+                param exists so the standalone headless-daemon path — the
+                only caller that needs `job_success`/`job_status`/etc.
+                actually firing — can still opt in without changing
+                aiohttp's existing runtime behaviour).
         """
         if use_redis:
             self._ensure_redis_jobstore()
@@ -1526,7 +1539,8 @@ class AgentSchedulerManager:
             await self._pool.connection()
             self._owns_pool = True
 
-        self.define_listeners()
+        if register_listeners:
+            self.define_listeners()
 
         if not self.scheduler.running:
             self.scheduler.start()
@@ -1612,14 +1626,20 @@ class AgentSchedulerManager:
             )
             self._pool = app['agentdb']
 
-        # Delegate the transport-free bootstrap steps (jobstore(s), event
-        # listeners, scheduler start, schedule loading) to start_headless().
-        # `self._pool` is already assigned above (owned by aiohttp's
-        # PostgresPool via `conn`) so start_headless()'s own dsn-based pool
-        # creation is skipped, while schedules are still loaded from it.
-        # `use_redis=True` preserves the previous behaviour of always having
-        # a Redis jobstore available under aiohttp.
-        await self.start_headless(use_redis=True)
+        # Delegate the transport-free bootstrap steps (jobstore(s),
+        # scheduler start, schedule loading) to start_headless(). `self.
+        # _pool` is already assigned above (owned by aiohttp's PostgresPool
+        # via `conn`) so start_headless()'s own dsn-based pool creation is
+        # skipped, while schedules are still loaded from it. `use_redis=
+        # True` preserves the previous behaviour of always having a Redis
+        # jobstore available under aiohttp. `register_listeners=False`
+        # keeps this strictly behaviour-preserving: `define_listeners()`
+        # was never called anywhere on this path before FEAT-422 (dead
+        # code), so wiring it now would be a silent, undocumented change
+        # to production aiohttp deployments (job_success/job_status
+        # callbacks, notifications, DB updates firing for the first time)
+        # — out of scope for this feature.
+        await self.start_headless(use_redis=True, register_listeners=False)
 
         self.logger.notice(
             "Agent Scheduler started successfully"

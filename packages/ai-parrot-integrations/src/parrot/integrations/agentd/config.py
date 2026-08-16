@@ -77,8 +77,9 @@ class AgentServiceConfig(BaseModel):
         exposed_methods: Allowlist of agent method names exposed via the
             `agent.invoke` RPC method; when non-empty it is also a hard
             requirement for the MCP `invoke_method` tool to be registered
-            at all. Empty means all public async methods are exposed over
-            RPC (still subject to the underscore-prefix rejection).
+            at all. Empty means every public method (sync or async; the
+            handler awaits the result when it is awaitable) is exposed
+            over RPC, still subject to the underscore-prefix rejection.
         log_level: Logging level name (e.g. `"INFO"`, `"DEBUG"`).
         max_line_bytes: NDJSON line-size limit for the UDS server.
         shutdown_grace: Seconds to wait for graceful shutdown before the

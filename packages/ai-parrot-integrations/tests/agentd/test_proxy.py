@@ -117,10 +117,20 @@ def _write_notification(writer, method, stream_id, **params):
 
 class TestProxy:
     async def test_ask_and_stream(self, scripted_server):
+        received_stream_ids: list[str] = []
+
         def chat_send_handler(request):
             if request["params"].get("stream"):
+                # `stream()` now generates the stream_id client-side and
+                # registers its queue before sending -- echo it back.
+                stream_id = request["params"]["stream_id"]
+                received_stream_ids.append(stream_id)
                 return [
-                    {"jsonrpc": "2.0", "id": request["id"], "result": {"stream_id": "s1"}}
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request["id"],
+                        "result": {"stream_id": stream_id},
+                    }
                 ]
             return [
                 {
@@ -146,8 +156,12 @@ class TestProxy:
             agen = bot.ask_stream("hi")
             first = asyncio.ensure_future(agen.__anext__())
             await asyncio.sleep(0.05)
-            _write_notification(writer, "chat.delta", "s1", text="chunk1")
-            _write_notification(writer, "chat.complete", "s1", response="chunk1", usage={})
+            assert len(received_stream_ids) == 1
+            stream_id = received_stream_ids[0]
+            _write_notification(writer, "chat.delta", stream_id, text="chunk1")
+            _write_notification(
+                writer, "chat.complete", stream_id, response="chunk1", usage={}
+            )
             await writer.drain()
 
             chunk = await first

@@ -11,7 +11,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from parrot.scheduler.manager import AgentSchedulerManager
 
 pytestmark = pytest.mark.requires_apscheduler
@@ -56,6 +55,32 @@ class TestStartHeadless:
             await manager.start_headless(use_redis=True)
 
         assert "redis" in manager.scheduler._jobstores
+
+    async def test_register_listeners_default_true(self, manager):
+        """FEAT-422: the standalone headless-daemon path (no explicit
+        `register_listeners=`) must still get `define_listeners()` wired,
+        per TASK-2209's original requirement."""
+        with patch.object(
+            manager, "define_listeners", new=MagicMock()
+        ) as mock_define, patch.object(
+            manager, "load_schedules_from_db", new=AsyncMock()
+        ):
+            await manager.start_headless()
+
+        mock_define.assert_called_once()
+
+    async def test_register_listeners_false_skips_define_listeners(self, manager):
+        """`register_listeners=False` (used by `on_startup()`) must NOT
+        wire the APScheduler event listeners -- they were never called on
+        the aiohttp path before FEAT-422, and this keeps it that way."""
+        with patch.object(
+            manager, "define_listeners", new=MagicMock()
+        ) as mock_define, patch.object(
+            manager, "load_schedules_from_db", new=AsyncMock()
+        ):
+            await manager.start_headless(register_listeners=False)
+
+        mock_define.assert_not_called()
 
     async def test_dsn_creates_pool_and_loads_db(self, manager):
         fake_pool = AsyncMock()
@@ -106,7 +131,24 @@ class TestAiohttpDelegation:
             await manager.on_startup(fake_app, fake_conn)
 
         assert manager._pool is fake_conn
-        mock_start.assert_awaited_once_with(use_redis=True)
+        mock_start.assert_awaited_once_with(use_redis=True, register_listeners=False)
+
+    async def test_on_startup_never_wires_listeners_end_to_end(self, manager):
+        """Not mocking `start_headless()` this time: the real aiohttp path,
+        end to end, must never call `define_listeners()` -- FEAT-422
+        regression coverage (code review) for a behaviour-change risk
+        found in `start_headless()`'s new `register_listeners` param."""
+        fake_conn = MagicMock(name="agentdb-pool")
+        fake_app = {"bot_manager": None}
+
+        with patch.object(
+            manager, "define_listeners", new=MagicMock()
+        ) as mock_define, patch.object(
+            manager, "load_schedules_from_db", new=AsyncMock()
+        ):
+            await manager.on_startup(fake_app, fake_conn)
+
+        mock_define.assert_not_called()
 
     async def test_on_shutdown_preserves_injected_pool(self, manager):
         """A pool injected via on_startup()/conn is NOT owned -- on_shutdown

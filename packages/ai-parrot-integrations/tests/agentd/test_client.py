@@ -121,11 +121,14 @@ class TestClient:
         assert excinfo.value.message == "nope"
 
     async def test_stream_demux_interleaved(self, scripted_server):
-        counter = {"n": 0}
+        received_stream_ids: list[str] = []
 
         def chat_send_handler(request):
-            counter["n"] += 1
-            stream_id = f"s{counter['n']}"
+            # `stream()` now generates the stream_id client-side and
+            # registers its queue before sending -- the daemon (real or
+            # scripted) must echo it back rather than assigning its own.
+            stream_id = request["params"]["stream_id"]
+            received_stream_ids.append(stream_id)
             return [
                 {
                     "jsonrpc": "2.0",
@@ -147,15 +150,18 @@ class TestClient:
             next2 = asyncio.ensure_future(agen2.__anext__())
             await asyncio.sleep(0.05)
 
+            assert len(received_stream_ids) == 2
+            s1, s2 = received_stream_ids
+
             writer = scripted_server.connections[0]
-            _write_notification(writer, "chat.delta", "s1", text="hello-1")
-            _write_notification(writer, "chat.delta", "s2", text="hello-2")
-            _write_notification(writer, "chat.delta", "s1", text="-more-1")
+            _write_notification(writer, "chat.delta", s1, text="hello-1")
+            _write_notification(writer, "chat.delta", s2, text="hello-2")
+            _write_notification(writer, "chat.delta", s1, text="-more-1")
             _write_notification(
-                writer, "chat.complete", "s2", response="done-2", usage={}
+                writer, "chat.complete", s2, response="done-2", usage={}
             )
             _write_notification(
-                writer, "chat.complete", "s1", response="done-1", usage={}
+                writer, "chat.complete", s1, response="done-1", usage={}
             )
             await writer.drain()
 

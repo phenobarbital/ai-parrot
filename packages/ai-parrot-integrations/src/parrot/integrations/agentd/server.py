@@ -205,9 +205,17 @@ class JsonRpcUnixServer:
                 `socket_path`.
         """
         await self._prepare_socket_path()
-        self._server = await asyncio.start_unix_server(
-            self._handle_connection, path=str(self.socket_path)
-        )
+        # Defense in depth: even though the parent dir is already 0700
+        # (unreachable to other local users), narrow the process umask
+        # for the bind itself so the socket is never briefly created with
+        # looser permissions before the chmod() below lands.
+        previous_umask = os.umask(0o177)
+        try:
+            self._server = await asyncio.start_unix_server(
+                self._handle_connection, path=str(self.socket_path)
+            )
+        finally:
+            os.umask(previous_umask)
         os.chmod(self.socket_path, 0o600)
         self.logger.info("agentd UDS server listening on %s", self.socket_path)
 
