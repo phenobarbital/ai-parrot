@@ -14,11 +14,12 @@
       "feature": "quickeda-html-escape-xss",
       "slug": "escape-styler-html-output",
       "title": "Escape DataFrame cell values in _df_to_html_with_style()",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "critical",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-2224-escape-styler-html-output.md"
+      "file": "sdd/tasks/active/TASK-2224-escape-styler-html-output.md",
+      "started_at": "2026-08-16T22:50:03+00:00"
     },
     {
       "id": "TASK-2225",
@@ -26,11 +27,14 @@
       "feature": "quickeda-html-escape-xss",
       "slug": "quickeda-xss-regression-test",
       "title": "Add XSS regression tests for QuickEdaTool HTML output",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "critical",
-      "depends_on": ["TASK-2224"],
+      "depends_on": [
+        "TASK-2224"
+      ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-2225-quickeda-xss-regression-test.md"
+      "file": "sdd/tasks/active/TASK-2225-quickeda-xss-regression-test.md",
+      "started_at": "2026-08-16T22:50:03+00:00"
     }
   ]
 }
