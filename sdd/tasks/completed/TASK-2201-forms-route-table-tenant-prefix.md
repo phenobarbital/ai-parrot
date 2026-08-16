@@ -211,10 +211,62 @@ class TestRouteTenantCoverage:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Modules 4+7 landed atomically as instructed. `api/routes.py`: all
+forms/fields routes re-prefixed to `{bp}/t/{tenant}/...`; all ten `/org/*`
+routes kept byte-identical paths with `tenant="none"`; the five public-form
+routes (`{form_uid}`, `/schema`, `/render/{format}`, `/data`, `/validate`)
+got `tenant="public"`; `/forms/blank` still precedes the `{form_uid}`
+catch-all; audio WS route re-prefixed but deliberately left undecorated
+(TASK-2204). `ui/routes.py`: HTML page routes re-prefixed the same way;
+Telegram routes re-prefixed for path consistency but left unwrapped
+(inline check is TASK-2204's job). `services/public_forms.py`:
+`public_form_paths` gained a required `tenant` positional param, building
+`/t/{tenant}/forms/...` globs.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Two implementation decisions beyond the literal task text, both
+necessitated by constraints the task didn't fully resolve on its own:
+1. **`/form-controls`**: not classified as forms or org in the spec. It's
+   static, tenant-agnostic field-type catalog metadata (no registry
+   access) — I gave it `tenant="none"` and left its path unprefixed, same
+   carve-out as `/org/*`. Flagging for spec-owner confirmation.
+2. **`_public_toggle` tenant resolution**: `FormRegistry`'s callback
+   signature is fixed to `(form_uid, is_public)` and is explicitly
+   "unchanged" per the spec's Integration Points, and `unregister()` fires
+   the callback AFTER deleting the form — so the registry can no longer
+   answer "what tenant was this form under" by the time `is_public=False`
+   fires. Register-time (`is_public=True`) resolves the tenant by
+   searching `list_tenants()` + `registry.get(uid, tenant=t)` — exactly
+   "resolve at callback time, don't cache" as instructed. Unregister-time
+   (`is_public=False`, covering both real deletes and public→private
+   updates) instead sweeps `unregister_exclusions` across every known
+   tenant's glob for that form_uid — idempotent/harmless for tenants that
+   never had the exemption, and the only way to guarantee no stale
+   exemption survives a delete or a re-tenant given the fixed callback
+   signature.
 
-**Deviations from spec**: none | describe if any
+Also worth flagging for the spec owner (not a deviation — implemented
+exactly as directed): the five routes sharing `tenant="public"` (e.g. `GET
+/forms/{uid}`) serve BOTH public and private forms through the same route
+registration. Since `public=True` skips the authorization step for the
+whole route (not per-request based on the specific form's `is_public`
+flag), an authenticated user who can correctly guess/knows another
+tenant's form_uid AND that tenant's slug could reach a private form outside
+their `programs` membership — bounded in practice by form_uid being an
+unguessable UUID and the 404-on-mismatch `_assert_form_tenant` check
+(TASK-2202), but worth a second look given G6.
+
+Full `tests/unit/` suite: confirmed via before/after diff against the
+pre-existing 36-failure baseline that exactly 9 additional tests broke,
+all attributable to old URL-shape assertions in files explicitly deferred
+to TASK-2206 (`test_exclude_provider.py`, `test_setup_form_api.py`,
+`test_setup_form_api_rest.py`, `test_setup_form_ui_protect_pages.py`,
+`test_setup_form_ui_routes.py`) — no unexpected regressions. New/changed
+files carry zero new ruff findings (diff-counted against pre-edit
+baselines for `routes.py`/`ui/routes.py`, which carry pre-existing,
+unrelated lint debt).
+
+**Deviations from spec**: none (see the two implementation decisions and
+the one flagged design risk above — all within the letter of the task,
+documented for reviewer visibility, not unilateral redesigns).
