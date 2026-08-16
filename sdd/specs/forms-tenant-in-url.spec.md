@@ -6,7 +6,8 @@ base_branch: dev
 
 # Feature Specification: Client-declared tenant in the forms URL
 
-**Feature ID**: FEAT-TBD *(pending `scripts/sdd/reserve_ids.py` — see §8)*
+**Feature ID**: FEAT-421
+**Jira**: NAV-9372 (create), NAV-9370 (edit/save)
 **Date**: 2026-08-16
 **Author**: Jesus Lara + Claude
 **Status**: draft
@@ -742,6 +743,15 @@ All blocking questions are resolved — ready for `/sdd-task`.
 - **Cross-feature dependencies**:
   - PR **#1149** must be **closed unmerged** before this lands — it adds the
     middleware this spec deletes.
+
+    > **FEAT-ID collision — decide before `/sdd-task`.** `scripts/sdd/reserve_ids.py`
+    > allocated `FEAT-421` to *this* spec from the `dev` ledger. PR #1149 carries
+    > `sdd/specs/FEAT-421-form-tenant-program-slug-scoping.spec.md` under the
+    > **same** number, self-assigned on its own branch without going through the
+    > ledger — which is why the allocator could not see it. The two specs describe
+    > **opposite** designs for the same problem. This is harmless once #1149 is
+    > closed unmerged (its spec never reaches `dev`), but if #1149 is kept open or
+    > merged, renumber one of them. `grep -rn "FEAT-421" sdd/` before starting work.
   - PR **#1146** is already merged; its items 2–4 (jsonb double-encoding, slug
     suffix, registry read-through) are **good and stay**. Only its item 1
     (resolution step 0) is reverted here.
