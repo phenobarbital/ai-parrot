@@ -15,8 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from parrot.bots.agent import Agent
-from parrot.mcp.integration import MCPEnabledMixin
+from parrot.bots.agent import BasicAgent
 from parrot.tools.obsidian import ObsidianToolkit
 from parrot.models.responses import AIMessage
 
@@ -24,7 +23,7 @@ from parrot.models.responses import AIMessage
 logger = logging.getLogger(__name__)
 
 
-class FirefliesObsidianAgent(MCPEnabledMixin, Agent):
+class FirefliesObsidianAgent(BasicAgent):
     """Agent that syncs Fireflies.ai transcripts into Obsidian vault.
 
     Features:
@@ -363,6 +362,7 @@ class FirefliesObsidianAgent(MCPEnabledMixin, Agent):
             .replace(" ", "-")
             .replace("_", "-")
             .replace("/", "-")
+            .replace("&", "-")
             .strip("-")
         )
 
@@ -433,14 +433,17 @@ Be concise and actionable."""
                 # Extract numbered list
                 lines = section.strip().split("\n")
                 for line in lines:
-                    if line.strip() and line[0].isdigit():
-                        follow_ups.append(line.strip())
+                    stripped = line.strip()
+                    # Check if line starts with digit (handles indentation)
+                    if stripped and stripped[0].isdigit():
+                        follow_ups.append(stripped)
             elif "Insight" in section:
                 # Extract bullet points
                 lines = section.strip().split("\n")
                 for line in lines:
-                    if line.strip().startswith("-"):
-                        insights.append(line.strip())
+                    stripped = line.strip()
+                    if stripped.startswith("-"):
+                        insights.append(stripped)
 
         return {
             "summary": summary,
