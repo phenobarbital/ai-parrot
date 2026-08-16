@@ -14,14 +14,14 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New standalone module (api/errors.py); shares no file with any other task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2198-tenant-error-responses.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "New module, but imports errors.py from TASK-2198.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2199-requires-tenant-decorator.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": false,
       "parallelism_notes": "Edits api/routes.py and ui/routes.py, both of which TASK-2201 also rewrites.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2200-wire-tenant-decorator-route-wrappers.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": false,
       "parallelism_notes": "Fuses spec Modules 4 and 7 deliberately: a re-prefixed route with unqualified public-form globs breaks every public form. Must be ONE commit.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2201-forms-route-table-tenant-prefix.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallel": false,
       "parallelism_notes": "Sole owner of api/handlers.py; needs the route table in place to test against.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2202-handler-tenant-split.md"
     },
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,9 +121,9 @@
         "TASK-2201"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches operations/render/uploads/_utils only \u2014 disjoint from TASK-2202 (handlers.py) and TASK-2204 (telegram/audio_ws). Can run beside both.",
+      "parallelism_notes": "Touches operations/render/uploads/_utils only — disjoint from TASK-2202 (handlers.py) and TASK-2204 (telegram/audio_ws). Can run beside both.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2203-module-level-tenant-migration.md"
     },
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,9 +142,9 @@
         "TASK-2201"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches ui/telegram.py and api/audio_ws.py only \u2014 disjoint from TASK-2202 and TASK-2203.",
+      "parallelism_notes": "Touches ui/telegram.py and api/audio_ws.py only — disjoint from TASK-2202 and TASK-2203.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2204-telegram-audio-ws-tenant.md"
     },
@@ -155,7 +155,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -164,7 +164,7 @@
       "parallel": true,
       "parallelism_notes": "Touches app.py only, which no other task edits. No-op if PR #1149 was closed unmerged.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2205-revert-app-py-middleware.md"
     },
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -186,7 +186,7 @@
       "parallel": false,
       "parallelism_notes": "Sole owner of restoring the suite to green; must follow every source change.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2206-test-suite-url-migration.md"
     },
@@ -197,7 +197,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -207,7 +207,7 @@
       "parallel": true,
       "parallelism_notes": "Touches version.py and a new docs/ file only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-16T17:03:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2207-version-bump-migration-guide.md"
     }
