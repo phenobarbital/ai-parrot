@@ -88,7 +88,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Integrates scheduler refactor, config and server — sequential by nature.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2212-agentd-daemon-service.md"
+      "completed_at": "2026-08-16T18:06:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2212-agentd-daemon-service.md"
     },
     {
       "id": "TASK-2213",
