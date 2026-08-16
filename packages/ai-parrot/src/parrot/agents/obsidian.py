@@ -216,6 +216,19 @@ class FirefliesObsidianAgent(BasicAgent):
                     self.logger.info(f"✅ Synced: {note_title}")
                     report["synced"] += 1
 
+                    # Phase 2: Generate LLM summary for each synced transcript
+                    self.logger.info(f"Generating summary for {note_title}...")
+                    summary_result = await self.summarize_transcript(
+                        note_title=note_title,
+                        granularity="standard"
+                    )
+
+                    if summary_result.get("updated"):
+                        self.logger.info(f"✅ Analysis added: {note_title}")
+                    else:
+                        if summary_result.get("status") == "error":
+                            self.logger.warning(f"Summary failed for {note_title}: {summary_result.get('error')}")
+
                 except Exception as e:
                     error_msg = f"Failed to sync {transcript.get('id', 'unknown')}: {e}"
                     self.logger.error(error_msg)
@@ -327,12 +340,14 @@ class FirefliesObsidianAgent(BasicAgent):
         """
         transcripts = []
         current_transcript = {}
+        in_participants = False
 
         for line in response_text.split("\n"):
             stripped = line.strip()
 
             # Skip empty lines and headers like [10]:
             if not stripped or stripped.startswith("["):
+                in_participants = False
                 continue
 
             # Detect start of new transcript (line starts with "- id:")
@@ -342,20 +357,35 @@ class FirefliesObsidianAgent(BasicAgent):
                     transcripts.append(current_transcript)
 
                 # Parse the id from "- id: 01KZ..."
-                current_transcript = {}
+                current_transcript = {"participants": []}
                 try:
                     _, id_value = stripped.split(":", 1)
                     current_transcript["id"] = id_value.strip().strip('"')
                 except:
                     pass
+                in_participants = False
+                continue
+
+            # Check if this is the participants section
+            if "participants" in stripped.lower() and stripped.endswith("{"):
+                in_participants = True
+                continue
+
+            # Collect participants (look for email addresses or names)
+            if in_participants and stripped and not stripped.startswith("{") and not stripped.startswith("}"):
+                # Line is either "null" or "email@domain.com"
+                if "@" in stripped:
+                    email = stripped.rstrip(",")
+                    if email and email not in current_transcript["participants"]:
+                        current_transcript["participants"].append(email)
                 continue
 
             # Parse key-value pairs (indented lines that aren't "- id:")
-            if ":" in stripped and not stripped.startswith("-"):
+            if ":" in stripped and not stripped.startswith("-") and not in_participants:
                 try:
                     key, value = stripped.split(":", 1)
                     key = key.strip()
-                    value = value.strip().strip('"')
+                    value = value.strip().strip('"').rstrip(",")
 
                     # Map Fireflies fields to our transcript format
                     if key == "title":
@@ -365,6 +395,9 @@ class FirefliesObsidianAgent(BasicAgent):
                         current_transcript["date"] = value[:10]
                     elif key == "organizer_email":
                         current_transcript["organizer"] = value
+                        # Also add organizer to participants if not already there
+                        if value not in current_transcript.get("participants", []):
+                            current_transcript.setdefault("participants", []).append(value)
                     elif key == "duration":
                         try:
                             current_transcript["duration"] = float(value)
