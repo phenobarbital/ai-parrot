@@ -13,6 +13,7 @@ PreToolUse hook can import them with minimal startup cost.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from collections.abc import Iterator
@@ -38,6 +39,8 @@ LOCK_FILENAME = "wiki.lock"
 
 #: Poll interval while waiting for a contended lock.
 _LOCK_POLL_SECONDS = 0.05
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -171,6 +174,14 @@ class WikiProjectConfig(BaseModel):
         default="text_en",
         description="ArangoSearch text analyzer for FTS",
     )
+    vault_dir: Optional[str] = Field(
+        default=None,
+        description=(
+            "Obsidian vault directory served by the wiki MCP server; "
+            "absolute, or relative to the project root. When omitted, the "
+            "project root itself is used if it is a vault (.obsidian/)."
+        ),
+    )
 
     def graph_path(self, root: Path) -> Path:
         """Directory of the project's GraphIndex plane (``.parrot/graph``)."""
@@ -229,6 +240,52 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
         "password": os.environ.get(f"{prefix}_PASSWORD", ""),
         "database": config.arango_database or f"wiki_{config.wiki_name}",
     }
+
+
+def resolve_vault_dir(
+    root: Path,
+    config: WikiProjectConfig,
+    override: Optional[str | Path] = None,
+) -> Optional[Path]:
+    """Resolve the Obsidian vault directory for a wiki project.
+
+    Precedence: explicit ``override`` > ``config.vault_dir`` (resolved
+    against ``root`` when relative) > ``root`` itself when it is a vault
+    (contains an ``.obsidian/`` directory).
+
+    Args:
+        root: Project root directory.
+        config: Project configuration.
+        override: Optional per-call vault path (e.g. a tool argument).
+
+    Returns:
+        The resolved, existing vault directory, or ``None`` when no vault
+        is configured/detected (a configured-but-missing directory is
+        logged and treated as absent).
+    """
+    from parrot.knowledge.wiki.vault_scan import is_obsidian_vault
+
+    candidate: Optional[Path] = None
+    if override:
+        candidate = Path(override).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+    elif config.vault_dir:
+        candidate = Path(config.vault_dir).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+    elif is_obsidian_vault(root):
+        candidate = root
+
+    if candidate is None:
+        return None
+    candidate = candidate.resolve()
+    if not candidate.is_dir():
+        logger.warning(
+            "Configured Obsidian vault directory does not exist: %s", candidate
+        )
+        return None
+    return candidate
 
 
 def config_path(root: Path) -> Path:

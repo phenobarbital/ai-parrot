@@ -6,6 +6,7 @@ a `StdioMCPServer` (core) and appear as first-class MCP tools at
 tool-selection time — equal standing with Grep/Read instead of competing
 via a Bash-invoked CLI.
 """
+import asyncio
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,6 +44,20 @@ class WikiRememberInput(BaseModel):
 class WikiNoteInput(BaseModel):
     page_id: str = Field(..., description="Page to append note to")
     text: str = Field(..., description="Note text")
+
+
+class VaultIngestInput(BaseModel):
+    vault_path: str | None = Field(
+        default=None,
+        description=(
+            "Obsidian vault directory (absolute or project-relative). "
+            "Omit to use the project's configured/auto-detected vault."
+        ),
+    )
+    force: bool = Field(
+        default=False,
+        description="Re-ingest every note, ignoring staleness tracking.",
+    )
 
 
 class WikiStatusInput(BaseModel):
@@ -268,6 +283,117 @@ class WikiStatusTool(AbstractTool):
     async def _execute(self) -> ToolResult:
         stats = await self._store.stats()
         return ToolResult(result=stats)
+
+
+class VaultIngestTool(AbstractTool):
+    """(Re)build the wiki retrieval plane from an Obsidian vault."""
+
+    name = "vault_ingest"
+    description = (
+        "Ingest (or refresh) an Obsidian vault into the wiki knowledge "
+        "base: one page per note, wikilink/embed/tag edges, FTS-searchable "
+        "via wiki_query. Incremental — unchanged notes are skipped unless "
+        "force=true. No LLM calls."
+    )
+    args_schema = VaultIngestInput
+
+    def __init__(
+        self,
+        store: BaseWikiStore,
+        root: Path,
+        config: WikiProjectConfig,
+    ):
+        super().__init__(name=self.name, description=self.description)
+        self._store = store
+        self._root = root
+        self._config = config
+
+    async def _execute(
+        self,
+        vault_path: str | None = None,
+        force: bool = False,
+        **kwargs,
+    ) -> ToolResult:
+        # Lazy imports: cli pulls click + scanners; keep the MCP server's
+        # module import light and stdout-clean.
+        from parrot.knowledge.wiki.cli import (
+            _ingest_files,
+            _open_sources,
+            _prune_removed,
+        )
+        from parrot.knowledge.wiki.project import (
+            resolve_vault_dir,
+            wiki_write_lock,
+        )
+        from parrot.knowledge.wiki.vault_scan import scan_vault
+
+        vault = resolve_vault_dir(self._root, self._config, override=vault_path)
+        if vault is None:
+            return ToolResult(
+                success=False,
+                status="error",
+                result=None,
+                error=(
+                    "No Obsidian vault found: pass vault_path, set "
+                    "'vault_dir' in .parrot/wiki.json, or run inside a "
+                    "vault (.obsidian/ directory)."
+                ),
+            )
+
+        storage = self._config.storage_path(self._root)
+        with wiki_write_lock(storage) as acquired:
+            if not acquired:
+                return ToolResult(
+                    success=False,
+                    status="error",
+                    result=None,
+                    error=(
+                        "Another wiki writer (build/upsert) is in progress "
+                        "— retry once it finishes."
+                    ),
+                )
+            scan, stats = await asyncio.to_thread(
+                scan_vault,
+                vault,
+                self._config.body_max_chars,
+                self._config.max_file_kb * 1024,
+            )
+            sources = _open_sources(self._root, self._config, store=self._store)
+            counts = await _ingest_files(
+                self._store, sources, vault, scan, force=force
+            )
+            await self._store.upsert_pages(scan.dir_records)
+            await self._store.add_edges(scan.dir_edges)
+            removed = await _prune_removed(self._store, sources, vault, scan)
+            store_stats = await self._store.stats()
+
+        try:
+            WikiBookkeeper().log_operation(
+                storage,
+                "VAULT_INGEST",
+                f"vault: {vault}, notes: {stats.notes}, tags: {stats.tags}, "
+                f"ingested: {counts.get('written', 0)}, removed: {removed}, "
+                f"by: agent:mcp",
+            )
+        except OSError as exc:
+            self.logger.warning(
+                "Failed to log VAULT_INGEST to wiki audit trail: %s", exc
+            )
+
+        return ToolResult(result={
+            "vault": str(vault),
+            "notes": stats.notes,
+            "tags": stats.tags,
+            "wikilink_edges": stats.wikilink_edges,
+            "embed_edges": stats.embed_edges,
+            "unresolved_links": len(stats.unresolved_links),
+            "ingested": counts.get("written", 0),
+            "unchanged": counts.get("unchanged", 0),
+            "removed": removed,
+            "skipped": len(scan.skipped),
+            "pages_total": store_stats.get("pages", 0),
+            "edges_total": store_stats.get("edges", 0),
+        })
 
 
 def create_wiki_tools(
