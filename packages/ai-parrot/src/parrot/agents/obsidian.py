@@ -8,21 +8,18 @@ under the 'meetings' folder. Supports two operations:
 
 The sync operation is safe to schedule every 8 hours via /schedule.
 """
-
-import asyncio
-import logging
 import os
-import uuid
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-
+import logging
 from navconfig import config
 from parrot.bots.agent import BasicAgent
 from parrot.tools.obsidian import ObsidianToolkit
 from parrot.models.responses import AIMessage
 from parrot.interfaces.obsidian.okf import project_okf_block
-from parrot.knowledge.okf.ontology import ConceptType, SourceProvenance, RelationType
+from parrot.knowledge.okf.ontology import ConceptType, RelationType
+# SourceProvenance
 
 
 logger = logging.getLogger(__name__)
