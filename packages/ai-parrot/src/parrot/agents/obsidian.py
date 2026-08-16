@@ -12,6 +12,7 @@ The sync operation is safe to schedule every 8 hours via /schedule.
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -20,6 +21,8 @@ from navconfig import config
 from parrot.bots.agent import BasicAgent
 from parrot.tools.obsidian import ObsidianToolkit
 from parrot.models.responses import AIMessage
+from parrot.interfaces.obsidian.okf import project_okf_block
+from parrot.knowledge.okf.ontology import ConceptType, SourceProvenance
 
 
 logger = logging.getLogger(__name__)
@@ -207,10 +210,22 @@ class FirefliesObsidianAgent(BasicAgent):
                         "synced_at": datetime.utcnow().isoformat(),
                     }
 
+                    # Generate OKF frontmatter for knowledge graph integration
+                    okf_metadata = self._build_okf_frontmatter(
+                        fireflies_id=transcript_id,
+                        title=title,
+                        date=date,
+                        participants=transcript.get("participants", []),
+                        duration=transcript.get("duration", 0),
+                    )
+
+                    # Merge OKF metadata with basic Fireflies metadata
+                    merged_metadata = {**metadata, **okf_metadata}
+
                     await self.obsidian_toolkit.create_note(
                         path=f"{self.meetings_folder}/{note_title}.md",
                         content=transcript_text,
-                        frontmatter=metadata,
+                        frontmatter=merged_metadata,
                     )
 
                     self.logger.info(f"✅ Synced: {note_title}")
