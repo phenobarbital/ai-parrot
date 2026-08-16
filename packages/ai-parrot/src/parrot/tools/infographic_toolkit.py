@@ -502,8 +502,10 @@ class InfographicToolkit(AbstractToolkit):
 
         a2ui_envelope = None
         if self._emit_a2ui:
+            # Same response object the HTML renderer consumed, so both surfaces
+            # describe identical content.
             a2ui_envelope = self._build_a2ui_envelope(
-                coerced_blocks, template.name, validated_theme, artifact_id,
+                infographic_response, artifact_id,
             )
 
         return InfographicRenderResult(
@@ -603,12 +605,25 @@ class InfographicToolkit(AbstractToolkit):
 
         a2ui_envelope = None
         if self._emit_a2ui:
-            sections = [{"heading": title or template_name}]
-            if data:
-                sections[0]["text"] = str(list(data.keys()))
+            # The Jinja lane has no typed blocks — the template owns the layout.
+            # Model what IS known semantically: the heading, plus the payload keys
+            # the template was given. Anything richer would be fabricated.
+            synthetic_blocks: List[Dict[str, Any]] = [
+                {"type": "title", "title": title or template_name}
+            ]
+            if isinstance(data, dict) and data:
+                synthetic_blocks.append(
+                    {
+                        "type": "summary",
+                        "content": "Data: " + ", ".join(sorted(map(str, data))),
+                    }
+                )
             a2ui_envelope = self._build_a2ui_envelope(
-                [], template_name, theme, artifact_id, title=title,
-                extra_sections=sections,
+                InfographicResponse(
+                    template=template_name, theme=theme, blocks=synthetic_blocks
+                ),
+                artifact_id,
+                title=title,
             )
 
         return InfographicRenderResult(
@@ -737,6 +752,13 @@ class InfographicToolkit(AbstractToolkit):
             template_name, effective_marker, len(html),
         )
 
+        a2ui_envelope = None
+        if self._emit_a2ui:
+            a2ui_envelope = self._build_a2ui_envelope_from_layout(
+                descriptor, payload, artifact_id, title=title,
+                template_name=template_name,
+            )
+
         return InfographicRenderResult(
             artifact_id=artifact_id,
             html_url=html_url,
@@ -745,7 +767,7 @@ class InfographicToolkit(AbstractToolkit):
             theme=None,
             data_variables=[],
             enhanced=False,
-            a2ui_envelope=None,
+            a2ui_envelope=a2ui_envelope,
         )
 
     @staticmethod
@@ -827,37 +849,126 @@ class InfographicToolkit(AbstractToolkit):
 
     def _build_a2ui_envelope(
         self,
-        blocks: List[Dict[str, Any]],
-        template_name: str,
-        theme: Optional[str],
+        response: InfographicResponse,
         artifact_id: str,
         *,
         title: Optional[str] = None,
-        extra_sections: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Build a validated A2UI Infographic envelope from the render data."""
-        from parrot.outputs.a2ui.builders import build_infographic
+        """Build a validated A2UI Infographic envelope from an ``InfographicResponse``.
 
-        sections = extra_sections or []
-        if not sections:
-            for i, block in enumerate(blocks):
-                heading = block.get("title") or block.get("type") or f"Block {i + 1}"
-                sections.append({"heading": heading})
-        if not sections:
-            sections = [{"heading": template_name}]
+        Delegates the whole mapping to the deterministic adapter
+        (``parrot.outputs.a2ui.adapters``), which turns each typed block into a
+        real catalog component and routes chart/table rows through data-model
+        bindings. The toolkit only owns the surface id and the failure policy.
+
+        Args:
+            response: The same ``InfographicResponse`` handed to the HTML renderer,
+                so the envelope and the HTML always describe identical content.
+            artifact_id: Persisted artifact id, used to derive the surface id.
+            title: Optional explicit surface title, overriding the response's own.
+
+        Returns:
+            The serialised envelope, or ``None`` when the build fails — the A2UI
+            lane is additive (spec G7), so a failure degrades to an HTML-only
+            result instead of breaking the render.
+        """
+        from parrot.outputs.a2ui.adapters import infographic_response_to_envelope
 
         try:
-            envelope = build_infographic(
-                title=title or template_name,
-                sections=sections,
-                theme=theme,
+            envelope = infographic_response_to_envelope(
+                response,
                 surface_id=f"infographic-{artifact_id}",
-                data_model={"blocks": blocks} if blocks else None,
+                title=title,
             )
             return envelope.model_dump(mode="json")
         except Exception:
             self.logger.warning(
                 "A2UI envelope build failed for infographic %s; "
+                "falling back to HTML-only result.",
+                artifact_id,
+                exc_info=True,
+            )
+            return None
+
+    def _build_a2ui_envelope_from_layout(
+        self,
+        descriptor: Optional["SectionDescriptor"],
+        payload: Dict[str, Any],
+        artifact_id: str,
+        *,
+        title: Optional[str] = None,
+        template_name: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """Build an envelope for the data-splice lane (FEAT-326 + FEAT-420).
+
+        The spliced ``payload`` IS the data model: the template's client-side JS
+        reads it from the marker script tag, and a descriptor's declared
+        ``layout`` carries ``$bind`` pointers into exactly that document. So when
+        a layout is declared it is used VERBATIM against the payload — the same
+        contract ``RecipeRunner._assemble_envelope_or_raise`` honours for saved
+        recipes (this mirrors its component dispatch, but degrades instead of
+        raising, because the A2UI lane is additive here).
+
+        Without a declared layout there is no component structure to model — the
+        template owns the layout and the payload shape is arbitrary. That case
+        falls back to the same minimal surface ``render_template`` emits: the
+        heading plus the payload's top-level keys, never invented structure.
+
+        Args:
+            descriptor: Optional section descriptor; its ``layout`` is the only
+                declarative source of component structure for this lane.
+            payload: The spliced JSON payload, used as the envelope's data model.
+            artifact_id: Persisted artifact id, used to derive the surface id.
+            title: Optional explicit surface title.
+            template_name: Template name, used as the title fallback.
+
+        Returns:
+            The serialised envelope, or ``None`` when the build fails.
+        """
+        from parrot.outputs.a2ui.builders import build_infographic, build_surface
+
+        layout = getattr(descriptor, "layout", None)
+        surface_id = f"infographic-{artifact_id}"
+
+        try:
+            if layout is None:
+                blocks: List[Dict[str, Any]] = [
+                    {"type": "title", "title": title or template_name}
+                ]
+                if isinstance(payload, dict) and payload:
+                    blocks.append(
+                        {
+                            "type": "summary",
+                            "content": "Data: " + ", ".join(sorted(map(str, payload))),
+                        }
+                    )
+                return self._build_a2ui_envelope(
+                    InfographicResponse(template=template_name, blocks=blocks),
+                    artifact_id,
+                    title=title,
+                )
+
+            properties = dict(layout.properties or {})
+            if layout.component == "Infographic":
+                envelope = build_infographic(
+                    title=properties.get("title") or title or template_name,
+                    sections=properties.get("sections", []),
+                    subtitle=properties.get("subtitle"),
+                    theme=properties.get("theme"),
+                    surface_id=surface_id,
+                    data_model=payload or None,
+                )
+            else:
+                envelope = build_surface(
+                    layout.component,
+                    properties,
+                    surface_id=surface_id,
+                    data_model=payload or None,
+                )
+            return envelope.model_dump(mode="json")
+        except Exception:
+            self.logger.warning(
+                "A2UI envelope build failed for data-splice infographic %s; "
                 "falling back to HTML-only result.",
                 artifact_id,
                 exc_info=True,

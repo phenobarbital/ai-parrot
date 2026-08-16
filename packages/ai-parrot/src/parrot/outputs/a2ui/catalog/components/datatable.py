@@ -47,6 +47,42 @@ DATATABLE_INSTRUCTIONS = (
 )
 
 
+def _lower_row(row: Any, column_names: list[Any]) -> BasicNode:
+    """Lower one resolved row to a ``Row`` of ``Text`` cells (pure, deterministic).
+
+    Cells follow the DECLARED column order, so a table never renders its columns
+    in dict-insertion order. Mapping rows are read by column name; sequence rows
+    positionally; a scalar row degrades to a single cell.
+
+    Args:
+        row: One resolved row — a mapping keyed by column name, a sequence of
+            cell values, or a scalar.
+        column_names: Column ``name`` values in declared order.
+
+    Returns:
+        A ``Row`` node whose children are one ``Text`` cell per column.
+    """
+    if isinstance(row, dict):
+        # No declared columns is degenerate (the schema requires them); fall back
+        # to the row's own key order so data still reaches the surface.
+        keys = column_names or list(row)
+        values = [row.get(name) for name in keys]
+    elif isinstance(row, (list, tuple)):
+        count = len(column_names) or len(row)
+        values = [row[i] if i < len(row) else None for i in range(count)]
+    else:
+        values = [row]
+
+    return BasicNode(
+        component="Row",
+        properties={"role": "row"},
+        children=[
+            BasicNode(component="Text", properties={"role": "cell", "text": value})
+            for value in values
+        ],
+    )
+
+
 @register_component("DataTable")
 class DataTableComponent:
     """The ``DataTable`` catalog component (display-only, ``requires_actions=False``)."""
@@ -80,13 +116,29 @@ class DataTableComponent:
         )
 
         body_props: dict[str, Any] = {"role": "rows"}
-        if "data" in props:
-            body_props["data"] = props["data"]
         if "totalRows" in props:
             body_props["totalRows"] = props["totalRows"]
         if props.get("truncated"):
             body_props["truncated"] = True
-        children.append(BasicNode(component="Column", properties=body_props))
+
+        # Two-phase contract (spec §7):
+        #  * REQUEST-live — ``data`` is still a binding expression: pass it through
+        #    untouched for renderers that resolve it client-side.
+        #  * CONFIGURE-bake — the bake pass already replaced the binding with the
+        #    row list, so materialise one Row of Text cells per row. Without this
+        #    the rows stay in an inert property and every static renderer emits an
+        #    empty table (the SSR-HTML renderer only draws Text/Image leaves).
+        data = props.get("data")
+        row_nodes: list[BasicNode] = []
+        if isinstance(data, list):
+            column_names = [col.get("name") for col in (props.get("columns") or [])]
+            row_nodes = [_lower_row(row, column_names) for row in data]
+        elif "data" in props:
+            body_props["data"] = data
+
+        children.append(
+            BasicNode(component="Column", properties=body_props, children=row_nodes)
+        )
 
         return BasicNode(
             component="Card",
