@@ -159,26 +159,8 @@ class FirefliesObsidianAgent(BasicAgent):
                 return report
 
             # Parse the result text to extract individual transcripts
-            # For now, we'll log the raw result and handle parsing
             self.logger.debug(f"Fireflies API response: {tool_result.result[:200]}...")
-
-            # Since parsing the formatted output is complex, we'll use a simpler approach:
-            # The user should have Fireflies transcripts synced manually or via a simpler integration.
-            # For demo purposes, we'll report what we received
-            if "id:" in tool_result.result:
-                self.logger.info("✅ Successfully retrieved transcripts from Fireflies API")
-                report["synced"] = 1  # Placeholder for demo
-                report["status"] = "ok"
-            else:
-                self.logger.warning("No transcripts returned from API")
-
-            return report
-
-            # NOTE: Full implementation would parse the formatted result text
-            # This requires robust parsing of Fireflies' output format
-            # For production, consider using Fireflies' official Python SDK if available
-
-            transcripts = []  # Placeholder - would be populated by parsing
+            transcripts = self._parse_fireflies_response(tool_result.result)
             if not transcripts:
                 self.logger.info("No transcripts found")
                 return report
@@ -203,9 +185,16 @@ class FirefliesObsidianAgent(BasicAgent):
                         continue
 
                     # Fetch full transcript
-                    transcript_text = await self._call_fireflies_tool(
+                    transcript_result = await self._call_fireflies_tool(
                         "fireflies_get_transcript",
-                        {"id": transcript_id}
+                        {"transcriptId": transcript_id}
+                    )
+
+                    # Extract transcript text from ToolResult
+                    transcript_text = (
+                        transcript_result.result
+                        if hasattr(transcript_result, "result")
+                        else str(transcript_result)
                     )
 
                     # Save to Obsidian
@@ -324,6 +313,61 @@ class FirefliesObsidianAgent(BasicAgent):
         return result
 
     # ========== Private Helpers ==========
+
+    @staticmethod
+    def _parse_fireflies_response(response_text: str) -> List[Dict[str, Any]]:
+        """Parse Fireflies MCP response text into list of transcripts.
+
+        Fireflies returns formatted text like:
+        [10]:
+          - id: 01KZ...
+            title: Meeting Title
+            dateString: 2026-08-16T...
+            ...
+        """
+        transcripts = []
+        current_transcript = {}
+
+        for line in response_text.split("\n"):
+            line = line.strip()
+
+            # Skip empty lines and headers
+            if not line or line.startswith("[") or line.startswith("-"):
+                if line.startswith("- id:"):
+                    if current_transcript:
+                        transcripts.append(current_transcript)
+                    current_transcript = {}
+                continue
+
+            # Parse key-value pairs
+            if ":" in line and not line.startswith("-"):
+                try:
+                    key, value = line.split(":", 1)
+                    key = key.strip()
+                    value = value.strip().strip('"')
+
+                    # Map Fireflies fields to our transcript format
+                    if key == "id":
+                        current_transcript["id"] = value
+                    elif key == "title":
+                        current_transcript["title"] = value
+                    elif key == "dateString":
+                        current_transcript["date"] = value[:10]  # Extract YYYY-MM-DD
+                    elif key == "organizer_email":
+                        current_transcript["organizer"] = value
+                    elif key == "duration":
+                        try:
+                            current_transcript["duration"] = float(value)
+                        except ValueError:
+                            pass
+                except Exception:
+                    pass
+
+        # Add last transcript if exists
+        if current_transcript and "id" in current_transcript:
+            transcripts.append(current_transcript)
+
+        return transcripts
 
     async def _call_fireflies_tool(
         self,
