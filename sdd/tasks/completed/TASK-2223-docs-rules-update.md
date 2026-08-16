@@ -203,10 +203,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: All 7 files updated as scoped. Found and fixed one un-itemized
+issue while editing `docs/outputs.md`'s architecture ASCII diagram: removing
+"Matplotlib" from the Renderer Registry box left a pre-existing duplicated
+"HTML Widget" line exposed (the diagram had listed it twice) — fixed for a
+clean, non-redundant diagram (same file already in scope).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Resolved one direct conflict between the task's own instructions: the
+literal AC for `docs/repl-worker-sandbox.md` demands zero `matplotlib`
+grep matches, while the Key Constraint explicitly directs "should mention
+the reduced memory footprint (no matplotlib overhead)". Resolved by keeping
+the reduced-footprint notes (satisfying the Key Constraint's intent) while
+rephrasing to avoid the literal word "matplotlib" (satisfying the strict
+AC) — e.g. "predates FEAT-423's reduction of the REPL bootstrap import
+surface" instead of naming the library. Verified: zero matches.
 
-**Deviations from spec**: none | describe if any
+Verified the two altair code examples (jupyter_mode.md's inline
+visualization snippet, SKILL.md's Annotation-and-Highlight technique) are
+not just plausible-looking but actually EXECUTE and produce valid Vega-Lite
+specs — ran both against real/synthetic data with the installed altair
+5.5.0.
+
+All 7 files: zero `matplotlib`/`seaborn` matches (verified via grep, per
+AC), balanced ``` code fences (valid markdown, verified via fence-count
+parity check). Confirmed 2 remaining repo-wide matplotlib mentions
+(`docs/migration/feat-223-*.md`, `docs/migration/feat-273-*.md`) are
+historical migration docs from OTHER features, correctly out of this
+task's scope — left untouched.
+
+**Deviations from spec**: See Notes above (ASCII diagram fix,
+repl-worker-sandbox.md AC/Key-Constraint conflict resolution) — both
+minor, same-file, no functional/code impact (documentation-only task).
