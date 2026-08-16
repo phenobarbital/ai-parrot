@@ -2,10 +2,10 @@
 
 **Feature**: quickeda-html-escape-xss (FEAT-424)
 **Spec**: n/a — bug fix from [GitHub Issue #1159](https://github.com/phenobarbital/ai-parrot/issues/1159)
-**Status**: [ ] pending
+**Status**: [x] done
 **Priority**: critical
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ## Context
 
@@ -141,4 +141,84 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+Applied `.format(escape="html")` to the Styler chain in
+`_df_to_html_with_style()` (`quickeda.py`), and flipped `DfToHtmlArgs.escape`
+default (and the corresponding `_execute()` parameter default) to `True` in
+`dftohtml.py`, matching the "After" snippets in this task exactly. Verified
+manually with the payload from the task's Verification section — `<img`
+does not survive, `&lt;img` does.
+
+Two follow-up corrections beyond the literal Before/After snippets, made
+after writing TASK-2225's regression tests surfaced they were needed to
+close the actual XSS vector and to satisfy that task's given test
+scaffold (both changes stayed inside files already authorized for this
+task):
+
+- **`dftohtml.py`**: `Styler.to_html()` has no `escape` kwarg in pandas
+  2.2 (it silently absorbs it into `**kwargs` and does nothing) — passing
+  `escape=escape` there, as the original code did, never actually escaped
+  anything regardless of the flag's value. Fixed by applying
+  `.format(escape="html")` to the styler conditionally on `escape` before
+  calling `.to_html()` (mirroring the `quickeda.py` fix), and dropped the
+  no-op `escape=` kwarg from the `.to_html()` call. Confirmed manually:
+  default now escapes `<script>`, `escape=False` still passes through
+  raw HTML for pre-sanitized content.
+- **`quickeda.py`**: `.format(escape="html")` only escapes *cell* values,
+  not column headers (`.format_index(..., axis=1)` needed) or the
+  `set_caption()` title (Styler never escapes captions). Since column
+  names are just as attacker-controlled as cell values (e.g. CSV
+  headers), added `.format_index(escape="html", axis=1)` to the chain
+  and `html.escape(title)` before `set_caption()`.
+
+**Critical follow-up (post code-review, before push)**: the dispatched
+`code-reviewer` agent built end-to-end repros against the patched code
+and found the fix above was still materially incomplete — confirmed by
+an independent Codex cross-check with pandas-source citations. Two more
+gaps, closed in the same files:
+
+- **Row index (axis=0) never escaped.** `.format_index(..., axis=1)`
+  only covers column headers; the row *index* needs its own
+  `.format_index(escape="html", axis=0)` call. Real attacker-reachable
+  paths in `quickeda.py`: `_generate_missing_values_section`'s
+  `to_frame()`, `_generate_descriptive_stats_section`'s transposed
+  `describe()`, and — the exact payload class this fix targets —
+  `_generate_categorical_section`'s `value_counts().to_frame()`, whose
+  index holds the actual category *values* from user data. `dftohtml.py`
+  had no `.format_index()` at all for either axis, so `escape=True`
+  (the new default) did not protect column headers or the index either.
+  Added `.format_index(escape="html", axis=0)` (and confirmed axis=1
+  was already/now present) in both files.
+- **Axis *names* (`df.index.name` / `df.columns.name`) are a third,
+  separate gap** — pandas' Styler renders them as a distinct
+  `class="index_name"` header cell that neither `.format()` nor
+  `.format_index()` touches at all (verified against pandas 2.2.3
+  directly: a `.format_index(escape="html")`-wrapped Styler still
+  renders a raw `<script>` tag from `index.name`). This is exactly what
+  `value_counts().to_frame()` produces: the resulting index inherits the
+  source column's (attacker-controlled) name. Fixed by escaping
+  `index.name` / `columns.name` in place on a DataFrame copy, in both
+  `quickeda.py` and `dftohtml.py` (`dftohtml.py`'s escaping is gated on
+  `escape=True`, preserving the `escape=False` pre-sanitized-content
+  opt-out).
+
+Re-verified end-to-end after this follow-up: a malicious column name
+(`<script>alert(1)</script>`) fed through the real
+`QuickEdaTool._execute()` → `_generate_categorical_section` →
+`value_counts()` path, and a malicious categorical value
+(`<img src=x onerror=alert(2)>`), both now come out escaped in the full
+report HTML — this exact case was the reviewer's failing repro before
+the fix. Also added 6 end-to-end regression tests to TASK-2225's test
+file covering all three gaps (see that task's completion note).
+
+Sweep of `parrot_tools/` for other unescaped `to_html()` call sites (item 3
+in Scope):
+- `edareport.py:226` — `ProfileReport.to_html()` (ydata-profiling's own
+  renderer, not raw pandas). Out of scope for this fix; left un-annotated
+  in code since `edareport.py` is not listed in this task's Files to
+  Create/Modify (Cardinal Rule: file fidelity) — documented here instead.
+- `correlationanalysis.py:388` — `correlation_df.to_html(classes=...,
+  table_id=...)` with no `escape=` kwarg, so it uses pandas'
+  `DataFrame.to_html()` default of `escape=True` already. Not a
+  vulnerability; no change needed.
+- No other `.style...to_html()` or `DataFrame.to_html()` call sites found.

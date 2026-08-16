@@ -2,10 +2,10 @@
 
 **Feature**: quickeda-html-escape-xss (FEAT-424)
 **Spec**: n/a — bug fix from [GitHub Issue #1159](https://github.com/phenobarbital/ai-parrot/issues/1159)
-**Status**: [ ] pending
+**Status**: [x] done
 **Priority**: critical
 **Depends-on**: TASK-2224
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ## Context
 
@@ -175,4 +175,51 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+Created `packages/ai-parrot-tools/tests/test_quickeda_xss.py` exactly per
+the test scaffold in this task (`TestDfToHtmlEscaping` +
+`TestDfToHtmlDefaultEscape`, 8 tests total). All 8 pass against the
+TASK-2224 fix.
+
+Writing/running these tests against the literal TASK-2224 fix surfaced
+two gaps that made 3 of the given tests fail (`test_column_name_with_
+html_escaped`, `test_title_does_not_inject`, and — for `DfToHtmlTool` —
+`test_default_escapes`): `.format(escape="html")` alone does not escape
+column headers or `set_caption()` text, and `Styler.to_html()` has no
+functional `escape` kwarg in pandas 2.2 (dftohtml.py's original
+`escape=escape` argument to it was a silent no-op). Both were fixed as a
+TASK-2224 follow-up (see that task's amended Completion Note) since the
+files were already in TASK-2224's scope; this task's commit only adds
+the new test file. Verified the negative control manually: reverting the
+`quickeda.py` escaping calls makes 5 of these 8 tests fail (confirmed,
+then restored) — satisfying the "tests fail if the fix is removed"
+acceptance criterion.
+
+`ruff check` on the new test file: clean.
+
+**Critical follow-up (post code-review, before push)**: a dispatched
+`code-reviewer` agent (cross-checked independently by Codex) found the
+initial 8-test suite above did not exercise two further, real
+attacker-reachable escaping gaps in the TASK-2224 fix (row index labels
+on axis=0, and the separate `df.index.name`/`df.columns.name` "axis
+name" gap that neither `.format()` nor `.format_index()` covers — see
+TASK-2224's amended completion note for the full technical detail).
+Added 6 more tests, bringing the file to 14 tests total:
+
+- `test_row_index_label_escaped` — index labels via `pd.Index(...)`.
+- `test_index_name_escaped` / `test_columns_name_escaped` — the
+  axis-name gap directly.
+- `test_execute_categorical_section_value_counts_escaped` — end-to-end
+  through the *real* `QuickEdaTool._execute()` →
+  `_generate_categorical_section` → `value_counts()` path (the
+  reviewer's point that testing the private helper in isolation missed
+  this), with both a malicious column name and a malicious categorical
+  value.
+- `test_column_header_escaped_by_default` /
+  `test_escape_false_column_header_passes_through` — `DfToHtmlTool`
+  column-header coverage for both the new default and the opt-out.
+
+Also strengthened `test_title_does_not_inject` (reviewer nitpick) to
+assert the escaped marker is present, not just that the raw tag is
+absent. All 14 tests pass against the fully-patched code; `ruff check`
+still clean.

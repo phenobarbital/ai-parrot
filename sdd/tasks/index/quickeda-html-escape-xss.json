@@ -2,10 +2,10 @@
   "feature": "quickeda-html-escape-xss",
   "feature_id": "FEAT-424",
   "spec": null,
-  "type": "hotfix",
+  "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-17T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-16T22:57:00+00:00",
   "github_issue": "https://github.com/phenobarbital/ai-parrot/issues/1159",
   "tasks": [
     {
@@ -14,11 +14,14 @@
       "feature": "quickeda-html-escape-xss",
       "slug": "escape-styler-html-output",
       "title": "Escape DataFrame cell values in _df_to_html_with_style()",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-2224-escape-styler-html-output.md"
+      "file": "sdd/tasks/completed/TASK-2224-escape-styler-html-output.md",
+      "started_at": "2026-08-16T22:50:03+00:00",
+      "completed_at": "2026-08-16T22:52:12+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2225",
@@ -26,11 +29,16 @@
       "feature": "quickeda-html-escape-xss",
       "slug": "quickeda-xss-regression-test",
       "title": "Add XSS regression tests for QuickEdaTool HTML output",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
-      "depends_on": ["TASK-2224"],
+      "depends_on": [
+        "TASK-2224"
+      ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-2225-quickeda-xss-regression-test.md"
+      "file": "sdd/tasks/completed/TASK-2225-quickeda-xss-regression-test.md",
+      "started_at": "2026-08-16T22:50:03+00:00",
+      "completed_at": "2026-08-16T22:57:00+00:00",
+      "verification": "verified"
     }
   ]
 }
