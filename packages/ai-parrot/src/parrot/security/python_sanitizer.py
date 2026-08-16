@@ -67,9 +67,6 @@ _GENERAL_IMPORTS: FrozenSet[str] = frozenset(
     {
         "pandas",
         "numpy",
-        "matplotlib",
-        "matplotlib.pyplot",
-        "seaborn",
         "altair",
         "plotly",
         "scipy",

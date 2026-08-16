@@ -35,7 +35,7 @@ Machine Learning:
 Data Processing:
 - Use pandas for data manipulation
 - Use numpy for numerical computations
-- Use matplotlib/seaborn for visualization
+- Return data for visualization via structured-chart/A2UI; use altair for complex viz only
 - Implement data validation
 - Handle missing data appropriately
 - Use efficient data structures

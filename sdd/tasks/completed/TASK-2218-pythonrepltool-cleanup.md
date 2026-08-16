@@ -55,7 +55,9 @@ Implements spec §Module 1.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/tools/pythonrepl.py` | MODIFY | Remove all matplotlib/seaborn integration |
-| `packages/ai-parrot/tests/tools/test_pythonrepl.py` | MODIFY | Update/add tests for matplotlib removal |
+| `packages/ai-parrot/tests/tools/test_pythonrepl_no_matplotlib.py` | CREATE | New tests for matplotlib removal (per Test Specification below) — `tests/tools/test_pythonrepl.py` named in the original contract does not exist |
+| `packages/ai-parrot/src/parrot/tools/pythonpandas.py` | MODIFY | **(Scope expansion, resolved 2026-08-16)** `PythonPandasTool(PythonREPLTool)`'s `create_session_clone()` copies `self.plt_style`/`self.palette`/`self.auto_save_plots`/`self.return_plot_as_base64` onto the clone (lines ~267-271) — these attributes no longer exist once this task removes them from `PythonREPLTool.__init__`. Drop those 4 lines. Also fix two now-stale LLM-facing guidance references: a `matplotlib` entry in a library-guide dict (~line 46-55) and a `"...with matplotlib"` hint referencing the deleted `save_current_plot` (~line 469) — replace with altair/structured-chart guidance consistent with TASK-2219's policy. Not in the original spec's Module 1 breakdown; discovered during Codebase Contract verification. |
+| `packages/ai-parrot/tests/repl_worker/test_integration.py` | MODIFY | **(Scope expansion, resolved 2026-08-16)** `TestPlots` class (`test_plot_via_shared_dir`, `test_plot_base64_when_enabled`) directly exercises `plt.plot()`, `save_current_plot()`, `return_plot_as_base64=True` — all removed by this task. Remove this test class. |
 
 ---
 
@@ -272,10 +274,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Implemented as scoped, plus a user-approved scope expansion
+discovered during Codebase Contract verification (see "Files to Create /
+Modify" table above, entries marked "Scope expansion, resolved 2026-08-16"):
+`PythonPandasTool.create_session_clone()` (packages/ai-parrot/src/parrot/tools/pythonpandas.py)
+copied `plt_style`/`palette`/`auto_save_plots`/`return_plot_as_base64` onto
+the clone — those lines were removed, and two stale matplotlib references in
+its LLM-facing plotting guide (`PLOTTING_LIBRARIES` dict, `_generate_plotting_guide()`)
+were updated to point at structured-chart/A2UI/altair. `test_integration.py`'s
+`TestPlots` class (exercised `plt.plot()`/`save_current_plot()`/`return_plot_as_base64`)
+was removed since it tested the now-deleted API.
 
-**Completed by**:
-**Date**:
-**Notes**:
+The original contract's `packages/ai-parrot/tests/tools/test_pythonrepl.py`
+did not exist; created `test_pythonrepl_no_matplotlib.py` instead, matching
+the task's own Test Specification section.
 
-**Deviations from spec**: none | describe if any
+All 9 new tests pass; full affected suite (test_pythonrepl_executor,
+test_pythonrepl_security, repl_worker/*, test_pythonpandas_integration,
+test_pythonpandas_preview, test_tool_clone, test_pythonrepl_no_matplotlib)
+— 159 passed. `ruff check` on the two modified source files: 99 errors, all
+pre-existing on `dev` (verified via `git show dev:<file>` — none introduced
+by this task; count went DOWN from 117 due to dead-code removal).
+
+`grep -rn "import matplotlib" packages/ai-parrot/src/` → zero matches (AC10).
+
+**Deviations from spec**:
+1. Two of the task's own literal Test Specification assertions
+   (`test_no_plt_style_param`, `test_no_auto_save_plots_param`) expected
+   `pytest.raises(TypeError)` when passing `plt_style=`/`palette=`/
+   `auto_save_plots=`/`return_plot_as_base64=` to the constructor. In
+   practice `PythonREPLTool.__init__`'s `**kwargs` forwards to
+   `AbstractTool.__init__`, which also accepts arbitrary `**kwargs` and
+   stores them in `_init_kwargs` without raising — so no `TypeError` is
+   ever raised. Rewrote those two tests to assert via
+   `inspect.signature()` (param absent) and `hasattr()` (no resulting
+   instance attribute) instead. Documented at the top of
+   `test_pythonrepl_no_matplotlib.py`.
+2. Scope expansion into `pythonpandas.py` and `test_integration.py`
+   (user-approved) — see Files table above and Notes.
