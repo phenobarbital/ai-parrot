@@ -383,3 +383,223 @@ class TestIngestWikiStoreSync:
         assert report.source_id == report2.source_id
         stats = await store.stats()
         assert stats["pages"] == 3  # replaced, not accumulated
+
+
+def _make_triage_entry(
+    *,
+    proposed_action="admit",
+    decision=None,
+    briefing="A concise triage briefing.",
+    composite=0.8,
+    decision_source="model",
+):
+    """Build a minimal ManifestDocEntry for orchestrator wiring tests."""
+    from parrot.knowledge.wiki.review import DimensionScores, ManifestDocEntry
+
+    return ManifestDocEntry(
+        source_uri="/docs/article.md",
+        file_hash="a" * 40,
+        briefing=briefing,
+        scores=DimensionScores(density=0.7, novelty=0.7, durability=0.7),
+        composite=composite,
+        proposed_action=proposed_action,
+        decision=decision,
+        decision_source=decision_source,
+    )
+
+
+class TestOrchestratorTriageWiring:
+    """FEAT-402 (TASK-2074): orchestrator triage context wiring."""
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_forwards_hint(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        mock_pi,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """The triage briefing reaches insert_content(hint=...)."""
+        triage = _make_triage_entry(briefing="Decided to migrate to ArangoDB.")
+        await orchestrator.ingest(str(sample_source), wiki_config, triage=triage)
+
+        mock_pi.insert_content.assert_called_once()
+        call_kwargs = mock_pi.insert_content.call_args.kwargs
+        assert call_kwargs.get("hint") == "Decided to migrate to ArangoDB."
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_no_triage_hint_is_none(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        mock_pi,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """Legacy path (triage=None): hint is explicitly None."""
+        await orchestrator.ingest(str(sample_source), wiki_config)
+        call_kwargs = mock_pi.insert_content.call_args.kwargs
+        assert call_kwargs.get("hint") is None
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_archive_category(
+        self,
+        mock_pi,
+        mock_gi,
+        source_manager: SourceCollectionManager,
+        bookkeeper: WikiBookkeeper,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+        tmp_path: Path,
+    ):
+        """Archive-destination docs produce pages with category 'archive'."""
+        from parrot.knowledge.wiki.store import WikiStore
+
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        orch = WikiIngestOrchestrator(
+            mock_pi, mock_gi, source_manager, bookkeeper, store=store
+        )
+        triage = _make_triage_entry(proposed_action="archive")
+
+        report = await orch.ingest(str(sample_source), wiki_config, triage=triage)
+        assert report.status == "ok"
+        assert report.pages_created == 3
+
+        page = await store.get_page("0001")
+        assert page is not None
+        assert page["category"] == "archive"
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_reject_no_pages(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        mock_pi,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """Discard-destination docs create ZERO pages and a rejected manifest row."""
+        triage = _make_triage_entry(proposed_action="discard", decision_source="heuristic")
+
+        report = await orchestrator.ingest(str(sample_source), wiki_config, triage=triage)
+
+        assert report.status == "ok"
+        assert report.pages_created == 0
+        mock_pi.insert_content.assert_not_called()
+
+        entry = source_manager.get_source(report.source_id)
+        assert entry is not None
+        assert entry.status == "rejected"
+        assert entry.pages_generated == []
+        assert entry.destination == "discard"
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_reject_writes_discard_log(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """A DISCARD line is written to log.md."""
+        triage = _make_triage_entry(proposed_action="discard")
+        await orchestrator.ingest(str(sample_source), wiki_config, triage=triage)
+
+        log_path = wiki_config.storage_dir / "log.md"
+        assert log_path.exists()
+        assert "[DISCARD]" in log_path.read_text()
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_admit_writes_admit_log_and_decision_fields(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """Admitted docs log ADMIT and persist decision fields via record_decision."""
+        triage = _make_triage_entry(
+            proposed_action="admit", decision_source="model", composite=0.91
+        )
+        report = await orchestrator.ingest(
+            str(sample_source), wiki_config, triage=triage, charter_version="3"
+        )
+        assert report.status == "ok"
+
+        log_path = wiki_config.storage_dir / "log.md"
+        assert "[ADMIT]" in log_path.read_text()
+
+        entry = source_manager.get_source(report.source_id)
+        assert entry is not None
+        assert entry.destination == "wiki"
+        assert entry.decision_source == "model"
+        assert entry.charter_version == "3"
+        assert entry.composite_score == pytest.approx(0.91)
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_archive_writes_archive_log(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """Archived docs log ARCHIVE and persist destination='archive'."""
+        triage = _make_triage_entry(proposed_action="archive")
+        report = await orchestrator.ingest(str(sample_source), wiki_config, triage=triage)
+
+        log_path = wiki_config.storage_dir / "log.md"
+        assert "[ARCHIVE]" in log_path.read_text()
+
+        entry = source_manager.get_source(report.source_id)
+        assert entry is not None
+        assert entry.destination == "archive"
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_reapply_idempotent(
+        self,
+        mock_pi,
+        mock_gi,
+        source_manager: SourceCollectionManager,
+        bookkeeper: WikiBookkeeper,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+        tmp_path: Path,
+    ):
+        """Re-applying the same source (unchanged content) replaces pages,
+        never duplicates — and re-persists the (possibly edited) decision."""
+        from parrot.knowledge.wiki.store import WikiStore
+
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        orch = WikiIngestOrchestrator(
+            mock_pi, mock_gi, source_manager, bookkeeper, store=store
+        )
+        triage = _make_triage_entry(proposed_action="admit", decision_source="human")
+
+        report1 = await orch.ingest(str(sample_source), wiki_config, triage=triage)
+        # Re-apply WITHOUT changing the file content — the legacy
+        # staleness skip must NOT short-circuit a triage-driven re-apply.
+        report2 = await orch.ingest(str(sample_source), wiki_config, triage=triage)
+
+        assert report1.status == report2.status == "ok"
+        assert report1.source_id == report2.source_id
+        assert mock_pi.insert_content.call_count == 2  # not skipped
+
+        stats = await store.stats()
+        assert stats["pages"] == 3  # replaced, not accumulated
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_decision_takes_precedence_over_proposed_action(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """A human-edited `decision` overrides the router's `proposed_action`."""
+        triage = _make_triage_entry(proposed_action="admit", decision="discard")
+
+        report = await orchestrator.ingest(str(sample_source), wiki_config, triage=triage)
+
+        assert report.pages_created == 0
+        entry = source_manager.get_source(report.source_id)
+        assert entry is not None
+        assert entry.status == "rejected"

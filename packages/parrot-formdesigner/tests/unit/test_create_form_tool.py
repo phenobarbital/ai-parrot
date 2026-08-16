@@ -1,6 +1,8 @@
 """Unit tests for CreateFormTool."""
 
 import json
+import uuid
+
 import pytest
 from unittest.mock import AsyncMock
 from parrot_formdesigner.core.schema import FormSchema, FormField, FormSection
@@ -130,7 +132,7 @@ class TestCreateFormToolRefinement:
     """Tests for iterative form refinement."""
 
     async def test_refinement_with_existing_form(self, mock_client):
-        """refine_form_id loads existing form and includes it in prompt."""
+        """refine_form_uid loads existing form and includes it in prompt."""
         existing = FormSchema(
             form_id="existing",
             title="Existing Form",
@@ -154,7 +156,7 @@ class TestCreateFormToolRefinement:
         tool = CreateFormTool(client=mock_client, registry=registry)
         result = await tool.execute(
             prompt="Add a phone field",
-            refine_form_id="existing",
+            refine_form_uid=existing.form_uid,
         )
         assert result.success is True
         # Verify the prompt to the LLM included the existing form
@@ -164,14 +166,14 @@ class TestCreateFormToolRefinement:
         assert "Existing Form" in messages_str or "existing" in messages_str.lower()
 
     async def test_refinement_nonexistent_form(self, mock_client):
-        """refine_form_id pointing to nonexistent form returns error."""
+        """refine_form_uid pointing to nonexistent form returns error."""
         registry = AsyncMock()
         registry.get = AsyncMock(return_value=None)
 
         tool = CreateFormTool(client=mock_client, registry=registry)
         result = await tool.execute(
             prompt="Add a field",
-            refine_form_id="nonexistent",
+            refine_form_uid=uuid.uuid4(),
         )
         assert result.success is False
         assert result.status == "error"
@@ -203,3 +205,70 @@ class TestCreateFormToolPersist:
         tool = CreateFormTool(client=mock_client, registry=None)
         result = await tool.execute(prompt="Create a form", persist=True)
         assert result.success is True
+
+
+class TestCreateFormToolFormUid:
+    """Tests for form_uid generation and propagation (FEAT-389, TASK-1978)."""
+
+    async def test_create_form_auto_generates_uid(self, tool):
+        """CreateFormTool generates form_uid when not provided."""
+        result = await tool.execute(prompt="Create a contact form")
+        assert result.success is True
+        assert "form_uid" in result.metadata
+        assert result.metadata["form_uid"] == result.metadata["form"]["form_uid"]
+        assert isinstance(result.metadata["form_uid"], uuid.UUID)
+
+    async def test_create_form_with_explicit_uid(self, tool):
+        """CreateFormTool uses the provided form_uid instead of generating one."""
+        uid = "550e8400-e29b-41d4-a716-446655440000"
+        result = await tool.execute(prompt="Create a form", form_uid=uid)
+        assert result.metadata["form_uid"] == uuid.UUID(uid)
+        assert result.metadata["form"]["form_uid"] == uuid.UUID(uid)
+
+    async def test_two_forms_get_different_uids(self, mock_client):
+        """Two separately-created forms get distinct auto-generated form_uids."""
+        tool = CreateFormTool(client=mock_client)
+        r1 = await tool.execute(prompt="Create form A")
+        r2 = await tool.execute(prompt="Create form B")
+        assert r1.metadata["form_uid"] != r2.metadata["form_uid"]
+
+    async def test_refine_form_uid_preserves_identity(self, mock_client):
+        """Refining an existing form preserves its form_uid unchanged."""
+        fixed_uid = uuid.uuid4()
+        existing = FormSchema(
+            form_uid=fixed_uid,
+            form_id="existing",
+            title="Existing Form",
+            sections=[
+                FormSection(
+                    section_id="s",
+                    fields=[
+                        FormField(field_id="f", field_type=FieldType.TEXT, label="F"),
+                    ],
+                )
+            ],
+        )
+        registry = AsyncMock()
+        registry.get = AsyncMock(return_value=existing)
+        registry.register = AsyncMock()
+
+        tool = CreateFormTool(client=mock_client, registry=registry)
+        result = await tool.execute(
+            prompt="Add a phone field",
+            refine_form_uid=fixed_uid,
+        )
+
+        assert result.success is True
+        assert result.metadata["form_uid"] == fixed_uid
+        assert result.metadata["form"]["form_uid"] == fixed_uid
+        # form_id (slug) is preserved too, since no explicit form_id= override.
+        assert result.metadata["form"]["form_id"] == "existing"
+
+    def test_create_form_input_has_form_uid_field(self):
+        """CreateFormInput schema includes form_uid and refine_form_uid."""
+        from parrot_formdesigner.tools.create_form import CreateFormInput
+
+        fields = CreateFormInput.model_fields
+        assert "form_uid" in fields
+        assert "refine_form_uid" in fields
+        assert "refine_form_id" not in fields  # renamed away

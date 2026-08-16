@@ -8,12 +8,13 @@ abstraction layer.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import uuid
+from collections.abc import Iterable, Iterator
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints, PostDependency
@@ -47,6 +48,11 @@ class FormField(BaseModel):
     and ARRAY fields can have an item_template defining the repeated element.
 
     Attributes:
+        field_uid: Stable, immutable UUID4 identity for this field
+            (FEAT-393). Auto-generated on creation and never changes for
+            the lifetime of the field — the primary key for edit
+            operations, rule references, blob storage keys, and internal
+            maps. Client-supplied values are accepted (upsert origin).
         field_id: Unique identifier for this field within the form.
         field_type: The type of input control to render.
         label: Human-readable label shown to the user.
@@ -71,6 +77,7 @@ class FormField(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    field_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
     field_id: str
     field_type: FieldType
     label: LocalizedString
@@ -103,6 +110,8 @@ class FormSubsection(BaseModel):
     panels, etc.).
 
     Attributes:
+        subsection_uid: Stable, immutable UUID4 identity for this
+            subsection (FEAT-393). Auto-generated on creation.
         subsection_id: Unique identifier for this subsection within the form.
         title: Optional title displayed as a subsection header.
         description: Optional description shown under the subsection title.
@@ -113,6 +122,7 @@ class FormSubsection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    subsection_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
     subsection_id: str
     title: LocalizedString | None = None
     description: LocalizedString | None = None
@@ -135,6 +145,8 @@ class FormSection(BaseModel):
     ``FormField`` instances (flattening through subsections).
 
     Attributes:
+        section_uid: Stable, immutable UUID4 identity for this section
+            (FEAT-393). Auto-generated on creation.
         section_id: Unique identifier for this section.
         title: Optional title displayed as a section header.
         description: Optional description shown under the section title.
@@ -143,6 +155,7 @@ class FormSection(BaseModel):
         meta: Arbitrary metadata for renderer-specific extensions.
     """
 
+    section_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
     section_id: str
     title: LocalizedString | None = None
     description: LocalizedString | None = None
@@ -157,6 +170,39 @@ class FormSection(BaseModel):
                 yield from item.fields
             else:
                 yield item
+
+
+def walk_fields(items: Iterable[SectionItem]) -> Iterator[FormField]:
+    """Yield every ``FormField``, recursing subsections, GROUP ``children``,
+    and ARRAY ``item_template``.
+
+    This is the ONE canonical recursive traversal for the full field tree
+    (FEAT-393, Module 2) — the traversal used by uniqueness validation,
+    rule-reference resolution, and UID lookups. It supersedes the divergent
+    walks in ``iter_all_fields()`` (layout order only, no nesting),
+    ``services/validators.py``'s ``_collect_fields``/``_collect_nested_fields``,
+    and ``api/operations.py``'s ``_field_index`` — those are re-keyed onto
+    this helper by later tasks (TASK-1998/1999), not replaced here.
+
+    A GROUP field's ``children`` and an ARRAY field's ``item_template`` are
+    yielded AFTER their parent field (parent-before-children order).
+
+    Args:
+        items: A section's ``fields`` list (``FormField`` and/or
+            ``FormSubsection`` items).
+
+    Yields:
+        Every ``FormField`` in the tree, parent-before-children order.
+    """
+    for item in items:
+        if isinstance(item, FormSubsection):
+            yield from walk_fields(item.fields)
+            continue
+        yield item
+        if item.children:
+            yield from walk_fields(item.children)
+        if item.item_template is not None:
+            yield from walk_fields([item.item_template])
 
 
 class SubmitAction(BaseModel):
@@ -272,7 +318,12 @@ class FormSchema(BaseModel):
     JSON Schema, or any other format via the renderer system.
 
     Attributes:
-        form_id: Unique identifier for this form.
+        form_uid: Stable, immutable UUID4 identity for this form. Auto-generated
+            on creation and never changes for the lifetime of the form — the
+            primary key for URL routing, registry lookups, storage, and
+            cross-system references (FEAT-389).
+        form_id: Human-readable slug for this form. Mutable and used for
+            display/search — never as a primary key (FEAT-389).
         version: Schema version string.
         title: Human-readable form title.
         description: Optional description of the form's purpose.
@@ -302,6 +353,7 @@ class FormSchema(BaseModel):
             them. (FEAT-241)
     """
 
+    form_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
     form_id: str
     version: str = "1.0"
     title: LocalizedString
@@ -322,9 +374,73 @@ class FormSchema(BaseModel):
     is_public: bool = False
 
     def iter_all_fields(self) -> Iterator[FormField]:
-        """Yield every ``FormField`` across all sections, flattening subsections."""
+        """Yield every ``FormField`` across all sections, flattening subsections.
+
+        NOTE: this is the renderer LAYOUT-ORDER traversal only (sections +
+        subsections, top-level fields) — it does NOT recurse into GROUP
+        ``children`` or ARRAY ``item_template``. It is NOT the uniqueness
+        traversal; use :meth:`iter_fields_recursive` (or the module-level
+        :func:`walk_fields`) for anything that must see the full tree
+        (FEAT-393, Module 2).
+        """
         for section in self.sections:
             yield from section.iter_fields()
+
+    def iter_fields_recursive(self) -> Iterator[FormField]:
+        """Yield every ``FormField`` in the full tree — sections,
+        subsections, GROUP ``children``, and ARRAY ``item_template``
+        (FEAT-393, Module 2). The canonical traversal for uniqueness
+        validation, rule-reference resolution, and UID lookups.
+        """
+        for section in self.sections:
+            yield from walk_fields(section.fields)
+
+    @model_validator(mode="after")
+    def _validate_unique_identity(self) -> "FormSchema":
+        """Reject duplicate UIDs (section/subsection/field) and duplicate
+        ``field_id``s anywhere in the full tree (FEAT-393, Module 2).
+
+        Global uniqueness rests on uuid4 collision-negligibility — this
+        validator only catches the realistic failure modes: a
+        client-supplied duplicate UID (upsert origin), or a form authored
+        (or migrated) with a repeated ``field_id``.
+        """
+        seen_uids: set[uuid.UUID] = set()
+        seen_field_ids: set[str] = set()
+
+        for section in self.sections:
+            if section.section_uid in seen_uids:
+                raise ValueError(
+                    f"Duplicate section_uid {section.section_uid} in form "
+                    f"{self.form_id!r}"
+                )
+            seen_uids.add(section.section_uid)
+
+            for item in section.fields:
+                if isinstance(item, FormSubsection):
+                    if item.subsection_uid in seen_uids:
+                        raise ValueError(
+                            f"Duplicate subsection_uid {item.subsection_uid} "
+                            f"in form {self.form_id!r}"
+                        )
+                    seen_uids.add(item.subsection_uid)
+
+        for field in self.iter_fields_recursive():
+            if field.field_uid in seen_uids:
+                raise ValueError(
+                    f"Duplicate field_uid {field.field_uid} in form "
+                    f"{self.form_id!r}"
+                )
+            seen_uids.add(field.field_uid)
+
+            if field.field_id in seen_field_ids:
+                raise ValueError(
+                    f"Duplicate field_id {field.field_id!r} in form "
+                    f"{self.form_id!r}"
+                )
+            seen_field_ids.add(field.field_id)
+
+        return self
 
     @model_validator(mode="after")
     def _validate_metadata(self) -> "FormSchema":
@@ -378,6 +494,9 @@ class RenderWarning(BaseModel):
 
     Attributes:
         field_id: The ID of the field that triggered the fallback.
+        field_uid: The stable UUID identity of the field that triggered the
+            fallback (FEAT-393), when known. ``None`` for warnings emitted
+            outside a per-field rendering context.
         field_type: The FieldType.value string (e.g. "signature").
         renderer: The renderer name ("html5" | "adaptive_card" | "pdf" |
                   "xforms" | "jsonschema" | "telegram").
@@ -385,6 +504,7 @@ class RenderWarning(BaseModel):
     """
 
     field_id: str
+    field_uid: uuid.UUID | None = None
     field_type: str
     renderer: str
     reason: str

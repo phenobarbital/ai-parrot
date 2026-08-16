@@ -111,6 +111,9 @@ def _inject_genai_stub() -> None:
         "VoiceConfig", "PrebuiltVoiceConfig", "ContextWindowCompressionConfig",
         "SlidingWindow", "RealtimeInputConfig", "AutomaticActivityDetection",
         "Tool", "FunctionDeclaration", "FunctionResponse", "Content", "Part",
+        # FEAT-418 (TASK-2168): _build_live_config() now always requests
+        # session resumption via types.SessionResumptionConfig(...).
+        "SessionResumptionConfig",
     ]:
         setattr(types_mod, _name, _Stub)
 
@@ -193,11 +196,16 @@ def _make_handler() -> VoiceChatHandler:
 
 
 def _transcription_response(text: str) -> LiveVoiceResponse:
-    """Return a LiveVoiceResponse carrying a user transcription frame."""
+    """Return a LiveVoiceResponse carrying a user transcription frame.
+
+    FEAT-418 (TASK-2175): the canonical envelope is a role="user" response
+    carrying the actual transcript text, not
+    metadata["user_transcription"] (removed, no deprecation window).
+    """
     return LiveVoiceResponse(
-        text="",
+        text=text,
+        role="user",
         is_complete=False,
-        metadata={"user_transcription": text},
         session_id="test-session-stt",
         turn_id="turn-1",
     )
@@ -242,9 +250,10 @@ def _sent_types(connection: WebSocketConnection) -> List[str]:
 async def test_stt_only_emits_user_transcription():
     """STT-only mode forwards the ``transcription`` (is_user=True) frame.
 
-    When a LiveVoiceResponse carries ``metadata["user_transcription"]``, the
-    handler must emit a ``{"type": "transcription", "is_user": True, ...}``
-    message even in STT-only mode.
+    When a LiveVoiceResponse carries ``role="user"`` (canonical envelope,
+    FEAT-418 — was ``metadata["user_transcription"]`` before TASK-2167),
+    the handler must emit a ``{"type": "transcription", "is_user": True,
+    ...}`` message even in STT-only mode.
     """
     handler = _make_handler()
     connection = _make_connection(stt_only=True)
@@ -456,6 +465,14 @@ def test_build_live_config_stt_only_sets_empty_modalities():
     client.voice_name = "Puck"
     client.temperature = None
     client.max_tokens = None
+    # FEAT-418 (TASK-2166): _build_live_config() now also falls back to
+    # self.top_p when the per-call override is None — must be set on this
+    # bypassed-__init__ client or the fallback read raises AttributeError.
+    client.top_p = None
+    # FEAT-418 (TASK-2168): _build_live_config() always reads
+    # self._resumption_handle (normally set to None in __init__, bypassed
+    # here) to build the session_resumption config.
+    client._resumption_handle = None
     client.enable_tools = False
     client.logger = MagicMock()
 
@@ -481,6 +498,9 @@ def test_build_live_config_default_full_duplex():
     client.voice_name = "Puck"
     client.temperature = None
     client.max_tokens = None
+    # FEAT-418 (TASK-2166/2168): see comments in the STT-only variant above.
+    client.top_p = None
+    client._resumption_handle = None
     client.enable_tools = False
     client.logger = MagicMock()
 

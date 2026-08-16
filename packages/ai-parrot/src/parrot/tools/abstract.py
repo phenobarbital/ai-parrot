@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime
+import asyncio
+import re
 import time
 import traceback
 from urllib.parse import urlparse, urlunparse
@@ -56,6 +58,8 @@ def _get_output_scrubber():
     from ..security.redaction import OutputScrubber, ScrubPolicy  # noqa: PLC0415
     return OutputScrubber, ScrubPolicy
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_SCRUBBER = None  # initialised on first use (module-level singleton)
 
 
@@ -66,6 +70,110 @@ def _default_scrubber():
         OutputScrubber, ScrubPolicy = _get_output_scrubber()
         _DEFAULT_SCRUBBER = OutputScrubber(ScrubPolicy())
     return _DEFAULT_SCRUBBER
+
+
+# FEAT-396 (TASK-2029) — lazy import, same reasoning as _get_output_scrubber()
+# above. Fallback-only default guardrail: used when a tool has no
+# `_tool_output_pipeline` stamped on it (e.g. constructed/executed outside
+# a guardrails-aware bot). The normal, per-bot-config-respecting path is
+# `_run_tool_output_guardrails()` below, which resolves the tool's
+# `_tool_output_pipeline` — the OWNING BOT's real TOOL_OUTPUT
+# `GuardrailPipeline` (`AbstractBot._guardrail_pipelines[GuardrailStage.
+# TOOL_OUTPUT]`, stamped onto the tool by `ToolManager` — see
+# `tools/manager.py`) — so a bot's `guardrails=[...]` registrations
+# (custom Guardrail subclasses, a non-default SecretsGuardrail policy) are
+# actually honored here, not silently ignored.
+_DEFAULT_SECRETS_GUARDRAIL = None  # initialised on first use (module-level singleton)
+
+
+def _default_secrets_guardrail():
+    """Return the module-level singleton SecretsGuardrail (FEAT-396 TASK-2029)."""
+    global _DEFAULT_SECRETS_GUARDRAIL  # noqa: PLW0603
+    if _DEFAULT_SECRETS_GUARDRAIL is None:
+        from ..bots.guardrails.builtin.secrets import SecretsGuardrail  # noqa: PLC0415
+        _DEFAULT_SECRETS_GUARDRAIL = SecretsGuardrail()
+    return _DEFAULT_SECRETS_GUARDRAIL
+
+
+async def _run_tool_output_guardrails(
+    pipeline: Optional[Any], value: Any, tool_name: str
+) -> tuple[Any, dict[str, dict[str, Any]]]:
+    """Apply TOOL_OUTPUT guardrails to a single `ToolResult` field.
+
+    Resolves ``pipeline`` (the calling tool's ``_tool_output_pipeline`` —
+    the owning bot's real `GuardrailPipeline`, or ``None``) rather than a
+    hardcoded default, so a bot's own `guardrails=[...]` config is
+    actually honored.
+
+    ``value`` may be ``str`` (routed through the real pipeline — full
+    BLOCK/TRANSFORM/FLAG semantics via `Guardrail.check()`) or non-``str``
+    (``ToolResult.result``/``.metadata`` are frequently dict/list —
+    `Guardrail.check(content: str)`/`GuardrailResult.content` are
+    Pydantic-typed ``str``-only, TASK-2024, so non-string values are
+    instead routed to each registered guardrail's ``scrub(value,
+    tool_name)`` escape hatch when it exposes one — e.g. `SecretsGuardrail`
+    — and left untouched by guardrails that don't).
+
+    ``on_error`` is honored for BOTH content shapes (code review fix,
+    post-TASK-2029): a ``fail_closed`` guardrail whose ``scrub()`` raises
+    on non-string content now blocks that field (type-preserving
+    placeholder — dict/list stay dict/list) instead of silently passing
+    the unscrubbed value through, matching the acceptance criterion "a
+    raising `fail_closed` [guardrail] blocks it" for the string path.
+
+    Args:
+        pipeline: The tool's `_tool_output_pipeline`, or ``None`` (falls
+            back to the process-wide default `SecretsGuardrail`).
+        value: The field value to scrub.
+        tool_name: Audit-log tool-name hint.
+
+    Returns:
+        A ``(value, flag_reports)`` tuple. ``value`` is the (possibly
+        transformed) field content — on BLOCK, a canned placeholder, never
+        the offending content. ``flag_reports`` carries FLAG-stage reports
+        keyed by guardrail name (string path only — the ``scrub()`` escape
+        hatch has no report concept), for the caller to attach to
+        ``ToolResult.metadata["guardrails"]``.
+    """
+    if pipeline is None or not pipeline.has_guardrails:
+        return _default_secrets_guardrail().scrub(value, tool_name=tool_name), {}
+
+    if isinstance(value, str):
+        from ..bots.guardrails.base import GuardrailContext, GuardrailStage  # noqa: PLC0415
+        ctx = GuardrailContext(
+            stage=GuardrailStage.TOOL_OUTPUT, agent_name=tool_name, tool_name=tool_name,
+        )
+        outcome = await pipeline.run(value, ctx)
+        if outcome.blocked:
+            return f"[content removed by guardrail: {outcome.reason}]", {}
+        return (outcome.content if outcome.content is not None else value), outcome.flag_reports
+
+    for guardrail in pipeline.guardrails:
+        scrub = getattr(guardrail, "scrub", None)
+        if not callable(scrub):
+            continue
+        try:
+            value = scrub(value, tool_name=tool_name)
+        except Exception as exc:  # noqa: BLE001 - guardrail error contract, see on_error
+            if getattr(guardrail, "on_error", "fail_open") == "fail_closed":
+                logger.error(
+                    "Guardrail '%s' raised %s while scrubbing non-string TOOL_OUTPUT "
+                    "content for tool %s; on_error=fail_closed -> blocking",
+                    guardrail.name, type(exc).__name__, tool_name,
+                )
+                placeholder = f"[content removed by guardrail: {guardrail.name}]"
+                if isinstance(value, dict):
+                    return {"_blocked_by_guardrail": guardrail.name}, {}
+                if isinstance(value, list):
+                    return [placeholder], {}
+                return placeholder, {}
+            logger.warning(
+                "Guardrail '%s' raised %s while scrubbing non-string TOOL_OUTPUT "
+                "content for tool %s; on_error=fail_open -> leaving unchanged",
+                guardrail.name, type(exc).__name__, tool_name,
+            )
+            continue
+    return value, {}
 
 
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
@@ -152,6 +260,18 @@ class AbstractTool(EventEmitterMixin, ABC):
     # agent (via ToolManager) stamps this flag on its tools when the agent is
     # created with ``enable_redaction=True``; unflagged agents skip scrubbing.
     enable_redaction: bool = False
+    # FEAT-396 (TASK-2029, corrected post-review): the owning bot's
+    # TOOL_OUTPUT GuardrailPipeline, stamped by ToolManager alongside
+    # enable_redaction above (tools have no bot back-reference by design —
+    # see `parrot.bots.guardrails`). ``None`` for tools not owned by a
+    # guardrails-aware bot (e.g. constructed standalone); the FEAT-252 hook
+    # falls back to `_default_secrets_guardrail()` in that case.
+    _tool_output_pipeline: Optional[Any] = None
+    # FEAT-391: opt-in lazy resource lifecycle. When True, execute() calls
+    # _ensure_open() (which calls _open() at most once) before the first
+    # _execute(). Tools that don't manage external resources leave this
+    # False (default) — fully backward compatible, no automatic I/O.
+    auto_open: bool = False
 
     def __init__(
         self,
@@ -219,6 +339,16 @@ class AbstractTool(EventEmitterMixin, ABC):
 
         # Initialize permission context (per-call, set in execute())
         self._current_pctx: Optional[Any] = None
+
+        # FEAT-391: per-instance lazy-resource-lifecycle flag. Must be set
+        # here (not as a class attribute) so it is never shared across
+        # instances of the same tool class.
+        self._opened: bool = False
+        # Guards _ensure_open() against a first-open race: two coroutines
+        # calling execute() concurrently on the same instance before either
+        # has set _opened=True must not both invoke _open(). asyncio.Lock()
+        # is safe to construct here without a running loop (3.10+).
+        self._open_lock: asyncio.Lock = asyncio.Lock()
 
         # Set up logging
         self.logger = logging.getLogger(
@@ -288,6 +418,55 @@ class AbstractTool(EventEmitterMixin, ABC):
         """
         clone_kwargs = self._get_clone_kwargs()
         return self.__class__(**clone_kwargs)
+
+    # ── FEAT-391: per-tool connection lifecycle ─────────────────────────────
+
+    async def _open(self) -> None:
+        """
+        Acquire external resources (connections, sessions, pools).
+
+        No-op by default. Subclasses that need a resource lifecycle
+        (database connections, HTTP sessions, broker channels, etc.)
+        should override this. Called at most once per instance lifetime
+        via :meth:`_ensure_open`, and only when ``auto_open`` is True.
+
+        If this raises after partially acquiring a resource, ``_opened``
+        stays ``False`` (see :meth:`_ensure_open`), so ``_close()`` will
+        NOT be invoked automatically for the partial state. Overrides that
+        can partially succeed before raising are responsible for releasing
+        whatever they already acquired before re-raising.
+        """
+
+    async def _close(self) -> None:
+        """
+        Release external resources acquired by :meth:`_open`.
+
+        No-op by default. Subclasses that override :meth:`_open` should
+        override this to release the corresponding resources. Always
+        resets ``_opened`` to ``False`` so the tool can be re-opened
+        (via :meth:`_ensure_open`) afterwards. Overrides MUST call
+        ``await super()._close()`` (or reset ``self._opened = False``
+        themselves) — otherwise the tool can never be re-opened.
+        """
+        self._opened = False
+
+    async def _ensure_open(self) -> None:
+        """
+        Idempotent gate that calls :meth:`_open` at most once.
+
+        Guarded by :attr:`_open_lock` so two coroutines racing into this
+        method concurrently (e.g. two tool calls fired in the same agent
+        turn) cannot both observe ``_opened is False`` and both invoke
+        :meth:`_open` (double-acquiring the underlying resource).
+
+        If ``_open()`` raises, ``_opened`` is left ``False`` so the next
+        call retries resource acquisition (recovers from transient
+        errors automatically).
+        """
+        async with self._open_lock:
+            if not self._opened:
+                await self._open()
+                self._opened = True
 
     @abstractmethod
     async def _execute(self, **kwargs) -> Any:
@@ -455,7 +634,9 @@ class AbstractTool(EventEmitterMixin, ABC):
             result = self.args_schema(**kwargs)
             if not result:
                 self.logger.warning(
-                    "Validation failed for %s with args: %s", self.name, kwargs
+                    "Validation failed for %s with args: %s",
+                    self.name,
+                    self._redact_keys(kwargs),
                 )
             return result
         except Exception as e:
@@ -463,6 +644,62 @@ class AbstractTool(EventEmitterMixin, ABC):
             raise ValueError(
                 f"Invalid arguments for {self.name}: {e}"
             ) from e
+
+    @staticmethod
+    def _shallow_dump(validated: BaseModel) -> Dict[str, Any]:
+        """Turn validated args into kwargs while keeping nested models intact.
+
+        ``validate_args`` coerces the raw JSON an LLM emits into the types the
+        tool declared, so a field annotated ``List[DerivedMetric]`` really does
+        hold ``DerivedMetric`` instances afterwards. ``model_dump()`` would
+        immediately undo that: it serialises *recursively*, so every nested
+        model collapses back into a plain dict and the tool body then fails on
+        attribute access (``'dict' object has no attribute 'name'``).
+
+        Reading the fields straight off the validated instance keeps this a
+        one-level conversion: the result is a plain kwargs dict, but each value
+        stays the type the tool's signature asked for.
+
+        Args:
+            validated: The Pydantic instance returned by ``validate_args``.
+
+        Returns:
+            A kwargs dict mapping field names to their validated values,
+            including any extra fields the schema allowed.
+        """
+        model_cls = type(validated)
+        data = {
+            name: getattr(validated, name)
+            for name in model_cls.model_fields
+        }
+        # The two things model_dump() also included, kept for parity so this
+        # stays a drop-in replacement: computed fields, and the unknown keys
+        # that schemas declared with extra="allow" collect in model_extra.
+        for name in getattr(model_cls, "model_computed_fields", {}):
+            data[name] = getattr(validated, name)
+        extra = getattr(validated, "model_extra", None)
+        if extra:
+            data.update(extra)
+        return data
+
+    # ── Sensitive-key redaction for logging ─────────────────────────────────
+
+    _REDACT_PATTERNS = re.compile(
+        r"password|passwd|secret|token|api_key|apikey|credential|auth",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _redact_keys(cls, kwargs: dict) -> dict:
+        """Return a shallow copy of *kwargs* with sensitive-looking values masked.
+
+        Keys whose names match common credential patterns are replaced with
+        ``'***'`` so the dict is safe for logging without leaking secrets.
+        """
+        return {
+            k: "***" if cls._REDACT_PATTERNS.search(k) else v
+            for k, v in kwargs.items()
+        }
 
     # ── FEAT-176 lifecycle helpers ────────────────────────────────────────────
 
@@ -521,6 +758,20 @@ class AbstractTool(EventEmitterMixin, ABC):
             return len(str(result).encode("utf-8"))
         except Exception:
             return 0
+
+    def _has_tool_output_guardrails(self) -> bool:
+        """Whether the owning bot registered real TOOL_OUTPUT guardrails.
+
+        FEAT-396 (TASK-2029, corrected post-review): a bot may register a
+        custom TOOL_OUTPUT `Guardrail` via `guardrails=[...]` without also
+        setting the legacy `enable_redaction` flag — the FEAT-252 hook must
+        still run in that case, not only when `enable_redaction` is True.
+
+        Returns:
+            True if `self._tool_output_pipeline` is set and non-empty.
+        """
+        pipeline = self._tool_output_pipeline
+        return pipeline is not None and pipeline.has_guardrails
 
     # ── Core execution ────────────────────────────────────────────────────────
 
@@ -599,6 +850,16 @@ class AbstractTool(EventEmitterMixin, ABC):
 
         # ── Normal execution ─────────────────────────────────────────────────
         try:
+            # FEAT-391: lazy resource acquisition (opt-in via auto_open).
+            # Skipped when a remote executor is configured — _execute()
+            # runs inside the worker process in that case (see the
+            # `self.executor is not None` branch below), so opening
+            # resources here (the caller/local process) would be both
+            # pointless and wrong. The worker opens its own resources via
+            # run_envelope_inprocess() (executors/runner.py) instead.
+            if self.auto_open and self.executor is None:
+                await self._ensure_open()
+
             self.logger.info("Executing tool: %s", self.name)
 
             # Validate arguments
@@ -606,7 +867,7 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             # Resolve the kwargs dict that the tool actually receives.
             if hasattr(validated_args, 'model_dump'):
-                resolved_kwargs = validated_args.model_dump()
+                resolved_kwargs = self._shallow_dump(validated_args)
             else:
                 resolved_kwargs = dict(kwargs)
 
@@ -705,28 +966,49 @@ class AbstractTool(EventEmitterMixin, ABC):
             # This is the ONLY place scrubbing happens on the way out; all
             # downstream callers receive a pre-scrubbed ToolResult.
             # Redaction is opt-in per agent: only tools stamped with
-            # enable_redaction=True (flagged agents) are scrubbed.
-            if self.enable_redaction:
+            # enable_redaction=True (flagged agents) are scrubbed — OR
+            # whose owning bot registered real TOOL_OUTPUT guardrails via
+            # `guardrails=[...]` (FEAT-396, corrected post-review: a bot
+            # can register a custom TOOL_OUTPUT guardrail WITHOUT also
+            # setting the legacy enable_redaction flag; gating on that flag
+            # alone would silently skip it).
+            # `_run_tool_output_guardrails()` resolves this tool's OWNING
+            # BOT's real TOOL_OUTPUT `GuardrailPipeline`
+            # (`self._tool_output_pipeline`, stamped by `ToolManager`) —
+            # honoring per-bot `guardrails=[...]` config — falling back to
+            # the process-wide default `SecretsGuardrail` only when no
+            # pipeline was stamped (tool used outside a bot context).
+            if self.enable_redaction or self._has_tool_output_guardrails():
                 try:
-                    _scrubber = _default_scrubber()
+                    _pipeline = self._tool_output_pipeline
+                    # FEAT-396 code review fix: FLAG reports were computed
+                    # by the TOOL_OUTPUT pipeline and then discarded — no
+                    # caller ever surfaced them, unlike the OUTPUT stage's
+                    # `AIMessage.metadata["guardrails"]` handling. Accumulate
+                    # them here and attach below, same shape/key convention.
+                    _tool_flag_reports: dict[str, dict[str, Any]] = {}
                     if tool_result.result is not None:
-                        tool_result = tool_result.model_copy(
-                            update={"result": _scrubber.scrub(
-                                tool_result.result, tool_name=_tool_name
-                            )}
+                        _scrubbed_result, _reports = await _run_tool_output_guardrails(
+                            _pipeline, tool_result.result, _tool_name
                         )
+                        tool_result = tool_result.model_copy(update={"result": _scrubbed_result})
+                        _tool_flag_reports.update(_reports)
                     if tool_result.error is not None:
-                        tool_result = tool_result.model_copy(
-                            update={"error": _scrubber.scrub(
-                                tool_result.error, tool_name=_tool_name
-                            )}
+                        _scrubbed_error, _reports = await _run_tool_output_guardrails(
+                            _pipeline, tool_result.error, _tool_name
                         )
+                        tool_result = tool_result.model_copy(update={"error": _scrubbed_error})
+                        _tool_flag_reports.update(_reports)
                     if tool_result.metadata:
-                        tool_result = tool_result.model_copy(
-                            update={"metadata": _scrubber.scrub(
-                                tool_result.metadata, tool_name=_tool_name
-                            )}
+                        _scrubbed_metadata, _reports = await _run_tool_output_guardrails(
+                            _pipeline, tool_result.metadata, _tool_name
                         )
+                        tool_result = tool_result.model_copy(update={"metadata": _scrubbed_metadata})
+                        _tool_flag_reports.update(_reports)
+                    if _tool_flag_reports:
+                        _merged_metadata = dict(tool_result.metadata)
+                        _merged_metadata.setdefault('guardrails', {}).update(_tool_flag_reports)
+                        tool_result = tool_result.model_copy(update={"metadata": _merged_metadata})
                 except Exception as _scrub_exc:  # never let scrub errors break tool execution
                     self.logger.warning(
                         "OutputScrubber error in tool %s (non-fatal): %s",
@@ -778,10 +1060,11 @@ class AbstractTool(EventEmitterMixin, ABC):
             self.logger.error("%s", error_msg)
             self.logger.debug("%s", traceback.format_exc())
 
-            if self.enable_redaction:
+            if self.enable_redaction or self._has_tool_output_guardrails():
                 try:
-                    _scrubber = _default_scrubber()
-                    error_msg = _scrubber.scrub(error_msg, tool_name=_tool_name)
+                    error_msg, _ = await _run_tool_output_guardrails(
+                        self._tool_output_pipeline, error_msg, _tool_name
+                    )
                 except Exception:
                     pass
 

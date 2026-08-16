@@ -125,6 +125,15 @@ class TestSplitIntoQuestions:
         assert questions[0].field_id == "name"
         assert questions[1].field_id == "age"
 
+    def test_question_carries_field_uid(
+        self, renderer: AudioFormRenderer, simple_form: FormSchema
+    ) -> None:
+        """FEAT-393: AudioQuestion.field_uid is populated from the source field."""
+        questions = renderer.split_into_questions(simple_form)
+        name_field, age_field, _secret_field = simple_form.sections[0].fields
+        assert questions[0].field_uid == name_field.field_uid
+        assert questions[1].field_uid == age_field.field_uid
+
     def test_questions_are_indexed(
         self, renderer: AudioFormRenderer, simple_form: FormSchema
     ) -> None:
@@ -196,7 +205,8 @@ class TestRender:
     ) -> None:
         """render() returns correct manifest structure."""
         result = await renderer.render(simple_form)
-        assert result.content["form_id"] == "test-001"
+        # FEAT-389: manifest identity is form_uid, not the mutable form_id slug.
+        assert result.content["form_uid"] == str(simple_form.form_uid)
         assert result.content["total_questions"] == 2
         assert "questions" in result.content
 
@@ -207,7 +217,7 @@ class TestRender:
         """render() manifest includes WebSocket endpoint path."""
         result = await renderer.render(simple_form)
         assert "/audio/ws" in result.content["ws_endpoint"]
-        assert "test-001" in result.content["ws_endpoint"]
+        assert str(simple_form.form_uid) in result.content["ws_endpoint"]
 
     @pytest.mark.asyncio
     async def test_manifest_locale(
@@ -445,7 +455,7 @@ class TestBuildAudioSynthesizer:
 
     def test_build_honors_config_backend(self) -> None:
         """An explicit google config is reflected in the built synth."""
-        cfg = AudioSessionConfig(form_id="f", tts_backend="google")
+        cfg = AudioSessionConfig(form_uid="f", tts_backend="google")
         synth = build_audio_synthesizer(cfg)
         assert synth is not None
         assert synth.config.backend == "google"

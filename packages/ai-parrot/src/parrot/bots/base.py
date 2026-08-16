@@ -20,8 +20,6 @@ from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
 from ..utils.helpers import RequestContext, _current_ctx
-from ..security import PromptInjectionException
-from ..security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1612)
 from .prompts import (
     OUTPUT_SYSTEM_PROMPT
 )
@@ -55,10 +53,17 @@ from parrot.core.events.lifecycle.events import (
     InvokeFailedEvent,
 )
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
-from parrot.observability.context import current_agent_name
+# user_id/session_id ContextVars: per-user usage attribution in OTEL span attributes
+from parrot.observability.context import (
+    current_agent_name,
+    current_session_id,
+    current_user_id,
+)
 
-# FEAT-252 (TASK-1612): module-level egress scrubber singleton for channel delivery
-_BOT_EGRESS_SCRUBBER: OutputScrubber = OutputScrubber(ScrubPolicy())
+# FEAT-252 (TASK-1612): the module-level egress scrubber singleton that used
+# to live here was removed in FEAT-396 (TASK-2029) — the unified OUTPUT
+# GuardrailPipeline (SecretsGuardrail) now covers channel egress for ALL
+# output modes, superseding the 4-chat-mode-only scrub this singleton served.
 
 
 class BaseBot(AbstractBot):
@@ -195,7 +200,10 @@ class BaseBot(AbstractBot):
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
         # Token-based set/reset is nested-safe (inner agents restore outer value).
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
         try:
             return await self._conversation_body(
                 question=question,
@@ -219,6 +227,8 @@ class BaseBot(AbstractBot):
                 **kwargs,
             )
         finally:
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)
 
     async def _conversation_body(
@@ -534,7 +544,7 @@ class BaseBot(AbstractBot):
                         source_name=self.name,
                     ))
                     # return the response Object:
-                    return self.get_response(
+                    return await self.get_response(
                         response,
                         return_sources,
                         return_context
@@ -608,7 +618,10 @@ class BaseBot(AbstractBot):
             AIMessage: The response from the LLM
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -618,35 +631,39 @@ class BaseBot(AbstractBot):
             turn_id = str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
 
-            # SECURITY: Sanitize question. The wrap is for the LLM call ONLY —
-            # do NOT rebind ``question`` here, otherwise the security wrapper
+            # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
+            # (prompt-injection detection + legacy PromptPipeline
+            # transforms). The wrap/transform is for the LLM call ONLY — do
+            # NOT rebind ``question`` here, otherwise the security wrapper
             # leaks into events, conversation memory and downstream agents.
-            try:
-                prompt_for_llm = await self._sanitize_question(
-                    question=question,
-                    user_id=user_id,
-                    session_id=session_id,
-                    context={'method': 'invoke'},
-                    _trusted_source=_trusted_source,
-                )
-            except PromptInjectionException:
+            _input_outcome = await self._run_input_pipeline(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                method='invoke',
+                _trusted_source=_trusted_source,
+            )
+            if _input_outcome.blocked:
+                # NOTE (FEAT-396 TASK-2028): `AIMessage(content=..., metadata=...)`
+                # is not a valid construction — `content` is a read/write
+                # *property* backed by `output`, not a Pydantic field, and
+                # `input`/`output`/`model`/`provider`/`usage` are all
+                # required with no defaults. This exact call (verbatim from
+                # the pre-migration code) would have raised a
+                # `pydantic.ValidationError` the first time a threat was
+                # ever actually blocked here — apparently never exercised by
+                # an existing test. Fixed using the same minimal-AIMessage
+                # pattern already established at `bots/base.py:1807` (ask_stream's
+                # defensive-fallback AIMessage).
                 return AIMessage(
-                    content="Your request could not be processed due to security concerns.",
+                    input=question,
+                    output="Your request could not be processed due to security concerns.",
+                    model='',
+                    provider='',
+                    usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
                     metadata={'error': 'security_block'}
                 )
-
-            # Apply prompt pipeline (also LLM-call-only; preserves the canonical
-            # ``question`` for events/memory).
-            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-                prompt_for_llm = await self._prompt_pipeline.apply(
-                    prompt_for_llm,
-                    context={
-                        'agent_name': self.name,
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'method': 'ask',
-                    }
-                )
+            prompt_for_llm = _input_outcome.content
 
             # Update status and trigger start event
             self.status = AgentStatus.WORKING
@@ -718,6 +735,12 @@ class BaseBot(AbstractBot):
                 response.session_id = session_id
                 response.turn_id = turn_id
 
+                # FEAT-396 code review fix: surface INPUT-stage FLAG reports
+                # (computed above by `_run_input_pipeline`, previously
+                # discarded) the same way `_run_output_pipeline` already
+                # does for OUTPUT-stage ones.
+                self._merge_guardrail_reports(response, _input_outcome.flag_reports)
+
                 if response_model:
                     return response  # return structured response directly
 
@@ -747,7 +770,7 @@ class BaseBot(AbstractBot):
                     result=response.output
                 )
 
-                return self.get_response(
+                return await self.get_response(
                     response,
                     return_sources=False,
                     return_context=False
@@ -775,6 +798,8 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     # ── ask() lifecycle hooks (overridden by mixins) ──
@@ -967,7 +992,17 @@ class BaseBot(AbstractBot):
             AIMessage or formatted output based on output_mode
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
+        # FEAT-176 bookkeeping, bound BEFORE the try because every `except`
+        # branch below reads both. Anything that raises earlier than their
+        # original in-try assignment — the input guardrail pipeline, for one —
+        # would otherwise make the handler itself raise UnboundLocalError and
+        # replace the real exception with a misleading one.
+        _trace_ctx = trace_context or TraceContext.new_root()
+        _ask_started_ms = time.perf_counter()
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -990,44 +1025,45 @@ class BaseBot(AbstractBot):
             turn_id = str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
 
-            # Security: sanitize the user's question. The wrap is for the LLM
-            # call ONLY — keep ``question`` clean so events, conversation memory,
-            # vector retrieval and downstream agents see the canonical input.
-            try:
-                prompt_for_llm = await self._sanitize_question(
-                    question=question,
-                    user_id=user_id,
-                    session_id=session_id,
-                    context={'method': 'ask'},
-                    _trusted_source=_trusted_source,
-                )
-            except PromptInjectionException as e:
-                # Return error response instead of crashing
+            # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
+            # (prompt-injection detection + legacy PromptPipeline
+            # transforms). The wrap/transform is for the LLM call ONLY —
+            # keep ``question`` clean so events, conversation memory, vector
+            # retrieval and downstream agents see the canonical input.
+            _input_outcome = await self._run_input_pipeline(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                method='ask',
+                _trusted_source=_trusted_source,
+            )
+            if _input_outcome.blocked:
+                # Same canned shape as the legacy PromptInjectionException
+                # catch, including `threats_detected` — now sourced from the
+                # blocking guardrail's report (see PromptInjectionGuardrail).
+                # NOTE (FEAT-396 TASK-2028): see the `invoke()` seam above for
+                # why this uses `input=`/`output=`/`model=`/`provider=`/
+                # `usage=` instead of the invalid `content=` kwarg the
+                # pre-migration code used here.
+                _threats_detected = _input_outcome.flag_reports.get(
+                    'prompt_injection', {}
+                ).get('threats_detected', 0)
                 return AIMessage(
-                    content="Your request could not be processed due to security concerns. Please rephrase your question.",
+                    input=question,
+                    output="Your request could not be processed due to security concerns. Please rephrase your question.",
+                    model='',
+                    provider='',
+                    usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
                     metadata={
                         'error': 'security_block',
-                        'threats_detected': len(e.threats)
+                        'threats_detected': _threats_detected
                     }
                 )
+            prompt_for_llm = _input_outcome.content
 
-            # Apply prompt pipeline (LLM-call-only; canonical ``question`` stays
-            # untouched).
-            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-                prompt_for_llm = await self._prompt_pipeline.apply(
-                    prompt_for_llm,
-                    context={
-                        'agent_name': self.name,
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'method': 'ask',
-                    }
-                )
-
-            # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
-            _trace_ctx = trace_context or TraceContext.new_root()
+            # FEAT-176: publish the trace context resolved above and emit
+            # BeforeInvokeEvent.
             self._current_trace_context = _trace_ctx
-            _ask_started_ms = time.perf_counter()
             await self.events.emit(BeforeInvokeEvent(
                 trace_context=_trace_ctx,
                 agent_name=self.name,
@@ -1309,6 +1345,12 @@ class BaseBot(AbstractBot):
                     use_tools,
                 )
 
+                # FEAT-396 code review fix: surface INPUT-stage FLAG reports
+                # (computed above by `_run_input_pipeline`, previously
+                # discarded) the same way `_run_output_pipeline` already
+                # does for OUTPUT-stage ones.
+                self._merge_guardrail_reports(response, _input_outcome.flag_reports)
+
                 # Save conversation turn
                 phase_started = time.perf_counter()
                 if use_conversation_history and memory:
@@ -1439,12 +1481,12 @@ class BaseBot(AbstractBot):
                     OutputMode.SLACK,
                     OutputMode.WHATSAPP,
                 ]:
-                    # FEAT-252 (TASK-1612): scrub at channel egress before delivery.
-                    # Opt-in per agent — only flagged agents redact.
-                    if getattr(self, 'enable_redaction', False) and isinstance(response.output, str):
-                        response.output = _BOT_EGRESS_SCRUBBER.scrub(
-                            response.output, tool_name=self.name
-                        )
+                    # FEAT-252 (TASK-1612) channel-egress scrub used to run
+                    # HERE, gated to these 4 chat modes only. FEAT-396
+                    # (TASK-2029) folds it into the general OUTPUT
+                    # GuardrailPipeline call below, which now runs for ALL
+                    # output modes (a deliberate behavior extension — spec
+                    # §2) — nothing mode-specific left to do here.
                     response.output_mode = output_mode
 
                 elif output_mode == OutputMode.A2UI:
@@ -1467,6 +1509,11 @@ class BaseBot(AbstractBot):
                     # Assign extracted data if we found any
                     if extracted_data and not response.data:
                         response.data = extracted_data
+
+                # FEAT-396 (TASK-2029): unified OUTPUT guardrail pipeline —
+                # runs for every output_mode (supersedes the old 4-chat-mode-only
+                # channel-egress scrub branch above).
+                response = await self._run_output_pipeline(response, method='ask')
 
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED,
@@ -1582,6 +1629,8 @@ class BaseBot(AbstractBot):
         finally:
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     async def ask_stream(
@@ -1607,7 +1656,10 @@ class BaseBot(AbstractBot):
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
+        # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
         _agent_token = current_agent_name.set(self.name)
+        _user_token = current_user_id.set(user_id)
+        _session_token = current_session_id.set(session_id)
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -1636,33 +1688,24 @@ class BaseBot(AbstractBot):
                 source_name=self.name,
             ))
 
-            try:
-                # The wrap is for the LLM call ONLY; keep ``question`` clean.
-                prompt_for_llm = await self._sanitize_question(
-                    question=question,
-                    user_id=user_id,
-                    session_id=session_id,
-                    context={'method': 'ask_stream'},
-                    _trusted_source=_trusted_source,
-                )
-            except PromptInjectionException:
+            # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
+            # (prompt-injection detection + legacy PromptPipeline
+            # transforms). The wrap/transform is for the LLM call ONLY;
+            # keep ``question`` clean.
+            _input_outcome = await self._run_input_pipeline(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                method='ask_stream',
+                _trusted_source=_trusted_source,
+            )
+            if _input_outcome.blocked:
                 yield (
                     "Your request could not be processed due to security concerns. "
                     "Please rephrase your question."
                 )
                 return
-
-            # Apply prompt pipeline (LLM-call-only; ``question`` stays untouched).
-            if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-                prompt_for_llm = await self._prompt_pipeline.apply(
-                    prompt_for_llm,
-                    context={
-                        'agent_name': self.name,
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'method': 'ask',
-                    }
-                )
+            prompt_for_llm = _input_outcome.content
 
             default_max_tokens = self._llm_kwargs.get('max_tokens', None)
             max_tokens = kwargs.get('max_tokens', default_max_tokens)
@@ -1789,13 +1832,39 @@ class BaseBot(AbstractBot):
                 full_response = ""
                 ai_message = None
                 stream_error: Optional[Exception] = None
+                # FEAT-396 code review fix: OUTPUT_STREAM FLAG reports were
+                # computed per-chunk by `_feed_streaming_guardrails` and
+                # then discarded — accumulate them here and merge onto the
+                # final `ai_message.metadata['guardrails']` below, same as
+                # `_run_output_pipeline` already does for the OUTPUT stage.
+                _stream_flag_reports: dict[str, dict[str, Any]] = {}
                 try:
+                    _stream_blocked = False
                     async for chunk in client.ask_stream(**llm_kwargs):
                         if isinstance(chunk, AIMessage):
                             ai_message = chunk
                         else:
-                            full_response += chunk
-                            yield chunk
+                            # FEAT-396 (TASK-2029): wrap chunk yields through
+                            # registered StreamingGuardrail adapters + the
+                            # OUTPUT_STREAM GuardrailPipeline (both empty by
+                            # default today — zero-overhead passthrough; see
+                            # `_feed_streaming_guardrails`).
+                            transformed_chunk, _stream_blocked, _chunk_flags = (
+                                await self._feed_streaming_guardrails(chunk)
+                            )
+                            if _chunk_flags:
+                                _stream_flag_reports.update(_chunk_flags)
+                            if _stream_blocked:
+                                break
+                            full_response += transformed_chunk
+                            if transformed_chunk:
+                                yield transformed_chunk
+                    if not _stream_blocked:
+                        # Flush any content a StreamingGuardrail adapter withheld.
+                        _stream_tail = self._flush_streaming_guardrails()
+                        if _stream_tail:
+                            full_response += _stream_tail
+                            yield _stream_tail
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -1826,8 +1895,10 @@ class BaseBot(AbstractBot):
 
                 if ai_message is None:
                     # Defensive fallback: client did not yield an AIMessage sentinel
-                    # (either because it errored mid-stream, or because the client
-                    # implementation forgot to yield the final envelope).
+                    # (either because it errored mid-stream, because a
+                    # guardrail blocked the stream (FEAT-396 TASK-2029), or
+                    # because the client implementation forgot to yield the
+                    # final envelope).
                     # Use prompt_for_llm (the actual text sent to the LLM) so that
                     # ai_message.input is consistent with what client-yielded
                     # AIMessages carry.
@@ -1845,8 +1916,9 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         session_id=session_id,
                         turn_id=_turn_id,
-                        finish_reason="error" if stream_error else "completed",
-                        stop_reason="error" if stream_error else "completed",
+                        finish_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
+                        stop_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
+                        metadata={'error': 'security_block'} if _stream_blocked else {},
                     )
                 elif stream_error and not (ai_message.response or '').strip():
                     # Client yielded an AIMessage but it carries no text (e.g.
@@ -1857,6 +1929,18 @@ class BaseBot(AbstractBot):
                     ai_message.output = ai_message.output or full_response
                     ai_message.finish_reason = "error"
                     ai_message.stop_reason = "error"
+
+                # FEAT-396 code review fix: surface INPUT-stage and
+                # accumulated OUTPUT_STREAM-stage FLAG reports (previously
+                # discarded) onto the final envelope, same as the OUTPUT
+                # stage already gets via `_run_output_pipeline` below.
+                self._merge_guardrail_reports(ai_message, _input_outcome.flag_reports)
+                self._merge_guardrail_reports(ai_message, _stream_flag_reports)
+
+                # FEAT-396 (TASK-2029): run the OUTPUT guardrail pipeline on
+                # the final AIMessage at stream close (chunks were already
+                # covered by the StreamingGuardrail adapters above).
+                ai_message = await self._run_output_pipeline(ai_message, method='ask_stream')
 
                 # FEAT-176: emit AfterInvokeEvent on success.
                 _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
@@ -1902,4 +1986,6 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self._current_trace_context = None
+            current_session_id.reset(_session_token)
+            current_user_id.reset(_user_token)
             current_agent_name.reset(_agent_token)  # FEAT-228

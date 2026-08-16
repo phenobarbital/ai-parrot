@@ -17,6 +17,10 @@ See sdd/specs/agentsflow-refactor-spec3.spec.md for the full design.
 from __future__ import annotations
 
 import asyncio
+import os
+import socket
+import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, Union
 
@@ -30,15 +34,27 @@ from ..core.context import FlowContext
 from ..core.fsm import AgentTaskMachine
 from ..core.result import (
     FlowResult,
+    _serialise_result_value,
     build_node_metadata,
     determine_run_status,
 )
+from ..core.checkpoint.checkpointer import FlowCheckpointer
+from ..core.checkpoint.errors import (
+    CheckpointNotFoundError,
+    FlowNotExportableError,
+)
+from ..core.checkpoint.model import FlowCheckpoint, MemoryRefs
+from ..core.checkpoint.serializer import FlowStateSerializer
+from ..core.checkpoint.store.base import CheckpointStore
+from ..core.checkpoint.recovery import get_recovery_service
+from ..core.checkpoint.store.factory import get_checkpoint_store
 from ..core.storage import PersistenceMixin
 from ..core.storage.synthesis import synthesize_results
 from ..core.types import DependencyResults
+from parrot.conf import FLOW_CHECKPOINT_HISTORY, FLOW_CHECKPOINT_REDIS_TTL
 
 # Declarative layer (intra-subpackage)
-from .definition import FlowDefinition, NodeDefinition
+from .definition import EdgeDefinition, FlowDefinition, NodeDefinition
 
 # Decision-node canonical implementations (TASK-1311)
 from .nodes import (
@@ -187,6 +203,20 @@ class AgentsFlow(PersistenceMixin):
             attached later via :meth:`add_node_event_listener`.
         **kwargs: Forwarded to ``PersistenceMixin`` (and ultimately
             ``object.__init__``).
+        checkpoint: Enable AgentsFlow state checkpointing (FEAT-399).
+            Default ``False`` — zero behavior change when omitted.
+        checkpoint_retention: Ephemeral (Redis) checkpoint TTL in seconds.
+            Defaults to ``FLOW_CHECKPOINT_REDIS_TTL``.
+        checkpoint_history: Max retained checkpoints per flow. Defaults to
+            ``FLOW_CHECKPOINT_HISTORY``.
+        checkpoint_include_responses: Include raw per-node responses in
+            checkpoints (heavy; results-only by default).
+        durable: Write-through every checkpoint to the durable store too.
+        checkpoint_store: Ephemeral ``CheckpointStore`` name/instance/None
+            (env fallback) — resolved via ``get_checkpoint_store()``.
+        durable_store: Durable ``CheckpointStore`` name/instance/None.
+        flow_id: Stable identifier for this flow run, used as the
+            checkpoint key. Auto-generated (UUID4) when omitted.
     """
 
     def __init__(
@@ -201,6 +231,14 @@ class AgentsFlow(PersistenceMixin):
                 Sequence[Callable[[str, str, Dict[str, Any]], Any]],
             ]
         ] = None,
+        checkpoint: bool = False,
+        checkpoint_retention: Optional[int] = None,
+        checkpoint_history: Optional[int] = None,
+        checkpoint_include_responses: bool = False,
+        durable: bool = False,
+        checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
+        durable_store: Optional[Union[str, CheckpointStore]] = None,
+        flow_id: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -226,6 +264,36 @@ class AgentsFlow(PersistenceMixin):
             else:
                 self._node_event_listeners.extend(on_node_event)
         self.logger = logging.getLogger(f"parrot.flow.{name}")
+
+        # ── Checkpointing (FEAT-399) ────────────────────────────────────
+        self.flow_id: str = flow_id or str(uuid.uuid4())
+        self._checkpoint_enabled = checkpoint
+        self._checkpoint_retention = (
+            FLOW_CHECKPOINT_REDIS_TTL
+            if checkpoint_retention is None
+            else checkpoint_retention
+        )
+        self._checkpoint_history = (
+            FLOW_CHECKPOINT_HISTORY if checkpoint_history is None else checkpoint_history
+        )
+        self._checkpoint_include_responses = checkpoint_include_responses
+        self._checkpoint_durable = durable
+        self._checkpoint_store_arg = checkpoint_store
+        self._durable_store_arg = durable_store
+        self._checkpointer: Optional[FlowCheckpointer] = None
+        # Set by resume() so a resumed run's checkpoint numbering/parent
+        # chain continues from the loaded checkpoint instead of starting
+        # fresh at 1 (see FlowCheckpointer's `starting_checkpoint_id`).
+        self._resume_starting_checkpoint_id: int = 0
+        # Set by resume() so run_flow() seeds the scheduler from the
+        # loaded checkpoint's FlowContext instead of starting empty.
+        self._resume_seed_context: Optional[FlowContext] = None
+        # Memory refs carried across suspend/resume (session/chatbot/user
+        # ids) — never conversational memory content (spec §2).
+        self._checkpoint_memory_refs: MemoryRefs = MemoryRefs()
+        # The live FlowContext of the currently-executing run_flow() call, if
+        # any — lets suspend() dump a mid-run snapshot from outside run_flow().
+        self._active_ctx: Optional[FlowContext] = None
 
     # ── Graph construction ────────────────────────────────────────────────
 
@@ -365,6 +433,14 @@ class AgentsFlow(PersistenceMixin):
         node_factories: Optional[
             dict[str, Callable[["NodeDefinition", set[str], set[str]], Node]]
         ] = None,
+        checkpoint: Optional[bool] = None,
+        checkpoint_retention: Optional[int] = None,
+        checkpoint_history: Optional[int] = None,
+        checkpoint_include_responses: Optional[bool] = None,
+        durable: Optional[bool] = None,
+        checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
+        durable_store: Optional[Union[str, CheckpointStore]] = None,
+        flow_id: Optional[str] = None,
     ) -> "AgentsFlow":
         """Materialize an executable ``AgentsFlow`` from a ``FlowDefinition``.
 
@@ -389,6 +465,20 @@ class AgentsFlow(PersistenceMixin):
                 node close over live dependencies (dispatcher, toolkits, …)
                 that cannot travel through the plain ``NodeDefinition.config``
                 dict. Node types still must be registered in ``NODE_REGISTRY``.
+            checkpoint: Explicit override for checkpointing (FEAT-399). When
+                ``None`` (default), falls back to ``definition.metadata.checkpoint``.
+                A constructor-level override always wins over the metadata block.
+            checkpoint_retention: See ``AgentsFlow.__init__``; falls back to
+                ``definition.metadata.checkpoint_retention`` when ``None``.
+            checkpoint_history: See ``AgentsFlow.__init__``; falls back to
+                ``definition.metadata.checkpoint_history`` when ``None``.
+            checkpoint_include_responses: See ``AgentsFlow.__init__``; falls
+                back to ``definition.metadata.checkpoint_include_responses``.
+            durable: See ``AgentsFlow.__init__``; falls back to
+                ``definition.metadata.durable`` when ``None``.
+            checkpoint_store: See ``AgentsFlow.__init__``.
+            durable_store: See ``AgentsFlow.__init__``.
+            flow_id: See ``AgentsFlow.__init__``.
 
         Returns:
             Configured ``AgentsFlow`` instance ready to ``run_flow()``.
@@ -444,16 +534,131 @@ class AgentsFlow(PersistenceMixin):
         # Construct the flow with the definition bound.
         # FlowDefinition uses .flow for the name.
         flow_name = getattr(definition, "flow", None) or getattr(definition, "name", "unnamed")
+        meta = definition.metadata
         flow = cls(
             name=flow_name,
             definition=definition,
             agent_registry=agent_registry,
+            checkpoint=checkpoint if checkpoint is not None else meta.checkpoint,
+            checkpoint_retention=(
+                checkpoint_retention
+                if checkpoint_retention is not None
+                else meta.checkpoint_retention
+            ),
+            checkpoint_history=(
+                checkpoint_history
+                if checkpoint_history is not None
+                else meta.checkpoint_history
+            ),
+            checkpoint_include_responses=(
+                checkpoint_include_responses
+                if checkpoint_include_responses is not None
+                else meta.checkpoint_include_responses
+            ),
+            durable=durable if durable is not None else meta.durable,
+            checkpoint_store=checkpoint_store,
+            durable_store=durable_store,
+            flow_id=flow_id,
         )
         # Attach pre-resolved agent map (keyed by node_id).
         flow._resolved_agents = resolved_agents
         # Attach custom-node factories (keyed by NodeDefinition.type).
         flow._node_factories = dict(node_factories or {})
         return flow
+
+    # ── Graph → FlowDefinition export (FEAT-399 TASK-2052) ─────────────────
+
+    @staticmethod
+    def _registry_type_name(node: Node) -> Optional[str]:
+        """Return the ``NODE_REGISTRY`` key for ``node``'s class, if any.
+
+        Prefers an exact class match; falls back to ``isinstance`` for
+        registered base classes (covers subclasses of a registered type).
+
+        Args:
+            node: The node instance to look up.
+
+        Returns:
+            The registered type name, or ``None`` if unregistered.
+        """
+        node_cls = type(node)
+        for type_name, cls in NODE_REGISTRY.items():
+            if cls is node_cls:
+                return type_name
+        for type_name, cls in NODE_REGISTRY.items():
+            if isinstance(node, cls):
+                return type_name
+        return None
+
+    def to_definition(self) -> FlowDefinition:
+        """Export this flow's graph to a ``FlowDefinition`` (spec §3 Module 7).
+
+        For a flow already built via ``from_definition()``, returns the
+        bound ``FlowDefinition`` unchanged. For a programmatic flow (built
+        via ``add_node``/``add_edge``), inverts the mapping performed by
+        ``from_definition``/``_materialize_nodes`` to construct one: every
+        node's type must be registered in ``NODE_REGISTRY``, and every
+        ``agent``-type node must expose a resolvable string ``agent_ref``
+        (its wrapped agent's ``.name``). This is a pure export — it never
+        mutates the flow.
+
+        Returns:
+            A validated ``FlowDefinition`` equivalent to this flow's graph.
+
+        Raises:
+            FlowNotExportableError: If a node's class is not registered in
+                ``NODE_REGISTRY``, an ``agent``-type node has no resolvable
+                string ``agent_ref``, or an edge's ``predicate`` is a live
+                Python callable (only CEL expression strings round-trip).
+        """
+        if self._definition is not None:
+            return self._definition
+
+        node_defs: list[NodeDefinition] = []
+        for node_id, node in self._nodes.items():
+            type_name = self._registry_type_name(node)
+            if type_name is None:
+                raise FlowNotExportableError(
+                    f"Node {node_id!r} (class {type(node).__name__}) is not "
+                    "registered in NODE_REGISTRY; cannot export flow "
+                    f"{self.name!r} to a FlowDefinition."
+                )
+
+            agent_ref: Optional[str] = None
+            if type_name == "agent":
+                agent_ref = getattr(getattr(node, "agent", None), "name", None)
+                if not agent_ref:
+                    raise FlowNotExportableError(
+                        f"Node {node_id!r} of type 'agent' has no resolvable "
+                        "string agent_ref (its agent has no stable .name); "
+                        f"cannot export flow {self.name!r} to a FlowDefinition."
+                    )
+
+            node_defs.append(
+                NodeDefinition(id=node_id, type=type_name, agent_ref=agent_ref)
+            )
+
+        edge_defs: list[EdgeDefinition] = []
+        for edge in self._edges:
+            if edge.predicate is not None and not isinstance(edge.predicate, str):
+                raise FlowNotExportableError(
+                    f"Edge {edge.from_!r} -> {edge.to!r} has a live Python "
+                    "callable predicate; cannot export flow "
+                    f"{self.name!r} to a FlowDefinition (only CEL expression "
+                    "strings round-trip)."
+                )
+            edge_defs.append(
+                EdgeDefinition(
+                    **{
+                        "from": edge.from_,
+                        "to": edge.to,
+                        "condition": edge.condition,
+                        "predicate": edge.predicate,
+                    }
+                )
+            )
+
+        return FlowDefinition(flow=self.name, nodes=node_defs, edges=edge_defs)
 
     # ── Scheduler (TASK-1067) ─────────────────────────────────────────────
 
@@ -527,10 +732,26 @@ class AgentsFlow(PersistenceMixin):
                     successors=succs,
                 )
             elif node_type in ("start", "end"):
-                fresh[nid] = cls(
+                # StartNode/EndNode declare no `fsm` field (only AgentNode
+                # does), yet `_run_node()` unconditionally calls
+                # `node.fsm.schedule()/.start()/.succeed()/.fail()` for
+                # EVERY dispatched node. The programmatic branch above
+                # (`self._definition is None`) already papers over this via
+                # `node.model_copy(update={"fsm": new_fsm})`; the
+                # definition-driven branch never did, because no existing
+                # FlowDefinition-based flow in this codebase used "start"/
+                # "end" node types before FEAT-419's `plan/compile.py::
+                # to_flow_definition()` started emitting `__start__`/
+                # `__end__` sentinels unconditionally. Mirror the same
+                # model_copy patch here so a defined-then-run flow with
+                # start/end sentinels does not crash on its first dispatch.
+                start_end_node = cls(
                     node_id=nid,
                     dependencies=deps,
                     successors=succs,
+                )
+                fresh[nid] = start_end_node.model_copy(
+                    update={"fsm": AgentTaskMachine(agent_name=nid)}
                 )
             else:
                 # Custom node type: prefer a registered factory so the node can
@@ -705,20 +926,34 @@ class AgentsFlow(PersistenceMixin):
         ``_materialize_nodes()`` so concurrent invocations on the same
         ``AgentsFlow`` instance do NOT share FSM state (B-lite contract).
 
+        When checkpointing is enabled (``checkpoint=True``, or this instance
+        was produced by ``resume()``), a ``FlowCheckpointer`` is attached for
+        the duration of this call: its listener is registered, the resume
+        lease is acquired (skipped if already held by ``resume()``), and
+        ``checkpointer.aclose()`` always runs in a ``finally`` block —
+        checkpoint write failures never fail or block this call (spec §7).
+
         Args:
             ctx: Optional pre-built ``FlowContext`` or a string prompt.
                 If a string is provided, a FlowContext is created with
                 ``initial_task`` set to that string.
-                If ``None``, a new FlowContext is created with an empty task.
+                If ``None`` and this instance holds a resume-seeded context
+                (from ``AgentsFlow.resume()``), that seeded context is used
+                (consumed once). Otherwise a new FlowContext is created with
+                an empty task.
             on_complete: Tuple of async callables invoked after the main loop.
                 Each receives ``(ctx, result)``; exceptions are caught and logged
                 but do NOT affect ``FlowResult.status``.
 
         Returns:
             Aggregated ``FlowResult`` describing the run.
-        """
-        from .cel_evaluator import CELPredicateEvaluator  # noqa: PLC0415
 
+        Raises:
+            FlowNotExportableError: If ``checkpoint=True`` and this flow's
+                graph cannot be exported (fail-fast, before any node runs).
+            FlowLockedError: If checkpointing is enabled and another holder
+                already holds the resume lease for this ``flow_id``.
+        """
         # Accept a plain string as the initial task prompt.
         if isinstance(ctx, str):
             ctx = FlowContext(
@@ -727,11 +962,285 @@ class AgentsFlow(PersistenceMixin):
                 synthesis_client=getattr(self, "_synthesis_client", None),
             )
 
+        if ctx is None and self._resume_seed_context is not None:
+            ctx = self._resume_seed_context
+            self._resume_seed_context = None
+
         ctx = ctx or FlowContext(
             initial_task="",
             agent_registry=self._agent_registry,
             synthesis_client=getattr(self, "_synthesis_client", None),
         )
+
+        self._active_ctx = ctx
+        checkpointer, listener = await self._ensure_checkpointer(ctx)
+        if checkpointer is not None:
+            # Track this run so a graceful-shutdown hook (FlowRecoveryService,
+            # FEAT-399 TASK-2054) can suspend it. A no-op when no service has
+            # ever been requested (get_recovery_service() lazily creates the
+            # process-wide default; registration itself has no side effects
+            # beyond a dict entry until shutdown() is actually invoked).
+            get_recovery_service().register(self)
+        try:
+            return await self._run_flow_scheduler(ctx, on_complete=on_complete)
+        finally:
+            self._active_ctx = None
+            if checkpointer is not None:
+                get_recovery_service().unregister(self)
+                if listener is not None:
+                    try:
+                        self._node_event_listeners.remove(listener)
+                    except ValueError:  # pragma: no cover - defensive
+                        pass
+                await checkpointer.aclose()
+                if checkpointer is self._checkpointer:
+                    self._checkpointer = None
+
+    async def _ensure_checkpointer(
+        self, ctx: "FlowContext"
+    ) -> Tuple[Optional[FlowCheckpointer], Optional[Callable[[str, str, Dict[str, Any]], Any]]]:
+        """Build (or reuse) this run's ``FlowCheckpointer`` and register its listener.
+
+        If ``resume()`` already attached a checkpointer (with its lease
+        already acquired there), it is reused as-is — the lease is never
+        re-acquired here. Otherwise, when ``checkpoint=True``, a fresh
+        checkpointer is built, the graph is validated exportable
+        (``to_definition()``, fail-fast), and the resume lease is acquired.
+
+        Args:
+            ctx: The live ``FlowContext`` for this run — bound into the
+                checkpointer's listener closure.
+
+        Returns:
+            ``(checkpointer, listener)``, or ``(None, None)`` when
+            checkpointing is disabled for this run.
+
+        Raises:
+            FlowNotExportableError: See ``to_definition()``.
+            FlowLockedError: See ``FlowCheckpointer.acquire_lease()``.
+        """
+        if self._checkpointer is not None:
+            # Already set up by resume() — lease already acquired there.
+            checkpointer = self._checkpointer
+            listener = checkpointer.make_listener(ctx)
+            self.add_node_event_listener(listener)
+            return checkpointer, listener
+
+        if not self._checkpoint_enabled:
+            return None, None
+
+        # Fail fast: enable checkpointing only for flows that can round-trip
+        # through to_definition() (spec §7 known risk).
+        definition = self.to_definition()
+
+        store = get_checkpoint_store(self._checkpoint_store_arg)
+        durable_store: Optional[CheckpointStore] = None
+        if self._checkpoint_durable or self._durable_store_arg is not None:
+            durable_store = get_checkpoint_store(self._durable_store_arg)
+
+        checkpointer = FlowCheckpointer(
+            flow_id=self.flow_id,
+            flow_name=self.name,
+            definition=definition,
+            store=store,
+            durable_store=durable_store,
+            include_responses=self._checkpoint_include_responses,
+            durable=self._checkpoint_durable,
+            history_limit=self._checkpoint_history,
+            memory_refs=self._checkpoint_memory_refs,
+            starting_checkpoint_id=self._resume_starting_checkpoint_id,
+        )
+
+        holder = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        await checkpointer.acquire_lease(holder)
+
+        self._checkpointer = checkpointer
+        listener = checkpointer.make_listener(ctx)
+        self.add_node_event_listener(listener)
+        return checkpointer, listener
+
+    async def suspend(self) -> FlowCheckpoint:
+        """Suspend this flow: dump ephemeral history to durable storage.
+
+        Copies the ephemeral store's retained checkpoint history to the
+        durable store, then writes a final ``status="suspended"``
+        checkpoint to both — usable mid-run (e.g. from a signal handler or
+        the graceful-shutdown recovery service) as well as standalone.
+
+        Returns:
+            The final ``status="suspended"`` ``FlowCheckpoint``.
+
+        Raises:
+            ValueError: If this flow has no active checkpointer (checkpointing
+                was never enabled for it) or no active run to snapshot.
+        """
+        if self._checkpointer is None:
+            raise ValueError(
+                f"AgentsFlow {self.name!r} has no active checkpointer; "
+                "suspend() requires checkpoint=True."
+            )
+        if self._active_ctx is None:
+            raise ValueError(
+                f"AgentsFlow {self.name!r} has no active run to suspend "
+                "(suspend() must be called while run_flow() is executing)."
+            )
+        return await self._checkpointer.dump(self._active_ctx)
+
+    @classmethod
+    async def resume(
+        cls,
+        flow_id: str,
+        checkpoint_id: Optional[int] = None,
+        *,
+        agent_registry: AgentRegistry,
+        store: Optional[Union[str, CheckpointStore]] = None,
+        durable_store: Optional[Union[str, CheckpointStore]] = None,
+    ) -> "AgentsFlow":
+        """Reconstruct and resume a checkpointed flow (spec §3 Module 7).
+
+        Loads the checkpoint (durable store first, ephemeral fallback),
+        acquires the resume lease fail-fast, rebuilds the flow via
+        ``from_definition()``, and seeds a fresh ``FlowContext`` from the
+        checkpoint so completed nodes are never re-executed when the
+        returned flow's ``run_flow()`` is called.
+
+        Args:
+            flow_id: The flow run's identifier (checkpoint key).
+            checkpoint_id: Optional specific checkpoint to resume/re-fork
+                from; defaults to the latest checkpoint for ``flow_id``.
+            agent_registry: ``AgentRegistry`` used to re-resolve agent refs
+                (required — same contract as ``from_definition()``).
+            store: Ephemeral ``CheckpointStore`` name/instance/None (env
+                fallback).
+            durable_store: Durable ``CheckpointStore`` name/instance/None.
+                Checked first when given; falls back to the ephemeral store.
+
+        Returns:
+            A configured ``AgentsFlow`` instance ready for ``run_flow()``
+            (with no arguments — the resume-seeded context is used
+            automatically).
+
+        Raises:
+            CheckpointNotFoundError: If no matching checkpoint exists
+                (missing or TTL-expired).
+            FlowLockedError: If another holder already holds the resume
+                lease for ``flow_id``.
+        """
+        ephemeral_store = get_checkpoint_store(store)
+        durable: Optional[CheckpointStore] = (
+            get_checkpoint_store(durable_store) if durable_store is not None else None
+        )
+
+        checkpoint: Optional[FlowCheckpoint] = None
+        if durable is not None:
+            checkpoint = (
+                await durable.get(flow_id, checkpoint_id)
+                if checkpoint_id is not None
+                else await durable.latest(flow_id)
+            )
+        if checkpoint is None:
+            checkpoint = (
+                await ephemeral_store.get(flow_id, checkpoint_id)
+                if checkpoint_id is not None
+                else await ephemeral_store.latest(flow_id)
+            )
+        if checkpoint is None:
+            raise CheckpointNotFoundError(
+                f"No checkpoint found for flow_id={flow_id!r}"
+                + (
+                    f", checkpoint_id={checkpoint_id}"
+                    if checkpoint_id is not None
+                    else " (no latest checkpoint)"
+                )
+            )
+
+        if checkpoint.lossy:
+            logger.warning(
+                "AgentsFlow.resume(): checkpoint flow_id=%s checkpoint_id=%s "
+                "is lossy — some dependency results may be degraded strings",
+                flow_id,
+                checkpoint.checkpoint_id,
+            )
+
+        serializer = FlowStateSerializer()
+
+        # Acquire the resume lease fail-fast, before any reconstruction —
+        # reused (never re-acquired) by run_flow()'s _ensure_checkpointer().
+        checkpointer = FlowCheckpointer(
+            flow_id=flow_id,
+            flow_name=checkpoint.flow_name,
+            definition=checkpoint.definition,
+            store=ephemeral_store,
+            durable_store=durable,
+            serializer=serializer,
+            memory_refs=checkpoint.memory_refs,
+            starting_checkpoint_id=checkpoint.checkpoint_id,
+        )
+        holder = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        await checkpointer.acquire_lease(holder)
+
+        flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
+        flow.flow_id = flow_id
+        flow._checkpoint_enabled = True
+        flow._checkpointer = checkpointer
+        flow._resume_starting_checkpoint_id = checkpoint.checkpoint_id
+        flow._checkpoint_memory_refs = checkpoint.memory_refs
+
+        # Seed a fresh FlowContext from the checkpoint (spec §2 step 4):
+        # decode results (+responses when present) via the serializer, then
+        # mark_completed() each node in completion_order — never re-execute
+        # completed nodes. agent_registry/synthesis_client/trace_context are
+        # re-bound here, not restored from the checkpoint (spec §7).
+        seed_ctx = FlowContext(
+            initial_task=checkpoint.context.initial_task,
+            agent_registry=agent_registry,
+        )
+        seed_ctx.shared_data.update(checkpoint.context.shared_data)
+
+        decoded_results = {
+            node_id: serializer.from_safe(value)
+            for node_id, value in checkpoint.context.results.items()
+        }
+        decoded_responses = (
+            {
+                node_id: serializer.from_safe(value)
+                for node_id, value in checkpoint.context.responses.items()
+            }
+            if checkpoint.context.responses is not None
+            else {}
+        )
+        for node_id in checkpoint.context.completion_order:
+            seed_ctx.mark_completed(
+                node_id,
+                result=decoded_results.get(node_id),
+                response=decoded_responses.get(node_id),
+            )
+
+        flow._resume_seed_context = seed_ctx
+        return flow
+
+    async def _run_flow_scheduler(
+        self,
+        ctx: FlowContext,
+        *,
+        on_complete: Tuple[Callable[[FlowContext, FlowResult], Awaitable[None]], ...] = (),
+    ) -> FlowResult:
+        """Event-driven scheduler body (extracted from ``run_flow()``, FEAT-399).
+
+        Unchanged scheduler logic — ``ctx`` is already fully resolved by
+        ``run_flow()`` (string/None normalization, resume-seed consumption)
+        before this is called; extracted only so ``run_flow()`` can wrap it
+        in a checkpointer-lifecycle ``try/finally`` without reformatting the
+        entire scheduler body.
+
+        Args:
+            ctx: The fully-resolved ``FlowContext`` for this run.
+            on_complete: See ``run_flow()``.
+
+        Returns:
+            Aggregated ``FlowResult`` describing the run.
+        """
+        from .cel_evaluator import CELPredicateEvaluator  # noqa: PLC0415
 
         # Fresh nodes per call (concurrent safety).
         nodes: dict[str, Node] = self._materialize_nodes()
@@ -764,10 +1273,15 @@ class AgentsFlow(PersistenceMixin):
         completion_queue: asyncio.Queue[CompletionEvent] = asyncio.Queue()
         attempts: dict[str, int] = {nid: 0 for nid in nodes}
         tasks: dict[str, asyncio.Task] = {}   # type: ignore[type-arg]
-        completed: set[str] = set()
+        # Resume (FEAT-399): seed from ctx.completed_tasks/.results when the
+        # caller pre-populated a FlowContext (AgentsFlow.resume()) — a no-op
+        # (identical to the prior `set()`/`{}`) for every ordinary run, where
+        # these are empty. Completed nodes are never re-executed; anything
+        # else (in-flight/failed/never-started) re-runs (at-least-once).
+        completed: set[str] = set(ctx.completed_tasks)
         failed: set[str] = set()
         skipped: set[str] = set()
-        results: dict[str, Any] = {}
+        results: dict[str, Any] = dict(ctx.results)
         errors: dict[str, BaseException] = {}
         active_count = 0
         loop = asyncio.get_running_loop()
@@ -789,8 +1303,17 @@ class AgentsFlow(PersistenceMixin):
             # nodes unexecuted and end the run with a misleading
             # "completed" status (FlowDefinition validates this itself;
             # programmatic graphs are validated here).
+            #
+            # ``on_condition`` edges are exempt (FEAT-377 TASK-1910), mirroring
+            # FlowDefinition._validate_acyclic: a CEL/callable-gated back-edge
+            # is a deliberate, bounded repair/retry loop (e.g. dev-loop's
+            # ``qa -> development`` edge, gated by an attempt-count
+            # predicate) that this explicit-edge executor's OR-join +
+            # skip-propagation semantics support. A genuinely unconditional
+            # cycle still raises — those edges have no predicate to bound
+            # iteration.
             unique_sources = {
-                nid: {e.from_ for e in in_edges}
+                nid: {e.from_ for e in in_edges if e.condition != "on_condition"}
                 for nid, in_edges in incoming.items()
             }
             in_degree = {nid: len(srcs) for nid, srcs in unique_sources.items()}
@@ -816,6 +1339,116 @@ class AgentsFlow(PersistenceMixin):
                     "are never reachable from an entry node. Break the "
                     "cycle or use conditional edges with a terminal path."
                 )
+
+        # ── Cyclic back-edge support (FEAT-377 TASK-1910) ───────────────────
+        #
+        # A bounded repair/retry loop (e.g. dev-loop's `qa -> development`
+        # edge, CEL/callable-gated on an attempt counter) is a genuine graph
+        # cycle that `_validate_acyclic`-style checks above now tolerate for
+        # `on_condition` edges. But tolerating the cycle structurally is not
+        # enough for EXECUTION: the plain OR-join gate ("dispatch once every
+        # incoming edge is resolved") would deadlock forever on a node's
+        # first-ever dispatch, since the back-edge's source cannot resolve
+        # until the very node it points at has already run at least once.
+        #
+        # Two additions close that gap:
+        #   1. `_forward_in_edges[tgt]` — `incoming[tgt]` minus any edge that
+        #      is part of a cycle — gates a node's FIRST dispatch. Back-edges
+        #      never block a node from running the first time.
+        #   2. `_resolve_retries()` — after a back-edge SOURCE completes and
+        #      its predicate fires, reset every node on the cycle (target
+        #      through source, inclusive) and re-dispatch the target. This is
+        #      the mechanism that actually re-enters the loop.
+        _back_edges: List[Tuple[Any, Set[str]]] = []
+        _back_edge_ids: Set[int] = set()
+        if explicit_mode:
+            full_adj: Dict[str, List[str]] = defaultdict(list)
+            for edge in edges:
+                for tgt in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
+                    full_adj[edge.from_].append(tgt)
+            reverse_adj: Dict[str, List[str]] = defaultdict(list)
+            for src, tgts in full_adj.items():
+                for tgt in tgts:
+                    reverse_adj[tgt].append(src)
+
+            def _reachable(start: str, adj: Dict[str, List[str]]) -> Set[str]:
+                seen = {start}
+                stack = [start]
+                while stack:
+                    cur = stack.pop()
+                    for nxt in adj.get(cur, ()):
+                        if nxt not in seen:
+                            seen.add(nxt)
+                            stack.append(nxt)
+                return seen
+
+            # Which `on_condition` edges are genuine cyclic *back*-edges (as
+            # opposed to a forward/tree edge that merely happens to sit on
+            # the same undirected cycle as one) is a graph-theoretic
+            # question, not a "does a cycle exist through here" one —
+            # `edge.from_ in _reachable(tgt, full_adj)` (cycle MEMBERSHIP)
+            # was the original TASK-1910 test, and it is too coarse once a
+            # cycle has more than one `on_condition` edge on it (FEAT-377/A:
+            # dev-loop feature-mode's `feedback_router -> development` retry
+            # edge closes a cycle that ALSO contains the pre-existing
+            # `qa -> feedback_router` forward-routing edge — both satisfy
+            # "cycle membership", but only the former is meant to trigger a
+            # retry-reset; misclassifying the latter turned every ordinary
+            # QA failure into a spurious repair-loop reset, live-locking the
+            # run). The correct test is the classic DFS white/gray/black
+            # back-edge definition: edge u->v is a back-edge iff v is still
+            # on the active DFS stack (a true ancestor of u) when the edge
+            # is explored — a tree/forward/cross edge to an already-visited
+            # node never re-triggers `_dfs` and is never gray at that point.
+            _WHITE, _GRAY, _BLACK = 0, 1, 2
+            _color: Dict[str, int] = dict.fromkeys(nodes, _WHITE)
+            _dfs_back_edges: List[Any] = []
+            _edges_by_source: Dict[str, List[Any]] = defaultdict(list)
+            for edge in edges:
+                _edges_by_source[edge.from_].append(edge)
+
+            def _dfs(start: str) -> None:
+                # Iterative DFS (explicit stack of (node, out-edge index)
+                # frames) — recursion would also work for dev-loop-sized
+                # graphs, but an explicit stack avoids any dependency on
+                # graph size staying well under the interpreter's recursion
+                # limit for arbitrary `AgentsFlow` callers.
+                call_stack: List[Tuple[str, int]] = [(start, 0)]
+                _color[start] = _GRAY
+                while call_stack:
+                    u, i = call_stack[-1]
+                    out_edges = _edges_by_source.get(u, ())
+                    if i >= len(out_edges):
+                        _color[u] = _BLACK
+                        call_stack.pop()
+                        continue
+                    call_stack[-1] = (u, i + 1)
+                    edge = out_edges[i]
+                    for v in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
+                        if v not in _color:
+                            continue  # defensive: edge to an unknown node id
+                        if _color[v] == _WHITE:
+                            _color[v] = _GRAY
+                            call_stack.append((v, 0))
+                        elif _color[v] == _GRAY and edge.condition == "on_condition":
+                            _dfs_back_edges.append(edge)
+
+            for nid in nodes:
+                if _color[nid] == _WHITE:
+                    _dfs(nid)
+
+            for edge in _dfs_back_edges:
+                for tgt in ([edge.to] if isinstance(edge.to, str) else list(edge.to)):
+                    forward_from_tgt = _reachable(tgt, full_adj)
+                    backward_to_src = _reachable(edge.from_, reverse_adj)
+                    cycle_members = forward_from_tgt & backward_to_src
+                    _back_edges.append((edge, cycle_members))
+                    _back_edge_ids.add(id(edge))
+
+        _forward_in_edges: Dict[str, List[Any]] = {
+            nid: [e for e in in_edges if id(e) not in _back_edge_ids]
+            for nid, in_edges in incoming.items()
+        }
 
         def _deps_for(node_id: str) -> DependencyResults:
             """Build dependency result dict for a node."""
@@ -915,11 +1548,17 @@ class AgentsFlow(PersistenceMixin):
             Runs to a fixpoint so a skip cascades through its descendants in
             the same pass (e.g. a failed node skips its whole success path,
             which in turn resolves a downstream error-handler's fan-in).
+
+            Gates on ``_forward_in_edges`` (FEAT-377 TASK-1910) rather than
+            the raw ``incoming`` index: a cyclic back-edge must never block a
+            node's first-ever dispatch (its source cannot resolve until the
+            node it points at has already run once) — re-entry after a
+            back-edge fires is handled separately by ``_resolve_retries()``.
             """
             progress = True
             while progress:
                 progress = False
-                for tgt, in_edges in incoming.items():
+                for tgt, in_edges in _forward_in_edges.items():
                     if not in_edges:
                         continue  # entry node — dispatched at start
                     if (
@@ -949,21 +1588,102 @@ class AgentsFlow(PersistenceMixin):
                         )
                     progress = True
 
+        def _resolve_retries() -> bool:
+            """Re-enter a bounded repair loop when a back-edge fires.
+
+            When a cyclic back-edge's source has resolved and its predicate
+            passes, every node on the cycle (target through source,
+            inclusive) is reset to "never ran" and the target is
+            re-dispatched. Only meaningful once the target has already
+            completed at least once — the loop's first pass is a normal
+            forward dispatch, never a retry.
+
+            Returns:
+                True if a retry was triggered (the caller should skip the
+                normal OR-join pass for this event — the reset invalidates
+                the state it would otherwise act on).
+            """
+            for edge, members in _back_edges:
+                src = edge.from_
+                tgt = edge.to if isinstance(edge.to, str) else None
+                if tgt is None or tgt not in completed:
+                    continue
+                if src not in completed and src not in failed:
+                    continue
+                if not _edge_fired(edge):
+                    continue
+                for member in members:
+                    completed.discard(member)
+                    failed.discard(member)
+                    skipped.discard(member)
+                    results.pop(member, None)
+                    errors.pop(member, None)
+                    tasks.pop(member, None)
+                    old_node = nodes[member]
+                    try:
+                        nodes[member] = old_node.model_copy(
+                            update={"fsm": AgentTaskMachine(agent_name=member)}
+                        )
+                    except Exception:  # noqa: BLE001 - fallback: keep old node
+                        pass
+                self.logger.info(
+                    "Repair-loop retry: edge %r -> %r fired; reset %s and "
+                    "re-dispatched %r",
+                    src, tgt, sorted(members), tgt,
+                )
+                _spawn(tgt)
+                return True
+            return False
+
         # Run-level bracket: flow_started precedes every node_started.
         self._notify_node_event(
             "flow_started", "",
             {"flow": self.name, "context": ctx, "node_count": len(nodes)},
         )
 
-        # Initial dispatch — entry nodes.
+        # Initial dispatch — entry nodes. Gated on `_forward_in_edges`
+        # (FEAT-377 TASK-1910) so a node whose ONLY incoming edges are
+        # cyclic back-edges still counts as an entry node. Entry nodes
+        # already in `completed` (resume, FEAT-399) are skipped — never
+        # re-executed.
         if explicit_mode:
             for nid in nodes:
-                if not incoming[nid]:
+                if nid in completed:
+                    continue
+                if not _forward_in_edges[nid]:
                     _spawn(nid)
         else:
             for nid, node in nodes.items():
+                if nid in completed:
+                    continue
                 if not node.dependencies:
                     _spawn(nid)
+
+        # Resume (FEAT-399): dispatch any node whose dependencies are
+        # already satisfied by the pre-seeded `completed` set, reaching the
+        # true execution frontier without waiting for a live completion
+        # event. `_resolve_ready_targets()` already handles this correctly
+        # for explicit/add_edge mode (OR-join + skip-propagation, generic
+        # fixpoint); definition-driven/legacy mode has no equivalent
+        # pre-loop entry point, so a small AND-join fixpoint is added here.
+        # A no-op whenever `completed` is empty (every non-resume run).
+        if completed:
+            if explicit_mode:
+                _resolve_ready_targets()
+            else:
+                progress = True
+                while progress:
+                    progress = False
+                    for nid, node in nodes.items():
+                        if (
+                            nid in completed or nid in failed
+                            or nid in skipped or nid in tasks
+                        ):
+                            continue
+                        deps = node.dependencies
+                        if deps and all(d in completed for d in deps):
+                            _spawn(nid)
+                            progress = True
 
         # Main event loop — drain completion events.
         while active_count > 0 or not completion_queue.empty():
@@ -1019,10 +1739,17 @@ class AgentsFlow(PersistenceMixin):
                         "flow": self.name,
                         "context": ctx,
                         "duration_ms": durations[nid] * 1000.0,
+                        "node_result": _serialise_result_value(event.result),
                     },
                 )
 
             if explicit_mode:
+                # A cyclic back-edge firing takes precedence over the normal
+                # OR-join pass for this event (FEAT-377 TASK-1910): the reset
+                # it performs invalidates the very state the OR-join pass
+                # would otherwise read.
+                if _back_edges and _resolve_retries():
+                    continue
                 # OR-join + skip-propagation over the whole graph.
                 _resolve_ready_targets()
                 continue

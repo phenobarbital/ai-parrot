@@ -68,7 +68,7 @@
     tg.MainButton.setText('Submit');
     tg.MainButton.show();
 
-    const FORM_ID = '{{ form_id }}';
+    const FORM_UID = '{{ form_uid }}';
     const FALLBACK_URL = '{{ fallback_url }}';
     const MAX_SEND_DATA = 4096;
 
@@ -76,7 +76,7 @@
       const form = document.querySelector('form');
       if (!form) return {};
       const fd = new FormData(form);
-      const data = {_form_id: FORM_ID};
+      const data = {_form_uid: FORM_UID};
       for (const [key, value] of fd.entries()) {
         if (key in data && Array.isArray(data[key])) {
           data[key].push(value);

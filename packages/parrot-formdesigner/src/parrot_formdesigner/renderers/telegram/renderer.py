@@ -262,7 +262,13 @@ class TelegramRenderer(AbstractFormRenderer):
                 total_fields=len(visible_fields),
             )
         else:
-            webapp_url = f"{self.base_url}/forms/{form.form_id}/telegram"
+            # FEAT-389: the UI Telegram route is mounted as {form_uid}
+            # (TASK-1981) — this URL must match that route or Telegram opens
+            # a 404. NOT a label; a real dispatch key, unlike this file's
+            # other form_id uses (title/hash tag), so it is the one
+            # exception carved out of TASK-1990's "explicitly not covered"
+            # list for this file (see that task's Completion Note).
+            webapp_url = f"{self.base_url}/forms/{form.form_uid}/telegram"
             payload = TelegramFormPayload(
                 mode=TelegramRenderMode.WEBAPP,
                 form_id=form.form_id,

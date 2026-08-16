@@ -36,7 +36,7 @@ async def test_concurrent_flows_respect_dispatcher_cap(
 ):
     """Spawn 4 dispatches with ``max_concurrent=2``; only 2 in flight."""
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH",
         str(tmp_path),
     )
     disp = ClaudeCodeDispatcher(
@@ -86,7 +86,7 @@ async def test_concurrent_flows_respect_dispatcher_cap(
             active["n"] -= 1
 
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+        "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
         lambda *a, **kw: _SlowClient(),
     )
 

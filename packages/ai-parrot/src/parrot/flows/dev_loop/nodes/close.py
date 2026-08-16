@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Union
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import QAReport, ResearchOutput
 from parrot.flows.dev_loop.nodes.base import (
     DevLoopNode,
@@ -35,9 +36,14 @@ class DevLoopCloseNode(DevLoopNode):
         self,
         jira_toolkit: Any,
         name: str = "close",
+        *,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_jira", jira_toolkit)
+        # FEAT-377 TASK-1915 (G2 seam 3): opt-in run write-back. None
+        # (default) is a strict no-op.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     async def execute(
         self,
@@ -55,8 +61,9 @@ class DevLoopCloseNode(DevLoopNode):
         Returns:
             ``{"status": "closed", "issue_key": ..., "mode": ...}`` on
             success, ``{"status": "closed_without_ticket", ...}`` when no
-            Jira issue exists, or ``{"status": "close_failed", "error": ...}``
-            when a Jira call raises.
+            Jira issue exists **or the run is under ``skip_jira``**, or
+            ``{"status": "close_failed", "error": ...}`` when a Jira call
+            raises.
         """
         shared = self.shared_state(ctx)
         research: Optional[ResearchOutput] = shared.get("research_output")
@@ -67,6 +74,18 @@ class DevLoopCloseNode(DevLoopNode):
             self.logger.warning(
                 "DevLoopClose: no jira_issue_key in shared state (mode=%s).",
                 mode,
+            )
+            return {"status": "closed_without_ticket", "mode": mode}
+
+        # Under ``skip_jira`` the key is ResearchNode's synthetic "SKIP-0"
+        # placeholder — no ticket was ever created, so commenting on and
+        # transitioning it can only 404. Same bypass the Development,
+        # DeploymentHandoff and FailureHandler nodes already honour.
+        if shared.get("skip_jira", False):
+            self.logger.info(
+                "Jira bypass enabled (skip_jira=True) — closing run %s "
+                "without touching %s (mode=%s).",
+                shared.get("run_id", "?"), issue_key, mode,
             )
             return {"status": "closed_without_ticket", "mode": mode}
 
@@ -86,6 +105,14 @@ class DevLoopCloseNode(DevLoopNode):
                 "mode": mode,
                 "error": str(exc),
             }
+
+        # FEAT-377 TASK-1915 (G2 seam 3): run write-back. The facade's own
+        # publish_run_outcome already degrades to a logged warning on any
+        # failure — never raises into this terminal node.
+        if self._graph_memory is not None:
+            await self._graph_memory.publish_run_outcome(
+                shared.get("run_id", ""), shared.get("qa_report"), "succeeded", body,
+            )
 
         return {"status": "closed", "issue_key": issue_key, "mode": mode}
 

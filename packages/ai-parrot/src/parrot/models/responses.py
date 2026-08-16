@@ -278,6 +278,20 @@ class AIMessage(BaseModel):
         """Check if tools were used."""
         return len(self.tool_calls) > 0
 
+    def total_usage(self) -> CompletionUsage:
+        """Total token usage across all rounds of the generating call.
+
+        For multi-round tool-use calls, ``self.usage`` already holds the
+        accumulated total across every round (clients accumulate via
+        :meth:`CompletionUsage.__add__` before setting it here). This
+        method exists as a stable, documented entry point in case
+        per-round usage history is exposed in a future iteration.
+
+        Returns:
+            The accumulated :class:`CompletionUsage` for this message.
+        """
+        return self.usage
+
     def add_tool_call(self, tool_call: ToolCall) -> None:
         """Add a tool call to the response."""
         self.tool_calls.append(tool_call)  # pylint: disable=E1101 # noqa
@@ -475,7 +489,7 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.dict() if hasattr(response, 'dict') else response.__dict__
+            raw_response=response.model_dump() if hasattr(response, 'model_dump') else (response.dict() if hasattr(response, 'dict') else response.__dict__)
         )
 
     @staticmethod
@@ -521,7 +535,7 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.dict() if hasattr(response, 'dict') else response.__dict__,
+            raw_response=response.model_dump() if hasattr(response, 'model_dump') else (response.dict() if hasattr(response, 'dict') else response.__dict__),
             response=message.content
         )
 
@@ -900,10 +914,10 @@ class AIMessageFactory:
             return [AIMessageFactory._sanitize_for_json(item) for item in data]
         elif isinstance(data, (str, int, float, bool, type(None))):
             return data
-        elif hasattr(data, 'dict'):
-            return AIMessageFactory._sanitize_for_json(data.dict())
         elif hasattr(data, 'model_dump'):
             return AIMessageFactory._sanitize_for_json(data.model_dump())
+        elif hasattr(data, 'dict'):
+            return AIMessageFactory._sanitize_for_json(data.dict())
         elif hasattr(data, '__dict__'):
             return AIMessageFactory._sanitize_for_json(data.__dict__)
         else:

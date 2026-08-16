@@ -193,6 +193,10 @@ class UniversalEdge(BaseModel):
             agent or human (``Provenance.ASSERTED``). Assertion-level
             confidence lives in ``AssertionMeta.confidence`` — it does
             NOT interact with the similarity ``confidence`` field.
+        domain_tags: Arbitrary key-value metadata from the extractor
+            (e.g. ``{"embed": true}`` for Obsidian transclusion edges —
+            FEAT-392 expresses domain semantics on existing edge kinds
+            through tags instead of new enum members).
     """
 
     source_id: str
@@ -201,6 +205,7 @@ class UniversalEdge(BaseModel):
     provenance: Provenance = Provenance.EXTRACTED
     confidence: Optional[float] = None
     assertion: Optional[AssertionMeta] = None
+    domain_tags: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _validate_confidence_with_provenance(self) -> "UniversalEdge":

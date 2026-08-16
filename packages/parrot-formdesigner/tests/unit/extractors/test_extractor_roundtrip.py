@@ -54,10 +54,12 @@ sections:
         assert f1.post_depends is not None
         assert len(f1.post_depends) == 1
         pd = f1.post_depends[0]
-        assert pd.target == "f2"
+        # FEAT-393: target/conditions are resolved to field_uid by the
+        # extractor's mandatory resolve_rule_references() call.
+        assert pd.target == str(fields["f2"].field_uid)
         assert pd.effect == "show"
         assert pd.conditions is not None
-        assert pd.conditions[0].field_id == "f1"
+        assert pd.conditions[0].field_uid == f1.field_uid
         assert pd.conditions[0].operator == ConditionOperator.EQ
 
     def test_yaml_imports_post_depends_calc_with_operation(self) -> None:
@@ -94,7 +96,8 @@ sections:
         assert pd.effect == "calc"
         assert pd.operation is not None
         assert pd.operation.op == "multiply"
-        assert "qty" in pd.operation.operands
+        # FEAT-393: operands are resolved to field_uid strings.
+        assert str(fields["qty"].field_uid) in pd.operation.operands
 
     def test_yaml_imports_post_depends_cascade_clear(self) -> None:
         """YAML cascade_clear post_depends parses without conditions."""
@@ -121,7 +124,8 @@ sections:
         assert country.post_depends is not None
         pd = country.post_depends[0]
         assert pd.effect == "cascade_clear"
-        assert pd.target == "city"
+        # FEAT-393: target is resolved to city's field_uid.
+        assert pd.target == str(fields["city"].field_uid)
 
     def test_yaml_depends_on_with_operations(self) -> None:
         """YAML depends_on with inline operations block parses correctly."""
@@ -158,7 +162,8 @@ sections:
         assert len(b.depends_on.operations) == 1
         op = b.depends_on.operations[0]
         assert op.op == "copy"
-        assert op.target == "b"
+        # FEAT-393: target is resolved to b's own field_uid.
+        assert op.target == str(b.field_uid)
 
     def test_yaml_without_post_depends_unchanged(self) -> None:
         """YAML without post_depends fields → post_depends is None (backward compat)."""
@@ -268,7 +273,9 @@ class TestJsonSchemaExtractorPostDepends:
         assert f1_imported.post_depends is not None
         assert len(f1_imported.post_depends) == 1
         pd = f1_imported.post_depends[0]
-        assert pd.target == "f2"
+        # FEAT-393: target is resolved to the (freshly re-minted, on
+        # import) field_uid of "f2" in the imported form.
+        assert pd.target == str(imported_fields["f2"].field_uid)
         assert pd.effect == "show"
         assert pd.logic == "and"
         assert pd.conditions is not None

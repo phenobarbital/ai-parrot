@@ -34,6 +34,8 @@ from pydantic import BaseModel, ValidationError
 # otherwise leave this module holding a *different* class object than a
 # consumer that imported via the package, breaking ``isinstance`` checks.
 from parrot.flows.dev_loop import (
+    GoogleCodingDispatcher,
+    GoogleCodingDispatchProfile,
     ClaudeCodeDispatcher,
     ClaudeCodeDispatchProfile,
     CodexCodeDispatcher,
@@ -49,6 +51,8 @@ from parrot.flows.dev_loop import (
     LLMCodeDispatchProfile,
     MoonshotCodeDispatcher,
     MoonshotCodeDispatchProfile,
+    NovaCodeDispatcher,
+    NovaCodeDispatchProfile,
     ZaiCodeDispatcher,
     ZaiCodeDispatchProfile,
 )
@@ -157,7 +161,7 @@ def build_dispatcher(
     if spec.agent == "nvidia":
         dispatcher = LLMCodeDispatcher(**common)
         nvidia_model = spec.model or config_getter(
-            "DEV_LOOP_NVIDIA_CODE_MODEL", "moonshotai/kimi-k2-instruct-0905"
+            "DEV_LOOP_NVIDIA_CODE_MODEL", "minimaxai/minimax-m3"
         )
         profile = LLMCodeDispatchProfile(
             llm=f"nvidia:{nvidia_model}",
@@ -195,6 +199,21 @@ def build_dispatcher(
             reasoning_effort=config_getter(
                 "DEV_LOOP_MOONSHOT_REASONING_EFFORT", "max"
             ),
+        )
+        return dispatcher, profile
+
+    if spec.agent == "google_coding":
+        dispatcher = GoogleCodingDispatcher(**common)
+        profile = GoogleCodingDispatchProfile(
+            model=spec.model or config_getter("DEV_LOOP_GOOGLE_CODING_MODEL", "auto")
+        )
+        return dispatcher, profile
+
+    if spec.agent == "nova":
+        dispatcher = NovaCodeDispatcher(**common)
+        profile = NovaCodeDispatchProfile(
+            model=spec.model
+            or config_getter("DEV_LOOP_NOVA_CODE_MODEL", "minimax.minimax-m2.5")
         )
         return dispatcher, profile
 
@@ -243,6 +262,8 @@ def resolve_pool_max(config_getter: ConfigGetter, *, default: int = 4) -> int:
         The resolved cap, always ``>= 1``.
     """
     raw = config_getter("DEV_LOOP_DEV_POOL_MAX", default)
+    if raw is None:
+        return default
     try:
         return max(1, int(raw))
     except (TypeError, ValueError):

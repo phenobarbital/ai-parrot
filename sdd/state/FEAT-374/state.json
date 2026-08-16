@@ -1,0 +1,65 @@
+{
+  "feat_id": "FEAT-374",
+  "slug": "devloop-cli-console",
+  "phase": "committed",
+  "started_at": "2026-07-24T13:06:23+02:00",
+  "updated_at": "2026-07-24T13:25:00+02:00",
+  "mode": "enrichment",
+  "type": "feature",
+  "base_branch": "dev",
+  "wiki_available": true,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "path": "sdd/state/FEAT-374/source.md",
+    "summary_oneline": "CLI console (parrot devloop) to dispatch dev-loop AgentCrew flows interactively from the terminal"
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 12,
+    "grep_calls": 10,
+    "git_calls": 2,
+    "wiki_queries": 8,
+    "depth_reached": 2
+  },
+  "phases": {
+    "plan": {
+      "status": "done",
+      "approved_by_user": true
+    },
+    "research": {
+      "status": "done",
+      "completed_at": "2026-07-24T13:25:00+02:00",
+      "files_read": 12,
+      "grep_calls": 10,
+      "git_calls": 2,
+      "wiki_queries": 8,
+      "truncated": false
+    },
+    "synthesis": {
+      "status": "done",
+      "overall_confidence": "high",
+      "claims_high": 3,
+      "claims_medium": 2,
+      "claims_low": 1
+    },
+    "qa": {
+      "status": "done",
+      "questions_total": 4,
+      "questions_answered": 4
+    },
+    "output": {
+      "status": "done",
+      "proposal_path": "sdd/proposals/devloop-cli-console.proposal.md",
+      "commit_sha": "3f7f85c206734b15f3a40ce0580f53adc7601c33"
+    }
+  },
+  "errors": []
+}

@@ -42,11 +42,14 @@ def _clear_stores() -> None:  # type: ignore[return]
     _clear_csrf_store_for_tests()
 
 
+_UNKNOWN_FORM_UID = "00000000-0000-0000-0000-000000000000"
+
+
 def _make_form(
     form_id: str = "test_form",
     events: FormEventsConfig | None = None,
 ) -> FormSchema:
-    """Build a minimal FormSchema."""
+    """Build a minimal FormSchema. form_uid is auto-generated."""
     return FormSchema(
         form_id=form_id,
         title={"en": "Test Form"},
@@ -63,15 +66,22 @@ def _make_handler(form: FormSchema | None = None) -> FormAPIHandler:
     return FormAPIHandler(registry=registry)
 
 
-def _make_get_form_request(form_id: str = "test_form", session_id: str = "sess1") -> MagicMock:
+def _make_get_form_request(form_uid: str = _UNKNOWN_FORM_UID, session_id: str = "sess1") -> MagicMock:
     """Build a mocked GET request for get_form.
 
     Sets up the session mock so that ``_extract_session_id`` returns the
     provided ``session_id`` and ``_get_tenant`` / ``_get_programs`` work
     without raising.
+
+    Args:
+        form_uid: Value for the ``{form_uid}`` path parameter (FEAT-389) —
+            MUST be a well-formed UUID string.
     """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    # aiohttp's real match_info always holds raw path strings — mirror that
+    # here so a caller passing FormSchema.form_uid (uuid.UUID, FEAT-393)
+    # round-trips through extract_form_uid() exactly like a live request.
+    req.match_info = {"form_uid": str(form_uid)}
     req.method = "GET"
     req.headers = {}
     req.query = {}
@@ -90,15 +100,20 @@ def _make_get_form_request(form_id: str = "test_form", session_id: str = "sess1"
 
 
 def _make_remote_request(
-    form_id: str = "test_form",
+    form_uid: str = _UNKNOWN_FORM_UID,
     event_name: str = "onBeforeSubmit",
     csrf_token: str | None = None,
     body: dict | None = None,
     session_id: str = "sess1",
 ) -> MagicMock:
-    """Build a mocked POST request for remote_event."""
+    """Build a mocked POST request for remote_event.
+
+    Args:
+        form_uid: Value for the ``{form_uid}`` path parameter (FEAT-389) —
+            MUST be a well-formed UUID string.
+    """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id, "event_name": event_name}
+    req.match_info = {"form_uid": str(form_uid), "event_name": event_name}
     req.method = "POST"
 
     headers: dict[str, str] = {}
@@ -164,7 +179,7 @@ class TestRemoteEventCSRF:
         """Request without X-CSRF-Token returns 403."""
         form = _make_form()
         handler = _make_handler(form=form)
-        req = _make_remote_request(csrf_token=None)
+        req = _make_remote_request(form.form_uid, csrf_token=None)
 
         resp = await handler.remote_event(req)
 
@@ -177,8 +192,8 @@ class TestRemoteEventCSRF:
         form = _make_form()
         handler = _make_handler(form=form)
         # Issue a valid token for a different session
-        issue_form_csrf_token("other_session", "test_form")
-        req = _make_remote_request(csrf_token="wrong_token")
+        issue_form_csrf_token("other_session", form.form_uid)
+        req = _make_remote_request(form.form_uid, csrf_token="wrong_token")
 
         resp = await handler.remote_event(req)
 
@@ -197,7 +212,7 @@ class TestRemoteEventValidation:
         """Unknown event_name returns 400 before CSRF check."""
         form = _make_form()
         handler = _make_handler(form=form)
-        req = _make_remote_request(event_name="onBogus", csrf_token="tok")
+        req = _make_remote_request(form.form_uid, event_name="onBogus", csrf_token="tok")
 
         resp = await handler.remote_event(req)
 
@@ -209,9 +224,9 @@ class TestRemoteEventValidation:
     async def test_form_not_found_returns_404(self) -> None:
         """Form not found returns 404."""
         handler = _make_handler(form=None)
-        token = issue_form_csrf_token("sess1", "no_such_form")
+        token = issue_form_csrf_token("sess1", _UNKNOWN_FORM_UID)
         req = _make_remote_request(
-            form_id="no_such_form",
+            _UNKNOWN_FORM_UID,
             event_name="onBeforeSubmit",
             csrf_token=token,
         )
@@ -244,8 +259,9 @@ class TestRemoteEventDispatch:
             )
         )
         handler = _make_handler(form=form)
-        token = issue_form_csrf_token("sess1", "test_form")
+        token = issue_form_csrf_token("sess1", form.form_uid)
         req = _make_remote_request(
+            form.form_uid,
             event_name="onBeforeSubmit",
             csrf_token=token,
             body={"payload": {"name": "Alice"}},
@@ -269,8 +285,8 @@ class TestRemoteEventDispatch:
             )
         )
         handler = _make_handler(form=form)
-        token = issue_form_csrf_token("sess1", "test_form")
-        req = _make_remote_request(event_name="onBeforeSubmit", csrf_token=token)
+        token = issue_form_csrf_token("sess1", form.form_uid)
+        req = _make_remote_request(form.form_uid, event_name="onBeforeSubmit", csrf_token=token)
 
         resp = await handler.remote_event(req)
 
@@ -292,8 +308,8 @@ class TestRemoteEventDispatch:
             )
         )
         handler = _make_handler(form=form)
-        token = issue_form_csrf_token("sess1", "test_form")
-        req = _make_remote_request(event_name="onBeforeSubmit", csrf_token=token)
+        token = issue_form_csrf_token("sess1", form.form_uid)
+        req = _make_remote_request(form.form_uid, event_name="onBeforeSubmit", csrf_token=token)
 
         resp = await handler.remote_event(req)
 
@@ -314,7 +330,7 @@ class TestGetFormCSRFIssuance:
         """Form without remote=True binding does NOT emit X-Form-CSRF-Token."""
         form = _make_form(events=None)
         handler = _make_handler(form=form)
-        req = _make_get_form_request()
+        req = _make_get_form_request(form.form_uid)
 
         resp = await handler.get_form(req)
 
@@ -332,7 +348,7 @@ class TestGetFormCSRFIssuance:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_get_form_request(session_id="sess1")
+        req = _make_get_form_request(form.form_uid, session_id="sess1")
 
         resp = await handler.get_form(req)
 
@@ -354,11 +370,12 @@ class TestGetFormCSRFIssuance:
             )
         )
         handler = _make_handler(form=form)
-        req = _make_get_form_request(form_id="test_form", session_id="sess1")
+        req = _make_get_form_request(form.form_uid, session_id="sess1")
 
         resp = await handler.get_form(req)
 
         assert resp.status == 200
         token = resp.headers.get("X-Form-CSRF-Token", "")
         assert token
-        assert validate_form_csrf_token("sess1", "test_form", token) is True
+        # FEAT-389: CSRF tokens are keyed by form_uid, not form_id.
+        assert validate_form_csrf_token("sess1", form.form_uid, token) is True

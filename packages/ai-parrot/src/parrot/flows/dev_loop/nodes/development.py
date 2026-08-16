@@ -31,20 +31,52 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.agent_pool import DevAgentPool, WaveResult, aggregate_outputs
-from parrot.flows.dev_loop.dispatcher import DevLoopCodeDispatcher
+from parrot.flows.dev_loop.dispatchers import DevLoopCodeDispatcher
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     DevAgentPoolConfig,
     DevAgentSpec,
     DevelopmentOutput,
+    QAReport,
     ResearchOutput,
     TaskScopedBrief,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler
+from parrot.flows.dev_loop.nodes.base import (
+    DevLoopNode,
+    condense_qa_failure,
+    register_dev_loop_node,
+    transition_issue_with_candidates,
+)
+from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
 
 DispatcherBuilder = Callable[[DevAgentSpec], Tuple[DevLoopCodeDispatcher, BaseModel]]
+
+
+def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
+    """Check whether the first wave actually benefits from parallelism.
+
+    A configured dev-agent pool is not automatically worth fanning out
+    into: a straight dependency chain (every wave size 1) gains nothing
+    from parallel workers.  This is a pure, no-LLM decision used as an
+    **advisory log hint** — it no longer gates pool-vs-single dispatch.
+    When a pool is configured, the pool path always runs; this function
+    only tells callers whether true parallelism will occur.
+
+    Args:
+        wave: The first dispatchable wave (``TaskScheduler.next_wave()``,
+            called before any task is marked done/failed).
+        pool_cfg: The resolved pool configuration.
+
+    Returns:
+        ``True`` only when the wave has 2 or more independent tasks AND
+        the pool has more than one effective worker slot — i.e. fanning
+        out could actually run tasks in parallel.
+    """
+    if len(wave) < 2:
+        return False
+    effective_slots = sum(spec.count for spec in pool_cfg.agents)
+    return effective_slots > 1
 
 
 @register_dev_loop_node("dev_loop.development")
@@ -59,6 +91,8 @@ class DevelopmentNode(DevLoopNode):
         pool_config: Optional[DevAgentPoolConfig] = None,
         dispatcher_builder: Optional[DispatcherBuilder] = None,
         pool_max: int = 4,
+        require_plan_approval: bool = False,
+        jira_toolkit: Any = None,
         name: str = "development",
     ) -> None:
         """Initialise the node.
@@ -76,6 +110,19 @@ class DevelopmentNode(DevLoopNode):
                 resolver's claude-code fallback. Required for the pool path;
                 its absence degrades to single-agent with a warning.
             pool_max: Hard cap on total pool workers (``DEV_LOOP_DEV_POOL_MAX``).
+            require_plan_approval: FEAT-377 TASK-1916 (G5) opt-in — when
+                ``True`` AND a ``SessionHost`` is present, opens a
+                ``plan_approval`` gate on this node's FIRST entry (before
+                any dispatch) and awaits its resolution. Mirrors
+                ``DeploymentHandoffNode.require_deployment_approval``'s
+                shape/fail-open-on-no-host semantics; placed here (the
+                first node after ``ResearchNode``) because the engine has
+                no external "pause between two nodes" hook — every
+                existing gate is opened and awaited FROM WITHIN the node
+                that would otherwise act next, which is what actually
+                blocks the scheduler's dispatch of that node's own work.
+            jira_toolkit: Optional Jira toolkit for transitioning the
+                ticket to "In Progress" at the start of development.
             name: Node id.
         """
         super().__init__(node_id=name)
@@ -84,6 +131,8 @@ class DevelopmentNode(DevLoopNode):
         object.__setattr__(self, "_pool_config", pool_config)
         object.__setattr__(self, "_dispatcher_builder", dispatcher_builder)
         object.__setattr__(self, "_pool_max", pool_max)
+        object.__setattr__(self, "_jira", jira_toolkit)
+        object.__setattr__(self, "_require_plan_approval", require_plan_approval)
 
     # ------------------------------------------------------------------
     # Execute
@@ -120,6 +169,23 @@ class DevelopmentNode(DevLoopNode):
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
 
+        # Transition ticket to "In Progress" before dispatching work.
+        issue_key = research.jira_issue_key
+        if issue_key and self._jira and not shared.get("skip_jira", False):
+            try:
+                await transition_issue_with_candidates(
+                    self._jira,
+                    issue_key,
+                    ["In Progress"],
+                    logger=self.logger,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        await self._check_plan_approval(shared, research)
+        research = self._with_prior_work_context(shared, research)
+        research = self._with_repair_feedback(shared, research)
+
         pool_cfg = self._resolve_pool_config(shared)
         if pool_cfg is None:
             return await self._execute_single(shared, research)
@@ -130,7 +196,218 @@ class DevelopmentNode(DevLoopNode):
             )
             return await self._execute_single(shared, research)
 
-        return await self._execute_pool(shared, research, pool_cfg)
+        scheduler = await self._build_scheduler(research)
+        if scheduler is None:
+            self.logger.warning(
+                "No readable per-spec task index found for %s under %s; "
+                "degrading to single-agent.",
+                research.feat_id,
+                research.worktree_path,
+            )
+            return await self._execute_single(shared, research)
+
+        first_wave = scheduler.next_wave()
+        if not should_fan_out(first_wave, pool_cfg):
+            effective_slots = sum(spec.count for spec in pool_cfg.agents)
+            self.logger.info(
+                "should_fan_out(wave=%d task(s), pool_slots=%d) -> False; "
+                "pool will dispatch tasks sequentially for %s.",
+                len(first_wave),
+                effective_slots,
+                research.feat_id,
+            )
+
+        return await self._execute_pool(shared, research, pool_cfg, scheduler)
+
+    # ------------------------------------------------------------------
+    # plan_approval HITL gate (FEAT-377 TASK-1916 — G5)
+    # ------------------------------------------------------------------
+
+    async def _check_plan_approval(
+        self, shared: Dict[str, Any], research: ResearchOutput
+    ) -> None:
+        """Open and await the ``plan_approval`` gate on this run's FIRST
+        entry into this node (opt-in via ``require_plan_approval``).
+
+        No-op when the flag is off, when this run already checked the
+        gate (a QA-repair-loop re-entry must never re-open it — the plan
+        was already approved), or — matching
+        ``DeploymentHandoffNode.require_deployment_approval``'s fail-open
+        legacy fallback — when no ``SessionHost`` is present.
+
+        Whether the gate is required is resolved **per run** (FEAT-412):
+        an explicit ``shared["require_plan_approval"]`` (``True`` *or*
+        ``False``) wins over the constructor flag, so a UI toggle can turn
+        the gate on/off for a single run without rebuilding the flow (the
+        server passes it through ``DevLoopRunner.run(extra_shared=...)``).
+        When the key is absent — or present as ``None`` — the
+        constructor flag applies, so every pre-FEAT-412 call site behaves
+        byte-identically.
+
+        Args:
+            shared: The flow's shared state dict.
+            research: The upstream research output (Jira key, spec path).
+
+        Raises:
+            RuntimeError: The gate resolved to anything other than
+                ``"approved"`` (rejected, or expired with a fail-closed
+                policy — this gate is opened with ``on_expiry="approve"``,
+                so only an explicit human rejection reaches this branch).
+                Any hard error from this node routes to ``failure_handler``
+                via the flow's ``on_error`` edge, the same terminate-the-run
+                effect a rejected ``deployment_approval`` gate has.
+        """
+        # FEAT-412: per-run override. Read with an absent-vs-explicit-False
+        # distinction (NOT truthiness): a run that explicitly sets False must
+        # suppress a gate the constructor flag would have opened, while an
+        # absent key (or an explicit None) must fall back to that flag.
+        override = shared.get("require_plan_approval")
+        required = (
+            self._require_plan_approval if override is None else bool(override)
+        )
+        if not required or shared.get("_plan_gate_checked"):
+            return
+        shared["_plan_gate_checked"] = True
+
+        host = shared.get("session_host")
+        if host is None:
+            self.logger.warning(
+                "DevelopmentNode: require_plan_approval=True but no "
+                "session_host in shared state (legacy DevLoopRunner "
+                "construction) — proceeding without a plan_approval gate."
+            )
+            return
+
+        # Lazy import — avoids a runner.py <-> factories.py <-> this module
+        # import cycle (runner.py imports factories.py, which imports this
+        # module to build the node) — same pattern as
+        # deployment_handoff.py's own gate helper.
+        from parrot.flows.dev_loop.runner import gate_ttl_for
+
+        task_count = await self._count_tasks(research)
+        instructions = (
+            f"Jira: {research.jira_issue_key}\n"
+            f"Spec: {research.spec_path}\n"
+            f"Tasks: {task_count if task_count is not None else 'not yet decomposed'}"
+        )
+        gate_id, _ = host.open_gate(
+            kind="plan_approval",
+            node_id=self.name,
+            title=f"Approve plan: {research.jira_issue_key}",
+            instructions=instructions,
+            ttl_seconds=gate_ttl_for("plan_approval"),
+            on_expiry="approve",
+        )
+        gate = await host.wait_gate(gate_id)
+        if gate.status != "approved":
+            raise RuntimeError(
+                f"plan_approval {gate.status} by {gate.resolved_by or 'ttl'}"
+            )
+
+    async def _count_tasks(self, research: ResearchOutput) -> Optional[int]:
+        """Best-effort total task count from the per-spec index, for the
+        gate's instructions text. ``None`` when no index is readable yet
+        (e.g. the research subagent hasn't scaffolded tasks)."""
+        scheduler = await self._build_scheduler(research)
+        if scheduler is None:
+            return None
+        return len(scheduler._tasks)  # noqa: SLF001 - same-package internal read
+
+    # ------------------------------------------------------------------
+    # Prior-work context (worktree reuse)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _with_prior_work_context(
+        shared: Dict[str, Any], research: ResearchOutput
+    ) -> ResearchOutput:
+        """Inject prior-work context when reusing a worktree.
+
+        When ``ResearchNode`` detects an existing worktree with prior
+        commits, it stores a ``prior_work_context`` dict in shared
+        state. This method folds a concise summary into
+        ``research.log_excerpts`` so the sdd-worker's prompt includes
+        what already exists — preventing it from repeating work.
+
+        Consumed once: the key is popped so QA-repair re-entries
+        (which also call this path) don't re-inject stale context.
+        """
+        prior = shared.pop("prior_work_context", None)
+        if not prior:
+            return research
+
+        commits = prior.get("commits", [])
+        diff_stat = prior.get("diff_stat", "")
+        uncommitted = prior.get("uncommitted_stat", "")
+
+        lines = [
+            "[PRIOR WORK — worktree reused from a previous run]",
+            f"Branch: {prior.get('branch', '?')}",
+            f"Commits since merge-base: {prior.get('commit_count', 0)}",
+        ]
+        if commits:
+            lines.append("Recent commits:")
+            for c in commits[:15]:
+                lines.append(f"  {c}")
+            if len(commits) > 15:
+                lines.append(f"  ... and {len(commits) - 15} more")
+        if diff_stat:
+            lines.append(f"Diff stat:\n{diff_stat}")
+        if uncommitted:
+            lines.append(f"Uncommitted changes:\n{uncommitted}")
+        lines.append(
+            "IMPORTANT: Review the existing code in the worktree BEFORE "
+            "making changes. If work is already done for a task, verify "
+            "and commit it — do NOT redo it from scratch."
+        )
+
+        note = "\n".join(lines)
+        return research.model_copy(
+            update={"log_excerpts": [note, *research.log_excerpts]}
+        )
+
+    # ------------------------------------------------------------------
+    # QA repair-loop re-entry (FEAT-377 TASK-1911)
+    # ------------------------------------------------------------------
+
+    def _with_repair_feedback(
+        self, shared: Dict[str, Any], research: ResearchOutput
+    ) -> ResearchOutput:
+        """Bump the attempt counter and carry prior-QA feedback on re-entry.
+
+        Re-entry is detected via a failing ``QAReport`` already in shared
+        state (set by ``QANode`` on a previous pass through this run's
+        ``qa -> development`` retry edge — TASK-1910). This node OWNS the
+        ``qa_attempt`` counter (``QANode`` only reads it to stamp
+        ``QAReport.attempt``); a fresh run therefore starts implicitly at
+        attempt 1 (``QANode``'s default) without this method ever running.
+
+        Worktree reuse falls out for free: this only augments
+        ``log_excerpts`` — ``research.worktree_path`` (and every other
+        field) is copied unchanged, and `research` (hence the worktree) is
+        never re-derived because the retry edge never re-enters
+        ``ResearchNode``.
+
+        Args:
+            shared: The flow's shared state dict.
+            research: The upstream research output (read fresh each call).
+
+        Returns:
+            ``research`` unchanged on a first pass or a passing prior
+            report; otherwise a copy with the prior failure condensed into
+            ``log_excerpts`` so both dispatch paths' briefs carry it.
+        """
+        prior_report: Optional[QAReport] = shared.get("qa_report")
+        if prior_report is None or prior_report.passed:
+            return research
+        shared["qa_attempt"] = shared.get("qa_attempt", 1) + 1
+        feedback = condense_qa_failure(prior_report)
+        note = (
+            f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"
+        )
+        return research.model_copy(
+            update={"log_excerpts": [*research.log_excerpts, note]}
+        )
 
     # ------------------------------------------------------------------
     # Config cascade
@@ -232,18 +509,49 @@ class DevelopmentNode(DevLoopNode):
                 return data.get("feature") or path.stem
         return None
 
+    async def _build_scheduler(self, research: ResearchOutput) -> Optional[TaskScheduler]:
+        """Resolve the per-spec index and build a :class:`TaskScheduler`.
+
+        FEAT-377 TASK-1913: split out of ``_execute_pool`` so the
+        fan-out decision (``should_fan_out``, computed in ``execute()``
+        against this same scheduler's first wave) and the pool-execution
+        loop share ONE scheduler instance rather than reading the index
+        twice.
+
+        Args:
+            research: The upstream research output.
+
+        Returns:
+            A :class:`TaskScheduler`, or ``None`` when no readable
+            per-spec index is found (caller degrades to single-agent).
+        """
+        # Index discovery + parsing are small local filesystem reads; keep
+        # them off the event loop to honour the async-first rule.
+        feature_slug = await asyncio.to_thread(
+            self._find_feature_slug, research.worktree_path, research.feat_id
+        )
+        if feature_slug is None:
+            return None
+        return await asyncio.to_thread(
+            TaskScheduler.from_worktree, research.worktree_path, feature_slug
+        )
+
     async def _execute_pool(
         self,
         shared: Dict[str, Any],
         research: ResearchOutput,
         pool_cfg: DevAgentPoolConfig,
+        scheduler: TaskScheduler,
     ) -> DevelopmentOutput:
-        """Orchestrate the multi-agent pool: scheduler, waves, aggregation.
+        """Orchestrate the multi-agent pool: waves, aggregation.
 
         Args:
             shared: The flow's shared state dict.
             research: The upstream research output.
             pool_cfg: The resolved pool configuration.
+            scheduler: The already-built :class:`TaskScheduler` (FEAT-377
+                TASK-1913: built once in ``execute()`` for the
+                ``should_fan_out`` decision, reused here).
 
         Returns:
             The aggregated :class:`DevelopmentOutput`.
@@ -253,27 +561,6 @@ class DevelopmentNode(DevLoopNode):
             SubWorktreeMergeError: Unresolvable merge conflict in 'isolated' mode.
             RuntimeError: Every dispatchable task ended up incomplete.
         """
-        # Index discovery + parsing are small local filesystem reads; keep
-        # them off the event loop to honour the async-first rule.
-        feature_slug = await asyncio.to_thread(
-            self._find_feature_slug, research.worktree_path, research.feat_id
-        )
-        scheduler = (
-            await asyncio.to_thread(
-                TaskScheduler.from_worktree, research.worktree_path, feature_slug
-            )
-            if feature_slug is not None
-            else None
-        )
-        if scheduler is None:
-            self.logger.warning(
-                "No readable per-spec task index found for %s under %s; "
-                "degrading to single-agent.",
-                research.feat_id,
-                research.worktree_path,
-            )
-            return await self._execute_single(shared, research)
-
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
         run_id = shared["run_id"]
 
@@ -298,6 +585,12 @@ class DevelopmentNode(DevLoopNode):
                 path, description, pool=pool, research=research, run_id=run_id
             )
 
+        # FEAT-377 TASK-1912 (G3): on a QA repair-loop redispatch
+        # (attempt >= 2 — stamped by `_with_repair_feedback` above), every
+        # worker's dispatch in this run uses its `escalation_model` when
+        # set, not just an internal within-wave retry.
+        escalate = shared.get("qa_attempt", 1) >= 2
+
         wave_results: List[WaveResult] = []
         try:
             while True:
@@ -306,7 +599,8 @@ class DevelopmentNode(DevLoopNode):
                     break
 
                 result = await pool.run_wave(
-                    wave, research=research, run_id=run_id, cwd_for=_cwd_for
+                    wave, research=research, run_id=run_id, cwd_for=_cwd_for,
+                    escalate=escalate,
                 )
                 wave_results.append(result)
 

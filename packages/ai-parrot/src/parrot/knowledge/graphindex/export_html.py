@@ -34,7 +34,7 @@ import json
 import logging
 from importlib.resources import files as _resource_files
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -110,10 +110,10 @@ class GraphExportNode(BaseModel):
     category: int
     symbolSize: float
     value: float = 0.0
-    community_id: Optional[str] = None
-    community_label: Optional[str] = None
+    community_id: str | None = None
+    community_label: str | None = None
     source_uri: str = ""
-    summary: Optional[str] = None
+    summary: str | None = None
     provenance: str = "extracted"
     degree: int = 0
     is_god: bool = False
@@ -134,7 +134,7 @@ class GraphExportEdge(BaseModel):
     target: str
     kind: str = "references"
     provenance: str = "extracted"
-    confidence: Optional[float] = None
+    confidence: float | None = None
 
 
 class GraphExportCategory(BaseModel):
@@ -149,7 +149,7 @@ class GraphExportCategory(BaseModel):
     """
 
     index: int
-    community_id: Optional[str]
+    community_id: str | None
     label: str
     color: str
     size: int
@@ -168,6 +168,15 @@ class GraphExportPayload(BaseModel):
         god_node_ids: Ids of the highlighted god nodes (most connected).
         modularity: Global modularity Q of the partition, if known.
         meta: Free-form metadata (counts, generator, etc.).
+        inter_community_relations: FEAT-401 community-to-community
+            relations (one dict per connected pair — see
+            :class:`parrot.knowledge.graphindex.inter_community.InterCommunityRelation`
+            for the field set). Empty list when no inter-community data
+            was supplied — additive, backward-compatible with pre-FEAT-401
+            payloads.
+        inter_community_density: FEAT-401 meta-graph density
+            (``connected_pairs / total_possible_pairs``). ``None`` when
+            no inter-community data was supplied.
     """
 
     title: str = "GraphIndex Knowledge Map"
@@ -175,8 +184,10 @@ class GraphExportPayload(BaseModel):
     edges: list[GraphExportEdge] = Field(default_factory=list)
     categories: list[GraphExportCategory] = Field(default_factory=list)
     god_node_ids: list[str] = Field(default_factory=list)
-    modularity: Optional[float] = None
+    modularity: float | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
+    inter_community_relations: list[dict] = Field(default_factory=list)
+    inter_community_density: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -206,16 +217,18 @@ def _scale_symbol_size(value: float, max_value: float, is_god: bool) -> float:
 
 
 def build_export_payload(
-    graph: "rustworkx.PyDiGraph",
+    graph: rustworkx.PyDiGraph,
     *,
-    node_to_community: Optional[dict[str, str]] = None,
-    community_order: Optional[list[str]] = None,
-    community_labels: Optional[dict[str, str]] = None,
-    community_sizes: Optional[dict[str, int]] = None,
-    god_scores: Optional[dict[str, float]] = None,
-    god_node_ids: Optional[list[str]] = None,
+    node_to_community: dict[str, str] | None = None,
+    community_order: list[str] | None = None,
+    community_labels: dict[str, str] | None = None,
+    community_sizes: dict[str, int] | None = None,
+    god_scores: dict[str, float] | None = None,
+    god_node_ids: list[str] | None = None,
     title: str = "GraphIndex Knowledge Map",
-    modularity: Optional[float] = None,
+    modularity: float | None = None,
+    inter_community_relations: list[dict] | None = None,
+    inter_community_density: float | None = None,
 ) -> GraphExportPayload:
     """Build a :class:`GraphExportPayload` from an assembled graph.
 
@@ -239,6 +252,13 @@ def build_export_payload(
         god_node_ids: Ids to flag as god nodes (highlighted + size boost).
         title: Graph title for the page header.
         modularity: Global modularity Q, recorded in metadata.
+        inter_community_relations: FEAT-401 pre-serialized community-pair
+            relation dicts (see :func:`export_graph` for how these are
+            adapted from an ``InterCommunityGraph``). Passed through
+            verbatim — this function stays pure and does not import
+            ``inter_community``.
+        inter_community_density: FEAT-401 meta-graph density, passed
+            through verbatim.
 
     Returns:
         A fully populated :class:`GraphExportPayload`.
@@ -377,6 +397,8 @@ def build_export_payload(
             "community_count": len(ordered_cids),
             "generated_by": "parrot.knowledge.graphindex.export_html",
         },
+        inter_community_relations=list(inter_community_relations or []),
+        inter_community_density=inter_community_density,
     )
 
 
@@ -406,7 +428,7 @@ def write_graph_json(payload: GraphExportPayload, output_dir: Path) -> Path:
     return path
 
 
-def _locate_echarts_asset() -> Optional[str]:
+def _locate_echarts_asset() -> str | None:
     """Return the inline JS of the vendored ECharts asset, if available.
 
     Looks up ``echarts.min.js`` shipped by ``ai-parrot-visualizations`` under
@@ -474,7 +496,7 @@ def write_graph_html(
     payload: GraphExportPayload,
     output_dir: Path,
     *,
-    echarts_js: Optional[str] = None,
+    echarts_js: str | None = None,
     allow_cdn_fallback: bool = True,
 ) -> Path:
     """Write a self-contained ``graph.html`` to ``output_dir``.
@@ -528,20 +550,22 @@ def write_graph_html(
 
 
 def export_graph(
-    graph: "rustworkx.PyDiGraph",
+    graph: rustworkx.PyDiGraph,
     output_dir: Path,
     *,
-    communities: Optional[Any] = None,
-    analytics: Optional[Any] = None,
+    communities: Any | None = None,
+    analytics: Any | None = None,
+    inter_community: Any | None = None,
     god_top_k: int = 15,
     title: str = "GraphIndex Knowledge Map",
-    echarts_js: Optional[str] = None,
+    echarts_js: str | None = None,
     allow_cdn_fallback: bool = True,
 ) -> tuple[Path, Path]:
     """Build the payload and write both ``graph.json`` and ``graph.html``.
 
-    Adapts a ``CommunitiesResult`` and an ``AnalyticsResult`` into the plain
-    lookups :func:`build_export_payload` consumes, then writes both artefacts.
+    Adapts a ``CommunitiesResult``, an ``AnalyticsResult``, and (FEAT-401)
+    an ``InterCommunityGraph`` into the plain lookups
+    :func:`build_export_payload` consumes, then writes both artefacts.
 
     Args:
         graph: The assembled ``rustworkx.PyDiGraph``.
@@ -549,6 +573,12 @@ def export_graph(
         communities: Optional ``CommunitiesResult`` for node colouring/labels.
         analytics: Optional ``AnalyticsResult`` whose ``god_nodes`` drive node
             sizing and highlighting.
+        inter_community: Optional FEAT-401 ``InterCommunityGraph`` — its
+            ``relations`` populate the ``graph.html`` inter-community
+            table panel and the ``graph.json``
+            ``inter_community_relations`` array. Adapted via ``getattr``
+            duck-typing (not imported at module level) so this module
+            stays usable without the ``inter_community`` module.
         god_top_k: Number of top god nodes to highlight.
         title: Graph title for the page header.
         echarts_js: Explicit ECharts runtime to inline (else auto-located).
@@ -561,7 +591,7 @@ def export_graph(
     community_order: list[str] = []
     community_labels: dict[str, str] = {}
     community_sizes: dict[str, int] = {}
-    modularity: Optional[float] = None
+    modularity: float | None = None
 
     if communities is not None:
         node_to_community = dict(getattr(communities, "node_to_community", {}) or {})
@@ -593,6 +623,23 @@ def export_graph(
             god_scores[nid] = float(score)
             god_node_ids.append(nid)
 
+    ic_relations: list[dict] = []
+    ic_density: float | None = None
+    if inter_community is not None:
+        ic_density = getattr(inter_community, "density", None)
+        for rel in getattr(inter_community, "relations", None) or []:
+            ic_relations.append({
+                "source_community_id": getattr(rel, "source_community_id", "") or "",
+                "target_community_id": getattr(rel, "target_community_id", "") or "",
+                "source_label": getattr(rel, "source_label", "") or "",
+                "target_label": getattr(rel, "target_label", "") or "",
+                "directed_edge_count": getattr(rel, "directed_edge_count", 0),
+                "reverse_edge_count": getattr(rel, "reverse_edge_count", 0),
+                "total_weight": getattr(rel, "total_weight", 0.0),
+                "reverse_weight": getattr(rel, "reverse_weight", 0.0),
+                "coupling_ratio": getattr(rel, "coupling_ratio", 0.0),
+            })
+
     payload = build_export_payload(
         graph,
         node_to_community=node_to_community,
@@ -603,6 +650,8 @@ def export_graph(
         god_node_ids=god_node_ids,
         title=title,
         modularity=modularity,
+        inter_community_relations=ic_relations,
+        inter_community_density=ic_density,
     )
 
     json_path = write_graph_json(payload, output_dir)
@@ -664,12 +713,49 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   #results li:hover {{ background: #f0f3f6; }}
   #results .dot {{ width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; }}
   #results .gd {{ font-size: 10px; color: #e15759; font-weight: 700; }}
+  .btn-reset {{
+    cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 6px;
+    border-radius: 4px; border: 1px solid #d0d7de; background: #f6f8fa;
+    color: #656d76; user-select: none;
+  }}
+  .btn-reset:hover {{ background: #eaeef2; color: #1f2328; }}
+  .conn-list {{ list-style: none; padding: 0; margin: 0; max-height: 35vh; overflow-y: auto; }}
+  .conn-list li {{
+    padding: 5px 8px; border-radius: 5px; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }}
+  .conn-list li:hover {{ background: #f0f3f6; }}
+  .conn-list .dot {{ width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }}
+  .conn-list .dir {{ font-size: 11px; color: #8b949e; flex: 0 0 14px; text-align: center; }}
+  .conn-list .conn-name {{ flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }}
+  .conn-list .conn-kind {{ font-size: 10px; color: #8b949e; flex: 0 0 auto; }}
+  .conn-list .gd {{ font-size: 10px; color: #e15759; font-weight: 700; }}
+  #interCommunityPanel {{
+    background: #ffffff; border-bottom: 1px solid #d0d7de; padding: 8px 18px;
+  }}
+  #interCommunityPanel summary {{
+    cursor: pointer; font-size: 12px; font-weight: 600; color: #656d76;
+    text-transform: uppercase; letter-spacing: .04em;
+  }}
+  #interCommunityPanel table {{
+    border-collapse: collapse; margin-top: 8px; font-size: 12px; width: 100%;
+  }}
+  #interCommunityPanel th, #interCommunityPanel td {{
+    text-align: left; padding: 4px 10px; border-bottom: 1px solid #eaeef2;
+  }}
+  #interCommunityPanel th {{ color: #656d76; font-weight: 600; }}
   @media (prefers-color-scheme: dark) {{
     body {{ background: #0d1117; color: #e6edf3; }}
     #side {{ background: #161b22; border-color: #30363d; }}
     #search {{ background: #0d1117; color: #e6edf3; border-color: #30363d; }}
     #detail pre {{ background: #0d1117; }}
     #results li:hover {{ background: #21262d; }}
+    .btn-reset {{ background: #21262d; border-color: #30363d; color: #8b949e; }}
+    .btn-reset:hover {{ background: #30363d; color: #e6edf3; }}
+    .conn-list li:hover {{ background: #21262d; }}
+    #interCommunityPanel {{ background: #161b22; border-color: #30363d; }}
+    #interCommunityPanel th, #interCommunityPanel td {{ border-color: #30363d; }}
   }}
 </style>
 {echarts_script_tag}
@@ -685,6 +771,19 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     <span>modularity <b>{modularity}</b></span>
   </div>
 </header>
+<details id="interCommunityPanel" style="display:none">
+  <summary>Inter-Community Relations (<span id="icCount">0</span> pairs)</summary>
+  <table>
+    <thead>
+      <tr>
+        <th>Community A</th><th>Community B</th>
+        <th>Edges &rarr;</th><th>Edges &larr;</th>
+        <th>Weight</th><th>Coupling</th>
+      </tr>
+    </thead>
+    <tbody id="icTableBody"></tbody>
+  </table>
+</details>
 <div id="wrap">
   <div id="chart"></div>
   <aside id="side">
@@ -700,6 +799,33 @@ const GRAPH = {payload_json};
 const catColor = i => (GRAPH.categories[i] && GRAPH.categories[i].color) || "#888";
 const nodeById = {{}};
 GRAPH.nodes.forEach(n => {{ nodeById[n.id] = n; }});
+
+// FEAT-401: Inter-community relations table panel.
+(function renderInterCommunityPanel() {{
+  const rels = GRAPH.inter_community_relations || [];
+  if (!rels.length) return;
+  const panel = document.getElementById("interCommunityPanel");
+  const tbody = document.getElementById("icTableBody");
+  document.getElementById("icCount").textContent = String(rels.length);
+  rels.forEach(r => {{
+    const fwd = r.directed_edge_count || 0;
+    const rev = r.reverse_edge_count || 0;
+    const arrow = fwd >= rev ? "\\u2192" : "\\u2190";
+    const srcLabel = r.source_label || r.source_community_id;
+    const tgtLabel = r.target_label || r.target_community_id;
+    const weight = (r.total_weight || 0) + (r.reverse_weight || 0);
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" + esc(srcLabel) + "</td>" +
+      "<td>" + arrow + " " + esc(tgtLabel) + "</td>" +
+      "<td>" + fwd + "</td>" +
+      "<td>" + rev + "</td>" +
+      "<td>" + weight.toFixed(2) + "</td>" +
+      "<td>" + (r.coupling_ratio || 0).toFixed(4) + "</td>";
+    tbody.appendChild(tr);
+  }});
+  panel.style.display = "block";
+}})();
 
 const chart = echarts.init(document.getElementById("chart"), null, {{ renderer: "canvas" }});
 const option = {{
@@ -741,31 +867,111 @@ chart.setOption(option);
 window.addEventListener("resize", () => chart.resize());
 
 const detail = document.getElementById("detail");
+const results = document.getElementById("results");
+const search = document.getElementById("search");
+const idOrder = GRAPH.nodes.map(n => n.id);
+function idxOf(id) {{ return idOrder.indexOf(id); }}
+let activeHighlight = null;
+
+function esc(s) {{
+  return String(s == null ? "" : s).replace(/[&<>"]/g, c =>
+    ({{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }}[c]));
+}}
+
+function clearFocus() {{
+  if (activeHighlight !== null) {{
+    chart.dispatchAction({{ type: "downplay", seriesIndex: 0 }});
+    activeHighlight = null;
+  }}
+}}
+
+function focusNode(id) {{
+  clearFocus();
+  const idx = idxOf(id);
+  if (idx >= 0) {{
+    chart.dispatchAction({{ type: "highlight", seriesIndex: 0, dataIndex: idx }});
+    activeHighlight = idx;
+  }}
+}}
+
+function resetView() {{
+  clearFocus();
+  search.value = "";
+  results.innerHTML = "";
+  detail.innerHTML = '<span class="empty">Click a node to inspect it.</span>';
+}}
+
+function getNeighbors(nodeId) {{
+  const out = [];
+  GRAPH.edges.forEach(e => {{
+    if (e.source === nodeId && nodeById[e.target])
+      out.push({{ node: nodeById[e.target], dir: "→", kind: e.kind }});
+    else if (e.target === nodeId && nodeById[e.source])
+      out.push({{ node: nodeById[e.source], dir: "←", kind: e.kind }});
+  }});
+  out.sort((a, b) => b.node.value - a.node.value);
+  return out;
+}}
+
 function showDetail(n) {{
   const cat = GRAPH.categories[n.category];
   const color = cat ? cat.color : "#888";
-  detail.innerHTML =
-    `<div style="font-weight:600;font-size:14px">${{esc(n.name)}}` +
-      (n.is_god ? `<span class="badge" style="background:#e15759">GOD</span>` : "") + `</div>` +
+  const neighbors = getNeighbors(n.id);
+  let h =
+    `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">` +
+      `<span class="btn-reset" title="Back to overview">&#8962;</span>` +
+      `<span style="font-weight:600;font-size:14px">${{esc(n.name)}}</span>` +
+      (n.is_god ? `<span class="badge" style="background:#e15759">GOD</span>` : "") +
+    `</div>` +
     `<div><span class="badge" style="background:${{color}}">${{esc(cat ? cat.label : "—")}}</span> ` +
       `<span class="badge" style="background:#57606a">${{esc(n.kind)}}</span></div>` +
     `<div style="margin-top:6px"><span class="k">provenance:</span> ${{esc(n.provenance)}} ` +
       `&middot; <span class="k">degree:</span> ${{n.degree}}</div>` +
     (n.source_uri ? `<div><span class="k">source:</span> ${{esc(n.source_uri)}}</div>` : "") +
     (n.summary ? `<pre>${{esc(n.summary)}}</pre>` : "");
+  if (neighbors.length) {{
+    h += `<div class="panel-title" style="margin-top:12px">Connections (${{neighbors.length}})</div><ul class="conn-list">`;
+    neighbors.forEach(nb => {{
+      const nc = GRAPH.categories[nb.node.category];
+      const ncol = nc ? nc.color : "#888";
+      h += `<li data-nid="${{esc(nb.node.id)}}">` +
+        `<span class="dir">${{nb.dir}}</span>` +
+        `<span class="dot" style="background:${{ncol}}"></span>` +
+        `<span class="conn-name">${{esc(nb.node.name)}}</span>` +
+        `<span class="conn-kind">${{esc(nb.kind)}}</span>` +
+        (nb.node.is_god ? ` <span class="gd">god</span>` : "") +
+      `</li>`;
+    }});
+    h += `</ul>`;
+  }}
+  detail.innerHTML = h;
 }}
-function esc(s) {{
-  return String(s == null ? "" : s).replace(/[&<>"]/g, c =>
-    ({{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }}[c]));
-}}
-chart.on("click", p => {{ if (p.dataType === "node" && nodeById[p.data.id]) showDetail(nodeById[p.data.id]); }});
 
-const results = document.getElementById("results");
-const search = document.getElementById("search");
+detail.addEventListener("click", e => {{
+  const rst = e.target.closest(".btn-reset");
+  if (rst) {{ resetView(); return; }}
+  const li = e.target.closest("[data-nid]");
+  if (li) {{
+    const n = nodeById[li.dataset.nid];
+    if (n) {{ showDetail(n); focusNode(n.id); }}
+  }}
+}});
+
+chart.on("click", p => {{
+  if (p.dataType === "node" && nodeById[p.data.id]) {{
+    showDetail(nodeById[p.data.id]);
+    focusNode(p.data.id);
+  }}
+}});
+
 function renderResults(q) {{
   q = q.trim().toLowerCase();
   results.innerHTML = "";
-  if (!q) return;
+  if (!q) {{
+    clearFocus();
+    detail.innerHTML = '<span class="empty">Click a node to inspect it.</span>';
+    return;
+  }}
   const hits = GRAPH.nodes
     .filter(n => n.name.toLowerCase().includes(q))
     .sort((a, b) => b.value - a.value).slice(0, 40);
@@ -773,17 +979,13 @@ function renderResults(q) {{
     const li = document.createElement("li");
     const dot = `<span class="dot" style="background:${{catColor(n.category)}}"></span>`;
     li.innerHTML = dot + `<span>${{esc(n.name)}}</span>` + (n.is_god ? ` <span class="gd">god</span>` : "");
-    li.onclick = () => {{
-      showDetail(n);
-      chart.dispatchAction({{ type: "focusNodeAdjacency", seriesIndex: 0, dataIndex: idxOf(n.id) }});
-      chart.dispatchAction({{ type: "highlight", seriesIndex: 0, dataIndex: idxOf(n.id) }});
-    }};
+    li.onclick = () => {{ showDetail(n); focusNode(n.id); }};
     results.appendChild(li);
   }});
 }}
-const idOrder = GRAPH.nodes.map(n => n.id);
-function idxOf(id) {{ return idOrder.indexOf(id); }}
+
 search.addEventListener("input", e => renderResults(e.target.value));
+search.addEventListener("search", e => renderResults(e.target.value));
 </script>
 </body>
 </html>

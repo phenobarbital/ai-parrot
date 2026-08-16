@@ -288,6 +288,33 @@ class FlowMetadata(BaseModel):
         description="FAISS index type: 'Flat', 'FlatIP', or 'HNSW'"
     )
 
+    # ── State checkpointing (FEAT-399) ─────────────────────────────────────
+    # All default to off/unset so existing definitions parse unchanged.
+    checkpoint: bool = Field(
+        default=False,
+        description="Enable AgentsFlow state checkpointing for this flow"
+    )
+    checkpoint_retention: Optional[int] = Field(
+        default=None,
+        description="Ephemeral (Redis) checkpoint TTL in seconds; "
+        "defaults to FLOW_CHECKPOINT_REDIS_TTL when unset"
+    )
+    checkpoint_history: Optional[int] = Field(
+        default=None,
+        description="Max retained checkpoints per flow; defaults to "
+        "FLOW_CHECKPOINT_HISTORY when unset"
+    )
+    checkpoint_include_responses: bool = Field(
+        default=False,
+        description="Include raw per-node responses in checkpoints "
+        "(heavy; results-only by default)"
+    )
+    durable: bool = Field(
+        default=False,
+        description="Write-through every checkpoint to the durable "
+        "store in addition to the ephemeral one"
+    )
+
 
 # ---------------------------------------------------------------------------
 # FlowDefinition (root model)
@@ -369,10 +396,20 @@ class FlowDefinition(BaseModel):
 
     @model_validator(mode="after")
     def _validate_acyclic(self) -> "FlowDefinition":
-        """Reject FlowDefinition whose edges form a cycle.
+        """Reject FlowDefinition whose *unconditional* edges form a cycle.
 
         Runs Kahn's algorithm: repeatedly remove nodes with in-degree 0.
         If any node remains after the queue empties, it participates in a cycle.
+
+        ``on_condition`` edges are exempt from this check (FEAT-377
+        TASK-1910): a CEL-gated back-edge is a deliberate, bounded repair/
+        retry loop (e.g. dev-loop's ``qa → development`` edge, gated by an
+        attempt-count predicate) — the engine's explicit-edge executor
+        (OR-join + skip-propagation) supports such cycles; only the
+        ``from_definition`` AND-join materialization path benefits from
+        acyclicity. A genuinely unconditional cycle (``always``/
+        ``on_success``/``on_error``/``on_timeout``) still raises — those
+        edges have no predicate to bound iteration.
 
         Placed AFTER ``validate_node_ids`` so dangling-reference errors surface
         first (cycle detection assumes referential integrity). Pydantic v2 runs
@@ -389,6 +426,8 @@ class FlowDefinition(BaseModel):
             in_degree.setdefault(n.id, 0)
 
         for edge in self.edges:
+            if edge.condition == "on_condition":
+                continue
             targets = [edge.to] if isinstance(edge.to, str) else edge.to
             for target in targets:
                 # Reference integrity already validated above; guard defensively.

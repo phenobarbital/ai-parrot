@@ -71,7 +71,7 @@ def fake_store():
 def toolkit_with_bot(fake_store):
     tk = InfographicToolkit(artifact_store=fake_store)
     bot = MagicMock()
-    bot._get_repl_locals = MagicMock(return_value={"r": pd.DataFrame([{"x": 1}])})
+    bot._get_repl_locals = AsyncMock(return_value={"r": pd.DataFrame([{"x": 1}])})
     bot.user_id = "u"
     bot.agent_id = "agt"
     bot.session_id = "s"

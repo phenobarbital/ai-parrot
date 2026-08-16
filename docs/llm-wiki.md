@@ -108,6 +108,9 @@ pytest examples/knowledge_wiki/ -v
 - [WikiToolkit as Claude Code infrastructure](./wiki-claude-code.md) —
   `wikitoolkit build` + `parrot claude install`: the wiki as a
   codebase knowledge graph for coding assistants.
+- [Dream Cycle](./dream-cycle.md) — an offline consolidation pipeline that
+  distills an agent's episodic memories into wiki pages on its own
+  personal brain, reusing this same `wiki.db` storage format.
 - [PageIndex](./pageindex.md)
 - [Memory & Knowledge](./chapters/memory-knowledge.md)
 - [Parent-Child Retrieval](./parent-child-retrieval.md)

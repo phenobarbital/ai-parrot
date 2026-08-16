@@ -1,0 +1,85 @@
+{
+  "feat_id": "FEAT-375",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/dispatcher.py", "symbol": "CodexCodeDispatcher", "lines": "936-1265", "role": "Existing codex-exec orchestrator; extension point for review/resume command variants and read-only profiles", "confidence": "high", "evidence": ["F001", "F004"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/code_review.py", "symbol": "CodeReviewDispatcherFactory / CodexCodeReviewDispatcher", "lines": "104-168", "role": "Registry where an advisory 'codex-adversarial' reviewer would be registered alongside the write-enabled 'codex' one", "confidence": "high", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/models.py", "symbol": "CodexCodeDispatchProfile / CodexCodeReviewProfile", "lines": "540-566, 797-809", "role": "Profiles to widen (subagent Literal, read-only constructor) for advisory/opinion modes", "confidence": "high", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/", "symbol": "load_subagent_definition", "lines": "n/a", "role": "Where a neutral adversarial-review brief (e.g. sdd-secondopinion.md) plugs in", "confidence": "high", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/agent_builder.py", "symbol": "build_dispatcher", "lines": "143-146", "role": "Already materializes codex dev-workers for the DevAgentPool (development-task half of the request)", "confidence": "high", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/conf.py", "symbol": "DEV_LOOP_CODEREVIEW_AGENT", "lines": "923-932", "role": "Config surface for reviewer selection; new advisory-mode settings would live here", "confidence": "high", "evidence": ["F002"]}
+  ],
+  "constraints": [
+    {"claim": "Every codex dispatch cwd must be under WORKTREE_BASE_PATH (_enforce_cwd_under_worktree_base)", "confidence": "high", "evidence": ["F001", "F004"]},
+    {"claim": "Review dispatchers must degrade to passed=True + nit finding on infra errors (FEAT-250 G4)", "confidence": "high", "evidence": ["F002"]},
+    {"claim": "Codex profiles pin subagent to Literal['sdd-worker']; widening it is required for any non-worker persona", "confidence": "high", "evidence": ["F004"]},
+    {"claim": "The subsystem is hot (FEAT-322/323/270 just merged; FEAT-374 CLI console in flight) — additive changes only, no dispatcher rework", "confidence": "high", "evidence": ["F006"]}
+  ],
+  "hypotheses": [
+    {
+      "rank": 1,
+      "statement": "The literal request ('invoke codex CLI from the dev loop for dev tasks and code review') is ~80% already implemented by FEAT-270 + FEAT-323. The real deliverable is the missing ADVERSARIAL/ADVISORY mode: (1) a read-only, advisory CodexAdversarialReviewDispatcher (registered e.g. as 'codex-adversarial') fed a neutral brief (diff + requirement + question, never the primary agent's reasoning) whose findings are triaged CONFIRM/REJECT/ESCALATE by the QA loop instead of auto-fixed; (2) a neutral second-opinion subagent brief in _subagent_data/; (3) profile widening (subagent Literal, read-only constructor); optionally (4) 'codex exec review --base/--commit/--uncommitted' and 'codex exec resume --last' command variants, and (5) a parallel-perspective option (Claude reviewer + codex advisory on the same brief, synthesized).",
+      "confidence": "high",
+      "evidence": ["F001", "F002", "F003", "F004", "F005"],
+      "reasoning": "All requested primitives exist except the advisory/adversarial semantics described at length in the source's example markdown, which contradicts the current write-enabled fix+commit reviewer design."
+    },
+    {
+      "rank": 2,
+      "statement": "Alternative reading: the user is unaware of FEAT-270/FEAT-323 and simply wants what already exists documented/exposed (e.g. via the FEAT-374 devloop console); the deliverable would then be mostly docs + console wiring.",
+      "confidence": "low",
+      "evidence": ["F003", "F006"],
+      "reasoning": "The detailed adversarial-review rules in the source suggest intent beyond existing behavior, so this is unlikely to be the whole ask."
+    }
+  ],
+  "scope": {
+    "in": [
+      "New advisory/adversarial Codex review dispatcher (read-only sandbox, no fix/commit) registered in CodeReviewDispatcherFactory",
+      "Neutral second-opinion brief file in _subagent_data/ + Literal widening in Codex profiles",
+      "Finding triage contract (CONFIRM/REJECT/ESCALATE) surfaced in CodeReviewVerdict or a sibling model consumed by QANode",
+      "Config: DEV_LOOP_CODEREVIEW_AGENT value + any advisory-mode envs in conf.py",
+      "Optional v2: codex exec review / resume command variants; parallel Claude+Codex perspective"
+    ],
+    "out": [
+      "Reworking CodexCodeDispatcher internals (hot subsystem, additive only)",
+      "Image generation (image_gen) — no dev-loop consumer identified",
+      "Touching in-flight FEAT-374 CLI console edits"
+    ],
+    "confidence": "high"
+  },
+  "confidence_map": [
+    {"claim": "CodexCodeDispatcher fully orchestrates codex exec --json with structured output", "confidence": "high", "evidence": ["F001"]},
+    {"claim": "Codex is already selectable as dev-task worker (DevAgentPool) and QA code reviewer", "confidence": "high", "evidence": ["F002", "F003"]},
+    {"claim": "Current codex reviewer fixes+commits (write-enabled) — no advisory/adversarial mode exists", "confidence": "high", "evidence": ["F002", "F004"]},
+    {"claim": "Codex path cannot load any brief other than sdd-worker (Literal pin)", "confidence": "high", "evidence": ["F004"]},
+    {"claim": "codex exec review / resume subcommands are unused anywhere in dev_loop", "confidence": "medium", "evidence": ["F001", "F004"]},
+    {"claim": "A new brief file + factory registration is the lowest-friction integration path", "confidence": "medium", "evidence": ["F005", "F006"]}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the adversarial reviewer REPLACE the write-enabled codex reviewer behavior when selected, or be a separate registry entry (e.g. 'codex-adversarial') so both modes coexist?",
+      "resolves_claims": ["C3"],
+      "plausible_answers": ["Separate registry entry, both coexist (recommended)", "Replace: make advisory the only codex review mode", "Config flag on the existing 'codex' entry"],
+      "user_answer": "Coexist: register a separate 'codex-adversarial' entry in CodeReviewDispatcherFactory; DEV_LOOP_CODEREVIEW_AGENT selects either. No behavior change for existing users."
+    },
+    {
+      "id": "U2",
+      "question": "Who consumes the CONFIRM/REJECT/ESCALATE triage? Should QANode's review-fix-rerun loop treat advisory findings as gate input for the PRIMARY (Claude) worker to fix, or only attach them as metadata to the verdict/PR?",
+      "resolves_claims": ["C2"],
+      "plausible_answers": ["QANode feeds advisory findings to the primary worker's fix loop (triage happens there)", "Advisory findings are metadata only — surfaced in PR/report, humans triage", "Both, behind a config flag"],
+      "user_answer": "Primary worker fixes: QANode feeds advisory findings into the existing review→fix→rerun loop; the primary (Claude) worker triages each finding (CONFIRM: fix, REJECT: record reason, ESCALATE: gate)."
+    },
+    {
+      "id": "U3",
+      "question": "Are the v2 items (codex exec review subcommand, resume --last session continuation, parallel Claude+Codex perspective) in scope for this feature, or deferred?",
+      "resolves_claims": ["C5"],
+      "plausible_answers": ["Defer all v2 items — ship advisory mode only", "Include 'codex exec review' variants, defer resume/parallel", "Include everything"],
+      "user_answer": "Include everything: advisory mode + codex exec review variants + resume --last continuation + parallel Claude/Codex perspective synthesis."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "High-confidence localization onto an existing, well-tested extension seam (factory registration + profile widening + brief file); design questions are narrow enough to resolve in Q&A, no architectural exploration needed."
+  }
+}

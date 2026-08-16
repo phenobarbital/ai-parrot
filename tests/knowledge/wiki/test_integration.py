@@ -32,6 +32,8 @@ from parrot.knowledge.wiki import (
     WikiCombinedSearch,
     SourceCollectionManager,
     WikiBookkeeper,
+    WikiPageCategory,
+    WikiStore,
 )
 from parrot.knowledge.wiki.models import WikiLintReport
 
@@ -458,3 +460,291 @@ class TestEndToEnd:
 
         # Verify the OKF lint was called
         okf.lint_knowledge_base.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# FEAT-402 (TASK-2075): supervised ingestion end-to-end + build-unaffected
+# ---------------------------------------------------------------------------
+
+
+class _FakeTriageAdapter:
+    """Stub PageIndexLLMAdapter for triage — content-marker-driven output."""
+
+    def __init__(self) -> None:
+        from parrot.knowledge.wiki.review import DimensionScores, TriageOutput
+
+        self.outputs = {
+            "ADMIT_MARKER": TriageOutput(
+                briefing="A durable technical decision with clear rationale.",
+                scores=DimensionScores(density=1.0, novelty=0.5, durability=1.0),
+                sensitive=False,
+            ),
+            "ARCHIVE_MARKER": TriageOutput(
+                briefing="Middling content — density and durability neither"
+                " clearly admits nor clearly rejects it.",
+                # With novelty fixed at 0.1 by the scorer below, this lands
+                # in the gray band [0.35, 0.75) and STAYS there after
+                # Stage-2 escalation (same canned output both stages) —
+                # _band_to_action's residual-gray policy maps that to
+                # "archive" (kept, searchable, human-reviewable — not
+                # discarded outright).
+                scores=DimensionScores(density=0.5, novelty=0.5, durability=0.5),
+                sensitive=False,
+            ),
+            "SENSITIVE_MARKER": TriageOutput(
+                briefing="(retained) sensitive personal data.",
+                scores=DimensionScores(density=1.0, novelty=0.5, durability=1.0),
+                sensitive=True,
+            ),
+        }
+        self.calls = 0
+
+    async def ask_structured(self, prompt, output_type, temperature=0.0, system_prompt=None):
+        self.calls += 1
+        for marker, output in self.outputs.items():
+            if marker in prompt:
+                return output
+        return next(iter(self.outputs.values()))
+
+
+class _FakeNoveltyScorer:
+    """Stub NoveltyScorer — content-marker-driven novelty, no grounding/search."""
+
+    def __init__(self, novelty_by_marker: dict[str, float], backend: str = "search-proxy") -> None:
+        self.novelty_by_marker = novelty_by_marker
+        self.backend = backend
+
+    async def score(self, claims, text):
+        for marker, value in self.novelty_by_marker.items():
+            if marker in text:
+                return value, self.backend
+        return 0.5, self.backend
+
+
+class TestSupervisedIngestionEndToEnd:
+    """FEAT-402: charter-driven triage + HITL manifest review, full pipeline.
+
+    folder -> dry-run manifest -> simulated human edits -> --review apply
+    -> admitted/archived/discarded outcomes verified end-to-end (pages,
+    categories, rejected-manifest row, bookkeeper log lines, and the
+    archive-category default-ranking exclusion).
+    """
+
+    @pytest.mark.asyncio
+    async def test_supervised_ingest_end_to_end(self, tmp_path: Path) -> None:
+        from parrot.knowledge.wiki.charter import (
+            CalibrationPolicy,
+            Charter,
+            CharterScope,
+            Thresholds,
+        )
+        from parrot.knowledge.wiki.review import (
+            ManifestReader,
+            ManifestRunHeader,
+            ManifestWriter,
+        )
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        # --- Arrange: a small doc corpus (admit / archive / sensitive-discard) ---
+        corpus_dir = tmp_path / "corpus"
+        corpus_dir.mkdir()
+        admit_doc = corpus_dir / "decision.md"
+        admit_doc.write_text(
+            "# Decision\n\nADMIT_MARKER: migrated the graph store to ArangoDB.",
+            encoding="utf-8",
+        )
+        archive_doc = corpus_dir / "borderline.md"
+        archive_doc.write_text(
+            "# Borderline note\n\nARCHIVE_MARKER: some context, unclear lasting value.",
+            encoding="utf-8",
+        )
+        sensitive_doc = corpus_dir / "hr.md"
+        sensitive_doc.write_text(
+            "# HR record\n\nSENSITIVE_MARKER: individual salary details.",
+            encoding="utf-8",
+        )
+
+        charter = Charter(
+            version="1",
+            scope=CharterScope(include=[], exclude=[]),
+            weights={"density": 0.4, "novelty": 0.35, "durability": 0.25},
+            thresholds=Thresholds(admit=0.75, reject=0.35),
+            calibration=CalibrationPolicy(),
+        )
+
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(
+            novelty_by_marker={
+                "ADMIT_MARKER": 0.9,
+                "ARCHIVE_MARKER": 0.1,
+                "SENSITIVE_MARKER": 0.9,
+            }
+        )
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+
+        # --- Act: triage all docs ---
+        docs = sorted(corpus_dir.iterdir())
+        entries = []
+        for doc in docs:
+            content = doc.read_text(encoding="utf-8")
+            entries.append(await router.triage(doc, content))
+
+        by_uri = {e.source_uri: e for e in entries}
+        admit_entry = by_uri[str(admit_doc.resolve())]
+        archive_entry = by_uri[str(archive_doc.resolve())]
+        sensitive_entry = by_uri[str(sensitive_doc.resolve())]
+        assert admit_entry.proposed_action == "admit"
+        assert archive_entry.proposed_action == "archive"
+        assert sensitive_entry.proposed_action == "discard"
+
+        # --- Act: write the dry-run manifest (decisions null) ---
+        manifest_path = tmp_path / "manifest.jsonl"
+        header = ManifestRunHeader(
+            charter_sha256="deadbeef" * 8,
+            charter_version=charter.version,
+            mode="dry-run",
+            novelty_backend=novelty_scorer.backend,
+            counts={},
+            created_at="2026-08-02T00:00:00+00:00",
+        )
+        ManifestWriter(manifest_path).write(header, entries)
+
+        _dry_header, dry_entries = ManifestReader(manifest_path).read()
+        assert all(e.decision is None for e in dry_entries)
+
+        # --- Act: simulate a human hand-editing the manifest ---
+        for entry in dry_entries:
+            entry.decision = entry.proposed_action
+            entry.decision_source = "human"
+        ManifestWriter(manifest_path).write(header, dry_entries)
+
+        # --- Act: --review apply ---
+        _review_header, applied_entries = ManifestReader(manifest_path).read()
+
+        insert_counter = {"n": 0}
+
+        async def _insert_content(tree_name, content, parent_node_id=None, hint=None):
+            insert_counter["n"] += 1
+            nid = f"node-{insert_counter['n']:04d}"
+            return {
+                "tree_name": tree_name,
+                "new_node_ids": [nid],
+                "title": "Doc",
+                "summary": content[:80],
+            }
+
+        pi = MagicMock()
+        pi.insert_content = AsyncMock(side_effect=_insert_content)
+        pi.get_tree = AsyncMock(return_value={})
+        bookkeeper = WikiBookkeeper()
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        orch = WikiIngestOrchestrator(pi, None, sources, bookkeeper, store=store)
+        wiki_config = WikiConfig(
+            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
+        )
+
+        for entry in applied_entries:
+            await orch.ingest(
+                entry.source_uri,
+                wiki_config,
+                triage=entry,
+                charter_version=charter.version,
+            )
+
+        # --- Assert: admitted doc got a page, decision fields persisted ---
+        admit_applied = next(
+            e for e in applied_entries if e.source_uri == admit_entry.source_uri
+        )
+        admit_source_id = sources.find_by_uri(admit_applied.source_uri)
+        admit_record = sources.get_source(admit_source_id)
+        assert admit_record.status == "ingested"
+        assert admit_record.destination == "wiki"
+        assert admit_record.decision_source == "human"
+        assert admit_record.charter_version == "1"
+        assert len(admit_record.pages_generated) >= 1
+
+        # --- Assert: archived doc got a page with category ARCHIVE ---
+        archive_applied = next(
+            e for e in applied_entries if e.source_uri == archive_entry.source_uri
+        )
+        archive_source_id = sources.find_by_uri(archive_applied.source_uri)
+        archive_record = sources.get_source(archive_source_id)
+        assert archive_record.destination == "archive"
+        assert len(archive_record.pages_generated) >= 1
+        archive_page_id = archive_record.pages_generated[0]
+        page = await store.get_page(archive_page_id)
+        assert page is not None
+        assert page["category"] == WikiPageCategory.ARCHIVE.value
+
+        # --- Assert: rejected (sensitive) doc created ZERO pages ---
+        sensitive_applied = next(
+            e for e in applied_entries if e.source_uri == sensitive_entry.source_uri
+        )
+        sensitive_source_id = sources.find_by_uri(sensitive_applied.source_uri)
+        sensitive_record = sources.get_source(sensitive_source_id)
+        assert sensitive_record.status == "rejected"
+        assert sensitive_record.pages_generated == []
+        assert sensitive_record.destination == "discard"
+
+        # --- Assert: bookkeeper log carries ADMIT/ARCHIVE/DISCARD lines ---
+        log_content = bookkeeper.read_log(wiki_config.storage_dir, last_n=50)
+        assert "[ADMIT]" in log_content
+        assert "[ARCHIVE]" in log_content
+        assert "[DISCARD]" in log_content
+
+        # --- Assert: archive page excluded from default ranking, but
+        # retrievable via the explicit include_archived opt-in ---
+        combined = WikiCombinedSearch(None, None, store=store)
+        default_results = await combined.search("borderline", mode="lexical", top_k=10)
+        assert all(r.node_id != archive_page_id for r in default_results)
+        archived_results = await combined.search(
+            "borderline", mode="lexical", top_k=10, include_archived=True
+        )
+        assert any(r.node_id == archive_page_id for r in archived_results)
+
+
+class TestBuildUnaffected:
+    """FEAT-402: `build`'s deterministic, offline, no-LLM contract is untouched."""
+
+    def test_build_unaffected(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+        from parrot.knowledge.wiki.cli import wiki
+        from parrot.knowledge.wiki.project import load_project_config
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "module.py").write_text(
+            '"""A tiny module."""\n\n\ndef greet(name):\n'
+            '    """Greet."""\n    return f"hi {name}"\n',
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        first = runner.invoke(
+            wiki, ["build", "--path", str(repo), "--no-git", "--quiet"]
+        )
+        assert first.exit_code == 0, first.output
+
+        config = load_project_config(repo)
+        store = WikiStore(config.db_path(repo), wiki_name=config.wiki_name)
+        stats_first = asyncio.run(store.stats())
+
+        # Re-run build (deterministic, offline, no-LLM) — FEAT-402 code
+        # being present anywhere in the codebase must not change output.
+        second = runner.invoke(
+            wiki, ["build", "--path", str(repo), "--no-git", "--quiet"]
+        )
+        assert second.exit_code == 0, second.output
+        stats_second = asyncio.run(store.stats())
+        assert stats_first == stats_second
+
+        # No page picks up the new ARCHIVE category — `build` never routes
+        # through supervised triage (spec §1 Non-Goals: build is untouched).
+        pages = asyncio.run(store.list_pages(limit=1000))
+        assert all(
+            p.get("category") != WikiPageCategory.ARCHIVE.value for p in pages
+        )

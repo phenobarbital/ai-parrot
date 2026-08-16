@@ -12,22 +12,26 @@ Exposed two ways:
 - ``parrot wiki <command>`` — subcommand of the main parrot CLI.
 
 Commands:
-    build    Generate/refresh the KB graph from the repository.
-    upsert   Incrementally re-ingest specific/changed files.
-    query    Scoped question → token-budgeted context pack.
-    page     Read one wiki page (progressive disclosure).
-    related  Follow typed edges from a page.
-    status   Plane statistics + staleness report.
-    export   Export the wiki as a human-readable markdown bundle.
+    build        Generate/refresh the KB graph from the repository.
+    upsert       Incrementally re-ingest specific/changed files.
+    query        Scoped question → token-budgeted context pack.
+    page         Read one wiki page (progressive disclosure).
+    related      Follow typed edges from a page.
+    communities  Community detection + inter-community relations (FEAT-401).
+    status       Plane statistics + staleness report.
+    export       Export the wiki as a human-readable markdown bundle.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path, PurePosixPath
+import logging
 import subprocess
-from typing import Any, Optional
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 import click
 
@@ -36,23 +40,30 @@ from parrot.knowledge.wiki.context import (
     pack_results,
     truncate_to_tokens,
 )
+from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
+    PARROT_DIR,
     WikiConfigError,
     WikiProjectConfig,
     find_project_root,
     load_project_config,
     save_project_config,
+    wiki_write_lock,
 )
 from parrot.knowledge.wiki.repo_scan import (
+    is_inside_wiki_bundle,
     is_wiki_relevant,
     scan_repository,
 )
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 
-import logging
-
 _cli_logger = logging.getLogger("wikitoolkit.cli")
+
+#: How long `upsert` waits for a contended store lock before skipping.
+#: Long enough to outlast a peer upsert (sub-second), short enough that
+#: a commit hook never stalls behind a multi-minute build.
+UPSERT_LOCK_WAIT_SECONDS = 3.0
 
 
 # --------------------------------------------------------------------------
@@ -64,7 +75,7 @@ path_option = click.option(
     "--path", "path_", default=None, help="Repo root (default: auto-detect)."
 )
 
-def _resolve_project(path: Optional[str]) -> tuple[Path, WikiProjectConfig]:
+def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
     """Resolve the repo root + config, aborting with guidance if absent."""
     if path:
         root = Path(path).resolve()
@@ -98,18 +109,45 @@ def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
 def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
     """Create the retrieval-plane store for a repo."""
     storage = config.storage_path(root)
+    if config.backend == "arangodb":
+        from parrot.knowledge.wiki.project import resolve_arango_params
+
+        return create_wiki_store(
+            storage,
+            wiki_name=config.wiki_name,
+            backend="arangodb",
+            arango_params=resolve_arango_params(config),
+            database=config.arango_database or "",
+            text_analyzer=config.arango_text_analyzer,
+        )
     storage.mkdir(parents=True, exist_ok=True)
     return create_wiki_store(
         storage, wiki_name=config.wiki_name, backend=config.backend
     )
 
 
-def _open_sources(root: Path, config: WikiProjectConfig) -> SourceCollectionManager:
-    """Create the source manifest manager matching the store backend."""
+def _open_sources(
+    root: Path,
+    config: WikiProjectConfig,
+    store: Optional[BaseWikiStore] = None,
+) -> SourceCollectionManager:
+    """Create the source manifest manager matching the store backend.
+
+    For the ``arangodb`` backend, ``store`` must already be an
+    *initialized* (connected) ``ArangoDBWikiStore`` — its ``asyncdb``
+    connection is shared with the returned manager rather than opening a
+    second one. Callers are responsible for ``await store.initialize()``
+    (or ``asyncio.run(...)`` from a sync context) before this is called.
+    """
     storage = config.storage_path(root)
     if config.backend == "sqlite":
         return SourceCollectionManager(
             storage / "sources", db_path=storage / "wiki.db"
+        )
+    if config.backend == "arangodb":
+        arango_db = getattr(store, "_db", None)
+        return SourceCollectionManager(
+            storage / "sources", backend="arangodb", arango_db=arango_db
         )
     return SourceCollectionManager(storage / "sources", backend="json")
 
@@ -131,7 +169,7 @@ def _run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
-def _env_setting(name: str) -> Optional[str]:
+def _env_setting(name: str) -> str | None:
     """Read a wiki env setting (``WIKI_STORE`` / ``WIKI_STORE_BACKEND``).
 
     Prefers navconfig (so values in ``.env`` are honoured, matching the
@@ -150,9 +188,9 @@ def _env_setting(name: str) -> Optional[str]:
 
 
 def _resolve_read_store(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
 ) -> BaseWikiStore:
     """Open a store for a read command (``query`` / ``page`` / ``related``).
 
@@ -167,7 +205,23 @@ def _resolve_read_store(
     redirected by ``WIKI_STORE``)::
 
         --store  >  --path project  >  WIKI_STORE env  >  auto-detected project
+
+    An explicit ``--backend arangodb`` always resolves via the project
+    config (ArangoDB is server-hosted — there is no local ``--store``
+    directory to point at) and connects eagerly here, so an unreachable
+    server fails with a clear message before any query is attempted.
     """
+    if backend_opt == "arangodb":
+        root, config = _resolve_project(path_)
+        store = _open_store(root, config)
+        try:
+            _run(store.initialize())
+        except Exception as exc:  # surfaced as a clear CLI error
+            raise click.ClickException(
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
+                f"{exc}"
+            ) from exc
+        return store
     store_override = store_opt
     if not store_override and not path_:
         # Only consult the env when neither an explicit store nor an
@@ -194,7 +248,7 @@ def _store_options(func: Any) -> Any:
     func = click.option(
         "--backend",
         "backend_opt",
-        type=click.Choice(["sqlite", "memory"]),
+        type=click.Choice(["sqlite", "memory", "arangodb"]),
         default=None,
         help="Backend for --store (default: sqlite / WIKI_STORE_BACKEND).",
     )(func)
@@ -399,25 +453,24 @@ async def _export_okf(
     }
 
 
-async def _export_graph_html(
+async def _load_graphindex_nodes_edges(
     store: BaseWikiStore,
-    output_dir: Path,
-    wiki_name: str,
     graph_kinds: frozenset[str],
-) -> dict[str, Any]:
-    """Build the interactive graph.html from the wiki store contents."""
-    try:
-        from parrot.knowledge.graphindex.assemble import GraphAssembler
-        from parrot.knowledge.graphindex.schema import (
-            EdgeKind,
-            NodeKind,
-            UniversalEdge,
-            UniversalNode,
-        )
-        from parrot.knowledge.graphindex.export_html import export_graph
-    except ImportError as exc:
-        _cli_logger.warning("graph export unavailable: %s", exc)
-        return {"exported": False, "reason": str(exc)}
+) -> tuple[list[Any], list[Any]]:
+    """Reconstruct ``UniversalNode``/``UniversalEdge`` lists from the wiki
+    store's pages + typed edges, filtered to ``graph_kinds`` categories.
+
+    Shared by the ``build`` graph.html export and the on-demand
+    ``communities`` CLI command (FEAT-401) — both need the same
+    wiki-page → GraphIndex-schema adaptation. Returns ``([], [])`` when
+    no pages match ``graph_kinds``.
+    """
+    from parrot.knowledge.graphindex.schema import (
+        EdgeKind,
+        NodeKind,
+        UniversalEdge,
+        UniversalNode,
+    )
 
     pages = await store.dump_pages()
     edges = await store.dump_edges()
@@ -427,7 +480,7 @@ async def _export_graph_html(
         if p.get("category", "") in graph_kinds
     ]
     if not kind_pages:
-        return {"nodes": 0, "edges": 0, "exported": False}
+        return [], []
 
     node_ids = {p["concept_id"] for p in kind_pages}
 
@@ -454,12 +507,34 @@ async def _export_graph_html(
                 kind=EdgeKind[ek_name],
             ))
 
+    return nodes, graph_edges
+
+
+async def _export_graph_html(
+    store: BaseWikiStore,
+    output_dir: Path,
+    wiki_name: str,
+    graph_kinds: frozenset[str],
+) -> dict[str, Any]:
+    """Build the interactive graph.html from the wiki store contents."""
+    try:
+        from parrot.knowledge.graphindex.assemble import GraphAssembler
+        from parrot.knowledge.graphindex.export_html import export_graph
+    except ImportError as exc:
+        _cli_logger.warning("graph export unavailable: %s", exc)
+        return {"exported": False, "reason": str(exc)}
+
+    nodes, graph_edges = await _load_graphindex_nodes_edges(store, graph_kinds)
+    if not nodes:
+        return {"nodes": 0, "edges": 0, "exported": False}
+
     assembler = GraphAssembler(tenant_id=wiki_name)
     assembler.add_nodes(nodes)
     assembler.add_edges(graph_edges)
 
     communities = None
     analytics = None
+    inter_community = None
     try:
         from parrot.knowledge.graphindex.communities import detect_communities
         communities = detect_communities(
@@ -472,6 +547,20 @@ async def _export_graph_html(
         analytics = compute_analytics(assembler.graph, nodes, graph_edges)
     except Exception as exc:  # noqa: BLE001
         _cli_logger.warning("analytics skipped: %s", exc)
+    if communities is not None:
+        # FEAT-401: same treatment as GraphIndexBuilder Stage 6 — the
+        # report/export "provides the full picture on build" (spec §8),
+        # so the wiki's own build → graph.html path gets it too, not
+        # just the on-demand `communities --inter` CLI command.
+        try:
+            from parrot.knowledge.graphindex.inter_community import (
+                compute_inter_community_graph,
+            )
+            inter_community = compute_inter_community_graph(
+                assembler.graph, communities,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _cli_logger.warning("inter-community relations skipped: %s", exc)
 
     try:
         html_path, json_path = export_graph(
@@ -479,6 +568,7 @@ async def _export_graph_html(
             output_dir,
             communities=communities,
             analytics=analytics,
+            inter_community=inter_community,
             title=f"{wiki_name} — Knowledge Map",
         )
     except Exception as exc:  # noqa: BLE001
@@ -502,15 +592,15 @@ def _write_build_stats(
     output_dir: Path,
     wiki_name: str,
     store_stats: dict[str, Any],
-    okf_report: Optional[dict[str, Any]],
-    graph_stats: Optional[dict[str, Any]],
+    okf_report: dict[str, Any] | None,
+    graph_stats: dict[str, Any] | None,
 ) -> None:
     """Write wiki_stats.json and README.md into the output directory."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     stats: dict[str, Any] = {
         "wiki_name": wiki_name,
-        "generated_at": datetime.now(tz=timezone.utc).strftime(
+        "generated_at": datetime.now(tz=UTC).strftime(
             "%Y-%m-%dT%H:%M:%S+00:00"
         ),
         "pages": store_stats.get("pages", 0),
@@ -518,6 +608,7 @@ def _write_build_stats(
         "categories": store_stats.get("categories", {}),
         "okf": okf_report,
         "graph": graph_stats,
+        "languages": {name: s.mode for name, s in all_scanners().items()},
     }
     (output_dir / "wiki_stats.json").write_text(
         json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8",
@@ -579,7 +670,7 @@ def _write_build_stats(
         "## Querying",
         "",
         "```bash",
-        f"wikitoolkit query \"your question\" --path .",
+        "wikitoolkit query \"your question\" --path .",
         "```",
         "",
         f"_Generated {stats['generated_at']}._",
@@ -604,11 +695,25 @@ def wiki() -> None:
 
 
 @wiki.command()
+def mcp() -> None:
+    """Start wikitoolkit as a local MCP stdio server (FEAT-403).
+
+    Exposes the six wiki tools (wiki_query, wiki_page, wiki_related,
+    wiki_remember, wiki_note, wiki_status) as native MCP tools, giving
+    them equal standing with Grep/Read at tool-selection time. Must be
+    run inside a repository with a built wiki (`wikitoolkit build`).
+    """
+    from parrot.knowledge.wiki.mcp_server import main as mcp_main
+
+    mcp_main()
+
+
+@wiki.command()
 @path_option
 @click.option("--name", default=None, help="Wiki name (default: repo directory name).")
 @click.option(
     "--backend",
-    type=click.Choice(["sqlite", "memory"]),
+    type=click.Choice(["sqlite", "memory", "arangodb"]),
     default=None,
     help="Retrieval-plane backend (default: sqlite).",
 )
@@ -631,16 +736,27 @@ def wiki() -> None:
     show_default=True,
     help="Comma list of page categories included in graph.html.",
 )
+@click.option(
+    "--vault/--no-vault",
+    "vault_mode",
+    default=None,
+    help=(
+        "Treat the path as an Obsidian vault (notes/wikilinks/tags scan) "
+        "instead of a source repository. Default: auto-detect via the "
+        ".obsidian/ directory."
+    ),
+)
 def build(
-    path_: Optional[str],
-    name: Optional[str],
-    backend: Optional[str],
+    path_: str | None,
+    name: str | None,
+    backend: str | None,
     force: bool,
     no_git: bool,
     quiet: bool,
     no_export: bool,
     no_graph: bool,
     graph_kinds: str,
+    vault_mode: bool | None,
 ) -> None:
     """Generate (or refresh) the KB graph from the current repository.
 
@@ -653,88 +769,133 @@ def build(
     map, a wiki_stats.json build report, and a README.md entry point.
     """
     root, config = _resolve_project(path_)
-    if name:
-        config.wiki_name = name
-    if backend:
-        config.backend = backend  # type: ignore[assignment]
-
-    if not quiet:
-        click.echo(f"Scanning {root} ...")
-    scan = scan_repository(
-        root,
-        suffixes=config.include_suffixes or None,
-        exclude_dirs=config.exclude_dirs,
-        body_max_chars=config.body_max_chars,
-        max_file_bytes=config.max_file_kb * 1024,
-        use_git=not no_git,
-    )
-
-    output_dir = config.storage_path(root)
-
-    async def _pipeline() -> dict[str, Any]:
-        store = _open_store(root, config)
-        sources = _open_sources(root, config)
-        counts = await _ingest_files(store, sources, root, scan, force=force)
-        await store.upsert_pages(scan.dir_records)
-        await store.add_edges(scan.dir_edges)
-        counts["removed"] = await _prune_removed(store, sources, root, scan)
-        counts["stats"] = await store.stats()
-
-        okf_report: Optional[dict[str, Any]] = None
-        if not no_export:
-            okf_report = await _export_okf(
-                store, output_dir, config.wiki_name,
+    with wiki_write_lock(config.storage_path(root)) as _acquired:
+        if not _acquired:
+            click.echo(
+                "Another wiki writer is in progress (build or upsert) — "
+                "refusing to run two writers against the same store. Wait "
+                "for it to finish, then retry."
             )
-            # Exclude the export output from future scans.
-            try:
-                export_rel = output_dir.resolve().relative_to(root).as_posix()
-            except ValueError:
-                export_rel = None
-            if export_rel and export_rel not in config.exclude_dirs:
-                config.exclude_dirs.append(export_rel)
-        counts["okf"] = okf_report
+            raise SystemExit(1)
+        if name:
+            config.wiki_name = name
+        if backend:
+            config.backend = backend  # type: ignore[assignment]
 
-        graph_stats: Optional[dict[str, Any]] = None
-        if not no_graph:
-            kinds = frozenset(
-                k.strip() for k in graph_kinds.split(",") if k.strip()
-            )
-            graph_stats = await _export_graph_html(
-                store, output_dir, config.wiki_name, kinds,
-            )
-        counts["graph"] = graph_stats
-
-        return counts
-
-    counts = _run(_pipeline())
-    save_project_config(root, config)
-
-    stats = counts["stats"]
-
-    # Write wiki_stats.json + README.md.
-    _write_build_stats(
-        output_dir, config.wiki_name, stats,
-        counts.get("okf"), counts.get("graph"),
-    )
-
-    click.echo(
-        f"Wiki '{config.wiki_name}' built at "
-        f"{output_dir} — "
-        f"{counts['written']} ingested, {counts['unchanged']} unchanged, "
-        f"{counts['removed']} removed; "
-        f"{stats.get('pages', 0)} pages, {stats.get('edges', 0)} edges."
-    )
-    okf = counts.get("okf")
-    if okf and not quiet:
-        click.echo(f"OKF bundle: {okf['files_written']} files exported.")
-    graph = counts.get("graph")
-    if graph and graph.get("exported") and not quiet:
-        click.echo(
-            f"Graph: {graph['nodes']} nodes, {graph['edges']} edges "
-            f"→ {graph['html']}"
+        from parrot.knowledge.wiki.vault_scan import (
+            is_obsidian_vault,
+            scan_vault,
         )
-    if scan.skipped and not quiet:
-        click.echo(f"Skipped {len(scan.skipped)} binary/oversized files.")
+
+        vault_stats = None
+        if vault_mode is None:
+            vault_mode = is_obsidian_vault(root)
+        if vault_mode:
+            if not quiet:
+                click.echo(f"Scanning Obsidian vault {root} ...")
+            scan, vault_stats = scan_vault(
+                root,
+                body_max_chars=config.body_max_chars,
+                max_file_bytes=config.max_file_kb * 1024,
+            )
+        else:
+            if not quiet:
+                click.echo(f"Scanning {root} ...")
+            scan = scan_repository(
+                root,
+                suffixes=config.include_suffixes or None,
+                exclude_dirs=config.exclude_dirs,
+                body_max_chars=config.body_max_chars,
+                max_file_bytes=config.max_file_kb * 1024,
+                use_git=not no_git,
+            )
+
+        output_dir = config.storage_path(root)
+
+        async def _pipeline() -> dict[str, Any]:
+            store = _open_store(root, config)
+            if config.backend == "arangodb":
+                await store.initialize()
+            sources = _open_sources(root, config, store=store)
+            counts = await _ingest_files(store, sources, root, scan, force=force)
+            await store.upsert_pages(scan.dir_records)
+            await store.add_edges(scan.dir_edges)
+            counts["removed"] = await _prune_removed(store, sources, root, scan)
+            counts["stats"] = await store.stats()
+
+            okf_report: dict[str, Any] | None = None
+            if not no_export:
+                okf_report = await _export_okf(
+                    store, output_dir, config.wiki_name,
+                )
+                # Exclude the export output from future scans.
+                try:
+                    export_rel = output_dir.resolve().relative_to(root).as_posix()
+                except ValueError:
+                    export_rel = None
+                if export_rel and export_rel not in config.exclude_dirs:
+                    config.exclude_dirs.append(export_rel)
+            counts["okf"] = okf_report
+
+            graph_stats: dict[str, Any] | None = None
+            if not no_graph:
+                kinds = frozenset(
+                    k.strip() for k in graph_kinds.split(",") if k.strip()
+                )
+                graph_stats = await _export_graph_html(
+                    store, output_dir, config.wiki_name, kinds,
+                )
+            counts["graph"] = graph_stats
+
+            return counts
+
+        try:
+            counts = _run(_pipeline())
+        except Exception as exc:  # surfaced as a clear CLI error
+            if config.backend == "arangodb":
+                raise click.ClickException(
+                    f"Could not connect to ArangoDB for wiki "
+                    f"{config.wiki_name!r}: {exc}"
+                ) from exc
+            raise
+        save_project_config(root, config)
+
+        stats = counts["stats"]
+
+        # Write wiki_stats.json + README.md.
+        _write_build_stats(
+            output_dir, config.wiki_name, stats,
+            counts.get("okf"), counts.get("graph"),
+        )
+
+        click.echo(
+            f"Wiki '{config.wiki_name}' built at "
+            f"{output_dir} — "
+            f"{counts['written']} ingested, {counts['unchanged']} unchanged, "
+            f"{counts['removed']} removed; "
+            f"{stats.get('pages', 0)} pages, {stats.get('edges', 0)} edges."
+        )
+        if vault_stats is not None:
+            click.echo(
+                f"Vault: {vault_stats.notes} notes, {vault_stats.tags} tags, "
+                f"{vault_stats.wikilink_edges} wikilink edges, "
+                f"{vault_stats.embed_edges} embed edges, "
+                f"{len(vault_stats.unresolved_links)} unresolved links."
+            )
+        okf = counts.get("okf")
+        if okf and not quiet:
+            click.echo(f"OKF bundle: {okf['files_written']} files exported.")
+        graph = counts.get("graph")
+        if graph and graph.get("exported") and not quiet:
+            click.echo(
+                f"Graph: {graph['nodes']} nodes, {graph['edges']} edges "
+                f"→ {graph['html']}"
+            )
+        if scan.skipped and not quiet:
+            click.echo(f"Skipped {len(scan.skipped)} binary/oversized files.")
+            if len(scan.skipped) <= 10:
+                for path in scan.skipped:
+                    click.echo(f"  - {path}")
 
 
 def _changed_files_from_git(root: Path) -> list[str]:
@@ -784,7 +945,7 @@ def _changed_files_from_git(root: Path) -> list[str]:
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output (for git hooks).")
 def upsert(
     paths: tuple[str, ...],
-    path_: Optional[str],
+    path_: str | None,
     changed: bool,
     quiet: bool,
 ) -> None:
@@ -796,74 +957,100 @@ def upsert(
     next full `wikitoolkit build`.
     """
     root, config = _resolve_project(path_)
-    if not config.is_built(root):
-        if not quiet:
-            click.echo("Wiki not built yet — run `wikitoolkit build` first.")
-        return
+    # Wait out a peer upsert (sub-second) rather than dropping the
+    # commit's files; give up quickly if a multi-minute build holds it.
+    with wiki_write_lock(
+        config.storage_path(root), timeout=UPSERT_LOCK_WAIT_SECONDS
+    ) as _acquired:
+        if not _acquired:
+            if not quiet:
+                click.echo(
+                    "Another wiki writer is in progress (likely a full "
+                    "build) — skipping this upsert; the build will cover "
+                    "these files."
+                )
+            return
+        if not config.is_built(root):
+            if not quiet:
+                click.echo("Wiki not built yet — run `wikitoolkit build` first.")
+            return
 
-    rel_paths = list(paths)
-    if changed:
-        rel_paths.extend(_changed_files_from_git(root))
-    if not rel_paths:
-        if not quiet:
-            click.echo("Nothing to upsert (no paths given).")
-        return
+        rel_paths = list(paths)
+        if changed:
+            rel_paths.extend(_changed_files_from_git(root))
+        if not rel_paths:
+            if not quiet:
+                click.echo("Nothing to upsert (no paths given).")
+            return
 
-    normalized: list[str] = []
-    for rel in rel_paths:
-        p = Path(rel)
-        if p.is_absolute():
-            try:
-                rel = p.resolve().relative_to(root).as_posix()
-            except ValueError:
-                continue
-        rel = PurePosixPath(rel).as_posix()
-        # Same selection filter as full discovery — the two paths must
-        # never disagree about what belongs in the wiki.
-        if is_wiki_relevant(
-            rel,
+        normalized: list[str] = []
+        for rel in rel_paths:
+            p = Path(rel)
+            if p.is_absolute():
+                try:
+                    rel = p.resolve().relative_to(root).as_posix()
+                except ValueError:
+                    continue
+            rel = PurePosixPath(rel).as_posix()
+            # Same selection filter as full discovery — the two paths must
+            # never disagree about what belongs in the wiki. The bundle
+            # guardrail is checked per path (ancestor walk) rather than by
+            # discovering every bundle in the repo, so a docs-only commit
+            # keeps its O(1) fast path.
+            if is_wiki_relevant(
+                rel,
+                suffixes=config.include_suffixes or None,
+                exclude_dirs=config.exclude_dirs,
+            ) and not is_inside_wiki_bundle(root, rel):
+                normalized.append(rel)
+
+        existing = [rel for rel in normalized if (root / rel).is_file()]
+        deleted = [rel for rel in normalized if not (root / rel).is_file()]
+        if not existing and not deleted:
+            if not quiet:
+                click.echo("No wiki-relevant files in the given set.")
+            return
+
+        scan = scan_repository(
+            root,
             suffixes=config.include_suffixes or None,
             exclude_dirs=config.exclude_dirs,
-        ):
-            normalized.append(rel)
-
-    existing = [rel for rel in normalized if (root / rel).is_file()]
-    deleted = [rel for rel in normalized if not (root / rel).is_file()]
-    if not existing and not deleted:
-        if not quiet:
-            click.echo("No wiki-relevant files in the given set.")
-        return
-
-    scan = scan_repository(
-        root,
-        suffixes=config.include_suffixes or None,
-        exclude_dirs=config.exclude_dirs,
-        body_max_chars=config.body_max_chars,
-        max_file_bytes=config.max_file_kb * 1024,
-        rel_paths=existing,
-    )
-
-    async def _pipeline() -> dict[str, int]:
-        store = _open_store(root, config)
-        sources = _open_sources(root, config)
-        counts = await _ingest_files(store, sources, root, scan, force=True)
-        removed = 0
-        for rel in deleted:
-            uri = str((root / rel).resolve())
-            source_id = await asyncio.to_thread(sources.find_by_uri, uri)
-            if source_id:
-                await store.replace_source_slice(source_id, [], [])
-                await asyncio.to_thread(sources.remove_source, source_id)
-                removed += 1
-        counts["removed"] = removed
-        return counts
-
-    counts = _run(_pipeline())
-    if not quiet:
-        click.echo(
-            f"Upserted {counts['written']} page(s), "
-            f"removed {counts['removed']}."
+            body_max_chars=config.body_max_chars,
+            max_file_bytes=config.max_file_kb * 1024,
+            rel_paths=existing,
         )
+
+        async def _pipeline() -> dict[str, int]:
+            store = _open_store(root, config)
+            if config.backend == "arangodb":
+                await store.initialize()
+            sources = _open_sources(root, config, store=store)
+            counts = await _ingest_files(store, sources, root, scan, force=True)
+            removed = 0
+            for rel in deleted:
+                uri = str((root / rel).resolve())
+                source_id = await asyncio.to_thread(sources.find_by_uri, uri)
+                if source_id:
+                    await store.replace_source_slice(source_id, [], [])
+                    await asyncio.to_thread(sources.remove_source, source_id)
+                    removed += 1
+            counts["removed"] = removed
+            return counts
+
+        try:
+            counts = _run(_pipeline())
+        except Exception as exc:  # surfaced as a clear CLI error
+            if config.backend == "arangodb":
+                raise click.ClickException(
+                    f"Could not connect to ArangoDB for wiki "
+                    f"{config.wiki_name!r}: {exc}"
+                ) from exc
+            raise
+        if not quiet:
+            click.echo(
+                f"Upserted {counts['written']} page(s), "
+                f"removed {counts['removed']}."
+            )
 
 
 @wiki.command()
@@ -896,12 +1083,12 @@ def upsert(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON results.")
 def query(
     question: str,
-    path_: Optional[str],
+    path_: str | None,
     top_k: int,
     budget: int,
-    category: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    category: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     as_table: bool,
     show_body: bool,
     as_json: bool,
@@ -964,10 +1151,10 @@ def query(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def page(
     page_id: str,
-    path_: Optional[str],
-    max_tokens: Optional[int],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    max_tokens: int | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     as_json: bool,
 ) -> None:
     """Read one wiki page in full (progressive disclosure)."""
@@ -1008,11 +1195,11 @@ def page(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def related(
     page_id: str,
-    path_: Optional[str],
-    rel: Optional[str],
+    path_: str | None,
+    rel: str | None,
     direction: str,
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    store_opt: str | None,
+    backend_opt: str | None,
     as_json: bool,
 ) -> None:
     """List pages linked to PAGE_ID by typed edges."""
@@ -1035,14 +1222,22 @@ def related(
 @wiki.command()
 @path_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
-def status(path_: Optional[str], as_json: bool) -> None:
+def status(path_: str | None, as_json: bool) -> None:
     """Show wiki plane statistics and source staleness."""
     root, config = _resolve_project(path_)
     if not config.is_built(root):
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
         return
     store = _open_store(root, config)
-    sources = _open_sources(root, config)
+    if config.backend == "arangodb":
+        try:
+            _run(store.initialize())
+        except Exception as exc:  # surfaced as a clear CLI error
+            raise click.ClickException(
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
+                f"{exc}"
+            ) from exc
+    sources = _open_sources(root, config, store=store)
     stats = _run(store.stats())
     entries = sources.list_sources()
     stale = [e.source_id for e in entries if sources.is_stale(e.source_id)]
@@ -1054,6 +1249,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
         "stats": stats,
         "sources": len(entries),
         "stale_sources": len(stale),
+        "languages": {name: s.mode for name, s in all_scanners().items()},
     }
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -1067,9 +1263,112 @@ def status(path_: Optional[str], as_json: bool) -> None:
         f"~{stats.get('total_tokens', 0)} tokens"
     )
     click.echo(f"Categories: {stats.get('categories', {})}")
+    click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+
+
+@wiki.command()
+@path_option
+@click.option(
+    "--graph-kinds",
+    default="module,document,overview",
+    show_default=True,
+    help="Comma list of page categories included in the community graph.",
+)
+@click.option(
+    "--inter",
+    "show_inter",
+    is_flag=True,
+    help="Also compute and print inter-community relations (FEAT-401).",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def communities(
+    path_: str | None,
+    graph_kinds: str,
+    show_inter: bool,
+    as_json: bool,
+) -> None:
+    """Show detected communities, or inter-community relations with --inter.
+
+    Runs Leiden (falling back to Louvain, FEAT-401) community detection
+    on demand from the current wiki store contents — no need to re-run
+    `wikitoolkit build` or regenerate graph.html. With `--inter`, also
+    computes the inter-community meta-graph (which community pairs are
+    connected, coupling ratios, edge direction) for cross-subsystem
+    questions like "how do the auth and payment areas relate?". Output
+    is token-budgeted for LLM-agent consumption.
+    """
+    root, config = _resolve_project(path_)
+    if not config.is_built(root):
+        click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
+        return
+    store = _open_store(root, config)
+
+    kinds = frozenset(k.strip() for k in graph_kinds.split(",") if k.strip())
+    nodes, graph_edges = _run(_load_graphindex_nodes_edges(store, kinds))
+    if not nodes:
+        click.echo(
+            "No pages found for --graph-kinds="
+            f"{graph_kinds!r}. Run `wikitoolkit build` first, or widen "
+            "--graph-kinds."
+        )
+        return
+
+    from parrot.knowledge.graphindex.assemble import GraphAssembler
+    from parrot.knowledge.graphindex.communities import detect_communities
+
+    assembler = GraphAssembler(tenant_id=config.wiki_name)
+    assembler.add_nodes(nodes)
+    assembler.add_edges(graph_edges)
+    communities_result = detect_communities(
+        assembler.graph, nodes, write_back_to_nodes=False,
+    )
+
+    if not show_inter:
+        if as_json:
+            click.echo(json.dumps(
+                communities_result.model_dump(mode="json"), indent=2,
+            ))
+            return
+        click.echo(
+            f"# Communities ({len(communities_result.communities)}, "
+            f"algorithm={communities_result.algorithm}, "
+            f"modularity={communities_result.modularity:.4f})\n"
+        )
+        if not communities_result.communities:
+            click.echo("(no communities detected)")
+            return
+        for c in communities_result.communities:
+            click.echo(f"| `{c.community_id}` | {c.label or '(unlabeled)'} | {c.size} members |")
+        return
+
+    from parrot.knowledge.graphindex.inter_community import (
+        compute_inter_community_graph,
+    )
+
+    inter = compute_inter_community_graph(assembler.graph, communities_result)
+
+    if as_json:
+        click.echo(json.dumps(inter.model_dump(mode="json"), indent=2))
+        return
+
+    click.echo(
+        f"Inter-Community Relations (density: {inter.density:.1%}, "
+        f"{inter.connected_pairs}/{inter.total_possible_pairs} pairs)\n"
+    )
+    if not inter.relations:
+        click.echo("(no cross-community edges detected)")
+        return
+    for rel in inter.relations:
+        arrow = "→" if rel.directed_edge_count >= rel.reverse_edge_count else "←"
+        src = rel.source_label or rel.source_community_id
+        tgt = rel.target_label or rel.target_community_id
+        click.echo(
+            f"| {src} {arrow} {tgt} | {rel.directed_edge_count}→, "
+            f"{rel.reverse_edge_count}← | coupling: {rel.coupling_ratio:.2f} |"
+        )
 
 
 @wiki.command()
@@ -1081,7 +1380,7 @@ def status(path_: Optional[str], as_json: bool) -> None:
     show_default=True,
     help="Output directory for the markdown bundle (relative to root).",
 )
-def export(path_: Optional[str], output: str) -> None:
+def export(path_: str | None, output: str) -> None:
     """Export the wiki as a human-readable markdown bundle.
 
     Writes one markdown file per page (YAML frontmatter + body) plus a
@@ -1116,7 +1415,7 @@ def export(path_: Optional[str], output: str) -> None:
 # Authoring / persistent-memory commands ("save things in the brain")
 # --------------------------------------------------------------------------
 
-def _authoring_identity(by: Optional[str]) -> str:
+def _authoring_identity(by: str | None) -> str:
     """Resolve who is asserting a write.
 
     Precedence: explicit ``--by`` > ``CLAUDE_AGENT_ID`` /
@@ -1138,7 +1437,7 @@ def _authoring_identity(by: Optional[str]) -> str:
         return "human:unknown"
 
 
-def _authoring_run_id() -> Optional[str]:
+def _authoring_run_id() -> str | None:
     """Session/run identifier from the ambient environment, if any."""
     import os
 
@@ -1150,10 +1449,10 @@ def _authoring_run_id() -> Optional[str]:
 
 
 def _resolve_write_store(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-) -> tuple[BaseWikiStore, Path, Optional[Path], Optional[WikiProjectConfig]]:
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+) -> tuple[BaseWikiStore, Path, Path | None, WikiProjectConfig | None]:
     """Open a store for an authoring command, creating the plane lazily.
 
     Same precedence as ``_resolve_read_store`` (``--store`` > ``--path``
@@ -1186,8 +1485,8 @@ def _sync_memory_to_graph(
     text: str,
     links: list[tuple[str, str]],
     asserted_by: str,
-    run_id: Optional[str],
-) -> Optional[str]:
+    run_id: str | None,
+) -> str | None:
     """Mirror a remembered fact into the project's GraphIndex plane.
 
     Publishes one audited commit containing a ``CONCEPT`` node for the
@@ -1275,8 +1574,8 @@ def _extract_into_graph(
     text: str,
     source_uri: str,
     asserted_by: str,
-    run_id: Optional[str],
-) -> Optional[dict[str, Any]]:
+    run_id: str | None,
+) -> dict[str, Any] | None:
     """Run LLM entity/relation extraction into the project graph plane.
 
     Requires a ``WIKI_EXTRACT_LLM`` provider spec (env / .env, e.g.
@@ -1357,15 +1656,15 @@ def _extract_into_graph(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def remember(
     text: str,
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-    title: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+    title: str | None,
     category: str,
     links: tuple[str, ...],
     rel: str,
-    source_uri: Optional[str],
-    by: Optional[str],
+    source_uri: str | None,
+    by: str | None,
     extract_: bool,
     as_json: bool,
 ) -> None:
@@ -1389,7 +1688,7 @@ def remember(
     if not resolved_title:
         raise click.ClickException("Cannot remember empty text.")
     page_id = "mem-" + hashlib.sha1(
-        f"{resolved_title}::{category}".encode("utf-8")
+        f"{resolved_title}::{category}".encode()
     ).hexdigest()[:12]
 
     from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
@@ -1432,14 +1731,14 @@ def remember(
         + (f", run: {run_id}" if run_id else ""),
     )
 
-    commit_id: Optional[str] = None
+    commit_id: str | None = None
     if root is not None and config is not None and config.sync_graph:
         commit_id = _sync_memory_to_graph(
             root, config, store, page_id, resolved_title, text,
             linked, asserted_by, run_id,
         )
 
-    extraction: Optional[dict[str, Any]] = None
+    extraction: dict[str, Any] | None = None
     if extract_ and root is not None and config is not None:
         extraction = _extract_into_graph(
             root, config, text,
@@ -1491,14 +1790,14 @@ def remember(
 def note(
     page_id: str,
     text: str,
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-    by: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+    by: str | None,
     as_json: bool,
 ) -> None:
     """Append an attributed note to an existing wiki page."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     store, storage_dir, _root, _config = _resolve_write_store(
         path_, store_opt, backend_opt
@@ -1509,7 +1808,7 @@ def note(
             f"Page {page_id!r} not found. Search first: wikitoolkit query \"...\""
         )
     asserted_by = _authoring_identity(by)
-    stamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+    stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
     body = str(page.get("body") or "")
     body += f"\n\n> **Note ({stamp}, {asserted_by}):** {text}"
 
@@ -1556,11 +1855,11 @@ def note(
 def link(
     src: str,
     dst: str,
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     rel: str,
-    by: Optional[str],
+    by: str | None,
     as_json: bool,
 ) -> None:
     """Connect two existing wiki pages with an asserted, typed edge."""
@@ -1603,10 +1902,10 @@ def link(
 @click.option("--limit", default=50, type=int, help="Maximum rows.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def memories(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
-    category: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
+    category: str | None,
     limit: int,
     as_json: bool,
 ) -> None:
@@ -1639,9 +1938,9 @@ def memories(
 @click.option("--limit", default=30, type=int, help="Maximum entries per plane.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def audit(
-    path_: Optional[str],
-    store_opt: Optional[str],
-    backend_opt: Optional[str],
+    path_: str | None,
+    store_opt: str | None,
+    backend_opt: str | None,
     limit: int,
     as_json: bool,
 ) -> None:
@@ -1698,7 +1997,7 @@ def audit(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def ground(
     claim: str,
-    path_: Optional[str],
+    path_: str | None,
     as_json: bool,
 ) -> None:
     """Check a claim against the project knowledge graph (grounding).
@@ -1760,6 +2059,568 @@ def ground(
         click.echo(f"Contradictions: {', '.join(data['contradictions'])}")
     for needed in data.get("required_evidence", []):
         click.echo(f"Required: {needed}")
+
+
+# --------------------------------------------------------------------------
+# Supervised ingestion (FEAT-402) — charter-driven triage + HITL manifest
+# review. Alongside (not inside) `build`: the deterministic, offline,
+# no-LLM `build`/`_ingest_files` path above is untouched (spec §1
+# Non-Goals). ALL triage/manifest/router logic lives in charter.py /
+# review.py / triage.py / ingest.py — this section only wires those
+# modules together and handles CLI argument parsing (hot-file discipline).
+# --------------------------------------------------------------------------
+
+
+def _discover_documents(folder: Path) -> list[Path]:
+    """List regular files under ``folder`` for supervised triage.
+
+    Deliberately NOT the language-aware ``repo_scan`` scanner — that
+    scanner's deterministic, offline, no-LLM contract is load-bearing for
+    the git post-commit hook and is never touched by this feature (spec
+    §1 Non-Goals). This is a flat, deterministic walk suited to arbitrary
+    document corpora (meeting notes, summaries, etc), not source code.
+
+    Args:
+        folder: Root folder to scan.
+
+    Returns:
+        Sorted list of file paths; dotfiles and dot-directories are
+        skipped (e.g. ``.git/``, ``.parrot/``).
+    """
+    return sorted(
+        p
+        for p in folder.rglob("*")
+        if p.is_file() and not any(part.startswith(".") for part in p.parts)
+    )
+
+
+def _resolve_charter_path(root: Path, charter_opt: str | None) -> Path:
+    """Resolve the charter YAML path: ``--charter``, else the project default.
+
+    Args:
+        root: Repository root.
+        charter_opt: The raw ``--charter`` CLI value, or ``None``.
+
+    Returns:
+        The resolved charter file path.
+
+    Raises:
+        click.ClickException: If neither an explicit path nor the
+            default ``<root>/.parrot/charter.yaml`` exists.
+    """
+    if charter_opt:
+        path = Path(charter_opt)
+        if not path.exists():
+            raise click.ClickException(f"No charter found at {path}.")
+        return path
+    default_path = root / PARROT_DIR / "charter.yaml"
+    if default_path.exists():
+        return default_path
+    raise click.ClickException(
+        "No editorial charter found. Pass --charter <path>, or place one "
+        f"at {default_path}."
+    )
+
+
+def _resolve_model_id(cli_value: str | None, env_name: str) -> str:
+    """Resolve a model spec from a CLI flag, else an env var, else error.
+
+    Args:
+        cli_value: The raw CLI flag value, or ``None``.
+        env_name: Environment variable name to fall back to.
+
+    Returns:
+        A ``"provider:model"`` (or ``"provider"``) spec string.
+
+    Raises:
+        click.ClickException: If neither is set.
+    """
+    value = cli_value or _env_setting(env_name)
+    if not value:
+        raise click.ClickException(
+            f"No model configured — pass the flag or set ${env_name} "
+            "(format: 'provider:model', e.g. 'groq:llama-3.3-70b-versatile')."
+        )
+    return value
+
+
+def _build_triage_adapters(
+    lightweight_model: str, model: str
+) -> tuple[Any, Any, str, bool]:
+    """Construct the lightweight/heavy ``PageIndexLLMAdapter`` pair.
+
+    A narrow, deliberately monkeypatchable seam: tests replace this
+    function wholesale to inject stub adapters instead of constructing
+    real LLM clients (``LLMFactory.create``).
+
+    Args:
+        lightweight_model: Stage-1 triage model spec.
+        model: Stage-2 (gray-zone escalation) model spec, also reused
+            for real page-content generation (``PageIndexToolkit``).
+
+    Returns:
+        ``(lightweight_adapter, heavy_adapter, lightweight_model_id,
+        same_provider)``. ``same_provider`` is ``True`` when both specs
+        resolve to the same provider — see the ``ingest`` command for why
+        this matters: ``PageIndexToolkit`` builds its own internal
+        lightweight adapter by pairing the *heavy* adapter's client with
+        the lightweight model id, so mixing providers there would send
+        one provider's client a model id meant for a different provider.
+    """
+    from parrot.clients.factory import LLMFactory
+    from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+
+    light_provider, light_model_id = LLMFactory.parse_llm_string(lightweight_model)
+    heavy_provider, heavy_model_id = LLMFactory.parse_llm_string(model)
+    light_client = LLMFactory.create(lightweight_model)
+    heavy_client = (
+        light_client if model == lightweight_model else LLMFactory.create(model)
+    )
+    light_adapter = PageIndexLLMAdapter(light_client, model=light_model_id)
+    heavy_adapter = PageIndexLLMAdapter(heavy_client, model=heavy_model_id)
+    same_provider = light_provider == heavy_provider
+    return light_adapter, heavy_adapter, light_model_id, same_provider
+
+
+def _build_novelty_scorer(
+    root: Path, config: WikiProjectConfig, store: BaseWikiStore
+) -> Any:
+    """Construct a NoveltyScorer: grounding-backed when the graph DB
+    exists (mirrors the ``ground`` command's wiring above), else a
+    ``WikiCombinedSearch`` similarity-proxy fallback.
+
+    Args:
+        root: Repository root.
+        config: The project's ``WikiProjectConfig``.
+        store: The open retrieval-plane store, used by the search-proxy
+            fallback.
+
+    Returns:
+        A configured ``NoveltyScorer``.
+    """
+    from parrot.knowledge.wiki.search import WikiCombinedSearch
+    from parrot.knowledge.wiki.triage import NoveltyScorer
+
+    graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
+    if not graph_db.exists():
+        return NoveltyScorer(
+            grounding_evaluator=None,
+            search=WikiCombinedSearch(None, None, store=store),
+        )
+
+    try:
+        from parrot.knowledge.graphindex.assemble import GraphAssembler
+        from parrot.knowledge.graphindex.factory import (
+            HashingGraphEmbedder,
+            make_stub_tenant_context,
+        )
+        from parrot.knowledge.graphindex.grounding import GroundingEvaluator
+        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+        from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
+    except ImportError:
+        return NoveltyScorer(
+            grounding_evaluator=None,
+            search=WikiCombinedSearch(None, None, store=store),
+        )
+
+    async def _build_evaluator() -> Any:
+        persistence = SQLitePersistence(config.graph_path(root))
+        ctx = make_stub_tenant_context(config.wiki_name)
+        nodes, edges = await persistence.load_graph(ctx)
+        assembler = GraphAssembler(tenant_id=config.wiki_name)
+        for node in nodes:
+            assembler.add_node(node)
+        for edge in edges:
+            assembler.add_edge(edge)
+        embedder = HashingGraphEmbedder()
+        if nodes:
+            await embedder.embed_nodes(nodes)
+        retriever = GraphExpandedRetriever(
+            graph=assembler.graph, nodes=nodes, embedder=embedder
+        )
+        return GroundingEvaluator(retriever)
+
+    evaluator = _run(_build_evaluator())
+    return NoveltyScorer(grounding_evaluator=evaluator)
+
+
+def _print_triage_summary(entries: list[Any]) -> None:
+    """Print a rich admit/archive/discard summary table."""
+    from rich.console import Console
+    from rich.table import Table
+
+    counts = Counter(e.proposed_action for e in entries)
+    table = Table(title="Supervised Ingestion — Triage Summary")
+    table.add_column("Proposed action", style="bold")
+    table.add_column("Count", justify="right", style="cyan")
+    for action in ("admit", "archive", "discard"):
+        table.add_row(action, str(counts.get(action, 0)))
+    Console().print(table)
+
+
+@wiki.command()
+@click.argument(
+    "folder", type=click.Path(exists=True, file_okay=False, path_type=Path)
+)
+@path_option
+@click.option(
+    "--charter",
+    "charter_opt",
+    default=None,
+    help="Path to the editorial charter YAML "
+    "(default: <repo>/.parrot/charter.yaml).",
+)
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Triage all docs, emit a manifest, ingest nothing.",
+)
+@click.option(
+    "--review",
+    "review_opt",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Apply human-edited decisions from a manifest.jsonl.",
+)
+@click.option(
+    "--interactive",
+    "interactive_flag",
+    is_flag=True,
+    help="Prompt per-document before applying (questionary).",
+)
+@click.option(
+    "--auto",
+    "auto_flag",
+    is_flag=True,
+    help="Charter thresholds decide automatically; flags a stratified audit sample.",
+)
+@click.option(
+    "--extract",
+    "extract_flag",
+    is_flag=True,
+    help="EXPERIMENTAL: include extracted claims in the manifest. Off by"
+    " default — v1 admission is document-level.",
+)
+@click.option(
+    "--lightweight-model",
+    "lightweight_model_opt",
+    default=None,
+    help="Stage-1 triage model ('provider:model'). Falls back to $WIKI_LIGHTWEIGHT_MODEL.",
+)
+@click.option(
+    "--model",
+    "model_opt",
+    default=None,
+    help="Stage-2 escalation / page-generation model ('provider:model')."
+    " Falls back to $WIKI_MODEL.",
+)
+@click.option(
+    "--audit-rate",
+    "audit_rate",
+    default=0.1,
+    show_default=True,
+    help="Fraction of --auto decisions flagged for stratified audit review.",
+)
+@click.option(
+    "--manifest",
+    "manifest_opt",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Manifest output path (default: <storage_dir>/ingest-manifest.jsonl).",
+)
+def ingest(
+    folder: Path,
+    path_: str | None,
+    charter_opt: str | None,
+    dry_run: bool,
+    review_opt: Path | None,
+    interactive_flag: bool,
+    auto_flag: bool,
+    extract_flag: bool,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    audit_rate: float,
+    manifest_opt: Path | None,
+) -> None:
+    """Supervised (charter-driven) ingestion of a document corpus.
+
+    Unlike ``build`` (deterministic, offline, no-LLM), ``ingest`` triages
+    each document in FOLDER against an editorial charter before it
+    becomes a wiki page: free heuristics reject duplicates/oversized
+    files, a lightweight model scores the rest, and only gray-zone
+    documents escalate to a heavier model. Exactly one mode is required.
+
+    \b
+    --dry-run      Triage everything, write a manifest, ingest nothing.
+    --review PATH  Apply decisions from a hand-edited manifest.
+    --interactive  Prompt per-document (before any async work starts).
+    --auto         Thresholds decide; flags a stratified audit sample.
+    """
+    from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+    from parrot.knowledge.wiki.charter import (
+        TriageExample,
+        append_example,
+        load_charter,
+    )
+    from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator
+    from parrot.knowledge.wiki.models import WikiConfig
+    from parrot.knowledge.wiki.review import (
+        ManifestReader,
+        ManifestRunHeader,
+        ManifestWriter,
+        stratified_sample,
+    )
+    from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+    modes_selected = sum(
+        [dry_run, review_opt is not None, interactive_flag, auto_flag]
+    )
+    if modes_selected == 0:
+        raise click.UsageError(
+            "Pick exactly one mode: --dry-run, --review, --interactive, or --auto."
+        )
+    if modes_selected > 1:
+        raise click.UsageError(
+            "--dry-run / --review / --interactive / --auto are mutually exclusive."
+        )
+    mode = (
+        "dry-run"
+        if dry_run
+        else "review"
+        if review_opt is not None
+        else "interactive"
+        if interactive_flag
+        else "auto"
+    )
+
+    root, config = _resolve_project(path_)
+    store = _open_store(root, config)
+    sources = _open_sources(root, config, store=store)
+    bookkeeper = WikiBookkeeper()
+    wiki_dir = config.storage_path(root)
+    manifest_path = manifest_opt or (wiki_dir / "ingest-manifest.jsonl")
+
+    def _log_triage(entry: Any) -> None:
+        details = (
+            f"source: {entry.source_uri}, composite: {entry.composite:.4f}, "
+            f"proposed_action: {entry.proposed_action}"
+        )
+        bookkeeper.log_operation(wiki_dir, "TRIAGE", details)
+
+    lightweight_model = _resolve_model_id(
+        lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL"
+    )
+    model = _resolve_model_id(model_opt, "WIKI_MODEL")
+    light_adapter, heavy_adapter, light_model_id, same_provider = (
+        _build_triage_adapters(lightweight_model, model)
+    )
+    pageindex_dir = wiki_dir / "pageindex"
+    pageindex_dir.mkdir(parents=True, exist_ok=True)
+    # PageIndexToolkit builds its OWN internal lightweight adapter as
+    # PageIndexLLMAdapter(client=heavy_adapter.client, model=lightweight_model)
+    # (packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py) — i.e.
+    # it always reuses the HEAVY adapter's client. When --lightweight-model
+    # and --model point at different providers, passing light_model_id
+    # there would send a foreign model id to the heavy provider's client.
+    # Only pass it through when both tiers share a provider; otherwise
+    # PageIndexToolkit falls back to using the heavy adapter for both of
+    # its own internal steps (safe, just not dual-tier for page generation
+    # — the triage router's own light/heavy split above is unaffected).
+    pi_toolkit = PageIndexToolkit(
+        heavy_adapter,
+        storage_dir=pageindex_dir,
+        lightweight_model=light_model_id if same_provider else None,
+    )
+    if not same_provider:
+        _cli_logger.info(
+            "Stage-1/Stage-2 triage models use different providers "
+            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
+            "model for its own internal page-generation steps too.",
+            lightweight_model,
+            model,
+        )
+    orch = WikiIngestOrchestrator(
+        pi_toolkit,
+        None,
+        sources,
+        bookkeeper,
+        store=store,
+        sync_graph=config.sync_graph,
+    )
+
+    async def _triage_all(paths: list[Path], router: Any) -> list[Any]:
+        entries = []
+        for doc_path in paths:
+            content = await asyncio.to_thread(
+                doc_path.read_text, encoding="utf-8", errors="ignore"
+            )
+            entry = await router.triage(doc_path, content)
+            if not extract_flag:
+                entry.claims = []
+            entries.append(entry)
+            await asyncio.to_thread(_log_triage, entry)
+        return entries
+
+    async def _apply_all(
+        entries: list[Any], wiki_config: WikiConfig, charter_version: str | None
+    ) -> None:
+        for entry in entries:
+            if entry.decision is None:
+                continue
+            await orch.ingest(
+                entry.source_uri,
+                wiki_config,
+                triage=entry,
+                charter_version=charter_version,
+            )
+
+    # ---- --review: apply pre-computed decisions, no re-triage ----------
+    if mode == "review":
+        header, entries = ManifestReader(review_opt).read()
+        applied = [e for e in entries if e.decision is not None]
+
+        charter_for_examples = None
+        try:
+            charter_for_examples = load_charter(_resolve_charter_path(root, charter_opt))
+        except click.ClickException:
+            charter_for_examples = None
+        if charter_for_examples is not None and charter_for_examples.examples_file:
+            for entry in applied:
+                if entry.decision_source == "human":
+                    append_example(
+                        charter_for_examples,
+                        TriageExample(
+                            summary=entry.briefing,
+                            why=f"human decision: {entry.decision}",
+                            destination=entry.decision,
+                        ),
+                    )
+
+        wiki_config = WikiConfig(
+            wiki_name=config.wiki_name,
+            storage_dir=wiki_dir,
+            sync_graph=config.sync_graph,
+            storage_backend=config.backend,
+        )
+        _run(_apply_all(applied, wiki_config, header.charter_version))
+        click.echo(f"Applied {len(applied)} decision(s) from {review_opt}.")
+        return
+
+    # ---- --dry-run / --interactive / --auto: triage first --------------
+    charter_path = _resolve_charter_path(root, charter_opt)
+    charter = load_charter(charter_path)
+    novelty_scorer = _build_novelty_scorer(root, config, store)
+    router = IngestTriageRouter(
+        charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter
+    )
+    wiki_config = WikiConfig(
+        wiki_name=config.wiki_name,
+        storage_dir=wiki_dir,
+        charter_path=charter_path,
+        sync_graph=config.sync_graph,
+        storage_backend=config.backend,
+    )
+    paths = _discover_documents(folder)
+    entries = _run(_triage_all(paths, router))
+
+    if mode == "dry-run":
+        header = ManifestRunHeader(
+            charter_sha256=charter.fingerprint,
+            charter_version=charter.version,
+            mode="dry-run",
+            novelty_backend=novelty_scorer.backend,
+            counts=dict(Counter(e.proposed_action for e in entries)),
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        ManifestWriter(manifest_path).write(header, entries)
+        click.echo(f"Triaged {len(entries)} document(s). Manifest: {manifest_path}")
+        _print_triage_summary(entries)
+        return
+
+    if mode == "interactive":
+        # ALL prompting happens here — synchronous, blocking, BEFORE the
+        # async apply pipeline below starts (questionary is blocking;
+        # spec §7 risk: never call it inside async code).
+        import questionary
+
+        for entry in entries:
+            click.echo(f"\n{entry.source_uri}")
+            click.echo(f"  briefing: {entry.briefing}")
+            click.echo(
+                f"  scores: density={entry.scores.density:.2f} "
+                f"novelty={entry.scores.novelty:.2f} "
+                f"durability={entry.scores.durability:.2f}"
+            )
+            click.echo(
+                f"  composite: {entry.composite:.4f}  proposed: {entry.proposed_action}"
+            )
+            choice = questionary.select(
+                "Decision:",
+                choices=["admit", "archive", "discard"],
+                default=entry.proposed_action,
+            ).ask()
+            entry.decision = choice or entry.proposed_action
+            entry.decision_source = "human"
+            if entry.decision != entry.proposed_action and charter.examples_file:
+                append_example(
+                    charter,
+                    TriageExample(
+                        summary=entry.briefing,
+                        why=f"human override: {entry.decision}",
+                        destination=entry.decision,
+                    ),
+                )
+
+        header = ManifestRunHeader(
+            charter_sha256=charter.fingerprint,
+            charter_version=charter.version,
+            mode="interactive",
+            novelty_backend=novelty_scorer.backend,
+            counts=dict(Counter(e.decision for e in entries)),
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        ManifestWriter(manifest_path).write(header, entries)
+        _run(_apply_all(entries, wiki_config, charter.version))
+        click.echo(
+            f"Applied {len(entries)} interactive decision(s). Manifest: {manifest_path}"
+        )
+        return
+
+    # ---- --auto ----------------------------------------------------------
+    for entry in entries:
+        entry.decision = entry.proposed_action
+        entry.decision_source = "auto"
+    sample_size = max(1, round(len(entries) * audit_rate)) if entries else 0
+    if sample_size:
+        stratified_sample(
+            entries,
+            charter.thresholds,
+            sample_size,
+            near_fraction=charter.calibration.near_fraction,
+            uniform_fraction=charter.calibration.uniform_fraction,
+        )
+    header = ManifestRunHeader(
+        charter_sha256=charter.fingerprint,
+        charter_version=charter.version,
+        mode="auto",
+        novelty_backend=novelty_scorer.backend,
+        counts=dict(Counter(e.decision for e in entries)),
+        created_at=datetime.now(UTC).isoformat(),
+    )
+    ManifestWriter(manifest_path).write(header, entries)
+    _run(_apply_all(entries, wiki_config, charter.version))
+    audited = [e for e in entries if e.audit_sample]
+    click.echo(
+        f"Applied {len(entries)} auto decision(s). Audit sample: "
+        f"{len(audited)} flagged for human review ({audit_rate:.0%} of batch)."
+        f" Manifest: {manifest_path}"
+    )
+    click.echo(
+        "agreement_rate(): computable once the audit sample's `decision` "
+        f"fields are filled in via a follow-up `--review` pass over {manifest_path}."
+    )
 
 
 @wiki.command(name="claude-hook", hidden=True)

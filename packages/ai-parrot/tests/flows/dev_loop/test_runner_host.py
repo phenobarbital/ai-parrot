@@ -348,6 +348,20 @@ def test_gate_ttl_for_all_kinds():
     assert gate_ttl_for("manual_criterion") == 259200
     assert gate_ttl_for("revision_approval") == 86400
     assert gate_ttl_for("plan_approval") == 14400
+    # FEAT-377 TASK-1907: "review_escalation" was missing from
+    # _GATE_TTL_CONF_ATTR — gate_ttl_for raised KeyError before this fix.
+    assert gate_ttl_for("review_escalation") == 86400
+
+
+def test_gate_ttl_for_covers_every_gate_kind():
+    """Regression guard: every GateKind member must resolve a TTL."""
+    from typing import get_args
+
+    from parrot.flows.dev_loop.runner import gate_ttl_for
+    from parrot.flows.dev_loop.session_state import GateKind
+
+    for kind in get_args(GateKind):
+        assert isinstance(gate_ttl_for(kind), int)
 
 
 # ---------------------------------------------------------------------------

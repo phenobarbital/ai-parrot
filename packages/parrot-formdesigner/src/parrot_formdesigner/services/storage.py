@@ -11,14 +11,18 @@ the same storage instance can serve many tenants
 
 Table columns:
 - id: UUID primary key
-- form_id: VARCHAR
+- form_uid: UUID — immutable UUID identity (FEAT-389/FEAT-393). Primary
+  uniqueness key for this table, together with ``version``.
+- form_id: VARCHAR — mutable, human-readable slug. Kept for display/search
+  and slug-based lookups via :meth:`PostgresFormStorage.load_by_slug`.
 - version: VARCHAR
 - schema_json: JSONB (serialized FormSchema)
 - style_json: JSONB (serialized StyleSchema, optional)
 - tenant: VARCHAR (nullable; physical-schema indicator captured for audit)
 - created_at, updated_at: TIMESTAMPTZ
 - created_by: VARCHAR (optional metadata)
-- UNIQUE(form_id, version)
+- UNIQUE(form_uid, version) — primary uniqueness (FEAT-389)
+- UNIQUE(tenant, form_id, version) — slug uniqueness per tenant (FEAT-389)
 
 Usage (self-managed pool — recommended):
     storage = PostgresFormStorage(
@@ -39,13 +43,15 @@ Usage (externally-managed pool — backward compatible):
     )
     await storage.initialize()   # DDL only, pool not closed on close()
     await storage.save(form_schema, tenant="epson")
-    form = await storage.load("my-form", tenant="epson")
+    form = await storage.load(form_schema.form_uid, tenant="epson")
+    form = await storage.load_by_slug("my-form", tenant="epson")
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any
 
 from ._identifiers import qualified_table, validate_identifier
@@ -150,6 +156,7 @@ class PostgresFormStorage(FormStorage):
         return f"""
         CREATE TABLE IF NOT EXISTS {qt} (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            form_uid UUID NOT NULL,
             form_id VARCHAR(255) NOT NULL,
             version VARCHAR(50) NOT NULL DEFAULT '1.0',
             schema_json JSONB NOT NULL,
@@ -158,17 +165,28 @@ class PostgresFormStorage(FormStorage):
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             created_by VARCHAR(255),
-            UNIQUE(form_id, version)
+            UNIQUE(form_uid, version),
+            UNIQUE(tenant, form_id, version)
         );
         """
 
     def _upsert_sql(self, tenant: str | None) -> str:
         qt = self._qualified(tenant)
+        # `$n::text::jsonb`, NOT `$n::jsonb`: the params are JSON TEXT
+        # (model_dump_json()). On a plain pool both casts behave the same,
+        # but a HOST-provided pool may register a json/jsonb type codec
+        # (encoder=json.dumps) — and a `::jsonb`-typed parameter is then
+        # re-encoded by that codec, storing a double-encoded jsonb STRING
+        # instead of an object (`jsonb_typeof = 'string'`, every
+        # `->>'key'` read returns NULL). Typing the parameter as TEXT
+        # keeps any codec out of the way; the explicit cast then parses
+        # the JSON server-side, identically under both pool regimes.
         return f"""
-        INSERT INTO {qt} (form_id, version, schema_json, style_json, tenant, created_by)
-        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6)
-        ON CONFLICT (form_id, version)
+        INSERT INTO {qt} (form_uid, form_id, version, schema_json, style_json, tenant, created_by)
+        VALUES ($1, $2, $3, $4::text::jsonb, $5::text::jsonb, $6, $7)
+        ON CONFLICT (form_uid, version)
         DO UPDATE SET
+            form_id = EXCLUDED.form_id,
             schema_json = EXCLUDED.schema_json,
             style_json = EXCLUDED.style_json,
             tenant = EXCLUDED.tenant,
@@ -179,7 +197,7 @@ class PostgresFormStorage(FormStorage):
         qt = self._qualified(tenant)
         return f"""
         SELECT schema_json, created_at FROM {qt}
-        WHERE form_id = $1
+        WHERE form_uid = $1
         ORDER BY updated_at DESC
         LIMIT 1
         """
@@ -188,18 +206,19 @@ class PostgresFormStorage(FormStorage):
         qt = self._qualified(tenant)
         return f"""
         SELECT schema_json, created_at FROM {qt}
-        WHERE form_id = $1 AND version = $2
+        WHERE form_uid = $1 AND version = $2
         ORDER BY updated_at DESC
         LIMIT 1
         """
 
     def _delete_sql(self, tenant: str | None) -> str:
-        return f"DELETE FROM {self._qualified(tenant)} WHERE form_id = $1"
+        return f"DELETE FROM {self._qualified(tenant)} WHERE form_uid = $1"
 
     def _list_sql(self, tenant: str | None) -> str:
         qt = self._qualified(tenant)
         return f"""
-        SELECT DISTINCT ON (form_id)
+        SELECT DISTINCT ON (form_uid)
+            form_uid,
             form_id,
             version,
             schema_json,
@@ -207,7 +226,25 @@ class PostgresFormStorage(FormStorage):
             created_at,
             updated_at
         FROM {qt}
-        ORDER BY form_id, updated_at DESC
+        ORDER BY form_uid, updated_at DESC
+        """
+
+    def _load_by_slug_sql(self, tenant: str | None) -> str:
+        qt = self._qualified(tenant)
+        return f"""
+        SELECT schema_json, created_at FROM {qt}
+        WHERE tenant = $1 AND form_id = $2
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+
+    def _load_by_slug_version_sql(self, tenant: str | None) -> str:
+        qt = self._qualified(tenant)
+        return f"""
+        SELECT schema_json, created_at FROM {qt}
+        WHERE tenant = $1 AND form_id = $2 AND version = $3
+        ORDER BY updated_at DESC
+        LIMIT 1
         """
 
     # ------------------------------------------------------------------
@@ -284,7 +321,11 @@ class PostgresFormStorage(FormStorage):
         created_by: str | None = None,
         tenant: str | None = None,
     ) -> str:
-        """Persist a FormSchema (UPSERT by form_id + version).
+        """Persist a FormSchema (UPSERT by form_uid + version, FEAT-389).
+
+        If ``form.form_id`` (slug) changed since this ``form_uid`` was last
+        saved, the stored ``form_id`` column is updated to the new slug —
+        renaming a form never breaks its ``form_uid``-keyed storage row.
 
         Args:
             form: FormSchema to persist.
@@ -306,6 +347,7 @@ class PostgresFormStorage(FormStorage):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 self._upsert_sql(effective_tenant),
+                form.form_uid,
                 form.form_id,
                 version,
                 schema_json,
@@ -315,7 +357,8 @@ class PostgresFormStorage(FormStorage):
             )
 
         self.logger.debug(
-            "Saved form %s version %s in %s",
+            "Saved form form_uid=%s (slug=%s) version %s in %s",
+            form.form_uid,
             form.form_id,
             version,
             self._qualified(effective_tenant),
@@ -324,15 +367,17 @@ class PostgresFormStorage(FormStorage):
 
     async def load(
         self,
-        form_id: str,
+        form_uid: uuid.UUID,
         version: str | None = None,
         *,
         tenant: str | None = None,
     ) -> FormSchema | None:
-        """Load a FormSchema from PostgreSQL.
+        """Load a FormSchema from PostgreSQL by its immutable form_uid.
 
         Args:
-            form_id: Identifier of the form.
+            form_uid: ``form_uid`` (immutable UUID) of the form. NOT
+                ``form_id`` — use :meth:`load_by_slug` for slug-based
+                lookups.
             version: Specific version to load. If None, loads the latest.
             tenant: Optional tenant override; resolves the schema for
                 this single call.
@@ -341,13 +386,14 @@ class PostgresFormStorage(FormStorage):
             FormSchema if found, None otherwise.
         """
         self._require_pool()
+        form_uid_param = form_uid
         async with self._pool.acquire() as conn:
             if version is not None:
                 row = await conn.fetchrow(
-                    self._load_version_sql(tenant), form_id, version
+                    self._load_version_sql(tenant), form_uid_param, version
                 )
             else:
-                row = await conn.fetchrow(self._load_sql(tenant), form_id)
+                row = await conn.fetchrow(self._load_sql(tenant), form_uid_param)
 
         if row is None:
             return None
@@ -374,20 +420,81 @@ class PostgresFormStorage(FormStorage):
             return form
         except Exception as exc:
             self.logger.error(
-                "Failed to deserialize form %s: %s", form_id, exc
+                "Failed to deserialize form form_uid=%s: %s", form_uid, exc
+            )
+            return None
+
+    async def load_by_slug(
+        self,
+        form_id: str,
+        tenant: str,
+        version: str | None = None,
+    ) -> FormSchema | None:
+        """Load a form by its mutable slug (``form_id``) + tenant (FEAT-389).
+
+        Backward-compatible slug-based lookup for callers that only know a
+        form's human-readable ``form_id`` (not its ``form_uid``). Returns
+        the latest version (by ``updated_at``) unless ``version`` is given.
+
+        Args:
+            form_id: The form's human-readable slug.
+            tenant: Tenant to query — REQUIRED (unlike ``load()``, this
+                filters the ``tenant`` column directly, not just schema
+                resolution, since slugs are only unique per tenant).
+            version: Specific version to load. If None, loads the latest.
+
+        Returns:
+            FormSchema if found, None otherwise.
+        """
+        self._require_pool()
+        async with self._pool.acquire() as conn:
+            if version is not None:
+                row = await conn.fetchrow(
+                    self._load_by_slug_version_sql(tenant), tenant, form_id, version
+                )
+            else:
+                row = await conn.fetchrow(
+                    self._load_by_slug_sql(tenant), tenant, form_id
+                )
+
+        if row is None:
+            return None
+
+        try:
+            raw = row["schema_json"]
+            data = json.loads(raw) if isinstance(raw, str) else raw
+            form = FormSchema.model_validate(data)
+
+            updates: dict[str, Any] = {}
+            row_created_at = row.get("created_at")
+            if row_created_at is not None and form.created_at is None:
+                updates["created_at"] = row_created_at
+            if form.tenant is None:
+                updates["tenant"] = tenant
+            if updates:
+                form = form.model_copy(update=updates)
+
+            return form
+        except Exception as exc:
+            self.logger.error(
+                "Failed to deserialize form (slug=%s, tenant=%s): %s",
+                form_id,
+                tenant,
+                exc,
             )
             return None
 
     async def delete(
         self,
-        form_id: str,
+        form_uid: uuid.UUID,
         *,
         tenant: str | None = None,
     ) -> bool:
-        """Delete all versions of a form from PostgreSQL.
+        """Delete all versions of a form from PostgreSQL by its form_uid.
 
         Args:
-            form_id: Identifier of the form to delete.
+            form_uid: ``form_uid`` (immutable UUID) of the form to delete.
+                NOT ``form_id``.
             tenant: Optional tenant override; resolves the schema for
                 this single call.
 
@@ -396,7 +503,7 @@ class PostgresFormStorage(FormStorage):
         """
         self._require_pool()
         async with self._pool.acquire() as conn:
-            result = await conn.execute(self._delete_sql(tenant), form_id)
+            result = await conn.execute(self._delete_sql(tenant), form_uid)
 
         try:
             count = int(result.split()[-1])
@@ -416,8 +523,8 @@ class PostgresFormStorage(FormStorage):
                 this single call.
 
         Returns:
-            List of dicts with keys ``form_id``, ``version``, ``title``,
-            ``description``, ``tenant``, and ``created_at``.
+            List of dicts with keys ``form_uid``, ``form_id``, ``version``,
+            ``title``, ``description``, ``tenant``, and ``created_at``.
             ``description`` may be ``None`` when the form has no
             description; ``created_at`` is an ISO-8601 string or
             ``None``.
@@ -429,6 +536,7 @@ class PostgresFormStorage(FormStorage):
         result: list[dict[str, Any]] = []
         for row in rows:
             entry: dict[str, Any] = {
+                "form_uid": row["form_uid"],
                 "form_id": row["form_id"],
                 "version": row["version"],
                 "tenant": row["tenant"],

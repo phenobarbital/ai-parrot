@@ -1,0 +1,428 @@
+"""Embedded runtime bootstrap and preflight for ``parrot devloop``.
+
+Checks real-mode prerequisites (Redis, claude CLI, Jira credentials,
+worktree base path) and constructs the ``DevLoopRunner`` with all the
+kwargs needed for both ``run()`` and ``run_revision()``.
+
+Heavy imports (``parrot.conf``, ``parrot.flows.dev_loop.*``) are deferred
+to function bodies so that ``parrot devloop --help`` stays fast.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+
+from pydantic import BaseModel, Field
+from rich.console import Console
+from rich.table import Table
+
+
+logger = logging.getLogger(__name__)
+
+#: Backend id -> actual CLI binary name, for the (few) backends whose
+#: catalog id differs from the binary an operator installs (FEAT-388 G6).
+#: Every other CLI-transport backend's binary name equals its id.
+_CLI_BINARY_OVERRIDES: Dict[str, str] = {
+    "claude-code": "claude",
+    "google_coding": "agy",
+}
+
+#: Provider -> credential env var, for the (well-documented) intake-LLM
+#: soft-credentials hint. Only the default provider is verified here
+#: (spec §7 Known Risks: "Intake default requires Anthropic credentials");
+#: other providers simply skip the soft hint rather than guess an
+#: unverified env var name.
+_INTAKE_PROVIDER_ENV_HINTS: Dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+}
+
+
+def _cli_binary_for(backend_id: str) -> str:
+    """Return the actual CLI binary name for a catalog backend id.
+
+    Args:
+        backend_id: A ``DevAgentBackend`` / catalog ``BackendInfo.id``.
+
+    Returns:
+        The binary name to look up via ``shutil.which``.
+    """
+    return _CLI_BINARY_OVERRIDES.get(backend_id, backend_id)
+
+
+class PreflightCheck(BaseModel):
+    """One preflight check result."""
+
+    name: str
+    passed: bool
+    hint: str = ""
+
+
+class PreflightResult(BaseModel):
+    """Aggregated preflight outcome."""
+
+    ok: bool
+    checks: List[PreflightCheck] = Field(default_factory=list)
+
+
+@dataclass
+class DevLoopRuntime:
+    """Holds the fully wired runtime components."""
+
+    runner: Any  # DevLoopRunner
+    flow: Any  # AgentsFlow
+    dispatcher: Any  # ClaudeCodeDispatcher
+    jira_toolkit: Any = None
+    redis_url: str = ""
+    reporter: str = ""
+    escalation_assignee: str = ""
+    graph_memory: Any = None  # Optional[DevLoopGraphMemory] (FEAT-377 G2)
+
+
+async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
+    """Run preflight checks and render results.
+
+    Never raises — returns a PreflightResult with ``ok=False`` on failure.
+    """
+    checks: List[PreflightCheck] = []
+
+    # 1. Redis URL
+    try:
+        from parrot import conf  # noqa: PLC0415
+        redis_url = getattr(conf, "REDIS_URL", "") or ""
+    except Exception:
+        redis_url = os.environ.get("REDIS_URL", "")
+
+    if redis_url:
+        checks.append(PreflightCheck(name="redis", passed=True))
+    else:
+        checks.append(PreflightCheck(
+            name="redis", passed=False,
+            hint="Set REDIS_URL in environment or parrot.conf",
+        ))
+
+    # 2. Development-agent backend check — backend-aware (FEAT-388 G6).
+    # Hard-fails only when the resolved backend is claude-code (byte-
+    # identical to the pre-FEAT-388 unconditional claude-cli check);
+    # other CLI-transport backends check their own binary; API-transport
+    # backends get a soft, informational check (BackendInfo has no
+    # structured credential-env field to verify against).
+    try:
+        from parrot import conf  # noqa: PLC0415
+        from parrot.flows.dev_loop import catalog  # noqa: PLC0415
+
+        backend_id = str(
+            conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code")
+            or "claude-code"
+        ).strip().lower()
+        backend = catalog.get_backend(backend_id)
+        valid_backend_ids = ", ".join(b.id for b in catalog.BACKENDS)
+    except Exception:
+        # conf/catalog unavailable (e.g. a fully-mocked `parrot` package in
+        # tests) — degrade to the pre-FEAT-388 unconditional claude-cli
+        # check rather than raise (preflight never raises).
+        backend_id = "claude-code"
+        backend = None
+        valid_backend_ids = ""
+
+    if backend is None and backend_id != "claude-code":
+        checks.append(PreflightCheck(
+            name="dev-agent-backend",
+            passed=False,
+            hint=(
+                f"Unknown DEV_LOOP_DEVELOPMENT_AGENT={backend_id!r}. "
+                f"Valid backends: {valid_backend_ids}"
+            ),
+        ))
+    elif backend is None:
+        claude_found = shutil.which("claude") is not None
+        checks.append(PreflightCheck(
+            name="claude-cli", passed=claude_found,
+            hint="" if claude_found else "Install Claude Code CLI: npm i -g @anthropic-ai/claude-code",
+        ))
+    elif backend.transport == "cli":
+        binary = _cli_binary_for(backend.id)
+        found = shutil.which(binary) is not None
+        if backend.id == "claude-code":
+            hint = "" if found else "Install Claude Code CLI: npm i -g @anthropic-ai/claude-code"
+        else:
+            hint = "" if found else f"Install/authenticate: {backend.requires}"
+        checks.append(PreflightCheck(name=f"{binary}-cli", passed=found, hint=hint))
+    else:
+        checks.append(PreflightCheck(
+            name=f"{backend.id}-credentials",
+            passed=True,
+            hint=f"Ensure credentials are configured: {backend.requires}",
+        ))
+
+    # 2b. Intake-LLM credentials — soft hint only (FEAT-388 G4/G6): feature-
+    # mode intake is optional, --brief runs never need it.
+    try:
+        from parrot import conf  # noqa: PLC0415
+        intake_llm = str(
+            conf.config.get("DEV_LOOP_INTAKE_LLM", fallback="anthropic:claude-haiku-4-5")
+            or "anthropic:claude-haiku-4-5"
+        )
+    except Exception:
+        intake_llm = "anthropic:claude-haiku-4-5"
+
+    intake_provider = intake_llm.split(":", 1)[0].strip().lower()
+    intake_env_key = _INTAKE_PROVIDER_ENV_HINTS.get(intake_provider)
+    intake_hint = ""
+    if intake_env_key and not os.environ.get(intake_env_key):
+        intake_hint = (
+            f"Feature-mode intake ({intake_llm}) needs {intake_env_key} — "
+            "optional; --brief runs don't need it."
+        )
+    checks.append(PreflightCheck(name="intake-llm", passed=True, hint=intake_hint))
+
+    # 3. Jira credentials
+    jira_ok = False
+    jira_hint = ""
+    try:
+        from parrot import conf  # noqa: PLC0415
+        jira_url = getattr(conf, "JIRA_URL", "") or conf.config.get("JIRA_URL", fallback="") or ""
+        jira_user = getattr(conf, "JIRA_USERNAME", "") or conf.config.get("JIRA_USERNAME", fallback="") or ""
+        jira_token = getattr(conf, "JIRA_API_TOKEN", "") or conf.config.get("JIRA_API_TOKEN", fallback="") or ""
+        if jira_url and (jira_user or jira_token):
+            jira_ok = True
+        else:
+            jira_hint = "Set JIRA_URL + JIRA_USERNAME/JIRA_API_TOKEN in parrot.conf"
+    except Exception:
+        jira_hint = "Configure Jira credentials in parrot.conf"
+    checks.append(PreflightCheck(name="jira", passed=jira_ok, hint=jira_hint))
+
+    # 4. Worktree base path
+    try:
+        from parrot import conf  # noqa: PLC0415
+        wt_base = getattr(conf, "WORKTREE_BASE_PATH", "") or ""
+    except Exception:
+        wt_base = os.environ.get("WORKTREE_BASE_PATH", "")
+    if wt_base:
+        checks.append(PreflightCheck(name="worktree-base", passed=True))
+    else:
+        checks.append(PreflightCheck(
+            name="worktree-base", passed=False,
+            hint="Set WORKTREE_BASE_PATH in parrot.conf (e.g. /home/user/worktrees)",
+        ))
+
+    result = PreflightResult(ok=all(c.passed for c in checks), checks=checks)
+
+    if console:
+        _render_preflight(console, result)
+
+    return result
+
+
+def _render_preflight(console: Console, result: PreflightResult) -> None:
+    """Render preflight results as a Rich table."""
+    table = Table(title="Preflight Checks", show_lines=True)
+    table.add_column("Check", style="cyan")
+    table.add_column("Status")
+    table.add_column("Hint", style="dim")
+
+    for check in result.checks:
+        status = "[green]PASS[/green]" if check.passed else "[red]FAIL[/red]"
+        table.add_row(check.name, status, check.hint)
+
+    console.print(table)
+    if result.ok:
+        console.print("[green]All checks passed.[/green]\n")
+    else:
+        console.print("[red]Some checks failed. Fix the issues above before running.[/red]\n")
+
+
+async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
+    """Preflight, then construct the full DevLoopRunner.
+
+    Mirrors the wiring from ``examples/dev_loop/quickstart.py``.
+
+    Raises:
+        SystemExit: If preflight fails.
+    """
+    con = console or Console()
+    result = await preflight(console=con)
+    if not result.ok:
+        raise SystemExit(1)
+
+    from parrot import conf  # noqa: PLC0415
+    from parrot.flows.dev_loop import (  # noqa: PLC0415
+        DevLoopRunner,
+        build_dev_loop_flow,
+    )
+    from parrot.flows.dev_loop import catalog  # noqa: PLC0415
+    from parrot.flows.dev_loop.agent_builder import build_dispatcher  # noqa: PLC0415
+    from parrot.flows.dev_loop.code_review import CodeReviewDispatcherFactory  # noqa: PLC0415
+    from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory  # noqa: PLC0415
+    from parrot.flows.dev_loop.models import DevAgentSpec  # noqa: PLC0415
+    from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch  # noqa: PLC0415
+
+    redis_url = conf.config.get("REDIS_URL", fallback="redis://localhost:6379/0")
+
+    # FEAT-388 G6: the default dispatcher is materialized via the same
+    # reusable builder the pool path (FEAT-323) and the web console
+    # (examples/dev_loop/server.py) use, keyed off DEV_LOOP_DEVELOPMENT_AGENT
+    # (fallback "claude-code") — homologates the CLI with both. preflight()
+    # already validated the backend id above (SystemExit on unknown), so
+    # DevAgentSpec's Literal type is guaranteed to accept it here.
+    backend_id = str(
+        conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code")
+        or "claude-code"
+    ).strip().lower()
+
+    dispatcher, development_profile = build_dispatcher(
+        DevAgentSpec(agent=backend_id),
+        redis_url=redis_url,
+        max_concurrent=conf.config.get(
+            "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3
+        ),
+        stream_ttl_seconds=conf.config.get(
+            "FLOW_STREAM_TTL_SECONDS", fallback=604800
+        ),
+    )
+
+    # Code-review-review fix (post-review CRITICAL finding): QANode's own
+    # "codereview_dispatcher=None -> wrap `dispatcher` in
+    # ClaudeCodeReviewDispatcher" backward-compat fallback (qa.py) assumes
+    # `dispatcher` is always a ClaudeCodeDispatcher — true before FEAT-388
+    # (this file always built ClaudeCodeDispatcher unconditionally), no
+    # longer true now that `dispatcher` can be any backend. Passing a non-
+    # claude-code dispatcher into ClaudeCodeReviewDispatcher silently
+    # degrades every code-review gate to "always pass" (a swallowed
+    # exception inside AbstractCodeReviewDispatcher.review()). Build a
+    # matching reviewer via the existing CodeReviewDispatcherFactory for
+    # every backend that actually has one (catalog.PRIMARY_REVIEW_BACKENDS);
+    # the claude-code default is left as None (QANode's own fallback is
+    # byte-identical there), and backends with no review profile
+    # (nvidia/grok/zai/moonshot) keep today's imperfect fallback — a full
+    # fix mirroring server.py's independent DEV_LOOP_CODEREVIEW_AGENT +
+    # adversarial/parallel reviewer selection is out of this task's scope.
+    codereview_dispatcher = None
+    if backend_id != "claude-code" and backend_id in catalog.PRIMARY_REVIEW_BACKENDS:
+        codereview_dispatcher = CodeReviewDispatcherFactory.create(
+            backend_id, dispatcher=dispatcher
+        )
+
+    jira_toolkit = _build_jira_toolkit()
+    log_toolkits = _build_log_toolkits()
+
+    # FEAT-377 TASK-1914/1915 (G2): opt-in GraphIndex facade. `from_config()`
+    # returns None when DEV_LOOP_GRAPH_MEMORY_PATH is unset — every seam it
+    # backs (research context, run write-back, grounded findings) degrades
+    # to a no-op, so this is a strict extension, never a behavior change.
+    graph_memory = await DevLoopGraphMemory.from_config()
+    wiki_search = DevLoopWikiSearch.from_project()
+
+    # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
+    # preserves current behavior exactly.
+    require_plan_approval = bool(
+        getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
+    )
+
+    flow = build_dev_loop_flow(
+        dispatcher=dispatcher,
+        development_profile=development_profile,
+        jira_toolkit=jira_toolkit,
+        log_toolkits=log_toolkits,
+        redis_url=redis_url,
+        wiki_search=wiki_search,
+        graph_memory=graph_memory,
+        require_plan_approval=require_plan_approval,
+        codereview_dispatcher=codereview_dispatcher,
+    )
+
+    reporter, escalation = await default_identities(jira_toolkit)
+
+    runner = DevLoopRunner(
+        flow,
+        dispatcher=dispatcher,
+        jira_toolkit=jira_toolkit,
+        git_toolkit=None,
+        redis_url=redis_url,
+        codereview_dispatcher=codereview_dispatcher,
+        graph_memory=graph_memory,
+    )
+
+    return DevLoopRuntime(
+        runner=runner,
+        flow=flow,
+        dispatcher=dispatcher,
+        jira_toolkit=jira_toolkit,
+        redis_url=redis_url,
+        reporter=reporter,
+        escalation_assignee=escalation,
+        graph_memory=graph_memory,
+    )
+
+
+async def default_identities(
+    jira_toolkit: Any,
+) -> Tuple[str, str]:
+    """Resolve reporter and escalation identities.
+
+    Falls back to ``$USER`` when Jira identity resolution is unavailable.
+    """
+    from parrot import conf  # noqa: PLC0415
+
+    fallback = os.environ.get("USER", "cli-user")
+    bot_account = getattr(conf, "FLOW_BOT_JIRA_ACCOUNT_ID", "") or ""
+
+    reporter_raw = conf.config.get("JIRA_REPORTER_ACCOUNT_ID", fallback="") or bot_account
+    escalation_raw = conf.config.get("JIRA_ESCALATION_ACCOUNT_ID", fallback="") or bot_account
+
+    reporter = await _resolve_identity(jira_toolkit, reporter_raw) or fallback
+    escalation = await _resolve_identity(jira_toolkit, escalation_raw) or fallback
+
+    return reporter, escalation
+
+
+async def _resolve_identity(jira_toolkit: Any, raw: str) -> str:
+    """Resolve a Jira accountId or email to a usable identity string."""
+    if not raw:
+        return ""
+    if jira_toolkit is None:
+        return raw
+    try:
+        if hasattr(jira_toolkit, "resolve_account_id"):
+            resolved = await jira_toolkit.resolve_account_id(raw)
+            return resolved or raw
+    except Exception:
+        logger.debug("Jira identity resolution failed for %r", raw, exc_info=True)
+    return raw
+
+
+def _build_jira_toolkit() -> Any:
+    """Build the JiraToolkit if Jira credentials are configured."""
+    try:
+        from parrot import conf  # noqa: PLC0415
+        from parrot_tools.jiratoolkit import JiraToolkit  # noqa: PLC0415
+
+        return JiraToolkit(
+            server_url=conf.JIRA_URL or None,
+            username=getattr(conf, "JIRA_USERNAME", "") or None,
+            token=getattr(conf, "JIRA_API_TOKEN", "") or None,
+        )
+    except Exception:
+        logger.warning("JiraToolkit not available; Jira features disabled.", exc_info=True)
+        return None
+
+
+def _build_log_toolkits() -> Dict[str, Any]:
+    """Build log source toolkits (CloudWatch, etc.) from config."""
+    toolkits: Dict[str, Any] = {}
+    try:
+        from parrot import conf  # noqa: PLC0415
+
+        if hasattr(conf, "CLOUDWATCH_LOG_GROUP"):
+            try:
+                from parrot.tools.cloudwatch import CloudWatchToolkit  # noqa: PLC0415
+                toolkits["cloudwatch"] = CloudWatchToolkit(
+                    log_group=conf.CLOUDWATCH_LOG_GROUP,
+                )
+            except ImportError:
+                pass
+    except Exception:
+        pass
+    return toolkits

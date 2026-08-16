@@ -274,12 +274,38 @@ class GrokClient(AbstractClient):
         max_turns = 10
         current_turn = 0
 
+        # FEAT-397: per-round token usage accumulation across the tool loop.
+        # Each chat.sample() call IS a round — current_turn is already the
+        # 1-indexed round number, no separate pre-loop "initial call" here.
+        _lc_accumulated_usage_grok2: "Optional[CompletionUsage]" = None
+
         while current_turn < max_turns:
             current_turn += 1
 
             try:
+                _lc_round_t0_grok2 = _lc_time_grok2.perf_counter()
                 response = await chat.sample()
                 chat.append(response)
+                _lc_round_duration_grok2 = (_lc_time_grok2.perf_counter() - _lc_round_t0_grok2) * 1000
+
+                # FEAT-397: build this round's usage and accumulate. Rounds
+                # where the provider reported no usage are skipped (accumulator
+                # untouched); the round event still fires with usage=None.
+                # Grok's usage may be a JSON-safe dict OR an xai_sdk protobuf
+                # object — from_grok() handles both; its extra_usage dict
+                # (getattr-extracted for the protobuf branch) doubles as the
+                # JSON-safe raw_usage payload, per this task's implementation note.
+                if hasattr(response, "usage") and response.usage:
+                    _lc_round_usage_grok2 = CompletionUsage.from_grok(response.usage)
+                    _lc_round_raw_usage_grok2 = _lc_round_usage_grok2.extra_usage
+                    _lc_accumulated_usage_grok2 = (
+                        _lc_round_usage_grok2
+                        if _lc_accumulated_usage_grok2 is None
+                        else _lc_accumulated_usage_grok2 + _lc_round_usage_grok2
+                    )
+                else:
+                    _lc_round_usage_grok2 = None
+                    _lc_round_raw_usage_grok2 = None
 
                 tool_calls = response.tool_calls or []
 
@@ -287,6 +313,7 @@ class GrokClient(AbstractClient):
                     final_response = response
                     break
 
+                _lc_round_tool_names_grok2 = []
                 for tc in tool_calls:
                     fn = tc.function
                     tool_name = fn.name
@@ -307,8 +334,21 @@ class GrokClient(AbstractClient):
                         result=tool_exec_result
                     )
                     all_tool_calls.append(tool_call_rec)
+                    _lc_round_tool_names_grok2.append(tool_name)
 
                     chat.append(tool_result_fn(str(tool_exec_result), tool_call_id=tool_id))
+
+                # FEAT-397: emit ClientRoundEvent for this round's tool execution.
+                self._emit_round_event(
+                    _lc_tc_grok2,
+                    client_name="grok",
+                    model=model,
+                    round_number=current_turn,
+                    usage=_lc_round_usage_grok2,
+                    raw_usage=_lc_round_raw_usage_grok2,
+                    tool_calls=_lc_round_tool_names_grok2,
+                    duration_ms=_lc_round_duration_grok2,
+                )
 
                 continue
 
@@ -343,6 +383,15 @@ class GrokClient(AbstractClient):
             usage=CompletionUsage.from_grok(final_response.usage) if hasattr(final_response, 'usage') else None,
             text_response=text_content
         )
+
+        # FEAT-397: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round calls (no tool use), the
+        # accumulated total equals the last (only) round's usage, so this
+        # is a no-op for existing single-round behavior.
+        if _lc_accumulated_usage_grok2 is not None:
+            if current_turn > 1:
+                _lc_accumulated_usage_grok2.extra_usage["rounds"] = current_turn
+            ai_message.usage = _lc_accumulated_usage_grok2
 
         ai_message.tool_calls = all_tool_calls
         if structured_payload:

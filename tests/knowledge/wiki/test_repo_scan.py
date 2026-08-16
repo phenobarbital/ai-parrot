@@ -10,11 +10,14 @@ from pathlib import Path
 
 from parrot.knowledge.wiki.repo_scan import (
     DEFAULT_MAX_FILE_BYTES,
+    WIKI_BUNDLE_MARKER,
     build_dir_pages,
     build_file_slice,
     dir_concept_id,
     discover_repo_files,
     file_concept_id,
+    find_wiki_bundle_dirs,
+    is_inside_wiki_bundle,
     scan_repository,
 )
 
@@ -28,6 +31,149 @@ def _write(root: Path, rel: str, content: str) -> Path:
 
 PY_A = '"""Mod A does things."""\nfrom pkg.b import x\n\n\nclass Alpha:\n    """Alpha class."""\n\n    def run(self, arg):\n        """Run it."""\n        return arg\n\n\ndef helper():\n    """Top-level helper."""\n'
 PY_B = '"""Mod B."""\nx = 1\n'
+
+
+class TestFrontmatterSummary:
+    """A YAML frontmatter block is metadata, not the document's lead.
+
+    Taking the first non-empty line of such a file yields the ``---``
+    delimiter, which is both useless in search results and indexed by
+    FTS as if it were content.
+    """
+
+    def _summary(self, tmp_path: Path, body: str) -> str:
+        _write(tmp_path, "doc.md", body)
+        slice_ = build_file_slice(tmp_path, "doc.md")
+        assert slice_ is not None
+        return slice_.record.summary
+
+    def test_prefers_the_frontmatter_summary_field(self, tmp_path: Path):
+        got = self._summary(
+            tmp_path,
+            "---\ntitle: query()\nsummary: Scoped question against the KB.\n"
+            "---\n\n# query\n\nBody text.\n",
+        )
+        assert got == "Scoped question against the KB."
+
+    def test_falls_back_to_the_frontmatter_title(self, tmp_path: Path):
+        got = self._summary(
+            tmp_path, "---\ntype: Concept\ntitle: query()\n---\n\n# query\n"
+        )
+        assert got == "query()"
+
+    def test_falls_back_to_the_first_heading_after_the_block(self, tmp_path: Path):
+        got = self._summary(
+            tmp_path, "---\ntype: Concept\ntags:\n- a\n---\n\n# Real Heading\n\nText.\n"
+        )
+        assert got == "Real Heading"
+
+    def test_strips_quotes_from_frontmatter_values(self, tmp_path: Path):
+        got = self._summary(tmp_path, '---\nsummary: "Quoted lead."\n---\n\n# H\n')
+        assert got == "Quoted lead."
+
+    def test_ignores_an_empty_frontmatter_summary(self, tmp_path: Path):
+        got = self._summary(tmp_path, "---\nsummary:\ntitle: The Title\n---\n\n# H\n")
+        assert got == "The Title"
+
+    def test_ignores_a_block_scalar_summary(self, tmp_path: Path):
+        # `summary: |` introduces a folded block; the indicator itself
+        # is not a summary.
+        got = self._summary(tmp_path, "---\nsummary: |\ntitle: The Title\n---\n\n# H\n")
+        assert got == "The Title"
+
+    def test_never_returns_the_delimiter(self, tmp_path: Path):
+        got = self._summary(tmp_path, "---\ntype: Concept\n---\n\nPlain lead line.\n")
+        assert got == "Plain lead line."
+
+    def test_unterminated_frontmatter_does_not_swallow_the_document(
+        self, tmp_path: Path
+    ):
+        got = self._summary(tmp_path, "---\nnot really frontmatter\n\n# Heading\n")
+        assert got
+        assert got != "---"
+
+    def test_a_document_without_frontmatter_is_unchanged(self, tmp_path: Path):
+        got = self._summary(tmp_path, "# Project Title\n\nSome text.\n")
+        assert got == "Project Title"
+
+    def test_a_leading_horizontal_rule_is_not_frontmatter(self, tmp_path: Path):
+        # Position alone does not make a block frontmatter: without any
+        # `key:` line this is a rule, and swallowing it would silently
+        # discard the document's real lead.
+        got = self._summary(tmp_path, "---\nIntro line.\n---\n\nAfter the rule.\n")
+        assert got == "Intro line."
+
+    def test_a_horizontal_rule_mid_document_is_not_frontmatter(self, tmp_path: Path):
+        got = self._summary(tmp_path, "# Heading\n\n---\n\nAfter the rule.\n")
+        assert got == "Heading"
+
+
+class TestWikiBundleGuardrail:
+    """A wiki must never ingest another wiki's exported bundle."""
+
+    def test_finds_a_nested_bundle_by_its_marker(self, tmp_path: Path):
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, "docs/parrot/index.md", "# Wiki")
+        assert find_wiki_bundle_dirs(tmp_path) == ["docs/parrot"]
+
+    def test_reports_no_bundle_for_an_ordinary_tree(self, tmp_path: Path):
+        _write(tmp_path, "docs/guide.md", "# Guide")
+        assert find_wiki_bundle_dirs(tmp_path) == []
+
+    def test_discovery_skips_everything_inside_a_bundle(self, tmp_path: Path):
+        _write(tmp_path, "app.py", "x = 1")
+        _write(tmp_path, "docs/guide.md", "# A real doc")
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, "docs/parrot/index.md", "# Wiki")
+        _write(
+            tmp_path,
+            "docs/parrot/overviews/doc:app-py.md",
+            "---\ntitle: app.py\n---\n\n# app.py\n",
+        )
+
+        found = discover_repo_files(tmp_path, use_git=False)
+
+        assert "app.py" in found
+        assert "docs/guide.md" in found
+        assert all(not f.startswith("docs/parrot/") for f in found)
+
+    def test_detects_a_path_inside_a_bundle_without_walking_the_repo(
+        self, tmp_path: Path
+    ):
+        # The incremental path must answer "is this one file inside a
+        # bundle?" by looking at its ancestors, not by scanning the tree:
+        # the git post-commit hook pays this cost on every commit.
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, "docs/parrot/overviews/doc:app-py.md", "# app")
+        _write(tmp_path, "docs/guide.md", "# Guide")
+
+        assert is_inside_wiki_bundle(tmp_path, "docs/parrot/overviews/doc:app-py.md")
+        assert is_inside_wiki_bundle(tmp_path, "docs/parrot/index.md")
+        assert not is_inside_wiki_bundle(tmp_path, "docs/guide.md")
+        assert not is_inside_wiki_bundle(tmp_path, "app.py")
+
+    def test_inside_check_ignores_a_marker_at_the_repo_root(self, tmp_path: Path):
+        _write(tmp_path, WIKI_BUNDLE_MARKER, "{}")
+        _write(tmp_path, "app.py", "x = 1")
+        assert not is_inside_wiki_bundle(tmp_path, "app.py")
+
+    def test_walk_does_not_descend_into_path_prefix_excludes(self, tmp_path: Path):
+        _write(tmp_path, f"vendor/stuff/{WIKI_BUNDLE_MARKER}", "{}")
+        _write(tmp_path, f"docs/parrot/{WIKI_BUNDLE_MARKER}", "{}")
+
+        found = find_wiki_bundle_dirs(tmp_path, exclude_dirs=["vendor/stuff"])
+
+        assert found == ["docs/parrot"]
+
+    def test_a_bundle_at_the_repo_root_does_not_prune_the_repo(self, tmp_path: Path):
+        # The scanned repo may itself be a wiki bundle root; excluding "."
+        # would silently discover nothing at all.
+        _write(tmp_path, WIKI_BUNDLE_MARKER, "{}")
+        _write(tmp_path, "app.py", "x = 1")
+
+        found = discover_repo_files(tmp_path, use_git=False)
+
+        assert "app.py" in found
 
 
 class TestDiscovery:

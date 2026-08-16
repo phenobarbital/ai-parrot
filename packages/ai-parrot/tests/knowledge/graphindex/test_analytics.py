@@ -1,26 +1,28 @@
 """Unit tests for parrot.knowledge.graphindex.analytics."""
 
+
 import pytest
 import rustworkx
-from pathlib import Path
-
 from parrot.knowledge.graphindex.analytics import (
+    REPORT_FILENAME,
     AnalyticsResult,
     KnowledgeGaps,
     SurpriseFactors,
-    DismissedInsights,
+    _compute_god_nodes,
+    _generate_suggested_questions,
+    _rank_surprising_connections,
+    _render_report,
     compute_analytics,
-    generate_report,
+    dismiss_insight,
+    find_bridge_nodes,
     find_isolated_nodes,
     find_sparse_communities,
-    find_bridge_nodes,
-    dismiss_insight,
+    generate_report,
     list_unreviewed_insights,
-    _compute_god_nodes,
-    _rank_surprising_connections,
-    _generate_suggested_questions,
-    _render_report,
-    REPORT_FILENAME,
+)
+from parrot.knowledge.graphindex.inter_community import (
+    InterCommunityGraph,
+    InterCommunityRelation,
 )
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
@@ -29,7 +31,6 @@ from parrot.knowledge.graphindex.schema import (
     UniversalEdge,
     UniversalNode,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -382,7 +383,7 @@ def graph_with_gaps():
     The CommunitiesResult is built directly (not via Louvain) to give
     deterministic cohesion values for testing.
     """
-    from parrot.knowledge.graphindex.communities import Community, CommunitiesResult
+    from parrot.knowledge.graphindex.communities import CommunitiesResult, Community
 
     g = rustworkx.PyDiGraph()
 
@@ -694,7 +695,7 @@ class TestCompositeSurpriseScoring:
 
     def test_cross_community_score(self, graph_with_gaps):
         """Cross-community edge gets +3."""
-        from parrot.knowledge.graphindex.communities import Community, CommunitiesResult
+        from parrot.knowledge.graphindex.communities import CommunitiesResult
 
         nodes = [
             make_node("x", NodeKind.CONCEPT, "X"),
@@ -1021,3 +1022,78 @@ class TestReportKnowledgeGaps:
         report = _render_report(analytics)
         assert "5" in report  # composite score value present
         assert "Score" in report
+
+
+# ---------------------------------------------------------------------------
+# FEAT-401 — Inter-community relations integration
+# ---------------------------------------------------------------------------
+
+
+def _sample_inter_community_graph() -> InterCommunityGraph:
+    return InterCommunityGraph(
+        relations=[
+            InterCommunityRelation(
+                source_community_id="cid_a", target_community_id="cid_b",
+                source_label="Auth", target_label="Payments",
+                directed_edge_count=3, reverse_edge_count=1,
+                total_weight=3.0, reverse_weight=1.0, coupling_ratio=0.4,
+            ),
+        ],
+        community_count=2, connected_pairs=1,
+        total_possible_pairs=1, density=1.0,
+    )
+
+
+class TestInterCommunityIntegration:
+    def test_analytics_inter_community_field_default_none(self):
+        """AnalyticsResult.inter_community defaults to None."""
+        analytics = AnalyticsResult()
+        assert analytics.inter_community is None
+
+    def test_analytics_inter_community_field_populated(self):
+        """AnalyticsResult.inter_community can be set (populated by the
+        builder after community detection — see builder.py Stage 6)."""
+        analytics = AnalyticsResult()
+        analytics.inter_community = _sample_inter_community_graph()
+        assert analytics.inter_community is not None
+        assert analytics.inter_community.community_count == 2
+
+    def test_report_inter_community_section(self):
+        """_render_report includes ## Inter-Community Relations when data present."""
+        analytics = AnalyticsResult(inter_community=_sample_inter_community_graph())
+        report = _render_report(analytics)
+        assert "## Inter-Community Relations" in report
+        assert "Auth" in report
+        assert "Payments" in report
+        assert "0.4000" in report  # coupling ratio
+
+    def test_report_shows_density(self):
+        analytics = AnalyticsResult(inter_community=_sample_inter_community_graph())
+        report = _render_report(analytics)
+        assert "Density" in report
+        assert "100.00%" in report  # density=1.0
+
+    def test_report_no_inter_community_section_when_none(self):
+        """_render_report omits the section when inter_community is None."""
+        analytics = AnalyticsResult()
+        report = _render_report(analytics)
+        assert "## Inter-Community Relations" not in report
+
+    def test_report_no_inter_community_section_when_empty(self):
+        """_render_report omits the section when inter_community has no
+        relations (e.g. every community is isolated)."""
+        analytics = AnalyticsResult(
+            inter_community=InterCommunityGraph(
+                relations=[], community_count=2, connected_pairs=0,
+                total_possible_pairs=1, density=0.0,
+            )
+        )
+        report = _render_report(analytics)
+        assert "## Inter-Community Relations" not in report
+
+    def test_report_generate_report_writes_inter_community_section(self, tmp_path):
+        """generate_report() (full file write) also includes the section."""
+        analytics = AnalyticsResult(inter_community=_sample_inter_community_graph())
+        report_path = generate_report(analytics, tmp_path)
+        content = report_path.read_text(encoding="utf-8")
+        assert "## Inter-Community Relations" in content

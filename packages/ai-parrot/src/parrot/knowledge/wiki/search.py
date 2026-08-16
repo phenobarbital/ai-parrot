@@ -26,7 +26,7 @@ import logging
 from typing import Any, Awaitable, Callable, Optional
 
 from parrot.knowledge.wiki.models import WikiPageCategory, WikiSearchResult
-from parrot.knowledge.wiki.store import WikiStore
+from parrot.knowledge.wiki.store import BaseWikiStore
 
 
 class WikiCombinedSearch:
@@ -49,7 +49,7 @@ class WikiCombinedSearch:
         pageindex_toolkit: Any,
         graphindex_toolkit: Any,
         default_weights: Optional[dict[str, float]] = None,
-        store: Optional[WikiStore] = None,
+        store: Optional[BaseWikiStore] = None,
         embedder: Optional[Callable[[str], Awaitable[list[float]]]] = None,
     ) -> None:
         """Initialise combined search.
@@ -63,8 +63,8 @@ class WikiCombinedSearch:
                 keys ``"lexical"`` / ``"vector"`` or the legacy aliases
                 ``"pageindex"`` / ``"graphindex"``.  Defaults to
                 ``{"pageindex": 0.6, "graphindex": 0.4}``.
-            store: :class:`WikiStore` retrieval plane.  When provided,
-                all searches run against it (preferred path).
+            store: :class:`BaseWikiStore` retrieval plane.  When
+                provided, all searches run against it (preferred path).
             embedder: Optional async ``text -> vector`` callable used
                 for the vector leg of store-backed search.
         """
@@ -89,6 +89,7 @@ class WikiCombinedSearch:
         top_k: int = 10,
         tree_name: Optional[str] = None,
         weights: Optional[dict[str, float]] = None,
+        include_archived: bool = False,
     ) -> list[WikiSearchResult]:
         """Search the wiki and return merged, ranked results.
 
@@ -101,6 +102,12 @@ class WikiCombinedSearch:
                 When ``None``, the PageIndex toolkit searches all trees.
             weights: Optional per-call override for score weights.  Falls
                 back to ``self._weights`` when ``None``.
+            include_archived: When ``False`` (the default), pages in the
+                supervised-ingestion ``"archive"`` category (FEAT-402)
+                are excluded from the results — they are indexed and
+                retrievable but opt-in only. Set ``True`` to include
+                them alongside everything else. No-op on the legacy
+                (storeless) path, which predates the archive category.
 
         Returns:
             Sorted list of :class:`WikiSearchResult` objects (descending
@@ -111,7 +118,11 @@ class WikiCombinedSearch:
 
         if self._store is not None:
             return await self._search_store(
-                query, mode=mode, top_k=top_k, weights=effective_weights
+                query,
+                mode=mode,
+                top_k=top_k,
+                weights=effective_weights,
+                include_archived=include_archived,
             )
 
         pi_results: list[WikiSearchResult] = []
@@ -137,6 +148,7 @@ class WikiCombinedSearch:
         mode: str,
         top_k: int,
         weights: dict[str, float],
+        include_archived: bool = False,
     ) -> list[WikiSearchResult]:
         """Answer a search entirely from the WikiStore SQLite plane.
 
@@ -146,6 +158,8 @@ class WikiCombinedSearch:
                 or ``"vector"`` (alias ``"graphindex"``).
             top_k: Maximum merged results.
             weights: Weight mapping (new or legacy key names).
+            include_archived: When ``True``, include ``"archive"``
+                category pages alongside everything else (FEAT-402).
 
         Returns:
             Sorted, deduplicated :class:`WikiSearchResult` list.
@@ -159,7 +173,18 @@ class WikiCombinedSearch:
         lexical_results: list[WikiSearchResult] = []
         if want_lexical:
             try:
+                # search_fts(category=None) already excludes the archive
+                # category by default (FEAT-402). When the caller opts
+                # in, issue a supplemental archive-only query and merge
+                # it in — search_fts's single `category` filter can only
+                # express "exactly this category" or "the default
+                # (non-archive) set", not "everything".
                 rows = await self._store.search_fts(query, limit=top_k)
+                if include_archived:
+                    archived_rows = await self._store.search_fts(
+                        query, category="archive", limit=top_k
+                    )
+                    rows = rows + archived_rows
                 lexical_results = [
                     self._store_row_to_wiki(r, source="lexical")
                     for r in self._normalize_rows(rows)
@@ -176,6 +201,15 @@ class WikiCombinedSearch:
                     self._store_row_to_wiki(r, source="vector")
                     for r in self._normalize_rows(rows)
                 ]
+                if not include_archived:
+                    # search_vector has no category filter at all (it
+                    # ranks purely on embedding similarity), so the
+                    # archive exclusion has to be a post-filter here.
+                    vector_results = [
+                        r
+                        for r in vector_results
+                        if r.category != WikiPageCategory.ARCHIVE
+                    ]
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning("WikiStore vector search failed: %s", exc)
 

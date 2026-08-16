@@ -7,11 +7,14 @@ into Claude Code:
 2. appends a managed section to ``CLAUDE.md`` telling the assistant to
    prefer ``wikitoolkit query "<question>"`` over grepping raw files;
 3. merges a ``PreToolUse`` nudge hook into ``.claude/settings.json``
-   (matcher ``Grep|Glob|Read`` → ``wikitoolkit claude-hook``);
-4. writes the ``/parrotwiki`` slash command;
-5. optionally installs a chained git ``post-commit`` hook that runs
+   (matcher ``Grep|Glob|Read|Bash`` → ``wikitoolkit claude-hook``);
+4. writes wikitoolkit permission rules into ``.claude/settings.local.json``
+   (per-user, not committed) and migrates any legacy rules out of the
+   shared ``settings.json``;
+5. writes the ``/parrotwiki`` slash command;
+6. optionally installs a chained git ``post-commit`` hook that runs
    ``wikitoolkit upsert --changed`` after every commit;
-6. optionally git-ignores ``.parrot/``.
+7. optionally git-ignores ``.parrot/``.
 
 Every step is marker-based and re-runnable; ``uninstall`` removes
 exactly the managed artifacts and nothing else.
@@ -103,14 +106,19 @@ def _install_claude_md(root: Path) -> str:
     return "CLAUDE.md — wiki section already current"
 
 
-def _hook_entry() -> dict[str, Any]:
-    """Build the PreToolUse hook entry for settings.json."""
+def _hook_entry(root: Path) -> dict[str, Any]:
+    """Build the PreToolUse hook entry for settings.json.
+
+    The command is resolved to an absolute path so the hook fires
+    correctly inside git worktrees (which do not inherit the venv's
+    ``$PATH``).
+    """
     return {
         "matcher": assets.HOOK_MATCHER,
         "hooks": [
             {
                 "type": "command",
-                "command": assets.HOOK_COMMAND,
+                "command": assets.hook_command(root),
                 "timeout": 10,
             }
         ],
@@ -173,48 +181,174 @@ def _install_settings_hook(root: Path) -> str:
     if not isinstance(pre, list):
         raise RuntimeError(f"{path}: 'hooks.PreToolUse' is not a list")
 
+    resolved_cmd = assets.hook_command(root)
+
     existing = next(
         (e for e in pre if isinstance(e, dict) and _is_our_hook(e)), None
     )
     if existing is not None:
-        # Upgrade an older install in place when the matcher changed
-        # (e.g. Grep|Glob|Read → Grep|Glob|Read|Bash) so a re-run picks
-        # up new coverage instead of reporting "already installed".
+        # Upgrade an older install in place when the matcher or command
+        # changed (e.g. bare → absolute path, or Grep|Glob|Read →
+        # Grep|Glob|Read|Bash) so a re-run picks up the fix instead of
+        # reporting "already installed".
+        dirty = False
         if existing.get("matcher") != assets.HOOK_MATCHER:
             existing["matcher"] = assets.HOOK_MATCHER
+            dirty = True
+        for hook in existing.get("hooks", []):
+            if (
+                assets.HOOK_COMMAND in str(hook.get("command", ""))
+                and hook.get("command") != resolved_cmd
+            ):
+                hook["command"] = resolved_cmd
+                dirty = True
+        if dirty:
             _write_settings(path, settings)
-            return ".claude/settings.json — PreToolUse hook matcher updated"
+            return ".claude/settings.json — PreToolUse hook updated"
         return ".claude/settings.json — PreToolUse hook already installed"
-    pre.append(_hook_entry())
+    pre.append(_hook_entry(root))
     _write_settings(path, settings)
     return ".claude/settings.json — PreToolUse wiki nudge hook added"
 
 
-def _install_permissions(root: Path) -> str:
-    """Allowlist wikitoolkit commands so queries run without prompting."""
-    path = root / ".claude" / "settings.json"
-    settings = _load_settings(path) or {}
+def _install_permissions(root: Path) -> list[str]:
+    """Allowlist wikitoolkit commands in settings.local.json.
 
-    permissions = settings.get("permissions")
+    Permissions are per-user (wikitoolkit is a local tool), so they
+    belong in the non-committed ``settings.local.json``.  If the shared
+    ``settings.json`` still carries legacy rules from a previous install,
+    they are migrated out.
+    """
+    actions: list[str] = []
+
+    # --- migrate legacy rules out of the shared settings.json ----------
+    shared_path = root / ".claude" / "settings.json"
+    shared = _load_settings(shared_path)
+    if isinstance(shared, dict):
+        s_perms = shared.get("permissions")
+        s_allow = (
+            s_perms.get("allow", []) if isinstance(s_perms, dict) else []
+        )
+        if isinstance(s_allow, list):
+            legacy = [r for r in s_allow if r in assets.PERMISSION_RULES]
+            if legacy:
+                shared["permissions"]["allow"] = [
+                    r for r in s_allow if r not in assets.PERMISSION_RULES
+                ]
+                if not shared["permissions"]["allow"]:
+                    shared["permissions"].pop("allow")
+                if not shared.get("permissions"):
+                    shared.pop("permissions", None)
+                _write_settings(shared_path, shared)
+                actions.append(
+                    ".claude/settings.json — migrated wikitoolkit "
+                    "permissions to settings.local.json"
+                )
+
+    # --- write rules into settings.local.json --------------------------
+    local_path = root / ".claude" / "settings.local.json"
+    local = _load_settings(local_path) or {}
+
+    permissions = local.get("permissions")
     if permissions is None:
-        permissions = settings["permissions"] = {}
+        permissions = local["permissions"] = {}
     if not isinstance(permissions, dict):
-        raise RuntimeError(f"{path}: 'permissions' is not a JSON object")
+        raise RuntimeError(
+            f"{local_path}: 'permissions' is not a JSON object"
+        )
     allow = permissions.get("allow")
     if allow is None:
         allow = permissions["allow"] = []
     if not isinstance(allow, list):
-        raise RuntimeError(f"{path}: 'permissions.allow' is not a list")
+        raise RuntimeError(
+            f"{local_path}: 'permissions.allow' is not a list"
+        )
 
-    missing = [r for r in assets.PERMISSION_RULES if r not in allow]
+    all_rules = assets.permission_rules(root)
+    missing = [r for r in all_rules if r not in allow]
     if not missing:
-        return ".claude/settings.json — wikitoolkit permissions already allowed"
-    allow.extend(missing)
-    _write_settings(path, settings)
-    return (
-        f".claude/settings.json — {len(missing)} wikitoolkit "
-        "permission rule(s) added"
+        actions.append(
+            ".claude/settings.local.json — wikitoolkit permissions "
+            "already allowed"
+        )
+    else:
+        allow.extend(missing)
+        _write_settings(local_path, local)
+        actions.append(
+            f".claude/settings.local.json — {len(missing)} wikitoolkit "
+            "permission rule(s) added"
+        )
+    return actions
+
+
+def _install_mcp_json(root: Path) -> str:
+    """Write/refresh the wikitoolkit entry in the project's .mcp.json.
+
+    ``.mcp.json`` lives at the project root (NOT inside ``.claude/``) and
+    may already carry entries for other MCP servers — only the
+    ``wikitoolkit`` key is ever touched here.  The command is resolved to
+    an absolute path so the MCP server starts in worktrees too.
+    """
+    path = root / ".mcp.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+    else:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    entry = assets.mcp_json_entry(root)
+
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = data["mcpServers"] = {}
+    if servers.get("wikitoolkit") == entry:
+        return ".mcp.json — wikitoolkit entry already current"
+
+    action = (
+        ".mcp.json — wikitoolkit entry updated"
+        if "wikitoolkit" in servers
+        else ".mcp.json — wikitoolkit entry added"
     )
+    servers["wikitoolkit"] = entry
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return action
+
+
+def _uninstall_mcp_json(root: Path) -> str | None:
+    """Remove the wikitoolkit entry from .mcp.json.
+
+    Preserves any other MCP server entries; removes the file entirely
+    only when it becomes empty. Returns ``None`` (nothing to report) when
+    the file is absent or already carries no wikitoolkit entry — mirrors
+    every other uninstall step in this module, which only appends to
+    ``actions`` when something was actually removed.
+    """
+    path = root / ".mcp.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ".mcp.json — could not parse, skipping"
+    if not isinstance(data, dict):
+        return None
+
+    servers = data.get("mcpServers", {})
+    if not isinstance(servers, dict) or "wikitoolkit" not in servers:
+        return None
+
+    del servers["wikitoolkit"]
+    if not servers:
+        data.pop("mcpServers", None)
+    if not data:
+        path.unlink()
+        return ".mcp.json — removed (was empty)"
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return ".mcp.json — wikitoolkit entry removed"
 
 
 def _install_slash_command(root: Path) -> str:
@@ -291,6 +425,8 @@ def _install_git_hook(root: Path) -> str:
     hook_path = _git_hook_path(root)
     if hook_path is None:
         return "git hook — skipped (not a git repository)"
+    block = assets.git_hook_block(root)
+    new_file = assets.git_hook_new_file(root)
     if hook_path.exists():
         text = hook_path.read_text(encoding="utf-8")
         if assets.GIT_HOOK_BEGIN in text:
@@ -305,11 +441,11 @@ def _install_git_hook(root: Path) -> str:
             )
         if not text.endswith("\n"):
             text += "\n"
-        hook_path.write_text(text + assets.GIT_HOOK_BLOCK, encoding="utf-8")
+        hook_path.write_text(text + block, encoding="utf-8")
         action = "git post-commit hook — chained into existing hook"
     else:
         hook_path.parent.mkdir(parents=True, exist_ok=True)
-        hook_path.write_text(assets.GIT_HOOK_NEW_FILE, encoding="utf-8")
+        hook_path.write_text(new_file, encoding="utf-8")
         action = "git post-commit hook — created"
     mode = hook_path.stat().st_mode
     hook_path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -377,7 +513,8 @@ def install_claude_integration(
 
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
-    actions.append(_install_permissions(root))
+    actions.extend(_install_permissions(root))
+    actions.append(_install_mcp_json(root))
     actions.append(_install_slash_command(root))
     if git_hook:
         actions.append(_install_git_hook(root))
@@ -411,6 +548,7 @@ def uninstall_claude_integration(root: Path) -> list[str]:
             claude_md.write_text(updated, encoding="utf-8")
             actions.append("CLAUDE.md — wiki section removed")
 
+    # --- shared settings.json: remove hook + any legacy permissions ------
     settings_path = root / ".claude" / "settings.json"
     try:
         settings = _load_settings(settings_path)
@@ -457,6 +595,42 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                 )
         if dirty:
             _write_settings(settings_path, settings)
+
+    # --- settings.local.json: remove permissions -----------------------
+    local_path = root / ".claude" / "settings.local.json"
+    try:
+        local = _load_settings(local_path)
+    except RuntimeError:
+        local = None
+    if isinstance(local, dict):
+        l_perms = local.get("permissions")
+        l_allow = (
+            l_perms.get("allow", [])
+            if isinstance(l_perms, dict)
+            else []
+        )
+        if isinstance(l_allow, list):
+            # Remove both the static rules and any absolute-path variants
+            # that a previous install may have written.
+            all_rules = assets.permission_rules(root)
+            kept_local = [
+                r for r in l_allow if r not in all_rules
+            ]
+            if len(kept_local) != len(l_allow):
+                local["permissions"]["allow"] = kept_local
+                if not kept_local:
+                    local["permissions"].pop("allow")
+                if not local.get("permissions"):
+                    local.pop("permissions", None)
+                _write_settings(local_path, local)
+                actions.append(
+                    ".claude/settings.local.json — wikitoolkit "
+                    "permissions removed"
+                )
+
+    mcp_json_action = _uninstall_mcp_json(root)
+    if mcp_json_action:
+        actions.append(mcp_json_action)
 
     command_path = root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
     if command_path.exists():
@@ -518,6 +692,22 @@ def integration_status(root: Path) -> dict[str, Any]:
                 isinstance(e, dict) and _is_our_hook(e) for e in pre
             )
 
+    # Permissions live in settings.local.json (fall back to settings.json
+    # for legacy installs).
+    permissions_installed = False
+    for sf in ("settings.local.json", "settings.json"):
+        try:
+            sf_data = _load_settings(root / ".claude" / sf)
+        except RuntimeError:
+            sf_data = None
+        if isinstance(sf_data, dict):
+            p_allow = (sf_data.get("permissions") or {}).get("allow", [])
+            if isinstance(p_allow, list) and all(
+                r in p_allow for r in assets.PERMISSION_RULES
+            ):
+                permissions_installed = True
+                break
+
     git_hook_file = _git_hook_path(root)
     git_hook_installed = bool(
         git_hook_file
@@ -526,14 +716,26 @@ def integration_status(root: Path) -> dict[str, Any]:
         in git_hook_file.read_text(encoding="utf-8")
     )
 
+    mcp_json_path = root / ".mcp.json"
+    mcp_json_installed = False
+    if mcp_json_path.exists():
+        try:
+            mcp_data = json.loads(mcp_json_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            mcp_data = None
+        if isinstance(mcp_data, dict):
+            mcp_json_installed = "wikitoolkit" in mcp_data.get("mcpServers", {})
+
     return {
         "root": str(root),
         "config": config_path(root).exists(),
         "wiki_built": config.is_built(root),
         "claude_md_section": claude_md_installed,
         "pre_tool_use_hook": hook_installed,
+        "permissions": permissions_installed,
         "slash_command": (
             root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
         ).exists(),
         "git_post_commit_hook": git_hook_installed,
+        "mcp_json": mcp_json_installed,
     }

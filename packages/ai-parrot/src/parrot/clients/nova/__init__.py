@@ -6,5 +6,6 @@ video) behind a single client — see :mod:`.client` for the full design.
 from __future__ import annotations
 
 from .client import NovaClient
+from .mantle import BedrockMantleClient
 
-__all__ = ["NovaClient"]
+__all__ = ["BedrockMantleClient", "NovaClient"]

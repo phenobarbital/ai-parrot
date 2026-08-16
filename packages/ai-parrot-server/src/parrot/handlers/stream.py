@@ -1,11 +1,14 @@
 from typing import Any, Dict, Optional, Set
 import asyncio
+import logging
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navigator.views import BaseHandler
 from navigator_auth.conf import exclude_list
 from parrot.bots import AbstractBot
 from parrot.models.responses import AIMessage
+
+logger = logging.getLogger(__name__)
 
 
 class StreamHandler(BaseHandler):
@@ -89,8 +92,9 @@ class StreamHandler(BaseHandler):
                 reason="Client disconnected during streaming."
             ) from e
         except Exception as e:
+            logger.error("SSE stream error: %s", e, exc_info=True)
             await response.write(
-                f"error: {str(e)}\n\n".encode('utf-8')
+                b"error: Internal streaming error\n\n"
             )
         finally:
             await response.write_eof()
@@ -145,7 +149,8 @@ class StreamHandler(BaseHandler):
                 reason="Client disconnected during streaming."
             ) from e
         except Exception as e:
-            error_line = json_encoder({'error': str(e)}) + '\n'
+            logger.error("NDJSON stream error: %s", e, exc_info=True)
+            error_line = json_encoder({'error': 'Internal streaming error'}) + '\n'
             await response.write(error_line.encode('utf-8'))
         finally:
             await response.write_eof()
@@ -191,7 +196,8 @@ class StreamHandler(BaseHandler):
                 reason="Client disconnected during streaming."
             ) from e
         except Exception as e:
-            await response.write(f"\n[ERROR]: {str(e)}\n".encode('utf-8'))
+            logger.error("Chunked stream error: %s", e, exc_info=True)
+            await response.write(b"\n[ERROR]: Internal streaming error\n")
         finally:
             await response.write_eof()
         return response

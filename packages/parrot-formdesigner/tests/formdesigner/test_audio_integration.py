@@ -77,6 +77,14 @@ def mock_transcriber() -> AsyncMock:
     return transcriber
 
 
+# A minimal WAV container (RIFF/....WAVE magic, padded to clear
+# _MIN_AUDIO_BYTES = 256) that satisfies AudioFormWSHandler's payload
+# validation (_sniff_audio_suffix + size gate, api/audio_ws.py:68-99).
+# Content beyond the magic bytes is irrelevant — mock_transcriber is an
+# AsyncMock and never actually decodes this file (FEAT-395).
+_VALID_AUDIO_FRAME = b"RIFF" + b"\x00" * 4 + b"WAVE" + b"\x00" * 244
+
+
 @pytest.fixture
 def mock_token_validator() -> AsyncMock:
     """Mock TokenValidator that accepts any token."""
@@ -136,15 +144,15 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/forms/{form_id}/render/{format}", handle_render
+            "/api/v1/forms/{form_uid}/render/{format}", handle_render
         )
 
         client = await aiohttp_client(render_app)
-        resp = await client.get("/api/v1/forms/integration-test/render/audio")
+        resp = await client.get(f"/api/v1/forms/{sample_form.form_uid}/render/audio")
         assert resp.status == 200
 
         data = await resp.json()
-        assert data["form_id"] == "integration-test"
+        assert data["form_uid"] == str(sample_form.form_uid)
         assert data["total_questions"] == 2
         assert "questions" in data
         assert "ws_endpoint" in data
@@ -164,11 +172,11 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/forms/{form_id}/render/{format}", handle_render
+            "/api/v1/forms/{form_uid}/render/{format}", handle_render
         )
 
         client = await aiohttp_client(render_app)
-        resp = await client.get("/api/v1/forms/integration-test/render/audio")
+        resp = await client.get(f"/api/v1/forms/{sample_form.form_uid}/render/audio")
         data = await resp.json()
         assert data["total_questions"] == 2
 
@@ -187,13 +195,13 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/forms/{form_id}/render/{format}", handle_render
+            "/api/v1/forms/{form_uid}/render/{format}", handle_render
         )
 
         client = await aiohttp_client(render_app)
-        resp = await client.get("/api/v1/forms/integration-test/render/audio")
+        resp = await client.get(f"/api/v1/forms/{sample_form.form_uid}/render/audio")
         data = await resp.json()
-        assert "integration-test" in data["ws_endpoint"]
+        assert str(sample_form.form_uid) in data["ws_endpoint"]
         assert "audio/ws" in data["ws_endpoint"]
 
     @pytest.mark.asyncio
@@ -210,11 +218,15 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/forms/{form_id}/render/{format}", handle_render
+            "/api/v1/forms/{form_uid}/render/{format}", handle_render
         )
 
         client = await aiohttp_client(render_app)
-        resp = await client.get("/api/v1/forms/nonexistent/render/audio")
+        # FEAT-389: must be a well-formed (but unregistered) UUID —
+        # extract_form_uid() validates format before the registry lookup runs.
+        resp = await client.get(
+            "/api/v1/forms/00000000-0000-0000-0000-000000000000/render/audio"
+        )
         assert resp.status == 404
 
 
@@ -591,7 +603,7 @@ class TestHybridVoiceFlows:
             "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
-            await ws.send_bytes(b"fake-audio-frame")
+            await ws.send_bytes(_VALID_AUDIO_FRAME)
             await ws.receive_json()  # transcription
             confirm = await ws.receive_json()
             assert confirm["type"] == "confirm_request"
@@ -618,7 +630,7 @@ class TestHybridVoiceFlows:
             "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
-            await ws.send_bytes(b"fake-audio-frame")
+            await ws.send_bytes(_VALID_AUDIO_FRAME)
             await ws.receive_json()  # transcription
             await ws.receive_json()  # confirm_request
 
@@ -643,7 +655,7 @@ class TestHybridVoiceFlows:
             "/api/v1/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
-            await ws.send_bytes(b"fake-audio-frame")
+            await ws.send_bytes(_VALID_AUDIO_FRAME)
             await ws.receive_json()  # transcription
             nxt = await ws.receive_json()
             # Next message is answer_accepted, then the next question — never a

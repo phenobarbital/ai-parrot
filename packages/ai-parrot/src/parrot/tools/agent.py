@@ -416,15 +416,18 @@ class AgentTool(AbstractTool):
         if hasattr(self.agent, 'tool_manager'):
             python_repl = self.agent.tool_manager.get_tool('python_repl')
 
-        if python_repl and hasattr(python_repl, 'globals'):
+        # FEAT-380 (TASK-1944): namespace API — the REPL namespace lives in
+        # the tool's worker process now, `.globals` on the host instance is
+        # never updated by executed code and no longer accepts writes.
+        if python_repl and hasattr(python_repl, 'set_var'):
             # Inject the structured data as a global variable
-            python_repl.globals['previous_result'] = context
+            await python_repl.set_var('previous_result', context)
 
             # Also inject all results from execution memory with agent names
             if self.execution_memory:
                 for agent_id, agent_result in self.execution_memory.results.items():
                     safe_name = agent_id.replace('-', '_').replace(' ', '_')
-                    python_repl.globals[f'{safe_name}_result'] = agent_result.result
+                    await python_repl.set_var(f'{safe_name}_result', agent_result.result)
 
     def _append_results(self, existing: Any, new: Any) -> Any:
         """Intelligently append results based on their types"""

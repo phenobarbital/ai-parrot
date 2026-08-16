@@ -18,20 +18,23 @@ Acknowledgment:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, List
+from datetime import UTC, datetime
+from typing import Any
 
 import pandas as pd
 
 from parrot_tools.interfaces.workday.handlers.base import WorkdayWriteTypeBase
-from parrot_tools.interfaces.workday.models.clock_event import ClockEvent, ClockEventResult
+from parrot_tools.interfaces.workday.models.clock_event import (
+    ClockEvent,
+    ClockEventResult,
+)
 
 
 def _isoformat_dt(dt: datetime) -> str:
     """Serialise a datetime as Workday-compatible xsd:dateTime string."""
     if dt.tzinfo is None:
         # Assume UTC when no timezone info present
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -46,7 +49,7 @@ class PutTimeClockEventsType(WorkdayWriteTypeBase):
     def _operation_name(self) -> str:
         return "Put_Time_Clock_Events"
 
-    def build_request(self, events: List[ClockEvent], **kwargs) -> dict:  # type: ignore[override]
+    def build_request(self, events: list[ClockEvent], **kwargs) -> dict:  # type: ignore[override]
         """Build the Put_Time_Clock_Events SOAP body.
 
         Args:
@@ -85,6 +88,17 @@ class PutTimeClockEventsType(WorkdayWriteTypeBase):
                 item["Time_Entry_Code"] = ev.time_entry_code
             if ev.comment:
                 item["Comment"] = ev.comment
+            if ev.delete:
+                item["Delete_Time_Clock_Event"] = True
+            if ev.location:
+                item["Location"] = ev.location
+            if ev.cost_center:
+                item["Cost_Center"] = ev.cost_center
+            if ev.override_rate is not None:  # presence-based: 0 IS sent
+                item["Override_Rate"] = ev.override_rate
+            # ev.latitude / ev.longitude intentionally NOT emitted — the
+            # Time Tracking WSDL has no geo field in any version (v27.1 →
+            # v46.1); they are carried on the model for the calling API only.
             event_data.append(item)
 
         return {"Time_Clock_Event_Data": event_data}
@@ -108,7 +122,7 @@ class PutTimeClockEventsType(WorkdayWriteTypeBase):
         # Stored during build_request via execute; we re-read from last call
         return self._last_result
 
-    async def execute(self, events: List[ClockEvent], **kwargs) -> pd.DataFrame:  # type: ignore[override]
+    async def execute(self, events: list[ClockEvent], **kwargs) -> pd.DataFrame:  # type: ignore[override]
         """Execute Put_Time_Clock_Events and return per-row status DataFrame.
 
         Overrides the base ``execute`` template to capture ``events`` so that
@@ -132,7 +146,7 @@ class PutTimeClockEventsType(WorkdayWriteTypeBase):
                     operation=operation, **request_body
                 )
                 break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — fault classification below decides retry vs. atomic failure
                 # Check if it's a SOAP fault (Validation_Fault / Processing_Fault)
                 exc_str = str(exc)
                 is_fault = any(

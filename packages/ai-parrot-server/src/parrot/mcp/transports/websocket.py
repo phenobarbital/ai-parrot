@@ -9,7 +9,7 @@ from aiohttp import web, WSMsgType, ClientSession, ClientWebSocketResponse
 import aiohttp
 
 from parrot.mcp.config import MCPServerConfig
-from parrot.mcp.transports.base import MCPServerBase
+from parrot.mcp.transports.base import RemoteMCPServerBase
 from parrot.mcp.oauth_server import OAuthRoutesMixin
 from parrot.mcp.client import MCPClientConfig, MCPConnectionError
 
@@ -23,7 +23,7 @@ class WebSocketConnection:
     last_ping: float = 0.0
 
 
-class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
+class WebSocketMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
     """MCP server using WebSocket transport for bidirectional communication.
     
     Implements the WebSocket transport as proposed in SEP-1288:

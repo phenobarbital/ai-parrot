@@ -1,0 +1,111 @@
+{
+  "feature": "wikitoolkit-svelte-typescript-support",
+  "feature_id": "FEAT-396",
+  "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-31T21:35:00+00:00",
+  "completed_at": "2026-08-01T00:10:00+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2019",
+      "slug": "treesitter-grammar-callable-resolution",
+      "title": "Resolve tree-sitter grammar callables for multi-grammar wheels",
+      "feature_id": "FEAT-396",
+      "feature": "wikitoolkit-svelte-typescript-support",
+      "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 1. The ONLY task touching no shared file — it changes treesitter.py exclusively, so it shares nothing with 2020-2023. Per spec 'Worktree Strategy' the feature still runs sequentially in one per-spec worktree, but this task is explicitly independently valuable, mergeable and revertable: if the rest of FEAT-396 stalls, land this alone (it fixes TypeScript AND PHP outlines for every existing user).",
+      "assigned_to": null,
+      "started_at": "2026-07-31T21:40:00+00:00",
+      "completed_at": "2026-07-31T21:55:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2019-treesitter-grammar-callable-resolution.md"
+    },
+    {
+      "id": "TASK-2020",
+      "slug": "claim-svelte-suffix",
+      "title": "Claim the .svelte suffix for the JavaScript scanner",
+      "feature_id": "FEAT-396",
+      "feature": "wikitoolkit-svelte-typescript-support",
+      "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 2. Order-independent from TASK-2019 (different files), but both must precede TASK-2021. Not parallel: it edits javascript.py, which 2021/2022/2023 also edit, so a separate worktree would collide on merge.",
+      "assigned_to": null,
+      "started_at": "2026-07-31T22:20:00+00:00",
+      "completed_at": "2026-07-31T22:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2020-claim-svelte-suffix.md"
+    },
+    {
+      "id": "TASK-2021",
+      "slug": "svelte-script-extraction-lang-grammar",
+      "title": "<script> pre-extraction and lang-aware grammar selection",
+      "feature_id": "FEAT-396",
+      "feature": "wikitoolkit-svelte-typescript-support",
+      "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2019",
+        "TASK-2020"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 3. Hard-sequential: lang-based grammar selection is inert until TASK-2019 makes get_parser('typescript') return a Parser, and .svelte files do not reach this scanner until TASK-2020 claims the suffix. Edits javascript.py outline().",
+      "assigned_to": null,
+      "started_at": "2026-07-31T22:40:00+00:00",
+      "completed_at": "2026-07-31T23:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2021-svelte-script-extraction-lang-grammar.md"
+    },
+    {
+      "id": "TASK-2022",
+      "slug": "js-alias-resolution-jsindex",
+      "title": "Alias-aware import resolution (JsIndex, $lib, tsconfig paths)",
+      "feature_id": "FEAT-396",
+      "feature": "wikitoolkit-svelte-typescript-support",
+      "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2020"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 4. Spec declares the dependency as Module 2 only, so it is technically independent of TASK-2021 — but both edit javascript.py (2021 outline(), 2022 build_reference_index/resolve_import/_extract_imports), so running them in parallel worktrees would collide. Sequenced after 2021 in the per-spec worktree.",
+      "assigned_to": null,
+      "started_at": "2026-07-31T23:05:00+00:00",
+      "completed_at": "2026-07-31T23:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2022-js-alias-resolution-jsindex.md"
+    },
+    {
+      "id": "TASK-2023",
+      "slug": "mode-reporting-integration-tests-docs",
+      "title": "Honest mode reporting, integration tests, and docs",
+      "feature_id": "FEAT-396",
+      "feature": "wikitoolkit-svelte-typescript-support",
+      "spec": "sdd/specs/wikitoolkit-svelte-typescript-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2019",
+        "TASK-2020",
+        "TASK-2021",
+        "TASK-2022"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 5. Closing task: the integration tests exercise all four preceding modules end-to-end, and the mode tightening is only correct once TASK-2019 makes the TypeScript grammar actually load. Depends on everything by construction.",
+      "assigned_to": null,
+      "started_at": "2026-07-31T23:40:00+00:00",
+      "completed_at": "2026-08-01T00:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2023-mode-reporting-integration-tests-docs.md"
+    }
+  ]
+}

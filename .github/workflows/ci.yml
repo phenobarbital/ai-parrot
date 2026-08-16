@@ -29,6 +29,20 @@ jobs:
       - name: Check registry freshness
         run: uv run python scripts/generate_tool_registry.py --check
 
+      # FEAT-387: fails the build on any NEW TASK-<NNN> collision (a task
+      # number reused across two different features). scripts/sdd/.collision_baseline.json
+      # is a one-time baseline exception listing every TASK-ID collision that
+      # already existed in the repo's history before this check was added
+      # (this history predates the git-native reserve_ids.py allocator and
+      # includes far more than the six FEAT-380-era collisions originally
+      # discovered — most stem from pre-per-spec-index-era per-feature task
+      # numbering) — those are left untouched (see the spec's Non-Goals) and
+      # do NOT fail the build; only a genuinely new collision does.
+      - name: Check SDD TASK-ID collisions (FEAT-387)
+        run: |
+          uv run python -m scripts.sdd.check_id_collisions \
+            --baseline scripts/sdd/.collision_baseline.json
+
   test-core:
     name: "Test ai-parrot (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
@@ -61,6 +75,51 @@ jobs:
 
       - name: Run core tests
         run: uv run pytest tests/ -x -q --tb=short --ignore=tests/tools
+
+  test-navrules:
+    name: "Test navrules (rust=${{ matrix.rust }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: ["on", "off"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Rust is needed in both legs: maturin is the build backend. The
+      # "off" leg disables the native matcher at runtime only.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Rust crate unit tests
+        if: matrix.rust == 'on'
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-dev
+          cd packages/navrules/rust && cargo test
+
+      - name: Python suite (native backend)
+        if: matrix.rust == 'on'
+        run: |
+          cd packages/navrules
+          uv run --no-project --isolated --with pytest --with pytest-asyncio \
+            --with-editable . python -m pytest tests -q
+
+      - name: Python suite (pure-Python fallback)
+        if: matrix.rust == 'off'
+        run: |
+          cd packages/navrules
+          NAVRULES_DISABLE_RUST=1 uv run --no-project --isolated \
+            --with pytest --with pytest-asyncio \
+            --with-editable . python -m pytest tests -q
 
   test-tools:
     name: "Test ai-parrot-tools (Python ${{ matrix.python-version }})"

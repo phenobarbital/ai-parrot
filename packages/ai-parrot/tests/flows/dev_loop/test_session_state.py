@@ -37,6 +37,7 @@ from parrot.flows.dev_loop.session_state import (
     NodeSkipped,
     NodeStarted,
     PullRequestLinked,
+    QaAttemptRecorded,
     RunAdded,
     RunCancelled,
     RunClosed,
@@ -258,6 +259,41 @@ def test_reduce_jira_linked():
 def test_reduce_pr_linked():
     state = reduce(_fresh_state(), PullRequestLinked(pr_url="http://pr", changeset="parrot-changeset:/x"))
     assert state.pr_url == "http://pr"
+
+
+# ---------------------------------------------------------------------------
+# QA repair loop (FEAT-377 TASK-1910)
+# ---------------------------------------------------------------------------
+
+
+def test_reduce_qa_attempt_recorded():
+    state = reduce(
+        _fresh_state(),
+        QaAttemptRecorded(attempt=1, qa_notes="lint failed: ruff E501"),
+    )
+    assert state.qa_attempts == 1
+    assert state.qa_notes == "lint failed: ruff E501"
+
+
+def test_reduce_qa_attempt_recorded_replays_latest_attempt():
+    """Replaying a second QaAttemptRecorded overwrites, not accumulates —
+    the counter tracks the CURRENT attempt, not a running total."""
+    state = _fresh_state()
+    state = reduce(state, QaAttemptRecorded(attempt=1, qa_notes="first failure"))
+    state = reduce(state, QaAttemptRecorded(attempt=2, qa_notes="second failure"))
+    assert state.qa_attempts == 2
+    assert state.qa_notes == "second failure"
+
+
+def test_qa_attempt_recorded_unknown_action_still_no_op():
+    """Forward-compat guard: an action this reducer doesn't recognise is a
+    no-op — verified alongside the new action to guard against a future
+    branch accidentally matching too broadly."""
+    state = _fresh_state()
+    unchanged = reduce(state, JiraLinked(issue_key="X-1"))
+    replayed = reduce(unchanged, QaAttemptRecorded(attempt=1))
+    assert replayed.qa_attempts == 1
+    assert replayed.jira_issue_key == "X-1"  # untouched by the qa branch
 
 
 # ---------------------------------------------------------------------------

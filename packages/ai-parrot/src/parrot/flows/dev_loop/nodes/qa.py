@@ -20,27 +20,36 @@ The node returns the report regardless of ``passed`` — the flow factory
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+import re
+import shlex
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
+from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     ClaudeCodeReviewDispatcher,
 )
-from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
+    AdversarialFinding,
     BugBrief,
     ClaudeCodeDispatchProfile,
     CriterionResult,
     ManualCriterion,
     QAReport,
     ResearchOutput,
+    ShellCriterion,
+    TriageBrief,
+    TriageReport,
 )
-from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
+from parrot.flows.dev_loop.session_state import QaAttemptRecorded
 
 
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
@@ -49,6 +58,31 @@ _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
 # run (infra error). Used to detect a *skipped* (vs. genuinely passed) review
 # so the skip is surfaced loudly instead of masquerading as a clean review.
 _CODE_REVIEW_SKIP_PREFIX = "code-review could not run:"
+
+# Matches a positional ``.`` target in lint commands (e.g. ``ruff check .``).
+# Preceded by whitespace, followed by whitespace, chain operator, or EOL.
+_LINT_TARGET_RE = re.compile(
+    r"(?<=\s)\."
+    r"(?=\s|&&|;|$)"
+)
+
+
+class _NoBugBrief(BaseModel):
+    """Stand-in for ``shared["bug_brief"]`` in briefless topologies.
+
+    The feature-mode (FEAT-378) and dev-flow (FEAT-412) graphs have **no**
+    ``BugIntakeNode``, so nothing ever seeds ``shared["bug_brief"]`` — their
+    acceptance criteria live in the spec/task artifacts, not on the intake
+    brief. This node only reads ``.acceptance_criteria`` and ``.summary`` off
+    that brief, so supplying this shim keeps the deterministic lint gate and
+    the code-review gate running (with zero brief-level criteria to
+    partition) instead of raising ``KeyError`` before QA even starts.
+
+    Bug/revision runs are unaffected: they always seed a real ``BugBrief``.
+    """
+
+    acceptance_criteria: List[AcceptanceCriterion] = Field(default_factory=list)
+    summary: str = ""
 
 
 class _QABrief(BaseModel):
@@ -78,6 +112,20 @@ class _CodeReviewBrief(BaseModel):
     worktree_path: str
     summary: str = ""
     jira_issue_key: str = ""
+    qa_criterion_results: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Deterministic QA gate results, one entry per executed "
+            "acceptance criterion (name/kind/exit_code/passed). Already "
+            "executed by the sdd-qa gate — reviewers must judge from these "
+            "recorded results and NEVER re-run the criteria themselves "
+            "(read-only reviewers cannot execute anything that writes)."
+        ),
+    )
+    qa_lint_passed: Optional[bool] = Field(
+        default=None,
+        description="Deterministic QA gate lint outcome (None if unknown).",
+    )
 
 
 @register_dev_loop_node("dev_loop.qa")
@@ -90,6 +138,8 @@ class QANode(DevLoopNode):
         dispatcher: ClaudeCodeDispatcher,
         lint_command: Optional[str] = None,
         codereview_dispatcher: Optional[AbstractCodeReviewDispatcher] = None,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
+        skip_qa: bool = False,
         name: str = "qa",
     ) -> None:
         super().__init__(node_id=name)
@@ -101,6 +151,10 @@ class QANode(DevLoopNode):
         if codereview_dispatcher is None:
             codereview_dispatcher = ClaudeCodeReviewDispatcher(dispatcher=dispatcher)
         object.__setattr__(self, "_codereview_dispatcher", codereview_dispatcher)
+        # FEAT-377 TASK-1915 (G2 seam 4): opt-in finding grounding. None
+        # (default) is a strict no-op.
+        object.__setattr__(self, "_graph_memory", graph_memory)
+        object.__setattr__(self, "_skip_qa", skip_qa)
 
     # ------------------------------------------------------------------
     # Execute
@@ -125,7 +179,32 @@ class QANode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         research: ResearchOutput = shared["research_output"]
-        brief: BugBrief = shared["bug_brief"]
+        # FEAT-412: `bug_brief` only exists in the bug/revision topologies.
+        # Feature-mode and dev-flow reach this node with no intake brief at
+        # all, so read it defensively (see _NoBugBrief) rather than
+        # KeyError-ing before the skip_qa check below.
+        brief: Union[BugBrief, _NoBugBrief] = shared.get("bug_brief") or _NoBugBrief(
+            summary=self._briefless_summary(shared, research)
+        )
+
+        runtime_skip = shared.get("skip_qa", False)
+        if self._skip_qa or runtime_skip:
+            self.logger.info(
+                "QA bypass enabled (skip_qa=True, runtime=%s) for %s — returning synthetic pass.",
+                runtime_skip, research.jira_issue_key or research.feat_id,
+            )
+            report = QAReport(
+                passed=True,
+                criterion_results=[],
+                lint_passed=True,
+                lint_output="(skipped: skip_qa=True)",
+                notes="QA bypassed (skip_qa=True).",
+                code_review_passed=True,
+                code_review_findings=[],
+                attempt=shared.get("qa_attempt", 1),
+            )
+            shared["qa_report"] = report
+            return report
 
         manual: List[ManualCriterion] = [
             c for c in brief.acceptance_criteria
@@ -144,31 +223,95 @@ class QANode(DevLoopNode):
             if not isinstance(c, ManualCriterion)
         ]
 
-        report = await self._run_deterministic_qa(
-            shared, research, brief, executable
-        )
-        deterministic_passed = report.passed
+        is_advisory = getattr(self._codereview_dispatcher, "advisory", False)
 
-        # FEAT-250 G4 / FEAT-270: additive code-review gate. A run passes QA
-        # only when the deterministic criteria/lint AND the qualitative
-        # review both pass. The reviewer may fix issues it finds and commit
-        # the fixes to the worktree branch (FEAT-270); when it does, the
-        # deterministic pass re-runs to confirm the fix didn't regress.
-        cr_passed, cr_findings, files_modified = await self._run_code_review(
-            shared, research, brief
-        )
+        # FEAT-250 G4 / FEAT-270, optimised pipeline:
+        #
+        # - Advisory reviewers (read-only): run deterministic QA and code
+        #   review CONCURRENTLY — the reviewer never modifies files, so
+        #   there is no race with the QA subagent reading the worktree.
+        #
+        # - Write-enabled reviewers: run code review FIRST so its fixes
+        #   are committed before the single deterministic QA pass. This
+        #   replaces the old QA → review → re-run-QA three-step with a
+        #   two-step (review → QA), eliminating the redundant re-run.
+        if is_advisory:
+            self.logger.info(
+                "Advisory reviewer — running deterministic QA and code review concurrently"
+            )
+            qa_coro = self._run_deterministic_qa(
+                shared, research, brief, executable
+            )
+            cr_coro = self._run_code_review(shared, research, brief)
+            report, (cr_passed, cr_findings, files_modified) = (
+                await asyncio.gather(qa_coro, cr_coro)
+            )
+            deterministic_passed = report.passed
+        else:
+            cr_passed, cr_findings, files_modified = await self._run_code_review(
+                shared, research, brief
+            )
+
         cr_skipped = any(
             f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
         )
 
-        if files_modified:
+        # FEAT-377 TASK-1915 (G2 seam 4): ground code-review findings — an
+        # infra-degrade skip marker is never a real finding, so it is never
+        # sent through grounding. Findings the graph cannot ground are
+        # demoted to notes (never counted as gate-failing); if grounding
+        # drops EVERY finding, the review gate must not fail on
+        # hallucinated findings alone.
+        ungrounded_notes: List[str] = []
+        if self._graph_memory is not None and cr_findings and not cr_skipped:
+            grounded = await self._graph_memory.ground_findings(cr_findings)
+            dropped = [f for f in cr_findings if f not in grounded]
+            if dropped:
+                ungrounded_notes = [f"[ungrounded] {f}" for f in dropped]
+                if not grounded:
+                    cr_passed = True
+                cr_findings = grounded
+
+        # FEAT-375 (Module 5): an advisory reviewer (`advisory=True`, e.g.
+        # "codex-adversarial"/"parallel") never modifies files itself — its
+        # findings must be routed to the primary worker for explicit triage
+        # (CONFIRM/REJECT/ESCALATE) instead of being trusted at face value.
+        triage_notes: List[str] = []
+        if not cr_skipped and is_advisory:
+            triage_findings = self._collect_triage_findings(shared)
+            if triage_findings:
+                triage_notes, triage_files_modified, escalation_passed = (
+                    await self._run_finding_triage(shared, research, brief, triage_findings)
+                )
+                for path in triage_files_modified:
+                    if path not in files_modified:
+                        files_modified.append(path)
+                # CONFIRM-and-fixed / REJECT do not fail QA by themselves —
+                # only an unresolved/rejected ESCALATE gate does (spec §3
+                # Module 5 QA pass/fail semantics).
+                cr_passed = escalation_passed
+
+        # Deterministic QA — deferred for write-enabled reviewers, or
+        # re-run for advisory reviewers when triage committed fixes.
+        if not is_advisory:
+            if files_modified:
+                self.logger.info(
+                    "Code review modified %s — running deterministic QA on fixed code",
+                    files_modified,
+                )
+            report = await self._run_deterministic_qa(
+                shared, research, brief, executable,
+                cwd_override=research.worktree_path,
+            )
+            deterministic_passed = report.passed
+        elif files_modified:
             self.logger.info(
                 "Code review modified %s — re-running deterministic QA",
                 files_modified,
             )
             report = await self._run_deterministic_qa(
                 shared, research, brief, executable,
-                cwd_override=research.repo_path or research.worktree_path,
+                cwd_override=research.worktree_path,
             )
             deterministic_passed = report.passed
 
@@ -186,6 +329,7 @@ class QANode(DevLoopNode):
             "code_review_passed": cr_passed,
             "code_review_findings": cr_findings,
         }
+        extra_notes: List[str] = []
         if cr_skipped:
             # Degrade-to-pass (FEAT-250 G4) keeps the deterministic gate as the
             # hard guarantee, but a skipped review must NOT read as green: here
@@ -198,11 +342,38 @@ class QANode(DevLoopNode):
                 research.jira_issue_key or research.feat_id,
                 "; ".join(cr_findings),
             )
-            skip_note = "⚠ Code-review gate SKIPPED (infra) — change NOT reviewed."
+            extra_notes.append("⚠ Code-review gate SKIPPED (infra) — change NOT reviewed.")
+        # FEAT-375: REJECT/ESCALATE triage notes are always PR-visible, even
+        # when the deterministic + code-review gates otherwise pass.
+        extra_notes.extend(triage_notes)
+        # FEAT-377 TASK-1915: ungrounded findings are demoted to notes, not
+        # gate-failing (see the grounding block above).
+        extra_notes.extend(ungrounded_notes)
+        if extra_notes:
             existing_notes = report.notes or ""
             sep = "\n\n" if existing_notes else ""
-            update["notes"] = f"{existing_notes}{sep}{skip_note}"
+            update["notes"] = f"{existing_notes}{sep}{chr(10).join(extra_notes)}"
         report = report.model_copy(update=update)
+
+        # FEAT-377 TASK-1911 (Module 3 repair loop): stamp the attempt
+        # number the development node owns in shared state (1 on the very
+        # first pass, before development ever bumps it). Lives ON the
+        # report — not merely in shared state — because the engine's
+        # `cel_evaluator` coerces the node result via `model_dump()`, so
+        # the qa->development retry / qa->failure_handler exhaustion CEL
+        # predicates can only reference fields on `QAReport` itself.
+        attempt = shared.get("qa_attempt", 1)
+        report = report.model_copy(update={"attempt": attempt})
+        session_host = shared.get("session_host")
+        if not report.passed and session_host is not None:
+            will_retry = attempt < int(conf.DEV_LOOP_QA_MAX_RETRIES)
+            if will_retry:
+                session_host.apply(
+                    QaAttemptRecorded(
+                        attempt=attempt,
+                        qa_notes=condense_qa_failure(report),
+                    )
+                )
 
         self.logger.info(
             "QA report: passed=%s, deterministic=%s, code_review=%s, "
@@ -223,6 +394,27 @@ class QANode(DevLoopNode):
     # ------------------------------------------------------------------
     # Deterministic QA dispatch
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _briefless_summary(
+        shared: Dict[str, Any], research: ResearchOutput
+    ) -> str:
+        """Best-effort run label when there is no intake brief (FEAT-412).
+
+        Used only to populate ``_NoBugBrief.summary``, which the downstream
+        dispatch briefs echo so a reviewer/judge knows what the run is about.
+
+        Args:
+            shared: The flow's shared state.
+            research: The bridged research output (spec path, feat id).
+
+        Returns:
+            The feature document's path when a ``feature_brief`` is present,
+            else the spec path, else the FEAT id — never raises.
+        """
+        feature_brief = shared.get("feature_brief")
+        document = getattr(feature_brief, "document_path", "") or ""
+        return document or research.spec_path or research.feat_id or ""
 
     async def _run_deterministic_qa(
         self,
@@ -256,9 +448,16 @@ class QANode(DevLoopNode):
             setting_sources=["project"],
         )
         effective_cwd = cwd_override or research.worktree_path
+
+        # Scope lint/ruff/mypy commands to changed files so pre-existing
+        # repo-wide errors don't fail the QA gate for unrelated code.
+        changed = await self._get_changed_files(effective_cwd)
+        lint_cmd = self._scope_lint_to_files(self._lint_command, changed)
+        scoped_criteria = self._scope_criteria(executable, changed)
+
         qa_brief = _QABrief(
-            acceptance_criteria=executable,
-            lint_command=self._lint_command,
+            acceptance_criteria=scoped_criteria,
+            lint_command=lint_cmd,
             worktree_path=effective_cwd,
             summary=brief.summary,
         )
@@ -276,6 +475,92 @@ class QANode(DevLoopNode):
         )
 
     # ------------------------------------------------------------------
+    # Lint scoping helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _get_changed_files(worktree_path: str) -> List[str]:
+        """Return Python files changed in the worktree vs its merge base.
+
+        Tries ``origin/dev`` first (standard base branch), then falls
+        back to ``origin/main``. Returns an empty list on any error so
+        the caller degrades to the unscoped lint command.
+        """
+        for upstream in ("origin/dev", "origin/main"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "diff", "--name-only", "--diff-filter=d",
+                    f"{upstream}...HEAD", "--", "*.py",
+                    cwd=worktree_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0 and stdout:
+                    return [
+                        f.strip()
+                        for f in stdout.decode().strip().splitlines()
+                        if f.strip()
+                    ]
+            except Exception:
+                continue
+        return []
+
+    @staticmethod
+    def _scope_lint_to_files(command: str, files: List[str]) -> str:
+        """Replace whole-repo targets (``.``) with explicit file paths.
+
+        Processes each ``&&``/``;``-separated sub-command independently
+        so compound commands like ``ruff check . && mypy --no-incremental``
+        scope both halves. Also appends file paths to bare ``mypy``
+        invocations that have no positional target.
+        """
+        if not files:
+            return command
+        file_args = " ".join(shlex.quote(f) for f in files)
+
+        def _scope_part(part: str) -> str:
+            scoped = _LINT_TARGET_RE.sub(file_args, part)
+            if scoped == part and re.search(r"\bmypy\b", part):
+                scoped = f"{part.rstrip()} {file_args}"
+            return scoped
+
+        parts = re.split(r"(&&|;)", command)
+        return "".join(
+            _scope_part(p) if i % 2 == 0 else p
+            for i, p in enumerate(parts)
+        )
+
+    @classmethod
+    def _scope_criteria(
+        cls,
+        criteria: List[AcceptanceCriterion],
+        files: List[str],
+    ) -> List[AcceptanceCriterion]:
+        """Rewrite shell criteria that lint the whole repo to target changed files."""
+        if not files:
+            return criteria
+        scoped: List[AcceptanceCriterion] = []
+        for c in criteria:
+            if (
+                isinstance(c, ShellCriterion)
+                and _LINT_TARGET_RE.search(c.command)
+                and re.search(r"\b(ruff|mypy|flake8|pylint)\b", c.command)
+            ):
+                scoped.append(
+                    c.model_copy(
+                        update={
+                            "command": cls._scope_lint_to_files(
+                                c.command, files
+                            )
+                        }
+                    )
+                )
+            else:
+                scoped.append(c)
+        return scoped
+
+    # ------------------------------------------------------------------
     # Code-review gate (FEAT-250, pluggable dispatcher since FEAT-270)
     # ------------------------------------------------------------------
 
@@ -284,6 +569,8 @@ class QANode(DevLoopNode):
         shared: Dict[str, Any],
         research: ResearchOutput,
         brief: BugBrief,
+        *,
+        qa_report: Optional[QAReport] = None,
     ) -> tuple[bool, List[str], List[str]]:
         """Delegate to the configured code-review dispatcher.
 
@@ -293,13 +580,37 @@ class QANode(DevLoopNode):
         ``CodeReviewVerdict(passed=True, findings=["code-review could not
         run: …"])`` so the deterministic gate remains the hard guarantee
         (FEAT-250 G4).
+
+        FEAT-375: also stashes the raw, structured ``CodeReviewVerdict`` on
+        ``shared["_code_review_verdict"]`` (``None`` when the dispatch
+        degraded) so :meth:`_collect_triage_findings` can read the
+        structured findings for triage without widening this method's
+        public 3-tuple contract (existing callers/tests assert on it).
+
+        Args:
+            qa_report: The deterministic gate's report, folded into the
+                brief as ``qa_criterion_results`` so reviewers judge from
+                the recorded exit codes instead of re-running criteria —
+                a read-only reviewer (codex adversarial) that attempts to
+                run pytest dies on tempdir creation and retry-spirals.
         """
-        review_cwd = research.repo_path or research.worktree_path
+        review_cwd = research.worktree_path
+        qa_results: List[Dict[str, Any]] = [
+            {
+                "name": r.name,
+                "kind": r.kind,
+                "exit_code": r.exit_code,
+                "passed": r.passed,
+            }
+            for r in (qa_report.criterion_results if qa_report else [])
+        ]
         review_brief = _CodeReviewBrief(
             acceptance_criteria=list(brief.acceptance_criteria),
             worktree_path=review_cwd,
             summary=brief.summary,
             jira_issue_key=research.jira_issue_key,
+            qa_criterion_results=qa_results,
+            qa_lint_passed=qa_report.lint_passed if qa_report else None,
         )
         try:
             verdict = await self._codereview_dispatcher.review(
@@ -310,14 +621,207 @@ class QANode(DevLoopNode):
                 # FEAT-322: fold dispatch-level events into the run's
                 # SessionHost when one is present.
                 session_host=shared.get("session_host"),
+                # FEAT-378 (code-review finding): the QA-attempt-scoped round
+                # identifier JudgePanelReviewDispatcher stamps onto each
+                # JudgeVerdictRecorded action ("qa-1", "qa-2", ... — same
+                # convention as QaAttemptRecorded's attempt number above).
+                # Ignored by every non-panel dispatcher.
+                round=f"qa-{shared.get('qa_attempt', 1)}",
             )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error (FEAT-250 G4)
             self.logger.warning("Code-review dispatcher raised: %s", exc)
+            shared["_code_review_verdict"] = None
             return True, [f"{_CODE_REVIEW_SKIP_PREFIX} {exc}"], []
+        shared["_code_review_verdict"] = verdict
         findings = [f.message for f in getattr(verdict, "findings", [])]
         files_modified = list(getattr(verdict, "files_modified", []))
         passed = getattr(verdict, "passed", True)
         return passed, findings, files_modified
+
+    # ------------------------------------------------------------------
+    # Advisory-finding triage loop (FEAT-375 Module 5)
+    # ------------------------------------------------------------------
+
+    def _collect_triage_findings(self, shared: Dict[str, Any]) -> List[AdversarialFinding]:
+        """Return the structured findings from the last review verdict, triage-ready.
+
+        Skip-prefixed findings (infra degrade) are excluded — they never
+        enter triage, matching the loud-skip convention. Plain
+        ``CodeReviewFinding`` items (should not normally occur for an
+        advisory dispatcher, which already tags its own findings) are
+        coerced into ``AdversarialFinding`` defensively.
+
+        FEAT-375 code-review fix: assigns a stable, positional ``finding_id``
+        (``"finding-<n>"``) to every collected finding here — the triage
+        worker echoes it back on each disposition, so matching a returned
+        disposition to its originating finding no longer depends on the
+        worker preserving the exact ``file``/``message`` text (an LLM may
+        paraphrase even while faithfully triaging).
+        """
+        verdict = shared.get("_code_review_verdict")
+        if verdict is None:
+            return []
+        raw_findings = list(getattr(verdict, "findings", []))
+        collected: List[AdversarialFinding] = []
+        for idx, finding in enumerate(raw_findings):
+            if finding.message.startswith(_CODE_REVIEW_SKIP_PREFIX):
+                continue
+            finding_id = f"finding-{idx}"
+            if isinstance(finding, AdversarialFinding):
+                collected.append(finding.model_copy(update={"finding_id": finding_id}))
+            else:
+                collected.append(AdversarialFinding(**finding.model_dump(), finding_id=finding_id))
+        return collected
+
+    async def _run_finding_triage(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+        brief: BugBrief,
+        findings: List[AdversarialFinding],
+    ) -> Tuple[List[str], List[str], bool]:
+        """Dispatch the primary worker to triage advisory findings.
+
+        Every input finding MUST come back with a disposition
+        (CONFIRM/REJECT/ESCALATE). Missing dispositions are retried once;
+        anything still missing after the retry fails closed to ESCALATE
+        (never silently dropped, never silently conceded).
+
+        Returns:
+            A ``(notes, files_modified, escalation_passed)`` tuple:
+            ``notes`` are PR-visible lines for ``QAReport.notes`` (REJECT
+            reasons + ESCALATE notices), ``files_modified`` collects
+            CONFIRM fixes for the deterministic-QA rerun, and
+            ``escalation_passed`` is ``True`` unless an ESCALATE gate
+            resolved to something other than ``"approved"`` (or is still
+            pending when a ``SessionHost`` degrade path applies).
+        """
+        worktree_path = research.worktree_path
+        triage_brief = TriageBrief(
+            findings=findings,
+            acceptance_criteria=list(brief.acceptance_criteria),
+            worktree_path=worktree_path,
+            summary=brief.summary,
+        )
+        # Write-enabled `sdd-worker` profile (mirrors development.py's
+        # single-agent profile) — CONFIRMed findings may be fixed and
+        # committed by this same dispatch.
+        profile = ClaudeCodeDispatchProfile(
+            subagent="sdd-worker",
+            permission_mode="acceptEdits",
+            allowed_tools=["Read", "Edit", "Write", "Bash", "Grep", "Glob"],
+            setting_sources=["project"],
+        )
+
+        async def _dispatch_once() -> TriageReport:
+            return await self._dispatcher.dispatch(
+                brief=triage_brief,
+                profile=profile,
+                output_model=TriageReport,
+                run_id=shared["run_id"],
+                node_id=self.name,
+                cwd=worktree_path,
+                session_host=shared.get("session_host"),
+            )
+
+        def _index(report: TriageReport) -> Dict[str, AdversarialFinding]:
+            # FEAT-375 code-review fix: match on the stable `finding_id`
+            # assigned by `_collect_triage_findings`, not on exact
+            # `(file, message)` text — robust against an LLM paraphrasing a
+            # finding's message while still faithfully dispositioning it.
+            return {f.finding_id: f for f in report.findings if f.finding_id}
+
+        def _missing(indexed: Dict[str, AdversarialFinding]) -> List[AdversarialFinding]:
+            return [
+                f for f in findings
+                if indexed.get(f.finding_id) is None
+                or indexed[f.finding_id].disposition is None
+            ]
+
+        report = await _dispatch_once()
+        indexed = _index(report)
+        if _missing(indexed):
+            self.logger.warning(
+                "One or more advisory findings came back without a "
+                "disposition after triage dispatch — retrying once."
+            )
+            report = await _dispatch_once()
+            indexed = _index(report)
+
+        notes: List[str] = []
+        session_host = shared.get("session_host")
+        ttl_seconds = conf.DEV_LOOP_GATE_TTL_REVIEW_ESCALATION
+        escalated_gate_ids: List[str] = []
+
+        files_modified_set = set(report.files_modified)
+        for finding in findings:
+            resolved = indexed.get(finding.finding_id)
+            if resolved is None or resolved.disposition is None:
+                # Fail-closed: still undispositioned after the retry.
+                resolved = finding.model_copy(update={
+                    "disposition": "escalate",
+                    "triage_reason": (
+                        "no disposition returned by the triage worker after one retry"
+                    ),
+                })
+            elif resolved.disposition == "confirm" and not self._confirm_has_evidence(
+                resolved, files_modified_set
+            ):
+                # FEAT-375 code-review fix: a CONFIRM MUST be backed by an
+                # actual file change — otherwise "confirmed" is
+                # indistinguishable from "silently dropped" (nothing else
+                # would have surfaced this in QAReport.notes, and the
+                # deterministic rerun never triggers). Fail closed to
+                # ESCALATE rather than let an agreed-upon defect disappear.
+                resolved = resolved.model_copy(update={
+                    "disposition": "escalate",
+                    "triage_reason": (
+                        f"disposed as 'confirm' but no corresponding fix was found "
+                        f"in files_modified (worker's stated reason: "
+                        f"{resolved.triage_reason or '(none)'}) — escalating fail-closed"
+                    ),
+                })
+
+            if resolved.disposition == "reject":
+                notes.append(f"rejected: {resolved.message} — {resolved.triage_reason}")
+            elif resolved.disposition == "escalate":
+                notes.append(f"⚠ Escalated for human review: {resolved.message}")
+                if session_host is not None:
+                    gate_id, _ = session_host.open_gate(
+                        kind="review_escalation",
+                        node_id=self.name,
+                        title=f"Adversarial review finding: {resolved.file or 'unspecified file'}",
+                        instructions=resolved.message,
+                        ttl_seconds=ttl_seconds,
+                        on_expiry="fail",
+                    )
+                    escalated_gate_ids.append(gate_id)
+            # CONFIRM (with verified evidence): no note of its own — its fix
+            # surfaces via `report.files_modified`, which triggers the
+            # existing deterministic-QA rerun.
+
+        escalation_passed = True
+        if escalated_gate_ids and session_host is not None:
+            resolved_gates = await asyncio.gather(
+                *(session_host.wait_gate(gate_id) for gate_id in escalated_gate_ids)
+            )
+            escalation_passed = all(gate.status == "approved" for gate in resolved_gates)
+
+        return notes, list(report.files_modified), escalation_passed
+
+    @staticmethod
+    def _confirm_has_evidence(resolved: AdversarialFinding, files_modified: set) -> bool:
+        """Whether a CONFIRM disposition is backed by an actual file change.
+
+        FEAT-375 code-review fix: when the finding names a specific file,
+        that file must appear in the triage dispatch's ``files_modified``.
+        When the finding isn't file-specific (``file == ""``), fall back to
+        requiring SOME fix happened this round — imprecise, but still far
+        better than accepting a bare, unverified claim.
+        """
+        if resolved.file:
+            return resolved.file in files_modified
+        return bool(files_modified)
 
     @staticmethod
     def _merge_manual_results(

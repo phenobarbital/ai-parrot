@@ -1,5 +1,7 @@
 """Tests for audio form session data models (FEAT-224 TASK-1460)."""
 
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
@@ -12,13 +14,17 @@ from parrot_formdesigner.audio.models import (
     VoiceMode,
 )
 
+# FEAT-393 / TASK-2004: AudioQuestion.field_uid is now required. Tests that
+# don't specifically exercise field_uid share this sentinel value.
+_UID = uuid.uuid4()
+
 
 class TestAudioSessionConfig:
     """Tests for AudioSessionConfig model."""
 
     def test_defaults(self):
         """AudioSessionConfig has correct default values."""
-        cfg = AudioSessionConfig(form_id="f1")
+        cfg = AudioSessionConfig(form_uid="f1")
         assert cfg.locale == "en"
         assert cfg.tts_mime_format == "audio/wav"
         assert cfg.auto_advance is True
@@ -26,7 +32,7 @@ class TestAudioSessionConfig:
 
     def test_supertonic_defaults(self):
         """FEAT-236: SuperTonic-first defaults and STT confirm threshold."""
-        cfg = AudioSessionConfig(form_id="x")
+        cfg = AudioSessionConfig(form_uid="x")
         assert cfg.tts_backend == "supertonic"
         assert cfg.stt_confirm_threshold == 0.6
         assert cfg.enumerate_options is True
@@ -34,33 +40,33 @@ class TestAudioSessionConfig:
 
     def test_stt_confirm_threshold_bounds(self):
         """stt_confirm_threshold is bounded to the 0.0–1.0 range."""
-        assert AudioSessionConfig(form_id="x", stt_confirm_threshold=0.0)
-        assert AudioSessionConfig(form_id="x", stt_confirm_threshold=1.0)
+        assert AudioSessionConfig(form_uid="x", stt_confirm_threshold=0.0)
+        assert AudioSessionConfig(form_uid="x", stt_confirm_threshold=1.0)
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="x", stt_confirm_threshold=1.5)
+            AudioSessionConfig(form_uid="x", stt_confirm_threshold=1.5)
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="x", stt_confirm_threshold=-0.1)
+            AudioSessionConfig(form_uid="x", stt_confirm_threshold=-0.1)
 
     def test_tts_backend_rejects_unknown(self):
         """tts_backend only accepts 'supertonic' or 'google'."""
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="x", tts_backend="elevenlabs")
+            AudioSessionConfig(form_uid="x", tts_backend="elevenlabs")
 
-    def test_requires_form_id(self):
-        """AudioSessionConfig raises ValidationError when form_id is missing."""
+    def test_requires_form_uid(self):
+        """AudioSessionConfig raises ValidationError when form_uid is missing."""
         with pytest.raises(ValidationError):
             AudioSessionConfig()  # type: ignore[call-arg]
 
     def test_custom_values(self):
         """AudioSessionConfig accepts custom locale and voice."""
-        cfg = AudioSessionConfig(form_id="f1", locale="es", tts_voice="Wavenet-A")
+        cfg = AudioSessionConfig(form_uid="f1", locale="es", tts_voice="Wavenet-A")
         assert cfg.locale == "es"
         assert cfg.tts_voice == "Wavenet-A"
 
     def test_extra_fields_forbidden(self):
         """AudioSessionConfig rejects extra fields."""
         with pytest.raises(ValidationError):
-            AudioSessionConfig(form_id="f1", unknown_field="x")
+            AudioSessionConfig(form_uid="f1", unknown_field="x")
 
 
 class TestVoiceMode:
@@ -84,14 +90,14 @@ class TestAudioQuestion:
 
     def test_minimal(self):
         """AudioQuestion validates with minimal required fields."""
-        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
+        q = AudioQuestion(field_uid=_UID, index=0, field_id="name", field_type="text", label="Name?")
         assert q.required is False
         assert q.audio_prompt is None
         assert q.options is None
 
     def test_voice_fields_default(self):
         """FEAT-236: new voice fields default to VOICE / 'voice' / False / None."""
-        q = AudioQuestion(index=0, field_id="f", field_type="text", label="L")
+        q = AudioQuestion(field_uid=_UID, index=0, field_id="f", field_type="text", label="L")
         assert q.voice_mode == VoiceMode.VOICE
         assert q.render_mode == "voice"
         assert q.sensitive is False
@@ -99,7 +105,7 @@ class TestAudioQuestion:
 
     def test_voice_fields_custom(self):
         """FEAT-236: voice fields accept explicit VISUAL_FALLBACK values."""
-        q = AudioQuestion(
+        q = AudioQuestion(field_uid=_UID, 
             index=0, field_id="f", field_type="rest", label="L",
             voice_mode=VoiceMode.VISUAL_FALLBACK, render_mode="visual",
             sensitive=True, fallback_html="<input name='f'>",
@@ -112,12 +118,12 @@ class TestAudioQuestion:
     def test_render_mode_rejects_unknown(self):
         """render_mode only accepts voice/select/visual."""
         with pytest.raises(ValidationError):
-            AudioQuestion(index=0, field_id="f", field_type="text",
+            AudioQuestion(field_uid=_UID, index=0, field_id="f", field_type="text",
                           label="L", render_mode="audio")  # type: ignore[arg-type]
 
     def test_with_options(self):
         """AudioQuestion stores options list for SELECT fields."""
-        q = AudioQuestion(
+        q = AudioQuestion(field_uid=_UID, 
             index=1,
             field_id="color",
             field_type="select",
@@ -129,7 +135,7 @@ class TestAudioQuestion:
 
     def test_with_audio_prompt(self):
         """AudioQuestion stores raw bytes as audio_prompt."""
-        q = AudioQuestion(
+        q = AudioQuestion(field_uid=_UID, 
             index=0, field_id="name", field_type="text",
             label="Name?", audio_prompt=b"fake-audio"
         )
@@ -137,9 +143,24 @@ class TestAudioQuestion:
 
     def test_required_field(self):
         """AudioQuestion.required defaults to False and can be set to True."""
-        q = AudioQuestion(index=0, field_id="name", field_type="text",
+        q = AudioQuestion(field_uid=_UID, index=0, field_id="name", field_type="text",
                           label="Name?", required=True)
         assert q.required is True
+
+    def test_audio_question_carries_uid(self):
+        """FEAT-393: AudioQuestion.field_uid is required and preserved as-is."""
+        uid = uuid.uuid4()
+        q = AudioQuestion(
+            field_uid=uid, index=0, field_id="name", field_type="text", label="Name?"
+        )
+        assert q.field_uid == uid
+
+    def test_field_uid_required(self):
+        """FEAT-393: AudioQuestion raises ValidationError without field_uid."""
+        with pytest.raises(ValidationError):
+            AudioQuestion(  # type: ignore[call-arg]
+                index=0, field_id="name", field_type="text", label="Name?"
+            )
 
 
 class TestAudioFormManifest:
@@ -147,9 +168,9 @@ class TestAudioFormManifest:
 
     def test_minimal_manifest(self):
         """AudioFormManifest validates with required fields."""
-        q = AudioQuestion(index=0, field_id="name", field_type="text", label="Name?")
+        q = AudioQuestion(field_uid=_UID, index=0, field_id="name", field_type="text", label="Name?")
         manifest = AudioFormManifest(
-            form_id="f1",
+            form_uid="f1",
             title="Test Form",
             total_questions=1,
             questions=[q],
@@ -161,11 +182,11 @@ class TestAudioFormManifest:
     def test_questions_list(self):
         """AudioFormManifest holds multiple questions."""
         questions = [
-            AudioQuestion(index=i, field_id=f"q{i}", field_type="text", label=f"Q{i}?")
+            AudioQuestion(field_uid=_UID, index=i, field_id=f"q{i}", field_type="text", label=f"Q{i}?")
             for i in range(3)
         ]
         manifest = AudioFormManifest(
-            form_id="f1",
+            form_uid="f1",
             title="Test Form",
             total_questions=3,
             questions=questions,
@@ -203,13 +224,22 @@ class TestAudioAnswer:
         with pytest.raises(ValidationError):
             AudioAnswer(field_id="name", value="x", source="video")  # type: ignore[arg-type]
 
+    def test_audio_answer_field_uid_optional(self):
+        """FEAT-393: AudioAnswer.field_uid defaults to None and accepts a UUID."""
+        a_no_uid = AudioAnswer(field_id="name", value="Alice")
+        assert a_no_uid.field_uid is None
+
+        uid = uuid.uuid4()
+        a_with_uid = AudioAnswer(field_id="name", field_uid=uid, value="Alice")
+        assert a_with_uid.field_uid == uid
+
 
 class TestAudioSessionState:
     """Tests for AudioSessionState model."""
 
     def test_initial_state(self):
         """AudioSessionState initializes with correct defaults."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         assert state.current_index == 0
         assert state.answers == {}
         assert state.completed is False
@@ -217,19 +247,19 @@ class TestAudioSessionState:
 
     def test_add_answer(self):
         """AudioSessionState can accumulate answers."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.answers["name"] = AudioAnswer(field_id="name", value="Alice", source="text")
         assert "name" in state.answers
         assert state.answers["name"].value == "Alice"
 
     def test_advance_index(self):
         """AudioSessionState.current_index can be incremented."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.current_index = 2
         assert state.current_index == 2
 
     def test_mark_completed(self):
         """AudioSessionState.completed can be set to True."""
-        state = AudioSessionState(session_id="s1", form_id="f1", user_id="u1")
+        state = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         state.completed = True
         assert state.completed is True

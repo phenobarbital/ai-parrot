@@ -91,7 +91,9 @@ def resolve_gen_ai_system(client_name: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Attribute builders — pure functions; return dict[str, Any]
-# Never include None values; never include PII (user_id, session_id, question).
+# Never include None values; never include prompt/completion content.
+# user_id and session_id ARE included in SPAN attributes for per-user usage
+# tracking (e.g. OpenLIT dashboards) — but NEVER in metric labels (cardinality).
 # ---------------------------------------------------------------------------
 
 
@@ -102,12 +104,19 @@ def build_before_invoke_attrs(event: BeforeInvokeEvent) -> dict[str, Any]:
         event: The ``BeforeInvokeEvent`` instance.
 
     Returns:
-        Dict of OTel attribute key-value pairs. Never contains PII.
+        Dict of OTel attribute key-value pairs. Includes ``user_id`` and
+        ``session_id`` when present — these are span attributes only, NEVER
+        used in metric labels.
     """
-    return {
+    attrs: dict[str, Any] = {
         "parrot.agent.name": event.agent_name,
         "parrot.invoke.method": event.method,
     }
+    if event.user_id:
+        attrs["enduser.id"] = event.user_id
+    if event.session_id:
+        attrs["session.id"] = event.session_id
+    return attrs
 
 
 def build_after_invoke_attrs(event: AfterInvokeEvent) -> dict[str, Any]:
@@ -141,6 +150,8 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
 
     Returns:
         Dict of GenAI SemConv + parrot-specific OTel attribute key-value pairs.
+        Includes ``enduser.id`` and ``session.id`` when present for per-user
+        usage tracking in OpenLIT.
     """
     system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
@@ -161,6 +172,10 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
         attrs["parrot.system_prompt_hash"] = event.system_prompt_hash
     if event.agent_name:  # FEAT-228: omit when None/empty
         attrs["parrot.agent.name"] = event.agent_name
+    if event.user_id:
+        attrs["enduser.id"] = event.user_id
+    if event.session_id:
+        attrs["session.id"] = event.session_id
     return attrs
 
 
@@ -178,6 +193,7 @@ def build_after_client_attrs(
 
     Returns:
         Dict of GenAI SemConv + parrot-specific OTel attribute key-value pairs.
+        Includes ``enduser.id`` and ``session.id`` when present.
     """
     system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
@@ -196,6 +212,10 @@ def build_after_client_attrs(
         attrs["parrot.cost.usd"] = cost_usd
     if event.agent_name:  # FEAT-228: omit when None/empty
         attrs["parrot.agent.name"] = event.agent_name
+    if event.user_id:
+        attrs["enduser.id"] = event.user_id
+    if event.session_id:
+        attrs["session.id"] = event.session_id
     return attrs
 
 
@@ -207,6 +227,7 @@ def build_client_failed_attrs(event: ClientCallFailedEvent) -> dict[str, Any]:
 
     Returns:
         Dict of OTel error + GenAI SemConv attribute key-value pairs.
+        Includes ``enduser.id`` and ``session.id`` when present.
     """
     system = resolve_gen_ai_system(event.client_name)
     attrs: dict[str, Any] = {
@@ -219,6 +240,10 @@ def build_client_failed_attrs(event: ClientCallFailedEvent) -> dict[str, Any]:
     }
     if event.agent_name:  # FEAT-228: omit when None/empty
         attrs["parrot.agent.name"] = event.agent_name
+    if event.user_id:
+        attrs["enduser.id"] = event.user_id
+    if event.session_id:
+        attrs["session.id"] = event.session_id
     return attrs
 
 

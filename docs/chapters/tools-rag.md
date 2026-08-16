@@ -51,7 +51,9 @@ flowchart LR
 ## Read next
 
 - [Tools Reference](../tools.md), [Sandbox Tool](../sandbox_tool.md),
-  [What-If Tool](../whatif_tool.md), [Hierarchy Tool](../hierarchy_tool.md)
+  [What-If Scenarios](../whatif_scenarios.md), [Hierarchy Tool](../hierarchy_tool.md)
+- [MultiStoreSearch Toolkit](../multistoresearch-toolkit.md) — multi-origin
+  retrieval across vector stores, PageIndex, GraphIndex & ParrotWiki
 - [Charts & Visualization](../charts_samples.md)
 - [Loaders Metadata](../loaders-metadata.md)
 

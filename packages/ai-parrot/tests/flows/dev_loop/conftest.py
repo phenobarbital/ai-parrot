@@ -9,11 +9,11 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from typing import Iterator
+import sys
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from parrot.flows.dev_loop import (
     BugBrief,
     FlowtaskCriterion,
@@ -21,7 +21,6 @@ from parrot.flows.dev_loop import (
     ResearchOutput,
     ShellCriterion,
 )
-
 
 # ---------------------------------------------------------------------------
 # Live-test skip guards (FEAT-250 TASK-013)
@@ -74,12 +73,59 @@ def _isolate_dev_loop_run_artifacts(tmp_path, monkeypatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _stub_pr_summary_enrichment(monkeypatch) -> None:
+    """Stub the Haiku PR-summary enrichment call for every test (FEAT-405
+    Module 8).
+
+    ``FeatureHandoffNode``/``DeploymentHandoffNode`` now call
+    ``summarize_pr_changes`` (``dispatchers/nova.py``) — one real
+    ``NovaClient.ask()`` — from their ``process()`` paths. Without this
+    autouse guard, every existing test in this suite that drives a real
+    handoff run would attempt a live Bedrock call (no credentials
+    configured here, so it always falls back — but only after a real,
+    slow connection/DNS attempt). Returns ``""`` (the "unconfigured/
+    failed" sentinel — see ``summarize_pr_changes``'s own contract),
+    exercising the exact byte-identical-fallback path both handoff nodes
+    already need to support. Tests that want to exercise the enriched
+    path (``test_pr_enrichment.py``) override this locally via their own
+    ``monkeypatch.setattr(...)`` call, which wins over this default.
+
+    Resolves the target modules via ``sys.modules`` directly rather than
+    monkeypatch's dotted-string form: ``test_lazy_import.py`` deletes and
+    re-imports every ``parrot.flows.dev_loop.*`` module during its own
+    test bodies, then restores the ``sys.modules`` dict entries — but a
+    dotted string resolves through **parent-package attribute chains**
+    (``getattr(parrot.flows.dev_loop.nodes, "feature_handoff")``), and
+    that surgery can leave a parent package's attribute pointing at a
+    module object ``sys.modules`` no longer holds, silently patching an
+    orphaned object instead of the live one. Indexing ``sys.modules``
+    directly is immune to that (verified empirically — see TASK-2092
+    completion note).
+    """
+    stub = AsyncMock(return_value="")
+    monkeypatch.setattr(
+        sys.modules["parrot.flows.dev_loop.nodes.feature_handoff"],
+        "summarize_pr_changes",
+        stub,
+    )
+    monkeypatch.setattr(
+        sys.modules["parrot.flows.dev_loop.nodes.deployment_handoff"],
+        "summarize_pr_changes",
+        stub,
+    )
+
+
 @pytest.fixture
 def temp_worktree_base(tmp_path, monkeypatch) -> Iterator[str]:
     """Point ``WORKTREE_BASE_PATH`` / ``DEV_LOOP_REPO_BASE_PATH`` at a tmp dir."""
     base = str(tmp_path)
     for target in (
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.codex.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.gemini.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.google_coding.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.llm.conf.WORKTREE_BASE_PATH",
         "parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH",
         "parrot.flows.dev_loop.nodes.research.conf.DEV_LOOP_REPO_BASE_PATH",
     ):

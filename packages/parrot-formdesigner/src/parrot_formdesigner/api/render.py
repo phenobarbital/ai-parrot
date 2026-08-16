@@ -2,7 +2,7 @@
 
 Provides a name-keyed registry of renderers (``dict[str, AbstractFormRenderer]``)
 and the ``handle_render`` aiohttp handler that delegates
-``GET /api/v1/forms/{form_id}/render/{format}`` to the renderer registered
+``GET /api/v1/forms/{form_uid}/render/{format}`` to the renderer registered
 under ``{format}``.
 
 V1 seeds two renderers:
@@ -25,6 +25,7 @@ from aiohttp import web
 
 from ..renderers.base import AbstractFormRenderer
 from ._utils import _get_request_tenant
+from .handlers import extract_form_uid
 
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ def register_renderer(format_key: str, renderer: AbstractFormRenderer) -> None:
 
     Args:
         format_key: The path-param value used in
-            ``GET /api/v1/forms/{form_id}/render/{format}``.
+            ``GET /api/v1/forms/{form_uid}/render/{format}``.
         renderer: An ``AbstractFormRenderer`` instance.
     """
     if format_key in _RENDERERS:
@@ -98,7 +99,7 @@ def _coerce_body(content: Any) -> bytes | str:
 
 
 async def handle_render(request: web.Request) -> web.Response:
-    """GET /api/v1/forms/{form_id}/render/{format} — render dispatcher.
+    """GET /api/v1/forms/{form_uid}/render/{format} — render dispatcher.
 
     Looks up the renderer by ``format`` path-param. On miss returns 415 with
     ``{"supported": [...]}``. On hit, loads the form from
@@ -110,7 +111,7 @@ async def handle_render(request: web.Request) -> web.Response:
     Returns:
         The rendered output with ``Content-Type`` set from the renderer.
     """
-    form_id = request.match_info["form_id"]
+    form_uid = extract_form_uid(request)
     format_key = request.match_info["format"]
 
     renderer = get_renderer(format_key)
@@ -128,10 +129,10 @@ async def handle_render(request: web.Request) -> web.Response:
         )
 
     tenant = _get_request_tenant(request)
-    form = await registry.get(form_id, tenant=tenant)
+    form = await registry.get(form_uid, tenant=tenant)
     if form is None:
         return web.json_response(
-            {"error": f"Form '{form_id}' not found"}, status=404
+            {"error": f"Form '{form_uid}' not found"}, status=404
         )
 
     locale = request.query.get("locale", "en")

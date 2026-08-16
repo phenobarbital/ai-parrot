@@ -1,0 +1,316 @@
+{
+  "feature": "tool-result-compression",
+  "feature_id": "FEAT-380",
+  "spec": "sdd/specs/tool-result-compression.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-07-27T00:00:00Z",
+  "completed_at": "2026-07-28T02:36:49+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1947",
+      "slug": "compression-contract-primitives",
+      "title": "Compression contract primitives (FilterLevel, Protocol, codec registry)",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Blocking foundation. Module 1 freezes the ResultCompressor Protocol and CompressionOutcome; everything else codes against that contract. Serializing it avoids three parallel worktrees redefining the same types and a painful merge (spec Worktree Strategy, Phase 1).",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-27T17:54:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1947-compression-contract-primitives.md"
+    },
+    {
+      "id": "TASK-1948",
+      "slug": "compressor-toml-registry",
+      "title": "TOML compressor manifest schema + multi-source CompressorRegistry",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1947"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Owns config.py + registry.py + compressors.toml exclusively. Disjoint from TASK-1949 (codecs/json_compact.py), TASK-1950 (budget.py) and TASK-1954 (codecs/columnar.py). Only shared file is compression/__init__.py (export lines) — trivial merge.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-27T17:59:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1948-compressor-toml-registry.md"
+    },
+    {
+      "id": "TASK-1949",
+      "slug": "json-compact-codec",
+      "title": "`json_compact` codec (MINIMAL, lossless)",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1947"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Owns codecs/json_compact.py exclusively. Depends only on the frozen contract from TASK-1947; disjoint from 1948, 1950 and 1954.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-27T19:03:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1949-json-compact-codec.md"
+    },
+    {
+      "id": "TASK-1950",
+      "slug": "latency-budget-circuit-breaker",
+      "title": "Latency budget router + circuit breaker",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1947"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Owns budget.py exclusively (spec Module 5, worktree B). Consumed by TASK-1951 and TASK-1954 but shares no file with either; must be complete before the stage can route.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-27T19:32:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1950-latency-budget-circuit-breaker.md"
+    },
+    {
+      "id": "TASK-1951",
+      "slug": "compression-stage",
+      "title": "CompressionStage — gates, level resolution, codec dispatch, metrics",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1948",
+        "TASK-1949",
+        "TASK-1950"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Join point: needs the registry, at least one real codec, and the budget router before it can be meaningfully implemented or tested. Sequential barrier between the parallel codec/registry work and the manager wiring.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-27T20:24:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1951-compression-stage.md"
+    },
+    {
+      "id": "TASK-1952",
+      "slug": "manager-wiring-and-telemetry",
+      "title": "Wire the stage into ToolManager.execute_tool() + extend AfterToolCallEvent",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1951"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches manager.py — the hot path of every agent — plus the shared lifecycle events module. Must not run concurrently with TASK-1953, which reorders a branch in the same function. Spec warns to audit in-flight specs touching execute_tool() before starting.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-27T21:39:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1952-manager-wiring-and-telemetry.md"
+    },
+    {
+      "id": "TASK-1953",
+      "slug": "compression-tee",
+      "title": "Compression tee — working-memory escape hatch + error-branch reorder",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1952"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Spec worktree A. Owns tee.py; also edits manager.py (error-branch reorder) and stage.py (tee callback), so it must NOT run concurrently with any other manager.py/stage.py task — but is disjoint from TASK-1954 (codecs/), TASK-1956 (live.py), TASK-1957 (report.py) and TASK-1961 (google/client.py), which can run alongside.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T00:23:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1953-compression-tee.md"
+    },
+    {
+      "id": "TASK-1954",
+      "slug": "columnar-codec-python",
+      "title": "`columnar` codec — Python reference implementation",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1947"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Spec worktree B. Owns codecs/columnar.py exclusively; depends only on the frozen contract, so it can start as soon as TASK-1947 merges and run alongside the entire 1948-1953 chain. Its test suite is the executable spec for the Rust path (TASK-1955).",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T00:48:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1954-columnar-codec-python.md"
+    },
+    {
+      "id": "TASK-1955",
+      "slug": "rust-codec-extension",
+      "title": "Optional Rust parrot_codec extension + maturin python-source fix",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-1954"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Spec worktree B continuation. Owns the new Rust crate and the [tool.maturin] block; touches columnar.py (dispatch) and budget.py (rust_available), so it must not run concurrently with TASK-1954 or TASK-1959. Disjoint from everything else.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T01:51:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1955-rust-codec-extension.md"
+    },
+    {
+      "id": "TASK-1956",
+      "slug": "live-py-pipeline-routing",
+      "title": "Route clients/live.py tool execution through the real pipeline",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1952"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Spec worktree C. Owns clients/live.py exclusively — no file overlap with any other task in this feature.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T01:11:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1956-live-py-pipeline-routing.md"
+    },
+    {
+      "id": "TASK-1957",
+      "slug": "savings-report",
+      "title": "Savings report (per-tool / per-session, rtk-gain equivalent)",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1952"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Spec worktree C. Owns report.py exclusively. Lowest priority; can trail the rest without blocking anything except TASK-1962.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T01:14:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1957-savings-report.md"
+    },
+    {
+      "id": "TASK-1958",
+      "slug": "e2e-integration-suite",
+      "title": "End-to-end integration suite",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1953",
+        "TASK-1954",
+        "TASK-1956"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Join point: the five spec section-4 integration tests only pass once tee, columnar codec and the live route are all merged. Shares conftest.py with TASK-1954, so it runs after that task, not beside it.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T01:38:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1958-e2e-integration-suite.md"
+    },
+    {
+      "id": "TASK-1959",
+      "slug": "latency-benchmark-calibration",
+      "title": "Latency benchmark suite + threshold calibration",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1950",
+        "TASK-1954"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Owns test_benchmarks.py; may modify budget.py defaults if measurement contradicts them, so it must not run concurrently with TASK-1955 (which also touches budget.py). Otherwise independent — the G7/G9 acceptance criteria cannot be checked without it.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T01:31:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1959-latency-benchmark-calibration.md"
+    },
+    {
+      "id": "TASK-1962",
+      "slug": "compression-docs-and-changelog",
+      "title": "Documentation + changelog for the compression pipeline",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1953",
+        "TASK-1954",
+        "TASK-1957"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documentation only — touches docs/ and the changelog, no source files, so it never conflicts. Deliberately late in the graph because it must document what shipped, not what the spec proposed.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T01:56:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1962-compression-docs-and-changelog.md"
+    },
+    {
+      "id": "TASK-1961",
+      "slug": "google-client-last-line-of-defense",
+      "title": "Demote Google client truncation to last line of defense",
+      "feature_id": "FEAT-380",
+      "feature": "tool-result-compression",
+      "spec": "sdd/specs/tool-result-compression.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1952"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Owns clients/google/client.py exclusively — no file overlap with any other task in this feature.",
+      "assigned_to": null,
+      "started_at": "2026-07-27T17:11:08+00:00",
+      "completed_at": "2026-07-28T01:19:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1961-google-client-last-line-of-defense.md"
+    }
+  ]
+}

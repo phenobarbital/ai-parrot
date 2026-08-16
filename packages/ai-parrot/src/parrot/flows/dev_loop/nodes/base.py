@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, Optional, Sequence, Set, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 from pydantic import Field
 
@@ -28,6 +28,7 @@ from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.flow.flow import NODE_REGISTRY, register_node
+from parrot.flows.dev_loop.models import QAReport
 
 
 # Matches the userinfo (``user:secret@``) of an https remote URL, e.g. the
@@ -130,6 +131,46 @@ async def transition_issue_with_candidates(
     return None
 
 
+def condense_qa_failure(report: QAReport, *, max_chars: int = 2000) -> str:
+    """Condense a failed :class:`QAReport` into a compact feedback summary.
+
+    FEAT-377 TASK-1911 (Module 3 repair loop): shared by ``QANode`` (the
+    ``QaAttemptRecorded.qa_notes`` persisted to session state) and
+    ``DevelopmentNode`` (the redispatch brief's feedback) so both surfaces
+    describe the same failure the same way. Per the spec: no new field is
+    added to ``QAReport`` — the summary is composed from
+    ``criterion_results`` + ``lint_output`` + ``notes`` +
+    ``code_review_findings``, all budget-capped so this never balloons an
+    LLM prompt with full logs.
+
+    Args:
+        report: The failing QA report to summarize.
+        max_chars: Hard cap on the returned string's length.
+
+    Returns:
+        A short, human-readable failure summary (never raises).
+    """
+    lines: List[str] = []
+    for c in report.criterion_results:
+        if c.passed:
+            continue
+        tail = (c.stderr_tail or c.stdout_tail or "").strip()
+        tail = tail[-300:] if tail else ""
+        line = f"- {c.name} (exit={c.exit_code})"
+        if tail:
+            line += f": {tail}"
+        lines.append(line)
+    if not report.lint_passed and report.lint_output:
+        lines.append(f"- lint: {report.lint_output.strip()[-300:]}")
+    if report.notes:
+        lines.append(f"- notes: {report.notes.strip()[:300]}")
+    if report.code_review_findings:
+        findings = "; ".join(report.code_review_findings[:5])
+        lines.append(f"- code review: {findings[:300]}")
+    summary = "\n".join(lines) or "QA failed with no detailed criterion output."
+    return summary[:max_chars]
+
+
 def register_dev_loop_node(name: str):
     """Idempotent ``@register_node`` for the dev-loop node types (FEAT-250).
 
@@ -225,6 +266,7 @@ class DevLoopNode(Node):
 
 __all__ = [
     "DevLoopNode",
+    "condense_qa_failure",
     "register_dev_loop_node",
     "scrub_git_output",
     "transition_issue_with_candidates",

@@ -441,3 +441,215 @@ class TestCloudWatchExcerptCleaning:
 
     def test_non_dict_results_unchanged(self):
         assert ResearchNode._tail_text("plain log text") == ["plain log text"]
+
+
+class TestInlineLogSource:
+    """`inline` log sources carry the pasted text itself — no fetch."""
+
+    def test_model_accepts_inline_kind(self):
+        src = LogSource(kind="inline", locator="ValueError: boom")
+        assert src.kind == "inline"
+        assert src.locator == "ValueError: boom"
+
+    @pytest.mark.asyncio
+    async def test_fetch_returns_pasted_text_verbatim(self, node):
+        trace = "Traceback (most recent call last):\n  ...\nValueError: boom"
+        out = await node._fetch_logs(LogSource(kind="inline", locator=trace))
+        assert out == [trace]
+
+    @pytest.mark.asyncio
+    async def test_fetch_tails_oversized_paste(self, node):
+        big = "x" * 10_000
+        out = await node._fetch_logs(LogSource(kind="inline", locator=big))
+        assert out == ["x" * 4000]
+
+    @pytest.mark.asyncio
+    async def test_blank_paste_yields_no_excerpts(self, node):
+        out = await node._fetch_logs(LogSource(kind="inline", locator="   \n"))
+        assert out == []
+
+    @pytest.mark.asyncio
+    async def test_collect_excerpts_needs_no_log_toolkits(
+        self, research_out_fixture, monkeypatch, tmp_path
+    ):
+        # Inline sources must work even when NO log toolkit is configured.
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH",
+            str(tmp_path),
+        )
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(return_value=research_out_fixture)
+        bare_node = ResearchNode(
+            dispatcher=dispatcher, jira_toolkit=MagicMock(), log_toolkits={}
+        )
+        out = await bare_node._collect_log_excerpts(
+            [LogSource(kind="inline", locator="ERROR: it broke")]
+        )
+        assert out == ["ERROR: it broke"]
+
+
+class TestRemoteLogFetchGate:
+    """Remote log backends are only queried for bug runs by default.
+
+    An enhancement / new-feature / spec-driven run has no incident to
+    triage, so the CloudWatch StartQuery it used to issue was pure
+    latency, AWS spend, and (with a path-shaped ``affected_component``)
+    a MalformedQueryException warning in every run's log.
+    """
+
+    def _cw_source(self) -> LogSource:
+        return LogSource(kind="cloudwatch", locator="fluent-bit-cloudwatch")
+
+    def _node(self, mode: str | None, cloudwatch) -> ResearchNode:
+        return ResearchNode(
+            dispatcher=MagicMock(),
+            jira_toolkit=MagicMock(),
+            log_toolkits={"cloudwatch": cloudwatch},
+            log_fetch_mode=mode,
+        )
+
+    @pytest.fixture
+    def cloudwatch(self):
+        toolkit = MagicMock()
+        toolkit.default_log_group = "fluent-bit-cloudwatch"
+        toolkit.aws_cloudwatch_query_logs = AsyncMock(
+            return_value={"results": [{"@timestamp": "t", "@message": "boom"}]}
+        )
+        return toolkit
+
+    @pytest.mark.asyncio
+    async def test_auto_fetches_for_bug(self, cloudwatch):
+        node = self._node("auto", cloudwatch)
+        out = await node._collect_log_excerpts(
+            [self._cw_source()], "etl/x", kind="bug"
+        )
+        cloudwatch.aws_cloudwatch_query_logs.assert_awaited_once()
+        assert out
+
+    @pytest.mark.parametrize("kind", ["enhancement", "new_feature"])
+    @pytest.mark.asyncio
+    async def test_auto_skips_remote_for_non_bug(self, cloudwatch, kind):
+        node = self._node("auto", cloudwatch)
+        out = await node._collect_log_excerpts(
+            [self._cw_source()], "etl/x", kind=kind
+        )
+        cloudwatch.aws_cloudwatch_query_logs.assert_not_awaited()
+        assert out == []
+
+    @pytest.mark.asyncio
+    async def test_auto_keeps_local_sources_for_non_bug(self, cloudwatch):
+        """Inline pastes cost no API call — never gated by the policy."""
+        node = self._node("auto", cloudwatch)
+        out = await node._collect_log_excerpts(
+            [self._cw_source(), LogSource(kind="inline", locator="ValueError: boom")],
+            "etl/x",
+            kind="new_feature",
+        )
+        cloudwatch.aws_cloudwatch_query_logs.assert_not_awaited()
+        assert out == ["ValueError: boom"]
+
+    @pytest.mark.asyncio
+    async def test_always_fetches_for_non_bug(self, cloudwatch):
+        node = self._node("always", cloudwatch)
+        await node._collect_log_excerpts(
+            [self._cw_source()], "etl/x", kind="enhancement"
+        )
+        cloudwatch.aws_cloudwatch_query_logs.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_never_skips_even_for_bug(self, cloudwatch):
+        node = self._node("never", cloudwatch)
+        out = await node._collect_log_excerpts(
+            [self._cw_source()], "etl/x", kind="bug"
+        )
+        cloudwatch.aws_cloudwatch_query_logs.assert_not_awaited()
+        assert out == []
+
+    @pytest.mark.asyncio
+    async def test_execute_skips_remote_fetch_for_enhancement_brief(
+        self, node, good_brief, cloudwatch
+    ):
+        """End-to-end through execute(): kind drives the gate."""
+        node._log_toolkits["cloudwatch"] = cloudwatch
+        brief = good_brief.model_copy(
+            update={"kind": "enhancement", "log_sources": [self._cw_source()]}
+        )
+        await node.execute({"bug_brief": brief, "run_id": "r-gate"})
+        cloudwatch.aws_cloudwatch_query_logs.assert_not_awaited()
+
+    def test_mode_defaults_from_conf(self, monkeypatch):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.nodes.research.conf.DEV_LOOP_LOG_FETCH_MODE",
+            "never",
+            raising=False,
+        )
+        node = ResearchNode(dispatcher=MagicMock(), jira_toolkit=MagicMock())
+        assert node._log_fetch_mode == "never"
+
+    def test_invalid_mode_rejected(self):
+        with pytest.raises(ValueError, match="log_fetch_mode"):
+            ResearchNode(
+                dispatcher=MagicMock(),
+                jira_toolkit=MagicMock(),
+                log_fetch_mode="sometimes",
+            )
+
+
+class TestCloudWatchQueryEscaping:
+    """`like /regex/` broke on path-shaped components — use `like "str"`.
+
+    ``affected_component="parrot/clients/anthropic.py"`` rendered as
+    ``filter @message like /parrot/clients/anthropic\\.py/``: the second
+    ``/`` closed the regex literal and CloudWatch rejected the query with
+    ``MalformedQueryException: unexpected symbol found clients``.
+    """
+
+    def test_path_component_does_not_break_the_literal(self):
+        query = ResearchNode._build_cw_query("parrot/clients/anthropic.py")
+        assert 'like "parrot/clients/anthropic.py"' in query
+        assert "like /" not in query
+
+    def test_dotted_component_matches_full_and_leaf(self):
+        query = ResearchNode._build_cw_query("Parrot.Loaders.MSWordLoader")
+        assert 'like "Parrot.Loaders.MSWordLoader"' in query
+        assert 'or @message like "MSWordLoader"' in query
+
+    def test_quotes_and_backslashes_are_escaped(self):
+        query = ResearchNode._build_cw_query('weird"name\\here')
+        assert '\\"' in query and "\\\\" in query
+
+
+class TestJiraBypass:
+    """``skip_jira`` must not issue a single Jira call.
+
+    The node synthesizes a "SKIP-0" placeholder key so downstream nodes
+    keep a stable shape, but that key tracks no real issue — the initial
+    Backlog transition on it 404'd on every bypassed run.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_transition_on_placeholder_key(self, node, good_brief):
+        node._jira.jira_transition_to = AsyncMock(return_value={"ok": True})
+        node._jira.jira_transition_issue = AsyncMock(return_value={"ok": True})
+        out = await node.execute(
+            {"bug_brief": good_brief, "run_id": "r-skip", "skip_jira": True}
+        )
+        node._jira.jira_create_issue.assert_not_awaited()
+        node._jira.jira_transition_to.assert_not_awaited()
+        node._jira.jira_transition_issue.assert_not_awaited()
+        # The run still completes and returns the dispatched ResearchOutput.
+        assert isinstance(out, ResearchOutput)
+
+    @pytest.mark.asyncio
+    async def test_placeholder_key_is_published_to_shared_state(
+        self, node, good_brief
+    ):
+        shared = {"bug_brief": good_brief, "run_id": "r-skip", "skip_jira": True}
+        await node.execute(shared)
+        assert shared["jira_issue_key"] == "SKIP-0"
+
+    @pytest.mark.asyncio
+    async def test_transition_still_runs_without_bypass(self, node, good_brief):
+        node._jira.jira_transition_to = AsyncMock(return_value={"ok": True})
+        await node.execute({"bug_brief": good_brief, "run_id": "r-normal"})
+        node._jira.jira_transition_to.assert_awaited()

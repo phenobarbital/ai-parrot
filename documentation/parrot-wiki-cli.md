@@ -13,6 +13,7 @@
 - [Entry points](#entry-points)
 - [Quick start](#quick-start)
 - [Core concepts](#core-concepts)
+- [Language support](#language-support)
 - [`parrot wiki` command reference](#parrot-wiki-command-reference)
   - [`build`](#parrot-wiki-build)
   - [`status`](#parrot-wiki-status)
@@ -45,9 +46,11 @@ directory, plus typed edges between them — and lets agents ask **scoped,
 token-budgeted questions** against it.
 
 The build is **fully offline and deterministic**: no LLM, no embeddings, no
-network. It uses Python's `ast` module for API outlines, markdown/rst heading
-extraction for docs, and `git ls-files` for `.gitignore`-aware discovery. The
-plane is a local **SQLite FTS5/BM25** database.
+network, and no *required* external parsers. It uses Python's `ast` module
+for Python API outlines, pluggable per-language scanners for PHP/JS-TS/Rust
+(see [Language support](#language-support)), markdown/rst heading extraction
+for docs, and `git ls-files` for `.gitignore`-aware discovery. The plane is a
+local **SQLite FTS5/BM25** database.
 
 Two surfaces sit on top of it:
 
@@ -126,8 +129,8 @@ parrot claude status         # see what's installed
 
 | Category | Applies to |
 | --- | --- |
-| `module` | Source code (`.py`, `.rs`, `.go`, `.ts`, `.sql`, …) |
-| `document` | Docs (`.md`, `.rst`, `.txt`) |
+| `module` | Source code (`.py`, `.php`, `.rs`, `.go`, `.ts`, `.svelte`, `.sql`, …) |
+| `document` | Docs (`.md`, `.rst`, `.txt`, `.html`, `.htm`) |
 | `config` | Config (`.toml`, `.yaml`, `.json`, `.ini`, …) |
 | `overview` | Directory overview pages |
 
@@ -136,7 +139,7 @@ parrot claude status         # see what's installed
 | Relation | Meaning |
 | --- | --- |
 | `contains` | Directory → its child files/subdirectories |
-| `references` | Python file → another file it imports (src-layout aware) |
+| `references` | A file → another file it imports, resolved per-language (src-layout aware for Python) |
 
 **Storage layout** (default, under the repo root):
 
@@ -148,9 +151,67 @@ parrot claude status         # see what's installed
     └── sources/       # source manifest (SHA-1 + mtime for incremental upserts)
 ```
 
-**Python API outline.** For `.py`/`.pyi` files the build extracts a compact API
-outline (classes, functions, and their first docstring line) into the page body,
-so a single page answers "what does this module expose?" without reading it.
+**API outline.** For files claimed by a registered language scanner, the build
+extracts a compact API outline (classes, functions, and their first doc-comment
+line) into the page body, so a single page answers "what does this module
+expose?" without reading it. See [Language support](#language-support) for
+which languages get an outline vs a shallow (content-head only) page.
+
+---
+
+## Language support
+
+`parrot wiki build` gives every scanned file a shallow `file:` page (a content
+head + one-line summary), and files claimed by a **pluggable per-language
+scanner** additionally get a full API outline and `references` edges derived
+from their import statements (FEAT-394).
+
+| Language | Suffixes | Outline | `references` edges |
+| --- | --- | --- | --- |
+| Python | `.py`, `.pyi` | classes, functions, docstrings (`ast`) | dotted-import resolution, src-layout aware |
+| PHP | `.php` | classes, interfaces, traits, enums, functions, methods + docblock | `use`/`require`/`include`, via `composer.json` PSR-4 or namespace-tail matching |
+| JS / TS | `.js`, `.jsx`, `.mjs`, `.ts`, `.tsx`, `.svelte` | exported classes/functions/consts/interfaces/type aliases | relative `import`/`export … from`/`require()`, plus alias specifiers (`$lib/…`, `tsconfig.json` `paths`); anything unresolvable — npm packages, `$app/*` — is dropped |
+| Rust | `.rs` | `pub` structs/enums/traits/fns, `impl` blocks + `///` doc comments | `use crate::…`, `mod foo;`, via crate layout (`src/lib.rs`/`src/main.rs`) |
+| HTML | `.html`, `.htm` | *shallow only* — summary from `<title>` or first heading | none |
+
+**Svelte components** are handled by the JS/TS scanner, not a separate one: the
+`<script>` block is extracted and parsed (its `lang` attribute picks the grammar,
+so `<script lang="ts">` is parsed as TypeScript), while markup semantics —
+component usage, `{#if}`/`{#each}`, slots — are out of scope. `$lib/…` resolves
+even when the repository declares the alias nowhere, since SvelteKit's own
+declaration lives in the generated, gitignored `.svelte-kit/tsconfig.json`.
+
+**Accurate parsing vs. the heuristic fallback.** PHP/JS-TS/Rust outlines use
+`tree-sitter` grammars when available, and degrade *silently* to a bounded,
+regex-based heuristic when they are not — the build never fails, and never
+warns, for a missing optional grammar. Python always uses the stdlib `ast`
+module (no tree-sitter involved). Check which mode is active for each
+language via [`parrot wiki status`](#parrot-wiki-status) or the `languages`
+block in `wiki_stats.json`.
+
+> **Changed in 0.26.0.** The JS/TS scanner reports `tree-sitter` only when
+> *both* grammars it selects between — TypeScript and JavaScript — actually
+> load. It previously reported `tree-sitter` if either did, which was
+> misleading: the TypeScript grammar was never loading (the wheel exposes
+> `language_typescript()`, not `language()`), so `.ts`/`.tsx` files were parsed
+> by regex while being reported as tree-sitter. The same wheel-loading bug
+> affected `.php`. Expect the reported mode of existing repositories to change
+> after upgrading — that is the correction, not a regression.
+
+**Installing accurate parsing** — the `wiki-languages` extra:
+
+```bash
+pip install "ai-parrot[wiki-languages]"
+# or, from a source checkout:
+uv pip install -e "packages/ai-parrot[wiki-languages]"
+```
+
+This pulls `tree-sitter` plus the PHP/TypeScript/JavaScript/Rust grammar
+wheels. **The core `ai-parrot` install gains zero new required dependencies**
+— without this extra, every non-Python plugin simply runs its heuristic
+fallback, which still produces a valid (if less precise) outline and edge
+set. Parse failures in either mode degrade to a shallow page — the build
+never raises on a single file it couldn't fully parse.
 
 ---
 
@@ -215,8 +276,16 @@ parrot wiki status --json
 ```
 
 Reports page/edge/token counts, category breakdown, number of tracked sources,
-and how many are stale (changed since the last build). Stale sources are a hint
-to re-run `parrot wiki build`.
+how many are stale (changed since the last build), and a `languages` block
+showing each registered scanner's active mode (`"ast"`, `"tree-sitter"`, or
+`"heuristic"` — see [Language support](#language-support)). Stale sources are
+a hint to re-run `parrot wiki build`.
+
+```
+Languages : {'python': 'ast', 'php': 'heuristic', 'javascript': 'tree-sitter', 'rust': 'heuristic'}
+```
+
+The same block is written to `wiki_stats.json` by every `parrot wiki build`.
 
 ### `parrot wiki query`
 
@@ -575,9 +644,12 @@ parrot wiki query "AgentsFlow DAG executor" --store docs/parrot --table --body
 
 ## How it works under the hood
 
-- **Deterministic & offline.** No LLM/embeddings/network at build time. Python
-  API outlines come from `ast`; discovery uses `git ls-files` (with a filesystem
-  fallback under `--no-git`).
+- **Deterministic & offline.** No LLM/embeddings/network at build time, and no
+  *required* external parsers. Python API outlines come from `ast`; PHP/JS-TS/
+  Rust outlines come from `tree-sitter` when the optional `wiki-languages`
+  extra is installed, else a stdlib-only heuristic (see
+  [Language support](#language-support)). Discovery uses `git ls-files` (with a
+  filesystem fallback under `--no-git`).
 - **Incremental.** A source manifest tracks SHA-1 + mtime per file; unchanged
   files are skipped on rebuild. Re-ingesting a file atomically replaces its slice
   while preserving incoming edges to its stable `concept_id`.

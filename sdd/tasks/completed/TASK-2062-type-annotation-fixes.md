@@ -1,0 +1,125 @@
+# TASK-2062: Type Annotation Fixes (WikiStore → BaseWikiStore)
+
+**Feature**: FEAT-400 — WikiToolkit ArangoDB Backend
+**Spec**: `sdd/specs/wikitoolkit-arangodb-backend.spec.md`
+**Status**: pending
+**Priority**: low
+**Estimated effort**: S (< 2h)
+**Depends-on**: none
+**Assigned-to**: unassigned
+
+---
+
+## Context
+
+`WikiCombinedSearch` and `WikiIngestOrchestrator` use `WikiStore` (alias
+for `SQLiteWikiStore`) in their type annotations instead of `BaseWikiStore`.
+This causes type-checking issues when passing an `ArangoDBWikiStore` or
+`InMemoryWikiStore`. Corresponds to Module 6 in the spec.
+
+---
+
+## Scope
+
+- Change `store: Optional[WikiStore]` to `store: Optional[BaseWikiStore]`
+  in `WikiCombinedSearch.__init__` (search.py).
+- Change `store: Optional[WikiStore]` to `store: Optional[BaseWikiStore]`
+  in `WikiIngestOrchestrator.__init__` (ingest.py).
+- Update the imports in both files: replace `from parrot.knowledge.wiki.store import WikiStore`
+  with `from parrot.knowledge.wiki.store import BaseWikiStore`.
+- Verify no other files use the narrow `WikiStore` type where `BaseWikiStore` is needed.
+
+**NOT in scope**:
+- Any behavioral changes — this is annotation-only
+
+---
+
+## Files to Create / Modify
+
+| File | Action | Description |
+|---|---|---|
+| `packages/ai-parrot/src/parrot/knowledge/wiki/search.py` | MODIFY | WikiStore → BaseWikiStore annotation |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/ingest.py` | MODIFY | WikiStore → BaseWikiStore annotation |
+
+---
+
+## Codebase Contract (Anti-Hallucination)
+
+### Verified Imports
+
+```python
+# search.py current (line 29):
+from parrot.knowledge.wiki.store import WikiStore  # → change to BaseWikiStore
+
+# ingest.py current (line 39-40):
+from parrot.knowledge.wiki.store import (
+    WikiStore,  # → change to BaseWikiStore
+    ...
+)
+
+# Both files should import:
+from parrot.knowledge.wiki.store import BaseWikiStore  # verified: store.py:279
+```
+
+### Existing Signatures to Use
+
+```python
+# search.py:47-54
+class WikiCombinedSearch:
+    def __init__(self, ..., store: Optional[WikiStore] = None, ...) -> None: ...
+    # ↑ change to Optional[BaseWikiStore]
+
+# ingest.py:89-96
+class WikiIngestOrchestrator:
+    def __init__(self, ..., store: Optional[WikiStore] = None, ...) -> None: ...
+    # ↑ change to Optional[BaseWikiStore]
+```
+
+### Does NOT Exist
+
+- ~~`WikiStore` as a distinct class~~ — it's just an alias for `SQLiteWikiStore` (store.py:1194)
+
+---
+
+## Acceptance Criteria
+
+- [ ] `WikiCombinedSearch.__init__` accepts any `BaseWikiStore` subclass
+- [ ] `WikiIngestOrchestrator.__init__` accepts any `BaseWikiStore` subclass
+- [ ] No runtime behavior change
+- [ ] Existing tests still pass: `pytest tests/knowledge/wiki/ -v`
+- [ ] `mypy` / `pyright` clean on both files
+
+---
+
+## Completion Note
+
+Annotation-only change, exactly as scoped: in `search.py`,
+`from parrot.knowledge.wiki.store import WikiStore` →
+`import BaseWikiStore`, and `WikiCombinedSearch.__init__`'s
+`store: Optional[WikiStore] = None` → `Optional[BaseWikiStore]` (plus
+the matching docstring `:class:` reference). Same two changes in
+`ingest.py` for `WikiIngestOrchestrator.__init__`. Verified via
+`grep -rn "Optional\[WikiStore\]\|: WikiStore\b\|import WikiStore\b"
+packages/ai-parrot/src/parrot/knowledge/wiki/*.py` that no other file in
+the package still types anything as the narrow `WikiStore` alias — these
+were the only two. Left all non-annotation prose mentions of "WikiStore"
+(module docstrings, log message text, inline comments) untouched — they
+describe the retrieval plane generically, not the parameter's type, and
+touching them would be scope creep beyond "annotation-only".
+
+No runtime behavior change (no logic touched). Full
+`tests/knowledge/wiki/` suite (665 tests) re-run — all passing, no
+regressions. `ruff check` on both files matches their pre-existing
+baseline exactly (7 findings on `search.py`, 9 on `ingest.py` — same
+codes, same counts).
+
+`mypy` on `ingest.py`: clean (0 errors). `mypy` on `search.py`: 3
+pre-existing `union-attr` errors at lines 162/174/305 (`self._store`
+used without a `None` guard in `search_fts`/`search_vector`/
+`neighbors` calls) — confirmed via `mypy` against the pre-change file
+that these are IDENTICAL errors that existed before this task (same
+lines, same nullability issue, only the reported type name changed from
+`SQLiteWikiStore` to `BaseWikiStore`). Fixing them would require adding
+`None`-guards/asserts — a structural code change outside this task's
+explicit "annotation-only" / "NOT in scope: any behavioral changes"
+boundary — so left as pre-existing and not touched here.

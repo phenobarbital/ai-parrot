@@ -81,8 +81,12 @@ class PartialSaveStore:
         Args:
             form_id: Form identifier.
             session_id: Session identifier (uniquely scopes the cache entry).
-            answers: Mapping of field_id to new values.  Merged over any
-                existing cached data.
+            answers: Mapping of field_uid (stringified UUID) to new values
+                (FEAT-393 / TASK-2003 — re-keyed at the ``FormAPIHandler``
+                boundary so a mid-session field_id rename never orphans a
+                saved answer). This service remains schema-agnostic: it
+                merges whatever keys it is given and does not resolve or
+                validate them. Merged over any existing cached data.
 
         Returns:
             PartialFormData representing the full merged state after the save.

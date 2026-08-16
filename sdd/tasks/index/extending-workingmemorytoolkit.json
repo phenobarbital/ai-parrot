@@ -19,10 +19,10 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation types \u2014 all subsequent tasks depend on this",
+      "parallelism_notes": "Foundation types — all subsequent tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-503-entry-type-enum-and-models.md",
+      "file": "sdd/tasks/completed/TASK-503-entry-type-enum-and-models.md",
       "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
@@ -39,10 +39,10 @@
         "TASK-503"
       ],
       "parallel": false,
-      "parallelism_notes": "Extends catalog internals \u2014 must follow TASK-503",
+      "parallelism_notes": "Extends catalog internals — must follow TASK-503",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-504-extend-working-memory-catalog.md",
+      "file": "sdd/tasks/completed/TASK-504-extend-working-memory-catalog.md",
       "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
@@ -63,7 +63,7 @@
       "parallelism_notes": "Uses GenericEntry and catalog.put_generic() from prior tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-505-generic-tool-methods.md",
+      "file": "sdd/tasks/completed/TASK-505-generic-tool-methods.md",
       "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
@@ -85,7 +85,7 @@
       "parallelism_notes": "Uses GenericEntry, catalog.put_generic(), and models from prior tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-506-answer-memory-bridge.md",
+      "file": "sdd/tasks/completed/TASK-506-answer-memory-bridge.md",
       "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
@@ -102,10 +102,10 @@
         "TASK-506"
       ],
       "parallel": false,
-      "parallelism_notes": "Touches BasicAgent \u2014 must follow bridge implementation",
+      "parallelism_notes": "Touches BasicAgent — must follow bridge implementation",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-507-basicagent-auto-injection.md",
+      "file": "sdd/tasks/completed/TASK-507-basicagent-auto-injection.md",
       "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
@@ -124,10 +124,10 @@
         "TASK-506"
       ],
       "parallel": true,
-      "parallelism_notes": "Only touches __init__.py \u2014 can run parallel with TASK-507",
+      "parallelism_notes": "Only touches __init__.py — can run parallel with TASK-507",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-508-package-exports.md",
+      "file": "sdd/tasks/completed/TASK-508-package-exports.md",
       "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
@@ -149,10 +149,10 @@
         "TASK-508"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task \u2014 tests everything, must run last",
+      "parallelism_notes": "Final task — tests everything, must run last",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-509-comprehensive-tests.md",
+      "file": "sdd/tasks/completed/TASK-509-comprehensive-tests.md",
       "completed_at": "2026-04-02T14:04:45.486343Z"
     }
   ]

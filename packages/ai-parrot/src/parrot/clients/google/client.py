@@ -1192,12 +1192,47 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         return None
 
-    # Maximum characters per tool result sent back to the model.
+    # FEAT-380 (TASK-1961): last line of defense, not first. The
+    # client-agnostic compression pipeline (the ToolManager compression stage,
+    # applied once in `ToolManager.execute_tool()` — G1: exactly one
+    # place) now runs on every tool result BEFORE it ever reaches this
+    # client, so by the time `_truncate_large_result()` sees a payload it
+    # has typically already been reduced (json_compact's lossless
+    # separator/null/dedup compaction at minimum; columnar/constant
+    # factoring for tabular results at NORMAL). This truncation only fires
+    # on whatever survives that pipeline — deliberately kept as a genuine
+    # last resort, not the primary defense it used to be.
+    #
+    # Threshold decision (TASK-1961, 2026-07-28): kept at 200,000 chars
+    # (~50K tokens). No empirical evidence yet justifies a specific higher
+    # number — TASK-1959's latency/size benchmark suite is what would
+    # produce real post-compression payload measurements to recalibrate
+    # against. Raising it on guesswork risks trading a loud, logged
+    # truncation for a silent context-window overflow — the aggregate
+    # context budget for a turn also includes conversation history, the
+    # system prompt, and every OTHER tool result in the same turn, not
+    # just this one. See the Completion Note of TASK-1961 for the full
+    # reasoning.
+    #
     # ~200K chars ≈ 50K tokens; keeps aggregate well under the 1M limit.
     MAX_TOOL_RESULT_CHARS: int = 200_000
 
     def _truncate_large_result(self, data: Any, max_chars: int) -> Any:
         """Truncate a Python object so its JSON stays under *max_chars*.
+
+        **Last line of defense (FEAT-380, TASK-1961), not the first.** The
+        compression pipeline (the ToolManager compression stage) already applies
+        semantic, client-agnostic reduction to every tool result before it
+        reaches this client (G1) — this method only ever sees what
+        survives that pipeline. It is **positional and therefore lossy in
+        an unprincipled way**: it keeps the *first N* elements of a list
+        (or the first N chars of a string), with no notion of which
+        elements matter. In a test result the failures matter; in a vector
+        search the top-score chunks matter — neither is guaranteed to be
+        in the first N. This is precisely the defect the compression
+        pipeline exists to fix upstream; do not try to make this method
+        smarter — it is intentionally a dumb, guaranteed-to-terminate
+        safety valve, not a second compression stage.
 
         Strategy keeps the JSON structurally valid:
         * list  → binary-search for the max item count that fits.
@@ -1336,7 +1371,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
         else:
             # No screenshot — fall back to the standard JSON response.
-            response_content = self._process_tool_result_for_api(result)
+            response_content = self._process_tool_result_for_api(result, tool_name=tool_name)
             return Part(
                 function_response=types.FunctionResponse(
                     id=tool_id,
@@ -1355,13 +1390,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return self._scrubber.scrub(value, tool_name=tool_name)
         return value
 
-    def _process_tool_result_for_api(self, result) -> dict:
+    def _process_tool_result_for_api(self, result, tool_name: Optional[str] = None) -> dict:
         """Process tool result for Google Function Calling API compatibility.
 
-        Serializes various Python objects into a JSON-compatible dict
-        for the Google GenAI API. Results exceeding MAX_TOOL_RESULT_CHARS
-        are truncated to prevent context-window overflow.
+        Serializes various Python objects into a JSON-compatible dict for
+        the Google GenAI API. Results exceeding ``MAX_TOOL_RESULT_CHARS``
+        are truncated — the **last line of defense** (FEAT-380, TASK-1961),
+        operating on a payload that has typically already passed through
+        the client-agnostic compression pipeline. See
+        ``MAX_TOOL_RESULT_CHARS``'s docstring for the full rationale.
+
+        Args:
+            result: Raw tool result (``ToolResult``, DataFrame, Pydantic
+                model, dict, list, string, or ``Exception``).
+            tool_name: Name of the tool that produced ``result``, when the
+                caller has it (all current call sites do, via the
+                function-call object's ``.name``). Included in the
+                truncation warning log line for operational visibility;
+                ``None`` degrades gracefully to an "unknown" label.
         """
+        _tool_label = tool_name or "unknown"
+
         # 1. Handle exceptions and special wrapper types first
         if isinstance(result, Exception):
             return {"result": f"Tool execution failed: {str(result)}", "error": True}
@@ -1381,7 +1430,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if not result.strip():
                 return {"result": "Code executed successfully (no output)"}
             if len(result) > self.MAX_TOOL_RESULT_CHARS:
+                pre_size = len(result)
                 result = result[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
+                self.logger.warning(
+                    "Tool '%s' result truncated (last line of defense, "
+                    "FEAT-380): %d chars -> %d chars (limit=%d)",
+                    _tool_label, pre_size, len(result), self.MAX_TOOL_RESULT_CHARS,
+                )
             return {"result": result}
 
         # Convert complex types to basic Python types
@@ -1416,12 +1471,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # 4. Attempt to serialize the processed result
         try:
             serialized = self._json.dumps(clean_result)
-            # --- truncation gate ---
+            # --- truncation gate (last line of defense, FEAT-380) ---
             if len(serialized) > self.MAX_TOOL_RESULT_CHARS:
-                self.logger.warning(
-                    f"Tool result too large ({len(serialized)} chars), " f"truncating to {self.MAX_TOOL_RESULT_CHARS}"
-                )
                 truncated = self._truncate_large_result(clean_result, self.MAX_TOOL_RESULT_CHARS)
+                post_size = len(self._json.dumps(truncated))
+                self.logger.warning(
+                    "Tool '%s' result truncated (last line of defense, "
+                    "FEAT-380): %d chars -> %d chars (limit=%d)",
+                    _tool_label, len(serialized), post_size, self.MAX_TOOL_RESULT_CHARS,
+                )
                 return {"result": truncated}
             json_compatible_result = self._json.loads(serialized)
         except Exception as e:
@@ -1432,7 +1490,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
             fallback = self._maybe_scrub(str(clean_result), tool_name="tool_result")  # FEAT-252
             if len(fallback) > self.MAX_TOOL_RESULT_CHARS:
+                pre_size = len(fallback)
                 fallback = fallback[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
+                self.logger.warning(
+                    "Tool '%s' result truncated (last line of defense, "
+                    "FEAT-380, non-serializable fallback path): %d chars -> "
+                    "%d chars (limit=%d)",
+                    _tool_label, pre_size, len(fallback), self.MAX_TOOL_RESULT_CHARS,
+                )
             json_compatible_result = fallback
 
         # Wrap for Google Function Calling format
@@ -1678,6 +1743,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         session_id: Optional[str] = None,
         messages: Optional[List[Dict[str, Any]]] = None,
         stop_tools: Optional[set] = None,
+        # FEAT-397: per-round token usage observability. Both are optional
+        # and default to None so existing callers (e.g. resume()) that do
+        # not pass them see zero behavioral change — accumulation and round
+        # event emission are opt-in via these params, mirroring the
+        # existing all_tool_calls in/out-parameter pattern above rather
+        # than changing this method's return contract.
+        round_tc: Optional[Any] = None,
+        initial_round_usage: Optional[CompletionUsage] = None,
+        initial_round_raw_usage: Optional[dict] = None,
+        initial_round_duration_ms: float = 0.0,
+        usage_state: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
@@ -1687,10 +1763,32 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 stop tool executes successfully its result is still sent back
                 to the model, but further tool-calling is disabled so the
                 model must produce a final text answer on the next turn.
+            round_tc: TraceContext for ClientRoundEvent emission (FEAT-397).
+                When None, no round events are emitted from this method.
+            initial_round_usage: The CALLER's already-computed CompletionUsage
+                for round 1 (the ``initial_response``, whose SDK call happened
+                in ``ask()`` before this method was invoked).
+            initial_round_raw_usage: JSON-safe raw usage dict for round 1.
+            initial_round_duration_ms: Wall-clock duration of round 1's SDK call.
+            usage_state: Mutable dict the method populates in place with
+                ``{"accumulated": Optional[CompletionUsage], "rounds": int}``
+                covering round 1 (seeded from the args above) through every
+                round this method's loop receives. When None, no accumulation
+                is performed.
         """
         current_response = initial_response
         current_config = config
         iteration = 0
+
+        # FEAT-397: seed round-1 accounting (the initial ask() call) and
+        # track the "current round's" usage/raw_usage/duration so the event
+        # emitted for round N (further down) can use them.
+        if usage_state is not None:
+            usage_state["accumulated"] = initial_round_usage
+            usage_state["rounds"] = 1
+        _lc_round_usage = initial_round_usage
+        _lc_round_raw_usage = initial_round_raw_usage
+        _lc_round_duration_ms = initial_round_duration_ms
 
         if active_tool_names is None:
             active_tool_names = set()
@@ -1909,7 +2007,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         # can process the screenshot visually.
                         part = self._build_computer_use_function_response_part(tool_id, fc.name, result)
                     else:
-                        response_content = self._process_tool_result_for_api(result)
+                        response_content = self._process_tool_result_for_api(result, tool_name=fc.name)
                         # In-band loop nudge (from round 2 onward): long
                         # prompts dilute the "be direct" system rules, so the
                         # reminder rides INSIDE the tool response payload —
@@ -1954,8 +2052,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if summary_part:
                 next_prompt_parts.append(summary_part)
 
+            # FEAT-397: emit ClientRoundEvent for round `iteration` — the
+            # function calls just executed above belong to `current_response`
+            # (round 1 = initial_response, rounds 2..N = responses this loop
+            # received). Usage/raw_usage/duration were carried from when this
+            # round's response was first received (seeded pre-loop for round 1,
+            # or set at the end of the previous iteration otherwise).
+            if round_tc is not None:
+                self._emit_round_event(
+                    round_tc,
+                    client_name="google",
+                    model=model or "",
+                    round_number=iteration,
+                    usage=_lc_round_usage,
+                    raw_usage=_lc_round_raw_usage,
+                    tool_calls=[fc.name for fc in function_calls],
+                    duration_ms=_lc_round_duration_ms,
+                )
+
             # Send responses back
             retry_count = 0
+            _lc_round_t0 = time.perf_counter()
             try:
                 self.logger.debug(f"Sending {len(next_prompt_parts)} responses back to model")
                 while retry_count < max_retries:
@@ -2033,6 +2150,33 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             self.logger.error("Max retries reached, aborting")
                             raise e
                         await asyncio.sleep(delay)
+
+                # FEAT-397: extract & accumulate this NEW round's usage (the
+                # response just received above becomes round `iteration + 1`
+                # when the loop's next pass checks it for function calls).
+                # Only reached on success — an exception here propagates to
+                # the outer except below, so no partial/failed round is
+                # counted or accumulated.
+                _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
+                _lc_usage_metadata = getattr(current_response, "usage_metadata", None)
+                if _lc_usage_metadata:
+                    _lc_round_raw_usage = {
+                        "prompt_token_count": getattr(_lc_usage_metadata, "prompt_token_count", 0),
+                        "candidates_token_count": getattr(_lc_usage_metadata, "candidates_token_count", 0),
+                        "total_token_count": getattr(_lc_usage_metadata, "total_token_count", 0),
+                    }
+                    _lc_round_usage = CompletionUsage.from_gemini(_lc_round_raw_usage)
+                    if usage_state is not None:
+                        usage_state["accumulated"] = (
+                            _lc_round_usage
+                            if usage_state.get("accumulated") is None
+                            else usage_state["accumulated"] + _lc_round_usage
+                        )
+                else:
+                    _lc_round_usage = None
+                    _lc_round_raw_usage = None
+                if usage_state is not None:
+                    usage_state["rounds"] = iteration + 1
 
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (
@@ -2834,15 +2978,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             conversation_history = None
         else:
             # Use the unified conversation context preparation from AbstractClient
-            phase_started = time.perf_counter()
             messages, conversation_history, system_prompt = await self._prepare_conversation_context(
                 prompt, files, user_id, session_id, system_prompt, stateless=stateless
-            )
-            self.logger.debug(
-                "Google ask timing: prepare_conversation_context_ms=%.1f messages=%d history=%s",
-                (time.perf_counter() - phase_started) * 1000,
-                len(messages),
-                bool(conversation_history),
             )
 
         # Prepare conversation history for Google GenAI format
@@ -2909,14 +3046,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # on Vertex AI reject temperature < 0.7.
             generation_config["temperature"] = 0.7 if self._requires_thinking(model) else 0
 
-        phase_started = time.perf_counter()
         tools = self._build_tools(tool_type) if tool_type else []
-        self.logger.debug(
-            "Google ask timing: build_tools_ms=%.1f toolboxes=%d tool_type=%s",
-            (time.perf_counter() - phase_started) * 1000,
-            len(tools),
-            tool_type,
-        )
 
         # Debug: List tool names
         tool_names = []
@@ -2994,13 +3124,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Track tool calls for the response
         all_tool_calls = []
 
-        phase_started = time.perf_counter()
         await self._ensure_client(model=model)
-        self.logger.debug(
-            "Google ask timing: ensure_client_ms=%.1f model=%s",
-            (time.perf_counter() - phase_started) * 1000,
-            model,
-        )
         # configure thinking config for gemini:
         thinking_config = None
         _requires_thinking = self._requires_thinking(model)
@@ -3122,26 +3246,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         current_model = model
         chat = self.client.aio.chats.create(model=current_model, history=history)
         retry_count = 0
+        # FEAT-397: time round 1's SDK call (the initial response) across
+        # every retry attempt, so the round-1 ClientRoundEvent's duration_ms
+        # reflects the full time spent, matching the other priority clients.
+        _lc_round1_t0 = time.perf_counter()
         while retry_count < max_retries:
             try:
-                phase_started = time.perf_counter()
-                self.logger.info(
-                    "Google ask timing: chat.send_message start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d thinking=%s stateless=%s history=%d",
-                    current_model,
-                    len(prompt or ""),
-                    len(system_prompt or ""),
-                    len(tool_names),
-                    getattr(thinking_config, 'thinking_budget', None) if thinking_config else False,
-                    stateless,
-                    len(history),
-                )
                 response = await chat.send_message(message=prompt, config=final_config)
-                self.logger.info(
-                    "Google ask timing: chat.send_message_ms=%.1f model=%s attempt=%d",
-                    (time.perf_counter() - phase_started) * 1000,
-                    current_model,
-                    retry_count + 1,
-                )
                 finish_reason = getattr(response.candidates[0], "finish_reason", None)
                 if finish_reason:
                     if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
@@ -3222,8 +3333,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if has_function_calls:
             self._log_non_text_parts(response, where="initial response")
 
+        # FEAT-397: round 1's usage — the initial response's usage_metadata,
+        # extracted here so it (a) feeds the accumulated total and (b) seeds
+        # the round-1 ClientRoundEvent emitted from inside the multiturn
+        # handler for round 1's tool execution.
+        _lc_round1_duration_ms = (time.perf_counter() - _lc_round1_t0) * 1000
+        _lc_round1_usage_metadata = getattr(response, "usage_metadata", None)
+        _lc_round1_usage = None
+        _lc_round1_raw_usage = None
+        if _lc_round1_usage_metadata:
+            _lc_round1_raw_usage = {
+                "prompt_token_count": getattr(_lc_round1_usage_metadata, "prompt_token_count", 0),
+                "candidates_token_count": getattr(_lc_round1_usage_metadata, "candidates_token_count", 0),
+                "total_token_count": getattr(_lc_round1_usage_metadata, "total_token_count", 0),
+            }
+            _lc_round1_usage = CompletionUsage.from_gemini(_lc_round1_raw_usage)
+        _lc_usage_state: Dict[str, Any] = {}
+
         # Multi-turn function calling loop
-        phase_started = time.perf_counter()
         final_response = await self._handle_multiturn_function_calls(
             chat,
             response,
@@ -3238,16 +3365,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             session_id=session_id,
             messages=messages,
             stop_tools=stop_tools,
-        )
-        self.logger.debug(
-            "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
-            (time.perf_counter() - phase_started) * 1000,
-            len(all_tool_calls),
+            round_tc=_lc_tc_google,
+            initial_round_usage=_lc_round1_usage,
+            initial_round_raw_usage=_lc_round1_raw_usage,
+            initial_round_duration_ms=_lc_round1_duration_ms,
+            usage_state=_lc_usage_state,
         )
         model = current_model
 
         # Extract assistant response text for conversation memory
-        phase_started = time.perf_counter()
         assistant_response_text = self._safe_extract_text(final_response)
 
         # Extract code execution content (code, results, images) from the response
@@ -3261,11 +3387,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # If we still don't have text but have tool calls, generate a summary
         if not assistant_response_text and all_tool_calls:
             assistant_response_text = self._create_simple_summary(all_tool_calls)
-        self.logger.debug(
-            "Google ask timing: response_text_extract_ms=%.1f text_chars=%d",
-            (time.perf_counter() - phase_started) * 1000,
-            len(assistant_response_text or ""),
-        )
 
         # Handle structured output
         final_output = None
@@ -3454,7 +3575,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Update conversation memory with unified system
         if not stateless and conversation_history:
-            phase_started = time.perf_counter()
             tools_used = [tc.name for tc in all_tool_calls]
             await self._update_conversation_memory(
                 user_id,
@@ -3466,10 +3586,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 original_prompt,
                 assistant_response_text,
                 tools_used,
-            )
-            self.logger.debug(
-                "Google ask timing: update_conversation_memory_ms=%.1f",
-                (time.perf_counter() - phase_started) * 1000,
             )
         # Prepare code execution content for AIMessage
         extracted_images = code_execution_content.get("images", []) if code_execution_content else []
@@ -3490,7 +3606,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         )
 
         # Create AIMessage using factory
-        phase_started = time.perf_counter()
         ai_message = AIMessageFactory.from_gemini(
             response=response,
             input_text=original_prompt,
@@ -3506,11 +3621,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             images=extracted_images,
             code=extracted_code,
         )
-        self.logger.debug(
-            "Google ask timing: ai_message_factory_ms=%.1f total_ms=%.1f",
-            (time.perf_counter() - phase_started) * 1000,
-            (time.perf_counter() - ask_started) * 1000,
-        )
+
+        # FEAT-397: replace the initial-response-only usage (the bug —
+        # AIMessageFactory.from_gemini built `usage` from the INITIAL
+        # `response`, discarding every multiturn round's tokens) with the
+        # accumulated multi-round total. For single-round calls (no function
+        # calls at all), `_lc_usage_state` stays empty and `.get(...)`
+        # defaults preserve the factory's original usage untouched.
+        _lc_google_accumulated_usage = _lc_usage_state.get("accumulated")
+        _lc_google_rounds = _lc_usage_state.get("rounds", 1)
+        if _lc_google_accumulated_usage is not None:
+            if _lc_google_rounds > 1:
+                _lc_google_accumulated_usage.extra_usage["rounds"] = _lc_google_rounds
+            ai_message.usage = _lc_google_accumulated_usage
 
         # Override provider to distinguish from Vertex AI
         ai_message.provider = "google_genai"
@@ -3976,7 +4099,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                         function_response_parts = []
                         for fc, result in zip(collected_function_calls, tool_results):
-                            response_content = self._process_tool_result_for_api(result)
+                            response_content = self._process_tool_result_for_api(result, tool_name=fc.name)
                             function_response_parts.append(
                                 Part(function_response=types.FunctionResponse(name=fc.name, response=response_content))
                             )

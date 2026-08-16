@@ -10,7 +10,7 @@
     {
       "id": "TASK-518",
       "slug": "schema-core-models",
-      "title": "Schema Core Models \u2014 FormSchema, FormField, FormSection, StyleSchema Pydantic models",
+      "title": "Schema Core Models — FormSchema, FormField, FormSection, StyleSchema Pydantic models",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -19,7 +19,7 @@
       "effort": "L",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Foundation module \u2014 no dependencies, but must complete before all others",
+      "parallelism_notes": "Foundation module — no dependencies, but must complete before all others",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -28,7 +28,7 @@
     {
       "id": "TASK-519",
       "slug": "form-validators",
-      "title": "Form Validators \u2014 platform-agnostic validation with cross-field and async support",
+      "title": "Form Validators — platform-agnostic validation with cross-field and async support",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -39,7 +39,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -48,7 +48,7 @@
     {
       "id": "TASK-520",
       "slug": "pydantic-extractor",
-      "title": "Pydantic Extractor \u2014 introspect Pydantic BaseModel to produce FormSchema",
+      "title": "Pydantic Extractor — introspect Pydantic BaseModel to produce FormSchema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -59,7 +59,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -68,7 +68,7 @@
     {
       "id": "TASK-521",
       "slug": "tool-extractor",
-      "title": "Tool Extractor \u2014 extract FormSchema from AbstractTool args_schema",
+      "title": "Tool Extractor — extract FormSchema from AbstractTool args_schema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -80,7 +80,7 @@
         "TASK-520"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on PydanticExtractor \u2014 must wait for batch 1",
+      "parallelism_notes": "Depends on PydanticExtractor — must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -89,7 +89,7 @@
     {
       "id": "TASK-522",
       "slug": "yaml-extractor",
-      "title": "YAML Extractor \u2014 parse YAML form definitions with backward compatibility",
+      "title": "YAML Extractor — parse YAML form definitions with backward compatibility",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -100,7 +100,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -109,7 +109,7 @@
     {
       "id": "TASK-523",
       "slug": "jsonschema-extractor",
-      "title": "JSON Schema Extractor \u2014 convert JSON Schema dict to FormSchema",
+      "title": "JSON Schema Extractor — convert JSON Schema dict to FormSchema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -120,7 +120,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -129,7 +129,7 @@
     {
       "id": "TASK-524",
       "slug": "adaptive-card-renderer",
-      "title": "Adaptive Card Renderer \u2014 migrate AdaptiveCardBuilder to AbstractFormRenderer",
+      "title": "Adaptive Card Renderer — migrate AdaptiveCardBuilder to AbstractFormRenderer",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -140,7 +140,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -149,7 +149,7 @@
     {
       "id": "TASK-525",
       "slug": "html5-renderer",
-      "title": "HTML5 Renderer \u2014 render FormSchema as <form> fragment with Jinja2",
+      "title": "HTML5 Renderer — render FormSchema as <form> fragment with Jinja2",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -160,7 +160,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-525-html5-renderer.md",
@@ -169,7 +169,7 @@
     {
       "id": "TASK-526",
       "slug": "jsonschema-renderer",
-      "title": "JSON Schema Renderer \u2014 structural schema + style JSON for Svelte form-builder",
+      "title": "JSON Schema Renderer — structural schema + style JSON for Svelte form-builder",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -180,7 +180,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-526-jsonschema-renderer.md",
@@ -189,7 +189,7 @@
     {
       "id": "TASK-527",
       "slug": "form-registry",
-      "title": "Form Registry \u2014 thread-safe registry with optional FormStorage backend",
+      "title": "Form Registry — thread-safe registry with optional FormStorage backend",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -200,7 +200,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-527-form-registry.md",
@@ -209,7 +209,7 @@
     {
       "id": "TASK-528",
       "slug": "form-cache",
-      "title": "Form Cache \u2014 in-memory cache with TTL, Redis, and file watching",
+      "title": "Form Cache — in-memory cache with TTL, Redis, and file watching",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -221,7 +221,7 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on FormRegistry \u2014 must wait for batch 1",
+      "parallelism_notes": "Depends on FormRegistry — must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-528-form-cache.md",
@@ -230,7 +230,7 @@
     {
       "id": "TASK-529",
       "slug": "postgres-form-storage",
-      "title": "PostgreSQL Form Storage \u2014 asyncpg persistence for FormSchema",
+      "title": "PostgreSQL Form Storage — asyncpg persistence for FormSchema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -242,7 +242,7 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on FormStorage ABC from FormRegistry \u2014 must wait for batch 1",
+      "parallelism_notes": "Depends on FormStorage ABC from FormRegistry — must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-529-postgres-form-storage.md",
@@ -251,7 +251,7 @@
     {
       "id": "TASK-530",
       "slug": "request-form-tool",
-      "title": "RequestFormTool Migration \u2014 platform-agnostic form request tool",
+      "title": "RequestFormTool Migration — platform-agnostic form request tool",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -264,7 +264,7 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on ToolExtractor and FormRegistry \u2014 batch 2",
+      "parallelism_notes": "Depends on ToolExtractor and FormRegistry — batch 2",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-530-request-form-tool.md",
@@ -273,7 +273,7 @@
     {
       "id": "TASK-531",
       "slug": "create-form-tool",
-      "title": "CreateFormTool \u2014 LLM-driven form creation with iterative refinement",
+      "title": "CreateFormTool — LLM-driven form creation with iterative refinement",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -287,7 +287,7 @@
         "TASK-529"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on validators, registry, and storage \u2014 batch 2",
+      "parallelism_notes": "Depends on validators, registry, and storage — batch 2",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-531-create-form-tool.md",
@@ -296,7 +296,7 @@
     {
       "id": "TASK-532",
       "slug": "msteams-integration-rewrite",
-      "title": "MS Teams Integration Rewrite \u2014 all consumers use parrot/forms/",
+      "title": "MS Teams Integration Rewrite — all consumers use parrot/forms/",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -310,16 +310,16 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on schema, validators, AC renderer, and registry \u2014 sequential final batch",
+      "parallelism_notes": "Depends on schema, validators, AC renderer, and registry — sequential final batch",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-532-msteams-integration-rewrite.md",
+      "file": "sdd/tasks/completed/TASK-532-msteams-integration-rewrite.md",
       "completed_at": "2026-04-02T23:53:34.517709+00:00"
     },
     {
       "id": "TASK-533",
       "slug": "remove-legacy-dialogs",
-      "title": "Remove Legacy Dialogs Module \u2014 delete parrot/integrations/dialogs/",
+      "title": "Remove Legacy Dialogs Module — delete parrot/integrations/dialogs/",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -330,10 +330,10 @@
         "TASK-532"
       ],
       "parallel": false,
-      "parallelism_notes": "Must run last \u2014 all consumers must be rewritten first",
+      "parallelism_notes": "Must run last — all consumers must be rewritten first",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-533-remove-legacy-dialogs.md",
+      "file": "sdd/tasks/completed/TASK-533-remove-legacy-dialogs.md",
       "completed_at": "2026-04-02T23:53:34.517709+00:00"
     }
   ]

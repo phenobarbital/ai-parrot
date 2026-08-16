@@ -1,0 +1,154 @@
+# =============================================================================
+# Editorial Charter — la política de admisión del wiki como artefacto de
+# primera clase. El router de ingestion lo recibe como contexto de scoring;
+# el humano lo edita como cualquier config. Versionado: cada decisión del
+# manifest registra contra qué versión del charter se tomó.
+# =============================================================================
+charter:
+  name: corporate-life
+  version: 3                      # bump manual o al aceptar una enmienda
+  language: es                    # idioma preferido de briefings y páginas
+  description: >
+    Wiki de la vida digital corporativa: decisiones, acuerdos, conocimiento
+    operativo y contexto durable extraído de meetings, summaries, docs y
+    threads. No es un archivo de todo lo que pasó: es la destilación de lo
+    que alguien necesitará saber dentro de seis meses.
+  audience: >
+    Cualquier miembro del equipo que se incorpora a un tema y necesita
+    contexto sin leer 40 transcripciones.
+
+  # ---------------------------------------------------------------------------
+  # Scope: la parte más "opinionada". Se escribe en prosa porque el evaluador
+  # es un LLM — ejemplos concretos valen más que taxonomías exhaustivas.
+  # ---------------------------------------------------------------------------
+  scope:
+    include:
+      - id: decisions
+        description: >
+          Decisiones técnicas o de negocio con sus razones y alternativas
+          descartadas ("migramos a ArangoDB porque...").
+      - id: agreements
+        description: >
+          Acuerdos, ownership, compromisos con fecha ("Marta lidera el
+          rollout de Q4").
+      - id: knowledge
+        description: >
+          Conocimiento operativo reutilizable: cómo se hace un deploy,
+          por qué existe tal workaround, postmortems.
+      - id: context
+        description: >
+          Contexto de negocio durable: clientes clave, restricciones
+          contractuales, historia de un proyecto.
+    exclude:
+      - id: social
+        description: >
+          Small talk, chistes, celebraciones, contenido puramente social.
+      - id: ephemeral
+        description: >
+          Logística efímera: cambios de sala, horarios de almuerzo,
+          recordatorios que caducan en días.
+      - id: raw-status
+        description: >
+          Status updates sin decisión ni aprendizaje (standups rutinarios).
+          Ojo: un standup donde SÍ se decidió algo entra por extracción.
+      - id: sensitive
+        description: >
+          Datos personales, salarios, temas de RRHH individuales.
+          Estos NUNCA van ni a wiki ni a archive → discard directo,
+          y el router debe marcar review_flag=sensitive.
+
+  # ---------------------------------------------------------------------------
+  # Scoring: dimensiones con pesos. El composite se calcula en código
+  # (no lo calcula el LLM: el LLM puntúa dimensiones, el código pondera).
+  # ---------------------------------------------------------------------------
+  scoring:
+    dimensions:
+      density:
+        weight: 0.40
+        description: >
+          ¿Cuánto contenido admisible por unidad de documento? Una reunión
+          de 60 min que fue puro chiste puntúa ~0 aunque clasifique
+          perfectamente como "meeting".
+      novelty:
+        weight: 0.35
+        description: >
+          ¿Aporta algo que el GraphIndex no cubre ya? Se apoya en el
+          chequeo de embeddings contra el wiki existente (el pipeline
+          inyecta los vecinos más cercanos como evidencia).
+      durability:
+        weight: 0.25
+        description: >
+          ¿Esto sirve en seis meses? Decisiones y postmortems sí;
+          "el almuerzo se movió a la 1pm" no.
+    thresholds:
+      admit: 0.75        # composite >= admit  → acción automática propuesta
+      reject: 0.35       # composite <= reject → archive/discard automático
+      # (reject, admit) = zona gris → defer (HITL o revisión de manifest)
+
+  # ---------------------------------------------------------------------------
+  # Routing: rechazar no es borrar. Tres destinos.
+  # ---------------------------------------------------------------------------
+  routing:
+    destinations:
+      wiki: "entra al grafo, curado, destilado en páginas"
+      archive: "indexado y buscable, fuera del wiki (default de rechazo)"
+      discard: "no se conserva (solo spam/duplicados exactos/sensitive)"
+    default_reject_destination: archive
+    unit_of_admission: claim      # claim | document — 'claim' habilita
+                                  # extracción parcial (5 min útiles de una
+                                  # reunión de 60)
+
+  # ---------------------------------------------------------------------------
+  # Calibración: el contrato del modo --auto.
+  # ---------------------------------------------------------------------------
+  calibration:
+    audit_sample:
+      rate: 0.05                 # fracción del batch marcada para auditoría
+      strategy: stratified        # uniform | stratified
+      # stratified: la mayor parte de la muestra sale de la zona cercana a
+      # los umbrales (donde el router puede estar equivocándose) y una
+      # fracción uniforme detecta errores "confiados". Un 5% uniforme puro
+      # muestrea sobre todo casos fáciles y sobreestima el acuerdo.
+      near_threshold_fraction: 0.6
+      uniform_fraction: 0.4
+    min_agreement: 0.90           # acuerdo humano↔router aceptable
+    on_low_agreement: widen_gray_zone   # widen_gray_zone | halt | warn
+    gray_zone_step: 0.05          # cuánto se ensancha por corrida en desacuerdo
+    autotune: propose             # off      → nunca toca el charter
+                                  # propose  → sugiere enmiendas, humano acepta
+                                  # apply    → (no recomendado) aplica solo
+
+  # ---------------------------------------------------------------------------
+  # Few-shots: decisiones humanas pasadas que anclan al router.
+  # El loop de aprendizaje escribe aquí (o en un fichero adjunto
+  # examples_file) cuando el humano corrige una propuesta.
+  # ---------------------------------------------------------------------------
+  examples:
+    admitted:
+      - summary: "Meeting 2026-06-11: se decidió migrar el graph store a ArangoDB; se descartó Neo4j por licencia."
+        why: "decisión durable con alternativas y razones"
+    rejected:
+      - summary: "Standup 2026-06-12: ronda de status, sin decisiones ni bloqueos nuevos."
+        why: "raw-status, densidad ~0"
+        destination: archive
+      - summary: "Meeting social de viernes: 55 min de chistes, sin contenido de trabajo."
+        why: "social, densidad 0"
+        destination: archive
+    extracted:
+      - summary: "Retro de 60 min mayormente social, pero se acordó rotar el on-call semanalmente."
+        why: "documento rechazable, claim admisible → extracción parcial"
+  examples_file: null             # opcional: JSONL externo si crecen mucho
+
+  # ---------------------------------------------------------------------------
+  # Enmiendas: historial editorial. Cada entrada explica por qué el charter
+  # es como es. Las propuestas de autotune aceptadas aterrizan aquí.
+  # ---------------------------------------------------------------------------
+  amendments:
+    - version: 2
+      date: 2026-07-02
+      change: "Se añadió exclude:raw-status"
+      source: "autotune: 12 standups rechazados a mano en corridas 4-7"
+    - version: 3
+      date: 2026-07-18
+      change: "durability weight 0.15 → 0.25"
+      source: "manual: entraban demasiados anuncios efímeros"

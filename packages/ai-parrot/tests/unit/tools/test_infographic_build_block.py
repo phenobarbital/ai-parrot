@@ -67,7 +67,7 @@ def toolkit(repl):
     store.save_artifact = AsyncMock(return_value=None)
     tk = InfographicToolkit(artifact_store=store)
     bot = MagicMock()
-    bot._get_repl_locals = MagicMock(return_value=repl)
+    bot._get_repl_locals = AsyncMock(return_value=repl)
     bot._current_user_id = None
     bot._current_agent_id = None
     bot._current_session_id = None

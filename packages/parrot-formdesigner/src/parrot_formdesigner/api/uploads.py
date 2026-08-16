@@ -2,11 +2,14 @@
 
 Exposes ``handle_rest_upload`` — an aiohttp request handler mounted at:
 
-    POST /api/v1/forms/{form_id}/fields/{field_id}/upload
+    POST /api/v1/forms/{form_uid}/fields/{field_uid}/upload
 
 The handler follows this pipeline:
 
-1. Resolve the ``FormField`` via ``app["form_registry"]``.
+1. Resolve the ``FormField`` via ``app["form_registry"]`` and
+   ``core.resolution.find_field_by_uid`` (FEAT-393 — ``field_uid``, not
+   ``field_id``, is the path param; renaming a field's ``field_id`` never
+   breaks its upload URL).
 2. Verify the field is ``FieldType.REST``; return 404 otherwise.
 3. Parse the multipart body, streaming bytes to ``AbstractBlobStorage``.
 4. Enforce MIME and size constraints from ``field.constraints``.
@@ -50,6 +53,7 @@ from aiohttp import web
 
 from pydantic import TypeAdapter
 
+from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField
 from ..core.types import FieldType
 from ..services.auth_context import AuthContext
@@ -60,6 +64,7 @@ from ..services.rest_field_resolver import (
     RestFieldSpec,
 )
 from ._utils import _get_request_tenant
+from .handlers import extract_form_uid, extract_uid
 
 _rest_spec_adapter: TypeAdapter[RestFieldSpec] | None = None
 
@@ -208,7 +213,7 @@ def _build_auth_context(request: web.Request) -> AuthContext:
 
 
 async def handle_rest_upload(request: web.Request) -> web.Response:
-    """Handle POST /api/v1/forms/{form_id}/fields/{field_id}/upload.
+    """Handle POST /api/v1/forms/{form_uid}/fields/{field_uid}/upload.
 
     Streams a multipart upload through the REST field pipeline:
     multipart → MIME/size check → blob storage → resolver → JSON envelope.
@@ -224,13 +229,14 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         JSON response with the resolver result envelope.
 
     Raises:
+        web.HTTPBadRequest: If ``field_uid`` is not a well-formed UUID, or
+            if multipart is malformed or has no ``file`` part.
         web.HTTPNotFound: If form or field not found, or field is not REST.
-        web.HTTPBadRequest: If multipart is malformed or has no ``file`` part.
         web.HTTPRequestEntityTooLarge: If upload exceeds size constraint.
         web.HTTPUnsupportedMediaType: If MIME is not in allowed list.
     """
-    form_id: str = request.match_info["form_id"]
-    field_id: str = request.match_info["field_id"]
+    form_uid = extract_form_uid(request)
+    field_uid = extract_uid(request, "field_uid")
     warnings: list[str] = []
 
     # --- 1. Resolve the field -----------------------------------------------
@@ -239,21 +245,15 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         raise web.HTTPInternalServerError(reason="form_registry not configured")
 
     tenant = _get_request_tenant(request)
-    form = await registry.get(form_id, tenant=tenant)
+    form = await registry.get(form_uid, tenant=tenant)
     if form is None:
-        raise web.HTTPNotFound(reason=f"Form not found: {form_id!r}")
+        raise web.HTTPNotFound(reason=f"Form not found: {form_uid!r}")
 
-    field: FormField | None = None
-    for section in form.sections:
-        for item in section.iter_fields():
-            if item.field_id == field_id:
-                field = item
-                break
-        if field is not None:
-            break
-
-    if field is None:
-        raise web.HTTPNotFound(reason=f"Field not found: {field_id!r}")
+    found = find_field_by_uid(form, field_uid)
+    if found is None:
+        raise web.HTTPNotFound(reason=f"Field not found: {field_uid!r}")
+    field: FormField = found[0]
+    field_id = field.field_id
 
     if field.field_type != FieldType.REST:
         raise web.HTTPNotFound(
@@ -334,7 +334,9 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         session_id = str(_sid) if _sid else None
 
     blob_meta = BlobMetadata(
-        form_id=form_id,
+        form_uid=form_uid,
+        form_id=form.form_id,
+        field_uid=field.field_uid,
         field_id=field_id,
         submission_id=session_id,       # str | None — None is correct when absent
         tenant=blob_tenant,             # str | None — None is correct when absent
@@ -349,7 +351,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             metadata=blob_meta,
         )
     except Exception as exc:
-        logger.exception("blob_storage.put failed for %s/%s", form_id, field_id)
+        logger.exception("blob_storage.put failed for %s/%s", form_uid, field_id)
         detail = " ".join(str(exc).split())
         raise web.HTTPInternalServerError(
             reason="Blob storage error",
@@ -365,7 +367,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             warnings.append(f"blob_cleanup_failed: {exc}")
             logger.warning(
                 "Failed to delete prior blob %r for %s/%s: %s",
-                prior_blob_ref, form_id, field_id, exc,
+                prior_blob_ref, form_uid, field_id, exc,
             )
 
     # --- 7b. Merge additional args (public from submission, private from spec)
@@ -387,7 +389,8 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     )
 
     payload = RestCallbackInput(
-        form_id=form_id,
+        form_id=form.form_id,
+        field_uid=field.field_uid,
         field_id=field_id,
         session_id=session_id,          # str | None
         user_id=_user_id,               # str | None — from JWT claims

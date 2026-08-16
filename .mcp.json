@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "wikitoolkit": {
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -33,6 +33,10 @@ class WikiPageCategory(str, Enum):
         OVERVIEW: Broad overview spanning multiple related topics.
         SYNTHESIS: LLM-synthesised insight across several sources.
         ANSWER: Direct answer to a query, filed as a wiki page.
+        ARCHIVE: Supervised-ingestion archive category (FEAT-402) —
+            content that was triaged and routed to the wiki as a page
+            but excluded from default query ranking (retrievable only
+            via an explicit category filter).
     """
 
     SUMMARY = "summary"
@@ -42,6 +46,7 @@ class WikiPageCategory(str, Enum):
     OVERVIEW = "overview"
     SYNTHESIS = "synthesis"
     ANSWER = "answer"
+    ARCHIVE = "archive"
 
 
 class WikiConfig(BaseModel):
@@ -65,9 +70,14 @@ class WikiConfig(BaseModel):
         sync_graph: When ``True``, wiki writes also mirror pages into
             GraphIndex.  Off by default — the WikiStore plane is the
             wiki's retrieval backend.
-        storage_backend: ``"sqlite"`` (default; single-file ``wiki.db``)
-            or ``"memory"`` (in-memory indexes + OKF markdown bundle
-            directory — no SQLite dependency).
+        storage_backend: ``"sqlite"`` (default; single-file ``wiki.db``),
+            ``"memory"`` (in-memory indexes + OKF markdown bundle
+            directory — no SQLite dependency), or ``"arangodb"``
+            (server-hosted, shared retrieval plane).
+        charter_path: Optional path to a supervised-ingestion editorial
+            charter YAML file (FEAT-402, see
+            ``parrot.knowledge.wiki.charter.load_charter``). ``None``
+            when this wiki does not use supervised ingestion.
     """
 
     wiki_name: str = Field(..., description="Unique wiki name / identifier")
@@ -99,13 +109,22 @@ class WikiConfig(BaseModel):
             "the WikiStore plane is the retrieval backend."
         ),
     )
-    storage_backend: Literal["sqlite", "memory"] = Field(
+    storage_backend: Literal["sqlite", "memory", "arangodb"] = Field(
         default="sqlite",
         description=(
             "Retrieval-plane backend: 'sqlite' (single-file wiki.db, "
-            "FTS5/BM25) or 'memory' (in-memory indexes persisted as an "
-            "OKF markdown bundle under {storage_dir}/pages/). Explicit "
-            "selection only — no auto-fallback."
+            "FTS5/BM25), 'memory' (in-memory indexes persisted as an "
+            "OKF markdown bundle under {storage_dir}/pages/), or "
+            "'arangodb' (server-hosted, shared retrieval plane). "
+            "Explicit selection only — no auto-fallback."
+        ),
+    )
+    charter_path: Optional[Path] = Field(
+        default=None,
+        description=(
+            "Path to a supervised-ingestion editorial charter YAML file "
+            "(FEAT-402). None when this wiki does not use supervised "
+            "ingestion (`wikitoolkit ingest`)."
         ),
     )
 
@@ -152,6 +171,18 @@ class SourceManifestEntry(BaseModel):
             updated during this ingest.
         status: Lifecycle status.  ``"ingested"`` after a successful ingest;
             may be ``"stale"`` or ``"error"`` as appropriate.
+        destination: Supervised-ingestion (FEAT-402) triage destination —
+            ``"wiki"``, ``"archive"``, or ``"discard"``. ``None`` for
+            sources that never went through triage (e.g. `wikitoolkit
+            build`).
+        decision_source: Who/what made the triage decision —
+            ``"heuristic"``, ``"model"``, ``"human"``, or ``"auto"``.
+            ``None`` when not applicable.
+        charter_version: Version of the editorial charter the decision
+            was made against, for audit/reproducibility. ``None`` when
+            not applicable.
+        composite_score: The weighted composite triage score in
+            ``[0, 1]``, or ``None`` when not applicable.
     """
 
     source_id: str = Field(..., description="Stable source identifier")
@@ -166,6 +197,30 @@ class SourceManifestEntry(BaseModel):
     status: str = Field(
         default="ingested",
         description="Source lifecycle status",
+    )
+    destination: Optional[str] = Field(
+        default=None,
+        description=(
+            "Supervised-ingestion (FEAT-402) triage destination: "
+            "'wiki' | 'archive' | 'discard'. None when not triaged."
+        ),
+    )
+    decision_source: Optional[str] = Field(
+        default=None,
+        description=(
+            "Who/what made the triage decision: 'heuristic' | 'model' | "
+            "'human' | 'auto'. None when not triaged."
+        ),
+    )
+    charter_version: Optional[str] = Field(
+        default=None,
+        description="Editorial charter version the decision was made against.",
+    )
+    composite_score: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Weighted composite triage score in [0, 1].",
     )
 
 

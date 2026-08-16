@@ -24,6 +24,7 @@ from parrot.core.events.lifecycle.events import (
     AfterToolCallEvent,
     BeforeClientCallEvent,
     ClientCallFailedEvent,
+    ClientRoundEvent,
     InvokeFailedEvent,
     ToolCallFailedEvent,
 )
@@ -113,6 +114,11 @@ class MetricsSubscriber:
             "parrot.agent.invoke.failure.count",
             description="Number of agent invoke failures.",
         )
+        # FEAT-397: per-round token usage observability
+        self._client_rounds = meter.create_counter(
+            "parrot.client.rounds",
+            description="Number of tool-execution rounds inside a client's ask() loop.",
+        )
 
         # ------------------------------------------------------------------
         # Histograms
@@ -128,6 +134,20 @@ class MetricsSubscriber:
             "gen_ai.client.token.usage",
             unit="tokens",
             description="Token usage per LLM API call (recorded twice: input + output).",
+        )
+        # FEAT-397: per-round token usage, DEDICATED histogram — never fed
+        # from _on_client_after, and never feeds gen_ai.client.token.usage.
+        # Reuses the token-space bucket boundaries (_TOKEN_BUCKETS) via the
+        # same OTel View wiring as gen_ai.client.token.usage in setup_telemetry().
+        self._client_round_token_usage = meter.create_histogram(
+            "parrot.client.round.token.usage",
+            unit="tokens",
+            description=(
+                "Per-round token usage inside a multi-round tool-use loop "
+                "(recorded twice: input + output). Dedicated instrument — "
+                "NEVER recorded onto gen_ai.client.token.usage to avoid "
+                "double-counting against AfterClientCallEvent totals."
+            ),
         )
         self._tool_exec_duration = meter.create_histogram(
             "parrot.tool.execution.duration",
@@ -161,6 +181,7 @@ class MetricsSubscriber:
         registry.subscribe(BeforeClientCallEvent, self._on_client_before)
         registry.subscribe(AfterClientCallEvent, self._on_client_after)
         registry.subscribe(ClientCallFailedEvent, self._on_client_fail)
+        registry.subscribe(ClientRoundEvent, self._on_client_round)
         registry.subscribe(AfterToolCallEvent, self._on_tool_after)
         registry.subscribe(ToolCallFailedEvent, self._on_tool_fail)
         registry.subscribe(AfterInvokeEvent, self._on_invoke_after)
@@ -228,6 +249,48 @@ class MetricsSubscriber:
             )
             if cost is not None:
                 self._client_cost_total.add(cost, attributes=base)
+
+    async def _on_client_round(self, event: ClientRoundEvent) -> None:
+        """Record per-round token usage and round count.
+
+        FEAT-397 — dedicated per-round instruments. NEVER records onto
+        ``gen_ai.client.token.usage`` (that histogram only receives the
+        accumulated totals from ``AfterClientCallEvent``, via
+        ``_on_client_after``) — recording per-round tokens there too would
+        double-count every token (rounds + total).
+
+        Note on cardinality: ``parrot.round.number`` adds a dimension per
+        round. Tool loops are bounded (``max_turns`` typically 10-15), so
+        the resulting series cardinality stays bounded — operators wiring
+        dashboards should be aware this label multiplies series count by
+        the round depth.
+        """
+        system = resolve_gen_ai_system(event.client_name)
+        # FEAT-228: metrics must always carry a string value for parrot.agent.name
+        # (OTel label sets must be stable per series); spans omit the attribute when
+        # agent_name is None instead — see attributes.py for the span-side handling.
+        base = {
+            "gen_ai.system": system,
+            "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
+            "gen_ai.request.model": event.model,
+            "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+            "parrot.round.number": event.round_number,
+        }
+
+        self._client_rounds.add(1, attributes=base)
+
+        # Round-token histogram — recorded TWICE (input + output), only when
+        # the provider reported usage for this round.
+        if event.input_tokens is not None:
+            self._client_round_token_usage.record(
+                event.input_tokens,
+                attributes={**base, "gen_ai.token.type": "input"},
+            )
+        if event.output_tokens is not None:
+            self._client_round_token_usage.record(
+                event.output_tokens,
+                attributes={**base, "gen_ai.token.type": "output"},
+            )
 
     async def _on_client_fail(self, event: ClientCallFailedEvent) -> None:
         """Count LLM API errors by error type."""

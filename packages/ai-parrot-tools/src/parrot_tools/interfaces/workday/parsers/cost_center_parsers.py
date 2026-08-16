@@ -2,11 +2,15 @@
 Cost Center parsers for Workday Get_Cost_Centers operation.
 """
 
-from typing import Dict, List, Any, Union
+import logging
+from typing import Any
+
 from ..utils import ensure_list, extract_by_type
 
+logger = logging.getLogger(__name__)
 
-def safe_get_nested(data: Dict, *keys, default=None) -> Any:
+
+def safe_get_nested(data: dict, *keys, default=None) -> Any:
     """
     Safely get nested dictionary values.
     
@@ -27,41 +31,53 @@ def safe_get_nested(data: Dict, *keys, default=None) -> Any:
     return current
 
 
-def parse_integration_id_data(integration_data: Union[List, Dict, None]) -> Dict[str, Any]:
+def parse_integration_id_data(integration_data: list | dict | None) -> dict[str, Any]:
     """
     Parse Integration ID Data from Cost Center response.
-    
+
+    The live shape (verified 2026-07-20) is a LIST of entries, each entry
+    carrying its own nested "ID" list of `{"_value_1": ..., "System_ID": ...}`
+    objects, e.g.:
+        [{"ID": [{"_value_1": "2502$3", "System_ID": "WD-I"},
+                  {"_value_1": "795b89c2...", "System_ID": "WD-WID"}]}]
+
     Args:
         integration_data: Integration ID data from the response
-        
+
     Returns:
-        Dictionary with parsed integration data
+        Dictionary with parsed integration data. `integration_ids` values are
+        formatted as `"<System_ID>:<value>"` (matching the organization
+        parser's `external_ids` format), falling back to the bare value when
+        no `System_ID` is present.
     """
     result = {
         "integration_ids": [],
         "external_integration_id": None
     }
-    
+
     if not integration_data:
         return result
-    
-    # Handle both dict and list cases
+
+    # Normalize to a flat list of ID-value dicts, unwrapping the nested
+    # "ID" sub-list each entry carries.
+    entries = integration_data if isinstance(integration_data, list) else [integration_data]
     id_items = []
-    if isinstance(integration_data, dict):
-        id_items = integration_data.get("ID", [])
-        if not isinstance(id_items, list):
-            id_items = [id_items]
-    elif isinstance(integration_data, list):
-        id_items = integration_data
-    
+    for entry in entries:
+        if isinstance(entry, dict) and "ID" in entry:
+            nested = entry.get("ID", [])
+            id_items.extend(nested if isinstance(nested, list) else [nested])
+        else:
+            id_items.append(entry)
+
     for id_item in id_items:
         if isinstance(id_item, dict):
             # Handle structured ID objects
             id_value = id_item.get("_value_1") or id_item.get("ID")
             system_id = id_item.get("System_ID")
-            
+
             if id_value:
-                result["integration_ids"].append(str(id_value))
+                formatted = f"{system_id}:{id_value}" if system_id else str(id_value)
+                result["integration_ids"].append(formatted)
                 if system_id == "WD-WID" and not result["external_integration_id"]:
                     result["external_integration_id"] = str(id_value)
         elif id_item:
@@ -69,11 +85,11 @@ def parse_integration_id_data(integration_data: Union[List, Dict, None]) -> Dict
             result["integration_ids"].append(str(id_item))
             if not result["external_integration_id"]:
                 result["external_integration_id"] = str(id_item)
-    
+
     return result
 
 
-def parse_organization_data(org_data: Dict) -> Dict[str, Any]:
+def parse_organization_data(org_data: dict) -> dict[str, Any]:
     """
     Parse Organization Data section from Cost Center response.
     
@@ -114,7 +130,7 @@ def parse_organization_data(org_data: Dict) -> Dict[str, Any]:
     }
 
 
-def parse_organization_type_data(type_data: Dict) -> Dict[str, Any]:
+def parse_organization_type_data(type_data: dict) -> dict[str, Any]:
     """
     Parse Organization Type and Subtype data.
     
@@ -141,7 +157,7 @@ def parse_organization_type_data(type_data: Dict) -> Dict[str, Any]:
     }
 
 
-def parse_organization_container_data(container_data: Dict) -> Dict[str, Any]:
+def parse_organization_container_data(container_data: dict) -> dict[str, Any]:
     """
     Parse Organization Container data.
     
@@ -153,8 +169,17 @@ def parse_organization_container_data(container_data: Dict) -> Dict[str, Any]:
     """
     if not container_data or not isinstance(container_data, dict):
         return {}
-    
+
     container_ref = container_data.get("Organization_Container_Reference", {})
+    # Live shape (verified 2026-07-20): Organization_Container_Reference is a
+    # LIST with a single container observed live — take the first element.
+    if isinstance(container_ref, list):
+        if len(container_ref) > 1:
+            logger.debug(
+                "Organization_Container_Reference has %d entries; using the first",
+                len(container_ref),
+            )
+        container_ref = container_ref[0] if container_ref else {}
     if not isinstance(container_ref, dict):
         return {}
     
@@ -183,7 +208,7 @@ def parse_organization_container_data(container_data: Dict) -> Dict[str, Any]:
     }
 
 
-def parse_worktags_data(worktags_data: Union[List, Dict, None]) -> List[str]:
+def parse_worktags_data(worktags_data: list | dict | None) -> list[str]:
     """
     Parse Worktags data.
     
@@ -214,7 +239,7 @@ def parse_worktags_data(worktags_data: Union[List, Dict, None]) -> List[str]:
     return worktags
 
 
-def parse_cost_center_reference(cc_ref: Dict) -> Dict[str, str]:
+def parse_cost_center_reference(cc_ref: dict) -> dict[str, str]:
     """
     Parse Cost Center Reference to extract WID and ID.
     
@@ -237,7 +262,7 @@ def parse_cost_center_reference(cc_ref: Dict) -> Dict[str, str]:
     return result
 
 
-def parse_cost_center_data(cost_center: Dict) -> Dict[str, Any]:
+def parse_cost_center_data(cost_center: dict) -> dict[str, Any]:
     """
     Parse complete Cost Center data from Workday response.
     
@@ -269,9 +294,16 @@ def parse_cost_center_data(cost_center: Dict) -> Dict[str, Any]:
     # Parse Worktags
     worktags = parse_worktags_data(cc_data.get("Worktags_Data"))
     
-    # Parse Integration ID Data (exists under Organization_Data)
-    integration_data = parse_integration_id_data(cc_data.get("Integration_ID_Data")) if isinstance(cc_data, dict) else {"integration_ids": [], "external_integration_id": None}
-    
+    # Parse Integration ID Data — lives under Cost_Center_Data.Organization_Data
+    # (NOT directly under Cost_Center_Data; verified 2026-07-20). Re-derived
+    # here from the same source parse_organization_data() already used, so it
+    # is the last (and correct) value merged into parsed_data below.
+    integration_data = (
+        parse_integration_id_data(cc_data.get("Organization_Data", {}).get("Integration_ID_Data"))
+        if isinstance(cc_data, dict) and isinstance(cc_data.get("Organization_Data"), dict)
+        else {"integration_ids": [], "external_integration_id": None}
+    )
+
     # Effective Date
     effective_date = cc_data.get("Effective_Date") if isinstance(cc_data, dict) else None
     
@@ -295,14 +327,60 @@ def parse_cost_center_data(cost_center: Dict) -> Dict[str, Any]:
     return parsed_data
 
 
+def merge_org_enrichment(cc_row: dict, org_row: dict | None) -> dict[str, Any]:
+    """
+    Map a matched `Organization` row onto the `org_*` CostCenter columns.
+
+    Only the fields directly derivable from the matched Organization row are
+    populated here (`parent_organization_id`, `roles`, `external_ids`,
+    `last_updated_datetime`). `org_parent_organization_name`,
+    `org_parent_organization_type` and `org_hierarchy_chain` are filled in by
+    the enrichment orchestration (`CostCenterType._enrich_with_organizations`)
+    from the resolved container-org cache / hierarchy walk — this helper
+    always sets them to `None`.
+
+    Args:
+        cc_row: The cost center row dict being enriched (currently unused;
+            reserved for future context-aware merging / logging).
+        org_row: The matched `Organization` model dict (as returned by
+            `Organization.dict()`), or `None` when no organization matched
+            this cost center (e.g. inactive cost centers with no
+            `Included_In` reference).
+
+    Returns:
+        Dictionary with exactly the seven `org_*` keys.
+    """
+    if not org_row:
+        return {
+            "org_parent_organization_id": None,
+            "org_parent_organization_name": None,
+            "org_parent_organization_type": None,
+            "org_roles": None,
+            "org_external_ids": None,
+            "org_last_updated": None,
+            "org_hierarchy_chain": None,
+        }
+
+    return {
+        "org_parent_organization_id": org_row.get("parent_organization_id"),
+        "org_parent_organization_name": None,
+        "org_parent_organization_type": None,
+        "org_roles": org_row.get("roles"),
+        "org_external_ids": org_row.get("external_ids"),
+        "org_last_updated": org_row.get("last_updated_datetime"),
+        "org_hierarchy_chain": None,
+    }
+
+
 __all__ = [
+    "extract_by_type",
+    "merge_org_enrichment",
     "parse_cost_center_data",
     "parse_cost_center_reference",
+    "parse_integration_id_data",
+    "parse_organization_container_data",
     "parse_organization_data",
     "parse_organization_type_data",
-    "parse_organization_container_data",
     "parse_worktags_data",
-    "parse_integration_id_data",
-    "extract_by_type",
     "safe_get_nested"
 ]

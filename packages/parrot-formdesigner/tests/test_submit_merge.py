@@ -68,13 +68,17 @@ def _make_validation_result(is_valid: bool = True, data: dict | None = None) -> 
 
 
 def _make_request(
-    form_id: str = "test-form",
+    form_uid: str = "11111111-1111-1111-1111-111111111111",
     session_id: str | None = "sess-1",
     body: dict | None = None,
     merge_partials: bool = False,
 ) -> MagicMock:
+    """``form_uid`` (FEAT-389) must be a well-formed UUID string — the
+    handlers' ``extract_form_uid()`` helper validates the path segment
+    and raises ``HTTPBadRequest`` for anything else.
+    """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    req.match_info = {"form_uid": form_uid}
 
     # Query params
     query_val = "true" if merge_partials else ""
@@ -130,7 +134,12 @@ class TestSubmitMergePartials:
     async def test_merge_combines_cached_and_submitted(self):
         """Cached partial merged with submitted data before validation."""
         form = _make_form()
-        cached = _make_partial(data={"name": "Alice", "age": 30})
+        name_field, age_field, _email_field = form.sections[0].fields
+        # Stored data is field_uid-keyed (TASK-2003) — submit_data's
+        # merge_partials path maps it back to field_id before merging.
+        cached = _make_partial(
+            data={str(name_field.field_uid): "Alice", str(age_field.field_uid): 30}
+        )
         store = MagicMock(spec=PartialSaveStore)
         store.get = AsyncMock(return_value=cached)
         store.delete = AsyncMock(return_value=True)
@@ -201,7 +210,9 @@ class TestSubmitMergePartials:
         req = _make_request(body={"name": "Alice"}, merge_partials=True)
         await handler.submit_data(req)
 
-        store.delete.assert_called_once_with("test-form", "sess-1")
+        store.delete.assert_called_once_with(
+            "11111111-1111-1111-1111-111111111111", "sess-1"
+        )
 
     async def test_no_merge_flag_unchanged(self):
         """Without ?merge_partials=true, PartialSaveStore.get is never called."""
@@ -243,7 +254,9 @@ class TestSubmitMergePartials:
         # Only submitted data — nothing was merged from cached (cached was None)
         assert captured_data == {"name": "Charlie"}
         # delete is still called as cleanup (idempotent — returns False since nothing existed)
-        store.delete.assert_called_once_with("test-form", "sess-1")
+        store.delete.assert_called_once_with(
+            "11111111-1111-1111-1111-111111111111", "sess-1"
+        )
 
     async def test_merge_no_store_configured(self):
         """If partial_store is None, merge is skipped silently."""

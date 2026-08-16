@@ -23,14 +23,19 @@ from parrot_formdesigner.core.constraints import (
     DependencyRule,
     FieldCondition,
 )
+from parrot_formdesigner.core.resolution import resolve_rule_references
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.rule_evaluator import RuleEvaluator
 
 
 def _form_with_rule(rule: DependencyRule, target: str = "q_target") -> FormSchema:
-    """A 2-field form where ``target`` has the given show-rule."""
-    return FormSchema(
+    """A 2-field form where ``target`` has the given show-rule.
+
+    Resolves rule references (FEAT-393) before returning — RuleEvaluator
+    reads conditions via field_uid, same as any real build boundary.
+    """
+    form = FormSchema(
         form_id="f1",
         title="F",
         sections=[
@@ -48,6 +53,7 @@ def _form_with_rule(rule: DependencyRule, target: str = "q_target") -> FormSchem
             )
         ],
     )
+    return resolve_rule_references(form)
 
 
 def _show_rule(cond: FieldCondition) -> DependencyRule:

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Optional
 from unittest.mock import MagicMock
 
 import pytest
 
+from parrot import conf
 from parrot.bots.flows.flow.flow import NODE_REGISTRY
 from parrot.bots.flows.flow.cel_evaluator import CELPredicateEvaluator
-from parrot.flows.dev_loop.definition import build_dev_loop_definition
+from parrot.flows.dev_loop.definition import (
+    _cel_qa_exhausted,
+    _cel_qa_retry,
+    build_dev_loop_definition,
+)
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import build_dev_loop_flow
 from parrot.flows.dev_loop.models import (
@@ -36,7 +42,64 @@ _DEV_LOOP_TYPES = [
     "dev_loop.failure_handler",
     "dev_loop.close",
     "dev_loop.revision_handoff",  # FEAT-250 TASK-012
+    "dev_loop.planner",  # FEAT-378 TASK-1925
+    "dev_loop.synthesis",  # FEAT-378 TASK-1925
+    "dev_loop.feedback_router",  # FEAT-378 TASK-1925
+    "dev_loop.feature_handoff",  # FEAT-378 TASK-1925
 ]
+
+# Snapshot of the pre-FEAT-378 bug + revision definitions (git history,
+# 2026-07-27) — asserted byte-identical (node ids + edge (from, to,
+# condition, predicate) tuples) after this feature's changes, per
+# TASK-1925's "byte-identical" acceptance criterion.
+#
+# The single ``qa -> failure_handler`` "result.passed == false" edge from
+# that snapshot was superseded on `dev` by FEAT-377 TASK-1910's bounded
+# QA<->development repair loop (merged into this branch post-TASK-1926):
+# the bug topology now routes a QA failure through ``_cel_qa_retry``/
+# ``_cel_qa_exhausted`` instead of a single unconditional failure edge.
+# The revision topology is explicitly NOT retried (spec §7 — repair is
+# scoped to the main loop only), so ``_REVISION_EDGES`` keeps the original
+# single failure edge unchanged.
+_BUG_NODE_IDS = {
+    "intent_classifier", "bug_intake", "research", "development",
+    "qa", "deployment_handoff", "failure_handler", "close",
+}
+_QA_MAX_RETRIES = int(conf.DEV_LOOP_QA_MAX_RETRIES)
+_BUG_EDGES = {
+    ("intent_classifier", "bug_intake", "on_condition", 'result.kind == "bug"'),
+    ("intent_classifier", "research", "on_condition", 'result.kind != "bug"'),
+    ("bug_intake", "research", "on_success", None),
+    ("research", "development", "on_success", None),
+    ("development", "qa", "on_success", None),
+    ("qa", "deployment_handoff", "on_condition", "result.passed == true"),
+    ("qa", "development", "on_condition", _cel_qa_retry(_QA_MAX_RETRIES)),
+    ("qa", "failure_handler", "on_condition", _cel_qa_exhausted(_QA_MAX_RETRIES)),
+    ("deployment_handoff", "close", "on_success", None),
+    ("intent_classifier", "failure_handler", "on_error", None),
+    ("bug_intake", "failure_handler", "on_error", None),
+    ("research", "failure_handler", "on_error", None),
+    ("development", "failure_handler", "on_error", None),
+    ("qa", "failure_handler", "on_error", None),
+    ("deployment_handoff", "failure_handler", "on_error", None),
+}
+_REVISION_NODE_IDS = {"development", "qa", "revision_handoff", "failure_handler", "close"}
+_REVISION_EDGES = {
+    ("development", "qa", "on_success", None),
+    ("qa", "revision_handoff", "on_condition", "result.passed == true"),
+    ("qa", "failure_handler", "on_condition", "result.passed == false"),
+    ("revision_handoff", "close", "on_success", None),
+    ("development", "failure_handler", "on_error", None),
+    ("qa", "failure_handler", "on_error", None),
+    ("revision_handoff", "failure_handler", "on_error", None),
+}
+
+
+def _edge_tuples(defn) -> set:
+    return {
+        (e.from_, e.to, e.condition, getattr(e, "predicate", None))
+        for e in defn.edges
+    }
 
 
 def _brief(kind: str) -> WorkBrief:
@@ -93,6 +156,50 @@ def test_definition_revision_graph():
     assert "research" not in ids and "intent_classifier" not in ids
 
 
+def test_definition_feature_graph():
+    # FEAT-378 TASK-1925 authored the feature-mode graph.
+    defn = build_dev_loop_definition(feature=True)
+    ids = {n.id for n in defn.nodes}
+    assert ids == {
+        "intent_classifier", "planner", "development", "synthesis",
+        "qa", "feedback_router", "feature_handoff", "failure_handler", "close",
+    }
+    assert "research" not in ids and "bug_intake" not in ids
+    assert all(n.type.startswith("dev_loop.") for n in defn.nodes)
+
+    edges = _edge_tuples(defn)
+    assert ("intent_classifier", "planner", "on_condition", 'result.kind == "feature"') in edges
+    assert ("planner", "development", "on_success", None) in edges
+    assert ("development", "synthesis", "on_success", None) in edges
+    assert ("synthesis", "qa", "on_success", None) in edges
+    assert ("qa", "feature_handoff", "on_condition", "result.passed == true") in edges
+    assert ("qa", "feedback_router", "on_condition", "result.passed == false") in edges
+    assert (
+        "feedback_router", "failure_handler", "on_condition", 'result.decision == "escalate"'
+    ) in edges
+    assert (
+        "feedback_router", "feature_handoff", "on_condition",
+        'result.decision == "accept_with_notes"',
+    ) in edges
+    assert ("feature_handoff", "close", "on_success", None) in edges
+    # FEAT-377/A: bounded repair-loop retry edge — the bound lives in
+    # FeedbackRouterNode._retry_allowed(), not on this predicate.
+    assert (
+        "feedback_router", "development", "on_condition", 'result.decision == "retry"'
+    ) in edges
+
+
+def test_bug_topology_unchanged():
+    """Bug + revision topologies are byte-identical to the pre-FEAT-378 snapshot."""
+    bug_defn = build_dev_loop_definition()
+    assert {n.id for n in bug_defn.nodes} == _BUG_NODE_IDS
+    assert _edge_tuples(bug_defn) == _BUG_EDGES
+
+    rev_defn = build_dev_loop_definition(revision=True)
+    assert {n.id for n in rev_defn.nodes} == _REVISION_NODE_IDS
+    assert _edge_tuples(rev_defn) == _REVISION_EDGES
+
+
 # ── factories ──────────────────────────────────────────────────────────
 
 
@@ -131,7 +238,7 @@ def test_development_factory_accepts_alternate_dispatcher():
 def test_development_factory_accepts_llm_dispatch_profile():
     default_dispatcher = MagicMock()
     development_dispatcher = MagicMock()
-    development_profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.1")
+    development_profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.2")
     factories = build_dev_loop_node_factories(
         dispatcher=default_dispatcher,
         development_dispatcher=development_dispatcher,
@@ -166,14 +273,29 @@ def test_cel_predicates_match_legacy_semantics():
 # ── end-to-end routing parity (drives the real build_dev_loop_flow) ─────
 
 
-def _stub_executes(monkeypatch, *, intent_kind: str, qa_passed: bool):
-    """Patch each node class' execute with a lightweight typed stub."""
+def _stub_executes(
+    monkeypatch, *, intent_kind: str, qa_passed: bool, qa_attempt: Optional[int] = None
+):
+    """Patch each node class' execute with a lightweight typed stub.
+
+    Args:
+        qa_passed: The QA verdict every dispatch returns.
+        qa_attempt: Attempt number stamped on a FAILING QAReport (FEAT-377
+            TASK-1910). ``None`` (default) stamps the exhaustion threshold
+            (``conf.DEV_LOOP_QA_MAX_RETRIES``) so a persistently-failing stub
+            routes straight to ``failure_handler`` — matching this
+            function's pre-TASK-1910 behavior (attempt-stamping/retry-then-
+            pass sequencing is exercised by ``qa_exec_sequence`` below, and
+            e2e feedback/worktree-reuse behavior is TASK-1911's).
+    """
+    from parrot import conf
     from parrot.flows.dev_loop.models import (
         DevelopmentOutput,
         ResearchOutput,
     )
 
     brief = _brief(intent_kind)
+    attempt = qa_attempt if qa_attempt is not None else int(conf.DEV_LOOP_QA_MAX_RETRIES)
 
     async def intent_exec(self, ctx, deps=None, **kw):
         return brief
@@ -194,7 +316,10 @@ def _stub_executes(monkeypatch, *, intent_kind: str, qa_passed: bool):
         return DevelopmentOutput(files_changed=[], commit_shas=[], summary="ok")
 
     async def qa_exec(self, ctx, deps=None, **kw):
-        return QAReport(passed=qa_passed, criterion_results=[], lint_passed=qa_passed)
+        return QAReport(
+            passed=qa_passed, criterion_results=[], lint_passed=qa_passed,
+            attempt=1 if qa_passed else attempt,
+        )
 
     async def handoff_exec(self, ctx, deps=None, **kw):
         return {"status": "ready_to_deploy", "pr_url": "u", "pr_number": 1}
@@ -213,6 +338,55 @@ def _stub_executes(monkeypatch, *, intent_kind: str, qa_passed: bool):
     monkeypatch.setattr(DeploymentHandoffNode, "execute", handoff_exec)
     monkeypatch.setattr(FailureHandlerNode, "execute", failure_exec)
     monkeypatch.setattr(DevLoopCloseNode, "execute", close_exec)
+
+
+def _stub_executes_qa_sequence(monkeypatch, *, intent_kind: str, qa_reports: list):
+    """Like ``_stub_executes``, but QA returns one entry of ``qa_reports``
+    per dispatch (in order) — drives a genuine retry-then-pass/exhaust
+    sequence through the REAL ``build_dev_loop_flow()`` wiring."""
+    from parrot.flows.dev_loop.models import DevelopmentOutput, ResearchOutput
+
+    brief = _brief(intent_kind)
+    calls = {"qa": 0}
+
+    async def intent_exec(self, ctx, deps=None, **kw):
+        return brief
+
+    async def bug_exec(self, ctx, deps=None, **kw):
+        return brief
+
+    async def research_exec(self, ctx, deps=None, **kw):
+        return ResearchOutput(
+            jira_issue_key="OPS-1", spec_path="x", feat_id="FEAT-1",
+            branch_name="feat-1-x", worktree_path="/tmp/feat-1-x",
+        )
+
+    async def dev_exec(self, ctx, deps=None, **kw):
+        return DevelopmentOutput(files_changed=[], commit_shas=[], summary="ok")
+
+    async def qa_exec(self, ctx, deps=None, **kw):
+        report = qa_reports[calls["qa"]]
+        calls["qa"] += 1
+        return report
+
+    async def handoff_exec(self, ctx, deps=None, **kw):
+        return {"status": "ready_to_deploy", "pr_url": "u", "pr_number": 1}
+
+    async def failure_exec(self, ctx, deps=None, **kw):
+        return {"status": "escalated"}
+
+    async def close_exec(self, ctx, deps=None, **kw):
+        return {"status": "closed"}
+
+    monkeypatch.setattr(IntentClassifierNode, "execute", intent_exec)
+    monkeypatch.setattr(BugIntakeNode, "execute", bug_exec)
+    monkeypatch.setattr(ResearchNode, "execute", research_exec)
+    monkeypatch.setattr(DevelopmentNode, "execute", dev_exec)
+    monkeypatch.setattr(QANode, "execute", qa_exec)
+    monkeypatch.setattr(DeploymentHandoffNode, "execute", handoff_exec)
+    monkeypatch.setattr(FailureHandlerNode, "execute", failure_exec)
+    monkeypatch.setattr(DevLoopCloseNode, "execute", close_exec)
+    return calls
 
 
 def _flow():
@@ -258,6 +432,9 @@ async def test_routing_bug_runs_bug_intake(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_routing_qa_fail_goes_to_failure(monkeypatch):
+    # FEAT-377 TASK-1910: a persistently-failing QA (stamped at the
+    # exhaustion threshold) still reaches failure_handler — the repair
+    # loop only defers escalation, it doesn't remove it.
     _stub_executes(monkeypatch, intent_kind="enhancement", qa_passed=False)
     flow = _flow()
     res = await flow.run_flow("go")
@@ -265,3 +442,140 @@ async def test_routing_qa_fail_goes_to_failure(monkeypatch):
     assert "failure_handler" in ran
     assert "deployment_handoff" not in ran
     assert "close" not in ran
+
+
+# ── FEAT-378 feature-mode CEL parity ────────────────────────────────────
+
+
+def test_cel_predicates_match_feature_mode_semantics():
+    from parrot.flows.dev_loop.models import FeatureBrief, FeedbackDecision
+
+    feature = FeedbackDecision(decision="escalate")
+    accept = FeedbackDecision(decision="accept_with_notes")
+    assert CELPredicateEvaluator('result.decision == "escalate"')(feature) is True
+    assert CELPredicateEvaluator('result.decision == "escalate"')(accept) is False
+    assert CELPredicateEvaluator('result.decision == "accept_with_notes"')(accept) is True
+
+    def _feature_brief(tmp_path):
+        doc = tmp_path / "x.proposal.md"
+        doc.write_text("# p")
+        return FeatureBrief(document_path=str(doc), document_kind="proposal")
+
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        fb = _feature_brief(Path(td))
+        assert CELPredicateEvaluator('result.kind == "feature"')(fb) is True
+        assert CELPredicateEvaluator('result.kind == "bug"')(fb) is False
+
+
+# FEAT-378 IntentClassifierNode routing, end-to-end feature-flow routing,
+# and declarative/imperative parity for the feature topology all live in
+# test_feature_flow.py (TASK-1925) — this file stays scoped to the
+# declarative definition + factories + CEL-predicate suite.
+
+
+# ── QA repair loop (FEAT-377 TASK-1910) ──────────────────────────────────
+
+
+def test_qa_report_attempt_default_is_1():
+    assert QAReport(passed=False, criterion_results=[], lint_passed=False).attempt == 1
+
+
+def test_qa_retry_edge_routes_to_development():
+    """A failing QAReport below the retry cap fires the retry predicate
+    (both topology forms), never the exhaustion one."""
+    from parrot import conf
+    from parrot.flows.dev_loop.definition import _cel_qa_exhausted, _cel_qa_retry
+    from parrot.flows.dev_loop.flow import _make_qa_exhausted, _make_qa_retry
+
+    n = int(conf.DEV_LOOP_QA_MAX_RETRIES)
+    failing_attempt_1 = QAReport(passed=False, criterion_results=[], lint_passed=False, attempt=1)
+
+    assert CELPredicateEvaluator(_cel_qa_retry(n))(failing_attempt_1) is True
+    assert CELPredicateEvaluator(_cel_qa_exhausted(n))(failing_attempt_1) is False
+    assert _make_qa_retry(n)(failing_attempt_1) is True
+    assert _make_qa_exhausted(n)(failing_attempt_1) is False
+
+
+def test_qa_exhausted_edge_routes_to_failure():
+    """A failing QAReport at/above the retry cap fires the exhaustion
+    predicate (both topology forms), never the retry one."""
+    from parrot import conf
+    from parrot.flows.dev_loop.definition import _cel_qa_exhausted, _cel_qa_retry
+    from parrot.flows.dev_loop.flow import _make_qa_exhausted, _make_qa_retry
+
+    n = int(conf.DEV_LOOP_QA_MAX_RETRIES)
+    exhausted_report = QAReport(passed=False, criterion_results=[], lint_passed=False, attempt=n)
+
+    assert CELPredicateEvaluator(_cel_qa_exhausted(n))(exhausted_report) is True
+    assert CELPredicateEvaluator(_cel_qa_retry(n))(exhausted_report) is False
+    assert _make_qa_exhausted(n)(exhausted_report) is True
+    assert _make_qa_retry(n)(exhausted_report) is False
+
+
+def test_definition_flow_parity_includes_retry_edge():
+    """The declarative definition and the imperative flow.py wiring must
+    agree edge-for-edge on the new qa <-> development repair-loop edges
+    (FEAT-250 parity discipline, extended by FEAT-377 TASK-1910)."""
+    defn = build_dev_loop_definition()
+    qa_edges = {(e.from_, e.to, e.condition) for e in defn.edges if e.from_ == "qa"}
+    assert ("qa", "deployment_handoff", "on_condition") in qa_edges
+    assert ("qa", "development", "on_condition") in qa_edges
+    assert ("qa", "failure_handler", "on_condition") in qa_edges
+    # Exactly one on_condition QA edge per outcome — no duplicate/missing routes.
+    on_condition_targets = {to for (_, to, cond) in qa_edges if cond == "on_condition"}
+    assert on_condition_targets == {"deployment_handoff", "development", "failure_handler"}
+
+    # flow.py wires the identical three targets off "qa" (verified by
+    # inspecting the real AgentsFlow's registered edges).
+    flow = _flow()
+    flow_qa_targets = {
+        e.to for e in flow._edges  # type: ignore[attr-defined]
+        if e.from_ == "qa" and e.condition == "on_condition"
+    }
+    assert flow_qa_targets == {"deployment_handoff", "development", "failure_handler"}
+
+
+@pytest.mark.asyncio
+async def test_routing_qa_retry_then_pass_reaches_close(monkeypatch):
+    """FEAT-377 TASK-1910: the real build_dev_loop_flow() wiring supports a
+    genuine repair-loop re-entry — QA fails on attempt 1, retries
+    development, passes on attempt 2, reaches close."""
+    calls = _stub_executes_qa_sequence(
+        monkeypatch,
+        intent_kind="enhancement",
+        qa_reports=[
+            QAReport(passed=False, criterion_results=[], lint_passed=False, attempt=1),
+            QAReport(passed=True, criterion_results=[], lint_passed=True, attempt=2),
+        ],
+    )
+    flow = _flow()
+    res = await flow.run_flow("go")
+    ran = _ran(res)
+    assert "close" in ran
+    assert "failure_handler" not in ran
+    assert calls["qa"] == 2
+
+
+@pytest.mark.asyncio
+async def test_routing_qa_exhausts_after_max_retries(monkeypatch):
+    """FEAT-377 TASK-1910: QA fails every attempt up to the cap, then
+    escalates to failure_handler — the loop is bounded, not infinite."""
+    from parrot import conf
+
+    n = int(conf.DEV_LOOP_QA_MAX_RETRIES)
+    reports = [
+        QAReport(passed=False, criterion_results=[], lint_passed=False, attempt=a)
+        for a in range(1, n + 1)
+    ]
+    calls = _stub_executes_qa_sequence(
+        monkeypatch, intent_kind="enhancement", qa_reports=reports,
+    )
+    flow = _flow()
+    res = await flow.run_flow("go")
+    ran = _ran(res)
+    assert "failure_handler" in ran
+    assert "close" not in ran
+    assert calls["qa"] == n

@@ -9,6 +9,17 @@ Provides the programmatic ``MergedOntology``-compatible definition with:
 These definitions are **additive** — they do not conflict with existing
 tenant ontologies.  They are intended to be merged at tenant initialisation
 time via ``OntologyMerger``.
+
+FEAT-377 TASK-1909: ``wiki_page``/``run``/``claim`` entities and
+``produced``/``about``/``supported_by``/``contradicts`` relations complete
+the mapping so ``NodeKind``/``EdgeKind`` (``schema.py``) route fully —
+these are the agent graph-memory kinds (work lineage, assertions) that
+``persist.py``'s ``_upsert_nodes``/``_create_edges`` previously dropped
+with an "Unknown kind" warning. ``build_graphindex_ontology()`` is used
+as the tenant ontology by ``GraphIndexLoader`` (see its docstring at
+``loader.py:198-201``), so ``initialize_tenant`` provisions these new
+``gi_*`` collections automatically from ``_ENTITY_DEFS``/``_RELATION_DEFS``
+— no separate collection-creation code to update.
 """
 
 from __future__ import annotations
@@ -127,6 +138,7 @@ _ENTITY_DEFS: dict[str, EntityDef] = {
             {"source_uri": PropertyDef(type="string", required=True)},
             {"kind": PropertyDef(type="string", required=True)},
             {"summary": PropertyDef(type="string", required=False)},
+            {"content_ref": PropertyDef(type="string", required=False)},
             {"embedding_ref": PropertyDef(type="string", required=False)},
             {"provenance": PropertyDef(type="string", required=True)},
         ],
@@ -141,6 +153,8 @@ _ENTITY_DEFS: dict[str, EntityDef] = {
             {"source_uri": PropertyDef(type="string", required=True)},
             {"kind": PropertyDef(type="string", required=True)},
             {"summary": PropertyDef(type="string", required=False)},
+            {"content_ref": PropertyDef(type="string", required=False)},
+            {"embedding_ref": PropertyDef(type="string", required=False)},
             {"provenance": PropertyDef(type="string", required=True)},
         ],
         vectorize=["summary", "title"],
@@ -154,6 +168,7 @@ _ENTITY_DEFS: dict[str, EntityDef] = {
             {"source_uri": PropertyDef(type="string", required=True)},
             {"kind": PropertyDef(type="string", required=True)},
             {"summary": PropertyDef(type="string", required=False)},
+            {"content_ref": PropertyDef(type="string", required=False)},
             {"embedding_ref": PropertyDef(type="string", required=False)},
             {"provenance": PropertyDef(type="string", required=True)},
         ],

@@ -74,6 +74,27 @@ async def test_html5_rest_uses_uploader_div(form_with_rest: FormSchema) -> None:
 
 
 @pytest.mark.asyncio
+async def test_html5_data_field_uid_attr(
+    form_with_rest: FormSchema, rest_field: FormField
+) -> None:
+    """FEAT-393: the REST uploader div carries data-field-uid alongside
+    data-field-id, HTML-escaped."""
+    out = await HTML5Renderer().render(form_with_rest)
+    assert f'data-field-uid="{rest_field.field_uid}"' in out.content
+
+
+@pytest.mark.asyncio
+async def test_html5_control_name_still_field_id(
+    form_with_rest: FormSchema,
+) -> None:
+    """FEAT-393: adding data-field-uid must NOT change any control name/id —
+    those stay field_id-based (zero change for form fillers)."""
+    out = await HTML5Renderer().render(form_with_rest)
+    assert 'data-field-id="planogram_photo"' in out.content
+    assert "planogram_photo" in out.content
+
+
+@pytest.mark.asyncio
 async def test_html5_rest_no_warnings(form_with_rest: FormSchema) -> None:
     """HTML5 is a native REST renderer — no warnings should be emitted."""
     out = await HTML5Renderer().render(form_with_rest)

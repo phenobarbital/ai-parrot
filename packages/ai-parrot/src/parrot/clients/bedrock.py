@@ -32,6 +32,7 @@ See ``sdd/specs/bedrock-client-llm.spec.md`` and
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -40,11 +41,9 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from .base import AbstractClient
 from ..conf import (
     AWS_CREDENTIALS,
-    AWS_ACCESS_KEY,
-    AWS_SECRET_KEY,
-    AWS_SESSION_TOKEN,
     AWS_REGION_NAME,
     BEDROCK_AWS_REGION,
+    AWS_NOVA_API_KEY,
 )
 from ..exceptions import InvokeError
 from ..models.basic import CompletionUsage, ToolCall
@@ -83,6 +82,7 @@ class BedrockConverseBase(AbstractClient):
         aws_access_key: Optional[str] = None,
         aws_secret_key: Optional[str] = None,
         aws_session_token: Optional[str] = None,
+        aws_bearer_token: Optional[str] = None,
         **kwargs
     ):
         """Initialise a Bedrock Converse API client.
@@ -92,8 +92,8 @@ class BedrockConverseBase(AbstractClient):
                 ``novaclient-amazon-aws`` §1/§2.2). Resolution: kwarg →
                 named profile in ``parrot.conf::AWS_CREDENTIALS`` (falls
                 back to the ``'default'`` profile when the named profile is
-                missing) → explicit ``aws_access_key``/``aws_secret_key`` →
-                env constants → SDK credential chain.
+                missing). No ``aws_id`` means no profile lookup at all — see
+                ``aws_access_key``/``aws_bearer_token`` for what happens next.
             region: AWS region for the Bedrock Runtime endpoint. Resolution
                 order: explicit kwarg → ``AWS_CREDENTIALS`` profile
                 ``region_name`` → ``BEDROCK_AWS_REGION`` →
@@ -112,11 +112,26 @@ class BedrockConverseBase(AbstractClient):
                 client (adaptive retry mode).
             read_timeout: Socket read timeout (seconds) for the botocore
                 client.
-            aws_access_key: AWS access key ID. Resolution: kwarg →
-                ``AWS_ACCESS_KEY`` → SDK credential chain.
+            aws_access_key: AWS access key ID. Resolution: kwarg → the
+                ``aws_id`` profile's ``aws_key``/``aws_access_key_id``. No
+                generic conf-wide fallback (removed — it silently picked up
+                whatever AWS account was configured for unrelated services,
+                e.g. S3, which may lack Bedrock permissions entirely).
             aws_secret_key: AWS secret access key. Same resolution order.
             aws_session_token: Optional STS session token. Same resolution
                 order.
+            aws_bearer_token: Bedrock API key (bearer token, ``"ABSK..."``
+                prefix) — an alternative to the access/secret keypair.
+                Resolution: kwarg → the ``aws_id`` profile's
+                ``aws_bearer_token`` → ``AWS_NOVA_API_KEY`` (conf). Only
+                consulted when no static access key resolves above (a
+                caller providing both is assumed to want the access/secret
+                keypair). When resolved, :meth:`get_client` exports it as
+                ``AWS_BEARER_TOKEN_BEDROCK`` for botocore's own bearer-auth
+                support (``botocore>=1.36``) to pick up — leave every
+                resolution step ``None`` to instead rely on
+                ``AWS_BEARER_TOKEN_BEDROCK`` already set in the process
+                environment (the SDK's own default).
             **kwargs: Forwarded to
                 :class:`~parrot.clients.base.AbstractClient`.
         """
@@ -129,8 +144,19 @@ class BedrockConverseBase(AbstractClient):
         # attributes unbound entirely when the named profile was missing.
         # This canonical resolver always binds the four attributes, in the
         # priority order from spec §1 Goals: explicit kwargs → ``aws_id``
-        # profile (fallback to 'default') → env constants → SDK chain
-        # (attributes may end up ``None``, but are never unbound).
+        # profile (fallback to 'default') → SDK chain (attributes may end
+        # up ``None``, but are never unbound).
+        #
+        # Code-review fix (post-FEAT-315): the conf-wide ``AWS_ACCESS_KEY``/
+        # ``AWS_SECRET_KEY``/``AWS_SESSION_TOKEN`` fallback was removed —
+        # it made every no-``aws_id`` client silently authenticate as
+        # whatever IAM identity happens to be configured for unrelated
+        # services, which may (as observed) be denied Bedrock access
+        # entirely. Static keys now require an explicit kwarg or a named
+        # ``aws_id`` profile; failing both, we try a Bedrock API key
+        # (bearer token) instead of a static keypair, and only fall through
+        # to the plain SDK credential chain (env vars, shared credentials
+        # file, SSO, ...) if that is unset too.
         credentials: Dict[str, Any] = {}
         if self._aws_id:
             credentials = AWS_CREDENTIALS.get(self._aws_id) or {}
@@ -140,19 +166,23 @@ class BedrockConverseBase(AbstractClient):
             aws_access_key
             or credentials.get('aws_key')
             or credentials.get('aws_access_key_id')
-            or AWS_ACCESS_KEY
         )
         self._aws_secret_key = (
             aws_secret_key
             or credentials.get('aws_secret')
             or credentials.get('aws_secret_access_key')
-            or AWS_SECRET_KEY
         )
         self._aws_session_token = (
             aws_session_token
             or credentials.get('aws_session_token')
-            or AWS_SESSION_TOKEN
         )
+        self._aws_bearer_token = None
+        if not self._aws_access_key:
+            self._aws_bearer_token = (
+                aws_bearer_token
+                or credentials.get('aws_bearer_token')
+                or AWS_NOVA_API_KEY
+            )
         self._region = (
             region
             or credentials.get('region_name')
@@ -216,6 +246,15 @@ class BedrockConverseBase(AbstractClient):
             client_kwargs["aws_secret_access_key"] = self._aws_secret_key
             if self._aws_session_token:
                 client_kwargs["aws_session_token"] = self._aws_session_token
+        elif self._aws_bearer_token:
+            # botocore >= 1.36 reads bearer tokens from the environment only
+            # (``AWS_BEARER_TOKEN_<SIGNING_NAME>`` — no constructor kwarg
+            # exists); exporting it here is the only supported hand-off.
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = self._aws_bearer_token
+        # else: no static keys or bearer token resolved from parrot config —
+        # fall through to botocore's own default credential chain (env vars,
+        # AWS_BEARER_TOKEN_BEDROCK if already exported, shared credentials
+        # file, SSO, instance role, ...).
 
         client_ctx = session.client("bedrock-runtime", **client_kwargs)
         return await client_ctx.__aenter__()
@@ -588,7 +627,12 @@ class BedrockConverseBase(AbstractClient):
                 metrics arrive via ``cacheReadInputTokens`` /
                 ``cacheWriteInputTokens`` in ``CompletionUsage.extra_usage``
                 (already surfaced by ``CompletionUsage.from_bedrock()``,
-                TASK-1742).
+                TASK-1742). For multi-round tool-use calls, these two
+                counters are the **sum across all rounds** (FEAT-404, U1) —
+                not the last round's values — because
+                ``CompletionUsage.__add__`` shallow-merges ``extra_usage``
+                right-hand-wins and would otherwise silently drop earlier
+                rounds' cache accounting.
             guardrail_id: Per-call guardrail identifier override. Falls back
                 to the identifier passed to ``__init__``.
             guardrail_version: Per-call guardrail version override. Falls
@@ -696,7 +740,15 @@ class BedrockConverseBase(AbstractClient):
         result: Dict[str, Any] = {}
         content_blocks: List[Dict[str, Any]] = []
 
+        # FEAT-404: per-round token usage accumulation across the tool loop
+        # (mirrors the FEAT-397 idiom in AnthropicClient.ask()).
+        _lc_round_number = 0
+        _lc_accumulated_usage: Optional[CompletionUsage] = None
+
         while True:
+            # FEAT-404: time this round's SDK call (including a fallback
+            # retry, if any) for the round event's duration_ms.
+            _lc_round_t0 = time.perf_counter()
             try:
                 result = await self._sdk_create(payload)
             except Exception as e:
@@ -710,12 +762,48 @@ class BedrockConverseBase(AbstractClient):
                     result = await self._sdk_create(payload)
                 else:
                     raise
+            _lc_round_number += 1
+            _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
+
+            # FEAT-404: build this round's usage and accumulate. Rounds
+            # where the provider reported no usage are skipped (accumulator
+            # untouched); the round event still fires with usage=None.
+            _lc_round_raw_usage = result.get("usage") or None
+            if _lc_round_raw_usage:
+                _lc_round_usage = CompletionUsage.from_bedrock(_lc_round_raw_usage)
+                if _lc_accumulated_usage is None:
+                    _lc_accumulated_usage = _lc_round_usage
+                else:
+                    # __add__ shallow-merges extra_usage right-hand-wins, so
+                    # capture the pre-add cache counters before they are
+                    # overwritten by this round's values (spec §2, U1).
+                    _lc_prev_cache_read = (
+                        _lc_accumulated_usage.extra_usage.get("cacheReadInputTokens", 0) or 0
+                    )
+                    _lc_prev_cache_write = (
+                        _lc_accumulated_usage.extra_usage.get("cacheWriteInputTokens", 0) or 0
+                    )
+                    _lc_accumulated_usage = _lc_accumulated_usage + _lc_round_usage
+                    # Re-sum the two cache counters explicitly so multi-round
+                    # totals honour the ask() docstring (spec §2, U1) instead
+                    # of reporting only the last round's cache accounting.
+                    _lc_accumulated_usage.extra_usage["cacheReadInputTokens"] = (
+                        _lc_prev_cache_read
+                        + (_lc_round_usage.extra_usage.get("cacheReadInputTokens", 0) or 0)
+                    )
+                    _lc_accumulated_usage.extra_usage["cacheWriteInputTokens"] = (
+                        _lc_prev_cache_write
+                        + (_lc_round_usage.extra_usage.get("cacheWriteInputTokens", 0) or 0)
+                    )
+            else:
+                _lc_round_usage = None
 
             message = result.get("output", {}).get("message", {})
             content_blocks = message.get("content", [])
 
             if result.get("stopReason") == "tool_use":
                 tool_result_blocks = []
+                _lc_round_tool_names: List[str] = []
 
                 for block in content_blocks:
                     if "toolUse" not in block:
@@ -759,6 +847,20 @@ class BedrockConverseBase(AbstractClient):
                         })
 
                     all_tool_calls.append(tc)
+                    _lc_round_tool_names.append(tool_name)
+
+                # FEAT-404: emit ClientRoundEvent after tool execution for
+                # this round (mirrors AnthropicClient.ask(), claude.py:640-650).
+                self._emit_round_event(
+                    _lc_tc,
+                    client_name=self.client_name,
+                    model=resolved_model,
+                    round_number=_lc_round_number,
+                    usage=_lc_round_usage,
+                    raw_usage=_lc_round_raw_usage,
+                    tool_calls=_lc_round_tool_names,
+                    duration_ms=_lc_round_duration_ms,
+                )
 
                 # Preserve the assistant turn verbatim (reasoningContent
                 # blocks, with their signature, travel through unmodified —
@@ -809,6 +911,15 @@ class BedrockConverseBase(AbstractClient):
             ai_message.metadata['used_fallback_model'] = True
             ai_message.metadata['original_model'] = resolved_model
             ai_message.metadata['fallback_model'] = self._fallback_model
+
+        # FEAT-404: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round calls (no tool use), the
+        # accumulated total equals the last (only) round's usage, so this
+        # is a strict no-op for existing single-round behavior.
+        if _lc_accumulated_usage is not None:
+            if _lc_round_number > 1:
+                _lc_accumulated_usage.extra_usage["rounds"] = _lc_round_number
+            ai_message.usage = _lc_accumulated_usage
 
         _lc_usage = ai_message.usage
         await self._emit_after_call(
@@ -978,6 +1089,17 @@ class BedrockConverseBase(AbstractClient):
         Returns:
             The :class:`AIMessage` produced once the resumed tool-use loop
             reaches a non-``tool_use`` stop reason.
+
+        Note:
+            FEAT-404 (U2/U4): unlike the five reference clients (Anthropic,
+            OpenAI, Gemini, Groq, Grok), whose ``resume()`` carries no
+            lifecycle instrumentation, Bedrock/Nova's ``resume()``
+            deliberately DOES emit a full call-level lifecycle span
+            (``BeforeClientCallEvent``/``AfterClientCallEvent``) plus
+            per-round ``ClientRoundEvent``s and accumulated multi-round
+            usage — the same four-part idiom as :meth:`ask`. This asymmetry
+            is intentional (completeness over parity); do not remove it in
+            a future consistency sweep.
         """
         await self._ensure_client()
 
@@ -1018,16 +1140,75 @@ class BedrockConverseBase(AbstractClient):
         if tool_specs:
             payload["toolConfig"] = {"tools": tool_specs}
 
+        # FEAT-404 (U2/U4): establish the call-level lifecycle span that
+        # resume() previously lacked entirely (mirrors ask()'s 659-667).
+        _lc_tc = self._emit_before_call(
+            client_name=self.client_name,
+            model=resolved_model,
+            temperature=self.temperature,
+            system_prompt=None,
+            has_tools=bool(tool_specs),
+            parent_trace=None,
+        )
+        _lc_t0 = time.perf_counter()
+
         result: Dict[str, Any] = {}
         content_blocks: List[Dict[str, Any]] = []
 
+        # FEAT-404: per-round token usage accumulation across the tool loop
+        # (same idiom as ask() — see TASK-2094). resume() has no fallback
+        # branch, unlike ask().
+        _lc_round_number = 0
+        _lc_accumulated_usage: Optional[CompletionUsage] = None
+
         while True:
+            # FEAT-404: time this round's SDK call for the round event's
+            # duration_ms.
+            _lc_round_t0 = time.perf_counter()
             result = await self._sdk_create(payload)
+            _lc_round_number += 1
+            _lc_round_duration_ms = (time.perf_counter() - _lc_round_t0) * 1000
+
+            # FEAT-404: build this round's usage and accumulate. Rounds
+            # where the provider reported no usage are skipped (accumulator
+            # untouched); the round event still fires with usage=None.
+            _lc_round_raw_usage = result.get("usage") or None
+            if _lc_round_raw_usage:
+                _lc_round_usage = CompletionUsage.from_bedrock(_lc_round_raw_usage)
+                if _lc_accumulated_usage is None:
+                    _lc_accumulated_usage = _lc_round_usage
+                else:
+                    # __add__ shallow-merges extra_usage right-hand-wins, so
+                    # capture the pre-add cache counters before they are
+                    # overwritten by this round's values (spec §2, U1).
+                    _lc_prev_cache_read = (
+                        _lc_accumulated_usage.extra_usage.get("cacheReadInputTokens", 0) or 0
+                    )
+                    _lc_prev_cache_write = (
+                        _lc_accumulated_usage.extra_usage.get("cacheWriteInputTokens", 0) or 0
+                    )
+                    _lc_accumulated_usage = _lc_accumulated_usage + _lc_round_usage
+                    # Re-sum the two cache counters explicitly so multi-round
+                    # totals honour the ask() docstring semantics (spec §2,
+                    # U1) instead of reporting only the last round's cache
+                    # accounting.
+                    _lc_accumulated_usage.extra_usage["cacheReadInputTokens"] = (
+                        _lc_prev_cache_read
+                        + (_lc_round_usage.extra_usage.get("cacheReadInputTokens", 0) or 0)
+                    )
+                    _lc_accumulated_usage.extra_usage["cacheWriteInputTokens"] = (
+                        _lc_prev_cache_write
+                        + (_lc_round_usage.extra_usage.get("cacheWriteInputTokens", 0) or 0)
+                    )
+            else:
+                _lc_round_usage = None
+
             message = result.get("output", {}).get("message", {})
             content_blocks = message.get("content", [])
 
             if result.get("stopReason") == "tool_use":
                 tool_result_blocks = []
+                _lc_round_tool_names: List[str] = []
 
                 for block in content_blocks:
                     if "toolUse" not in block:
@@ -1071,6 +1252,20 @@ class BedrockConverseBase(AbstractClient):
                         })
 
                     all_tool_calls.append(tc)
+                    _lc_round_tool_names.append(tool_name)
+
+                # FEAT-404: emit ClientRoundEvent after tool execution for
+                # this round (mirrors ask(), TASK-2094).
+                self._emit_round_event(
+                    _lc_tc,
+                    client_name=self.client_name,
+                    model=resolved_model,
+                    round_number=_lc_round_number,
+                    usage=_lc_round_usage,
+                    raw_usage=_lc_round_raw_usage,
+                    tool_calls=_lc_round_tool_names,
+                    duration_ms=_lc_round_duration_ms,
+                )
 
                 bedrock_messages.append({"role": "assistant", "content": content_blocks})
                 bedrock_messages.append({"role": "user", "content": tool_result_blocks})
@@ -1079,7 +1274,7 @@ class BedrockConverseBase(AbstractClient):
                 bedrock_messages.append({"role": "assistant", "content": content_blocks})
                 break
 
-        return AIMessageFactory.from_bedrock(
+        ai_message = AIMessageFactory.from_bedrock(
             response=result,
             input_text="[Resumed Conversation]",
             model=resolved_model,
@@ -1087,6 +1282,26 @@ class BedrockConverseBase(AbstractClient):
             turn_id=turn_id,
             tool_calls=all_tool_calls,
         )
+
+        # FEAT-404: replace the last-round-only usage with the accumulated
+        # multi-round total. For single-round resumes (no further tool
+        # use), the accumulated total equals the last (only) round's usage.
+        if _lc_accumulated_usage is not None:
+            if _lc_round_number > 1:
+                _lc_accumulated_usage.extra_usage["rounds"] = _lc_round_number
+            ai_message.usage = _lc_accumulated_usage
+
+        _lc_usage = ai_message.usage
+        await self._emit_after_call(
+            _lc_tc,
+            client_name=self.client_name,
+            model=resolved_model,
+            duration_ms=(time.perf_counter() - _lc_t0) * 1000,
+            input_tokens=getattr(_lc_usage, 'input_tokens', None) if _lc_usage else None,
+            output_tokens=getattr(_lc_usage, 'output_tokens', None) if _lc_usage else None,
+            finish_reason=ai_message.stop_reason,
+        )
+        return ai_message
 
     async def invoke(
         self,

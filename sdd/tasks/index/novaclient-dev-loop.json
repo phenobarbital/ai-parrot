@@ -1,0 +1,231 @@
+{
+  "feature": "novaclient-dev-loop",
+  "feature_id": "FEAT-405",
+  "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-03T00:00:00Z",
+  "completed_at": "2026-08-03T03:40:04+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2083",
+      "slug": "bedrock-model-id-translation",
+      "title": "Bedrock model-ID translation for the 2026 model generation",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only parrot/models/bedrock_models.py, which no other task in this feature modifies. Genuinely isolatable, though per-spec isolation runs it sequentially.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T02:00:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2083-bedrock-model-id-translation.md"
+    },
+    {
+      "id": "TASK-2084",
+      "slug": "nova-dispatch-profiles",
+      "title": "Nova dispatch profiles (code, adversarial, mechanical)",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2083"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates models/nova.py and edits models/__init__.py; TASK-2085 later edits models/nova.py. Depends on TASK-2083 for the verified model ids its defaults reference.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T02:06:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2084-nova-dispatch-profiles.md"
+    },
+    {
+      "id": "TASK-2085",
+      "slug": "per-model-output-clamping",
+      "title": "Per-model output-token clamping",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2084"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares models/nova.py with TASK-2084 and dispatchers/nova.py with TASK-2086. Must be sequential.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T02:08:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2085-per-model-output-clamping.md"
+    },
+    {
+      "id": "TASK-2086",
+      "slug": "nova-code-dispatcher",
+      "title": "NovaCodeDispatcher — dev seat over the bedrock-mantle endpoint",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2084",
+        "TASK-2085"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates dispatchers/nova.py, which TASK-2085 and TASK-2087 also edit. Sequential.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T02:14:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2086-nova-code-dispatcher.md"
+    },
+    {
+      "id": "TASK-2087",
+      "slug": "nova-adversarial-reviewer",
+      "title": "NovaAdversarialReviewDispatcher — read-only, no-tools reviewer",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2084"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Adds a second class to dispatchers/nova.py (created by TASK-2086) and edits dispatchers/__init__.py. Sequential with TASK-2086.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T02:26:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2087-nova-adversarial-reviewer.md"
+    },
+    {
+      "id": "TASK-2088",
+      "slug": "nova-backend-wiring",
+      "title": "Nova backend registration, catalog entry & selectable adversarial seat",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2086",
+        "TASK-2087"
+      ],
+      "parallel": false,
+      "parallelism_notes": "The convergence point: edits models/base.py, agent_builder.py, catalog.py and conf.py, all shared registration surfaces. Must follow both dispatchers.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T02:38:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2088-nova-backend-wiring.md"
+    },
+    {
+      "id": "TASK-2089",
+      "slug": "dispatcher-round-events",
+      "title": "Emit ClientRoundEvent from the LLMCodeDispatcher tool loop",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Fully independent of the Nova work — touches only dispatchers/llm.py, which no other task modifies. This plus TASK-2090/2091 form the one genuinely detachable chain if a second worktree is ever wanted.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T02:48:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2089-dispatcher-round-events.md"
+    },
+    {
+      "id": "TASK-2090",
+      "slug": "usage-report-model",
+      "title": "UsageReport model, usage.json and the markdown section",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2089"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes the round events from TASK-2089. Creates usage_report.py and edits run_bundle.py — a file no Nova task touches, so the usage chain stays disjoint from Modules 1-5.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T03:00:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2090-usage-report-model.md"
+    },
+    {
+      "id": "TASK-2091",
+      "slug": "usage-report-html",
+      "title": "Self-contained HTML usage report",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2090"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends usage_report.py created by TASK-2090 and must match its column set.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T03:05:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2091-usage-report-html.md"
+    },
+    {
+      "id": "TASK-2092",
+      "slug": "haiku-pr-enrichment",
+      "title": "Haiku PR-body enrichment (enrich, never replace)",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2084"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only the two handoff nodes plus a helper in dispatchers/nova.py. Disjoint from the wiring and usage chains once TASK-2084 lands.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T03:32:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2092-haiku-pr-enrichment.md"
+    },
+    {
+      "id": "TASK-2093",
+      "slug": "integration-tests-docs",
+      "title": "Integration tests, opt-in regression guard & documentation",
+      "feature_id": "FEAT-405",
+      "feature": "novaclient-dev-loop",
+      "spec": "sdd/specs/novaclient-dev-loop.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2088",
+        "TASK-2091",
+        "TASK-2092"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Certifies the whole feature — must run last, after all three chains converge.",
+      "assigned_to": null,
+      "started_at": "2026-08-03T01:53:57+00:00",
+      "completed_at": "2026-08-03T03:40:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2093-integration-tests-docs.md"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "chrome-devtools-mcp": "^1.6.0"
+  }
+}

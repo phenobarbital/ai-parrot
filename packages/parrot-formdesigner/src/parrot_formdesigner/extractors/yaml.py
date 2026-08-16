@@ -21,6 +21,7 @@ from ..core.constraints import (
     PostDependency,
 )
 from ..core.options import FieldOption
+from ..core.resolution import resolve_rule_references
 from ..core.schema import FormField, FormSchema, FormSection, SubmitAction
 from ..core.types import FieldType, LocalizedString
 
@@ -200,7 +201,7 @@ class YamlExtractor:
                 action_ref=data["submit_action"],
             )
 
-        return FormSchema(
+        form = FormSchema(
             form_id=form_id,
             version=version,
             title=title,
@@ -210,6 +211,10 @@ class YamlExtractor:
             cancel_allowed=cancel_allowed,
             meta=meta,
         )
+        # FEAT-393: mint UIDs (free — model default_factory) and resolve
+        # authored field_id rule references to field_uid before returning,
+        # so no unresolved rule ever reaches the registry/storage.
+        return resolve_rule_references(form)
 
     def _parse_section(self, data: dict[str, Any]) -> FormSection:
         """Parse a section dict into a FormSection.
@@ -449,7 +454,13 @@ class YamlExtractor:
         conditions: list[FieldCondition] = []
         for cond in conditions_data:
             if isinstance(cond, dict):
-                field_id = cond.get("field_id", "")
+                # FEAT-393: an empty/missing field_id used to silently
+                # produce field_id="" — now a hard error, since a build-time
+                # resolution pass (core.resolution.resolve_rule_references)
+                # can no longer resolve a rule reference that was never real.
+                field_id = cond.get("field_id")
+                if not field_id:
+                    raise ValueError("dependency condition is missing 'field_id'")
                 op_str = str(cond.get("operator", "eq")).lower()
                 try:
                     operator = ConditionOperator(op_str)
@@ -538,7 +549,10 @@ class YamlExtractor:
             parsed_conds = []
             for cond in raw_conds:
                 if isinstance(cond, dict):
-                    field_id = cond.get("field_id", "")
+                    # FEAT-393: same hard-error rule as _parse_dependency_rule.
+                    field_id = cond.get("field_id")
+                    if not field_id:
+                        raise ValueError("post_depends condition is missing 'field_id'")
                     op_str = str(cond.get("operator", "eq")).lower()
                     try:
                         operator = ConditionOperator(op_str)

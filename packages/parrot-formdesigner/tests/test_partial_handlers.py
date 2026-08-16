@@ -71,13 +71,18 @@ def _make_form(form_id: str = "test-form") -> FormSchema:
 
 def _make_request(
     method: str = "POST",
-    form_id: str = "test-form",
+    form_uid: str = "11111111-1111-1111-1111-111111111111",
     session_id: str | None = "sess-1",
     body: dict | None = None,
 ) -> MagicMock:
-    """Build a mocked aiohttp request."""
+    """Build a mocked aiohttp request.
+
+    ``form_uid`` (FEAT-389) must be a well-formed UUID string — the
+    handlers' ``extract_form_uid()`` helper validates the path segment
+    and raises ``HTTPBadRequest`` for anything else.
+    """
     req = MagicMock(spec=web.Request)
-    req.match_info = {"form_id": form_id}
+    req.match_info = {"form_uid": form_uid}
     req.method = method
 
     # Session attribute
@@ -123,8 +128,11 @@ class TestSavePartial:
     async def test_save_single_field_returns_partial(self):
         """POST /partial with one field returns 200 with updated state."""
         form = _make_form()
+        name_field = form.sections[0].fields[0]
         store = MagicMock(spec=PartialSaveStore)
-        partial = _make_partial(data={"name": "Alice"})
+        # Stored data is field_uid-keyed (TASK-2003) — the handler maps it
+        # back to field_id before serializing the response.
+        partial = _make_partial(data={str(name_field.field_uid): "Alice"})
         store.save = AsyncMock(return_value=partial)
 
         handler = _make_handler(form=form, partial_store=store)
@@ -140,8 +148,15 @@ class TestSavePartial:
     async def test_save_bulk_fields(self):
         """POST /partial with multiple fields returns all merged data."""
         form = _make_form()
+        name_field, age_field = form.sections[0].fields
         store = MagicMock(spec=PartialSaveStore)
-        partial = _make_partial(data={"name": "Alice", "age": 30})
+        # Stored data is field_uid-keyed (TASK-2003).
+        partial = _make_partial(
+            data={
+                str(name_field.field_uid): "Alice",
+                str(age_field.field_uid): 30,
+            }
+        )
         store.save = AsyncMock(return_value=partial)
 
         handler = _make_handler(form=form, partial_store=store)
@@ -258,8 +273,14 @@ class TestSavePartial:
     async def test_save_empty_answers_with_cache_returns_existing_partial(self):
         """POST /partial with 'answers': {} returns existing cached partial."""
         form = _make_form()
+        name_field = form.sections[0].fields[0]
         store = MagicMock(spec=PartialSaveStore)
-        existing = _make_partial(data={"name": "Alice"}, field_errors={"age": ["Required"]})
+        # Stored data is field_uid-keyed (TASK-2003); field_errors stay
+        # field_id-keyed (response-only, never persisted key-transformed).
+        existing = _make_partial(
+            data={str(name_field.field_uid): "Alice"},
+            field_errors={"age": ["Required"]},
+        )
         store.get = AsyncMock(return_value=existing)
 
         handler = _make_handler(form=form, partial_store=store)
@@ -347,11 +368,15 @@ class TestGetPartial:
 
     async def test_get_returns_cached(self):
         """GET /partial returns 200 with cached partial data."""
+        form = _make_form()
+        name_field = form.sections[0].fields[0]
         store = MagicMock(spec=PartialSaveStore)
-        partial = _make_partial(data={"name": "Bob"})
+        # Stored data is field_uid-keyed (TASK-2003) — the handler needs the
+        # form (via registry.get) to map it back to field_id on read.
+        partial = _make_partial(data={str(name_field.field_uid): "Bob"})
         store.get = AsyncMock(return_value=partial)
 
-        handler = _make_handler(partial_store=store)
+        handler = _make_handler(form=form, partial_store=store)
         req = _make_request(method="GET")
 
         resp = await handler.get_partial(req)

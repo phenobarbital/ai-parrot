@@ -311,6 +311,14 @@ CREW_RESULT_STORAGE_PG_DSN = config.get('CREW_RESULT_STORAGE_PG_DSN', fallback=d
 CREW_RESULT_STORAGE_REDIS_URL = config.get('CREW_RESULT_STORAGE_REDIS_URL', fallback=REDIS_URL)
 CREW_RESULT_STORAGE_REDIS_TTL = int(config.get('CREW_RESULT_STORAGE_REDIS_TTL', fallback=604800))
 
+# AgentsFlow state checkpointing (FEAT-399)
+FLOW_CHECKPOINT_STORE = config.get('FLOW_CHECKPOINT_STORE', fallback='redis')
+FLOW_CHECKPOINT_DURABLE_STORE = config.get('FLOW_CHECKPOINT_DURABLE_STORE', fallback=None)
+FLOW_CHECKPOINT_REDIS_TTL = int(config.get('FLOW_CHECKPOINT_REDIS_TTL', fallback=86400))
+FLOW_CHECKPOINT_HISTORY = int(config.get('FLOW_CHECKPOINT_HISTORY', fallback=10))
+FLOW_CHECKPOINT_SHUTDOWN_DEADLINE = int(config.get('FLOW_CHECKPOINT_SHUTDOWN_DEADLINE', fallback=15))
+FLOW_CHECKPOINT_LEASE_TTL = int(config.get('FLOW_CHECKPOINT_LEASE_TTL', fallback=60))
+
 REDIS_HISTORY_DB = config.get('REDIS_HISTORY_DB', fallback=3)
 REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
@@ -447,7 +455,7 @@ GOOGLE_CREDENTIALS_FILE = Path(
 )
 
 ## LLM default config:
-from .models.google import GoogleModel
+from .models.google import GoogleModel  # noqa: E402
 DEFAULT_LLM_MODEL = config.get(
     'LLM_MODEL', fallback=GoogleModel.GEMINI_FLASH_LATEST.value
 )
@@ -478,6 +486,17 @@ AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get(
 AWS_SESSION_TOKEN = config.get("AWS_SESSION_TOKEN", fallback=None)
 ANTHROPIC_AWS_WORKSPACE_ID = config.get("ANTHROPIC_AWS_WORKSPACE_ID", fallback=None)
 BEDROCK_AWS_REGION = config.get("BEDROCK_AWS_REGION", fallback=None)
+# Bedrock API key (bearer token, prefix "ABSK...") for NovaClient/
+# BedrockConverseBase — a dedicated, scoped alternative to the generic
+# AWS_ACCESS_KEY/AWS_SECRET_KEY IAM keypair (see BedrockConverseBase.__init__).
+AWS_NOVA_API_KEY = config.get("AWS_NOVA_API_KEY", fallback=None)
+# FEAT-407: Amazon Bedrock Mantle (OpenAI-compatible API) settings.
+# BEDROCK_MANTLE_API_KEY — dedicated bearer key for BedrockMantleClient;
+#   falls back to AWS_NOVA_API_KEY above when unset (see mantle.py).
+# BEDROCK_MANTLE_BASE_URL — explicit override for the Mantle endpoint;
+#   when unset, the base URL is constructed from the resolved region.
+BEDROCK_MANTLE_API_KEY = config.get("BEDROCK_MANTLE_API_KEY", fallback=None)
+BEDROCK_MANTLE_BASE_URL = config.get("BEDROCK_MANTLE_BASE_URL", fallback=None)
 
 # Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
 # AWS_SECRET_KEY so that the conversations/artifacts backend can run against a
@@ -526,6 +545,12 @@ AWS_CREDENTIALS = {
         "region_name": config.get("AWS_SECURITY_REGION", fallback="us-east-2"),
         "bucket_name": config.get("AWS_SECURITY_BUCKET_NAME"),
     },
+    "nova_sonic": {
+        "use_credentials": True,
+        "aws_key": config.get("AWS_NOVA_SONIC_KEY_ID"),
+        "aws_secret": config.get("AWS_NOVA_SONIC_SECRET_KEY"),
+        "region_name": config.get("AWS_NOVA_SONIC_REGION", fallback="us-east-1"),
+    }
 }
 
 """
@@ -672,6 +697,15 @@ WORKDAY_WSDL_PATHS = {
     "payroll": WORKDAY_WSDL_PAYROLL
 }
 
+# WORKDAY_ENV selects which credential set WorkdayConfig resolves:
+#   "prod" (default) → WORKDAY_* ; "sandbox"/"impl"/"implementation" → WORKDAY_*_IMPL
+WORKDAY_ENV = config.get("WORKDAY_ENV", fallback="prod")
+# Sandbox / implementation tenant credentials (used when WORKDAY_ENV=sandbox)
+WORKDAY_CLIENT_ID_IMPL = config.get("WORKDAY_CLIENT_ID_IMPL", fallback=None)
+WORKDAY_CLIENT_SECRET_IMPL = config.get("WORKDAY_CLIENT_SECRET_IMPL", fallback=None)
+WORKDAY_REFRESH_TOKEN_IMPL = config.get("WORKDAY_REFRESH_TOKEN_IMPL", fallback=None)
+WORKDAY_TOKEN_URL_IMPL = config.get("WORKDAY_TOKEN_URL_IMPL", fallback=None)
+
 # NetSuite MCP settings (OAuth2 Client Credentials M2M + certificate)
 NETSUITE_ACCOUNT_ID = config.get("NETSUITE_ACCOUNT_ID")
 NETSUITE_CLIENT_ID = config.get("NETSUITE_CLIENT_ID")
@@ -718,6 +752,9 @@ JIRA_USERS = [
         "username": "jlara@trocglobal.com"
     }
 ]
+JIRA_URL = config.get("JIRA_URL", fallback="")
+JIRA_USERNAME = config.get("JIRA_USERNAME", fallback="")
+JIRA_API_TOKEN = config.get("JIRA_API_TOKEN", fallback="")
 JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
 JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
 JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
@@ -815,6 +852,19 @@ VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(
     fallback=25 * 1024 * 1024  # 25MB
 )
 
+## Infographic Render Endpoint (FEAT-327): template source directories for
+## the server-owned, bot-less InfographicToolkit used by
+## POST /api/v1/agents/infographic/render (data-splice/jinja HTML sources —
+## NOT the block-spec metadata registry `parrot.helpers.infographics` uses
+## for the pre-render 404 check; the two are intentionally separate
+## registries, see docs/api/infographic_render.md's Known Limitation).
+## Comma-separated list of directories; empty by default — the render
+## route logs a loud warning and every render request fails with
+## TEMPLATE_ENGINE_UNSET until this is configured for a deployment.
+INFOGRAPHIC_RENDER_TEMPLATE_DIRS: list[str] = config.getlist(
+    "INFOGRAPHIC_RENDER_TEMPLATE_DIRS", fallback=[]
+)
+
 ## Security:
 AWS_ACCESS_KEY_ID = config.get("AWS_ACCESS_KEY_ID", fallback=AWS_ACCESS_KEY)
 AWS_SECRET_ACCESS_KEY = config.get("AWS_SECRET_ACCESS_KEY", fallback=AWS_SECRET_KEY)
@@ -909,10 +959,21 @@ DEV_LOOP_CODEREVIEW_MODEL: str = config.get(
     "DEV_LOOP_CODEREVIEW_MODEL", fallback="claude-sonnet-4-6"
 )
 # Which code-review dispatcher backs the QA node's code-review gate
-# (FEAT-270): "claude-code" (default), "codex", or "gemini". Selected via
+# (FEAT-270, extended FEAT-375): "claude-code" (default), "codex", "gemini",
+# "codex-adversarial" (read-only advisory second opinion), or "parallel"
+# (primary + codex-adversarial composite). Selected via
 # ``CodeReviewDispatcherFactory.create()`` at server startup.
 DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
     "DEV_LOOP_CODEREVIEW_AGENT", fallback="claude-code"
+)
+
+# Default Jira workflow status chain for `jira_transition_to`'s multi-step
+# walker. Covers the standard NAV simplified-workflow path so the dev-loop
+# can reach "Resolved" from any earlier state without manual env config.
+# Override per-project via ``JIRA_WORKFLOW_PATH_<PROJECT>`` env var.
+DEV_LOOP_JIRA_WORKFLOW_PATH: str = config.get(
+    "DEV_LOOP_JIRA_WORKFLOW_PATH",
+    fallback="Backlog > Open > In Progress > Resolved > Closed",
 )
 
 # Jira transition labels the dev-loop applies at each hand-off point. Every
@@ -924,8 +985,8 @@ DEV_LOOP_CODEREVIEW_AGENT: str = config.get(
 # workflow. Matching is alias/substring-tolerant (jira_transition_issue).
 DEV_LOOP_JIRA_TRANSITIONS_READY: list[str] = config.getlist(
     "DEV_LOOP_JIRA_TRANSITIONS_READY",
-    fallback=["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"],
-) or ["Ready to Deploy", "Resolve Issue", "Resolved", "Done", "Close Issue", "Closed"]
+    fallback=["Resolved", "Closed", "Done", "Ready to Deploy", "Resolve Issue", "Close Issue"],
+) or ["Resolved", "Closed", "Done", "Ready to Deploy", "Resolve Issue", "Close Issue"]
 DEV_LOOP_JIRA_TRANSITIONS_BLOCKED: list[str] = config.getlist(
     "DEV_LOOP_JIRA_TRANSITIONS_BLOCKED",
     fallback=["Deployment Blocked", "Blocked", "Blocked for Requirements", "On Hold", "Stop Progress"],
@@ -959,6 +1020,201 @@ DEV_LOOP_GATE_TTL_PLAN: int = config.getint(
 # durable audit record — the stream itself is swept after this many days.
 DEV_LOOP_ACTIONS_RETENTION_DAYS: int = config.getint(
     "DEV_LOOP_ACTIONS_RETENTION_DAYS", fallback=7
+)
+
+# FEAT-377 (TASK-1910): bounded QA→development repair-loop cap. A failed QA
+# attempt redispatches development (with QAReport feedback) while
+# `QAReport.attempt < N`; at `attempt >= N` the run escalates to
+# `failure_handler` as before. Read at ``build_dev_loop_definition()`` /
+# ``build_dev_loop_flow()`` call time (not import time) so tests can
+# monkeypatch it per-case.
+DEV_LOOP_QA_MAX_RETRIES: int = config.getint("DEV_LOOP_QA_MAX_RETRIES", fallback=2)
+
+# FEAT-377 (TASK-1914): dev-loop graph-memory wire (G2). Directory holding
+# the SQLite graph plane DevLoopGraphMemory.from_config() opens (one
+# `<tenant>.db` per tenant, same convention as build_graph_memory_toolkit).
+# Unset (default) disables the facade entirely — every dev_loop node
+# behaves byte-identically to today. SQLite-only in v1 (decided
+# 2026-07-26); no Arango dual publish.
+DEV_LOOP_GRAPH_MEMORY_PATH: str = config.get("DEV_LOOP_GRAPH_MEMORY_PATH", fallback="")
+
+# FEAT-377 (TASK-1916): opt-in plan_approval gate (G5) — approve the Jira
+# ticket + spec + task decomposition BEFORE the agent fleet burns tokens
+# implementing it. False (default) preserves current behavior exactly
+# (mirrors the FEAT-322 require_deployment_approval flag's shape; unlike
+# that flag, this one IS conf-backed per this task's explicit design).
+DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean(
+    "DEV_LOOP_REQUIRE_PLAN_APPROVAL", fallback=False
+)
+
+# Skip the QA node entirely (deterministic checks + code review) and emit a
+# synthetic passing QAReport. Useful for trivial fixes (e.g. syntax errors)
+# where the QA cycle costs more than the research + development combined.
+# False (default) preserves the full QA gate.
+DEV_LOOP_SKIP_QA: bool = config.getboolean("DEV_LOOP_SKIP_QA", fallback=False)
+
+# FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
+# it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
+# re-acquiring it once the gate resolves. True (default) per spec §2 —
+# unlike the other FEAT-377 flags, parking defaults ON since holding a slot
+# for a gate's whole TTL (up to 72h for manual_criterion) is the behavior
+# this task exists to fix. Set False to keep the pre-TASK-1917 behavior
+# (a gate wait holds its slot for the run's entire duration).
+DEV_LOOP_GATE_PARK: bool = config.getboolean("DEV_LOOP_GATE_PARK", fallback=True)
+
+# FEAT-375: Codex CLI adversarial second-opinion agent. These settings back
+# the "codex-adversarial" / "parallel" ``DEV_LOOP_CODEREVIEW_AGENT`` values
+# above — kept append-only here (rather than reflowing the block near
+# :927-932) to avoid merge conflicts with FEAT-374's in-flight conf.py edits.
+# Model used by the read-only codex-adversarial reviewer's dispatch.
+DEV_LOOP_ADVERSARIAL_MODEL: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_MODEL", fallback="gpt-5.5"
+)
+# Default `codex exec review` scope for the adversarial reviewer:
+# "uncommitted" (default), "base", or "commit".
+DEV_LOOP_ADVERSARIAL_SCOPE: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_SCOPE", fallback="uncommitted"
+)
+# Whether the "parallel" composite reviewer runs an additional LLM-judge
+# dispatch to synthesize a narrative over the primary + adversarial
+# verdicts. Off by default — the deterministic merge alone is authoritative.
+DEV_LOOP_CODEREVIEW_JUDGE: bool = config.getboolean(
+    "DEV_LOOP_CODEREVIEW_JUDGE", fallback=False
+)
+# HITL gate TTL for an ESCALATEd adversarial-review finding
+# (``GateKind="review_escalation"``, FEAT-375). Fail-closed like the other
+# DEV_LOOP_GATE_TTL_* settings above (:961-972).
+DEV_LOOP_GATE_TTL_REVIEW_ESCALATION: int = config.getint(
+    "DEV_LOOP_GATE_TTL_REVIEW_ESCALATION", fallback=86400  # 24h, fail-closed
+)
+# HITL gate TTL for a dev-flow ideation Open-Questions round
+# (``GateKind="open_questions"``, FEAT-412). Fail-closed like the other
+# DEV_LOOP_GATE_TTL_* settings: silence is not consent for spec decisions,
+# so an unanswered round expires the run into the failure path rather than
+# auto-approving an under-specified document.
+DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint(
+    "DEV_FLOW_GATE_TTL_QUESTIONS", fallback=86400  # 24h, fail-closed
+)
+# FEAT-412: maximum number of HITL Open-Questions rounds (i.e. gates) the
+# dev-flow's IdeationNode may open per run. Once exhausted, questions still
+# `[ ]` in the document are NOT re-asked and do NOT block the run — they are
+# carried into the spec's §8 by the planner. Read at execute() time (not
+# import time) so tests can monkeypatch it per-case.
+DEV_FLOW_IDEATION_MAX_ROUNDS: int = config.getint(
+    "DEV_FLOW_IDEATION_MAX_ROUNDS", fallback=2
+)
+# Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
+# "base" (e.g. "dev" or "origin/main"). Required in that case — the server
+# bootstrap raises at startup rather than silently degrading every review if
+# "base" scope is selected without a ref configured here (code-review fix,
+# FEAT-375). Not used, and not required, for "uncommitted" (default) scope.
+# "commit" scope is a per-run value (a fixed commit SHA doesn't make sense as
+# a persistent server setting) and is intentionally NOT configurable here —
+# the server bootstrap rejects "commit" scope with a clear error.
+DEV_LOOP_ADVERSARIAL_BASE_REF: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_BASE_REF", fallback=""
+)
+
+# FEAT-378: JSON spec of the feature-mode QA judge panel used by
+# ``JudgePanelReviewDispatcher`` (registered as "judge-panel"), e.g.
+# '{"judges": [{"agent": "claude-code", "model": "claude-sonnet-4-6"},
+# {"agent": "codex", "model": "gpt-5.5"}, {"agent": "gemini"}],
+# "decision": "majority"}' — matches ``JudgePanelConfig``'s shape. Empty
+# (default) falls back to ``default_judge_panel()`` (3 judges: claude-code,
+# codex via the adversarial ``sdd-secondopinion`` profile, gemini; simple
+# majority, tie/majority-breaking abstention → escalate, fail-closed).
+DEV_LOOP_JUDGE_PANEL: str = config.get("DEV_LOOP_JUDGE_PANEL", fallback="")
+
+# FEAT-378: directory (relative to the feature worktree root) where
+# ``FeatureHandoffNode`` generates ``feat-<id>-<slug>.md`` docs artifacts
+# describing what was implemented — committed to the PR branch alongside
+# the change. ``docs/migration/`` stays reserved for migrations/breaking
+# changes (spec §2).
+DEV_LOOP_DOCS_ARTIFACT_DIR: str = config.get(
+    "DEV_LOOP_DOCS_ARTIFACT_DIR", fallback="docs/features"
+)
+# FEAT-378: whether ``FeatureHandoffNode`` ingests the docs artifact as a
+# queryable wiki page via ``LLMWikiToolkit.create_page``. Off by default —
+# requires a wiki_toolkit to actually be wired by the caller; when on but
+# no toolkit is configured (or the wiki is otherwise unavailable), the
+# node degrades with a warning rather than blocking the handoff.
+DEV_LOOP_WIKI_PAGE_INGEST: bool = config.getboolean(
+    "DEV_LOOP_WIKI_PAGE_INGEST", fallback=False
+)
+
+# Whether ``ResearchNode`` fetches REMOTE log excerpts (CloudWatch,
+# Elasticsearch) for a run. Local sources (``inline`` pasted traces and
+# ``attached_file``) are never gated by this — they cost no API call.
+#   "auto"   (default) — only for ``kind == "bug"`` briefs. Enhancement /
+#                        new-feature / spec-driven runs have no incident to
+#                        triage, so the query is pure latency + AWS spend.
+#   "always" — pre-existing behavior: fetch for every work kind.
+#   "never"  — never call a remote log backend, not even for bugs.
+DEV_LOOP_LOG_FETCH_MODE: str = config.get(
+    "DEV_LOOP_LOG_FETCH_MODE", fallback="auto"
+)
+
+# FEAT-405: Nova (AWS Bedrock) dev-loop backend. The dev-seat coding loop
+# (``NovaCodeDispatcher``) reaches MiniMax/Kimi/GLM models over the
+# OpenAI-compatible ``bedrock-mantle`` endpoint rather than through
+# ``NovaClient``/Converse (which exposes no chat-completion shape) — see
+# spec ``novaclient-dev-loop`` §2 Component Diagram. Authentication reuses
+# the existing ``AWS_NOVA_API_KEY`` Bedrock API key (bearer token) — the
+# same physical credential ``BedrockConverseBase`` uses for the Converse
+# seats, not a duplicate secret.
+# Explicit override for the full bedrock-mantle base URL. Empty (default)
+# derives it as ``https://bedrock-mantle.{DEV_LOOP_NOVA_MANTLE_REGION}.api.aws/v1``.
+DEV_LOOP_NOVA_MANTLE_BASE_URL: str = config.get(
+    "DEV_LOOP_NOVA_MANTLE_BASE_URL", fallback=""
+)
+# Region used to derive the default bedrock-mantle base URL above. Falls
+# back to the same region BedrockConverseBase/NovaClient use.
+DEV_LOOP_NOVA_MANTLE_REGION: str = config.get(
+    "DEV_LOOP_NOVA_MANTLE_REGION",
+    fallback=BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1",
+)
+# Both Nova Converse seats below default to Amazon's OWN Nova models rather
+# than to ``us.anthropic.*`` ids. Rationale: Bedrock gates every Anthropic
+# model behind a per-account "Anthropic use case details" form, so an
+# account holding a perfectly valid Bedrock API key still gets
+# ``ResourceNotFoundException`` ("Model use case details have not been
+# submitted for this account") on the very first call. Native Nova ids need
+# no such form, which makes them the correct default for a *NOVA* backend —
+# an operator who has completed the Anthropic form can still point either
+# key back at a ``us.anthropic.*`` id.
+#
+# ``us.amazon.nova-2-lite-v1:0`` is the current-generation Nova text model,
+# Converse-capable, and the id ``NovaClient`` itself defaults to. The ``us.``
+# geo prefix is REQUIRED — Nova 2 Lite has no in-region access (spec
+# ``novaclient-amazon-aws`` §"Verified AWS Facts"). Nova Premier is
+# deliberately NOT used: it is Legacy on Bedrock with EOL 2026-09-14.
+#
+# Duplicated (not imported) from
+# ``parrot.flows.dev_loop.models.nova.NOVA_DEFAULT_CONVERSE_MODEL``: conf.py
+# is a foundational module imported almost everywhere and must not pull in
+# ``parrot.flows``. ``test_nova_profiles.py`` pins the two literals equal.
+_NOVA_DEFAULT_CONVERSE_MODEL: str = "us.amazon.nova-2-lite-v1:0"
+
+# Model used by the read-only nova-adversarial reviewer's single Converse
+# call (``NovaAdversarialReviewDispatcher``). Mirrors
+# ``DEV_LOOP_ADVERSARIAL_MODEL`` (the codex-adversarial equivalent, :1048).
+DEV_LOOP_NOVA_REVIEW_MODEL: str = config.get(
+    "DEV_LOOP_NOVA_REVIEW_MODEL", fallback=_NOVA_DEFAULT_CONVERSE_MODEL
+)
+# Model used by the mechanical (PR-summary) seat (TASK-2092's enrichment
+# call), consumed by ``dispatchers.nova.summarize_pr_changes``.
+DEV_LOOP_NOVA_MECHANICAL_MODEL: str = config.get(
+    "DEV_LOOP_NOVA_MECHANICAL_MODEL",
+    fallback=_NOVA_DEFAULT_CONVERSE_MODEL,
+)
+# Adversarial-seat backend selector (FEAT-405 Module 5, [R3]): choice over
+# {"codex", "nova"}, defaulting to "codex" — unconfigured deployments see
+# byte-identical behaviour to pre-FEAT-405. Resolved through
+# ``catalog.resolve_adversarial_backend()`` (validates the value and
+# raises naming the valid options); this constant exists for discoverability
+# alongside the sibling DEV_LOOP_ADVERSARIAL_* keys above (:1048,1053,1076).
+DEV_LOOP_ADVERSARIAL_BACKEND: str = config.get(
+    "DEV_LOOP_ADVERSARIAL_BACKEND", fallback="codex"
 )
 
 # ---------------------------------------------------------------------------

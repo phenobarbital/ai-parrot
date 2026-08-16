@@ -52,7 +52,7 @@ class _Response:
 
 
 class _FakeClient:
-    model = "moonshotai/kimi-k2-instruct-0905"
+    model = "minimaxai/minimax-m3"
 
     def __init__(self, responses: Sequence[_Message]) -> None:
         self.responses = list(responses)
@@ -69,7 +69,7 @@ class _FakeClient:
 @pytest.fixture(autouse=True)
 def _patch_worktree_base(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.llm.conf.WORKTREE_BASE_PATH",
         str(tmp_path),
     )
     return tmp_path
@@ -154,7 +154,7 @@ async def test_dispatch_runs_tool_loop_and_validates_final_output(
     result = await dispatcher.dispatch(
         brief=brief,
         profile=LLMCodeDispatchProfile(
-            llm="nvidia:moonshotai/kimi-k2-instruct-0905",
+            llm="nvidia:minimaxai/minimax-m3",
             max_turns=4,
         ),
         output_model=DevelopmentOutput,
@@ -164,8 +164,8 @@ async def test_dispatch_runs_tool_loop_and_validates_final_output(
     )
 
     assert result.files_changed == ["app.py"]
-    assert dispatcher._captured_factory["args"][0] == "nvidia:moonshotai/kimi-k2-instruct-0905"  # type: ignore[attr-defined]
-    assert client.calls[0]["model"] == "moonshotai/kimi-k2-instruct-0905"
+    assert dispatcher._captured_factory["args"][0] == "nvidia:minimaxai/minimax-m3"  # type: ignore[attr-defined]
+    assert client.calls[0]["model"] == "minimaxai/minimax-m3"
     assert client.calls[0]["use_tools"] is True
     assert any(tool["function"]["name"] == "final_output" for tool in client.calls[0]["tools"])
 

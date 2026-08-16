@@ -27,6 +27,7 @@ from parrot_formdesigner.core import (
     FormSchema,
     FormSection,
     PostDependency,
+    resolve_rule_references,
 )
 from parrot_formdesigner.renderers import JsonSchemaRenderer
 from parrot_formdesigner.services import FormValidator, RuleEvaluator
@@ -75,8 +76,11 @@ class TestAuthoredFormWithRulesValidatesAndRenders:
     async def test_add_xor_dependency_via_toolkit(self, form_with_rules: FormSchema) -> None:
         """EditToolkit can add a depends_on with logic='xor' successfully."""
         toolkit = EditToolkit(form_with_rules)
+        derived_uid = str(
+            next(f for s in form_with_rules.sections for f in s.fields if f.field_id == "derived").field_uid
+        )
         result = await toolkit.add_dependency(
-            "derived",
+            derived_uid,
             {
                 "conditions": [
                     {"field_id": "trigger_a", "operator": "eq", "value": "yes"},
@@ -104,8 +108,11 @@ class TestAuthoredFormWithRulesValidatesAndRenders:
         # trigger_b (2nd field) targets derived (4th field); operand = trigger_a (1st field)
         # Dependency graph: trigger_b -> derived (forward) + trigger_b -> trigger_a (op read)
         # No cycle.
+        trigger_b_uid = str(
+            next(f for s in form_with_rules.sections for f in s.fields if f.field_id == "trigger_b").field_uid
+        )
         result = await toolkit.add_post_dependency(
-            "trigger_b",
+            trigger_b_uid,
             {
                 "target": "derived",
                 "effect": "calc",
@@ -177,6 +184,10 @@ class TestAuthoredFormWithRulesValidatesAndRenders:
             title="Calc Form",
             sections=[FormSection(section_id="s1", fields=[flag, source, result_field])],
         )
+        # FEAT-393: validate_rules reads conditions/operations via field_uid —
+        # resolve authored field_id references first, same as any real build
+        # boundary (extractors/CreateFormTool/edit APIs).
+        form = resolve_rule_references(form)
         validator = FormValidator()
         errors = validator.validate_rules(form)
         assert errors == [], f"Expected no rule errors, got: {errors}"

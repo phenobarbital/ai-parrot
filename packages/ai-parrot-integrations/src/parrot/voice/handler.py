@@ -37,16 +37,31 @@ if TYPE_CHECKING:
     # dependencies, but this keeps the module-scope import list minimal and
     # matches the lazy-import style used for NovaClient/GeminiLiveClient
     # in resolve_voice_client_class() below.
-    from parrot.voice.models import VoiceProvider
+    # FEAT-416 (TASK-2152): import the unified VoiceProvider from core —
+    # parrot.voice.models.VoiceProvider is now just a re-export of this.
+    from parrot.models.voice import VoiceProvider
 
 # Type hints for optional imports
 try:
     from parrot.bots.voice import VoiceBot, create_voice_bot
     from parrot.models.voice import VoiceConfig
+    # FEAT-416 (TASK-2152): VoiceSession (TASK-2149) replaces the inlined
+    # turn lifecycle previously in _run_voice_session().
+    from parrot.voice.session import VoiceSession
 except ImportError:
     VoiceBot = Any
     VoiceConfig = Any
+    VoiceSession = Any
     create_voice_bot = None
+
+
+# Filters internal "thinking" text that sometimes leaks into the model's
+# output (e.g. "**Clarifying...**", "**Show Product Image**"). Shared by
+# _send_voice_response() and _HandlerVoiceSession.build_frames() so both
+# frame-construction paths filter identically (FEAT-418, TASK-2174).
+_THOUGHT_FILTER_PATTERN = re.compile(
+    r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])'
+)
 
 
 # =============================================================================
@@ -94,7 +109,8 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
             not installed and ``stream_voice()`` is called — importing
             :class:`NovaClient` itself never requires it.
     """
-    from parrot.voice.models import VoiceProvider as _VoiceProvider
+    # FEAT-416 (TASK-2152): import the unified VoiceProvider from core.
+    from parrot.models.voice import VoiceProvider as _VoiceProvider
 
     if provider == _VoiceProvider.NOVA:
         from parrot.clients.nova import NovaClient
@@ -118,12 +134,21 @@ class BotConfig:
     tools: Optional[List[Any]] = None
     voice_config: Optional[VoiceConfig] = None
 
-    # Additional client configuration
+    # Additional client configuration — Gemini / VertexAI
     api_key: Optional[str] = None
     vertexai: bool = False
     project: Optional[str] = None
     location: Optional[str] = None
     credentials_file: Optional[str] = None
+
+    # Nova / Bedrock (FEAT-315 — required for VoiceBot to forward AWS
+    # credentials to NovaClient; without these the SDK falls back to its
+    # default credential chain which may resolve to the wrong identity).
+    aws_access_key: Optional[str] = None
+    aws_secret_key: Optional[str] = None
+    aws_id: Optional[str] = None
+    region: Optional[str] = None
+    region_prefix: Optional[str] = None
 
     def as_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
@@ -199,6 +224,12 @@ class WebSocketConnection:
     # Voice session task
     voice_task: Optional[asyncio.Task] = None
 
+    # FEAT-416 (TASK-2152): the VoiceSession managing this connection's
+    # turn lifecycle (start_turn/push_audio/end_turn/close/reconnection).
+    # Created in _handle_start_session(), consumed by
+    # _handle_start_recording()/_handle_audio_data()/_handle_stop_recording().
+    voice_session: Optional["VoiceSession"] = None
+
     # Shutdown event
     shutdown_event: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -217,6 +248,275 @@ class WebSocketConnection:
     # Type is Optional[Any] to avoid importing the liveavatar stack at module level
     # (lazy import so /ws/voice works without the ai-parrot-integrations[liveavatar] extra).
     avatar_session: Optional[Any] = None
+
+
+# =============================================================================
+# VoiceSession relay adapter (FEAT-416 TASK-2152; re-based on the
+# build_frames() hook, FEAT-418 TASK-2174)
+# =============================================================================
+# VoiceSession's own _relay() (parrot.voice.session, TASK-2149) used to
+# build a generic, minimal frame vocabulary the handler's real,
+# ALREADY-SHIPPED WebSocket protocol (response_chunk/transcription/
+# response_complete/ready_to_speak/display_data/session_warning, STT-only
+# gating, "thought" text filtering, the LiveAvatar audio tee) couldn't
+# reproduce without dropping information. TASK-2152 worked around that by
+# overriding BOTH `_relay()` (delegating to `_send_voice_response()`) AND
+# duplicating `_run_turn()`'s entire reconnection loop, purely so the turn
+# could be driven through `VoiceBot.ask_stream()` (conversation-memory
+# persistence, dynamic system-prompt building, `stt_only` — all
+# VoiceBot-level features `VoiceSession.client.stream_voice()` alone
+# cannot provide) instead of `self.client.stream_voice()` directly.
+#
+# FEAT-418 (TASK-2174) removes both workarounds:
+#   1. `build_frames()` (TASK-2171's relay extension hook) now reproduces
+#      the handler's real frame protocol directly, so `_run_turn()` no
+#      longer needs re-implementing to reach a custom `_relay()` — this
+#      class overrides `build_frames()` (sync) instead. The LiveAvatar
+#      audio tee is async, so it stays in a (now cooperative, calling
+#      `super()._relay()`) `_relay()` override — `build_frames()` cannot
+#      `await` it.
+#   2. `client` is now `_AskStreamVoiceClient` (below), a tiny adapter
+#      presenting `VoiceBot.ask_stream()` as `VoiceCapable.stream_voice()`
+#      so the now-INHERITED `_run_turn()` (TASK-2150's reconnection loop,
+#      unmodified) drives turns through the bot — preserving conversation
+#      memory and dynamic system-prompt building without needing its own
+#      copy of the reconnection loop. `stt_only` threads through
+#      `VoiceSession.__init__`'s `stt_only` parameter (TASK-2172), which
+#      `to_stream_options()` projects into `options.stt_only`.
+#
+# Net result: `_HandlerVoiceSession` no longer defines `_run_turn` at
+# all — `voice/session.py`'s loop is the only reconnection loop in the
+# codebase, satisfied literally, not just in spirit.
+class _AskStreamVoiceClient:
+    """Adapts ``VoiceBot.ask_stream()`` to the ``VoiceCapable.stream_voice()``
+    shape (FEAT-418, TASK-2174).
+
+    ``VoiceSession``'s inherited ``_run_turn()`` calls
+    ``self.client.stream_voice(...)``. Passing the raw provider client
+    (``bot._llm``) there would bypass ``VoiceBot`` entirely — losing
+    conversation-memory persistence and dynamic system-prompt building
+    (KB/vector/user context), both of which ``VoiceChatHandler`` relies on
+    today (it explicitly configures ``conversation_memory`` on the bot
+    before starting a session — see ``_handle_start_session()`` — *because*
+    ``ask_stream()`` is what persists turns). This adapter is the glue that
+    lets the turn still flow through the bot while ``VoiceSession`` itself
+    stays a thin, provider-agnostic lifecycle manager.
+    """
+
+    def __init__(self, bot: "VoiceBot", user_id: Optional[str] = None):
+        self._bot = bot
+        self._user_id = user_id
+
+    @property
+    def voice_capabilities(self):
+        """Delegates to the underlying raw client's descriptor — required
+        by ``VoiceSession.__init__``'s capability preflight (TASK-2172)."""
+        return self._bot._llm.voice_capabilities
+
+    async def stream_voice(
+        self,
+        audio_iterator,
+        system_prompt=None,
+        session_id=None,
+        user_id=None,
+        options=None,
+        **kwargs,
+    ):
+        """Delegates to ``VoiceBot.ask_stream()``.
+
+        ``VoiceBot`` builds its own dynamic ``system_prompt`` internally
+        (KB/vector/conversation context) — the ``system_prompt`` argument
+        here (``VoiceSession.system_prompt``, a static value) is
+        intentionally NOT forwarded, matching the pre-TASK-2174 behavior
+        where the duplicated ``_run_turn()`` called ``bot.ask_stream()``
+        the same way. ``stt_only`` is read off ``options`` (projected by
+        ``VoiceSession`` from its own ``stt_only`` constructor parameter,
+        TASK-2172) since ``ask_stream()`` takes it as a dedicated
+        parameter, not part of an options object.
+        """
+        stt_only = options.stt_only if options is not None else False
+        async for response in self._bot.ask_stream(
+            audio_input=audio_iterator,
+            session_id=session_id,
+            user_id=user_id or self._user_id,
+            stt_only=stt_only,
+        ):
+            yield response
+
+
+class _HandlerVoiceSession(VoiceSession):
+    """VoiceSession that relays through VoiceChatHandler's existing,
+    richer WebSocket frame protocol instead of VoiceSession's own."""
+
+    def __init__(self, *args, handler: "VoiceChatHandler", connection: "WebSocketConnection", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._handler = handler
+        self._connection = connection
+
+    async def _send(self, payload: dict) -> None:
+        # Code-review fix: route through the handler's own _send_message()
+        # (blanket try/except + logged failure) instead of the inherited
+        # VoiceSession._send(), which only suppresses ConnectionResetError
+        # — keeps error/reconnect frames on the exact same safety net as
+        # every other frame this handler sends.
+        await self._handler._send_message(self._connection.ws, payload)
+
+    def build_frames(self, resp, turn_no: int) -> list:  # noqa: ARG002 — turn_no kept for signature parity
+        """Reproduce VoiceChatHandler's real WebSocket frame protocol
+        (FEAT-418, TASK-2174).
+
+        Mirrors ``_send_voice_response()``'s frame construction (STT-only
+        gating, "thought" text filtering, ``response_chunk``/
+        ``transcription``/``display_data``/``tool_call``/
+        ``response_complete``/``ready_to_speak``) plus the ``go_away`` ->
+        ``session_warning`` mapping the old ``_relay()`` override did.
+        Duplicated rather than delegating to the async
+        ``_send_voice_response()`` — this method must stay sync (the base
+        ``VoiceSession._relay()`` calls it without awaiting, per the
+        ``build_frames()`` contract from TASK-2171) — the LiveAvatar audio
+        tee (the one genuinely async side effect) is handled by the
+        ``_relay()`` override below instead.
+
+        Transcription frames now come from canonical ``role`` (FEAT-418)
+        instead of the removed ``metadata["user_transcription"]``/
+        ``metadata["assistant_transcription"]`` keys.
+        """
+        frames: list = []
+        connection = self._connection
+
+        if not connection.stt_only:
+            is_thought = bool(resp.text and _THOUGHT_FILTER_PATTERN.match(resp.text))
+            text_to_send = "" if is_thought else resp.text
+            if (resp.audio_data or text_to_send) and not resp.is_complete:
+                frames.append({
+                    "type": "response_chunk",
+                    "text": text_to_send or "",
+                    "audio_base64": base64.b64encode(resp.audio_data).decode() if resp.audio_data else "",
+                    "audio_format": "audio/pcm;rate=24000" if resp.audio_data else "",
+                    "is_interrupted": resp.is_interrupted,
+                })
+
+        # User transcription is always forwarded (both modes) — canonical
+        # role replaces the removed metadata["user_transcription"] key.
+        if resp.role == "user" and resp.text:
+            frames.append({
+                "type": "transcription",
+                "text": resp.text,
+                "is_user": True,
+            })
+
+        # Everything below this point is model-response output — skip in
+        # STT-only mode (matches _send_voice_response()'s early return).
+        if not connection.stt_only:
+            # Forward the assistant's spoken text as the display bubble.
+            # canonical role="assistant" replaces the removed
+            # metadata["assistant_transcription"] key; turn_metadata's own
+            # output_transcription remains as a fallback for a frame that
+            # carries no text of its own (e.g. an audio-only chunk).
+            assistant_text = resp.text if resp.role == "assistant" else None
+            if not assistant_text and resp.turn_metadata:
+                assistant_text = resp.turn_metadata.output_transcription
+            if assistant_text:
+                frames.append({
+                    "type": "transcription",
+                    "text": assistant_text,
+                    "is_user": False,
+                })
+
+            if resp.metadata.get("display_data"):
+                frames.append({
+                    "type": "display_data",
+                    "data": resp.metadata["display_data"],
+                })
+
+            for tc in resp.tool_calls:
+                frames.append({
+                    "type": "tool_call",
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                    "result": tc.result,
+                    "execution_time_ms": tc.execution_time_ms,
+                })
+
+            if resp.is_complete:
+                final_text = resp.text
+                if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
+                    final_text = ""
+                response_complete_frame = {
+                    "type": "response_complete",
+                    "text": final_text or "",
+                    "is_interrupted": resp.is_interrupted,
+                }
+                # FEAT-418 (TASK-2178): surface per-turn token/latency
+                # counters on the streaming path — mirrors the shape
+                # _send_complete_voice_response() already sends on the
+                # non-streaming path (input_tokens/output_tokens/
+                # total_tokens), plus the timing fields LiveCompletionUsage
+                # already computes (response_time_ms/first_token_time_ms),
+                # so the dual-provider example can render a live counter
+                # per provider without fabricating data client-side.
+                if resp.usage:
+                    response_complete_frame["usage"] = {
+                        "input_tokens": resp.usage.prompt_tokens,
+                        "output_tokens": resp.usage.completion_tokens,
+                        "total_tokens": resp.usage.total_tokens,
+                        "response_time_ms": resp.usage.response_time_ms,
+                        "first_token_time_ms": resp.usage.first_token_time_ms,
+                    }
+                frames.append(response_complete_frame)
+                frames.append({
+                    "type": "ready_to_speak",
+                    "message": "Ready for new question",
+                })
+
+        # Gemini's GoAway signal is distinct from reconnect_required and,
+        # by itself, is not understood by VoiceSession's (inherited,
+        # unmodified) reconnection loop. Mutating resp.metadata here is
+        # safe: build_frames() runs (via _relay()) BEFORE _run_turn()
+        # checks resp.metadata.get("reconnect_required") (spec §7 relay-
+        # before-reconnect ordering). As of TASK-2168, Gemini's own
+        # producer already sets reconnect_required alongside go_away — this
+        # mutation is now a defensive no-op for Gemini and a safety net for
+        # any future provider that emits go_away without it.
+        if resp.metadata.get("go_away"):
+            frames.append({
+                "type": "session_warning",
+                "message": "Session reconnecting...",
+            })
+            resp.metadata["reconnect_required"] = True
+
+        return frames
+
+    async def _relay(self, resp, turn_no: int) -> None:
+        """Send build_frames()'s output, then run the LiveAvatar audio tee.
+
+        The tee is async (awaits connection.avatar_session.speak()/
+        interrupt()/finish_turn()) so it cannot live in the sync
+        build_frames() — kept here, cooperating with the base class via
+        super()._relay() rather than re-implementing frame sending.
+        """
+        await super()._relay(resp, turn_no)
+
+        # ── Avatar audio tee (FEAT-245) ───────────────────────────────
+        # Best-effort: exceptions are caught and logged; the browser audio
+        # path MUST NOT be interrupted by an avatar hiccup (dual audio).
+        # Skipped in STT-only mode, matching _send_voice_response()'s
+        # early return (the avatar tee is unreachable there too).
+        connection = self._connection
+        if connection.stt_only or connection.avatar_session is None:
+            return
+        try:
+            if resp.is_interrupted:
+                await connection.avatar_session.interrupt()
+            else:
+                if resp.audio_data:
+                    await connection.avatar_session.speak(resp.audio_data)
+                if resp.is_complete:
+                    await connection.avatar_session.finish_turn()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "VoiceChatHandler: avatar tee error (voice stream unaffected): %s", exc
+            )
 
 
 # =============================================================================
@@ -556,12 +856,27 @@ class VoiceChatHandler:
                         connection.gemini_responding = False
                         connection.recording_start_time = datetime.now()
                         connection.audio_buffer = b""  # Reset buffer
+                        # FEAT-416 (TASK-2152 code-review fix): mirrors
+                        # _handle_audio_data()'s implicit-start-of-turn
+                        # handling — this binary path bypasses that
+                        # method entirely, so it needs its own start_turn()
+                        # for the same auto-start-on-first-chunk case.
+                        if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+                            await connection.voice_session.start_turn()
                     connection.is_recording = True
 
                     if connection.session_active and not connection.stop_audio_sending:
                         if connection.streaming_mode == "streaming":
-                            # Streaming mode: send to queue immediately
-                            await connection.audio_queue.put(msg.data)
+                            # FEAT-416 (TASK-2152 code-review fix): this
+                            # path previously queued into
+                            # connection.audio_queue, which nothing has
+                            # drained since the VoiceSession refactor —
+                            # audio sent as raw binary WS frames (rather
+                            # than base64-in-JSON via _handle_audio_data())
+                            # was being silently dropped. Route through
+                            # the same VoiceSession the JSON path uses.
+                            if connection.voice_session is not None:
+                                await connection.voice_session.push_audio(msg.data)
                         else:
                             # Buffered mode: accumulate audio
                             connection.audio_buffer += msg.data
@@ -980,6 +1295,16 @@ class VoiceChatHandler:
         connection.is_recording = True
         connection.recording_start_time = datetime.now()
 
+        # FEAT-416 (TASK-2152): in streaming mode, each recording is one
+        # VoiceSession turn — start_turn() creates the (fresh, per-turn)
+        # audio queue that _handle_audio_data()/_handle_stop_recording()
+        # below feed. VoiceSession itself also emits a "turn_started"
+        # frame (additive — existing clients should ignore unknown frame
+        # types; this is new functionality this refactor enables, not a
+        # change to any existing frame).
+        if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+            await connection.voice_session.start_turn()
+
         await self._send_message(connection.ws, {
             "type": "recording_started",
         })
@@ -1011,12 +1336,16 @@ class VoiceChatHandler:
                 self.logger.info(
                     f"Recording too short ({duration_ms:.0f}ms), ignoring"
                 )
-                # Clear audio
-                while not connection.audio_queue.empty():
-                    try:
-                        connection.audio_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
+                # FEAT-416 (TASK-2152): previously drained
+                # connection.audio_queue directly; audio now lives in
+                # VoiceSession's own per-turn queue (created by
+                # start_turn() in _handle_start_recording()), so abandon
+                # that turn outright via VoiceSession's own cancellation
+                # (cheaper than end_turn()'s ~460ms paced-silence
+                # sequence, which is pointless for a clip too short to
+                # process anyway).
+                if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+                    await connection.voice_session._cancel_turn()
                 connection.audio_buffer = b""
 
                 await self._send_message(connection.ws, {
@@ -1030,6 +1359,13 @@ class VoiceChatHandler:
             "message": "Processing...",
             "duration_ms": duration_ms,
         })
+
+        # FEAT-416 (TASK-2152): signal end-of-turn through VoiceSession —
+        # this injects the 20ms-paced silence VAD needs before the
+        # end-of-turn sentinel (TASK-2149), which the previous inlined
+        # audio_from_queue() generator did not do.
+        if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+            await connection.voice_session.end_turn()
 
         # In buffered mode, process the accumulated audio now
         if connection.streaming_mode == "buffered" and connection.audio_buffer:
@@ -1055,6 +1391,14 @@ class VoiceChatHandler:
             connection.gemini_responding = False
             connection.recording_start_time = datetime.now()
             connection.audio_buffer = b""
+            # FEAT-416 (TASK-2152): some clients send audio_data without a
+            # preceding explicit start_recording — auto-start the
+            # VoiceSession turn here too (matching the implicit
+            # is_recording=True above), otherwise push_audio() below would
+            # silently drop this audio (VoiceSession._queue is None until
+            # start_turn() runs, TASK-2149).
+            if connection.streaming_mode == "streaming" and connection.voice_session is not None:
+                await connection.voice_session.start_turn()
 
         connection.is_recording = True
 
@@ -1065,7 +1409,8 @@ class VoiceChatHandler:
             audio_bytes = base64.b64decode(audio_b64)
 
             if connection.streaming_mode == "streaming":
-                await connection.audio_queue.put(audio_bytes)
+                if connection.voice_session is not None:
+                    await connection.voice_session.push_audio(audio_bytes)
             else:
                 # Buffered mode
                 connection.audio_buffer += audio_bytes
@@ -1267,17 +1612,19 @@ class VoiceChatHandler:
         Send complete voice response (non-streaming).
 
         Used by ask_voice and non-streaming text-to-speech.
+
+        Note (FEAT-418, TASK-2174): this used to forward a
+        ``metadata["user_transcription"]`` key as a ``transcription``
+        frame. That key is removed from the producer (TASK-2167) and,
+        unlike the streaming path (``_send_voice_response()``, migrated to
+        canonical ``role``), ``VoiceBot.ask_voice()``'s aggregation
+        (``bots/voice.py``, out of this task's file scope) merges all
+        chunks' ``metadata``/``text`` into one flat response without
+        preserving per-chunk ``role`` — so there is no role-based
+        replacement available here without changing ``ask_voice()``
+        itself. The dead branch is removed rather than left silently
+        never firing.
         """
-        metadata = metadata or {}
-
-        # Send user transcription if available
-        if metadata.get("user_transcription"):
-            await self._send_message(connection.ws, {
-                "type": "transcription",
-                "text": metadata["user_transcription"],
-                "is_user": True,
-            })
-
         # Send tool calls
         for tc in (tool_calls or []):
             await self._send_message(connection.ws, {
@@ -1318,57 +1665,61 @@ class VoiceChatHandler:
     # =========================================================================
 
     async def _run_voice_session(self, connection: WebSocketConnection) -> None:
-        """Run voice session with audio streaming."""
+        """Own the connection's :class:`VoiceSession` for its lifetime.
+
+        FEAT-416 (TASK-2152): the actual turn lifecycle (audio queue,
+        turn task, silence-paced end-of-turn, reconnection) is now owned
+        by ``connection.voice_session`` (a :class:`_HandlerVoiceSession`),
+        driven by ``_handle_start_recording()``/``_handle_audio_data()``/
+        ``_handle_stop_recording()``. This method just constructs the
+        session and keeps this task alive until shutdown, then tears it
+        down — mirroring the task's own Implementation Notes pattern.
+        """
         if not connection.bot:
             return
 
-        async def audio_from_queue():
-            """Generator that reads audio from queue."""
-            audio_ended_sent = False
+        bot = connection.bot
 
+        # VoiceSession requires a VoiceCapable client. Reuse VoiceBot's own
+        # lazy-construction (matches ask_stream()/ask()'s
+        # `if self._llm is None: ...` pattern) rather than duplicating
+        # VoiceBot's private _resolve_llm_config()/_create_llm_client()
+        # call sequence differently — accesses the same "private" attrs
+        # the rest of this handler already does (e.g.
+        # connection.bot.conversation_memory above).
+        if bot._llm is None:
+            config = bot._resolve_llm_config()
+            bot._llm = bot._create_llm_client(config, bot.conversation_memory)
+
+        # FEAT-418 (TASK-2174): wrap the raw client so the now-INHERITED
+        # VoiceSession._run_turn() (no more duplicated reconnection loop)
+        # drives turns through VoiceBot.ask_stream() — preserving
+        # conversation-memory persistence and dynamic system-prompt
+        # building, which the raw client's stream_voice() alone cannot
+        # provide. See _AskStreamVoiceClient's docstring above.
+        client = _AskStreamVoiceClient(bot, user_id=connection.user_id)
+
+        async def send_fn(payload: dict) -> None:
+            if not connection.ws.closed:
+                await connection.ws.send_json(payload)
+
+        connection.voice_session = _HandlerVoiceSession(
+            client=client,
+            send_fn=send_fn,
+            system_prompt=bot.system_prompt,
+            voice_config=bot.voice_config,
+            session_id=connection.session_id,
+            stt_only=connection.stt_only,
+            handler=self,
+            connection=connection,
+        )
+
+        try:
             while not connection.shutdown_event.is_set():
-                try:
-                    chunk = await asyncio.wait_for(
-                        connection.audio_queue.get(),
-                        timeout=0.5
-                    )
-                    audio_ended_sent = False
-                    yield chunk
-                except asyncio.TimeoutError:
-                    if connection.stop_audio_sending and connection.audio_queue.empty():
-                        if not audio_ended_sent:
-                            yield None
-                            audio_ended_sent = True
-                    continue
-                except asyncio.CancelledError:
-                    break
-
-        while not connection.shutdown_event.is_set():
-            try:
-                async for response in connection.bot.ask_stream(
-                    audio_input=audio_from_queue(),
-                    session_id=connection.session_id,
-                    user_id=connection.user_id,
-                    stt_only=connection.stt_only,
-                ):
-                    await self._send_voice_response(connection, response)
-
-                    if response.metadata.get("go_away"):
-                        await self._send_message(connection.ws, {
-                            "type": "session_warning",
-                            "message": "Session reconnecting...",
-                        })
-                        break
-
-                    if connection.shutdown_event.is_set():
-                        return
-
-            except asyncio.CancelledError:
-                return
-            except Exception as e:
-                self.logger.error("Voice session error: %s", e)
-                await self._send_error(connection.ws, str(e))
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
+        finally:
+            if connection.voice_session is not None:
+                await connection.voice_session.close()
 
     async def _send_voice_response(
         self,
@@ -1385,13 +1736,8 @@ class VoiceChatHandler:
         if not connection.stt_only:
             # Send response_chunk for audio OR text (not just audio)
             # FILTER: Skip internal thought processes that leak into output
-            # Generic pattern:
-            # 1. Bold/Header followed by a Gerund (Verb-ing) -> **Clarifying...**
-            # 2. Bold/Header followed by "Show [Capital]" -> **Show Product Image**
-            is_thought = response.text and re.match(
-                r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])',
-                response.text
-            )
+            # (see _THOUGHT_FILTER_PATTERN's docstring for the two patterns).
+            is_thought = bool(response.text and _THOUGHT_FILTER_PATTERN.match(response.text))
 
             # Determine strict text to send (suppress if thought)
             text_to_send = response.text
@@ -1407,11 +1753,13 @@ class VoiceChatHandler:
                     "is_interrupted": response.is_interrupted,
                 })
 
-        # User transcription is always forwarded (both modes).
-        if response.metadata.get("user_transcription"):
+        # User transcription is always forwarded (both modes). FEAT-418:
+        # canonical role="user" replaces the removed
+        # metadata["user_transcription"] key.
+        if response.role == "user" and response.text:
             await self._send_message(connection.ws, {
                 "type": "transcription",
-                "text": response.metadata["user_transcription"],
+                "text": response.text,
                 "is_user": True,
             })
 
@@ -1419,13 +1767,17 @@ class VoiceChatHandler:
         if connection.stt_only:
             return
 
-        # Forward the assistant's SPOKEN transcription (output_transcription) as
-        # the display text. In audio mode Gemini's model_turn TEXT modality is
-        # generated separately from the audio — it diverges from what's actually
-        # spoken (and leaks "thinking" headers), so the transcription is the
-        # source of truth for the bubble. The front shows this and ignores the
+        # Forward the assistant's spoken text as the display bubble.
+        # FEAT-418: canonical role="assistant" replaces the removed
+        # metadata["assistant_transcription"] key; turn_metadata's own
+        # output_transcription remains as a fallback for a frame that
+        # carries no text of its own (e.g. an audio-only chunk). In audio
+        # mode Gemini's model_turn TEXT modality is generated separately
+        # from the audio — it diverges from what's actually spoken (and
+        # leaks "thinking" headers), so the transcription is the source of
+        # truth for the bubble. The front shows this and ignores the
         # response_chunk text (audio only).
-        assistant_text = response.metadata.get("assistant_transcription")
+        assistant_text = response.text if response.role == "assistant" else None
         if not assistant_text and response.turn_metadata:
             assistant_text = response.turn_metadata.output_transcription
         if assistant_text:
@@ -1453,7 +1805,7 @@ class VoiceChatHandler:
         if response.is_complete:
             # Re-check filter for the final text payload
             final_text = response.text
-            if final_text and re.match(r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])', final_text):
+            if final_text and _THOUGHT_FILTER_PATTERN.match(final_text):
                 final_text = ""
 
             await self._send_message(connection.ws, {

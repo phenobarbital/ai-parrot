@@ -1,6 +1,6 @@
 ---
 description: Query or maintain the repository LLM-wiki knowledge graph (wikitoolkit)
-argument-hint: [query <question> | page <id> | related <id> | status | build | --wiki [dir]]
+argument-hint: [query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | status | build | --wiki [dir]]
 allowed-tools: Bash(wikitoolkit:*)
 ---
 
@@ -21,6 +21,17 @@ matching `wikitoolkit` command with Bash:
   neighbours connect.
 - `status` — run `wikitoolkit status` and report plane health.
 - `build` — run `wikitoolkit build` and report what changed.
+- `remember <fact>` — save durable knowledge: run
+  `wikitoolkit remember "<fact>" --category <note|decision|lesson|concept>`
+  (add `--title` for a short handle and `--link <page_id>` to connect
+  it to the pages it is about). Report the saved page id.
+- `note <id> <text>` — run `wikitoolkit note <id> "<text>"` to append
+  an attributed note to an existing page.
+- `link <a> <b>` — run `wikitoolkit link <a> <b> --rel <relation>`
+  to connect two pages (default relation `references`).
+- `memories` — run `wikitoolkit memories` and summarise what has
+  been saved.
+- `audit` — run `wikitoolkit audit` and summarise recent writes.
 - `--wiki [dir]` — build a human-readable markdown wiki from the
   graph: run `wikitoolkit export -o <dir>` (default `docs/wiki`) and
   list what was written.

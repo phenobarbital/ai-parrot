@@ -10,7 +10,6 @@ import asyncio
 import time
 from navconfig.logging import logging
 from .abstract import AbstractKnowledgeBase
-from ..faiss_store import FAISSStore
 from ..models import Document
 from ...utils.helpers import RequestContext
 
@@ -80,6 +79,9 @@ class LocalKB(AbstractKnowledgeBase):
         self.chunk_overlap = chunk_overlap
         self.dimension = dimension
         self.logger = logging.getLogger(__name__)
+
+        # Lazy import: FAISSStore lives in ai-parrot-embeddings
+        from ..faiss_store import FAISSStore
 
         # FAISS store with persistence
         self.faiss_store = FAISSStore(

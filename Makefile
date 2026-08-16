@@ -3,10 +3,10 @@
 
 .PHONY: venv install install-core install-tools install-loaders install-codex-sdk-editable \
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
-		generate-registry check-registry \
+		generate-registry check-registry build-codec-rs build-navrules-rs build-rust \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
-		install-supertonic docker-tool-worker
+		install-supertonic docker-tool-worker docker-integrations docker-dev
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -134,6 +134,7 @@ install-whisperx: install-system-deps
 # Install production: core + tools (base deps only, no extras)
 install:
 	uv sync --frozen --no-dev --all-packages
+	$(MAKE) build-rust
 	@echo "Production dependencies installed (core + tools + loaders, base deps)."
 	@echo "Use 'make install-tools' or 'make install-loaders' for extras."
 
@@ -175,6 +176,7 @@ install-loaders-all:
 install-all:
 	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
 	uv pip install querysource
+	$(MAKE) build-rust
 	@echo "All packages installed with ALL extras (except gemma4)."
 
 # Generate lock files (uv only)
@@ -197,6 +199,7 @@ endif
 develop:
 	uv sync --all-packages --all-extras --no-extra gemma4
 	$(MAKE) build-inplace
+	$(MAKE) build-rust
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 
 # Fast dev install: all packages but skip heavy ML deps
@@ -205,6 +208,7 @@ develop-fast:
 	uv pip install "Cython==3.0.11" "setuptools>=67.6.1" "wheel>=0.44.0"
 	uv sync --all-packages
 	$(MAKE) build-inplace
+	$(MAKE) build-rust
 	@echo "Fast dev environment ready (no heavy ML deps)."
 
 # Full ML stack (slow install, requires GPU for optimal performance)
@@ -290,7 +294,7 @@ install-supertonic:
 	@echo "   works out of the box. Voices: M1-M5, F1-F5 (TTSConfig(voice='F1'), default M1)."
 
 # Build and publish all packages
-release: lint test clean check-registry
+release: lint test clean check-registry build-rust
 	uv build --package ai-parrot
 	uv build --package ai-parrot-tools
 	uv build --package ai-parrot-loaders
@@ -301,6 +305,9 @@ release: lint test clean check-registry
 	uv build --package parrot-formdesigner
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
+	uv build --package navrules
+	cd packages/ai-parrot/src/parrot/codec-rs && maturin build --release --out $(CURDIR)/dist
+	cd packages/navrules && maturin build --release --out $(CURDIR)/dist
 	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
 	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
 	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
@@ -311,6 +318,8 @@ release: lint test clean check-registry
 	uv publish dist/parrot_formdesigner-*.tar.gz dist/parrot_formdesigner-*.whl
 	uv publish dist/ai_parrot_server-*.tar.gz dist/ai_parrot_server-*.whl
 	uv publish dist/ai_parrot_advisors-*.tar.gz dist/ai_parrot_advisors-*.whl
+	uv publish dist/navrules-*.tar.gz dist/navrules-*.whl
+	uv publish dist/parrot_codec-*.tar.gz dist/parrot_codec-*.whl
 
 # Alternative release using flit
 release-flit: lint test clean
@@ -352,12 +361,37 @@ remove:
 # Compile Cython extensions using setup.py
 build-cython:
 	@echo "Compiling Cython extensions..."
-	python setup.py build_ext
+	cd packages/ai-parrot && python setup.py build_ext
 
 # Build Cython extensions in place (for development)
 build-inplace:
 	@echo "Building Cython extensions in place..."
 	cd packages/ai-parrot && python setup.py build_ext --inplace
+
+# Build optional parrot_codec Rust extension (FEAT-380 / TASK-1955)
+# Requires: maturin + Rust toolchain. Skips gracefully if maturin is absent.
+build-codec-rs:
+	@if command -v maturin >/dev/null 2>&1; then \
+		echo "Building parrot_codec Rust extension..."; \
+		cd packages/ai-parrot/src/parrot/codec-rs && maturin develop --release; \
+		echo "✅ parrot_codec installed."; \
+	else \
+		echo "⚠  maturin not found — skipping parrot_codec (optional)."; \
+	fi
+
+# Build navrules Rust backend (PyO3 + rayon native matcher).
+# Requires: maturin + Rust toolchain. Skips gracefully if maturin is absent.
+build-navrules-rs:
+	@if command -v maturin >/dev/null 2>&1; then \
+		echo "Building navrules Rust backend..."; \
+		cd packages/navrules && maturin develop --release; \
+		echo "✅ navrules Rust backend installed."; \
+	else \
+		echo "⚠  maturin not found — skipping navrules Rust backend (optional)."; \
+	fi
+
+# Build all Rust extensions (parrot_codec + navrules)
+build-rust: build-codec-rs build-navrules-rs
 
 # Full build using uv (builds all workspace packages)
 build: clean
@@ -372,6 +406,11 @@ build: clean
 	uv build --package parrot-formdesigner
 	uv build --package ai-parrot-server
 	uv build --package ai-parrot-advisors
+	uv build --package navrules
+	@if command -v maturin >/dev/null 2>&1; then \
+		cd packages/ai-parrot/src/parrot/codec-rs && maturin build --release --out $(CURDIR)/dist; \
+		cd $(CURDIR)/packages/navrules && maturin build --release --out $(CURDIR)/dist; \
+	fi
 
 # ============================================================
 # Tool Registry Management
@@ -461,6 +500,9 @@ INTEGRATIONS_VERSION_FILE := packages/ai-parrot-integrations/src/parrot/integrat
 FORMDESIGNER_VERSION_FILE := packages/parrot-formdesigner/src/parrot_formdesigner/version.py
 SERVER_VERSION_FILE := packages/ai-parrot-server/src/parrot/server/version.py
 ADVISORS_VERSION_FILE := packages/ai-parrot-advisors/src/parrot/advisors/version.py
+NAVRULES_INIT := packages/navrules/src/navrules/__init__.py
+NAVRULES_PYPROJECT := packages/navrules/pyproject.toml
+NAVRULES_CARGO := packages/navrules/rust/Cargo.toml
 
 # Helper: bump a version file. Usage: $(call _bump,file,part)
 # part: patch=2, minor=1, major=0
@@ -476,6 +518,25 @@ define _bump
 	new_content = re.sub(r'__version__ = \".+\"', f'__version__ = \"{new_version}\"', content); \
 	open('$(1)', 'w').write(new_content); \
 	print(f'$(1): {version} → {new_version}')"
+endef
+
+# Helper: bump navrules across __init__.py, pyproject.toml, and Cargo.toml
+# Usage: $(call _bump_navrules,part)   part: patch=2, minor=1, major=0
+define _bump_navrules
+	@python -c "import re; \
+	content = open('$(NAVRULES_INIT)').read(); \
+	version = re.search(r'__version__ = \"(.+)\"', content).group(1); \
+	parts = version.split('.'); \
+	idx = $(1); \
+	parts[idx] = str(int(parts[idx]) + 1); \
+	parts[idx+1:] = ['0'] * len(parts[idx+1:]); \
+	nv = '.'.join(parts); \
+	open('$(NAVRULES_INIT)', 'w').write(re.sub(r'__version__ = \".+\"', f'__version__ = \"{nv}\"', content)); \
+	pp = open('$(NAVRULES_PYPROJECT)').read(); \
+	open('$(NAVRULES_PYPROJECT)', 'w').write(re.sub(r'^version = \".+\"', f'version = \"{nv}\"', pp, count=1, flags=re.MULTILINE)); \
+	ct = open('$(NAVRULES_CARGO)').read(); \
+	open('$(NAVRULES_CARGO)', 'w').write(re.sub(r'^version = \".+\"', f'version = \"{nv}\"', ct, count=1, flags=re.MULTILINE)); \
+	print(f'navrules: {version} → {nv}  (__init__.py + pyproject.toml + Cargo.toml)')"
 endef
 
 # --- Core package (ai-parrot) ---
@@ -579,6 +640,16 @@ bump-minor-advisors:
 bump-major-advisors:
 	$(call _bump,$(ADVISORS_VERSION_FILE),0)
 
+# --- Navrules package (Rust/PyO3 — syncs __init__.py + pyproject.toml + Cargo.toml) ---
+bump-patch-navrules:
+	$(call _bump_navrules,2)
+
+bump-minor-navrules:
+	$(call _bump_navrules,1)
+
+bump-major-navrules:
+	$(call _bump_navrules,0)
+
 # --- Bump ALL packages at once (patch) ---
 bump-all:
 	$(call _bump,$(VERSION_FILE),2)
@@ -591,6 +662,7 @@ bump-all:
 	$(call _bump,$(FORMDESIGNER_VERSION_FILE),2)
 	$(call _bump,$(SERVER_VERSION_FILE),2)
 	$(call _bump,$(ADVISORS_VERSION_FILE),2)
+	$(call _bump_navrules,2)
 	@$(MAKE) _sync-core-dep
 
 # Sync ai-parrot>= dependency in tools/loaders pyproject.toml
@@ -647,6 +719,22 @@ docker-tool-worker:
 	@docker build -f docker/tool-worker/Dockerfile $(TOOL_WORKER_BUILD_ARGS) -t parrot-tools:latest .
 	@echo "✅ parrot-tools:latest built (worker for DockerToolExecutor / K8sToolExecutor)"
 
+# Build the standalone messaging-bot integrations image (Telegram/Slack/
+# MSTeams/WhatsApp/...), driven by env/integrations_bots.yaml.
+#   make docker-integrations INTEGRATIONS_BUILD_ARGS='--build-arg INTEGRATIONS_EXTRAS=telegram,matrix'
+docker-integrations:
+	@echo "Building parrot-integrations image..."
+	@docker build -f docker/integrations/Dockerfile $(INTEGRATIONS_BUILD_ARGS) -t parrot-integrations:latest .
+	@echo "✅ parrot-integrations:latest built (mount env/ at runtime: -v \$$(pwd)/env:/app/env)"
+
+# Build the isolated agent/workflow/dev_loop sandbox (ai-parrot installed
+# normally via `uv pip install`, no monorepo build-context dependency).
+#   make docker-dev DEV_BUILD_ARGS='--build-arg PARROT_EXTRAS=all'
+docker-dev:
+	@echo "Building parrot-dev image..."
+	@docker build -f docker/dev/Dockerfile $(DEV_BUILD_ARGS) -t parrot-dev:latest docker/dev
+	@echo "✅ parrot-dev:latest built (run: docker run -it -v \$$(pwd):/workspace parrot-dev:latest)"
+
 # Docker targets for WhatsApp Bridge
 docker-whatsapp-bridge:
 	@echo "Building WhatsApp Bridge Docker image..."
@@ -697,6 +785,12 @@ install-github:
 	@echo "Installing GitHub MCP server..."
 	npm install @modelcontextprotocol/server-github
 
+# Install Chrome DevTools MCP Server
+# https://github.com/ChromeDevTools/chrome-devtools-mcp
+install-chrome-devtools:
+	@echo "Installing Chrome DevTools MCP server..."
+	npm install chrome-devtools-mcp
+	@echo "Chrome DevTools MCP server installed successfully."
 
 # Install MCP Toolbox
 install-toolbox:
@@ -763,6 +857,9 @@ help:
 	@echo "    generate-registry   - Regenerate TOOL_REGISTRY from source"
 	@echo "    check-registry      - Check if TOOL_REGISTRY is up to date (CI)"
 	@echo "    build               - Build all workspace packages"
+	@echo "    build-rust          - Build all Rust extensions (parrot_codec + navrules)"
+	@echo "    build-codec-rs      - Build optional parrot_codec Rust extension"
+	@echo "    build-navrules-rs   - Build navrules Rust backend"
 	@echo "    release             - Build and publish all packages to PyPI"
 	@echo ""
 	@echo "  Quality:"
@@ -801,6 +898,7 @@ help:
 	@echo "    cuda-info           - Show GPU/CUDA information"
 	@echo "    install-go          - Install Go toolchain"
 	@echo "    install-genmedia    - Install GenMedia MCP Server"
+	@echo "    install-chrome-devtools - Install Chrome DevTools MCP Server"
 	@echo "    install-tesseract   - Install Tesseract OCR"
 	@echo "    install-gvisor      - Install gVisor sandbox runtime"
 	@echo ""

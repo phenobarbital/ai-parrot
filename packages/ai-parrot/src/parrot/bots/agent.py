@@ -126,7 +126,21 @@ class BasicAgent(Chatbot, NotificationMixin):
         self._inject_answer_memory_into_toolkits()
         # Bridge REPL/pandas tool namespaces into WorkingMemoryToolkit so the
         # LLM can `import_from_tool` DataFrames the agent loaded (e.g. datasets).
-        self._wire_tool_namespaces_into_working_memory()
+        # FEAT-380 (TASK-1944): this now needs an async round-trip to each
+        # REPL tool's worker (`snapshot()`), so it can't run here in `__init__`
+        # — deferred to `configure()`, the framework's own async setup hook.
+
+    async def configure(self, app=None) -> None:
+        """Async setup hook (overrides ``Chatbot.configure``).
+
+        FEAT-380 (TASK-1944): wiring REPL/pandas tool namespaces into any
+        registered ``WorkingMemoryToolkit`` needs an async round-trip to each
+        tool's worker process (``snapshot()``) and therefore cannot run in
+        the synchronous ``__init__`` anymore — it runs here instead, after
+        the base configuration completes.
+        """
+        await super().configure(app)
+        await self._wire_tool_namespaces_into_working_memory()
 
     def _inject_answer_memory_into_toolkits(self) -> None:
         """Auto-inject self.answer_memory into any registered WorkingMemoryToolkit.
@@ -164,25 +178,33 @@ class BasicAgent(Chatbot, NotificationMixin):
                     getattr(tool, "name", tool),
                 )
 
-    def _wire_tool_namespaces_into_working_memory(self) -> None:
+    async def _wire_tool_namespaces_into_working_memory(self) -> None:
         """Bridge REPL-family tool namespaces into any WorkingMemoryToolkit.
 
         ``WorkingMemoryToolkit.import_from_tool`` / ``list_tool_dataframes``
         resolve DataFrames through a ``tool_locals_registry`` mapping
         ``{tool_name: namespace_dict}``. PandasAgent (and any agent that
         explicitly wires arbitrary Python execution) keeps its live DataFrames
-        in a :class:`PythonPandasTool` / :class:`PythonREPLTool` ``.locals``
-        dict. Without this bridge the catalog is isolated and the LLM gets
+        in a :class:`PythonPandasTool` / :class:`PythonREPLTool` namespace.
+        Without this bridge the catalog is isolated and the LLM gets
         ``"not registered. Available: []"`` when it tries to import data.
 
-        Wiring stores a **live reference** to each tool's ``.locals`` (assigned
-        once at tool construction and mutated in place afterward), so DataFrames
-        the agent loads later — including lazily-fetched datasets — become
-        importable without re-wiring. Keyed by ``type(tool).__name__`` so the
-        LLM passes the same name it sees from ``list_tool_dataframes``.
-        Note: ``PythonREPLTool`` is no longer a default tool — agents add it
-        explicitly — so we match whatever REPL-family tool is actually present.
-        Explicitly-wired registry keys are never overwritten.
+        FEAT-380 (TASK-1944): the namespace now lives in each tool's worker
+        process, reachable only via the async ``snapshot()`` namespace API —
+        ``.locals`` on the host instance is a stale, construction-time-only
+        snapshot (a live cross-process reference is impossible; the spec
+        explicitly rejects a compatibility dict-proxy). Wiring therefore
+        stores a **snapshot frozen at capture time** rather than a live
+        reference: DataFrames the agent loads AFTER this call runs (e.g.
+        lazily-fetched datasets) are NOT automatically visible — this is a
+        deliberate, spec-decided behavior change from the old live-reference
+        semantics, not an oversight. Called from ``configure()`` (the async
+        setup hook), not ``__init__``, since it needs to await each tool's
+        worker round-trip. Keyed by ``type(tool).__name__`` so the LLM passes
+        the same name it sees from ``list_tool_dataframes``. Note:
+        ``PythonREPLTool`` is no longer a default tool — agents add it
+        explicitly — so we match whatever REPL-family tool is actually
+        present. Explicitly-wired registry keys are never overwritten.
         """
         tool_manager = getattr(self, "tool_manager", None)
         if tool_manager is None:
@@ -205,9 +227,7 @@ class BasicAgent(Chatbot, NotificationMixin):
             return
         repl_tools = [
             t for t in tool_iter
-            if isinstance(t, PythonREPLTool) and isinstance(
-                getattr(t, "locals", None), dict
-            )
+            if isinstance(t, PythonREPLTool) and callable(getattr(t, "snapshot", None))
         ]
         if not repl_tools:
             return
@@ -216,7 +236,7 @@ class BasicAgent(Chatbot, NotificationMixin):
                 key = type(tool).__name__
                 # Respect explicit wiring; only fill in missing namespaces.
                 if key not in wm._tool_locals:
-                    wm._tool_locals[key] = tool.locals
+                    wm._tool_locals[key] = await tool.snapshot()
                     self.logger.debug(
                         "Wired %s namespace into WorkingMemoryToolkit '%s'",
                         key, getattr(wm, "name", wm),

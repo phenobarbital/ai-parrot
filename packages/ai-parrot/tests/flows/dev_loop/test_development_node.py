@@ -23,7 +23,8 @@ from parrot.flows.dev_loop.models import (
     WorkBrief,
 )
 from parrot.flows.dev_loop.nodes import development as development_module
-from parrot.flows.dev_loop.nodes.development import DevelopmentNode
+from parrot.flows.dev_loop.nodes.development import DevelopmentNode, should_fan_out
+from parrot.flows.dev_loop.task_scheduler import TaskRef
 from parrot.flows.dev_loop.worktree_manager import MergeReport, SubWorktreeMergeError
 
 
@@ -154,41 +155,194 @@ class TestSinglePathRegression:
         assert profile.allowed_tools == ["Read", "Edit", "Write", "Bash", "Grep", "Glob"]
 
 
+def _task_ref(task_id: str) -> TaskRef:
+    return TaskRef(id=task_id, status="pending", depends_on=[])
+
+
+class TestShouldFanOut:
+    """FEAT-377 TASK-1913: should_fan_out — pure, no-LLM stop rule."""
+
+    def test_two_independent_tasks_and_multi_slot_pool_fans_out(self):
+        wave = [_task_ref("TASK-1"), _task_ref("TASK-2")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        assert should_fan_out(wave, pool_cfg) is True
+
+    def test_single_task_wave_never_fans_out(self):
+        wave = [_task_ref("TASK-1")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=4)])
+        assert should_fan_out(wave, pool_cfg) is False
+
+    def test_empty_wave_never_fans_out(self):
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=4)])
+        assert should_fan_out([], pool_cfg) is False
+
+    def test_single_effective_slot_never_fans_out(self):
+        wave = [_task_ref("TASK-1"), _task_ref("TASK-2")]
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=1)])
+        assert should_fan_out(wave, pool_cfg) is False
+
+    def test_effective_slots_sum_across_multiple_specs(self):
+        """Two specs with count=1 each still sum to 2 effective slots."""
+        wave = [_task_ref("TASK-1"), _task_ref("TASK-2")]
+        pool_cfg = DevAgentPoolConfig(
+            agents=[DevAgentSpec(agent="claude-code"), DevAgentSpec(agent="codex")]
+        )
+        assert should_fan_out(wave, pool_cfg) is True
+
+
 @pytest.mark.asyncio
-class TestCascade:
-    async def test_injected_pool_used_when_no_brief_pool(self, tmp_path):
+class TestFanOutWiring:
+    """Pool path is always taken when pool config + dispatcher_builder
+    are present, regardless of wave size or slot count."""
+
+    async def test_chain_uses_pool_path_sequentially(self, tmp_path):
+        """A straight dependency chain (every wave size 1) still uses
+        the pool path — tasks run sequentially through the pool."""
         _write_index(
             tmp_path,
             "FEAT-323",
             "my-feature",
-            [{"id": "TASK-1", "status": "pending", "depends_on": []}],
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": ["TASK-1"]},
+                {"id": "TASK-3", "status": "pending", "depends_on": ["TASK-2"]},
+            ],
         )
         research = _research(str(tmp_path))
-        d1 = FakeDispatcher()
-        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code")])
+        single_dispatcher = MagicMock()
+        single_dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=["x.py"], commit_shas=["s"], summary="single")
+        )
+        pool_dispatcher = FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=4)])
+        node = DevelopmentNode(
+            dispatcher=single_dispatcher,
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+            pool_max=4,
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        # Pool path taken: pool dispatcher handled all three tasks
+        # sequentially; the single-agent dispatcher was NOT called.
+        single_dispatcher.dispatch.assert_not_awaited()
+        dispatched = [c[0] for c in pool_dispatcher.calls]
+        assert dispatched == ["TASK-1", "TASK-2", "TASK-3"]
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
+
+    async def test_single_slot_pool_uses_pool_path(self, tmp_path):
+        """A pool with count=1 dispatches through the pool path
+        (sequentially), not the legacy single-agent path."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        single_dispatcher = MagicMock()
+        single_dispatcher.dispatch = AsyncMock(
+            return_value=DevelopmentOutput(files_changed=[], commit_shas=[], summary="unused")
+        )
+        pool_dispatcher = FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=1)])
+        node = DevelopmentNode(
+            dispatcher=single_dispatcher,
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([pool_dispatcher]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        await node.execute(ctx)
+
+        single_dispatcher.dispatch.assert_not_awaited()
+        dispatched_tasks = {c[0] for c in pool_dispatcher.calls}
+        assert dispatched_tasks == {"TASK-1", "TASK-2"}
+
+    async def test_development_takes_pool_path_when_wave_has_two_tasks(self, tmp_path):
+        """A first wave with 2 independent tasks + a multi-slot pool
+        takes the pool path with true parallelism."""
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,
-            dispatcher_builder=_dispatcher_builder_factory([d1]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+        assert d1.calls and d2.calls
+
+
+@pytest.mark.asyncio
+class TestCascade:
+    async def test_injected_pool_used_when_no_brief_pool(self, tmp_path):
+        # FEAT-377 TASK-1913: should_fan_out requires >=2 independent
+        # first-wave tasks AND >1 effective worker slot to take the pool
+        # path — TASK-2 (independent) and count=2 satisfy both.
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
+        node = DevelopmentNode(
+            dispatcher=MagicMock(),
+            pool_config=pool_config,
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
             pool_max=4,
         )
 
         ctx = {"run_id": "r1", "research_output": research}
         await node.execute(ctx)
 
-        assert d1.calls == [("TASK-1", "development.w1", research.worktree_path)]
+        # next_wave() makes no ordering guarantee, so each worker gets
+        # exactly one of the two tasks — which one is unspecified.
+        assert len(d1.calls) == 1 and len(d2.calls) == 1
+        dispatched_tasks = {d1.calls[0][0], d2.calls[0][0]}
+        assert dispatched_tasks == {"TASK-1", "TASK-2"}
+        assert d1.calls[0][2] == research.worktree_path
+        assert d2.calls[0][2] == research.worktree_path
 
     async def test_brief_pool_overrides_injected(self, tmp_path):
+        # FEAT-377 TASK-1913: same >=2 wave / >1 slot requirement as above.
         _write_index(
             tmp_path,
             "FEAT-323",
             "my-feature",
-            [{"id": "TASK-1", "status": "pending", "depends_on": []}],
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
         )
         research = _research(str(tmp_path))
         injected_dispatcher = FakeDispatcher()
         brief_dispatcher = FakeDispatcher()
-        brief = _work_brief(dev_agents=[DevAgentSpec(agent="codex")])
+        brief = _work_brief(dev_agents=[DevAgentSpec(agent="codex", count=2)])
 
         # Two different dispatcher_builders would normally be constructed
         # by the same builder, but for this test we key off the spec passed
@@ -200,7 +354,7 @@ class TestCascade:
 
         node = DevelopmentNode(
             dispatcher=MagicMock(),
-            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code")]),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
             dispatcher_builder=_builder,
             pool_max=4,
         )
@@ -250,37 +404,50 @@ class TestCascade:
 @pytest.mark.asyncio
 class TestPoolPath:
     async def test_waves_and_partial(self, tmp_path):
+        # FEAT-377 TASK-1913: TASK-2 is independent (alongside TASK-1) so
+        # the FIRST wave has 2 tasks (should_fan_out -> True); TASK-3
+        # depends on TASK-1 and lands in a SECOND wave, preserving this
+        # test's original multi-wave intent.
         _write_index(
             tmp_path,
             "FEAT-323",
             "my-feature",
             [
                 {"id": "TASK-1", "status": "pending", "depends_on": []},
-                {"id": "TASK-2", "status": "pending", "depends_on": ["TASK-1"]},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+                {"id": "TASK-3", "status": "pending", "depends_on": ["TASK-1"]},
             ],
         )
         research = _research(str(tmp_path))
-        d1 = FakeDispatcher()
-        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code")])
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,
-            dispatcher_builder=_dispatcher_builder_factory([d1]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
         )
 
         ctx = {"run_id": "r1", "research_output": research}
         result = await node.execute(ctx)
 
-        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py"}
+        assert set(result.files_changed) == {"TASK-1.py", "TASK-2.py", "TASK-3.py"}
         assert result.incomplete_tasks == []
         assert ctx["development_output"] is result
 
     async def test_all_incomplete_raises(self, tmp_path):
+        # FEAT-377 TASK-1913: 2 independent tasks + count=2 to satisfy
+        # should_fan_out and actually reach the pool path.
         _write_index(
-            tmp_path, "FEAT-323", "my-feature", [{"id": "TASK-1", "status": "pending", "depends_on": []}]
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
         )
         research = _research(str(tmp_path))
-        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code")])
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)])
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,
@@ -292,8 +459,15 @@ class TestPoolPath:
             await node.execute(ctx)
 
     async def test_isolated_uses_manager_and_cleanup(self, tmp_path, monkeypatch):
+        # FEAT-377 TASK-1913: 2 independent tasks + count=2 pool.
         _write_index(
-            tmp_path, "FEAT-323", "my-feature", [{"id": "TASK-1", "status": "pending", "depends_on": []}]
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
         )
         research = _research(str(tmp_path))
         monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
@@ -307,14 +481,14 @@ class TestPoolPath:
 
         monkeypatch.setattr(development_module, "SubWorktreeManager", _manager_factory)
 
-        d1 = FakeDispatcher()
+        d1, d2 = FakeDispatcher(), FakeDispatcher()
         pool_config = DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="claude-code")], isolation_mode="isolated"
+            agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated"
         )
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,
-            dispatcher_builder=_dispatcher_builder_factory([d1]),
+            dispatcher_builder=_dispatcher_builder_factory([d1, d2]),
         )
 
         ctx = {"run_id": "r1", "research_output": research}
@@ -322,15 +496,23 @@ class TestPoolPath:
 
         assert len(created_managers) == 1
         manager = created_managers[0]
-        assert manager.created == ["development.w1"]
+        assert manager.created == ["development.w1", "development.w2"]
         assert manager.merge_calls == 1
         assert manager.cleanup_calls == [True]
         # Dispatch happened against the sub-worktree path, not the base worktree.
         assert d1.calls[0][2] == f"{research.worktree_path}/subwt/development.w1"
+        assert d2.calls[0][2] == f"{research.worktree_path}/subwt/development.w2"
 
     async def test_isolated_cleanup_runs_even_on_merge_failure(self, tmp_path, monkeypatch):
+        # FEAT-377 TASK-1913: 2 independent tasks + count=2 pool.
         _write_index(
-            tmp_path, "FEAT-323", "my-feature", [{"id": "TASK-1", "status": "pending", "depends_on": []}]
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
         )
         research = _research(str(tmp_path))
         monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
@@ -345,12 +527,12 @@ class TestPoolPath:
         monkeypatch.setattr(development_module, "SubWorktreeManager", _manager_factory)
 
         pool_config = DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="claude-code")], isolation_mode="isolated"
+            agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated"
         )
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,
-            dispatcher_builder=_dispatcher_builder_factory([FakeDispatcher()]),
+            dispatcher_builder=_dispatcher_builder_factory([FakeDispatcher(), FakeDispatcher()]),
         )
 
         ctx = {"run_id": "r1", "research_output": research}

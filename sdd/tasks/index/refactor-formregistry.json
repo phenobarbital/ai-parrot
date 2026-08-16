@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T22:38:13+00:00",
       "completed_at": "2026-05-18T23:40:20+00:00",
-      "file": "sdd/tasks/active/TASK-1242-formstorage-close-and-registry-lifecycle.md"
+      "file": "sdd/tasks/completed/TASK-1242-formstorage-close-and-registry-lifecycle.md"
     },
     {
       "id": "TASK-1243",
@@ -43,7 +43,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T22:38:13+00:00",
       "completed_at": "2026-05-18T23:40:20+00:00",
-      "file": "sdd/tasks/active/TASK-1243-postgres-storage-self-managed-pool.md"
+      "file": "sdd/tasks/completed/TASK-1243-postgres-storage-self-managed-pool.md"
     },
     {
       "id": "TASK-1244",
@@ -64,7 +64,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T22:38:13+00:00",
       "completed_at": "2026-05-18T23:40:20+00:00",
-      "file": "sdd/tasks/active/TASK-1244-core-package-mirror.md"
+      "file": "sdd/tasks/completed/TASK-1244-core-package-mirror.md"
     },
     {
       "id": "TASK-1245",
@@ -85,7 +85,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T22:38:13+00:00",
       "completed_at": "2026-05-18T23:40:20+00:00",
-      "file": "sdd/tasks/active/TASK-1245-callsite-simplification.md"
+      "file": "sdd/tasks/completed/TASK-1245-callsite-simplification.md"
     },
     {
       "id": "TASK-1246",
@@ -108,7 +108,7 @@
       "assigned_to": null,
       "started_at": "2026-05-18T22:38:13+00:00",
       "completed_at": "2026-05-18T23:40:20+00:00",
-      "file": "sdd/tasks/active/TASK-1246-lifecycle-tests.md"
+      "file": "sdd/tasks/completed/TASK-1246-lifecycle-tests.md"
     }
   ]
 }

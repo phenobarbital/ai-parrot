@@ -11,13 +11,15 @@ spec. Runs are hosted by :class:`DevLoopRunner`, which enforces the
 
 from parrot.flows.dev_loop.commands import register_command_routes
 from parrot.flows.dev_loop.config import parse_repo_specs
-from parrot.flows.dev_loop.dispatcher import (
+from parrot.flows.dev_loop.dispatchers import (
+    GoogleCodingDispatcher,
     ClaudeCodeDispatcher,
     CodexCodeDispatcher,
     GeminiCodeDispatcher,
     LLMCodeDispatcher,
     GrokCodeDispatcher,
     MoonshotCodeDispatcher,
+    NovaCodeDispatcher,
     ZaiCodeDispatcher,
     DevLoopCodeDispatcher,
     DispatchExecutionError,
@@ -25,6 +27,7 @@ from parrot.flows.dev_loop.dispatcher import (
 )
 from parrot.flows.dev_loop.flow import FlowEventPublisher, build_dev_loop_flow
 from parrot.flows.dev_loop.runner import DevLoopRunner, gate_ttl_for
+from parrot.flows.dev_loop.run_bundle import RunBundle, build_run_bundle, render_markdown
 from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.streaming import (
     FlowStreamMultiplexer,
@@ -37,13 +40,20 @@ from parrot.flows.dev_loop.webhook import (
 )
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
+    AdversarialFinding,
+    GoogleCodingDispatchProfile,
     BugBrief,
     ClaudeCodeDispatchProfile,
+    CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,
     GeminiCodeDispatchProfile,
     LLMCodeDispatchProfile,
     GrokCodeDispatchProfile,
     MoonshotCodeDispatchProfile,
+    NovaCodeDispatchProfile,
+    PerspectiveSynthesis,
+    TriageBrief,
+    TriageReport,
     ZaiCodeDispatchProfile,
     CriterionResult,
     DevAgentBackend,
@@ -80,10 +90,14 @@ __all__ = [
     "AcceptanceCriterion",
     "ActionEnvelope",
     "ActionOrigin",
+    "AdversarialFinding",
+    "GoogleCodingDispatcher",
+    "GoogleCodingDispatchProfile",
     "ApprovalGate",
     "BugBrief",
     "ClaudeCodeDispatcher",
     "ClaudeCodeDispatchProfile",
+    "CodexAdversarialReviewProfile",
     "CodexCodeDispatcher",
     "CodexCodeDispatchProfile",
     "DevLoopAction",
@@ -96,6 +110,8 @@ __all__ = [
     "GrokCodeDispatchProfile",
     "MoonshotCodeDispatcher",
     "MoonshotCodeDispatchProfile",
+    "NovaCodeDispatcher",
+    "NovaCodeDispatchProfile",
     "ZaiCodeDispatcher",
     "ZaiCodeDispatchProfile",
     "CriterionResult",
@@ -116,23 +132,29 @@ __all__ = [
     "IntentClassifierNode",
     "LogSource",
     "ManualCriterion",
+    "PerspectiveSynthesis",
     "QAReport",
     "ResearchOutput",
     "RootAction",
+    "RunBundle",
     "RunRegistryState",
     "RunSummary",
     "SessionHost",
     "ShellCriterion",
     "Snapshot",
     "TaskScopedBrief",
+    "TriageBrief",
+    "TriageReport",
     "WorkBrief",
     "WorkerSummary",
     "build_dev_loop_flow",
+    "build_run_bundle",
     "cleanup_worktree",
     "flow_stream_ws",
     "gate_ttl_for",
     "parse_repo_specs",
     "register_command_routes",
     "register_pull_request_webhook",
+    "render_markdown",
     "sweep_finished_worktrees",
 ]

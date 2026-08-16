@@ -6,6 +6,7 @@ conditional visibility and behavior.
 """
 
 import re
+import uuid
 from enum import Enum
 from typing import Any, Literal
 
@@ -145,7 +146,16 @@ class FieldCondition(BaseModel):
     """A single condition referencing another field's value.
 
     Attributes:
-        field_id: The ID of the field to evaluate.
+        field_id: The authored reference to the field to evaluate — a
+            human/YAML/LLM-authored ``field_id`` (FEAT-393). Only
+            meaningful when ``source == "field"``. Retained as
+            informational input after resolution; it goes stale on
+            rename by design and is ignored at evaluation time once
+            ``field_uid`` is set.
+        field_uid: The resolved, authoritative UID reference (FEAT-393).
+            ``None`` until :func:`~parrot_formdesigner.core.resolution.
+            resolve_rule_references` rewrites the authored ``field_id``
+            at a build boundary. Only meaningful when ``source == "field"``.
         operator: The comparison operator to apply.
         value: The value to compare against (not required for IS_EMPTY/IS_NOT_EMPTY).
     """
@@ -153,7 +163,8 @@ class FieldCondition(BaseModel):
     # model_config intentionally omits extra="forbid" for forward-compatible
     # unknown keys — existing forms with unrecognised condition keys must round-trip unchanged.
 
-    field_id: str
+    field_id: str | None = None
+    field_uid: uuid.UUID | None = None
     operator: ConditionOperator
     value: Any = None
     # FEAT-301: condition source discriminator. "field" (default) reads from
@@ -208,9 +219,16 @@ class DependencyOperation(BaseModel):
               (tool ref in ``options["tool_ref"]``).
             - ``"aggregate"`` — aggregate values across repeated-section items
               (function in ``options["fn"]``, e.g. ``"sum"`` / ``"avg"`` / ``"count"``).
-        operands: List of ``field_id`` strings whose current values are the
-            inputs. Must be non-empty.
-        target: The ``field_id`` that receives the computed value.
+        operands: List of field reference strings whose current values are
+            the inputs. Must be non-empty. Authored as ``field_id``
+            strings; :func:`~parrot_formdesigner.core.resolution.
+            resolve_rule_references` (FEAT-393) rewrites them in place to
+            canonical UUID strings (``str(field_uid)``) at a build
+            boundary — idempotent, since an already-UID-shaped operand
+            validates and passes through unchanged.
+        target: The field reference that receives the computed value.
+            Same authored-``field_id`` → resolved-UUID-string lifecycle as
+            ``operands`` (FEAT-393).
         options: Optional operation-specific configuration (e.g. ``{"unit": "days"}``
             for ``date_diff``, ``{"template": "{} {}"}`` for ``format``).
     """
@@ -279,8 +297,13 @@ class PostDependency(BaseModel):
     :class:`~parrot_formdesigner.services.FormValidator`.
 
     Attributes:
-        target: The ``field_id`` of the field to affect (must be declared
-            *after* the owning field in the form layout).
+        target: The field reference of the field to affect (must be
+            declared *after* the owning field in the form layout).
+            Authored as a ``field_id`` string; resolved in place to a
+            canonical UUID string by
+            :func:`~parrot_formdesigner.core.resolution.resolve_rule_references`
+            (FEAT-393) — idempotent, same lifecycle as
+            :attr:`DependencyOperation.target`.
         effect: The effect to apply.  ``"set"`` and ``"calc"`` require an
             ``operation``; the others are pure visibility/state changes.
             One of:

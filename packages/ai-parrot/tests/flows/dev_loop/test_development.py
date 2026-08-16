@@ -106,7 +106,7 @@ class TestDispatchArguments:
     async def test_injected_llm_dispatch_profile_used(self, research_out, dev_out):
         dispatcher = MagicMock()
         dispatcher.dispatch = AsyncMock(return_value=dev_out)
-        profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.1")
+        profile = LLMCodeDispatchProfile(llm="nvidia:z-ai/glm-5.2")
         node = DevelopmentNode(
             dispatcher=dispatcher,
             dispatch_profile=profile,

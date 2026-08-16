@@ -1,0 +1,98 @@
+# Canonical groundedness prototype fixtures (FEAT-398, TASK-2044).
+#
+# Sourced from the brainstorm's Appendix A prototype validation
+# (sdd/proposals/deterministic-groundedness-scoring.brainstorm.md), which
+# reports 5/5 synthetic cases scoring correctly against this exact evidence
+# pair. All five cases share the SAME two tool outputs as evidence so the
+# fixture exercises exact-match, precision-tolerance, contradicted-band, and
+# no-factual-content behavior against one consistent evidence set.
+#
+# tool_outputs: the turn's two ToolCall.result payloads (rendered to text).
+tool_outputs:
+  - >-
+    Q3 sales totaled $1,243,500 across 4,812 orders, closing the quarter on
+    2026-06-30. For questions, contact finance@acme.example.com. Reference
+    invoice INV-2210.
+  - >-
+    Current inventory stands at 312 units, which is 15% below the reorder
+    threshold, as of 06/28/2026.
+
+# cases: each case is a distinct agent "final answer" scored against the
+# evidence above. `expected_verdicts` lists the per-atom kind + verdict the
+# scorer must produce (raw text is informational, kind+verdict is what the
+# test asserts).
+cases:
+  - name: faithful
+    description: >-
+      Answer echoes evidence hard-data exactly (money, number, date,
+      percent) -> every atom supported, score 1.0.
+    answer: >-
+      Q3 sales totaled $1,243,500 across 4,812 orders, closing the quarter
+      on 2026-06-30. Inventory was down 15% from the reorder threshold.
+    expected_score: 1.0
+    expected_no_factual_content: false
+    expected_verdicts:
+      - kind: money
+        raw: "$1,243,500"
+        verdict: supported
+      - kind: number
+        raw: "4,812"
+        verdict: supported
+      - kind: date
+        raw: "2026-06-30"
+        verdict: supported
+      - kind: percent
+        raw: "15%"
+        verdict: supported
+
+  - name: transposed_digits
+    description: >-
+      A single transposed digit in the money figure ($1,234,500 vs
+      evidence $1,243,500) must be flagged as contradicted, not
+      swallowed by a fixed percentage tolerance (the design finding
+      that motivated the precision-aware tolerance rule).
+    answer: "Q3 sales totaled $1,234,500."
+    expected_score: 0.0
+    expected_no_factual_content: false
+    expected_verdicts:
+      - kind: money
+        raw: "$1,234,500"
+        verdict: contradicted
+
+  - name: invented_identifiers
+    description: >-
+      An invented invoice number and an email at a different domain than
+      the evidence -> both unsupported.
+    answer: "Please reference invoice INV-9999 and contact bob@other.com regarding your order."
+    expected_score: 0.0
+    expected_no_factual_content: false
+    expected_verdicts:
+      - kind: identifier
+        raw: "INV-9999"
+        verdict: unsupported
+      - kind: identifier
+        raw: "bob@other.com"
+        verdict: unsupported
+
+  - name: no_hard_data
+    description: >-
+      An answer with no verifiable hard-data atoms at all -> neutral
+      score 1.0, flagged no_factual_content instead of penalized.
+    answer: "Thank you for your question. I'm happy to help however I can."
+    expected_score: 1.0
+    expected_no_factual_content: true
+    expected_verdicts: []
+
+  - name: rounded_paraphrase
+    description: >-
+      A rounded/abbreviated restatement ($1.24M) of the exact evidence
+      figure ($1,243,500) must be supported via the precision-aware
+      tolerance (half a unit of the answer's own last stated
+      significant digit), not flagged as contradicted/unsupported.
+    answer: "Q3 sales were approximately $1.24M."
+    expected_score: 1.0
+    expected_no_factual_content: false
+    expected_verdicts:
+      - kind: money
+        raw: "$1.24M"
+        verdict: supported

@@ -134,8 +134,18 @@ class LiveVoiceResponse:
     usage: Optional[LiveCompletionUsage] = None
     turn_metadata: Optional[VoiceTurnMetadata] = None
     session_id / turn_id / user_id
-    metadata: Dict[str, Any] = {}    # user_transcription, display_data, go_away...
+    role: Optional[str] = None       # "user" | "assistant" — envelope canónico (FEAT-418)
+    metadata: Dict[str, Any] = {}    # display_data, go_away, reconnect_required...
 ```
+
+> **Envelope canónico (FEAT-418)**: `role` es el atributo que determina si un chunk es
+> transcripción del **usuario** (`role="user"`) o texto/audio del **asistente**
+> (`role="assistant"`) — en minúsculas, igual para ambos proveedores (Gemini Live y Nova 2
+> Sonic). El handler traduce `role` a `transcription {is_user: true|false}` en el frame WS (ver
+> §3.2, tabla "Servidor → Cliente") — el wire protocol (`transcription.is_user`) **no
+> cambió**, solo la fuente interna del dato en Python. La clave `metadata["user_transcription"]` (y su contraparte
+> `metadata["assistant_transcription"]`) ya no existen — no las leas si consumes
+> `LiveVoiceResponse` directamente (p. ej. si escribes tu propio handler).
 
 El handler traduce cada `LiveVoiceResponse` a uno o varios mensajes WebSocket
 (`response_chunk`, `transcription`, `tool_call`, `display_data`, `response_complete`).

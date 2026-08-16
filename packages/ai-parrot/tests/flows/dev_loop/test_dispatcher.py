@@ -1,4 +1,4 @@
-"""Unit tests for parrot.flows.dev_loop.dispatcher (TASK-878).
+"""Unit tests for parrot.flows.dev_loop.dispatchers.claude (TASK-878).
 
 All tests mock ``LLMFactory.create`` and the Redis connection so they
 can run without ``claude-agent-sdk`` or a live Redis.
@@ -96,7 +96,7 @@ class _FakeClient:
 def _patch_worktree_base(monkeypatch, tmp_path):
     """Pin WORKTREE_BASE_PATH to a tmp dir so cwd checks pass."""
     monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH",
         str(tmp_path),
     )
     return tmp_path
@@ -155,7 +155,7 @@ class TestProfileResolution:
         """Default policy: subscription detected → blank the key so the
         subprocess uses the claude.ai login instead of API billing."""
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "prefer-subscription",
             raising=False,
         )
@@ -170,7 +170,7 @@ class TestProfileResolution:
     ):
         """No subscription login → inherit ANTHROPIC_API_KEY (API fallback)."""
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "prefer-subscription",
             raising=False,
         )
@@ -187,7 +187,7 @@ class TestProfileResolution:
         self, dispatcher, monkeypatch, _patch_worktree_base
     ):
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "api-key",
             raising=False,
         )
@@ -202,7 +202,7 @@ class TestProfileResolution:
         self, dispatcher, monkeypatch, _patch_worktree_base
     ):
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.conf.CLAUDE_CODE_DISPATCH_AUTH",
+            "parrot.flows.dev_loop.dispatchers.claude.conf.CLAUDE_CODE_DISPATCH_AUTH",
             "subscription",
             raising=False,
         )
@@ -346,7 +346,7 @@ class TestDispatchHappyPath:
         ]
         fake_client = _FakeClient(messages)
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: fake_client,
         )
 
@@ -384,7 +384,7 @@ class TestDispatchValidationFailure:
         ]
         fake_client = _FakeClient(messages)
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: fake_client,
         )
 
@@ -427,7 +427,7 @@ class TestDispatchTimeout:
                 yield  # pragma: no cover
 
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: _SlowClient(),
         )
 
@@ -441,7 +441,7 @@ class TestDispatchTimeout:
             return real_timeout(0.05)
 
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.asyncio.timeout",
+            "parrot.flows.dev_loop.dispatchers.claude.asyncio.timeout",
             _short_timeout,
         )
 
@@ -476,7 +476,7 @@ class TestDispatchSessionFailure:
                 yield  # pragma: no cover - unreachable, makes this an async gen
 
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: _BoomClient(),
         )
 
@@ -527,7 +527,7 @@ class TestDispatchSessionFailure:
                 )
 
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: _ErrAfterResultClient(),
         )
 
@@ -566,7 +566,7 @@ class TestDispatchSessionFailure:
         )
 
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: _FakeClient([err_result]),
         )
 
@@ -626,7 +626,7 @@ class TestSemaphore:
                 active["n"] -= 1
 
         monkeypatch.setattr(
-            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
             lambda *a, **kw: _SlowClient(),
         )
 

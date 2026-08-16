@@ -1,0 +1,199 @@
+{
+  "summary_oneline": "Close the dev_loop repair loop, wire GraphIndex into dev_loop, and resolve 6 secondary gaps identified by the Graph Engineering framework audit",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/definition.py",
+      "symbol": "build_dev_loop_definition",
+      "lines": "104-111",
+      "role": "QA edges — only qa→handoff and qa→failure_handler, no qa→development",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/flow.py",
+      "symbol": "build_dev_loop_flow",
+      "lines": "343-345",
+      "role": "Imperative wiring mirrors declarative — no retry edge",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py",
+      "symbol": "ResearchNode.execute",
+      "lines": "1-924",
+      "role": "No GraphIndex context injection, no wiki tools in allowed_tools",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/close.py",
+      "symbol": "DevLoopCloseNode",
+      "lines": "1-143",
+      "role": "No graph write-back at run completion",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/failure_handler.py",
+      "symbol": "FailureHandlerNode",
+      "lines": "87-89",
+      "role": "Hard-coded Jira transition + no graph write-back",
+      "evidence": ["F002", "F007"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-research.md",
+      "symbol": null,
+      "lines": null,
+      "role": "Dispatched prompt — missing wiki-first triage block that .claude/agents/ copy has",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/agent_pool.py",
+      "symbol": "_next_worker",
+      "lines": "159-174",
+      "role": "Round-robin retry — no model-tier escalation",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+      "symbol": "GateKind",
+      "lines": "166-172",
+      "role": "plan_approval + revision_approval declared but never opened",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/runner.py",
+      "symbol": "DevLoopRunner",
+      "lines": "573-586",
+      "role": "Semaphore held during gate waits — no checkpoint/resume",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/models.py",
+      "symbol": "RevisionBrief",
+      "lines": "283-305",
+      "role": "No acceptance_criteria field — revision QA is lint-only",
+      "evidence": ["F007"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/meta_ontology.py",
+      "symbol": "_ENTITY_DEFS",
+      "lines": "30-120",
+      "role": "Only 6 of 9 NodeKinds mapped — wiki_page/run/claim dropped",
+      "evidence": ["F008"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist.py",
+      "symbol": "_upsert_nodes",
+      "lines": "240",
+      "role": "Silently skips unmapped node kinds with logger.warning",
+      "evidence": ["F008"]
+    }
+  ],
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "QA failure routes exclusively to failure_handler — no bounded retry loop exists",
+      "evidence": ["F001"],
+      "confidence": "high",
+      "reasoning": "Direct read of definition.py edges + flow.py wiring confirms only two QA outbound edges"
+    },
+    {
+      "id": "C2",
+      "claim": "Zero Python-level coupling between dev_loop and GraphIndex subsystems",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "reasoning": "Exhaustive grep across all dev_loop .py files and _subagent_data .md files = zero hits"
+    },
+    {
+      "id": "C3",
+      "claim": "Wiki-first instructions exist in interactive .claude/agents/sdd-research.md but not in dispatched _subagent_data/sdd-research.md",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "reasoning": "Direct diff between both copies confirms 13 lines of wiki-first block present only in interactive copy"
+    },
+    {
+      "id": "C4",
+      "claim": "Dispatch retry is positional (round-robin), not model-tier escalation",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "agent_pool._next_worker picks next by index; DevAgentSpec has no tier/escalation field"
+    },
+    {
+      "id": "C5",
+      "claim": "Pool-vs-single decision is purely configuration-driven, but wave sizing is dynamic via TaskScheduler",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "reasoning": "Development node checks pool_cfg presence (config); TaskScheduler.next_wave() computes dependency-bounded waves (dynamic)"
+    },
+    {
+      "id": "C6",
+      "claim": "plan_approval and revision_approval gate kinds are declared with TTL config but never opened by any node",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "Exhaustive grep for open_gate calls across all dev_loop nodes shows only 3 of 5 kinds used"
+    },
+    {
+      "id": "C7",
+      "claim": "Gated runs hold concurrency semaphore slot; checkpoint/resume explicitly deferred to v2",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "reasoning": "runner.py async-with-semaphore wraps entire flow; spec Risk R8 documents deferral"
+    },
+    {
+      "id": "C8",
+      "claim": "Subagent prompts have drifted: repo copies updated with per-spec index + wiki, package copies unchanged",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "reasoning": "Line count diff (99 vs 80, 328 vs 274) + content diff confirms substantive behavioral divergence"
+    },
+    {
+      "id": "C9",
+      "claim": "FailureHandlerNode hard-codes Jira transition string instead of using transition_issue_with_candidates",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "reasoning": "Direct read of failure_handler.py:87-89 vs base.py:53 helper used by other nodes"
+    },
+    {
+      "id": "C10",
+      "claim": "RevisionBrief lacks acceptance_criteria — revision QA verifies only lint",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "reasoning": "Model definition + runner.py:653 comment explicitly acknowledges lint-only verification"
+    },
+    {
+      "id": "C11",
+      "claim": "Arango meta-ontology maps 6 of 9 NodeKinds; wiki_page/run/claim nodes silently dropped by _upsert_nodes",
+      "evidence": ["F008"],
+      "confidence": "high",
+      "reasoning": "Direct comparison of NodeKind enum (9) vs _ENTITY_DEFS (6) vs KIND_TO_COLLECTION (6)"
+    }
+  ],
+  "scope": {
+    "whats_new": [
+      "qa → development conditional edge with bounded retry counter (G1)",
+      "Model-tier escalation policy in pool retry path (G3)",
+      "Graph context injection in ResearchNode (G2 seam 2)",
+      "Run outcome write-back in CloseNode/FailureHandlerNode (G2 seam 3)"
+    ],
+    "what_changes": [
+      "definition.py + flow.py: new QA→development edge with retry predicate (G1) [F001]",
+      "models.py: add qa_attempts counter to session state (G1) [F001]",
+      "_subagent_data/*.md: sync wiki-first block from .claude/agents/ (G2 seam 1) [F002]",
+      "agent_pool.py: optional escalation policy on retry (G3) [F003]",
+      "failure_handler.py: use transition_issue_with_candidates (G7b) [F007]",
+      "models.py RevisionBrief: carry acceptance criteria (G7c) [F007]",
+      "meta_ontology.py: add wiki_page/run/claim entity defs (G8) [F008]",
+      "persist.py: route new kinds to collections (G8) [F008]"
+    ],
+    "non_goals": [
+      "Rewriting the flow engine itself — all changes are topology/model additions",
+      "Migrating away from SQLite persistence — it remains a valid plane",
+      "Changing the deployment_approval gate (already working)",
+      "Adding new LLM providers or dispatchers"
+    ]
+  },
+  "unknowns": [],
+  "recommended_next_command": {
+    "command": "/sdd-spec FEAT-377",
+    "rationale": "All 8 gaps verified with high confidence; scope is well-bounded; the evaluation already provides a feature decomposition. A spec can codify the 6 candidate features (FEAT-A through FEAT-F) with acceptance criteria."
+  }
+}

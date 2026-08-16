@@ -338,7 +338,7 @@ class HITLResponseHandler(BaseView):
             return web.Response(
                 status=400,
                 content_type="application/json",
-                body=json.dumps({"error": f"Invalid JSON: {exc}"}),
+                body=json.dumps({"error": "Invalid JSON body"}),
             )
 
         try:
@@ -350,7 +350,7 @@ class HITLResponseHandler(BaseView):
             return web.Response(
                 status=400,
                 content_type="application/json",
-                body=json.dumps({"error": str(exc)}),
+                body=json.dumps({"error": "Request body validation failed"}),
             )
 
         interaction_id: str = body.interaction_id
@@ -422,7 +422,7 @@ class HITLResponseHandler(BaseView):
                 return web.Response(
                     status=500,
                     content_type="application/json",
-                    body=json.dumps({"error": f"Failed to escalate: {exc}"}),
+                    body=json.dumps({"error": "Failed to escalate"}),
                 )
             return web.Response(
                 status=200,
@@ -457,7 +457,7 @@ class HITLResponseHandler(BaseView):
             return web.Response(
                 status=500,
                 content_type="application/json",
-                body=json.dumps({"error": f"Failed to process response: {exc}"}),
+                body=json.dumps({"error": "Failed to process response"}),
             )
 
         logger.info(

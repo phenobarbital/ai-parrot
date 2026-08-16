@@ -11,8 +11,8 @@ Acknowledgment shape (same as Import_Time_Clock_Events):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, List
+from datetime import UTC, datetime
+from typing import Any
 
 import pandas as pd
 from zeep.helpers import serialize_object
@@ -27,7 +27,7 @@ from parrot_tools.interfaces.workday.models.clock_event import (
 def _isoformat_dt(dt: datetime) -> str:
     """Serialise a datetime as Workday-compatible xsd:dateTime string."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -43,7 +43,7 @@ class ImportReportedTimeBlocksType(WorkdayWriteTypeBase):
 
     def build_request(  # type: ignore[override]
         self,
-        blocks: List[ReportedTimeBlock],
+        blocks: list[ReportedTimeBlock],
         **kwargs,
     ) -> dict:
         """Build the Import_Reported_Time_Blocks SOAP body.
@@ -68,6 +68,8 @@ class ImportReportedTimeBlocksType(WorkdayWriteTypeBase):
                 item["Time_Entry_Code"] = blk.time_entry_code
             if blk.reported_quantity is not None:
                 item["Reported_Quantity"] = blk.reported_quantity
+            if blk.override_rate is not None:
+                item["Override_Rate"] = blk.override_rate
             if blk.comment:
                 item["Comment"] = blk.comment
             block_data.append(item)
@@ -110,7 +112,7 @@ class ImportReportedTimeBlocksType(WorkdayWriteTypeBase):
 
     async def execute(  # type: ignore[override]
         self,
-        blocks: List[ReportedTimeBlock],
+        blocks: list[ReportedTimeBlock],
         **kwargs,
     ) -> pd.DataFrame:
         """Execute Import_Reported_Time_Blocks and return per-row status DataFrame.
@@ -135,7 +137,7 @@ class ImportReportedTimeBlocksType(WorkdayWriteTypeBase):
                     operation=operation, **request_body
                 )
                 break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — pre-existing, untouched by this task
                 exc_str = str(exc)
                 is_fault = any(
                     kw in exc_str

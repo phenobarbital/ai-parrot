@@ -17,8 +17,10 @@ plugins/*
 /outputs/**/*.html
 /outputs/**/*.jpg
 /outputs/**/*.png
+/outputs/dev_loop_runs/
 examples/**/*.py
 !examples/autonomous_analyst/**/*.py
+!examples/data/whatif_scenario_e2e.py
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
@@ -31,6 +33,14 @@ examples/zoom/*
 examples/podcasts/*
 examples/scraper/*
 examples/tool/workday*
+# dev-loop console (FEAT-129/377/378): this example is a shipped artifact,
+# not scratch data — its sources must always reach the repo. Re-included
+# after the blanket examples/** rules above, mirroring the
+# autonomous_analyst exception on line 21. Deliberately scoped to source
+# extensions rather than `!examples/dev_loop/**`: a bare `**` would also
+# match the `__pycache__` directory and undo the global rule at the top.
+!examples/dev_loop/**/*.py
+!examples/dev_loop/**/*.html
 /backup/
 
 # Distribution / packaging
@@ -153,6 +163,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv*/
 env/
 venv/
 ENV/

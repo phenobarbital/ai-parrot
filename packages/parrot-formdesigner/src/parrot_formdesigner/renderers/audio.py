@@ -4,7 +4,7 @@ Converts a FormSchema into an AudioFormManifest — a sequential list of
 questions suitable for a voice-driven Q&A session over WebSocket.
 
 The renderer is registered under the "audio" format key and is discoverable
-at GET /api/v1/forms/{form_id}/render/audio.
+at GET /api/v1/forms/{form_uid}/render/audio.
 
 Added by FEAT-224 (FormDesigner Audio Renderer).
 """
@@ -250,7 +250,7 @@ class AudioFormRenderer(AbstractFormRenderer):
 
         renderer = AudioFormRenderer()
         result = await renderer.render(form_schema, locale="en")
-        manifest = result.content  # dict with form_id, questions, ws_endpoint, ...
+        manifest = result.content  # dict with form_uid, questions, ws_endpoint, ...
     """
 
     def __init__(
@@ -356,6 +356,7 @@ class AudioFormRenderer(AbstractFormRenderer):
             AudioQuestion(
                 index=0,  # re-indexed by caller
                 field_id=field.field_id,
+                field_uid=field.field_uid,
                 field_type=field.field_type.value,
                 label=label,
                 description=description,
@@ -401,11 +402,14 @@ class AudioFormRenderer(AbstractFormRenderer):
         if self._synthesizer is not None:
             questions = await self._synthesize_questions(questions, locale=locale)
 
-        ws_endpoint = f"/api/v1/forms/{form.form_id}/audio/ws"
+        ws_endpoint = f"/api/v1/forms/{form.form_uid}/audio/ws"
         form_title = _resolve(form.title, locale) if form.title else form.form_id
 
         manifest = AudioFormManifest(
-            form_id=form.form_id,
+            # FEAT-393 (TASK-1995): form.form_uid is now uuid.UUID (was str
+            # under FEAT-389); AudioFormManifest.form_uid stays a wire-facing
+            # str field, so stringify explicitly.
+            form_uid=str(form.form_uid),
             title=form_title,
             total_questions=len(questions),
             questions=questions,
@@ -414,7 +418,11 @@ class AudioFormRenderer(AbstractFormRenderer):
         )
 
         # Serialize to dict; exclude audio_prompt bytes from JSON output.
-        manifest_dict = manifest.model_dump(exclude={"questions": {"__all__": {"audio_prompt"}}})
+        # mode="json" so field_uid (FEAT-393) and any other UUID values
+        # serialize as strings instead of raw uuid.UUID objects.
+        manifest_dict = manifest.model_dump(
+            mode="json", exclude={"questions": {"__all__": {"audio_prompt"}}}
+        )
 
         return RenderedForm(
             content=manifest_dict,

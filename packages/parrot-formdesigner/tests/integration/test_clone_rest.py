@@ -1,8 +1,12 @@
-"""Integration tests for POST /api/v1/forms/{form_id}/clone (FEAT-183).
+"""Integration tests for POST /api/v1/forms/{form_uid}/clone (FEAT-183, updated FEAT-389).
 
 End-to-end via aiohttp test client. Auth is bypassed by registering the
 handler directly (without _wrap_auth), matching the pattern used by
 test_operations_e2e.py.
+
+FEAT-389: the route path param and clone_form()'s source identifier are now
+``form_uid`` (validated as a UUID), not ``form_id`` (slug) — URLs use
+``source_form.form_uid`` rather than the literal slug ``"source-form"``.
 """
 
 from __future__ import annotations
@@ -65,7 +69,7 @@ async def _make_client(aiohttp_client, registry: FormRegistry):
     handler = FormAPIHandler(registry=registry)
     app = web.Application()
     app.router.add_post(
-        "/api/v1/forms/{form_id}/clone", handler.clone_form
+        "/api/v1/forms/{form_uid}/clone", handler.clone_form
     )
     return await aiohttp_client(app)
 
@@ -82,14 +86,15 @@ async def test_clone_rest_success(aiohttp_client, source_form: FormSchema) -> No
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/source-form/clone",
+        f"/api/v1/forms/{source_form.form_uid}/clone",
         json={"new_form_id": "cloned-form"},
     )
     assert resp.status == 201
     data = await resp.json()
     assert data["form_id"] == "cloned-form"
+    assert data["form_uid"] != str(source_form.form_uid)
     assert data["version"] == "1.0"
-    assert data["meta"]["cloned_from"] == "source-form"
+    assert data["meta"]["cloned_from"] == str(source_form.form_uid)
     assert "sections" in data
 
 
@@ -100,7 +105,7 @@ async def test_clone_rest_with_patch(aiohttp_client, source_form: FormSchema) ->
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/source-form/clone",
+        f"/api/v1/forms/{source_form.form_uid}/clone",
         json={
             "new_form_id": "patched-clone",
             "patch": {"title": "Patched Title"},
@@ -126,7 +131,7 @@ async def test_clone_rest_missing_new_form_id(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/source-form/clone",
+        f"/api/v1/forms/{source_form.form_uid}/clone",
         json={},
     )
     assert resp.status == 400
@@ -143,7 +148,7 @@ async def test_clone_rest_empty_new_form_id(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/source-form/clone",
+        f"/api/v1/forms/{source_form.form_uid}/clone",
         json={"new_form_id": ""},
     )
     assert resp.status == 400
@@ -160,7 +165,7 @@ async def test_clone_rest_invalid_json(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/source-form/clone",
+        f"/api/v1/forms/{source_form.form_uid}/clone",
         data="not json at all",
         headers={"Content-Type": "application/json"},
     )
@@ -178,7 +183,7 @@ async def test_clone_rest_source_not_found(aiohttp_client) -> None:
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/nonexistent-form/clone",
+        "/api/v1/forms/00000000-0000-0000-0000-000000000000/clone",
         json={"new_form_id": "any-clone"},
     )
     assert resp.status == 404
@@ -201,7 +206,7 @@ async def test_clone_rest_duplicate_id(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/source-form/clone",
+        f"/api/v1/forms/{source_form.form_uid}/clone",
         json={"new_form_id": "taken-id"},
     )
     assert resp.status == 409

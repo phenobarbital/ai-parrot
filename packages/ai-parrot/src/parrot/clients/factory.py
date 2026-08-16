@@ -52,6 +52,19 @@ def _lazy_nova():
     return NovaClient
 
 
+def _lazy_bedrock_mantle():
+    """Lazy loader for :class:`BedrockMantleClient` (FEAT-407).
+
+    Keeps the same deferred-import pattern as :func:`_lazy_nova` /
+    :func:`_lazy_bedrock_converse`.
+
+    Returns:
+        The :class:`BedrockMantleClient` class.
+    """
+    from .nova.mantle import BedrockMantleClient
+    return BedrockMantleClient
+
+
 def _lazy_claude_agent():
     """Lazy loader for :class:`ClaudeAgentClient`.
 
@@ -94,6 +107,12 @@ SUPPORTED_CLIENTS = {
     # video) on Bedrock — distinct key, coexists with "bedrock-converse"
     # above (non-Nova families: Claude/Llama/Mistral/...).
     "nova": _lazy_nova,
+    # FEAT-407: Amazon Bedrock Mantle — OpenAI-compatible API for
+    # Bedrock-hosted models, authenticated with a bearer API key (no
+    # SigV4/boto). Distinct key, coexists with "bedrock" (FEAT-232),
+    # "bedrock-converse" (FEAT-302), and "nova" (FEAT-315) above.
+    "bedrock-mantle": _lazy_bedrock_mantle,
+    "mantle": _lazy_bedrock_mantle,
     "google": GoogleGenAIClient,
     "openai": OpenAIClient,
     "groq": GroqClient,

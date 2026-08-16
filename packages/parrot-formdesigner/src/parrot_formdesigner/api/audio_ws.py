@@ -134,7 +134,7 @@ class AudioFormWSHandler:
             token_validator=TokenValidator(secret_key=SECRET),
         )
         # Register route: app.router.add_get(
-        #   "/api/v1/forms/{form_id}/audio/ws",
+        #   "/api/v1/forms/{form_uid}/audio/ws",
         #   handler.handle_websocket
         # )
     """
@@ -177,7 +177,7 @@ class AudioFormWSHandler:
 
         Args:
             request: Incoming aiohttp request. Expected path params:
-                ``{form_id}``.
+                ``{form_uid}``.
 
         Returns:
             Completed WebSocketResponse.
@@ -203,10 +203,10 @@ class AudioFormWSHandler:
         if user is None:
             return ws
 
-        form_id = request.match_info.get("form_id", "")
+        form_uid = request.match_info.get("form_uid", "")
         session = AudioSessionState(
             session_id=str(uuid.uuid4()),
-            form_id=form_id,
+            form_uid=form_uid,
             user_id=user.user_id,
         )
 
@@ -383,7 +383,7 @@ class AudioFormWSHandler:
 
     def _build_session_config(
         self,
-        form_id: str,
+        form_uid: str,
         locale: str,
         data: dict[str, Any],
     ) -> AudioSessionConfig:
@@ -394,14 +394,14 @@ class AudioFormWSHandler:
         session.
 
         Args:
-            form_id: The form being started.
+            form_uid: The immutable UUID of the form being started (FEAT-389).
             locale: Resolved session locale.
             data: The raw start_session message payload.
 
         Returns:
             A populated AudioSessionConfig.
         """
-        kwargs: dict[str, Any] = {"form_id": form_id, "locale": locale}
+        kwargs: dict[str, Any] = {"form_uid": form_uid, "locale": locale}
         for key in (
             "tts_backend",
             "tts_voice",
@@ -418,7 +418,7 @@ class AudioFormWSHandler:
             self.logger.warning(
                 "Invalid audio session config (%s); using defaults", exc
             )
-            return AudioSessionConfig(form_id=form_id, locale=locale)
+            return AudioSessionConfig(form_uid=form_uid, locale=locale)
 
     async def _handle_start_session(
         self,
@@ -430,18 +430,18 @@ class AudioFormWSHandler:
         audio_cache: dict[int, str],
     ) -> None:
         """Handle start_session message: load form, build manifest, send Q1."""
-        form_id = data.get("form_id") or session.form_id
+        form_uid = data.get("form_uid") or session.form_uid
         locale = data.get("locale", "en")
 
         # Build the per-session config from the start_session payload (FEAT-236),
         # falling back to defaults for any omitted key.
-        config = self._build_session_config(form_id, locale, data)
+        config = self._build_session_config(form_uid, locale, data)
         session.config = config
 
         # Load form
-        form = await self.registry.get(form_id, tenant=None)
+        form = await self.registry.get(form_uid, tenant=None)
         if form is None:
-            await self._send_error(ws, "FORM_NOT_FOUND", f"Form '{form_id}' not found")
+            await self._send_error(ws, "FORM_NOT_FOUND", f"Form '{form_uid}' not found")
             return
 
         # Build manifest
@@ -452,7 +452,7 @@ class AudioFormWSHandler:
             questions = questions[:MAX_QUESTIONS]
             self.logger.warning(
                 "Form %s has >%d questions; truncating to %d",
-                form_id, MAX_QUESTIONS, MAX_QUESTIONS,
+                form_uid, MAX_QUESTIONS, MAX_QUESTIONS,
             )
 
 
@@ -465,15 +465,15 @@ class AudioFormWSHandler:
 
         form_title = _resolve_str(form.title)
         manifest = AudioFormManifest(
-            form_id=form_id,
+            form_uid=form_uid,
             title=form_title,
             total_questions=len(questions),
             questions=questions,
-            ws_endpoint=f"/api/v1/forms/{form_id}/audio/ws",
+            ws_endpoint=f"/api/v1/forms/{form_uid}/audio/ws",
             locale=locale,
         )
 
-        session.form_id = form_id
+        session.form_uid = form_uid
         session.manifest = manifest
         session.current_index = 0
 
@@ -1092,8 +1092,17 @@ class AudioFormWSHandler:
             try:
                 from ..services.submissions import FormSubmission
 
+                # FormSubmission requires both form_uid (identity, FEAT-389)
+                # and form_id (human-readable slug). AudioSessionState only
+                # carries form_uid, so re-resolve the form to recover its
+                # current slug for the submission record; fall back to the
+                # uid itself if the form was deleted mid-session.
+                _form = await self.registry.get(session.form_uid, tenant=None)
+                _form_id = _form.form_id if _form is not None else session.form_uid
+
                 submission = FormSubmission(
-                    form_id=session.form_id,
+                    form_uid=session.form_uid,
+                    form_id=_form_id,
                     form_version="1",
                     data={fid: a.value for fid, a in session.answers.items()},
                     is_valid=True,

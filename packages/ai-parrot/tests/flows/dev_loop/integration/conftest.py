@@ -58,14 +58,15 @@ def skip_unless_redis_available():
 @pytest.fixture
 def temp_worktree_base(tmp_path, monkeypatch) -> Iterator[str]:
     """Override ``WORKTREE_BASE_PATH`` to point at an ephemeral tmp dir."""
-    monkeypatch.setattr(
-        "parrot.flows.dev_loop.dispatcher.conf.WORKTREE_BASE_PATH",
-        str(tmp_path),
-    )
-    monkeypatch.setattr(
+    for target in (
+        "parrot.flows.dev_loop.dispatchers.claude.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.codex.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.gemini.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.google_coding.conf.WORKTREE_BASE_PATH",
+        "parrot.flows.dev_loop.dispatchers.llm.conf.WORKTREE_BASE_PATH",
         "parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH",
-        str(tmp_path),
-    )
+    ):
+        monkeypatch.setattr(target, str(tmp_path))
     yield str(tmp_path)
 
 

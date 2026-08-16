@@ -74,6 +74,8 @@ from ..handlers.crew.execution_history_handler import CrewExecutionHistoryHandle
 from ..handlers.crew.tool_catalog import CrewToolCatalogHandler
 from ..handlers.crew.special_nodes import CrewSpecialNodeCatalogHandler
 from ..handlers.crew.redis_persistence import CrewRedis
+from ..handlers.flows.checkpoints import FlowCheckpointHandler
+from parrot.bots.flows.core.checkpoint.recovery import get_recovery_service
 from ..openapi.config import setup_swagger
 from ..conf import (
     BOT_CLEANUP_TIMEOUT,
@@ -87,6 +89,9 @@ from ..conf import (
 )
 # Credentials handler
 from ..handlers.credentials import setup_credentials_routes
+# CommCenter bulk notification sender (FEAT-417) — method-based handler,
+# mirrors ScrapingInfoHandler's instantiate-then-.setup(app) convention.
+from ..handlers.comm_center import CommCenterHandler
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
 # FEAT-146: Web HITL response endpoint + bootstrap
@@ -1841,6 +1846,19 @@ class BotManager:
             '/api/v1/agents/infographic/{resource:themes}/{theme_name}',
             InfographicTalk,
         )
+        # Deterministic render route (FEAT-327) — bot-less, LLM-free. The
+        # literal `render` resource MUST be registered before the {agent_id}
+        # catch-all below, same reasoning as templates/themes above.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:render}',
+            InfographicTalk,
+        )
+        # Async render job polling (FEAT-327, Module 4) — grouped with the
+        # render route above; also before {agent_id}.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:render}/jobs/{job_id}',
+            InfographicTalk,
+        )
         router.add_view(
             '/api/v1/agents/infographic/{agent_id}',
             InfographicTalk,
@@ -1964,6 +1982,16 @@ class BotManager:
             )
             CrewHandler.configure(self.app, '/api/v1/crew')
             CrewExecutionHandler.configure(self.app, '/api/v1/crews')
+        # AgentsFlow state checkpointing ops surface (FEAT-399): list/history/
+        # resume/delete over the CheckpointStore contract.
+        FlowCheckpointHandler.configure(self.app, '/api/v1/flows/checkpoints')
+        # Graceful-shutdown hook: suspend + dump every active checkpointed
+        # flow (checkpoint=True) within FLOW_CHECKPOINT_SHUTDOWN_DEADLINE.
+        # AgentsFlow.run_flow() registers/unregisters itself with this
+        # shared service automatically — nothing else to wire per-flow
+        # (code review finding, FEAT-399: this was previously only shown
+        # in the example, never actually called by the server).
+        get_recovery_service().attach_to_app(self.app)
         # Agent Config CRUD
         router.add_view(
             '/api/v1/agents/config',
@@ -2009,6 +2037,8 @@ class BotManager:
         setup_credentials_routes(self.app)
         # MCP helper routes (discovery, activation, management)
         setup_mcp_helper_routes(self.app)
+        # CommCenter bulk notification sender routes (FEAT-417)
+        CommCenterHandler().setup(self.app)
         if self.enable_swagger_api:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)

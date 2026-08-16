@@ -4,6 +4,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Sequence,
     Union,
     TypedDict,
     Any,
@@ -68,9 +69,20 @@ from parrot.core.events.lifecycle.events import (
     BeforeClientCallEvent,
     AfterClientCallEvent,
     ClientCallFailedEvent,
+    # FEAT-397: Per-Round Token Usage Observability
+    ClientRoundEvent,
 )
+# FEAT-397: used by _emit_round_event()'s has_subscribers() fallback check —
+# hoisted to module scope (not re-imported per round) since sys.modules
+# caching aside, this runs on every tool round once MetricsSubscriber is
+# wired globally.
+from navigator_eventbus.lifecycle.global_registry import get_global_registry
 # FEAT-228: per-agent cost/usage metrics — read invoking agent's identity at event build time
-from parrot.observability.context import current_agent_name
+from parrot.observability.context import (
+    current_agent_name,
+    current_session_id,
+    current_user_id,
+)
 
 
 LLM_PRESETS = {
@@ -468,6 +480,8 @@ $backstory
             # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
             # captured before the event leaves the calling coroutine.
             agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -476,6 +490,84 @@ $backstory
         # forward_to_global skips the work when nobody is listening globally.
         self.events.forward_to_global(event)
         return tc
+
+    def _emit_round_event(
+        self,
+        tc: "TraceContext",
+        *,
+        client_name: str,
+        model: str,
+        round_number: int,
+        usage: "Optional[CompletionUsage]",
+        raw_usage: "Optional[dict]",
+        tool_calls: "Sequence[str]",
+        duration_ms: float,
+    ) -> None:
+        """Emit ``ClientRoundEvent`` for a single tool-execution round.
+
+        Fire-and-forget (``emit_nowait`` + ``forward_to_global``), mirroring
+        :meth:`_emit_before_call`. Short-circuits before constructing the
+        event so there is zero overhead on the hot path when nobody listens
+        — checking BOTH the client's own (isolated, ``forward_to_global=
+        False``) registry AND the current global registry. Client registries
+        normally have no direct subscribers in production (real consumers
+        like ``MetricsSubscriber`` register on the global registry, reached
+        via the explicit ``forward_to_global()`` bridge below); checking
+        only ``self.events`` would silently never emit ``ClientRoundEvent``
+        outside of tests that subscribe directly on a client instance
+        (FEAT-397 TASK-2040 integration testing surfaced this).
+
+        Args:
+            tc: The ``TraceContext`` returned by :meth:`_emit_before_call`.
+            client_name: Provider identifier.
+            model: Model name/identifier.
+            round_number: 1-indexed round number within this ``ask()`` call.
+            usage: This round's :class:`CompletionUsage`, or ``None`` when
+                the provider reported no usage for the round. Flat token
+                counts are extracted from it (``prompt_tokens`` →
+                ``input_tokens``, ``completion_tokens`` → ``output_tokens``,
+                ``total_tokens`` → ``total_tokens``); all ``None`` when
+                ``usage is None``.
+            raw_usage: Provider-native usage payload for this round,
+                JSON-safe (plain dict). Passed through as-is.
+            tool_calls: Tool-name strings invoked during this round.
+            duration_ms: Wall-clock time in milliseconds for this round's
+                SDK call.
+        """
+        if not self.events.has_subscribers(ClientRoundEvent):
+            # FEAT-397 (TASK-2040 fix): client registries never carry direct
+            # subscribers in production — fall back to checking the current
+            # global registry before giving up, so MetricsSubscriber (or any
+            # other global observer) actually receives round events.
+            if not get_global_registry().has_subscribers(ClientRoundEvent):
+                return
+
+        event = ClientRoundEvent(
+            trace_context=tc,
+            client_name=client_name,
+            model=model or "",
+            round_number=round_number,
+            input_tokens=usage.prompt_tokens if usage is not None else None,
+            output_tokens=usage.completion_tokens if usage is not None else None,
+            total_tokens=usage.total_tokens if usage is not None else None,
+            tool_calls=tuple(tool_calls),
+            duration_ms=duration_ms,
+            raw_usage=raw_usage,
+            source_type="client",
+            source_name=client_name,
+            # FEAT-228: read here (construction time, bot's task context) not at emit time —
+            # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
+            # captured before the event leaves the calling coroutine.
+            agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
+        )
+        self.events.emit_nowait(event)
+        # Client registries are isolated (forward_to_global=False). Forward the
+        # LLM-call lifecycle events explicitly so global observers (cost/token
+        # recorders, OTel subscribers) receive them. The guard inside
+        # forward_to_global skips the work when nobody is listening globally.
+        self.events.forward_to_global(event)
 
     async def _emit_after_call(
         self,
@@ -515,6 +607,8 @@ $backstory
             # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
             # captured before the event leaves the calling coroutine.
             agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -555,6 +649,8 @@ $backstory
             # _emit_* dispatches fire-and-forget via emit_nowait so the ContextVar must be
             # captured before the event leaves the calling coroutine.
             agent_name=current_agent_name.get(),
+            user_id=current_user_id.get(),
+            session_id=current_session_id.get(),
         )
         await self.events.emit(event)
         # Forward to global so error counters on the global registry observe
@@ -1409,6 +1505,14 @@ $backstory
         if isinstance(tool, ToolDefinition):
             fn = tool.function
         elif isinstance(tool, AbstractTool):
+            # MCP tools expose their accepted params via input_schema
+            # rather than a bound_method — use schema properties when
+            # available so context keys get filtered correctly.
+            schema = getattr(tool, 'input_schema', None)
+            if schema and isinstance(schema, dict):
+                props = schema.get('properties')
+                if props and isinstance(props, dict):
+                    return set(props.keys())
             fn = getattr(tool, 'bound_method', None)
         if fn is None:
             return None

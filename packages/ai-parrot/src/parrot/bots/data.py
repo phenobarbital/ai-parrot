@@ -540,8 +540,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
 
+    _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
     def _get_default_tools(self, tools: list = None, use_tools: bool = True) -> List[AbstractTool]:
         """Return Agent-specific tools."""
+        if not self._SAFE_ID.match(self.agent_id):
+            raise ValueError(f"Unsafe agent_id for path construction: {self.agent_id!r}")
         report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         report_dir.mkdir(parents=True, exist_ok=True)
         if not tools:
@@ -1750,7 +1754,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         if isinstance(response.data, pd.DataFrame) and not response.data.empty
                         else None
                     )
-                    inferred_var = self._infer_data_variable_from_tools(
+                    inferred_var = await self._infer_data_variable_from_tools(
                         response.tool_calls,
                         prefer_names=_prefer,
                     )
@@ -1797,8 +1801,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     # legitimate small results.
                     pandas_tool = self._get_python_pandas_tool()
                     live_df = (
-                        pandas_tool.locals.get(inferred_var)
-                        if pandas_tool and hasattr(pandas_tool, 'locals')
+                        # FEAT-380 (TASK-1944): namespace API — the worker
+                        # owns the live namespace now, not `.locals`.
+                        await pandas_tool.get_var(inferred_var)
+                        if pandas_tool and hasattr(pandas_tool, 'get_var')
                         else None
                     )
                     if (
@@ -2319,14 +2325,20 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             None,
         )
 
-    def _get_repl_locals(self) -> Dict[str, Any]:
+    async def _get_repl_locals(self) -> Dict[str, Any]:
         """Return the REPL local variables from PythonPandasTool.
 
         Used by DatasetManager.store_dataframe() to look up computed
         DataFrames by variable name.
+
+        FEAT-380 (TASK-1944): the namespace now lives in the tool's worker
+        process — `.locals` on the host instance is a stale snapshot from
+        construction time, never updated by executed code. This is async
+        (a full `snapshot()` round-trip to the worker) instead of a plain
+        dict read; every caller was audited and is itself already async.
         """
         if pandas_tool := self._get_python_pandas_tool():
-            return pandas_tool.locals
+            return await pandas_tool.snapshot()
         return {}
 
     def _turn_has_data_operations(self, tool_calls: Optional[List[Any]]) -> bool:
@@ -2584,7 +2596,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 rejected.append(var)
         return allowed, rejected
 
-    def _infer_data_variable_from_tools(
+    async def _infer_data_variable_from_tools(
         self, tool_calls: List[Any], prefer_names: tuple = ()
     ) -> Optional[str]:
         """Strict-mode inference of a ``data_variable`` from the current turn.
@@ -2605,6 +2617,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         ``fetch_dataset`` tool calls are considered. DataFrames left
         over from previous turns are never returned.
 
+        FEAT-380 (TASK-1944): async — uses targeted ``get_var()`` calls
+        (namespace API) instead of `.locals` membership checks, since the
+        namespace now lives in the tool's worker process. Fetched values
+        are cached locally (`candidate_values`) so the column-match
+        tiebreaker below doesn't re-fetch a candidate already retrieved.
+
         Returns:
             Variable name when there is exactly one live DataFrame
             candidate in the current turn, ``None`` otherwise.
@@ -2613,7 +2631,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return None
 
         pandas_tool = self._get_python_pandas_tool()
-        if not pandas_tool or not hasattr(pandas_tool, 'locals'):
+        if not pandas_tool or not hasattr(pandas_tool, 'get_var'):
             return None
 
         # Collect candidate variable names produced by this turn's tool
@@ -2621,12 +2639,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         candidates: set = self._current_turn_variable_names(tool_calls)
 
         # Keep only candidates that are currently live, non-empty DataFrames.
-        live_dataframes = [
-            var for var in candidates
-            if var in pandas_tool.locals
-            and isinstance(pandas_tool.locals[var], pd.DataFrame)
-            and not pandas_tool.locals[var].empty
-        ]
+        candidate_values: Dict[str, pd.DataFrame] = {}
+        for var in candidates:
+            value = await pandas_tool.get_var(var)
+            if isinstance(value, pd.DataFrame) and not value.empty:
+                candidate_values[var] = value
+        live_dataframes = list(candidate_values.keys())
 
         # Convention-aware preference: when the caller passes conventional names
         # (e.g. the structured_chart `chart_data` DataFrame), prefer the first
@@ -2652,7 +2670,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 ref_cols = self._current_response_data_columns
                 col_matches = [
                     var for var in live_dataframes
-                    if list(pandas_tool.locals[var].columns) == ref_cols
+                    if list(candidate_values[var].columns) == ref_cols
                 ]
                 if len(col_matches) == 1:
                     self.logger.info(
@@ -2737,15 +2755,15 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             self.logger.warning("PythonPandasTool not available to inject data from variable")
             return
         df = None
-        # Check locals from the Python REPL tool context
-        if hasattr(pandas_tool, "locals"):
-            # 1. Check top-level locals
-            if data_variable in pandas_tool.locals:
-                df = pandas_tool.locals.get(data_variable)
+        # Check the REPL worker namespace (FEAT-380 TASK-1944: namespace API,
+        # not `.locals` — the namespace lives in the tool's worker process).
+        if hasattr(pandas_tool, "get_var"):
+            # 1. Check top-level namespace
+            df = await pandas_tool.get_var(data_variable)
 
             # 2. Check inside execution_results (common pattern for LLM outputs)
-            if df is None and 'execution_results' in pandas_tool.locals:
-                exec_results = pandas_tool.locals['execution_results']
+            if df is None:
+                exec_results = await pandas_tool.get_var('execution_results')
                 if isinstance(exec_results, dict) and data_variable in exec_results:
                     df = exec_results.get(data_variable)
 
@@ -2805,14 +2823,15 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         missing: List[str] = []
         for var_name in data_variables:
             df = None
-            if hasattr(pandas_tool, "locals"):
-                # 1. Check top-level locals
-                if var_name in pandas_tool.locals:
-                    df = pandas_tool.locals.get(var_name)
+            # FEAT-380 (TASK-1944): namespace API, not `.locals` — the
+            # namespace lives in the tool's worker process.
+            if hasattr(pandas_tool, "get_var"):
+                # 1. Check top-level namespace
+                df = await pandas_tool.get_var(var_name)
 
                 # 2. Check inside execution_results (common LLM output pattern)
-                if df is None and "execution_results" in pandas_tool.locals:
-                    exec_results = pandas_tool.locals["execution_results"]
+                if df is None:
+                    exec_results = await pandas_tool.get_var("execution_results")
                     if isinstance(exec_results, dict) and var_name in exec_results:
                         df = exec_results.get(var_name)
 

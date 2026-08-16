@@ -129,29 +129,29 @@ class TestExcludeProviderBehavior:
         """Provider returns exactly the 5 patterns for each is_public=True form."""
         from parrot_formdesigner.core.schema import FormSchema
 
-        forms = [
-            FormSchema(form_id="pub", title="Public", sections=[], is_public=True),
-            FormSchema(form_id="priv", title="Private", sections=[], is_public=False),
-        ]
+        pub_form = FormSchema(form_id="pub", title="Public", sections=[], is_public=True)
+        priv_form = FormSchema(form_id="priv", title="Private", sections=[], is_public=False)
+        forms = [pub_form, priv_form]
         provider = await self._get_provider(forms)
 
         paths = await provider()
 
+        # FEAT-389: exclusion paths are built from form_uid (routes are
+        # form_uid-based, TASK-1976), not the human-readable slug.
         assert len(paths) == 5
-        assert all("/forms/pub" in p for p in paths)
-        assert not any("/forms/priv" in p for p in paths)
+        assert all(f"/forms/{pub_form.form_uid}" in p for p in paths)
+        assert not any(f"/forms/{priv_form.form_uid}" in p for p in paths)
 
     async def test_provider_includes_expected_patterns(self):
         """Provider returns the five specific URL patterns defined by public_form_paths."""
         from parrot_formdesigner.core.schema import FormSchema
 
-        forms = [
-            FormSchema(form_id="contact", title="Contact", sections=[], is_public=True),
-        ]
+        form = FormSchema(form_id="contact", title="Contact", sections=[], is_public=True)
+        forms = [form]
         provider = await self._get_provider(forms)
 
         paths = await provider()
-        expected = public_form_paths("contact", base_path="/api/v1")
+        expected = public_form_paths(form.form_uid, base_path="/api/v1")
 
         assert set(paths) == set(expected)
 
@@ -198,20 +198,19 @@ class TestExcludeProviderBehavior:
         """Provider yields paths for each is_public=True form."""
         from parrot_formdesigner.core.schema import FormSchema
 
-        forms = [
-            FormSchema(form_id="form-a", title="A", sections=[], is_public=True),
-            FormSchema(form_id="form-b", title="B", sections=[], is_public=True),
-            FormSchema(form_id="form-c", title="C", sections=[], is_public=False),
-        ]
+        form_a = FormSchema(form_id="form-a", title="A", sections=[], is_public=True)
+        form_b = FormSchema(form_id="form-b", title="B", sections=[], is_public=True)
+        form_c = FormSchema(form_id="form-c", title="C", sections=[], is_public=False)
+        forms = [form_a, form_b, form_c]
         provider = await self._get_provider(forms)
 
         paths = await provider()
 
         # 2 public forms × 5 paths each
         assert len(paths) == 10
-        assert any("/forms/form-a" in p for p in paths)
-        assert any("/forms/form-b" in p for p in paths)
-        assert not any("/forms/form-c" in p for p in paths)
+        assert any(f"/forms/{form_a.form_uid}" in p for p in paths)
+        assert any(f"/forms/{form_b.form_uid}" in p for p in paths)
+        assert not any(f"/forms/{form_c.form_uid}" in p for p in paths)
 
 
 # ---------------------------------------------------------------------------
@@ -245,9 +244,8 @@ class TestExcludeProviderStartupOrdering:
         # load_from_storage is the async method that reads from DB.
         registry.load_from_storage = AsyncMock(return_value=0)
         # list_tenants and list_forms return the forms as if already loaded.
-        forms = [
-            FormSchema(form_id="pub", title="Public", sections=[], is_public=True),
-        ]
+        form = FormSchema(form_id="pub", title="Public", sections=[], is_public=True)
+        forms = [form]
         registry.list_tenants = AsyncMock(return_value=["navigator"])
         registry.list_forms = AsyncMock(return_value=forms)
 
@@ -259,7 +257,7 @@ class TestExcludeProviderStartupOrdering:
         # load_from_storage must have been called to handle ordering race.
         registry.load_from_storage.assert_awaited_once()
         assert len(paths) == 5
-        assert all("/forms/pub" in p for p in paths)
+        assert all(f"/forms/{form.form_uid}" in p for p in paths)
 
     async def test_provider_skips_load_when_no_storage(self):
         """Provider does NOT call load_from_storage when has_storage=False."""
@@ -292,13 +290,11 @@ class TestExcludeProviderStartupOrdering:
         registry.load_from_storage = AsyncMock(return_value=0)
         registry._storage = MagicMock()  # has_storage=True
 
+        nav_form = FormSchema(form_id="nav-form", title="Nav", sections=[], is_public=True)
+        epson_form = FormSchema(form_id="epson-form", title="Epson", sections=[], is_public=True)
         tenant_forms = {
-            "navigator": [
-                FormSchema(form_id="nav-form", title="Nav", sections=[], is_public=True),
-            ],
-            "epson": [
-                FormSchema(form_id="epson-form", title="Epson", sections=[], is_public=True),
-            ],
+            "navigator": [nav_form],
+            "epson": [epson_form],
         }
         registry.list_tenants = AsyncMock(return_value=list(tenant_forms.keys()))
         registry.list_forms = AsyncMock(
@@ -312,5 +308,5 @@ class TestExcludeProviderStartupOrdering:
 
         # 2 tenants × 1 public form × 5 paths = 10
         assert len(paths) == 10
-        assert any("/forms/nav-form" in p for p in paths)
-        assert any("/forms/epson-form" in p for p in paths)
+        assert any(f"/forms/{nav_form.form_uid}" in p for p in paths)
+        assert any(f"/forms/{epson_form.form_uid}" in p for p in paths)

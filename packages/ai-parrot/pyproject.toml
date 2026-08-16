@@ -51,6 +51,9 @@ dependencies = [
     "pydantic==2.12.5",
     "PyYAML>=6.0.2",
     "python-frontmatter>=1.1.0",
+    # Obsidian-flavored markdown parsing (wikilinks/embeds/tags) for the
+    # shared vault interface (parrot.interfaces.obsidian) — FEAT-392.
+    "marko>=2.0",
     "xmltodict>=0.14.2",
     "tiktoken>=0.9.0",
     "psutil>=5.9",
@@ -73,6 +76,9 @@ dependencies = [
     "navigator-api[uvloop,locale,google]>=3.1.2",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.11.6",
+    # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
+    # native Pydantic/datetime/UUID serialization; never pickle.
+    "ormsgpack>=1.5",
     # HTTP / networking
     "rich>=13.0",
     # requests is otherwise transitive; pin to the 2.33 series — the intersection
@@ -98,13 +104,23 @@ dependencies = [
     "questionary>=2.1.1",
     # Pandas stays in core (owner decision)
     "pandas>=2.0.0",
+    # Code-review fix (FEAT-380 sandbox-hardening, post-TASK-1945):
+    # `repl_worker/transport.py` (Arrow IPC/shm DataFrame transport, the
+    # PRIMARY path `PythonPandasTool._get_worker_handle()` uses to seed
+    # every DataFrame into the worker) imports `pyarrow` unconditionally.
+    # It's a lazy, function-local import (only paid for when
+    # `inject_dataframe()` actually runs), but that's still the default
+    # DataFrame-injection path — an undeclared dependency there means a
+    # bare `pip install ai-parrot` breaks the tool at first use instead of
+    # at install time. Same floor pin as ai-parrot-server (FEAT-327).
+    "pyarrow>=25.0",
     # SQL validation for DatabaseToolkit (FEAT-062)
     "sqlglot>=20.0",
     "numexpr==2.10.2",
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
-    "navigator-eventbus>=0.1.0,<0.2",
+    "navigator-eventbus>=0.2.1",
 ]
 
 [project.scripts]
@@ -180,6 +196,33 @@ graphindex = [
     "orjson>=3.9",
 ]
 
+# LLM Wiki pluggable per-language scanners (FEAT-394) — accurate
+# tree-sitter outlines for PHP/JS/TS/Rust `wikitoolkit build` plugins.
+# Optional: every plugin degrades to a stdlib-only heuristic when this
+# extra is not installed, so core install gains zero new dependencies.
+# Individual grammar wheels (not `tree-sitter-languages`, which is
+# effectively unmaintained and incompatible with `tree-sitter>=0.23` on
+# newer Pythons per the graphindex extra's own precedent) — each ships
+# `abi3` wheels covering py3.10-3.12, verified on PyPI 2026-07-31,
+# following the `tree_sitter_python` pattern already used by graphindex.
+wiki-languages = [
+    "tree-sitter>=0.23",
+    "tree-sitter-php>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-rust>=0.23",
+]
+
+# Leiden community detection for GraphIndex (FEAT-401) — guarantees
+# internally well-connected communities, unlike Louvain. `python-igraph`
+# is a C library (~15 MB installed); kept opt-in like `graphindex` and
+# `wiki-languages` above. `detect_communities()` falls back to Louvain
+# with a logged warning when this extra is not installed.
+leiden = [
+    "leidenalg>=0.10",
+    "python-igraph>=0.10",
+]
+
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203
 # scheduler = ["apscheduler==3.11.2"]  # use ai-parrot-server[scheduler] instead
 
@@ -226,7 +269,7 @@ agents = [
     "spacy==3.8.11",
     "html2text==2025.4.15",
     "httpx-sse==0.4.1",
-    "mcp==1.23.0",
+    "mcp>=1.28.1,<2",
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "undetected-chromedriver==3.5.5",
@@ -280,7 +323,7 @@ agents-lite = [
     "decorator>=5",
     "html2text==2025.4.15",
     "httpx-sse==0.4.1",
-    "mcp==1.23.0",
+    "mcp>=1.28.1,<2",
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "jira==3.10.5",
@@ -313,7 +356,7 @@ mcp = [
     "decorator>=5",
     "html2text==2025.4.15",
     "httpx-sse==0.4.1",
-    "mcp==1.23.0",
+    "mcp>=1.28.1,<2",
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
     "jira==3.10.5",
@@ -342,7 +385,7 @@ images = [
     "pyheif==0.8.0",
     "exif==1.6.1",
     "pillow-avif-plugin==1.5.2",
-    "pillow-heif==0.22.0",
+    "pillow-heif>=0.22.0",  # lowered: flowtask pins ==0.22.0
     "python-xmp-toolkit==2.1.0",
     "exifread==3.5.1",
     "transformers>=4.48.0,<5.0",
@@ -369,7 +412,17 @@ bedrock = [
 # factory/client_type key (parrot.clients.factory.SUPPORTED_CLIENTS,
 # BedrockConverseClient.client_type), which is unrelated and unchanged.
 bedrock-native = [
-    "aioboto3>=13.0.0",
+    # OVERRIDE (2026-08-05): floor lowered from >=15.1.0 to >=13.2.0 to
+    # unblock Python 3.12+/3.13 — asyncdb[boto3] pins aioboto3==13.2.0 and
+    # the two extras are mutually exclusive at >=15.1.0.  All Bedrock Runtime
+    # APIs used by BedrockConverseClient (converse, converse_stream,
+    # apply_guardrail, invoke_model) are present in botocore >=1.35.16
+    # (shipped with aioboto3 13.2.0).  The only feature lost on <15.1.0 is
+    # bearer-token auth (AWS_BEARER_TOKEN_BEDROCK env var); the client's
+    # aws_bearer_token path silently no-ops on older botocore, so IAM keys /
+    # STS / instance-role / SSO auth all work normally.
+    # TODO: restore >=15.1.0 once asyncdb unpins aioboto3.
+    "aioboto3>=13.2.0",
 ]
 
 claude-agent = [
@@ -449,7 +502,7 @@ xai = [
 # and torch~=2.8.0. Install this extra in a dedicated environment.
 gemma4 = [
     "transformers>=5.0.0",
-    "torch==2.11.0",
+    "torch>=2.13.0",
     "accelerate>=1.9.0",
 ]
 
@@ -587,7 +640,7 @@ include = ["parrot*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-parrot = ["py.typed", "templates/*.tpl"]
+parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.auth" = ["templates/*.html"]
 # parrot.integrations.telegram moved to ai-parrot-integrations
 # parrot.voice moved to ai-parrot-integrations
@@ -596,6 +649,9 @@ parrot = ["py.typed", "templates/*.tpl"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
+# FEAT-412: dev_flow ships its own prompt set (sdd-ideation); the loader
+# reads it via importlib.resources, so it MUST be in the wheel.
+"parrot.flows.dev_flow" = ["_subagent_data/*.md"]
 # Interactive HTML artifact catalog (library specs + scaffold templates),
 # loaded from disk at runtime by parrot.tools.interactive.catalog_registry.
 "parrot.tools.interactive" = [
@@ -610,13 +666,40 @@ parrot = ["py.typed", "templates/*.tpl"]
 # Schema DDL shipped for manual application.
 "parrot.security" = ["*.sql"]
 "parrot.pipelines" = ["*.sql"]
+# Core default compressor manifest (FEAT-380), loaded by CompressorRegistry.
+"parrot.tools.compression" = ["*.toml"]
 
 # ---------------------------------------------------------------------------
-# Maturin (Rust extension)
+# Maturin (Rust extensions) — TASK-1955 (FEAT-380) investigation note:
+#
+# This package's [build-system] above is setuptools (Cython-based), NOT
+# maturin — so this [tool.maturin] block is NOT invoked by the actual
+# `pip install`/`build` of ai-parrot; setuptools has no knowledge of it.
+# The two optional Rust extensions in this tree (`yaml-rs/`, `codec-rs/`)
+# are each their OWN self-contained maturin sub-projects (own pyproject.toml
+# with build-backend="maturin", own Cargo.toml) built independently via
+# `maturin develop`/`build` run FROM WITHIN their own directory, producing
+# wheels installed into the SAME venv as ai-parrot (see
+# `src/parrot/yaml-rs/pyproject.toml` and `src/parrot/codec-rs/pyproject.toml`).
+# Both degrade gracefully to a pure-Python fallback when not built
+# (`registry.py`'s `try: from parrot import yaml_rs / except ImportError`;
+# `compression/budget.py`'s `is_rust_available()`).
+#
+# `python-source` below was pointing at a directory that never existed on
+# disk (`src/parrot/yaml_rs`, underscore — the real one is
+# `src/parrot/yaml-rs/python/yaml_rs`, hyphen) and `module-name` didn't
+# match `yaml-rs`'s own working config (`module-name = "yaml_rs"`, no
+# `parrot.` prefix, no `_yaml_rs` submodule) either. Corrected below to
+# describe what the on-disk yaml-rs sub-project ACTUALLY does, for
+# accuracy — but since this block is inert (see above), the correction
+# has no runtime effect either way. Left in place (rather than removed)
+# as living documentation of the real Rust-extension layout, and because
+# a future migration of the root build-system TO maturin (out of this
+# feature's scope) would need this reconciled first.
 # ---------------------------------------------------------------------------
 [tool.maturin]
-python-source = "src/parrot/yaml_rs"
-module-name = "parrot.yaml_rs._yaml_rs"
+python-source = "src/parrot/yaml-rs/python"
+module-name = "yaml_rs"
 bindings = "pyo3"
 features = ["pyo3/extension-module"]
 

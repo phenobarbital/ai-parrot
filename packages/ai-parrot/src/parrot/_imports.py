@@ -81,6 +81,32 @@ def _ensure_torchcodec_optional() -> None:
     sys.modules["torchcodec.decoders"] = decoders
 
 
+def _is_missing_module(exc: ImportError, module_path: str) -> bool:
+    """Check whether ``exc`` means ``module_path`` itself is not installed.
+
+    Distinguishes "the module is absent" from "the module is present but
+    something it imports is broken". Only a ``ModuleNotFoundError`` naming
+    ``module_path`` or one of its ancestor packages means the target is
+    genuinely missing; every other ``ImportError`` (a missing name, a
+    missing third-party dependency, a circular import) comes from code that
+    *did* get imported and must not be reported as a missing install.
+
+    Args:
+        exc: The exception raised by ``importlib.import_module``.
+        module_path: Dotted path of the module that was being imported.
+
+    Returns:
+        True if ``module_path`` (or an ancestor package) is the module that
+        could not be found.
+    """
+    if not isinstance(exc, ModuleNotFoundError):
+        return False
+    missing = exc.name
+    if not missing:
+        return False
+    return module_path == missing or module_path.startswith(f"{missing}.")
+
+
 def lazy_import(
     module_path: str,
     package_name: str | None = None,
@@ -130,6 +156,16 @@ def lazy_import(
     try:
         return importlib.import_module(module_path)
     except ImportError as exc:
+        if not _is_missing_module(exc, module_path):
+            # ``module_path`` was found and executed — the failure came from
+            # inside it (a broken dependency of its own, a circular import).
+            # Reporting that as "not installed" sends the reader after a
+            # package that is already there, so re-raise it verbatim.
+            exc.add_note(
+                f"Raised while lazily importing {module_path!r}. The module "
+                f"was found, so this is NOT a missing install."
+            )
+            raise
         pkg = package_name or module_path.split(".")[0]
         if extra:
             msg = (
@@ -142,6 +178,71 @@ def lazy_import(
                 f"Install it with: pip install {pkg}"
             )
         raise ImportError(msg) from exc
+
+
+def load_satellite_attr(
+    name: str,
+    module_path: str,
+    *,
+    install: str,
+    attr: str | None = None,
+) -> object:
+    """Resolve a public name from a satellite package, lazily.
+
+    Used by the core namespace stubs (``parrot.manager``, ``parrot.a2a``,
+    ``parrot.mcp``, ...) whose public API is implemented in a sibling
+    distribution that merges into the same ``parrot.*`` namespace via PEP 420.
+
+    Only a genuinely absent satellite module produces the "install the
+    package" hint. Any other ``ImportError`` is re-raised **unchanged** —
+    same type, same message, same traceback — with a diagnostic note
+    attached. Masking those was how a version skew between ``ai-parrot`` and
+    ``ai-parrot-server`` (a satellite module importing a core symbol that the
+    installed core does not have) surfaced as a misleading "install
+    ai-parrot-server", pointing at a package that was already installed.
+
+    Args:
+        name: Public name being resolved, as written by the caller. Used in
+            the error message.
+        module_path: Dotted path of the satellite module implementing it,
+            e.g. ``"parrot.manager.manager"``.
+        install: pip install target advertised when the satellite is absent,
+            e.g. ``"ai-parrot-server"`` or ``"ai-parrot-server[scheduler]"``.
+        attr: Attribute to read from the module. Defaults to ``name``.
+
+    Returns:
+        The resolved attribute.
+
+    Raises:
+        ImportError: If the satellite module is not installed (with the
+            install hint), or — re-raised untouched — whatever the satellite
+            module's own import failed with.
+        AttributeError: If the module imports cleanly but does not define
+            the requested attribute.
+    """
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as exc:
+        if _is_missing_module(exc, module_path):
+            raise ImportError(
+                f"{name!r} requires the {install} package. "
+                f"Install it with: pip install {install}"
+            ) from exc
+        # The satellite IS installed — this failure came from inside it.
+        # Re-raise verbatim so the real cause stays at the top of the report.
+        exc.add_note(
+            f"Raised while resolving {name!r} from {module_path!r} "
+            f"({install}). The module was found, so this is NOT a missing "
+            f"install — check for a version mismatch between ai-parrot and "
+            f"its satellite packages, or a missing optional dependency."
+        )
+        raise
+    try:
+        return getattr(module, attr or name)
+    except AttributeError as exc:
+        raise AttributeError(
+            f"module {module_path!r} has no attribute {attr or name!r}"
+        ) from exc
 
 
 def require_extra(extra: str, *modules: str) -> None:

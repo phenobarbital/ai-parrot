@@ -8,6 +8,7 @@ Added by FEAT-224 (FormDesigner Audio Renderer).
 
 from __future__ import annotations
 
+import uuid
 from enum import Enum
 from typing import Literal, Optional
 
@@ -38,7 +39,9 @@ class AudioSessionConfig(BaseModel):
     """Configuration for an audio form session.
 
     Attributes:
-        form_id: Unique identifier of the form to render in audio mode.
+        form_uid: Immutable UUID of the form to render in audio mode
+            (FEAT-389 — identity is form_uid-only; the mutable form_id
+            slug is never used here).
         locale: BCP 47 language tag for TTS and label resolution.
         tts_backend: Preferred TTS backend. Defaults to "supertonic" (a
             sub-second ONNX backend) with a graceful fallback to "google"
@@ -56,7 +59,7 @@ class AudioSessionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    form_id: str
+    form_uid: str
     locale: str = "en"
     tts_backend: Literal["supertonic", "google"] = "supertonic"
     tts_voice: Optional[str] = None
@@ -72,6 +75,9 @@ class AudioQuestion(BaseModel):
     Attributes:
         index: Zero-based position in the sequential question list.
         field_id: The FormField.field_id this question maps to.
+        field_uid: Immutable UUID of the FormField this question maps to
+            (FEAT-393). WS wire messages still key on field_id by design
+            (spec §8) — this is additive session-manifest identity only.
         field_type: The FieldType value string (e.g. 'text', 'select').
         label: Resolved question text shown/spoken to the user.
         description: Optional extended description or help text.
@@ -96,6 +102,7 @@ class AudioQuestion(BaseModel):
 
     index: int
     field_id: str
+    field_uid: uuid.UUID
     field_type: str
     label: str
     description: Optional[str] = None
@@ -116,7 +123,7 @@ class AudioFormManifest(BaseModel):
     for the interactive audio session.
 
     Attributes:
-        form_id: The form identifier.
+        form_uid: Immutable UUID of the form (FEAT-389).
         title: Human-readable form title.
         total_questions: Number of questions in the audio session.
         questions: Ordered list of audio questions.
@@ -126,7 +133,7 @@ class AudioFormManifest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    form_id: str
+    form_uid: str
     title: str
     total_questions: int
     questions: list[AudioQuestion]
@@ -139,6 +146,9 @@ class AudioAnswer(BaseModel):
 
     Attributes:
         field_id: The field_id this answer corresponds to.
+        field_uid: Immutable UUID of the FormField this answer corresponds
+            to (FEAT-393), when known. Optional — answers may be
+            reconstructed from wire data that carries no UID.
         value: The answer text (either typed or transcribed).
         source: Origin of the answer — 'text' for keyboard input,
             'speech' for STT-transcribed audio, 'selection' for a UI
@@ -150,6 +160,7 @@ class AudioAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     field_id: str
+    field_uid: Optional[uuid.UUID] = None
     value: str
     source: Literal["text", "speech", "selection"] = "text"
     confidence: Optional[float] = None
@@ -164,7 +175,8 @@ class AudioSessionState(BaseModel):
 
     Attributes:
         session_id: Unique identifier for this session.
-        form_id: The form being filled in this session.
+        form_uid: Immutable UUID of the form being filled in this session
+            (FEAT-389).
         user_id: Authenticated user ID from JWT.
         current_index: Zero-based index of the current question.
         answers: Map of field_id → AudioAnswer for completed questions.
@@ -180,7 +192,7 @@ class AudioSessionState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
-    form_id: str
+    form_uid: str
     user_id: str
     current_index: int = 0
     answers: dict[str, AudioAnswer] = Field(default_factory=dict)

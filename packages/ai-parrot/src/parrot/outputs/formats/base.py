@@ -130,7 +130,24 @@ class BaseRenderer(ABC):
         extra_namespace: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """Execute code within the PythonPandasTool or fallback namespace."""
+        """Execute code within the PythonPandasTool or fallback namespace.
+
+        FEAT-380 (TASK-1944) note on the ``pandas_tool`` branch: this
+        deliberately keeps reading the tool's ``locals`` attribute rather
+        than switching to the async namespace API
+        (``snapshot()``/``get_var()``). Those always read the tool's WORKER
+        process's namespace (TASK-1943); the attribute read below reflects
+        ``execute_sync()`` (a separate, pre-existing
+        synchronous escape hatch that still runs `_execute_code()`
+        in-process, untouched by TASK-1943) — the worker was never even
+        started for this code path, so ``snapshot()`` would silently return
+        an unrelated (fresh, empty) namespace instead of this method's own
+        just-executed result. Porting this branch correctly would require
+        also routing ``execute_sync()`` through the worker, which TASK-1943
+        explicitly keeps out of scope. See TASK-1944's Completion Note for
+        the full reasoning; the AC13 grep guard test explicitly excludes
+        this one documented case.
+        """
         if tool := pandas_tool:
             try:
                 tool.execute_sync(code, debug=kwargs.get('debug', False))
