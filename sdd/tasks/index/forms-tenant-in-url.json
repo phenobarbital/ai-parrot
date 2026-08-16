@@ -134,7 +134,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Touches ui/telegram.py and api/audio_ws.py only — disjoint from TASK-2202 and TASK-2203.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:03:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2204-telegram-audio-ws-tenant.md"
+      "completed_at": "2026-08-16T17:45:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2204-telegram-audio-ws-tenant.md"
     },
     {
       "id": "TASK-2205",

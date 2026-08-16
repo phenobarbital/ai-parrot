@@ -199,10 +199,70 @@ class TestAudioWSTenant:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Deleted `ui/telegram.py`'s local `_get_request_tenant` and its
+docstring; both call sites use `declared_tenant` from `..api.tenant`. Also
+fixed `serve_webapp`'s `fallback_url` construction, which hardcoded the
+pre-TASK-2201 unprefixed path (`/api/v1/forms/{uid}/telegram-submit`) —
+now `/api/v1/t/{tenant}/forms/{uid}/telegram-submit`, matching the actual
+registered route. `AudioFormWSHandler.handle_websocket` reads
+`request.match_info.get("tenant")` right after JWT auth succeeds (Step
+1.5) and closes with WS code 1008 + a `TENANT_NOT_DECLARED` error message
+when absent/empty — before the message loop, so `start_session` can never
+be dispatched without a tenant. `_handle_start_session` now resolves the
+form via the declared tenant (was `tenant=None` → silently
+`registry.default_tenant`) and cross-checks `form.tenant != declared` →
+close(1008) rather than serve (defense-in-depth, same rationale as
+`_assert_form_tenant`, TASK-2202).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Necessary correction beyond this task's file list**: also modified
+`ui/routes.py` to wrap both Telegram routes with `_page_wrap(handler,
+protect=False, tenant="public")`. TASK-2201 registered them completely
+unwrapped; this task's own Scope required `declared_tenant()` to work in
+`ui/telegram.py`, which only works if `requires_tenant` actually ran for
+the request — otherwise it always raises `RuntimeError`. `protect=False`
+means `_page_wrap` returns `requires_tenant(public=True)(handler)`
+directly, skipping navigator-auth's `is_authenticated`/`user_session`
+entirely (exactly what Telegram clients need, matching audio WS's own
+"can't go through navigator-auth" rationale) while still validating +
+stashing the declared tenant. This matches this task's own "Key
+Constraints" text verbatim ("Telegram routes are public... They take
+`tenant='public'` **in the wrapper**") — the Scope/AC were achievable no
+other way. Documented rather than silently expanded scope.
 
-**Deviations from spec**: none | describe if any
+**Flagged for spec-owner visibility** (discovered during this task,
+pre-dates it): `test_ui_imports.py::test_importing_ui_does_not_pull_api`
+has been failing since **TASK-2200**, not this task — `ui/routes.py`
+importing `from ..api.tenant import requires_tenant` forces Python to
+execute `api/__init__.py` (which seeds the controls registry and hard-
+imports `navigator_auth` via `api/routes.py`), breaking the documented
+"ui is independently importable without api" invariant. This is a direct,
+unavoidable consequence of the spec's own Module 3 design ("`ui/routes.py`
+gains the same decorator" from `api.tenant`) — not a bug in any single
+task's implementation, and not something any of FEAT-421's 10 tasks lists
+as owned. A real fix would mean relocating `tenant.py`/`errors.py` out of
+`api/` into a neutral, dependency-light location both `ui` and `api` could
+import without triggering `api/__init__.py`'s side effects — a much larger
+refactor, out of scope for this feature. Recommend either retiring that
+test's assumption or filing a follow-up ticket.
+
+Full `tests/formdesigner/` suite: confirmed via before/after diff
+(stash/pop) that my changes introduce **zero** new failures — the 20
+already-failing `test_audio_integration.py` WS tests (hardcoded
+pre-TASK-2201 unprefixed paths, e.g. `/api/v1/forms/integration-test/
+audio/ws`) are unchanged, pre-dating this task, deferred to TASK-2206.
+`tests/unit/`: zero new failures beyond the post-TASK-2203 baseline (46/46
+unchanged). New test files: `test_telegram_tenant.py` (6/6, using a mocked
+registry to isolate tenant-declaration behaviour from a pre-existing,
+unrelated `form_uid` string/UUID coercion bug in `ui/telegram.py` — see
+that file's module docstring) and `test_audio_tenant.py` (4/4, patching
+`web.WebSocketResponse.prepare`/`close`/`send_json` at the class level to
+exercise `handle_websocket` without a live transport). Lint diff-count
+unchanged for `api/audio_ws.py` (44/44) and `ui/routes.py` (2/2);
+`ui/telegram.py` verified back at its pre-existing baseline (2/2) after
+fixing my own import-order addition.
+
+**Deviations from spec**: none in intent — see the `ui/routes.py`
+correction and the flagged `test_ui_imports.py` pre-existing regression
+above, both fully documented rather than silently absorbed.
