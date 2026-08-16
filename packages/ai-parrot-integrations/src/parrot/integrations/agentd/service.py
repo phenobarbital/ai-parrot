@@ -410,7 +410,13 @@ class AgentDaemon:
             session.stream_ids.discard(stream_id)
 
     async def _handle_agent_info(self, session: Session, params: dict[str, Any]) -> Any:
-        """Handle `agent.info`."""
+        """Handle `agent.info`.
+
+        Includes `exposed_methods` (the daemon's `agent.invoke` allowlist)
+        so clients that only know a socket path/name -- e.g. the MCP stdio
+        proxy (TASK-2215) -- can decide whether to expose `invoke_method`
+        without needing the `AgentServiceConfig` object itself.
+        """
         get_tools_count = getattr(self.agent, "get_tools_count", None)
         return {
             "name": getattr(self.agent, "name", self.config.name),
@@ -418,6 +424,7 @@ class AgentDaemon:
             "llm": str(getattr(self.agent, "llm", None)),
             "tools_count": get_tools_count() if callable(get_tools_count) else 0,
             "uptime_s": time.monotonic() - self._start_time,
+            "exposed_methods": list(self.config.exposed_methods),
         }
 
     async def _handle_tools_list(self, session: Session, params: dict[str, Any]) -> Any:
