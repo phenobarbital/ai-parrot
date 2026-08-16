@@ -147,7 +147,13 @@ class BotMetadata:
                     if inspect.iscoroutine(instance):
                         instance = await instance
             except Exception as e:
-                raise ValueError(f"Error creating instance for {self.name}: {e}")
+                # `from e` keeps the original traceback reachable: without it
+                # the only surviving evidence of a startup failure is this
+                # one-line message, which is rarely enough to locate the
+                # offending frame.
+                raise ValueError(
+                    f"Error creating instance for {self.name}: {e}"
+                ) from e
 
             if not isinstance(instance, AbstractBot):
                 raise ValueError(
@@ -840,7 +846,10 @@ class AgentRegistry:
             module = importlib.import_module(config.module)
             agent_class = getattr(module, config.class_name)
         except (ImportError, AttributeError) as e:
-            raise ValueError(f"Could not load agent class {config.class_name} from {config.module}: {e}")
+            raise ValueError(
+                f"Could not load agent class {config.class_name} "
+                f"from {config.module}: {e}"
+            ) from e
 
         async def factory(**kwargs) -> AbstractBot:
              # Merge startup_config with kwargs
@@ -1359,8 +1368,12 @@ class AgentRegistry:
                     "priority": metadata.priority
                 }
             except Exception as e:
+                # exc_info=True: startup instantiation is the one place where
+                # the traceback is the whole diagnosis — the agent never
+                # reaches a request, so nothing later can surface the cause.
                 self.logger.error(
-                    f"Failed startup instantiate {metadata.name}: {e}"
+                    f"Failed startup instantiate {metadata.name}: {e}",
+                    exc_info=True,
                 )
                 results[metadata.name] = {
                     "status": "error",

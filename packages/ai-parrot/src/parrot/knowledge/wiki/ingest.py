@@ -436,6 +436,167 @@ class WikiIngestOrchestrator:
             status="ok",
         )
 
+    async def extract_entities(
+        self,
+        tree_name: str,
+        wiki_config: WikiConfig,
+        granularity: Any = "standard",
+        custom_instructions: Optional[str] = None,
+    ) -> IngestReport:
+        """Phase 2 (FEAT-392): LLM entity/concept extraction from pages.
+
+        Iterates over the content-bearing nodes of an already-ingested
+        PageIndex tree, asks the PageIndex LLM adapter for the entities
+        and concepts each page mentions, creates one sub-node per
+        extracted item, and mirrors each as a CONCEPT node in GraphIndex
+        (when a graph toolkit is configured).
+
+        Args:
+            tree_name: PageIndex tree to extract from (must exist).
+            wiki_config: Wiki configuration (used for logging context).
+            granularity: ``ExtractionGranularity`` or its string value —
+                ``minimal`` (up to 3 key concepts per page), ``standard``
+                (up to 8 entities + concepts), ``fine`` (exhaustive), or
+                ``custom`` (drive with ``custom_instructions``).
+            custom_instructions: Extraction directive used when
+                ``granularity="custom"``.
+
+        Returns:
+            An :class:`IngestReport` — ``pages_created`` counts entity
+            sub-nodes, ``graph_nodes_created`` counts GraphIndex mirrors.
+        """
+        from parrot.interfaces.obsidian.models import ExtractionGranularity
+
+        t0 = time.monotonic()
+        source_id = f"entity-extraction::{tree_name}"
+        if not isinstance(granularity, ExtractionGranularity):
+            granularity = ExtractionGranularity(str(granularity))
+
+        adapter = getattr(self._pi, "_light_adapter", None) or getattr(
+            self._pi, "_adapter", None
+        )
+        if adapter is None:
+            return self._error_report(
+                source_id, tree_name, t0,
+                "PageIndexToolkit has no LLM adapter for entity extraction",
+            )
+        try:
+            tree = await self._pi.get_tree(tree_name)
+        except KeyError as exc:
+            return self._error_report(source_id, tree_name, t0, str(exc))
+
+        directives = {
+            ExtractionGranularity.MINIMAL: (
+                "Extract at most 3 KEY concepts central to the text."
+            ),
+            ExtractionGranularity.STANDARD: (
+                "Extract up to 8 salient entities (people, projects, "
+                "systems, places) and concepts."
+            ),
+            ExtractionGranularity.FINE: (
+                "Extract ALL distinct entities and concepts mentioned, "
+                "however minor."
+            ),
+            ExtractionGranularity.CUSTOM: custom_instructions
+            or "Extract the entities and concepts from the text.",
+        }
+        directive = directives[granularity]
+
+        # Collect content-bearing nodes, skipping prior extraction output.
+        targets: list[dict[str, Any]] = []
+
+        def _walk(data: Any) -> None:
+            if isinstance(data, dict):
+                metadata = data.get("metadata") or {}
+                if data.get("node_id") and not metadata.get("extracted_from"):
+                    targets.append(data)
+                for key in data:
+                    if "nodes" in key:
+                        _walk(data[key])
+            elif isinstance(data, list):
+                for item in data:
+                    _walk(item)
+
+        _walk(tree.get("structure", tree))
+
+        loader = None
+        content_store = getattr(self._pi, "_content_store", None)
+        if content_store is not None:
+            loader = content_store.loader_for(tree_name)
+
+        entities_created = 0
+        graph_created = 0
+        errors: list[str] = []
+        for node in targets:
+            node_id = node.get("node_id") or ""
+            body = self._load_body(
+                loader, node.get("concept_id") or node_id, node_id
+            )
+            if not body or len(body.strip()) < 20:
+                continue
+            prompt = (
+                f"{directive}\n\n"
+                "Return ONLY a JSON array; each item: "
+                '{"name": str, "kind": "entity"|"concept", "summary": str '
+                "(one sentence)}.\n\nTEXT:\n" + body[:6000]
+            )
+            try:
+                items = await adapter.ask_json(prompt)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{node_id}: {exc}")
+                continue
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict) or not item.get("name"):
+                    continue
+                name = str(item["name"]).strip()
+                kind = str(item.get("kind", "concept")).lower()
+                kind = kind if kind in ("entity", "concept") else "concept"
+                summary = str(item.get("summary", "")).strip()
+                try:
+                    await self._pi.add_node(
+                        tree_name,
+                        title=name,
+                        summary=summary,
+                        parent_node_id=node_id,
+                        categories=[kind],
+                        metadata={
+                            "extracted_from": node_id,
+                            "granularity": granularity.value,
+                        },
+                    )
+                    entities_created += 1
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{node_id}/{name}: {exc}")
+                    continue
+                if self._gi is not None:
+                    try:
+                        created = await self._gi.create_concept(
+                            title=name,
+                            summary=summary or name,
+                            source_uri=f"pageindex://{tree_name}/{node_id}",
+                            categories=[kind],
+                        )
+                        if isinstance(created, dict) and not created.get("error"):
+                            graph_created += 1
+                    except Exception as exc:  # noqa: BLE001
+                        errors.append(f"graph {name}: {exc}")
+
+        self.logger.info(
+            "extract_entities(%s, granularity=%s): %d entities, %d graph nodes",
+            tree_name, granularity.value, entities_created, graph_created,
+        )
+        return IngestReport(
+            source_id=source_id,
+            source_uri=tree_name,
+            pages_created=entities_created,
+            graph_nodes_created=graph_created,
+            duration_ms=(time.monotonic() - t0) * 1000,
+            status="ok" if not errors else "partial",
+            error="; ".join(errors[:5]) if errors else None,
+        )
+
     async def _record_discard(
         self,
         source_path_obj: Path,

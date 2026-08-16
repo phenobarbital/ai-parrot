@@ -51,6 +51,9 @@ dependencies = [
     "pydantic==2.12.5",
     "PyYAML>=6.0.2",
     "python-frontmatter>=1.1.0",
+    # Obsidian-flavored markdown parsing (wikilinks/embeds/tags) for the
+    # shared vault interface (parrot.interfaces.obsidian) — FEAT-392.
+    "marko>=2.0",
     "xmltodict>=0.14.2",
     "tiktoken>=0.9.0",
     "psutil>=5.9",
