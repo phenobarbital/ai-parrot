@@ -329,30 +329,40 @@ class FirefliesObsidianAgent(BasicAgent):
         current_transcript = {}
 
         for line in response_text.split("\n"):
-            line = line.strip()
+            stripped = line.strip()
 
-            # Skip empty lines and headers
-            if not line or line.startswith("[") or line.startswith("-"):
-                if line.startswith("- id:"):
-                    if current_transcript:
-                        transcripts.append(current_transcript)
-                    current_transcript = {}
+            # Skip empty lines and headers like [10]:
+            if not stripped or stripped.startswith("["):
                 continue
 
-            # Parse key-value pairs
-            if ":" in line and not line.startswith("-"):
+            # Detect start of new transcript (line starts with "- id:")
+            if stripped.startswith("- id:"):
+                # Save previous transcript if it has an id
+                if current_transcript and "id" in current_transcript:
+                    transcripts.append(current_transcript)
+
+                # Parse the id from "- id: 01KZ..."
+                current_transcript = {}
                 try:
-                    key, value = line.split(":", 1)
+                    _, id_value = stripped.split(":", 1)
+                    current_transcript["id"] = id_value.strip().strip('"')
+                except:
+                    pass
+                continue
+
+            # Parse key-value pairs (indented lines that aren't "- id:")
+            if ":" in stripped and not stripped.startswith("-"):
+                try:
+                    key, value = stripped.split(":", 1)
                     key = key.strip()
                     value = value.strip().strip('"')
 
                     # Map Fireflies fields to our transcript format
-                    if key == "id":
-                        current_transcript["id"] = value
-                    elif key == "title":
+                    if key == "title":
                         current_transcript["title"] = value
                     elif key == "dateString":
-                        current_transcript["date"] = value[:10]  # Extract YYYY-MM-DD
+                        # Extract YYYY-MM-DD from ISO format
+                        current_transcript["date"] = value[:10]
                     elif key == "organizer_email":
                         current_transcript["organizer"] = value
                     elif key == "duration":
