@@ -153,10 +153,46 @@ AbstractTool + local_server.py first; 4. index → in-progress; 5. implement;
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Implemented `mcp_server.py` on top of the CORE `StdioMCPServer`/
+`MCPServerBase`/`AbstractTool` (not the integrations-local `mcp/` dir,
+which only holds OAuth): `AskAgentTool` (`chat.send` non-stream — one MCP
+process = one daemon connection = one conversation session, so history is
+shared across calls), `AgentInfoTool`, `ListSchedulesTool`,
+`DaemonStatusTool` (all JSON-encode their RPC result), and
+`InvokeMethodTool` (client-side allowlist check as defense in depth, on
+top of the daemon's own enforcement). `build_proxy_tools(client,
+exposed_methods)` registers `InvokeMethodTool` ONLY when
+`exposed_methods` is non-empty. `run_mcp_proxy(name_or_socket)` connects,
+fetches `agent.info`, builds the tool set, configures
+`LocalServerConfig`, registers on `StdioMCPServer`, and runs it — on
+`DaemonNotRunning`, prints to stderr and exits non-zero. All tool
+`_execute()` bodies use the framework's `MCPToolAdapter._execute(**arguments)`
+call contract directly (verified in `parrot.mcp.adapter`), returning plain
+strings (the adapter's documented "direct results" path) rather than
+`ToolResult` for simplicity.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviation from the task's file list (documented, not silent)**:
+`service.py` (TASK-2212) was additively modified — `_handle_agent_info`'s
+response now includes `"exposed_methods": list(self.config.exposed_methods)`.
+This task's own scope explicitly requires "fetch `agent.info`" to learn
+the daemon's `exposed_methods` allowlist (there is no other channel
+available to `run_mcp_proxy(name_or_socket: str)`, which only ever has a
+socket path/name — never the `AgentServiceConfig` object), but TASK-2212's
+`agent.info` handler did not surface that field. One-line, additive,
+non-breaking addition — all 58 pre-existing tests (through TASK-2214)
+still pass unchanged after the change.
 
-**Deviations from spec**: none
+Test coverage (`test_mcp_proxy.py`, scripted raw UDS server, same harness
+pattern as TASK-2213 per instruction): tool-registration matrix
+(`invoke_method` absent with an empty allowlist / present + validating
+method names with a non-empty one, exercised through
+`StdioMCPServer.handle_tools_list`/`handle_tools_call` directly — no
+subprocess), `ask_agent` end-to-end via `handle_tools_call`, and a stdio
+smoke test asserting zero stdout pollution (`capsys`) across
+`handle_initialize`/`handle_tools_list`/`handle_tools_call`. 4 new tests;
+full `agentd/` suite (62 tests) green. `ruff check` clean after auto-fix
+(import ordering).
+
+**Deviations from spec**: none.

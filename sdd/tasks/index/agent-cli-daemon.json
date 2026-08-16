@@ -150,7 +150,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -160,8 +160,8 @@
       "parallelism_notes": "Imports client.py; disjoint files from TASK-2214 but sequential in the single feature worktree.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2215-agentd-mcp-proxy.md"
+      "completed_at": "2026-08-16T18:17:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2215-agentd-mcp-proxy.md"
     },
     {
       "id": "TASK-2216",
