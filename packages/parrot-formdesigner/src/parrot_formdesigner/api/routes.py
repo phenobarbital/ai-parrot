@@ -40,6 +40,7 @@ from . import operations as operations_module
 from . import render as render_module
 from . import uploads as uploads_module
 from .handlers import FormAPIHandler
+from .tenant import requires_tenant
 
 
 if TYPE_CHECKING:
@@ -65,19 +66,38 @@ logger = logging.getLogger(__name__)
 
 _Handler = Callable[[web.Request], Awaitable[web.Response]]
 
+_TENANT_MODES = ("required", "public", "none")
 
-def _wrap_auth(handler: _Handler) -> _Handler:
+
+def _wrap_auth(handler: _Handler, *, tenant: str = "required") -> _Handler:
     """Wrap a handler with navigator-auth ``is_authenticated`` + ``user_session``.
 
     Mirrors the previous ``handlers/routes.py:_wrap_auth`` shape, but without
     the ``_AUTH_AVAILABLE`` fallback — navigator-auth is a hard dep here.
+    Also composes the ``requires_tenant`` decorator (FEAT-421) as the
+    innermost layer, so it runs after ``user_session`` has populated
+    ``request.session`` and before the handler body.
 
     Args:
         handler: A bound async coroutine accepting ``request: web.Request``.
+        tenant: Tenant-enforcement mode — one of ``"required"`` (forms
+            routes: declare + authorize, the default so a newly added forms
+            route is protected by omission), ``"public"`` (public-form
+            routes: declare, skip authorization), or ``"none"`` (``/org/*``
+            routes: no tenant layer at all).
 
     Returns:
         The decorated handler.
+
+    Raises:
+        ValueError: ``tenant`` is not one of the three valid modes.
     """
+    if tenant not in _TENANT_MODES:
+        raise ValueError(f"tenant must be one of {_TENANT_MODES}, got {tenant!r}")
+
+    tenant_applied = tenant != "none"
+    if tenant_applied:
+        handler = requires_tenant(public=(tenant == "public"))(handler)
 
     @wraps(handler)
     async def _inner(request: web.Request, **kwargs) -> web.Response:
@@ -88,6 +108,8 @@ def _wrap_auth(handler: _Handler) -> _Handler:
 
     decorated = user_session()(_inner)
     decorated = is_authenticated(content_type="application/json")(decorated)
+    if tenant_applied:
+        decorated._requires_tenant = True
     return decorated
 
 

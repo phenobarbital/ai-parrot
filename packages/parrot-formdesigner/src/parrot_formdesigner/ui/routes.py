@@ -24,6 +24,7 @@ from navigator_auth.decorators import is_authenticated, user_session
 from ..services.registry import FormRegistry
 from .handlers import FormPageHandler
 from .telegram import TelegramWebAppHandler
+from ..api.tenant import requires_tenant
 
 
 logger = logging.getLogger(__name__)
@@ -31,20 +32,46 @@ logger = logging.getLogger(__name__)
 
 _Handler = Callable[[web.Request], Awaitable[web.Response]]
 
+_TENANT_MODES = ("required", "public", "none")
 
-def _page_wrap(handler: _Handler, *, protect: bool) -> _Handler:
+
+def _page_wrap(
+    handler: _Handler, *, protect: bool, tenant: str = "required"
+) -> _Handler:
     """Optionally wrap an HTML page handler with navigator-auth.
+
+    The ``requires_tenant`` layer (FEAT-421) is applied BEFORE the
+    ``protect=False`` early-return: fieldsync runs with
+    ``protect_pages=False``, so if the tenant layer were only added to the
+    ``protect=True`` branch, the very deployment this feature exists for
+    would get no tenant validation at all.
 
     Args:
         handler: A bound async coroutine accepting ``request: web.Request``.
         protect: When ``True``, decorate the handler with
-            ``is_authenticated`` + ``user_session``. When ``False``, return
-            the handler unchanged (no-op wrapper).
+            ``is_authenticated`` + ``user_session``. When ``False``, skip
+            navigator-auth (auth handled client-side) but still apply the
+            tenant layer.
+        tenant: Tenant-enforcement mode — one of ``"required"``,
+            ``"public"``, or ``"none"``. See ``api.routes._wrap_auth`` for
+            the full mode contract.
 
     Returns:
         The (possibly decorated) handler.
+
+    Raises:
+        ValueError: ``tenant`` is not one of the three valid modes.
     """
+    if tenant not in _TENANT_MODES:
+        raise ValueError(f"tenant must be one of {_TENANT_MODES}, got {tenant!r}")
+
+    tenant_applied = tenant != "none"
+    if tenant_applied:
+        handler = requires_tenant(public=(tenant == "public"))(handler)
+
     if not protect:
+        if tenant_applied:
+            handler._requires_tenant = True
         return handler
 
     @wraps(handler)
@@ -55,6 +82,8 @@ def _page_wrap(handler: _Handler, *, protect: bool) -> _Handler:
     # HTML page routes — return text/html on auth failure so browsers
     # render the response, not a raw JSON 401 body.
     decorated = is_authenticated(content_type="text/html")(decorated)
+    if tenant_applied:
+        decorated._requires_tenant = True
     return decorated
 
 
