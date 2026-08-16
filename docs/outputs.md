@@ -27,10 +27,9 @@ Instead of agents returning just text, they can now return **rich, interactive v
 │  │               │  │   Registry   │  │                 │ │
 │  │ - Detects type│  │ - Folium     │  │ - Terminal      │ │
 │  │ - Multiple    │  │ - Plotly     │  │ - HTML          │ │
-│  │   outputs     │  │ - Matplotlib │  │ - Jupyter       │ │
+│  │   outputs     │  │ - Altair     │  │ - Jupyter       │ │
 │  │ - Metadata    │  │ - DataFrame  │  │ - JSON          │ │
-│  └───────────────┘  │ - Altair     │  └─────────────────┘ │
-│                      │ - Bokeh      │                       │
+│  └───────────────┘  │ - Bokeh      │  └─────────────────┘ │
 │                      │ - HTML Widget│                       │
 │                      └──────────────┘                       │
 └─────────────────────────────────────────────────────────────┘
@@ -42,7 +41,6 @@ Instead of agents returning just text, they can now return **rich, interactive v
 |------|---------|----------|------|---------|
 | **Folium Map** | folium | Description | ✅ Embeddable | ✅ Native |
 | **Plotly Chart** | plotly | Description | ✅ Embeddable | ✅ Native |
-| **Matplotlib** | matplotlib | Description | ✅ Image | ✅ Native |
 | **DataFrame** | pandas | Rich Table | ✅ Styled HTML | ✅ Native |
 | **Altair Chart** | altair | Description | ✅ Vega-Lite | ✅ Native |
 | **Bokeh Plot** | bokeh | Description | ✅ Embeddable | ✅ Native |
@@ -61,7 +59,7 @@ Instead of agents returning just text, they can now return **rich, interactive v
 pip install aiparrot
 
 # Visualization libraries (install as needed)
-pip install folium plotly matplotlib pandas altair bokeh
+pip install folium plotly pandas altair bokeh
 
 # For Jupyter
 pip install ipywidgets jupyter
@@ -445,11 +443,12 @@ formatter.format(response)  # Interactive Plotly dashboard
 ### 4. Scientific Visualization Agent
 
 ```python
-# Agent creates matplotlib figures
+# Agent returns structured data; the system renders it via altair for
+# complex/statistical visualizations (Vega-Lite JSON, rendered natively)
 response = await science_agent.run(
     "Plot the relationship between temperature and pressure with error bars"
 )
-formatter.format(response)  # High-quality matplotlib figure
+formatter.format(response)  # Interactive Vega-Lite chart
 ```
 
 ---

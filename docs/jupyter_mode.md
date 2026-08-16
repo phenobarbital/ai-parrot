@@ -303,16 +303,19 @@ await agent.run("Analyze this dataset")
 The Jupyter mode automatically detects and displays visualizations:
 
 ```python
-import matplotlib.pyplot as plt
+import altair as alt
 import pandas as pd
 
-# Agent generates visualization code
+# Agent returns structured data; the system renders it automatically via
+# structured-chart/A2UI. For complex visualizations, use altair directly —
+# it outputs Vega-Lite JSON that the frontend renders natively.
 response = await agent.run("Create a bar chart of sales data")
 
 # Visualizations are embedded inline
 formatter.format(response)
 
-# If response contains matplotlib figures, they display inline
+# If response contains a Vega-Lite spec (altair chart.to_dict()), it
+# displays inline
 ```
 
 ### 2. Code Execution Display

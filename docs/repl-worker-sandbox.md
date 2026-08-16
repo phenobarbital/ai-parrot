@@ -58,7 +58,7 @@ there.
   (matching its pre-existing per-instance `.locals`, never shared across
   instances). Lazy start: the worker is spawned on the first `_execute()`
   (or namespace-API) call, never in `__init__`.
-- **Spawn only, never fork.** matplotlib, connection pools, and the parent's
+- **Spawn only, never fork.** Connection pools and the parent's
   threads do not tolerate `fork()`.
 - **No in-process fallback.** If the worker cannot start, `_execute()`
   returns an explicit error (see §2) — the in-process `exec()` path is
@@ -123,13 +123,13 @@ from parrot.tools.repl_worker.protocol import WorkerConfig
 
 | Field | Default | Meaning |
 |---|---|---|
-| `rlimit_as_bytes` | **12 GiB** (`12 * 1024**3`) | Virtual address space ceiling (`RLIMIT_AS`) applied to the worker via `preexec_fn`. **Empirically calibrated** — see [`artifacts/logs/feat-380-rlimit-as-calibration.md`](../artifacts/logs/feat-380-rlimit-as-calibration.md) for the measurements (peak observed VmPeak 5522.8 MB across a real bootstrap+500MB-load+merge+plot session, ×2 margin). Re-run `scripts/sdd/calibrate_rlimit_as.py` after a pandas/numpy/matplotlib/pyarrow version bump. |
+| `rlimit_as_bytes` | **12 GiB** (`12 * 1024**3`) | Virtual address space ceiling (`RLIMIT_AS`) applied to the worker via `preexec_fn`. **Empirically calibrated** — see [`artifacts/logs/feat-380-rlimit-as-calibration.md`](../artifacts/logs/feat-380-rlimit-as-calibration.md) for the measurements (peak observed VmPeak 5522.8 MB across a real bootstrap+500MB-load+merge+plot session, ×2 margin — predates FEAT-423's reduction of the REPL bootstrap import surface; actual footprint is now smaller, so this default is conservative). Re-run `scripts/sdd/calibrate_rlimit_as.py` after a pandas/numpy/pyarrow version bump (or to tighten this default post-FEAT-423). |
 | `rlimit_cpu_seconds` | `300` | `RLIMIT_CPU` — a safety net if the host's own `SIGKILL`-on-timeout somehow failed to fire. |
 | `rlimit_nofile` | `256` | `RLIMIT_NOFILE` — bounds file descriptors. |
 | `deadline_ms` | `60_000` | Host-enforced wall-clock deadline per `exec` call. On expiry: `SIGKILL` + namespace-loss error (see §2). |
 | `max_workers` | `0` (→ `max(4, cpu_count())`, capped at 16) | Concurrency ceiling across the pool. Reaching it makes `acquire()` raise immediately — no queueing. |
 | `idle_ttl_seconds` | `1800` (30 min) | A session's worker idle past this is killed and unmapped by the pool's background sweep. |
-| `prewarm_pool_size` | `2` | Idle, pre-booted spare workers (pandas/numpy/matplotlib already imported) kept ready so a session's first call doesn't pay the 1–3s import cost. |
+| `prewarm_pool_size` | `2` | Idle, pre-booted spare workers (pandas/numpy already imported — the bootstrap import surface shrank as of FEAT-423) kept ready so a session's first call doesn't pay the 1–3s import cost. |
 
 `RLIMIT_CORE = 0` is hardcoded, non-configurable — a core dump with live
 DataFrames in memory is a data-exfiltration vector, not a tuning knob.
@@ -142,7 +142,7 @@ DataFrames in memory is a data-exfiltration vector, not a tuning knob.
   can crash the worker **during its own bootstrap** (numpy/pandas import),
   before any user code runs at all. Don't set it below the calibrated
   default without re-running the calibration script against your own
-  pandas/numpy/matplotlib versions.
+  pandas/numpy versions.
 - `max_workers` bounds concurrent sessions, but each worker independently
   reserves up to `rlimit_as_bytes` of virtual address space — plan
   `max_workers × rlimit_as_bytes` for worst-case aggregate exposure on
