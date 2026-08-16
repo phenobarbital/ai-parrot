@@ -256,3 +256,153 @@ class TestSoftDeleteNodes:
             tenant_ctx, "employees", keys=[],
         )
         mock_db.execute_query.assert_not_called()
+
+
+class TestEnsureCollection:
+
+    @pytest.mark.asyncio
+    async def test_creates_when_missing(self, store, tenant_ctx, mock_db):
+        mock_db.collection_exists.return_value = False
+        await store.ensure_collection(tenant_ctx, "gi_commits")
+        mock_db.create_collection.assert_called_once_with("gi_commits")
+
+    @pytest.mark.asyncio
+    async def test_creates_edge_collection(self, store, tenant_ctx, mock_db):
+        mock_db.collection_exists.return_value = False
+        await store.ensure_collection(tenant_ctx, "gi_produced", edge=True)
+        mock_db.create_collection.assert_called_once_with(
+            "gi_produced", edge=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_noop_when_exists(self, store, tenant_ctx, mock_db):
+        mock_db.collection_exists.return_value = True
+        await store.ensure_collection(tenant_ctx, "gi_commits")
+        mock_db.create_collection.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_swallows_creation_failure(self, store, tenant_ctx, mock_db):
+        mock_db.collection_exists.return_value = False
+        mock_db.create_collection.side_effect = RuntimeError("duplicate")
+        await store.ensure_collection(tenant_ctx, "gi_commits")
+
+
+class TestDocumentHelpers:
+
+    @pytest.mark.asyncio
+    async def test_get_document_found(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = [{"_key": "c1", "op": "x"}]
+        doc = await store.get_document(tenant_ctx, "gi_commits", "c1")
+        assert doc["_key"] == "c1"
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "doc._key == @key" in aql
+        assert binds == {"@collection": "gi_commits", "key": "c1"}
+
+    @pytest.mark.asyncio
+    async def test_get_document_missing(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = []
+        assert await store.get_document(tenant_ctx, "gi_commits", "c1") is None
+
+    @pytest.mark.asyncio
+    async def test_upsert_document(self, store, tenant_ctx, mock_db):
+        await store.upsert_document(
+            tenant_ctx, "gi_commits", {"_key": "c1", "op": "x"},
+        )
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "UPSERT" in aql and "REPLACE @doc" in aql
+        assert binds["key"] == "c1"
+        assert binds["doc"]["op"] == "x"
+
+    @pytest.mark.asyncio
+    async def test_insert_document(self, store, tenant_ctx, mock_db):
+        await store.insert_document(
+            tenant_ctx, "gi_commit_items", {"item_key": "a"},
+        )
+        aql = mock_db.execute_query.call_args.args[0]
+        assert "INSERT @doc IN @@collection" in aql
+
+    @pytest.mark.asyncio
+    async def test_remove_document(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = ["c1"]
+        assert await store.remove_document(tenant_ctx, "gi_concepts", "c1")
+        aql = mock_db.execute_query.call_args.args[0]
+        assert "REMOVE doc IN @@collection" in aql
+
+    @pytest.mark.asyncio
+    async def test_remove_document_missing(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = []
+        assert not await store.remove_document(tenant_ctx, "gi_concepts", "c1")
+
+
+class TestQueryDocuments:
+
+    @pytest.mark.asyncio
+    async def test_filters_sort_and_limit(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = [{"seq": 2}]
+        rows = await store.query_documents(
+            tenant_ctx,
+            "gi_commits",
+            filters={"run_id": "r1"},
+            sort_desc="seq",
+            limit=5,
+        )
+        assert rows == [{"seq": 2}]
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "FILTER doc.run_id == @f0" in aql
+        assert "SORT doc.seq DESC" in aql
+        assert "LIMIT 5" in aql
+        assert binds["f0"] == "r1"
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_field(self, store, tenant_ctx, mock_db):
+        with pytest.raises(ValueError):
+            await store.query_documents(
+                tenant_ctx, "gi_commits", filters={"x == 1 REMOVE doc": "y"},
+            )
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_sort_field(self, store, tenant_ctx, mock_db):
+        with pytest.raises(ValueError):
+            await store.query_documents(
+                tenant_ctx, "gi_commits", sort_desc="seq DESC REMOVE doc",
+            )
+
+
+class TestEdgeHelpers:
+
+    @pytest.mark.asyncio
+    async def test_get_all_edges(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = [{"source_id": "a"}]
+        edges = await store.get_all_edges(tenant_ctx, "gi_references")
+        assert edges == [{"source_id": "a"}]
+
+    @pytest.mark.asyncio
+    async def test_get_all_edges_failure_returns_empty(
+        self, store, tenant_ctx, mock_db,
+    ):
+        mock_db.execute_query.side_effect = RuntimeError("boom")
+        assert await store.get_all_edges(tenant_ctx, "gi_references") == []
+
+    @pytest.mark.asyncio
+    async def test_edges_incident(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = []
+        await store.edges_incident(tenant_ctx, "gi_references", "n1")
+        aql = mock_db.execute_query.call_args.args[0]
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert "e.source_id == @node_id OR e.target_id == @node_id" in aql
+        assert binds["node_id"] == "n1"
+
+    @pytest.mark.asyncio
+    async def test_remove_edge_by_triple(self, store, tenant_ctx, mock_db):
+        mock_db.execute_query.return_value = ["k1"]
+        removed = await store.remove_edge_by_triple(
+            tenant_ctx, "gi_references", "a", "b", "references",
+        )
+        assert removed
+        binds = mock_db.execute_query.call_args.kwargs["bind_vars"]
+        assert binds["src"] == "a"
+        assert binds["tgt"] == "b"
+        assert binds["kind"] == "references"
