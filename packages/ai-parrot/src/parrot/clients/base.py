@@ -103,24 +103,18 @@ LLM_PRESETS = {
 def register_python_tool(
     client,
     report_dir: Optional[Path] = None,
-    plt_style: str = 'seaborn-v0_8-whitegrid',
-    palette: str = 'Set2'
 ) -> PythonREPLTool:
     """Register Python REPL tool with a ClaudeAPIClient.
 
     Args:
         client: The ClaudeAPIClient instance
         report_dir: Directory for saving reports
-        plt_style: Matplotlib style
-        palette: Seaborn color palette
 
     Returns:
         The PythonREPLTool instance
     """
     tool = PythonREPLTool(
         report_dir=report_dir,
-        plt_style=plt_style,
-        palette=palette
     )
 
     client.register_tool(
@@ -128,8 +122,7 @@ def register_python_tool(
         description=(
             "A Python shell for executing Python commands. "
             "Input should be valid Python code. "
-            "Pre-loaded libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), "
-            "seaborn (sns), numexpr (ne). "
+            "Pre-loaded libraries: pandas (pd), numpy (np), numexpr (ne). "
             "Available tools: quick_eda, generate_eda_report, list_available_dataframes "
             "from parrot_tools. "
             "Use execution_results dict for capturing intermediate results. "
@@ -1225,16 +1218,12 @@ $backstory
     def register_python_tool(
         self,
         report_dir: Optional[Path] = None,
-        plt_style: str = 'seaborn-v0_8-whitegrid',
-        palette: str = 'Set2'
     ) -> PythonREPLTool:
         """Register Python REPL tool with a ClaudeAPIClient.
 
         Args:
             client: The ClaudeAPIClient instance
             report_dir: Directory for saving reports
-            plt_style: Matplotlib style
-            palette: Seaborn color palette
 
         Returns:
             The PythonREPLTool instance
@@ -1244,8 +1233,6 @@ $backstory
 
         tool = PythonREPLTool(
             report_dir=report_dir,
-            plt_style=plt_style,
-            palette=palette,
             debug=self._debug,
         )
         self.tool_manager.add_tool(tool)

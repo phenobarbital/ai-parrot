@@ -1,10 +1,10 @@
 """REPL worker process entrypoint (FEAT-380 Sandbox Hardening — Module 2).
 
-Spawn-only child process (never ``fork`` — matplotlib, connection pools and
+Spawn-only child process (never ``fork`` — connection pools and
 parent threads do not tolerate it) that hosts one persistent
 ``PythonREPLTool`` instance for the lifetime of one REPL session. Resource
 limits are applied first thing in :func:`main`, before the heavy
-pandas/numpy/matplotlib imports ``PythonREPLTool`` pulls in.
+pandas/numpy imports ``PythonREPLTool`` pulls in.
 
 The static allowlist + AST denylist gate is revalidated here too — reusing
 ``PythonREPLTool._execute_code(..., enforce_security=True)`` as-is (see
@@ -86,7 +86,7 @@ def apply_rlimits(config: WorkerConfig) -> None:
     """Apply POSIX resource limits to the CURRENT process.
 
     Must run before any user code executes — and, per the Key Constraint,
-    before the heavy pandas/numpy/matplotlib imports too. Best-effort skip
+    before the heavy pandas/numpy imports too. Best-effort skip
     on non-POSIX platforms (Windows) with a visible log line rather than a
     silent no-op (spec AC16: the Windows degradation must be documented,
     never hidden).
@@ -141,14 +141,14 @@ class WorkerNamespace:
         sanitize_input_enabled: bool = True,
         repl_kwargs: Optional[dict[str, Any]] = None,
     ):
-        # Local import: heavy (pandas/numpy/matplotlib/seaborn) — must run
+        # Local import: heavy (pandas/numpy) — must run
         # AFTER rlimits are applied, i.e. after apply_rlimits() in main().
         from parrot.tools.pythonrepl import PythonREPLTool
 
         # repl_kwargs (FEAT-380 Module 5 / TASK-1943): forwards session
-        # config that shapes `save_current_plot`'s behaviour inside THIS
-        # worker instance (e.g. `return_plot_as_base64`) — these must be set
-        # at construction time since `_execute_code()` reads them off
+        # config (e.g. `setup_code`) that shapes `_execute_code()`'s
+        # behaviour inside THIS worker instance — these must be set at
+        # construction time since `_execute_code()` reads them off
         # `self` on the tool instance living HERE, not on the host's.
         self._tool = PythonREPLTool(
             report_dir=output_dir,
@@ -235,7 +235,7 @@ def _dispatch(namespace: WorkerNamespace, message: Any) -> Any:
         # pickle fallback for dtypes Arrow can't represent (G9). Local import:
         # `transport.py` pulls in `pyarrow` (heavy) — deferred so it loads
         # AFTER apply_rlimits(), same "rlimits before heavy imports" pattern
-        # WorkerNamespace already follows for pandas/numpy/matplotlib.
+        # WorkerNamespace already follows for pandas/numpy.
         from .transport import decode_dataframe_from_shm, decode_pickle_payload
 
         if message.format == "arrow":

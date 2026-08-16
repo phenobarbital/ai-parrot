@@ -41,8 +41,9 @@ Implements spec §Module 3.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/security/python_sanitizer.py` | MODIFY | Remove matplotlib/seaborn from `_GENERAL_IMPORTS` |
-| `packages/ai-parrot/src/parrot/tools/repl_worker/worker.py` | MODIFY | Update docstring |
+| `packages/ai-parrot/src/parrot/tools/repl_worker/worker.py` | MODIFY | Update docstring (also 3 stale comments outside the docstring line range referencing matplotlib/save_current_plot — same file, same concern) |
 | `packages/ai-parrot/src/parrot/clients/base.py` | MODIFY | Remove `plt_style` param |
+| `packages/ai-parrot/tests/security/test_sanitizer_no_matplotlib.py` | CREATE | New tests per Test Specification below — omitted from the original table, and `tests/security/` did not exist yet |
 
 ---
 
