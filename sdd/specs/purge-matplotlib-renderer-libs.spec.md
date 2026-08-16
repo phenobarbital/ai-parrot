@@ -207,6 +207,9 @@ class ChartTool(AbstractTool):
 14. Update class docstring (lines 106–115) and `description` field (line 118).
 15. Remove `logging.getLogger("matplotlib")` silencer (line 17).
 16. Update `_worker_repl_kwargs` to drop `plt_style` and `palette` (lines 303–304).
+17. Remove `auto_save_plots` and `return_plot_as_base64` constructor params — no
+    altair replacement; A2UI transports visualization as JSON (OQ1 resolved).
+18. Add `"matplotlib"` and `"matplotlib.pyplot"` to `BLOCKED_IMPORTS` set (OQ2 resolved).
 
 ### Module 2: System Prompt Rewrite
 
@@ -255,7 +258,9 @@ class ChartTool(AbstractTool):
 1. Update `worker.py` docstring (lines 1–21) — remove "matplotlib, connection
    pools" references.
 2. Remove `plt_style` param from `clients/base.py` (lines 106, 1228).
-3. Update `python_sanitizer.py` allowlist if seaborn is listed there (line 72).
+3. Remove `"matplotlib"`, `"matplotlib.pyplot"`, and `"seaborn"` from
+   `_GENERAL_IMPORTS` in `python_sanitizer.py` (lines 70–72) — resolved
+   OQ2 + OQ4.
 
 ### Module 4: ChartTool Migration
 
@@ -383,6 +388,14 @@ def chart_data():
 - [ ] **AC9**: All existing tests pass (`pytest tests/ -v`).
 - [ ] **AC10**: `grep -rn "import matplotlib" packages/ai-parrot/src/` returns zero
   matches (core package is matplotlib-free).
+- [ ] **AC11**: `"matplotlib"` and `"matplotlib.pyplot"` are present in
+  `PythonREPLTool.BLOCKED_IMPORTS` — user REPL code cannot import them.
+- [ ] **AC12**: `_GENERAL_IMPORTS` in `python_sanitizer.py` does NOT contain
+  `"matplotlib"`, `"matplotlib.pyplot"`, or `"seaborn"`.
+- [ ] **AC13**: `PythonREPLTool.__init__` does NOT accept `auto_save_plots`
+  or `return_plot_as_base64` params.
+- [ ] **AC14**: `ai-parrot-tools/pyproject.toml` has a `charts` extra that
+  includes `altair>=5.0` and `vl-convert-python>=1.0`.
 
 ---
 
@@ -515,48 +528,51 @@ The altair backend should produce:
   LLMs to generate `import matplotlib` code that hits the sandbox blocklist.
   The system prompt must explicitly state "matplotlib is NOT available" to
   prevent repeated failures.
-- **`auto_save_plots` / `return_plot_as_base64` params**: These are constructor
-  params on PythonREPLTool that only apply to matplotlib. They must be removed,
-  which is a breaking API change.
+- **Breaking API change** (resolved): `auto_save_plots`, `return_plot_as_base64`,
+  `plt_style`, `palette` are removed from PythonREPLTool's constructor. Any caller
+  passing these kwargs will get a TypeError. Acceptable for a major release.
 - **`_worker_repl_kwargs`**: The worker config dict passes `plt_style` and
   `palette` to the worker process (line 303–304). Removing these changes the
   worker bootstrap protocol — ensure the worker's PythonREPLTool constructor
   signature matches.
-- **seaborn is used in `python_sanitizer.py`** allowlist (line 72) — verify
-  whether this should be removed or kept (user code should not import seaborn
-  in the sandbox either).
 - **EDA tools depend on seaborn**: `quickeda.py` and `correlationanalysis.py`
   use seaborn extensively — the altair migration requires rewriting chart
   generation logic, not just swapping imports.
-- **`vl-convert-python`** dependency: If ChartTool or analytics tools need
-  PNG output (for Telegram/Teams inline images), `vl-convert-python` (~20 MB)
-  must be added as an optional dependency. This is still lighter than
-  matplotlib (~60 MB).
+- **`vl-convert-python`** (resolved): Optional dep in `ai-parrot-tools[charts]`
+  (~20 MB). Only needed for raster export to messaging integrations. Lighter
+  than matplotlib (~60 MB).
 
 ### External Dependencies
 
 | Package | Version | Reason |
 |---|---|---|
 | `altair` | `>=5.0` | Vega-Lite chart generation (already an optional dep in ai-parrot-visualizations) |
-| `vl-convert-python` | `>=1.0` | **Optional** — static PNG/SVG export from Vega-Lite specs for messaging integrations |
+| `vl-convert-python` | `>=1.0` | **Optional in `ai-parrot-tools[charts]`** — static PNG/SVG export from Vega-Lite specs for messaging integrations (OQ3 resolved) |
 
 ---
 
 ## 8. Open Questions
 
-- [ ] **Should `auto_save_plots` and `return_plot_as_base64` be replaced with
-  an altair-equivalent, or simply removed?** The A2UI path doesn't need file-
-  based plot persistence. — *Owner: Jesus*
-- [ ] **Should `matplotlib` be added to `BLOCKED_IMPORTS` in the sandbox
-  policy?** This would prevent user code from importing it even if installed.
-  Pro: forces the correct path. Con: power users might legitimately want it.
-  — *Owner: Jesus*
-- [ ] **Does `vl-convert-python` need to be a core or optional dependency?**
-  If Telegram/Teams integrations require inline images, the ChartTool must
-  produce PNGs — which requires vl-convert. — *Owner: Jesus*
-- [ ] **Should seaborn stay in the `python_sanitizer.py` allowlist?** Removing
-  it means even explicit `import seaborn` in user REPL code will be blocked.
-  — *Owner: Jesus*
+- [x] **Should `auto_save_plots` and `return_plot_as_base64` be replaced with
+  an altair-equivalent, or simply removed?** — *Resolved*: **Eliminate without
+  replacement.** A2UI transports visualization as JSON in the response — no
+  file persistence needed. ChartTool handles raster export for messaging
+  integrations independently. These params are removed as a breaking change.
+- [x] **Should `matplotlib` be added to `BLOCKED_IMPORTS` in the sandbox
+  policy?** — *Resolved*: **Yes.** Add `"matplotlib"` and `"matplotlib.pyplot"`
+  to `PythonREPLTool.BLOCKED_IMPORTS` AND remove them from
+  `python_sanitizer.py`'s `_GENERAL_IMPORTS` allowlist. This produces a clear
+  error that the system prompt already explains. Power users needing matplotlib
+  can use SandboxTool (Docker) or an external notebook.
+- [x] **Does `vl-convert-python` need to be a core or optional dependency?**
+  — *Resolved*: **Optional, in `ai-parrot-tools[charts]`** (not in core).
+  Only ChartTool needs raster export for Telegram/Teams inline images. The
+  extra is: `charts = ["altair>=5.0", "vl-convert-python>=1.0"]`.
+- [x] **Should seaborn stay in the `python_sanitizer.py` allowlist?**
+  — *Resolved*: **No — remove it.** Remove `"seaborn"` from
+  `_GENERAL_IMPORTS` in `python_sanitizer.py` (line 72). Consistent with the
+  matplotlib block: the sandbox directs all visualization through
+  structured-chart / A2UI / altair.
 
 ---
 
