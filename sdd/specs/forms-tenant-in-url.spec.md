@@ -10,7 +10,7 @@ base_branch: dev
 **Jira**: NAV-9372 (create), NAV-9370 (edit/save)
 **Date**: 2026-08-16
 **Author**: Jesus Lara + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.9.0 (major, breaking)
 
 ---
