@@ -1,0 +1,335 @@
+"""Unix-domain-socket JSON-RPC server for the Agent CLI Daemon (agentd).
+
+Implements Module 4 of ``sdd/specs/agent-cli-daemon.spec.md``: the
+transport server sitting between the wire protocol (``protocol.py``,
+TASK-2208) and the daemon service (``service.py``, TASK-2212). Owns the
+socket lifecycle (including stale-socket detection), per-connection
+``Session`` state, method dispatch, streaming notification delivery, and
+event fan-out via ``EventBroker``.
+
+No RPC method implementations live here — those are supplied by the caller
+as a ``dispatch`` mapping (built by ``AgentDaemon`` in TASK-2212).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+import uuid
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any
+
+from pydantic import ValidationError
+
+from .protocol import (
+    DEFAULT_MAX_LINE_BYTES,
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    INVALID_REQUEST,
+    METHOD_NOT_FOUND,
+    PARSE_ERROR,
+    MalformedMessageError,
+    OversizedLineError,
+    RpcError,
+    RpcNotification,
+    RpcRequest,
+    RpcResponse,
+    read_message,
+    write_message,
+)
+
+__all__ = [
+    "DaemonAlreadyRunning",
+    "EventBroker",
+    "Handler",
+    "JsonRpcUnixServer",
+    "Session",
+]
+
+
+class DaemonAlreadyRunning(Exception):
+    """Raised when a live daemon is already listening on the socket path."""
+
+
+class Session:
+    """Per-connection state for one UDS client.
+
+    Attributes:
+        session_id: Unique identifier for this connection (its own
+            "conversation session", per spec §2).
+        writer: The connection's ``asyncio.StreamWriter``.
+        subscribed: Whether this session is subscribed to broadcast events
+            via ``EventBroker``.
+        stream_ids: Active `chat.send(stream=true)` stream identifiers for
+            this session.
+        tasks: In-flight handler tasks for this session (tracked so they
+            can be cancelled on disconnect).
+    """
+
+    def __init__(self, session_id: str, writer: asyncio.StreamWriter) -> None:
+        self.session_id = session_id
+        self.writer = writer
+        self.subscribed = False
+        self.stream_ids: set[str] = set()
+        self.tasks: set[asyncio.Task] = set()
+        self._lock = asyncio.Lock()
+
+    async def send(self, message: RpcResponse | RpcNotification) -> None:
+        """Serialize and write one message, serialized under this session's lock.
+
+        Args:
+            message: The response or notification to send.
+        """
+        async with self._lock:
+            write_message(self.writer, message)
+            await self.writer.drain()
+
+    async def notify(self, method: str, params: dict[str, Any]) -> None:
+        """Send a server-initiated notification (e.g. `chat.delta`).
+
+        Args:
+            method: Notification method name.
+            params: Notification payload.
+        """
+        await self.send(RpcNotification(method=method, params=params))
+
+
+#: Signature every dispatch table entry must implement.
+Handler = Callable[[Session, dict[str, Any]], Awaitable[Any]]
+
+
+class EventBroker:
+    """Subscribe/fan-out broadcaster for scheduler/daemon events.
+
+    Sessions opt in via `subscribe()` (typically from an `events.subscribe`
+    RPC handler) and receive every `publish()`ed notification until they
+    `unsubscribe()` or disconnect.
+    """
+
+    def __init__(self) -> None:
+        self._subscribers: set[Session] = set()
+        self.logger = logging.getLogger(__name__)
+
+    def subscribe(self, session: Session) -> None:
+        """Add `session` to the broadcast set."""
+        session.subscribed = True
+        self._subscribers.add(session)
+
+    def unsubscribe(self, session: Session) -> None:
+        """Remove `session` from the broadcast set (idempotent)."""
+        session.subscribed = False
+        self._subscribers.discard(session)
+
+    async def publish(self, method: str, params: dict[str, Any]) -> None:
+        """Fan out a notification to every subscribed session.
+
+        Dead/broken connections are dropped silently (best-effort
+        broadcast) rather than raising — one bad subscriber must not break
+        delivery to the rest.
+
+        Args:
+            method: Notification method name (e.g. `event.job_executed`).
+            params: Notification payload.
+        """
+        for session in list(self._subscribers):
+            try:
+                await session.notify(method, params)
+            except Exception:  # noqa: BLE001 - isolate broadcast failures
+                self.logger.debug(
+                    "Dropping dead subscriber %s", session.session_id
+                )
+                self._subscribers.discard(session)
+
+
+class JsonRpcUnixServer:
+    """JSON-RPC 2.0 / NDJSON server over a Unix domain socket.
+
+    Attributes:
+        socket_path: Path to the UDS socket file.
+        dispatch: Mapping of RPC method name to `Handler`. Mutable after
+            construction — callers may add/replace entries at any time
+            (the same `dict` object is retained, not copied).
+        max_line_bytes: NDJSON line-size limit passed to `read_message()`.
+        event_broker: Shared `EventBroker` for this server instance.
+    """
+
+    def __init__(
+        self,
+        socket_path: Path,
+        dispatch: dict[str, Handler],
+        *,
+        max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
+    ) -> None:
+        self.socket_path = Path(socket_path)
+        self.dispatch = dispatch
+        self.max_line_bytes = max_line_bytes
+        self.event_broker = EventBroker()
+        self.logger = logging.getLogger(__name__)
+        self._server: asyncio.Server | None = None
+        self._sessions: dict[str, Session] = {}
+
+    async def start(self) -> None:
+        """Bind and start accepting connections.
+
+        Raises:
+            DaemonAlreadyRunning: If a live daemon already owns
+                `socket_path`.
+        """
+        await self._prepare_socket_path()
+        self._server = await asyncio.start_unix_server(
+            self._handle_connection, path=str(self.socket_path)
+        )
+        os.chmod(self.socket_path, 0o600)
+        self.logger.info("agentd UDS server listening on %s", self.socket_path)
+
+    async def close(self) -> None:
+        """Stop accepting connections, close all sessions, unlink the socket."""
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
+
+        for session in list(self._sessions.values()):
+            await self._disconnect(session)
+
+        if self.socket_path.exists():
+            with contextlib.suppress(OSError):
+                self.socket_path.unlink()
+
+    async def _prepare_socket_path(self) -> None:
+        """Create the parent dir (0700) and resolve any stale socket file.
+
+        Raises:
+            DaemonAlreadyRunning: If an existing socket at `socket_path` is
+                still accepting connections (a daemon is already running).
+        """
+        parent = self.socket_path.parent
+        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(parent, 0o700)
+
+        if self.socket_path.exists():
+            if await self._socket_is_alive():
+                raise DaemonAlreadyRunning(
+                    f"A daemon is already listening on {self.socket_path}"
+                )
+            self.socket_path.unlink()
+
+    async def _socket_is_alive(self) -> bool:
+        """Try-connect to `socket_path` to tell a live socket from a dead one."""
+        try:
+            _, writer = await asyncio.open_unix_connection(
+                path=str(self.socket_path)
+            )
+        except OSError:
+            return False
+        writer.close()
+        with contextlib.suppress(OSError):
+            await writer.wait_closed()
+        return True
+
+    async def _handle_connection(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        """Per-connection accept-loop callback for `start_unix_server`."""
+        session = Session(session_id=str(uuid.uuid4()), writer=writer)
+        self._sessions[session.session_id] = session
+        self.logger.debug("Session %s connected", session.session_id)
+
+        try:
+            while True:
+                try:
+                    message = await read_message(
+                        reader, max_line_bytes=self.max_line_bytes
+                    )
+                except OversizedLineError as exc:
+                    with contextlib.suppress(Exception):
+                        await session.send(
+                            RpcResponse(
+                                id=None,
+                                error=RpcError(
+                                    code=INVALID_REQUEST, message=str(exc)
+                                ),
+                            )
+                        )
+                    break
+                except MalformedMessageError as exc:
+                    with contextlib.suppress(Exception):
+                        await session.send(
+                            RpcResponse(
+                                id=exc.rpc_id,
+                                error=RpcError(code=PARSE_ERROR, message=str(exc)),
+                            )
+                        )
+                    continue
+
+                if message is None:
+                    break  # Clean EOF.
+
+                if isinstance(message, RpcRequest):
+                    task = asyncio.create_task(self._run_handler(session, message))
+                    session.tasks.add(task)
+                    task.add_done_callback(session.tasks.discard)
+                else:
+                    self.logger.debug(
+                        "Ignoring unsupported inbound message type: %s",
+                        type(message).__name__,
+                    )
+        finally:
+            await self._disconnect(session)
+
+    async def _run_handler(self, session: Session, request: RpcRequest) -> None:
+        """Dispatch one request to its handler and send back the response.
+
+        Every failure mode is converted into a JSON-RPC error response —
+        the connection (and the server) stay alive regardless of handler
+        exceptions.
+        """
+        handler = self.dispatch.get(request.method)
+        if handler is None:
+            response = RpcResponse(
+                id=request.id,
+                error=RpcError(
+                    code=METHOD_NOT_FOUND,
+                    message=f"Unknown method: {request.method}",
+                ),
+            )
+        else:
+            try:
+                result = await handler(session, request.params)
+                response = RpcResponse(id=request.id, result=result)
+            except ValidationError as exc:
+                response = RpcResponse(
+                    id=request.id,
+                    error=RpcError(code=INVALID_PARAMS, message=str(exc)),
+                )
+            except Exception as exc:
+                self.logger.exception(
+                    "Handler for %r raised an exception", request.method
+                )
+                response = RpcResponse(
+                    id=request.id,
+                    error=RpcError(code=INTERNAL_ERROR, message=str(exc)),
+                )
+
+        with contextlib.suppress(Exception):
+            await session.send(response)
+
+    async def _disconnect(self, session: Session) -> None:
+        """Tear down a session: cancel tasks, unsubscribe, close the writer."""
+        for task in list(session.tasks):
+            task.cancel()
+        if session.tasks:
+            await asyncio.gather(*session.tasks, return_exceptions=True)
+
+        self.event_broker.unsubscribe(session)
+        self._sessions.pop(session.session_id, None)
+
+        with contextlib.suppress(Exception):
+            session.writer.close()
+        with contextlib.suppress(Exception):
+            await session.writer.wait_closed()
+
+        self.logger.debug("Session %s disconnected", session.session_id)
