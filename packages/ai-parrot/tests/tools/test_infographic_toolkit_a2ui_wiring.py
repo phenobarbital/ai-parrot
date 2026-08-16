@@ -132,6 +132,119 @@ class TestSurfaceMatchesTheRenderedResponse:
             r"_build_a2ui_envelope\(\s*infographic_response\b", source
         ), "render() must pass the InfographicResponse to _build_a2ui_envelope"
 
+class TestDataSpliceLane:
+    """``render_data_template`` used to hardcode ``a2ui_envelope=None``."""
+
+    def _descriptor(self, layout=None):
+        # LayoutSpec lives in recipes.models — infographic_sections only
+        # forward-references it (circular-import workaround, FEAT-420).
+        from parrot.outputs.a2ui.recipes.models import LayoutSpec
+        from parrot.tools.infographic_sections import SectionDescriptor
+
+        return SectionDescriptor(
+            template="dash",
+            mode="data-splice",
+            layout=LayoutSpec(**layout) if layout else None,
+        )
+
+    def test_declared_layout_is_used_verbatim_against_the_payload(self, toolkit):
+        # The spliced payload IS the data model, so the layout's $bind pointers
+        # resolve against it — the same contract RecipeRunner honours.
+        descriptor = self._descriptor(
+            {
+                "component": "Infographic",
+                "properties": {
+                    "title": "Budget Variance",
+                    "sections": [
+                        {
+                            "heading": "Detail",
+                            "components": [
+                                {
+                                    "component": "DataTable",
+                                    "properties": {
+                                        "columns": [{"name": "region"}],
+                                        "data": {"$bind": "/rows"},
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+            }
+        )
+        envelope = toolkit._build_a2ui_envelope_from_layout(
+            descriptor, {"rows": [{"region": "North"}]}, "art-5", template_name="dash"
+        )
+        props = _infographic(envelope)
+        assert props["title"] == "Budget Variance"
+        table = props["sections"][0]["components"][0]
+        assert table["properties"]["data"] == {"$bind": "/rows"}
+        assert envelope["data_model"] == {"rows": [{"region": "North"}]}
+        assert envelope["surface_id"] == "infographic-art-5"
+
+    def test_non_infographic_layout_dispatches_to_build_surface(self, toolkit):
+        descriptor = self._descriptor(
+            {
+                "component": "DataTable",
+                "properties": {
+                    "columns": [{"name": "region"}],
+                    "data": {"$bind": "/rows"},
+                },
+            }
+        )
+        envelope = toolkit._build_a2ui_envelope_from_layout(
+            descriptor, {"rows": [{"region": "N"}]}, "art-6", template_name="dash"
+        )
+        assert envelope["components"][0]["component"] == "DataTable"
+        assert envelope["data_model"] == {"rows": [{"region": "N"}]}
+
+    def test_without_a_layout_it_falls_back_to_the_minimal_surface(self, toolkit):
+        envelope = toolkit._build_a2ui_envelope_from_layout(
+            None, {"beta": 1, "alpha": 2}, "art-7", title="Dash", template_name="dash"
+        )
+        props = _infographic(envelope)
+        assert props["title"] == "Dash"
+        # Keys sorted so the envelope stays deterministic.
+        assert props["sections"][0]["text"] == "Data: alpha, beta"
+
+    def test_descriptor_without_layout_uses_the_same_fallback(self, toolkit):
+        envelope = toolkit._build_a2ui_envelope_from_layout(
+            self._descriptor(), {"a": 1}, "art-8", template_name="dash"
+        )
+        assert _infographic(envelope)["title"] == "dash"
+
+    def test_empty_payload_yields_no_data_model(self, toolkit):
+        envelope = toolkit._build_a2ui_envelope_from_layout(
+            None, {}, "art-9", title="Empty", template_name="dash"
+        )
+        assert not envelope.get("data_model")
+
+    def test_invalid_layout_degrades_to_none(self, toolkit, caplog):
+        descriptor = self._descriptor(
+            {"component": "NotAnA2UIComponent", "properties": {}}
+        )
+        assert (
+            toolkit._build_a2ui_envelope_from_layout(
+                descriptor, {}, "art-10", template_name="dash"
+            )
+            is None
+        )
+        assert "falling back to HTML-only result" in caplog.text
+
+    def test_lane_is_wired_and_respects_the_flag(self, toolkit):
+        import inspect
+        import re
+
+        cls = _toolkit_or_skip()
+        source = inspect.getsource(cls.render_data_template)
+        assert re.search(r"if self\._emit_a2ui", source)
+        assert re.search(
+            r"_build_a2ui_envelope_from_layout\(", source
+        ), "render_data_template must build the envelope from the descriptor layout"
+        assert "a2ui_envelope=a2ui_envelope" in source
+
+
+class TestTemplateLane:
     def test_template_lane_models_only_what_it_knows(self, toolkit):
         # The Jinja lane has no typed blocks; it must still emit a valid,
         # title-bearing surface rather than fabricated structure.
