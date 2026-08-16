@@ -46,6 +46,19 @@ def _page_wrap(
     ``protect=True`` branch, the very deployment this feature exists for
     would get no tenant validation at all.
 
+    FEAT-421 review fix (2nd pass, CRITICAL): when ``protect=False``,
+    navigator-auth's ``user_session()`` never runs, so ``request.session``
+    is never populated. ``requires_tenant(public=False)``'s membership
+    check unconditionally reads that session — with no session, EVERY
+    caller (including the legitimate tenant owner) would be rejected with
+    403, silently breaking the exact ``protect_pages=False`` deployment
+    (fieldsync, and this repo's own ``app.py``) this feature must serve
+    without any application-code change (spec AC10). There is no session
+    to authorize against in this mode regardless of the caller's true
+    membership, so ``tenant="required"`` is downgraded to declare-only
+    (``public=True``) whenever ``protect=False`` — mirroring the Telegram
+    routes' already-established workaround for the same root cause.
+
     Args:
         handler: A bound async coroutine accepting ``request: web.Request``.
         protect: When ``True``, decorate the handler with
@@ -54,7 +67,8 @@ def _page_wrap(
             tenant layer.
         tenant: Tenant-enforcement mode — one of ``"required"``,
             ``"public"``, or ``"none"``. See ``api.routes._wrap_auth`` for
-            the full mode contract.
+            the full mode contract. Downgraded to declare-only when
+            ``protect=False`` (see above).
 
     Returns:
         The (possibly decorated) handler.
@@ -67,7 +81,8 @@ def _page_wrap(
 
     tenant_applied = tenant != "none"
     if tenant_applied:
-        handler = requires_tenant(public=(tenant == "public"))(handler)
+        effective_public = (tenant == "public") or not protect
+        handler = requires_tenant(public=effective_public)(handler)
 
     if not protect:
         if tenant_applied:

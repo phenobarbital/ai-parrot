@@ -239,6 +239,11 @@ class FormPageHandler:
                     tenant=form.tenant or "",
                 ),
                 prefix=p,
+                # FEAT-421 review fix (2nd pass): every sibling page_shell()
+                # call passes tenant= so the top nav ("New Form"/"Gallery")
+                # links stay tenant-qualified — this one was missing it,
+                # which rendered them as "{prefix}/t//" (empty segment).
+                tenant=form.tenant or "",
             ),
             content_type="text/html",
         )
