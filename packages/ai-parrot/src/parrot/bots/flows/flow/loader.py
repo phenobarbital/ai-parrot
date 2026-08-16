@@ -261,7 +261,7 @@ class FlowLoader:
                     successors=succs,
                     metadata=node_def.metadata or {},
                 )
-            elif node_type in ("agent", "human", "decision"):
+            elif node_type in ("agent", "decision"):
                 agent = cls._resolve_agent(
                     node_def.agent_ref, extra_agents, agent_registry
                 )

@@ -3,10 +3,14 @@ FlowDefinition — Pydantic models for AgentsFlow JSON serialization.
 
 This module defines the complete schema for persisting and loading AgentsFlow
 workflows as JSON. The schema supports:
-- Node definitions (start, end, agent, decision, interactive_decision, human)
+- Node definitions, typed by any key registered in ``NODE_REGISTRY``
 - Edge definitions with conditional transitions
 - Pre/post lifecycle actions
 - SvelteFlow-compatible position data
+
+Every model here is closed (``extra="forbid"``). A definition is frequently
+machine-generated, and a silently-ignored unknown key is the difference
+between "this flow does what it says" and "this flow quietly dropped a step".
 
 Example:
     >>> from parrot.bots.flows.flow.definition import FlowDefinition
@@ -19,7 +23,8 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing_extensions import Annotated
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +36,8 @@ class LogActionDef(BaseModel):
 
     Template variables: {node_name}, {result}, {prompt}
     """
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["log"] = "log"
     level: Literal["debug", "info", "warning", "error"] = "info"
     message: str = Field(..., description="Message template with {node_name}, {result}, {prompt}")
@@ -38,6 +45,8 @@ class LogActionDef(BaseModel):
 
 class NotifyActionDef(BaseModel):
     """Send a notification to a channel."""
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["notify"] = "notify"
     channel: Literal["slack", "teams", "email", "log"] = "log"
     message: str = Field(..., description="Notification message")
@@ -49,6 +58,8 @@ class NotifyActionDef(BaseModel):
 
 class WebhookActionDef(BaseModel):
     """Make an HTTP webhook call."""
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["webhook"] = "webhook"
     url: str = Field(..., description="Webhook URL")
     method: Literal["POST", "PUT"] = "POST"
@@ -61,6 +72,8 @@ class WebhookActionDef(BaseModel):
 
 class MetricActionDef(BaseModel):
     """Emit a metric."""
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["metric"] = "metric"
     name: str = Field(..., description="Metric name (e.g., 'flow.node.completed')")
     tags: Dict[str, str] = Field(default_factory=dict)
@@ -69,6 +82,8 @@ class MetricActionDef(BaseModel):
 
 class SetContextActionDef(BaseModel):
     """Extract a value from result and set in shared context."""
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["set_context"] = "set_context"
     key: str = Field(..., description="Context key to set")
     value_from: str = Field(
@@ -88,11 +103,13 @@ class ValidateActionDef(BaseModel):
     on_failure: Literal["raise", "skip", "fallback"] = "raise"
     fallback_value: Any = None
 
-    model_config = {"populate_by_name": True}
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class TransformActionDef(BaseModel):
     """Transform result using a safe expression."""
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["transform"] = "transform"
     expression: str = Field(
         ...,
@@ -100,15 +117,25 @@ class TransformActionDef(BaseModel):
     )
 
 
-# Discriminated union of all action types
-ActionDefinition = Union[
-    LogActionDef,
-    NotifyActionDef,
-    WebhookActionDef,
-    MetricActionDef,
-    SetContextActionDef,
-    ValidateActionDef,
-    TransformActionDef,
+# Discriminated union of all action types.
+#
+# The ``discriminator`` is what makes this a *tagged* union: without it
+# Pydantic resolves members by smart-union left-to-right, and
+# ``model_json_schema()`` emits an ``anyOf`` that tells a generating model
+# nothing about which fields belong to which action. With it, the schema is a
+# ``oneOf`` keyed on ``type``, and a wrong field is reported against the
+# intended action instead of "no member matched".
+ActionDefinition = Annotated[
+    Union[
+        LogActionDef,
+        NotifyActionDef,
+        WebhookActionDef,
+        MetricActionDef,
+        SetContextActionDef,
+        ValidateActionDef,
+        TransformActionDef,
+    ],
+    Field(discriminator="type"),
 ]
 
 
@@ -118,6 +145,9 @@ ActionDefinition = Union[
 
 class NodePosition(BaseModel):
     """UI position hint for visual flow builders (SvelteFlow compatible)."""
+
+    model_config = ConfigDict(extra="forbid")
+
     x: float = 0.0
     y: float = 0.0
 
@@ -125,23 +155,31 @@ class NodePosition(BaseModel):
 class NodeDefinition(BaseModel):
     """Definition of a node in the flow.
 
-    Node types:
-    - start: Entry point, no agent_ref required
-    - end: Terminal point, no agent_ref required
-    - agent: Wraps a registered agent, requires agent_ref
-    - decision: Multi-agent voting/consensus
-    - interactive_decision: Human-in-the-loop choice
-    - human: Full HITL escalation
+    The set of valid ``type`` values is exactly the ``NODE_REGISTRY`` keys —
+    see :func:`parrot.bots.flows.flow.flow.register_node`. Do not maintain a
+    second list here: the registry is populated by import side effects
+    (``dev_loop.*``, ``"tool"``), so any hand-written enumeration drifts.
+
+    Membership is deliberately *not* checked at parse time. Because
+    registration is an import side effect, a definition is routinely loaded
+    (from disk, Redis or an API payload) before the modules that register its
+    types have been imported, and rejecting it then would be wrong. The check
+    belongs where the types must actually exist: ``AgentsFlow.from_definition``
+    at build time, and — for machine-generated documents — the authoring
+    validator, which builds its type enum from the live registry.
     """
+
+    model_config = ConfigDict(extra="forbid")
+
     id: str = Field(..., description="Unique node identifier")
     type: str = Field(
         ...,
         description=(
-            "Node type. Built-in types: 'start', 'end', 'agent', 'decision', "
-            "'interactive_decision', 'human'. Custom node types (e.g. "
-            "'dev_loop.development') are also accepted as long as they are "
-            "registered in ``NODE_REGISTRY`` via ``@register_node``; membership "
-            "is validated at flow-build time by ``AgentsFlow.from_definition``."
+            "Node type. Must be a key registered in ``NODE_REGISTRY`` via "
+            "``@register_node`` — core types are 'start', 'end', 'agent', "
+            "'decision', 'interactive_decision' and 'synthesis'; packages "
+            "register more (e.g. 'tool', 'dev_loop.development'). Membership "
+            "is enforced by ``AgentsFlow.from_definition`` at build time."
         ),
     )
     label: Optional[str] = Field(
@@ -235,7 +273,7 @@ class EdgeDefinition(BaseModel):
         description="Optional UI label"
     )
 
-    model_config = {"populate_by_name": True}
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     @model_validator(mode="after")
     def validate_predicate(self) -> "EdgeDefinition":
@@ -253,6 +291,9 @@ class EdgeDefinition(BaseModel):
 
 class FlowMetadata(BaseModel):
     """Flow-level configuration and defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
     max_parallel_tasks: int = Field(
         default=10,
         ge=1,
@@ -340,6 +381,8 @@ class FlowDefinition(BaseModel):
         ...     ]
         ... )
     """
+    model_config = ConfigDict(extra="forbid")
+
     flow: str = Field(..., description="Flow name (unique identifier)")
     version: str = Field(
         default="1.0",
