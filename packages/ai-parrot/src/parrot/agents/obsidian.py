@@ -387,9 +387,8 @@ class FirefliesObsidianAgent(BasicAgent):
                 for email in participants[:5]  # Limit to 5 participants
             ],
             "source": {
-                "uri": f"fireflies://api/transcript/{fireflies_id}",
-                "name": "Fireflies.ai",
-                "timestamp": date,
+                "document": f"fireflies-{fireflies_id[:8]}.transcript",
+                "url": f"fireflies://api/transcript/{fireflies_id}",
             },
         }
 
