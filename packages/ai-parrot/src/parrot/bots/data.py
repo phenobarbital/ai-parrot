@@ -867,7 +867,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         capabilities = self._capabilities or """
 ** Your Capabilities:**
 - Perform complex data analysis and transformations
-- Create visualizations (matplotlib, seaborn, plotly)
+- Return structured data for visualization (the system renders charts automatically via A2UI)
 - Generate statistical summaries
 - Export results to various formats
 - Execute pandas operations efficiently
