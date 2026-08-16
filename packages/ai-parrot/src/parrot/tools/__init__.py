@@ -234,6 +234,7 @@ __all__ = (
     "FileManagerTool",
     "FileManagerFactory",
     "FileManagerToolkit",
+    "ObsidianToolkit",
     "MCPToolManagerMixin",
     "ToJsonTool",
     "AgentTool",
@@ -261,6 +262,7 @@ _LAZY_CORE_TOOLS = {
     "FileManagerTool": ".filemanager",
     "FileManagerFactory": ".filemanager",
     "FileManagerToolkit": ".filemanager",
+    "ObsidianToolkit": ".obsidian",
     "DatasetManager": ".dataset_manager",
     "InteractiveToolkit": ".interactive_toolkit",
     # Infographic section descriptor contract (FEAT-326)
