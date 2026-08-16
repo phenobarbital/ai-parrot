@@ -3,8 +3,6 @@
 import uuid
 
 import pytest
-from pydantic import ValidationError
-
 from parrot_formdesigner.audio.models import (
     AudioAnswer,
     AudioFormManifest,
@@ -13,6 +11,7 @@ from parrot_formdesigner.audio.models import (
     AudioSessionState,
     VoiceMode,
 )
+from pydantic import ValidationError
 
 # FEAT-393 / TASK-2004: AudioQuestion.field_uid is now required. Tests that
 # don't specifically exercise field_uid share this sentinel value.
@@ -174,7 +173,7 @@ class TestAudioFormManifest:
             title="Test Form",
             total_questions=1,
             questions=[q],
-            ws_endpoint="/api/v1/forms/f1/audio/ws",
+            ws_endpoint="/api/v1/t/navigator/forms/f1/audio/ws",
         )
         assert manifest.total_questions == 1
         assert manifest.locale == "en"
@@ -190,7 +189,7 @@ class TestAudioFormManifest:
             title="Test Form",
             total_questions=3,
             questions=questions,
-            ws_endpoint="/api/v1/forms/f1/audio/ws",
+            ws_endpoint="/api/v1/t/navigator/forms/f1/audio/ws",
         )
         assert len(manifest.questions) == 3
 

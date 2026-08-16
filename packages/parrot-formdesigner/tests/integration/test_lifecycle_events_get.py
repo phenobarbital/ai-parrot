@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
-
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.events import (
     EventResolution,
@@ -39,12 +38,19 @@ def _clear_registry() -> None:  # type: ignore[return]
 
 _UNKNOWN_FORM_UID = "00000000-0000-0000-0000-000000000000"
 
+# FEAT-421: fixed tenant shared by _make_form()/_make_request() so
+# FormAPIHandler._get_tenant() (declared_tenant()) resolves consistently
+# and _assert_form_tenant()'s cross-check never fires for these
+# lifecycle-hook tests, which are not testing tenant enforcement.
+_TEST_TENANT = "test-tenant"
+
 
 def _make_form(form_id: str = "test_form", events: FormEventsConfig | None = None) -> FormSchema:
     """Build a minimal FormSchema. form_uid is auto-generated."""
     return FormSchema(
         form_id=form_id,
         title={"en": "Test Form"},
+        tenant=_TEST_TENANT,
         sections=[],
         events=events,
     )
@@ -66,9 +72,13 @@ def _make_request(form_uid: str = _UNKNOWN_FORM_UID) -> MagicMock:
     req.match_info = {"form_uid": str(form_uid)}
     req.method = "GET"
     req.headers = {}
-    # No auth context set
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed. No other key is read this way.
     req.__contains__ = MagicMock(return_value=False)
     req.__getitem__ = MagicMock(side_effect=KeyError)
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+    )
     # Session with default tenant
     session = MagicMock()
     session.get = MagicMock(return_value={})

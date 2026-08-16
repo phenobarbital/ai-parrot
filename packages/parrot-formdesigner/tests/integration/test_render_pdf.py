@@ -6,12 +6,15 @@ from io import BytesIO
 
 import pytest
 from aiohttp import web
-from pypdf import PdfReader
-
-from parrot_formdesigner.api.render import _RENDERERS, _seed_default_renderers, handle_render
+from parrot_formdesigner.api.render import (
+    _RENDERERS,
+    _seed_default_renderers,
+    handle_render,
+)
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.registry import FormRegistry
+from pypdf import PdfReader
 
 
 @pytest.fixture(autouse=True)
@@ -43,6 +46,13 @@ def sample_form() -> FormSchema:
     )
 
 
+async def _tenant_wrapped_render(request: web.Request) -> web.Response:
+    """Stash the URL-declared tenant, mirroring what @requires_tenant does
+    (FEAT-421) — this test exercises rendering, not tenant enforcement."""
+    request["tenant"] = request.match_info["tenant"]
+    return await handle_render(request)
+
+
 async def test_e2e_pdf_render(aiohttp_client, sample_form):
     registry = FormRegistry()
     await registry.register(sample_form)
@@ -50,12 +60,13 @@ async def test_e2e_pdf_render(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_uid}/render/{format}", handle_render
+        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/forms/{sample_form.form_uid}/render/pdf"
+        f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/pdf"
     )
     assert resp.status == 200
     assert resp.content_type == "application/pdf"

@@ -1,4 +1,4 @@
-"""Integration tests for POST /api/v1/forms/{form_uid}/clone (FEAT-183, updated FEAT-389).
+"""Integration tests for POST /api/v1/t/{tenant}/forms/{form_uid}/clone (FEAT-183, updated FEAT-389).
 
 End-to-end via aiohttp test client. Auth is bypassed by registering the
 handler directly (without _wrap_auth), matching the pattern used by
@@ -13,12 +13,10 @@ from __future__ import annotations
 
 import pytest
 from aiohttp import web
-
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.registry import FormRegistry
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -69,7 +67,7 @@ async def _make_client(aiohttp_client, registry: FormRegistry):
     handler = FormAPIHandler(registry=registry)
     app = web.Application()
     app.router.add_post(
-        "/api/v1/forms/{form_uid}/clone", handler.clone_form
+        "/api/v1/t/{tenant}/forms/{form_uid}/clone", handler.clone_form
     )
     return await aiohttp_client(app)
 
@@ -86,7 +84,7 @@ async def test_clone_rest_success(aiohttp_client, source_form: FormSchema) -> No
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        f"/api/v1/forms/{source_form.form_uid}/clone",
+        f"/api/v1/t/navigator/forms/{source_form.form_uid}/clone",
         json={"new_form_id": "cloned-form"},
     )
     assert resp.status == 201
@@ -105,7 +103,7 @@ async def test_clone_rest_with_patch(aiohttp_client, source_form: FormSchema) ->
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        f"/api/v1/forms/{source_form.form_uid}/clone",
+        f"/api/v1/t/navigator/forms/{source_form.form_uid}/clone",
         json={
             "new_form_id": "patched-clone",
             "patch": {"title": "Patched Title"},
@@ -131,7 +129,7 @@ async def test_clone_rest_missing_new_form_id(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        f"/api/v1/forms/{source_form.form_uid}/clone",
+        f"/api/v1/t/navigator/forms/{source_form.form_uid}/clone",
         json={},
     )
     assert resp.status == 400
@@ -148,7 +146,7 @@ async def test_clone_rest_empty_new_form_id(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        f"/api/v1/forms/{source_form.form_uid}/clone",
+        f"/api/v1/t/navigator/forms/{source_form.form_uid}/clone",
         json={"new_form_id": ""},
     )
     assert resp.status == 400
@@ -165,7 +163,7 @@ async def test_clone_rest_invalid_json(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        f"/api/v1/forms/{source_form.form_uid}/clone",
+        f"/api/v1/t/navigator/forms/{source_form.form_uid}/clone",
         data="not json at all",
         headers={"Content-Type": "application/json"},
     )
@@ -183,7 +181,7 @@ async def test_clone_rest_source_not_found(aiohttp_client) -> None:
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        "/api/v1/forms/00000000-0000-0000-0000-000000000000/clone",
+        "/api/v1/t/navigator/forms/00000000-0000-0000-0000-000000000000/clone",
         json={"new_form_id": "any-clone"},
     )
     assert resp.status == 404
@@ -206,7 +204,7 @@ async def test_clone_rest_duplicate_id(
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
-        f"/api/v1/forms/{source_form.form_uid}/clone",
+        f"/api/v1/t/navigator/forms/{source_form.form_uid}/clone",
         json={"new_form_id": "taken-id"},
     )
     assert resp.status == 409

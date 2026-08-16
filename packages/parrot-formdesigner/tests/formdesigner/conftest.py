@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 
@@ -55,6 +55,7 @@ def mixed_mode_form() -> FormSchema:
     return FormSchema(
         form_id="mixed-mode-form",
         title="Mixed Mode Form",
+        tenant="navigator",
         sections=[
             FormSection(
                 section_id="s1",

@@ -112,6 +112,22 @@ def _make_partial_request(
     return req
 
 
+async def _tenant_wrapped(handler):
+    """Stash the URL-declared tenant, mirroring what @requires_tenant does.
+
+    These tests exercise the operations/upload handlers' own logic, not
+    tenant enforcement (covered by TASK-2199's decorator tests) — matches
+    the pattern established in test_render_dispatcher.py /
+    test_blob_uid_keys.py for FEAT-421.
+    """
+
+    async def _wrapped(request: web.Request) -> web.Response:
+        request["tenant"] = request.match_info["tenant"]
+        return await handler(request)
+
+    return _wrapped
+
+
 async def _make_ops_and_upload_client(
     aiohttp_client, registry: FormRegistry, blob_storage, resolver
 ):
@@ -123,9 +139,13 @@ async def _make_ops_and_upload_client(
     app["form_registry"] = registry
     app["blob_storage"] = blob_storage
     app["rest_resolver"] = resolver
-    app.router.add_patch("/api/v1/forms/{form_uid}/operations", handle_operations)
+    app.router.add_patch(
+        "/api/v1/t/{tenant}/forms/{form_uid}/operations",
+        await _tenant_wrapped(handle_operations),
+    )
     app.router.add_post(
-        "/api/v1/forms/{form_uid}/fields/{field_uid}/upload", handle_rest_upload
+        "/api/v1/t/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
+        await _tenant_wrapped(handle_rest_upload),
     )
     return await aiohttp_client(app)
 
@@ -207,7 +227,7 @@ async def test_edit_flow_rename_stability(
         "file", io.BytesIO(b"fake photo bytes"), filename="p.jpg", content_type="image/jpeg"
     )
     upload_resp = await client.post(
-        f"/api/v1/forms/{rename_flow_form.form_uid}/fields/{photo_field.field_uid}/upload",
+        f"/api/v1/t/navigator/forms/{rename_flow_form.form_uid}/fields/{photo_field.field_uid}/upload",
         data=data,
     )
     assert upload_resp.status == 200
@@ -227,7 +247,7 @@ async def test_edit_flow_rename_stability(
 
     # 3. Rename 'country' -> 'country_code' via the REAL operations handler.
     rename_resp = await client.patch(
-        f"/api/v1/forms/{rename_flow_form.form_uid}/operations",
+        f"/api/v1/t/navigator/forms/{rename_flow_form.form_uid}/operations",
         json={
             "operations": [
                 {

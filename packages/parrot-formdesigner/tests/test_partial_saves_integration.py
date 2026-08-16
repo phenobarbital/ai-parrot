@@ -16,25 +16,30 @@ Test classes:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from parrot_formdesigner.api.handlers import FormAPIHandler
+from parrot_formdesigner.core.constraints import FieldConstraints
 from parrot_formdesigner.core.partial import PartialFormData
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
-from parrot_formdesigner.core.constraints import FieldConstraints
 from parrot_formdesigner.services.partial_saves import PartialSaveStore
 from parrot_formdesigner.services.registry import FormRegistry
 from parrot_formdesigner.services.validators import FormValidator, ValidationResult
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+# FEAT-421: fixed tenant shared by sample_form()/_make_request() so
+# FormAPIHandler._get_tenant() (declared_tenant()) resolves consistently
+# and _assert_form_tenant()'s cross-check never fires for these tests,
+# which are not testing tenant enforcement.
+_TEST_TENANT = "test-tenant"
 
 
 @pytest.fixture
@@ -43,6 +48,7 @@ def sample_form() -> FormSchema:
     return FormSchema(
         form_id="test-form",
         title="Test Form",
+        tenant=_TEST_TENANT,
         sections=[
             FormSection(
                 section_id="s1",
@@ -71,7 +77,7 @@ def sample_form() -> FormSchema:
 
 
 @pytest.fixture
-def in_memory_store() -> "InMemoryPartialStore":
+def in_memory_store() -> InMemoryPartialStore:
     """A PartialSaveStore backed by an in-memory dict (no Redis needed)."""
     return InMemoryPartialStore(ttl_seconds=3600)
 
@@ -142,6 +148,12 @@ def _make_request(
         req.__getitem__ = lambda self, key: {"id": session_id} if key == "session" else None
     else:
         req.__contains__ = lambda self, key: False
+
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed.
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+    )
 
     if body is not None:
         req.json = AsyncMock(return_value=body)
@@ -559,7 +571,7 @@ class TestEdgeCases:
 
     async def test_partial_data_model_json_round_trip(self):
         """PartialFormData round-trips correctly through JSON."""
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         original = PartialFormData(
             form_id="f1",
             session_id="s1",
