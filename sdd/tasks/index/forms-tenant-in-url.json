@@ -155,7 +155,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -165,8 +165,8 @@
       "parallelism_notes": "Touches app.py only, which no other task edits. No-op if PR #1149 was closed unmerged.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:03:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2205-revert-app-py-middleware.md"
+      "completed_at": "2026-08-16T17:47:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2205-revert-app-py-middleware.md"
     },
     {
       "id": "TASK-2206",

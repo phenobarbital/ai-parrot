@@ -172,10 +172,30 @@ def test_no_tenant_context_anywhere():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Verified no-op, as anticipated by the task itself. PR #1149 was
+never merged to `dev` — `grep -n "forms_tenant_context_middleware\|
+tenant_context" app.py` returns nothing, `grep -n "middlewares.append"
+app.py` returns nothing at all (no middlewares registered, tenant-related
+or otherwise), and `tests/test_forms_tenant_context_middleware.py` and
+`sdd/specs/FEAT-421-form-tenant-program-slug-scoping.spec.md` do not exist
+anywhere in the repo. No changes made to `app.py`. `python -c "import
+ast; ast.parse(open('app.py').read())"` confirms the file still parses
+(full `import app` smoke check skipped — requires runtime settings/DB
+this worktree doesn't have configured; syntax-level check is sufficient
+since no bytes changed).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Broader `grep -rn "tenant_context" app.py packages/` still surfaces hits,
+all confirmed out of scope for this task: (1) an unrelated, differently-
+named `agent.tenant_context` concept in `ai-parrot-server`/`ai-parrot`
+(knowledge-graph tooling, nothing to do with this feature), and (2)
+legitimate self-referential mentions in this feature's own test files
+(`test_handler_tenant_split.py`, `test_requires_tenant.py`) that assert
+the string is ABSENT from source, plus
+`packages/parrot-formdesigner/tests/test_tenant_context_resolution.py`,
+which TASK-2206 explicitly owns deleting ("delete, do not migrate") —
+confirmed by reading that task's file before closing this one out, so no
+gap between tasks.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
