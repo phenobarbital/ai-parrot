@@ -138,19 +138,21 @@ def setup_form_ui(
         _page_wrap(page.submit_form, protect=protect_pages),
     )
 
-    # Telegram WebApp routes — PUBLIC (no auth). Re-prefixed for path
-    # consistency (FEAT-421); the tenant is declared but not yet validated
-    # here — the inline tenant check inside the handlers is TASK-2204's job
-    # (these routes are not `_page_wrap`-ed at all, matching the audio WS
-    # route's rationale: Telegram WebApp clients cannot go through
-    # navigator-auth).
+    # Telegram WebApp routes — PUBLIC (no navigator-auth session; Telegram
+    # WebApp clients cannot carry one). FEAT-421 TASK-2204: still wrapped
+    # with `_page_wrap(..., protect=False, tenant="public")` — protect=False
+    # skips navigator-auth's is_authenticated/user_session entirely (the
+    # early-return in _page_wrap), but the tenant layer (declare + skip
+    # authorization) still applies, so `declared_tenant()` works inside
+    # `TelegramWebAppHandler`.
     app.router.add_get(
-        f"{tp}/forms/{{form_uid}}/telegram", telegram.serve_webapp
+        f"{tp}/forms/{{form_uid}}/telegram",
+        _page_wrap(telegram.serve_webapp, protect=False, tenant="public"),
     )
     # Telegram REST fallback (for WebApp payloads > 4 KB) — public.
     app.router.add_post(
         f"{bp}/api/v1/t/{{tenant}}/forms/{{form_uid}}/telegram-submit",
-        telegram.rest_fallback,
+        _page_wrap(telegram.rest_fallback, protect=False, tenant="public"),
     )
 
     logger.info(

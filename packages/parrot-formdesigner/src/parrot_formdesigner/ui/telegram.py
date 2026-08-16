@@ -12,6 +12,7 @@ from pathlib import Path
 import jinja2
 from aiohttp import web
 
+from ..api.tenant import declared_tenant
 from ..renderers.html5 import HTML5Renderer
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
@@ -19,28 +20,6 @@ from ..services.validators import FormValidator
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "renderers" / "templates"
-
-
-def _get_request_tenant(request: web.Request) -> str | None:
-    """Extract the effective tenant from an aiohttp request.
-
-    Mirrors ``parrot_formdesigner.api._utils._get_request_tenant`` but is
-    inlined here to avoid a circular dependency between the ``ui`` and ``api``
-    sub-packages (the ``ui`` package must remain importable without pulling
-    in ``api``).
-
-    Args:
-        request: Incoming aiohttp web.Request.
-
-    Returns:
-        First program slug string, or ``None`` if not available.
-    """
-    session = getattr(request, "session", None)
-    if session is None:
-        return None
-    userinfo = session.get("session", {})
-    programs: list[str] = userinfo.get("programs", [])
-    return programs[0] if programs else None
 
 
 class TelegramWebAppHandler:
@@ -68,7 +47,7 @@ class TelegramWebAppHandler:
         )
 
     async def serve_webapp(self, request: web.Request) -> web.Response:
-        """GET /forms/{form_uid}/telegram — Serve the form as a Telegram WebApp.
+        """GET /t/{tenant}/forms/{form_uid}/telegram — Serve the form as a Telegram WebApp.
 
         Args:
             request: Incoming HTTP request.
@@ -77,7 +56,7 @@ class TelegramWebAppHandler:
             HTML response with the Telegram WebApp page, or 404.
         """
         form_uid = request.match_info["form_uid"]
-        tenant = _get_request_tenant(request)
+        tenant = declared_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.Response(text="Form not found", status=404)
@@ -92,9 +71,10 @@ class TelegramWebAppHandler:
 
         title = form.title if isinstance(form.title, str) else form.title.get("en", "Form")
 
-        # Build fallback URL
+        # Build fallback URL — tenant-qualified to match the route table
+        # re-prefixed by TASK-2201 (ui/routes.py).
         prefix = request.app.get("_form_prefix", "")
-        fallback_url = f"{prefix}/api/v1/forms/{form_uid}/telegram-submit"
+        fallback_url = f"{prefix}/api/v1/t/{tenant}/forms/{form_uid}/telegram-submit"
 
         template = self._env.get_template("telegram_webapp.html.j2")
         html = template.render(
@@ -108,7 +88,7 @@ class TelegramWebAppHandler:
         return web.Response(text=html, content_type="text/html")
 
     async def rest_fallback(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_uid}/telegram-submit — REST fallback.
+        """POST /api/v1/t/{tenant}/forms/{form_uid}/telegram-submit — REST fallback.
 
         Validates a form submission for payloads too large for sendData().
 
@@ -119,7 +99,7 @@ class TelegramWebAppHandler:
             JSON response with is_valid and errors.
         """
         form_uid = request.match_info["form_uid"]
-        tenant = _get_request_tenant(request)
+        tenant = declared_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.json_response(
