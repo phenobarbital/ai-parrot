@@ -34,6 +34,24 @@ class TestCountTokens:
         assert result > 0
         assert result < 10
 
+    def test_falls_back_when_tiktoken_unavailable(self, monkeypatch):
+        """An offline host estimates rather than raising.
+
+        tiktoken downloads its BPE file on first use; a token *estimate* is
+        never worth failing a document parse over.
+        """
+        monkeypatch.setattr(
+            "parrot.knowledge.pageindex.utils.tiktoken.encoding_for_model",
+            lambda model: (_ for _ in ()).throw(RuntimeError("offline")),
+        )
+        monkeypatch.setattr(
+            "parrot.knowledge.pageindex.utils.tiktoken.get_encoding",
+            lambda name: (_ for _ in ()).throw(RuntimeError("offline")),
+        )
+
+        assert count_tokens("") == 0
+        assert count_tokens("hello world") > 0
+
 
 class TestExtractJson:
 

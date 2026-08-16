@@ -193,15 +193,21 @@ async def generate_prefix_summaries(
 
 async def md_to_tree(
     md_text: str,
-    adapter: PageIndexLLMAdapter,
+    adapter: PageIndexLLMAdapter | None = None,
     options: dict | config | None = None,
     doc_name: str = "document.md",
 ) -> dict:
     """Build a PageIndex tree from markdown text.
 
+    The tree itself — headings, nesting, node ids, per-node text — is derived
+    from the Markdown alone. The adapter is needed only for the optional LLM
+    passes (``if_add_node_summary``, ``if_add_doc_description``); pass ``None``
+    to build the structure offline and they are skipped.
+
     Args:
         md_text: Full markdown document text.
-        adapter: LLM adapter wrapping any AbstractClient.
+        adapter: LLM adapter wrapping any AbstractClient, or ``None`` for a
+            structure-only build.
         options: Configuration dict or SimpleNamespace.
         doc_name: Document identifier.
 
@@ -240,10 +246,15 @@ async def md_to_tree(
     if opt.if_add_node_id == "yes":
         write_node_id(tree)
 
-    if opt.if_add_node_summary == "yes":
+    if opt.if_add_node_summary == "yes" and adapter is not None:
         await generate_prefix_summaries(tree, adapter)
+    elif opt.if_add_node_summary == "yes":
+        logger.debug(
+            "md_to_tree: no LLM adapter — skipping node summaries for %s",
+            doc_name,
+        )
 
-    if opt.if_add_doc_description == "yes":
+    if opt.if_add_doc_description == "yes" and adapter is not None:
         from .builder import generate_doc_description
         clean_struct = create_clean_structure_for_description(tree)
         doc_description = await generate_doc_description(clean_struct, adapter)

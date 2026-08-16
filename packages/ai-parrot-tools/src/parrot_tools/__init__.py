@@ -120,7 +120,11 @@ TOOL_REGISTRY: dict[str, str] = {
     "multi_store_search_toolkit": "parrot_tools.multistoresearch.MultiStoreSearchToolkit",
     "ibisworld": "parrot_tools.ibisworld.tool.IBISWorldTool",
     "bloomberg": "parrot_tools.bloomberg.BloombergTool",
-    "composite_score": "parrot_tools.composite_score.CompositeScoreTool",
+    # composite_score / technical_analysis moved to ai-parrot-finance — they
+    # depend on that package's Alpaca/CoinGecko/CryptoQuant toolkits. Registry
+    # entries point at the new home so a resolve still works when it is
+    # installed, and fails with a clear ImportError when it is not.
+    "composite_score": "parrot.finance.tools.composite_score.CompositeScoreTool",
     "correlation_analysis": "parrot_tools.correlationanalysis.CorrelationAnalysisTool",
     "database_query": "parrot.tools.databasequery.DatabaseQueryTool",
     "database": "parrot_tools.db.DatabaseTool",
@@ -132,7 +136,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "prophet_forecast": "parrot_tools.prophetforecast.ProphetForecastTool",
     "qsource": "parrot_tools.qsource.QSourceTool",
     "seasonal_detection": "parrot_tools.seasonaldetection.SeasonalDetectionTool",
-    "technical_analysis": "parrot_tools.technical_analysis.TechnicalAnalysisTool",
+    "technical_analysis": "parrot.finance.tools.technical_analysis.TechnicalAnalysisTool",
     "whatif": "parrot_tools.whatif.WhatIfTool",
     "whatif_toolkit": "parrot_tools.whatif_toolkit.WhatIfToolkit",
     "yfinance": "parrot_tools.yfinance.YFinanceTool",
