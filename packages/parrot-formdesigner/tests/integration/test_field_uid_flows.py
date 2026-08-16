@@ -109,6 +109,14 @@ def _make_partial_request(
     else:
         req.json = AsyncMock(side_effect=ValueError("no body"))
 
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed. rename_flow_form is registered
+    # under tenant="navigator" (matching the URL used by the ops/upload
+    # client in this same flow).
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: "navigator" if key == "tenant" else default
+    )
+
     return req
 
 

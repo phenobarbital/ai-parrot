@@ -33,6 +33,10 @@ def sample_form() -> FormSchema:
         form_id="e2e-xml",
         title={"en": "E2E XML"},
         tenant="navigator",
+        # FEAT-421: handle_render() calls enforce_membership_unless_public()
+        # after resolving the form; mark it public so this rendering test
+        # (not a tenant-enforcement test) doesn't need a session/programs.
+        is_public=True,
         sections=[
             FormSection(
                 section_id="s1",

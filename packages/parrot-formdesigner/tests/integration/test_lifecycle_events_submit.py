@@ -89,7 +89,7 @@ def _make_request(
     )
     # Session for tenant resolution
     session = MagicMock()
-    session.get = MagicMock(return_value={})
+    session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
     return req
 

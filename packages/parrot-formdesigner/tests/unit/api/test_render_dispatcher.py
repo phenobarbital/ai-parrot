@@ -54,6 +54,10 @@ def sample_form() -> FormSchema:
         title={"en": "Test"},
         # FEAT-183: tenant required by FormRegistry (require_tenant=True default).
         tenant="navigator",
+        # FEAT-421: handle_render() calls enforce_membership_unless_public()
+        # after resolving the form; mark it public so these dispatcher tests
+        # (not tenant-enforcement tests) don't need session/programs scaffolding.
+        is_public=True,
         sections=[
             FormSection(
                 section_id="s1",

@@ -85,6 +85,53 @@ class TestCrossTenantIsolation:
         )
         await registry.register(form, tenant="flexroc")
 
+        # FEAT-421 review fix: get_form is mounted tenant="public" (shared
+        # with public forms), so a private form (is_public defaults False)
+        # still requires tenant membership — declare a matching session.
+        request = _request(
+            tenant="flexroc",
+            session_programs=["flexroc"],
+            match_info={"form_uid": str(form.form_uid)},
+        )
+        resp = await handler.get_form(request)
+        assert resp.status == 200
+
+    async def test_private_form_non_member_is_403(self, handler, registry):
+        """FEAT-421 review fix (C2): get_form is mounted tenant="public"
+        (shared with public forms) — an authenticated non-member must still
+        be rejected for a PRIVATE form, not silently let through because
+        the route's decorator-level authorization was skipped."""
+        form = FormSchema(
+            form_id="contact",
+            title={"en": "Contact"},
+            tenant="flexroc",
+            sections=[],
+            is_public=False,
+        )
+        await registry.register(form, tenant="flexroc")
+
+        request = _request(
+            tenant="flexroc",
+            session_programs=["navigator"],
+            match_info={"form_uid": str(form.form_uid)},
+        )
+        from parrot_formdesigner.api.errors import TenantForbiddenError
+
+        with pytest.raises(TenantForbiddenError):
+            await handler.get_form(request)
+
+    async def test_public_form_no_session_is_200(self, handler, registry):
+        """A genuinely public form stays reachable unauthenticated — the
+        membership gate must not apply to it."""
+        form = FormSchema(
+            form_id="contact",
+            title={"en": "Contact"},
+            tenant="flexroc",
+            sections=[],
+            is_public=True,
+        )
+        await registry.register(form, tenant="flexroc")
+
         request = _request(
             tenant="flexroc", match_info={"form_uid": str(form.form_uid)}
         )

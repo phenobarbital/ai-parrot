@@ -111,6 +111,10 @@ def _make_request(
     req.get = MagicMock(
         side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
     )
+    # FEAT-421: enforce_membership_unless_public() reads request.session
+    # (attribute access, navigator-auth's user_session shape) to authorize
+    # the caller as a member of _TEST_TENANT for non-public forms.
+    req.session = {"session": {"programs": [_TEST_TENANT]}}
 
     return req
 

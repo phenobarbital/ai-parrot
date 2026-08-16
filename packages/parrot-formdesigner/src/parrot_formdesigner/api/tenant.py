@@ -10,6 +10,7 @@ Public API:
 
     requires_tenant(*, public: bool = False) -> decorator
     declared_tenant(request) -> str
+    enforce_membership_unless_public(request, form, tenant) -> None
     assert_body_tenant_matches(body, tenant) -> None
 """
 
@@ -157,6 +158,37 @@ def declared_tenant(request: web.Request) -> str:
             "— the route was mounted without @requires_tenant()."
         )
     return str(tenant)
+
+
+def enforce_membership_unless_public(
+    request: web.Request, form: Any, tenant: str
+) -> None:
+    """Close the authorization gap on shared public/private routes.
+
+    ``requires_tenant(public=True)`` skips membership authorization at the
+    decorator level, because it runs BEFORE the handler resolves the form
+    and therefore cannot know whether this SPECIFIC ``form_uid`` is
+    actually public — the same route (``GET /forms/{form_uid}``, etc.)
+    serves both public and private forms. Call this immediately after the
+    form has been resolved and tenant-scoped (:func:`declared_tenant` +
+    the registry's tenant-scoped lookup), so a private form on a
+    ``public``-mode route still requires the caller to be a tenant member
+    (or superuser) — exactly as if the route had been ``tenant="required"``.
+    A truly public form (``form.is_public``) is exempt, matching the
+    route's original intent.
+
+    Args:
+        request: Incoming HTTP request.
+        form: The already-resolved, tenant-scoped form.
+        tenant: The declared tenant for this request.
+
+    Raises:
+        TenantForbiddenError: ``form.is_public`` is falsy and the caller is
+            not a member of ``tenant`` (and not a superuser).
+    """
+    if getattr(form, "is_public", False):
+        return
+    _authorize(request, tenant)
 
 
 def assert_body_tenant_matches(body: dict, tenant: str) -> None:

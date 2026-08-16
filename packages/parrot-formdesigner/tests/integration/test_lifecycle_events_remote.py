@@ -93,15 +93,20 @@ def _make_get_form_request(form_uid: str = _UNKNOWN_FORM_UID, session_id: str = 
     req.query = {}
 
     # Build a session mock that returns sensible defaults for all .get() calls.
-    session_data: dict = {"id": session_id, "programs": []}
+    session_data: dict = {"id": session_id, "programs": [_TEST_TENANT]}
     session = MagicMock()
     session.get = MagicMock(side_effect=lambda key, default=None: session_data.get(key, default))
 
     # ``"session" in request`` → True so _extract_session_id reads it;
-    # ``request["session"]`` → the session mock.
+    # ``request["session"]`` → the session mock (item access, used by
+    # _extract_session_id). FEAT-421 review fix: _get_programs/_authorize
+    # (enforce_membership_unless_public) read request.session as an
+    # ATTRIBUTE, not an item — both must point at the same mock or
+    # membership authorization sees an empty session.
     req.__contains__ = MagicMock(side_effect=lambda k: k == "session")
     req.__getitem__ = MagicMock(return_value=session)
     req.__setitem__ = MagicMock()
+    req.session = {"session": {"programs": [_TEST_TENANT]}}
     # FEAT-421: declared_tenant() reads request.get("tenant") — the value
     # @requires_tenant would have stashed.
     req.get = MagicMock(

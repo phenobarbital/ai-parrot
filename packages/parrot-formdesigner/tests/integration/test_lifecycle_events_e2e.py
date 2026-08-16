@@ -92,7 +92,7 @@ def _make_request_get(form_uid: str) -> MagicMock:
         side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
     )
     session = MagicMock()
-    session.get = MagicMock(return_value={})
+    session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
     return req
 
@@ -120,7 +120,7 @@ def _make_request_post(
         side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
     )
     session = MagicMock()
-    session.get = MagicMock(return_value={})
+    session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
     return req
 
@@ -400,7 +400,7 @@ class TestRemoteEventCSRFRoundTrip:
         req.method = "GET"
         req.headers = {}
         req.query = {}
-        session_data = {"id": session_id, "programs": []}
+        session_data = {"id": session_id, "programs": [_TEST_TENANT]}
         session = MagicMock()
         session.get = MagicMock(
             side_effect=lambda k, default=None: session_data.get(k, default)
@@ -408,6 +408,12 @@ class TestRemoteEventCSRFRoundTrip:
         req.__contains__ = MagicMock(side_effect=lambda k: k == "session")
         req.__getitem__ = MagicMock(return_value=session)
         req.__setitem__ = MagicMock()
+        # FEAT-421 review fix: _get_programs/_authorize
+        # (enforce_membership_unless_public) read request.session as an
+        # ATTRIBUTE, not an item — must point at the same data as
+        # request["session"] above or membership authorization sees an
+        # empty session.
+        req.session = {"session": {"programs": [_TEST_TENANT]}}
         # FEAT-421: declared_tenant() reads request.get("tenant") — the
         # value @requires_tenant would have stashed.
         req.get = MagicMock(
@@ -447,7 +453,7 @@ class TestRemoteEventCSRFRoundTrip:
         remote_req.method = "POST"
         headers = {"X-CSRF-Token": token}
         remote_req.headers = headers
-        session_data = {"id": "sess_e2e", "programs": []}
+        session_data = {"id": "sess_e2e", "programs": [_TEST_TENANT]}
         session = MagicMock()
         session.get = MagicMock(
             side_effect=lambda k, default=None: session_data.get(k, default)

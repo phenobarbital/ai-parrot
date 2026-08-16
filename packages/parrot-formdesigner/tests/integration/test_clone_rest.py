@@ -55,7 +55,10 @@ async def _make_client(aiohttp_client, registry: FormRegistry):
     """Build a test aiohttp client with the clone handler mounted.
 
     Registers handler.clone_form directly (without navigator-auth wrapping)
-    so integration tests run without an auth stack.
+    so integration tests run without an auth stack. The tenant is stashed
+    directly from ``match_info``, mirroring what ``@requires_tenant`` does
+    (FEAT-421) — these tests exercise clone_form's own logic, not tenant
+    enforcement (covered by TASK-2199's decorator tests).
 
     Args:
         aiohttp_client: pytest-aiohttp fixture.
@@ -65,9 +68,14 @@ async def _make_client(aiohttp_client, registry: FormRegistry):
         aiohttp test client connected to the test application.
     """
     handler = FormAPIHandler(registry=registry)
+
+    async def _tenant_wrapped_clone(request: web.Request) -> web.Response:
+        request["tenant"] = request.match_info["tenant"]
+        return await handler.clone_form(request)
+
     app = web.Application()
     app.router.add_post(
-        "/api/v1/t/{tenant}/forms/{form_uid}/clone", handler.clone_form
+        "/api/v1/t/{tenant}/forms/{form_uid}/clone", _tenant_wrapped_clone
     )
     return await aiohttp_client(app)
 

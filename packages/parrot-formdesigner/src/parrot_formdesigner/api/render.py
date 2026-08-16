@@ -25,7 +25,7 @@ from aiohttp import web
 
 from ..renderers.base import AbstractFormRenderer
 from .handlers import extract_form_uid
-from .tenant import declared_tenant
+from .tenant import declared_tenant, enforce_membership_unless_public
 
 
 logger = logging.getLogger(__name__)
@@ -134,6 +134,13 @@ async def handle_render(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": f"Form '{form_uid}' not found"}, status=404
         )
+    # FEAT-421 review fix: this route is mounted tenant="public" (the same
+    # route serves public and private forms) — requires_tenant skipped
+    # membership authorization at the decorator level because it can't
+    # know the specific form's is_public flag before it's resolved. Close
+    # that gap here: private forms still require membership; a truly
+    # public form is exempt.
+    enforce_membership_unless_public(request, form, tenant)
 
     locale = request.query.get("locale", "en")
     rendered = await renderer.render(form, locale=locale)

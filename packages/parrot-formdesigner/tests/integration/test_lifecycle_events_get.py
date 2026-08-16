@@ -81,7 +81,7 @@ def _make_request(form_uid: str = _UNKNOWN_FORM_UID) -> MagicMock:
     )
     # Session with default tenant
     session = MagicMock()
-    session.get = MagicMock(return_value={})
+    session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
     return req
 

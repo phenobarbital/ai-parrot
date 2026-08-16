@@ -35,6 +35,10 @@ def sample_form() -> FormSchema:
         form_id="integration-test",
         title="Integration Test Form",
         tenant="navigator",
+        # FEAT-421: handle_render() calls enforce_membership_unless_public()
+        # after resolving the form; mark it public so TestRenderEndpoint
+        # (not a tenant-enforcement test) doesn't need session/programs.
+        is_public=True,
         sections=[
             FormSection(
                 section_id="s1",

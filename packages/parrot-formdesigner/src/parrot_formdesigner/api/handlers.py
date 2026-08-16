@@ -28,7 +28,11 @@ from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
-from .tenant import assert_body_tenant_matches, declared_tenant
+from .tenant import (
+    assert_body_tenant_matches,
+    declared_tenant,
+    enforce_membership_unless_public,
+)
 
 
 def extract_form_uid(request: web.Request) -> _uuid.UUID:
@@ -489,6 +493,7 @@ class FormAPIHandler:
             )
 
         form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
@@ -516,7 +521,7 @@ class FormAPIHandler:
             if existing is not None:
                 # Stored data is field_uid-keyed (TASK-2003) — map back to
                 # the CURRENT field_id for the wire response.
-                form_for_remap = await self.registry.get(form_uid)
+                form_for_remap = await self.registry.get(form_uid, tenant=tenant)
                 existing = self._remap_partial_to_field_ids(form_for_remap, existing)
                 return JSONResponse(existing.model_dump(mode="json"), status=200)
             return JSONResponse(
@@ -524,11 +529,12 @@ class FormAPIHandler:
                 status=200,
             )
 
-        form = await self.registry.get(form_uid)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(form, tenant)
 
         # Resolve each incoming field_id to its field_uid BEFORE storing —
         # unknown field_ids are rejected (field error, not stored) instead of
@@ -603,6 +609,7 @@ class FormAPIHandler:
             )
 
         form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
@@ -629,7 +636,7 @@ class FormAPIHandler:
         # Stored data is field_uid-keyed (TASK-2003) — map back to CURRENT
         # field_ids for the wire response; UIDs whose field was deleted
         # (or whose form no longer exists) are dropped silently.
-        form = await self.registry.get(form_uid)
+        form = await self.registry.get(form_uid, tenant=tenant)
         partial = self._remap_partial_to_field_ids(form, partial)
 
         return JSONResponse(
@@ -797,6 +804,13 @@ class FormAPIHandler:
         if form is None:
             return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: this route is mounted tenant="public" (the
+        # SAME route serves public and private forms) — requires_tenant
+        # skipped membership authorization at the decorator level because
+        # it can't know the specific form's is_public flag before it's
+        # resolved. Close that gap here: private forms still require
+        # membership; a truly public form is exempt.
+        enforce_membership_unless_public(request, form, tenant)
         # lifecycle: onBeforeOpen — can abort or mutate (abort only in MVP)
         try:
             await dispatch(
@@ -829,6 +843,9 @@ class FormAPIHandler:
         if form is None:
             return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: see get_form's comment — this route is also
+        # mounted tenant="public".
+        enforce_membership_unless_public(request, form, tenant)
         rendered: RenderedForm = await self.schema_renderer.render(form)
         # lifecycle: onSchemaLoaded — can apply shallow schema_overrides
         try:
@@ -958,6 +975,9 @@ class FormAPIHandler:
         if form is None:
             return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: see get_form's comment — this route is also
+        # mounted tenant="public".
+        enforce_membership_unless_public(request, form, tenant)
         try:
             data = await request.json()
         except (json.JSONDecodeError, ValueError):
@@ -1028,7 +1048,7 @@ class FormAPIHandler:
                 "form_uid": form.form_uid,
                 "form_id": form.form_id,
                 "title": _loc_to_str(title),
-                "url": f"{prefix}/forms/{form.form_uid}",
+                "url": f"{prefix}/t/{tenant}/forms/{form.form_uid}",
             },
             status=201,
         )
@@ -1082,7 +1102,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/forms/{form_uid}",
+            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
         })
 
     async def edit_form(self, request: web.Request) -> web.Response:
@@ -1152,30 +1172,40 @@ class FormAPIHandler:
             "form_uid": updated_form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/forms/{updated_form_uid}",
+            "url": f"{prefix}/t/{tenant}/forms/{updated_form_uid}",
         })
 
     async def clone_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_uid}/clone — Clone a form under a new slug.
+        """POST /api/v1/t/{tenant}/forms/{form_uid}/clone — Clone a form under a new slug.
 
         Creates a deep copy of the source form identified by ``form_uid``,
         assigns ``new_form_id`` (slug) from the request body and a freshly
         generated ``form_uid``, optionally applies an RFC 7396 merge-patch,
         validates the result, and persists it.
 
+        FEAT-421: the tenant is the URL-declared, decorator-validated value
+        (:meth:`_get_tenant`) — both the source lookup and the clone
+        registration happen within that tenant scope. A body ``tenant`` is
+        only ever an optional cross-check (spec §2); it is never trusted as
+        an override, closing what would otherwise be a cross-tenant read+
+        write via an unvalidated body field.
+
         Request body (JSON):
             new_form_id (str): Required. Slug for the cloned form.
             patch (dict | None): Optional RFC 7396 merge-patch.
-            tenant (str | None): Optional tenant override for the clone.
+            tenant (str | None): Optional cross-check — must match the URL
+                tenant if present.
 
         Returns:
             201 Created with the full cloned ``FormSchema`` JSON body.
-            400 if ``new_form_id`` is missing or empty.
+            400 if ``new_form_id`` is missing or empty, or the body tenant
+                conflicts with the URL tenant.
             404 if the source form is not found.
             409 if ``new_form_id`` already exists.
             422 if the patch produces an invalid schema.
         """
         form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
 
         try:
             body = await request.json()
@@ -1191,7 +1221,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": "patch must be a JSON object"}, status=400
             )
-        tenant = body.get("tenant") or None
+        assert_body_tenant_matches(body, tenant)
 
         try:
             clone = await self.registry.clone_form(
@@ -1422,6 +1452,10 @@ class FormAPIHandler:
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
         self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: see get_form's comment — this route is also
+        # mounted tenant="public" (a public form's submission must remain
+        # reachable unauthenticated; a private form's must not).
+        enforce_membership_unless_public(request, form, tenant)
 
         try:
             data = await request.json()
@@ -1733,7 +1767,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_id,
             "title": title,
-            "url": f"{prefix}/forms/{form_uid}",
+            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
         })
 
     # ------------------------------------------------------------------

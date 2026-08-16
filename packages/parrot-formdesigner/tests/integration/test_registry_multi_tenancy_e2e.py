@@ -111,6 +111,10 @@ async def test_handlers_pass_tenant_to_registry(aiohttp_client) -> None:
         form_id="intake-epson",
         title={"en": "Intake"},
         tenant="epson",
+        # FEAT-421: handle_render() calls enforce_membership_unless_public()
+        # after resolving the form; mark it public so this tenant-routing
+        # test doesn't need session/programs scaffolding.
+        is_public=True,
         sections=[
             FormSection(
                 section_id="s1",
