@@ -372,8 +372,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
     # "Completed N tool calls" investigation.
     DEFAULT_MAX_ITERATIONS = 10
     queries: Union[List[str], dict] = None
-    # Composable prompt builder with dataframe context layer
-    _prompt_builder = _build_pandas_prompt_builder()
+    # NOTE: _prompt_builder is created per-instance in __init__ (not as a
+    # class attribute) because configure() bakes instance identity ($name,
+    # $role, $goal) into the builder.  A shared class-level object would
+    # only configure for the first instance; every later one silently
+    # inherits that identity.
 
     def __init__(
         self,
@@ -461,7 +464,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         self.logger.info(
             'PandasAgent initialized with DataFrames: %s', list(self.dataframes.keys())
         )
-        # Initialize base agent (AbstractBot will set chatbot_id)
+        # Initialize base agent (AbstractBot will set chatbot_id).
+        # prompt_builder is created per-instance to avoid the mutable
+        # class-attribute pitfall (see note above).
+        if 'prompt_builder' not in kwargs:
+            kwargs['prompt_builder'] = _build_pandas_prompt_builder()
         super().__init__(
             name=name,
             system_prompt=system_prompt,
