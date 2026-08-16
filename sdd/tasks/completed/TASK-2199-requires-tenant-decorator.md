@@ -283,10 +283,19 @@ class TestBodyCrossCheck:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Created `api/tenant.py` with `requires_tenant(*, public=False)`,
+`declared_tenant(request)`, and `assert_body_tenant_matches(body, tenant)`,
+mirroring `_wrap_auth`'s `@wraps` + `**kwargs`-swallowing shape and reusing
+`FormAPIHandler._get_programs`'s exact session read. Superuser flag read
+from the same `userinfo` dict as `programs`. Authorization rejection logs
+at WARNING with the declared tenant and session programs. 14 unit tests
+cover the full case matrix from the spec (member/superuser/non-member/
+no-session/empty-tenant/public carve-out/body cross-check) plus a source
+guard asserting no reference to `tenant_context`, `program_slug`, or
+`default_tenant`. Pre-existing unrelated failure noted in
+`test_form_controls_endpoint.py::test_form_controls_payload_shape` (out of
+scope — controls endpoint, not touched by this feature).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -186,10 +186,16 @@ class TestTenantErrors:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: Created `api/errors.py` with `TenantNotDeclaredError` (400),
+`TenantForbiddenError` (403), `TenantConflictError` (400), each rendering the
+stable JSON body contract with an `error` slug, optional `expected` hint, and
+`content_type="application/json"`. Added 5 unit tests covering status codes,
+content-type, body shape, and raisability. Noted a worktree-local gotcha: the
+shared venv's editable install of `parrot_formdesigner` resolves to the main
+repo checkout, not this worktree — tests/lint must be run with
+`PYTHONPATH="$(pwd)/packages/parrot-formdesigner/src:$PYTHONPATH"` prefixed
+until the venv is reinstalled against this worktree.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

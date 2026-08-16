@@ -9,8 +9,11 @@ from __future__ import annotations
 import pytest
 from aiohttp import web
 from lxml import etree
-
-from parrot_formdesigner.api.render import _RENDERERS, _seed_default_renderers, handle_render
+from parrot_formdesigner.api.render import (
+    _RENDERERS,
+    _seed_default_renderers,
+    handle_render,
+)
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.registry import FormRegistry
@@ -30,6 +33,10 @@ def sample_form() -> FormSchema:
         form_id="e2e-xml",
         title={"en": "E2E XML"},
         tenant="navigator",
+        # FEAT-421: handle_render() calls enforce_membership_unless_public()
+        # after resolving the form; mark it public so this rendering test
+        # (not a tenant-enforcement test) doesn't need a session/programs.
+        is_public=True,
         sections=[
             FormSection(
                 section_id="s1",
@@ -46,6 +53,13 @@ def sample_form() -> FormSchema:
     )
 
 
+async def _tenant_wrapped_render(request: web.Request) -> web.Response:
+    """Stash the URL-declared tenant, mirroring what @requires_tenant does
+    (FEAT-421) — this test exercises rendering, not tenant enforcement."""
+    request["tenant"] = request.match_info["tenant"]
+    return await handle_render(request)
+
+
 async def test_e2e_xml_render(aiohttp_client, sample_form):
     registry = FormRegistry()
     await registry.register(sample_form)
@@ -53,12 +67,13 @@ async def test_e2e_xml_render(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_uid}/render/{format}", handle_render
+        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/forms/{sample_form.form_uid}/render/xml"
+        f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/xml"
     )
     assert resp.status == 200
     assert resp.content_type == "application/xml"

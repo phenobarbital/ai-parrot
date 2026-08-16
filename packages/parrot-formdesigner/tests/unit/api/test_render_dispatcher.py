@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 from aiohttp import web
-
 from parrot_formdesigner.api.render import (
     _RENDERERS,
     _seed_default_renderers,
@@ -26,6 +25,19 @@ from parrot_formdesigner.renderers.base import AbstractFormRenderer
 from parrot_formdesigner.services.registry import FormRegistry
 
 
+async def _tenant_wrapped_render(request: web.Request) -> web.Response:
+    """Stash the URL-declared tenant, mirroring what @requires_tenant does.
+
+    These tests exercise the render DISPATCHER's own logic (format
+    resolution, delegation, 404s), not tenant enforcement (covered by
+    TASK-2199's decorator tests) — so this stashes ``request["tenant"]``
+    directly from ``match_info`` rather than pulling in navigator-auth
+    session/programs scaffolding these tests don't otherwise need.
+    """
+    request["tenant"] = request.match_info["tenant"]
+    return await handle_render(request)
+
+
 @pytest.fixture(autouse=True)
 def _reset_renderers():
     snapshot = dict(_RENDERERS)
@@ -42,6 +54,10 @@ def sample_form() -> FormSchema:
         title={"en": "Test"},
         # FEAT-183: tenant required by FormRegistry (require_tenant=True default).
         tenant="navigator",
+        # FEAT-421: handle_render() calls enforce_membership_unless_public()
+        # after resolving the form; mark it public so these dispatcher tests
+        # (not tenant-enforcement tests) don't need session/programs scaffolding.
+        is_public=True,
         sections=[
             FormSection(
                 section_id="s1",
@@ -113,11 +129,12 @@ async def test_dispatcher_returns_415_for_unknown_format(aiohttp_client, sample_
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_uid}/render/{format}", handle_render
+        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(f"/api/v1/forms/{sample_form.form_uid}/render/foo")
+    resp = await client.get(f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/foo")
     assert resp.status == 415
     body = await resp.json()
     assert "supported" in body
@@ -141,12 +158,13 @@ async def test_dispatcher_html_delegates(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_uid}/render/{format}", handle_render
+        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/forms/{sample_form.form_uid}/render/html"
+        f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/html"
     )
     assert resp.status == 200
     assert resp.content_type == "text/html"
@@ -179,12 +197,13 @@ async def test_dispatcher_adaptive_delegates(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_uid}/render/{format}", handle_render
+        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/forms/{sample_form.form_uid}/render/adaptive"
+        f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/adaptive"
     )
     assert resp.status == 200
     assert resp.content_type == "application/json"
@@ -198,13 +217,14 @@ async def test_dispatcher_404_when_form_unknown(aiohttp_client):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/forms/{form_uid}/render/{format}", handle_render
+        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+        _tenant_wrapped_render,
     )
 
     client = await aiohttp_client(app)
     # FEAT-389: must be a well-formed (but unregistered) UUID — extract_form_uid()
     # validates format before the registry lookup runs.
     resp = await client.get(
-        "/api/v1/forms/00000000-0000-0000-0000-000000000000/render/html"
+        "/api/v1/t/navigator/forms/00000000-0000-0000-0000-000000000000/render/html"
     )
     assert resp.status == 404

@@ -65,8 +65,19 @@ class FormPageHandler:
             HTML page response.
         """
         p = _prefix(request)
+        # FEAT-421: read directly from match_info (URL-declared, already
+        # validated by @requires_tenant at route-registration time) rather
+        # than importing api.tenant.declared_tenant() here, which would
+        # widen the existing ui->api coupling (see TASK-2200's completion
+        # note) beyond what this template-URL fix needs.
+        tenant = request.match_info.get("tenant", "")
         return web.Response(
-            text=page_shell("Create a Form", index_page(prefix=p), prefix=p),
+            text=page_shell(
+                "Create a Form",
+                index_page(prefix=p, tenant=tenant),
+                prefix=p,
+                tenant=tenant,
+            ),
             content_type="text/html",
         )
 
@@ -80,10 +91,20 @@ class FormPageHandler:
             HTML page response with the form gallery.
         """
         p = _prefix(request)
-        forms = await self.registry.list_forms(tenant=None)
+        # FEAT-421 review fix: this handler previously always resolved
+        # tenant=None (-> registry.default_tenant), completely ignoring the
+        # tenant declared and authorized in the URL by @requires_tenant —
+        # a pre-existing gap (ui/handlers.py was never in the spec's 30
+        # classified call sites) that this fix closes so the gallery
+        # actually reflects the declared tenant's forms.
+        tenant = request.match_info.get("tenant") or None
+        forms = await self.registry.list_forms(tenant=tenant)
 
         if not forms:
-            items_html = f"<p>No forms created yet. <a href='{p}/'>Create one!</a></p>"
+            items_html = (
+                f"<p>No forms created yet. "
+                f"<a href='{p}/t/{escape(tenant or '')}/'>Create one!</a></p>"
+            )
         else:
             items = []
             for form in forms:
@@ -97,9 +118,9 @@ class FormPageHandler:
                     f'<span><strong>{escape(title)}</strong> '
                     f'<span style="color:var(--muted);font-size:.85rem">({escape(fid)})</span></span>'
                     f'<span style="display:flex;gap:.5rem;">'
-                    f'<a href="{p}/forms/{escape(fid)}" class="btn btn-secondary" '
+                    f'<a href="{p}/t/{escape(tenant or "")}/forms/{escape(fid)}" class="btn btn-secondary" '
                     f'style="padding:.35rem .8rem; font-size:.85rem;">Open</a>'
-                    f'<a href="{p}/forms/{escape(fid)}/schema" class="btn btn-secondary" '
+                    f'<a href="{p}/t/{escape(tenant or "")}/forms/{escape(fid)}/schema" class="btn btn-secondary" '
                     f'style="padding:.35rem .8rem; font-size:.85rem;">Schema</a>'
                     f'</span>'
                     f'</li>'
@@ -107,7 +128,9 @@ class FormPageHandler:
             items_html = f'<ul class="form-list">{"".join(items)}</ul>'
 
         return web.Response(
-            text=page_shell("Gallery", gallery_page(items_html), prefix=p),
+            text=page_shell(
+                "Gallery", gallery_page(items_html), prefix=p, tenant=tenant or ""
+            ),
             content_type="text/html",
         )
 
@@ -122,11 +145,17 @@ class FormPageHandler:
         """
         p = _prefix(request)
         form_uid = request.match_info["form_uid"]
-        form = await self.registry.get(form_uid, tenant=None)
+        # FEAT-421 review fix: see gallery()'s comment — resolve the
+        # URL-declared tenant instead of always defaulting.
+        tenant = request.match_info.get("tenant") or None
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.Response(
                 text=page_shell(
-                    "Not Found", error_page("Form not found.", prefix=p), prefix=p
+                    "Not Found",
+                    error_page("Form not found.", prefix=p, tenant=tenant or ""),
+                    prefix=p,
+                    tenant=tenant or "",
                 ),
                 status=404,
                 content_type="text/html",
@@ -140,20 +169,26 @@ class FormPageHandler:
 
         style = StyleSchema(layout=layout)
         rendered = await self.renderer.render(form, style=style)
+        t = escape(tenant or "")
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="{p}/forms/{escape(form_uid)}" method="post" ',
+            f'<form action="{p}/t/{t}/forms/{escape(form_uid)}" method="post" ',
             1,
         )
 
         title = form.title if isinstance(form.title, str) else form.title.get("en", "Form")
         schema_link = (
             f'<div style="margin-top:1rem;">'
-            f'<a href="{p}/forms/{escape(form_uid)}/schema" class="btn btn-secondary"'
+            f'<a href="{p}/t/{t}/forms/{escape(form_uid)}/schema" class="btn btn-secondary"'
             f' style="font-size:.85rem;">View JSON Schema</a></div>'
         )
         return web.Response(
-            text=page_shell(title, form_page(fragment) + schema_link, prefix=p),
+            text=page_shell(
+                title,
+                form_page(fragment) + schema_link,
+                prefix=p,
+                tenant=tenant or "",
+            ),
             content_type="text/html",
         )
 
@@ -168,11 +203,17 @@ class FormPageHandler:
         """
         p = _prefix(request)
         form_uid = request.match_info["form_uid"]
-        form = await self.registry.get(form_uid, tenant=None)
+        # FEAT-421 review fix: see gallery()'s comment — resolve the
+        # URL-declared tenant instead of always defaulting.
+        tenant = request.match_info.get("tenant") or None
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.Response(
                 text=page_shell(
-                    "Not Found", error_page("Form not found.", prefix=p), prefix=p
+                    "Not Found",
+                    error_page("Form not found.", prefix=p, tenant=tenant or ""),
+                    prefix=p,
+                    tenant=tenant or "",
                 ),
                 status=404,
                 content_type="text/html",
@@ -189,8 +230,20 @@ class FormPageHandler:
         return web.Response(
             text=page_shell(
                 f"{title} - JSON Schema",
-                schema_page(form_uid, title, schema_json, style_json, prefix=p),
+                schema_page(
+                    form_uid,
+                    title,
+                    schema_json,
+                    style_json,
+                    prefix=p,
+                    tenant=form.tenant or "",
+                ),
                 prefix=p,
+                # FEAT-421 review fix (2nd pass): every sibling page_shell()
+                # call passes tenant= so the top nav ("New Form"/"Gallery")
+                # links stay tenant-qualified — this one was missing it,
+                # which rendered them as "{prefix}/t//" (empty segment).
+                tenant=form.tenant or "",
             ),
             content_type="text/html",
         )
@@ -206,11 +259,17 @@ class FormPageHandler:
         """
         p = _prefix(request)
         form_uid = request.match_info["form_uid"]
-        form = await self.registry.get(form_uid, tenant=None)
+        # FEAT-421 review fix: see gallery()'s comment — resolve the
+        # URL-declared tenant instead of always defaulting.
+        tenant = request.match_info.get("tenant") or None
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.Response(
                 text=page_shell(
-                    "Not Found", error_page("Form not found.", prefix=p), prefix=p
+                    "Not Found",
+                    error_page("Form not found.", prefix=p, tenant=tenant or ""),
+                    prefix=p,
+                    tenant=tenant or "",
                 ),
                 status=404,
                 content_type="text/html",
@@ -233,18 +292,20 @@ class FormPageHandler:
   <pre>{escape(sanitized_json)}</pre>
 </div>
 <div style="display:flex; gap:.75rem;">
-  <a href="{p}/forms/{escape(form_uid)}" class="btn btn-secondary">Fill again</a>
-  <a href="{p}/" class="btn btn-primary">Create another form</a>
+  <a href="{p}/t/{escape(tenant or "")}/forms/{escape(form_uid)}" class="btn btn-secondary">Fill again</a>
+  <a href="{p}/t/{escape(tenant or "")}/" class="btn btn-primary">Create another form</a>
 </div>"""
             return web.Response(
-                text=page_shell(f"{title} - Success", body, prefix=p),
+                text=page_shell(
+                    f"{title} - Success", body, prefix=p, tenant=tenant or ""
+                ),
                 content_type="text/html",
             )
 
         rendered = await self.renderer.render(form, prefilled=submission, errors=result.errors)
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="{p}/forms/{escape(form_uid)}" method="post" ',
+            f'<form action="{p}/t/{escape(tenant or "")}/forms/{escape(form_uid)}" method="post" ',
             1,
         )
         error_count = len(result.errors)
@@ -255,7 +316,10 @@ class FormPageHandler:
         )
         return web.Response(
             text=page_shell(
-                title, f'{banner}<div class="card">{fragment}</div>', prefix=p
+                title,
+                f'{banner}<div class="card">{fragment}</div>',
+                prefix=p,
+                tenant=tenant or "",
             ),
             content_type="text/html",
         )

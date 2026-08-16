@@ -35,6 +35,11 @@ from parrot_formdesigner.services.partial_saves import PartialSaveStore
 from parrot_formdesigner.services.registry import FormRegistry
 
 _FORM_UID = "11111111-1111-1111-1111-111111111111"
+# FEAT-421: fixed tenant shared by _make_form()/_make_request() so
+# FormAPIHandler._get_tenant() (declared_tenant()) resolves consistently
+# and _assert_form_tenant()'s cross-check never fires for these tests,
+# which are not testing tenant enforcement.
+_TEST_TENANT = "test-tenant"
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +98,7 @@ def _make_form(fields: list[FormField] | None = None) -> FormSchema:
     return FormSchema(
         form_id="test-form",
         title="Test Form",
+        tenant=_TEST_TENANT,
         sections=[FormSection(section_id="s1", fields=fields)],
     )
 
@@ -117,6 +123,12 @@ def _make_request(
         req.json = AsyncMock(return_value=body)
     else:
         req.json = AsyncMock(side_effect=ValueError("no body"))
+
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed.
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+    )
 
     return req
 

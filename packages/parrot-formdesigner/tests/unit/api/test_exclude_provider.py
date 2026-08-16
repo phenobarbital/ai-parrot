@@ -13,11 +13,10 @@ Tests verify that:
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from parrot_formdesigner.services.public_forms import public_form_paths
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -151,7 +150,8 @@ class TestExcludeProviderBehavior:
         provider = await self._get_provider(forms)
 
         paths = await provider()
-        expected = public_form_paths(form.form_uid, base_path="/api/v1")
+        # _get_provider() stubs list_tenants() to return ["default"].
+        expected = public_form_paths(form.form_uid, "default", base_path="/api/v1")
 
         assert set(paths) == set(expected)
 
@@ -232,8 +232,8 @@ class TestExcludeProviderStartupOrdering:
     async def test_provider_calls_load_from_storage_when_has_storage(self):
         """Provider calls registry.load_from_storage() when has_storage=True."""
         from parrot_formdesigner.api.routes import setup_form_api
-        from parrot_formdesigner.services.registry import FormRegistry
         from parrot_formdesigner.core.schema import FormSchema
+        from parrot_formdesigner.services.registry import FormRegistry
 
         app, auth = _make_app_with_auth()
         registry = FormRegistry(require_tenant=False)
@@ -282,8 +282,8 @@ class TestExcludeProviderStartupOrdering:
     async def test_provider_iterates_all_tenants(self):
         """Provider collects public forms from all tenants, not just default."""
         from parrot_formdesigner.api.routes import setup_form_api
-        from parrot_formdesigner.services.registry import FormRegistry
         from parrot_formdesigner.core.schema import FormSchema
+        from parrot_formdesigner.services.registry import FormRegistry
 
         app, auth = _make_app_with_auth()
         registry = FormRegistry(require_tenant=False)

@@ -188,6 +188,7 @@ def page_shell(
     locale: str = "en",
     nav: bool = True,
     prefix: str = "",
+    tenant: str = "",
 ) -> str:
     """Wrap body HTML in a full page shell.
 
@@ -203,6 +204,9 @@ def page_shell(
         nav: Whether to include the top navigation links.
         prefix: URL prefix where the form-designer is mounted. Empty
             string = legacy behaviour (routes at root).
+        tenant: FEAT-421 — the URL-declared tenant, embedded in the
+            top navigation's "New Form"/"Gallery" links so they stay on
+            the same tenant rather than dropping the segment.
 
     Returns:
         Complete HTML page string.
@@ -210,10 +214,11 @@ def page_shell(
     p = _normalize_prefix(prefix)
     nav_html = ""
     if nav:
+        t = escape(tenant)
         nav_html = (
             f'<div class="nav">'
-            f'<a href="{p}/">New Form</a>'
-            f'<a href="{p}/gallery">Gallery</a>'
+            f'<a href="{p}/t/{t}/">New Form</a>'
+            f'<a href="{p}/t/{t}/gallery">Gallery</a>'
             f'</div>'
         )
     return f"""\
@@ -233,7 +238,7 @@ def page_shell(
 </html>"""
 
 
-def index_page(prefix: str = "") -> str:
+def index_page(prefix: str = "", tenant: str = "") -> str:
     """Return the HTML body for the index page (prompt builder + DB loader).
 
     The embedded JavaScript declares a ``FORM_PREFIX`` constant so all
@@ -242,6 +247,9 @@ def index_page(prefix: str = "") -> str:
 
     Args:
         prefix: URL prefix where the form-designer is mounted.
+        tenant: FEAT-421 — the URL-declared tenant, embedded in the
+            create-form/load-from-db ``fetch()`` calls so they hit the
+            tenant-qualified API routes.
 
     Returns:
         HTML body string for the landing page.
@@ -296,6 +304,7 @@ def index_page(prefix: str = "") -> str:
 
 <script>
 const FORM_PREFIX = {p!r};
+const TENANT = {tenant!r};
 function showError(container, message) {{
   const banner = document.createElement('div');
   banner.className = 'error-banner';
@@ -321,7 +330,7 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
   status.style.display = 'block';
   status.innerHTML = '<em>Generating form...</em>';
   try {{
-    const res = await fetch(FORM_PREFIX + '/api/v1/forms', {{method:'POST',
+    const res = await fetch(FORM_PREFIX + '/api/v1/t/' + TENANT + '/forms', {{method:'POST',
       headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{prompt}})}});
     const data = await res.json();
     if (!res.ok) {{ showError(status, data.error || 'Something went wrong'); return; }}
@@ -338,7 +347,7 @@ async function loadFromDB() {{
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Loading...';
   status.style.display = 'block'; status.innerHTML = '<em>Loading...</em>';
   try {{
-    const res = await fetch(FORM_PREFIX + '/api/v1/forms/from-db', {{method:'POST',
+    const res = await fetch(FORM_PREFIX + '/api/v1/t/' + TENANT + '/forms/from-db', {{method:'POST',
       headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{formid, orgid}})}});
     const data = await res.json();
     if (!res.ok) {{ showError(status, data.error || 'Failed to load'); return; }}
@@ -396,6 +405,7 @@ def schema_page(
     schema_json: str,
     style_json: str,
     prefix: str = "",
+    tenant: str = "",
 ) -> str:
     """Return the HTML body for the JSON Schema view page.
 
@@ -407,18 +417,22 @@ def schema_page(
         schema_json: Pretty-printed JSON Schema string.
         style_json: Pretty-printed Style Schema string.
         prefix: URL prefix where the form-designer is mounted.
+        tenant: FEAT-421 — the form's tenant, embedded in the "View Form"
+            link and the API Endpoints help text so both stay accurate
+            against the tenant-qualified route table.
 
     Returns:
         HTML body string with the JSON schema display.
     """
     p = _normalize_prefix(prefix)
+    t = escape(tenant)
     return f"""\
 <h1>JSON Schema: {escape(title)}</h1>
 <p>Structural JSON Schema for form <code>{escape(form_uid)}</code>.</p>
 
 <div style="display:flex; gap:.75rem; margin-bottom:1rem;">
-  <a href="{p}/forms/{escape(form_uid)}" class="btn btn-secondary">View Form</a>
-  <a href="{p}/gallery" class="btn btn-secondary">Gallery</a>
+  <a href="{p}/t/{t}/forms/{escape(form_uid)}" class="btn btn-secondary">View Form</a>
+  <a href="{p}/t/{t}/gallery" class="btn btn-secondary">Gallery</a>
 </div>
 
 <div class="card">
@@ -434,20 +448,22 @@ def schema_page(
 <div class="card">
   <h2 style="margin-bottom:.5rem;">API Endpoints</h2>
   <ul style="margin:0; padding-left:1.2rem;">
-    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}</code> — Full FormSchema (JSON)</li>
-    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}/schema</code> — JSON Schema</li>
-    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}/style</code> — Style Schema</li>
-    <li><code>GET {p}/api/v1/forms/{escape(form_uid)}/html</code> — Rendered HTML fragment</li>
+    <li><code>GET {p}/api/v1/t/{t}/forms/{escape(form_uid)}</code> — Full FormSchema (JSON)</li>
+    <li><code>GET {p}/api/v1/t/{t}/forms/{escape(form_uid)}/schema</code> — JSON Schema</li>
+    <li><code>GET {p}/api/v1/t/{t}/forms/{escape(form_uid)}/style</code> — Style Schema</li>
+    <li><code>GET {p}/api/v1/t/{t}/forms/{escape(form_uid)}/html</code> — Rendered HTML fragment</li>
   </ul>
 </div>"""
 
 
-def error_page(message: str, prefix: str = "") -> str:
+def error_page(message: str, prefix: str = "", tenant: str = "") -> str:
     """Return an error page body.
 
     Args:
         message: Human-readable error message.
         prefix: URL prefix where the form-designer is mounted.
+        tenant: FEAT-421 — the URL-declared tenant, embedded in the "Go
+            back" link so it stays on the same tenant.
 
     Returns:
         HTML body string with the error banner.
@@ -455,5 +471,5 @@ def error_page(message: str, prefix: str = "") -> str:
     p = _normalize_prefix(prefix)
     return (
         f'<div class="error-banner">{escape(message)}</div>'
-        f'<a href="{p}/">Go back</a>'
+        f'<a href="{p}/t/{escape(tenant)}/">Go back</a>'
     )

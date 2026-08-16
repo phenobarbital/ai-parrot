@@ -247,10 +247,49 @@ class TestBodyCrossCheck:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: `_get_tenant` body replaced with `declared_tenant(request)`
+(signature preserved; all 21 forms call-site LINES unmodified — verified
+by grep count). Added `_session_tenant` carrying the pre-0.9.0 logic
+verbatim; repointed exactly the 9 classified `/org/*` call sites (verified
+by grep count: 9 `_session_tenant(request)`, 21 `_get_tenant(request)`).
+Added `_assert_form_tenant(form, tenant)` — raises `web.HTTPNotFound` (404,
+never 403) — and called it at all 12 sites where a forms handler resolves
+a form via `registry.get`/`get_by_slug` and returns it to the caller
+(`list_forms`, `get_form`, `get_schema`, `get_style`, `remote_event`,
+`validate`, `edit_form`, `update_form`, `patch_form`, `delete_form`,
+`submit_data`, `list_versions`). Added `assert_body_tenant_matches(body,
+tenant)` at exactly the 3 classified write sites (`create_blank_form`,
+`update_form`, `patch_form`). Deleted the `request["tenant_context"]` read
+— `grep -n "tenant_context" .../handlers.py` returns nothing (including
+docstrings, reworded to avoid the literal string).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Flagged for spec-owner visibility** (not fixed, out of scope — not in
+the 30-call-site classification table, and not listed in this task's
+Scope): `save_partial`/`get_partial`/`delete_partial` (the FEAT-186
+partial-save endpoints) call `registry.get(form_uid)` with **no tenant
+argument at all** — they don't call `_get_tenant`/`_session_tenant`
+anywhere, silently resolving to `registry.default_tenant`. These ARE
+forms paths (`POST/GET/DELETE /forms/{form_uid}/partial`), so this is in
+tension with this task's own AC "No forms path can reach
+registry.default_tenant". Since the spec's Codebase Contract explicitly
+enumerates exactly 30 `_get_tenant` call sites as exhaustive and this
+task's Scope never mentions these three methods, I did not touch them —
+recommend a follow-up task.
 
-**Deviations from spec**: none | describe if any
+Also confirmed `_assert_form_tenant` is defense-in-depth rather than the
+sole gate: `registry.get(uid, tenant=t)`/`get_by_slug` are already
+tenant-scoped internally (a form under a different tenant is invisible,
+returning `None`), so `test_cross_tenant_form_returns_404` would pass even
+without this assertion — it exists to fail loudly if a future resolver
+change bypasses tenant-scoping, per the task's own framing.
+
+Full `tests/unit/` suite: confirmed via before/after diff against the
+post-TASK-2201 baseline that **zero** additional tests broke (still
+exactly the same 41 pre-existing/deferred-to-TASK-2206 failures). New test
+file: 13/13 passing. `handlers.py` lint diff-count unchanged (46/46 —
+pre-existing, unrelated debt).
+
+**Deviations from spec**: none (see the flagged partial-save gap above,
+documented for reviewer visibility, not a unilateral scope change).

@@ -203,6 +203,22 @@ class AudioFormWSHandler:
         if user is None:
             return ws
 
+        # Step 1.5: Tenant declaration (FEAT-421). This route is NOT
+        # `_wrap_auth`-ed — navigator-auth's decorators return HTTP 401,
+        # incompatible with the WS upgrade handshake — so the tenant check
+        # is inline here, after JWT validation and before the form is ever
+        # resolved (see spec §7 "Known Risks": audio WS cannot use the
+        # requires_tenant decorator). By the time we're here, ws.prepare()
+        # has already sent the HTTP 101 response, so a missing/invalid
+        # tenant is reported as a WS close, never an HTTP 400.
+        declared_tenant = request.match_info.get("tenant")
+        if not declared_tenant:
+            await self._send_error(
+                ws, "TENANT_NOT_DECLARED", "This endpoint requires an explicit tenant."
+            )
+            await ws.close(code=1008, message=b"tenant_not_declared")
+            return ws
+
         form_uid = request.match_info.get("form_uid", "")
         session = AudioSessionState(
             session_id=str(uuid.uuid4()),
@@ -438,10 +454,32 @@ class AudioFormWSHandler:
         config = self._build_session_config(form_uid, locale, data)
         session.config = config
 
-        # Load form
-        form = await self.registry.get(form_uid, tenant=None)
+        # Load form — tenant-scoped by the declaration validated in
+        # handle_websocket (FEAT-421). `request.match_info["tenant"]` is
+        # guaranteed non-empty here: handle_websocket closes the socket
+        # before the message loop (and thus before start_session can ever
+        # be dispatched) when the tenant is missing.
+        declared_tenant = request.match_info.get("tenant")
+        form = await self.registry.get(form_uid, tenant=declared_tenant)
         if form is None:
             await self._send_error(ws, "FORM_NOT_FOUND", f"Form '{form_uid}' not found")
+            return
+        if form.tenant != declared_tenant:
+            # Defense-in-depth: registry.get() is already tenant-scoped, so
+            # this should never fire — see the equivalent
+            # FormAPIHandler._assert_form_tenant (TASK-2202). Close rather
+            # than serve the form; never a 403 (existence oracle).
+            self.logger.warning(
+                "Cross-tenant audio session blocked: form_uid=%s form.tenant=%s "
+                "declared=%s",
+                form_uid,
+                form.tenant,
+                declared_tenant,
+            )
+            await self._send_error(
+                ws, "TENANT_MISMATCH", "Form belongs to a different tenant."
+            )
+            await ws.close(code=1008, message=b"tenant_mismatch")
             return
 
         # Build manifest
@@ -469,7 +507,7 @@ class AudioFormWSHandler:
             title=form_title,
             total_questions=len(questions),
             questions=questions,
-            ws_endpoint=f"/api/v1/forms/{form_uid}/audio/ws",
+            ws_endpoint=f"/api/v1/t/{declared_tenant}/forms/{form_uid}/audio/ws",
             locale=locale,
         )
 

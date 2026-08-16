@@ -459,8 +459,13 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 "mode": rest_meta.get("mode"),
                 "response_path": rest_meta.get("response_path"),
                 "display_template": rest_meta.get("display_template"),
+                # FEAT-421: `{tenant}` is a client-side template placeholder
+                # — like the pre-existing `{form_id}`/`{field_id}` — that
+                # the consumer substitutes with the real tenant slug before
+                # issuing the upload request (see docs/migration/
+                # feat-421-forms-tenant-in-url.md).
                 "upload_url_template": (
-                    "/api/v1/forms/{form_id}/fields/{field_id}/upload"
+                    "/api/v1/t/{tenant}/forms/{form_id}/fields/{field_id}/upload"
                 ),
                 "additional_args": all_args,
                 "public_args": public_args,

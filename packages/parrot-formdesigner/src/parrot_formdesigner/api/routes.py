@@ -40,6 +40,7 @@ from . import operations as operations_module
 from . import render as render_module
 from . import uploads as uploads_module
 from .handlers import FormAPIHandler
+from .tenant import requires_tenant
 
 
 if TYPE_CHECKING:
@@ -65,19 +66,38 @@ logger = logging.getLogger(__name__)
 
 _Handler = Callable[[web.Request], Awaitable[web.Response]]
 
+_TENANT_MODES = ("required", "public", "none")
 
-def _wrap_auth(handler: _Handler) -> _Handler:
+
+def _wrap_auth(handler: _Handler, *, tenant: str = "required") -> _Handler:
     """Wrap a handler with navigator-auth ``is_authenticated`` + ``user_session``.
 
     Mirrors the previous ``handlers/routes.py:_wrap_auth`` shape, but without
     the ``_AUTH_AVAILABLE`` fallback — navigator-auth is a hard dep here.
+    Also composes the ``requires_tenant`` decorator (FEAT-421) as the
+    innermost layer, so it runs after ``user_session`` has populated
+    ``request.session`` and before the handler body.
 
     Args:
         handler: A bound async coroutine accepting ``request: web.Request``.
+        tenant: Tenant-enforcement mode — one of ``"required"`` (forms
+            routes: declare + authorize, the default so a newly added forms
+            route is protected by omission), ``"public"`` (public-form
+            routes: declare, skip authorization), or ``"none"`` (``/org/*``
+            routes: no tenant layer at all).
 
     Returns:
         The decorated handler.
+
+    Raises:
+        ValueError: ``tenant`` is not one of the three valid modes.
     """
+    if tenant not in _TENANT_MODES:
+        raise ValueError(f"tenant must be one of {_TENANT_MODES}, got {tenant!r}")
+
+    tenant_applied = tenant != "none"
+    if tenant_applied:
+        handler = requires_tenant(public=(tenant == "public"))(handler)
 
     @wraps(handler)
     async def _inner(request: web.Request, **kwargs) -> web.Response:
@@ -88,6 +108,8 @@ def _wrap_auth(handler: _Handler) -> _Handler:
 
     decorated = user_session()(_inner)
     decorated = is_authenticated(content_type="application/json")(decorated)
+    if tenant_applied:
+        decorated._requires_tenant = True
     return decorated
 
 
@@ -202,91 +224,112 @@ def setup_form_api(
     )
 
     bp = base_path.rstrip("/")
+    # FEAT-421: every FORMS route is mounted under a literal `t/{tenant}`
+    # marker segment so the tenant is a declared, cross-checkable path
+    # component rather than an inferred value. The `t` marker removes
+    # router ambiguity between `/forms/{tenant}` and `/forms/{form_uid}`
+    # (both one path segment) and keeps the forms namespace visibly
+    # disjoint from `/org/*`, which is UNCHANGED (spec G7, AC11).
+    tp = f"{bp}/t/{{tenant}}"
 
     # CRUD + listing
-    app.router.add_get(f"{bp}/forms", _wrap_auth(handler.list_forms))
-    app.router.add_post(f"{bp}/forms", _wrap_auth(handler.create_form))
-    app.router.add_post(f"{bp}/forms/from-db", _wrap_auth(handler.load_from_db))
+    app.router.add_get(f"{tp}/forms", _wrap_auth(handler.list_forms))
+    app.router.add_post(f"{tp}/forms", _wrap_auth(handler.create_form))
+    app.router.add_post(f"{tp}/forms/from-db", _wrap_auth(handler.load_from_db))
     # Blank form creation (FEAT-389) — MUST be registered BEFORE the
     # {form_uid} catch-all routes below, so the literal "blank" segment is
     # never captured as a form_uid path param.
-    app.router.add_post(f"{bp}/forms/blank", _wrap_auth(handler.create_blank_form))
-    app.router.add_get(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.get_form))
-    app.router.add_put(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.update_form))
-    app.router.add_patch(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.patch_form))
-    app.router.add_delete(f"{bp}/forms/{{form_uid}}", _wrap_auth(handler.delete_form))
+    app.router.add_post(f"{tp}/forms/blank", _wrap_auth(handler.create_blank_form))
+    # GET /forms/{form_uid} is the one CRUD route also reachable by public
+    # forms (is_public=True) — tenant="public" skips authorization (the
+    # form's is_public flag IS the grant) but the tenant is still mandatory.
+    app.router.add_get(
+        f"{tp}/forms/{{form_uid}}",
+        _wrap_auth(handler.get_form, tenant="public"),
+    )
+    app.router.add_put(f"{tp}/forms/{{form_uid}}", _wrap_auth(handler.update_form))
+    app.router.add_patch(f"{tp}/forms/{{form_uid}}", _wrap_auth(handler.patch_form))
+    app.router.add_delete(f"{tp}/forms/{{form_uid}}", _wrap_auth(handler.delete_form))
 
     # Natural language editing
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/edit", _wrap_auth(handler.edit_form)
+        f"{tp}/forms/{{form_uid}}/edit", _wrap_auth(handler.edit_form)
     )
 
     # Clone endpoint
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form)
+        f"{tp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form)
     )
 
-    # Contract endpoints (schema, style)
+    # Contract endpoints (schema, style). /schema is one of the five
+    # public-form globs (services/public_forms.py); /style is not.
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/schema", _wrap_auth(handler.get_schema)
+        f"{tp}/forms/{{form_uid}}/schema",
+        _wrap_auth(handler.get_schema, tenant="public"),
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/style", _wrap_auth(handler.get_style)
-    )
-
-    # Render dispatcher (path-param format)
-    app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/render/{{format}}",
-        _wrap_auth(render_module.handle_render),
+        f"{tp}/forms/{{form_uid}}/style", _wrap_auth(handler.get_style)
     )
 
-    # Validation + submissions
+    # Render dispatcher (path-param format) — a public-form glob.
+    app.router.add_get(
+        f"{tp}/forms/{{form_uid}}/render/{{format}}",
+        _wrap_auth(render_module.handle_render, tenant="public"),
+    )
+
+    # Validation + submissions — both public-form globs.
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/validate", _wrap_auth(handler.validate)
+        f"{tp}/forms/{{form_uid}}/validate",
+        _wrap_auth(handler.validate, tenant="public"),
     )
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/data", _wrap_auth(handler.submit_data)
+        f"{tp}/forms/{{form_uid}}/data",
+        _wrap_auth(handler.submit_data, tenant="public"),
     )
 
-    # Form-controls toolbar metadata
+    # Form-controls toolbar metadata — static, tenant-agnostic field-type
+    # catalog (no registry access, no per-tenant data). Path unchanged,
+    # not under {tp}: tenant="none", same carve-out as /org/*.
     app.router.add_get(
         f"{bp}/form-controls",
-        _wrap_auth(controls_module.handle_form_controls),
+        _wrap_auth(controls_module.handle_form_controls, tenant="none"),
     )
 
     # Atomic batched-edit endpoint (Wave 2d replaces the stub body)
     app.router.add_patch(
-        f"{bp}/forms/{{form_uid}}/operations",
+        f"{tp}/forms/{{form_uid}}/operations",
         _wrap_auth(operations_module.handle_operations),
     )
 
     # REST field upload endpoint (Phase 3 — FEAT-170; field_uid FEAT-393)
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/fields/{{field_uid}}/upload",
+        f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/upload",
         _wrap_auth(uploads_module.handle_rest_upload),
     )
 
     # Partial saves (FEAT-186)
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial)
+        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/partial", _wrap_auth(handler.get_partial)
+        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.get_partial)
     )
     app.router.add_delete(
-        f"{bp}/forms/{{form_uid}}/partial", _wrap_auth(handler.delete_partial)
+        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.delete_partial)
     )
 
     # Remote lifecycle event bridge (FEAT-188)
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/events/{{event_name}}",
+        f"{tp}/forms/{{form_uid}}/events/{{event_name}}",
         _wrap_auth(handler.remote_event),
     )
 
     # Audio WebSocket endpoint (FEAT-224, FEAT-236) — NOT wrapped with
     # _wrap_auth. JWT auth is handled inside AudioFormWSHandler via
     # TokenValidator because navigator-auth decorators return HTTP 401, which is
-    # incompatible with the WebSocket upgrade handshake.
+    # incompatible with the WebSocket upgrade handshake. FEAT-421: its tenant
+    # check is inline inside the handler (TASK-2204), not this decorator —
+    # deliberately left undecorated, see spec §7 "Known Risks".
     #
     # FEAT-236: when audio is intended (transcriber/token_validator provided)
     # but no explicit ``synthesizer`` is injected, the handler synthesizes TTS
@@ -308,71 +351,79 @@ def setup_form_api(
             auto_synthesize=synthesizer is None,
         )
         app.router.add_get(
-            f"{bp}/forms/{{form_uid}}/audio/ws",
+            f"{tp}/forms/{{form_uid}}/audio/ws",
             audio_handler.handle_websocket,
         )
-        logger.info("setup_form_api: audio WS endpoint mounted at %s/forms/{form_uid}/audio/ws", bp)
+        logger.info("setup_form_api: audio WS endpoint mounted at %s/t/{tenant}/forms/{form_uid}/audio/ws", bp)
     # FEAT-300 — publish, question-bank, version history, import-report
     # Note: /versions and /import-report routes are registered BEFORE the
     # generic /{form_uid} catch-all to avoid shadowing issues if the router
     # were order-sensitive (aiohttp matches on specificity, but belt-and-braces).
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}/publish", _wrap_auth(handler.publish_form)
+        f"{tp}/forms/{{form_uid}}/publish", _wrap_auth(handler.publish_form)
     )
     app.router.add_get(
-        f"{bp}/fields", _wrap_auth(handler.list_fields)
+        f"{tp}/fields", _wrap_auth(handler.list_fields)
     )
     app.router.add_post(
-        f"{bp}/fields", _wrap_auth(handler.create_field)
+        f"{tp}/fields", _wrap_auth(handler.create_field)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/versions", _wrap_auth(handler.list_versions)
+        f"{tp}/forms/{{form_uid}}/versions", _wrap_auth(handler.list_versions)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/versions/{{version}}",
+        f"{tp}/forms/{{form_uid}}/versions/{{version}}",
         _wrap_auth(handler.get_version),
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/import-report",
+        f"{tp}/forms/{{form_uid}}/import-report",
         _wrap_auth(handler.get_import_report),
     )
 
     # FEAT-302 — Org Graph + RBAC + Projects + Workday sync
+    # FEAT-421 G7: the /org/* surface is untouched — paths stay
+    # byte-identical to 0.8.21 and none of them carries the tenant
+    # decorator (tenant="none"). Organizations are the layer that
+    # *defines* tenants; scoping them by one would invert the dependency.
     app.router.add_get(
-        f"{bp}/org/graph", _wrap_auth(handler.get_org_graph)
+        f"{bp}/org/graph", _wrap_auth(handler.get_org_graph, tenant="none")
     )
     app.router.add_post(
-        f"{bp}/org/projects", _wrap_auth(handler.create_project)
+        f"{bp}/org/projects", _wrap_auth(handler.create_project, tenant="none")
     )
     app.router.add_post(
         f"{bp}/org/cost-centers/{{project_id}}/workday-map",
-        _wrap_auth(handler.map_project_workday),
+        _wrap_auth(handler.map_project_workday, tenant="none"),
     )
     app.router.add_post(
         f"{bp}/org/users/{{user_id}}/assign",
-        _wrap_auth(handler.assign_user_role),
+        _wrap_auth(handler.assign_user_role, tenant="none"),
     )
     app.router.add_post(
-        f"{bp}/org/sync/workday", _wrap_auth(handler.sync_workday_identities)
+        f"{bp}/org/sync/workday",
+        _wrap_auth(handler.sync_workday_identities, tenant="none"),
     )
 
     # FEAT-330 — Store sub-structure (Store → Site → Location)
     app.router.add_get(
-        f"{bp}/org/stores/{{store_id}}/sites", _wrap_auth(handler.list_sites)
+        f"{bp}/org/stores/{{store_id}}/sites",
+        _wrap_auth(handler.list_sites, tenant="none"),
     )
     app.router.add_post(
-        f"{bp}/org/stores/{{store_id}}/sites", _wrap_auth(handler.create_site)
+        f"{bp}/org/stores/{{store_id}}/sites",
+        _wrap_auth(handler.create_site, tenant="none"),
     )
     app.router.add_get(
         f"{bp}/org/sites/{{site_id}}/locations",
-        _wrap_auth(handler.list_locations),
+        _wrap_auth(handler.list_locations, tenant="none"),
     )
     app.router.add_post(
         f"{bp}/org/sites/{{site_id}}/locations",
-        _wrap_auth(handler.create_location),
+        _wrap_auth(handler.create_location, tenant="none"),
     )
     app.router.add_get(
-        f"{bp}/org/locations/{{location_id}}", _wrap_auth(handler.get_location)
+        f"{bp}/org/locations/{{location_id}}",
+        _wrap_auth(handler.get_location, tenant="none"),
     )
 
     # FEAT-241 M6: Wire is_public toggle → auth exclude list.
@@ -394,11 +445,47 @@ def setup_form_api(
                 # with form_uid (not form_id) — see registry.py's register()/
                 # unregister() firing sites. Routes are form_uid-based
                 # (TASK-1976), so exclusion patterns must match.
-                paths = public_form_paths(form_uid, base_path=_bp)
+                #
+                # FEAT-421: public_form_paths() now needs the form's tenant to
+                # build a tenant-qualified glob. The callback signature is
+                # fixed to (form_uid, is_public) — FormRegistry is unchanged
+                # by this feature — so the tenant is resolved HERE, at
+                # callback time, rather than cached from an earlier lookup:
+                # a form can be re-tenanted while staying public (no toggle
+                # fires on tenant change alone), so a cached tenant value
+                # could register/unregister the wrong tenant's exemption.
                 if is_public:
-                    _auth.register_exclusions(paths)
+                    tenant = None
+                    for candidate_tenant in await registry.list_tenants():
+                        if await registry.get(form_uid, tenant=candidate_tenant):
+                            tenant = candidate_tenant
+                            break
+                    if tenant is None:
+                        logger.warning(
+                            "setup_form_api: public_toggle could not resolve "
+                            "a tenant for form_uid=%s — exclusion registration "
+                            "skipped",
+                            form_uid,
+                        )
+                        return
+                    _auth.register_exclusions(
+                        public_form_paths(form_uid, tenant, base_path=_bp)
+                    )
                 else:
-                    _auth.unregister_exclusions(paths)
+                    # The form may already be gone (unregister() fires this
+                    # callback AFTER removing the form — FEAT-241) or may
+                    # have been re-tenanted since it was registered, so its
+                    # current/former tenant cannot be resolved reliably.
+                    # Sweep every known tenant: unregistering a glob that
+                    # was never registered is a harmless no-op, and this is
+                    # the only way to guarantee no stale exemption survives
+                    # a delete or a re-tenant.
+                    for candidate_tenant in await registry.list_tenants():
+                        _auth.unregister_exclusions(
+                            public_form_paths(
+                                form_uid, candidate_tenant, base_path=_bp
+                            )
+                        )
 
             registry.set_public_toggle_callback(_public_toggle)
             logger.info(
@@ -440,7 +527,9 @@ def setup_form_api(
                     for form in await registry.list_forms(tenant=tenant):
                         if form.is_public:
                             paths.extend(
-                                public_form_paths(form.form_uid, base_path=_bp_m7)
+                                public_form_paths(
+                                    form.form_uid, tenant, base_path=_bp_m7
+                                )
                             )
             except Exception as exc:
                 logger.warning(

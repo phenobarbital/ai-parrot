@@ -14,14 +14,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import web
-
-from parrot_formdesigner.api.render import _RENDERERS, _seed_default_renderers, handle_render
+from parrot_formdesigner.api.render import (
+    _RENDERERS,
+    _seed_default_renderers,
+    handle_render,
+)
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers.telegram.renderer import TelegramRenderer
 from parrot_formdesigner.renderers.telegram.router import TelegramFormRouter
 from parrot_formdesigner.services.registry import FormRegistry
-
 
 # ---------------------------------------------------------------------------
 # Registry spy
@@ -45,12 +47,19 @@ class TenantCapturingRegistry(FormRegistry):
 # ---------------------------------------------------------------------------
 
 
-def _make_session_middleware(programs: list[str]):
-    """Return an aiohttp middleware that attaches a fake navigator-auth session.
+def _make_tenant_middleware(tenant: str):
+    """Return an aiohttp middleware that stashes the URL-declared tenant.
+
+    FEAT-421: the tenant is a client declaration in the URL, validated by
+    the ``requires_tenant`` decorator (``api/tenant.py``) at route
+    registration time — it stashes the validated value under
+    ``request["tenant"]``, which ``declared_tenant()`` then reads. This
+    middleware simulates that stash point directly (bypassing the full
+    decorator's session/authorization machinery) so this test can stay
+    focused on the tenant → ``registry.get()`` propagation path.
 
     Args:
-        programs: List of program slugs to expose as ``programs`` in the session.
-            The first slug is what ``_get_request_tenant`` returns.
+        tenant: The tenant slug to stash on every request.
 
     Returns:
         An aiohttp-compatible middleware coroutine.
@@ -58,7 +67,7 @@ def _make_session_middleware(programs: list[str]):
 
     @web.middleware
     async def _middleware(request: web.Request, handler):
-        request.session = {"session": {"programs": programs}}  # type: ignore[attr-defined]
+        request["tenant"] = tenant
         return await handler(request)
 
     return _middleware
@@ -79,11 +88,17 @@ def _seed_renderers():
 
 @pytest.mark.asyncio
 async def test_handlers_pass_tenant_to_registry(aiohttp_client) -> None:
-    """End-to-end: a session carrying tenant='epson' flows into registry.get(tenant='epson').
+    """End-to-end: a URL-declared tenant='epson' flows into registry.get(tenant='epson').
 
-    Uses the render handler (``handle_render``) with the ``html`` format,
-    which calls ``_get_request_tenant(request)`` to extract the tenant from
-    the navigator-auth session, then passes it to ``registry.get()``.
+    FEAT-421: rewritten from session-derived to URL-declared tenant
+    resolution. The original version of this test asserted the exact
+    inference this feature removes from the forms HTTP boundary — a
+    session's ``programs[0]`` determining the tenant — which is the
+    NAV-9370/9372 bug (an arbitrarily-ordered session default is not a
+    statement of which programme a request is about). Uses the render
+    handler (``handle_render``), which now calls ``declared_tenant(request)``
+    to read the tenant validated by ``requires_tenant`` (simulated here by
+    ``_make_tenant_middleware``), then passes it to ``registry.get()``.
 
     The ``TenantCapturingRegistry`` spy records the ``tenant=`` kwarg so we
     can assert it equals ``"epson"`` rather than ``None`` or ``"navigator"``.
@@ -96,6 +111,10 @@ async def test_handlers_pass_tenant_to_registry(aiohttp_client) -> None:
         form_id="intake-epson",
         title={"en": "Intake"},
         tenant="epson",
+        # FEAT-421: handle_render() calls enforce_membership_unless_public()
+        # after resolving the form; mark it public so this tenant-routing
+        # test doesn't need session/programs scaffolding.
+        is_public=True,
         sections=[
             FormSection(
                 section_id="s1",
@@ -111,13 +130,15 @@ async def test_handlers_pass_tenant_to_registry(aiohttp_client) -> None:
     )
     await registry.register(form)
 
-    middleware = _make_session_middleware(["epson"])
+    middleware = _make_tenant_middleware("epson")
     app = web.Application(middlewares=[middleware])
     app["form_registry"] = registry
-    app.router.add_get("/api/v1/forms/{form_uid}/render/{format}", handle_render)
+    app.router.add_get(
+        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}", handle_render
+    )
 
     client = await aiohttp_client(app)
-    resp = await client.get(f"/api/v1/forms/{form.form_uid}/render/html")
+    resp = await client.get(f"/api/v1/t/epson/forms/{form.form_uid}/render/html")
 
     # The form exists under tenant="epson"; with the session carrying "epson",
     # the handler should find it and return 200.
