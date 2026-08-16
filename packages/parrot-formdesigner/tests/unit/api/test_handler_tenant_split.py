@@ -213,3 +213,88 @@ class TestBodyCrossCheck:
         request.json = _json
         resp = await handler.create_blank_form(request)
         assert resp.status == 201
+
+
+class TestPutPatchTenantStamp:
+    """FEAT-421 review fix (2nd pass, CRITICAL — codex P1 finding).
+
+    ``assert_body_tenant_matches()`` only rejects a CONFLICTING body
+    tenant; it is a no-op when the field is omitted or explicitly null,
+    both valid per ``FormSchema.tenant: str | None = None``. Without
+    unconditionally stamping the URL-declared tenant back onto the body
+    before ``FormSchema.model_validate()``, an ordinary PUT/PATCH that
+    doesn't round-trip the optional ``tenant`` field would silently
+    persist ``form.tenant=None`` — permanently 404ing the form for its own
+    rightful owner on every subsequent tenant-scoped read.
+    """
+
+    async def test_put_without_body_tenant_does_not_corrupt_form_tenant(
+        self, handler, registry
+    ):
+        form = FormSchema(
+            form_id="contact",
+            title={"en": "Contact"},
+            tenant="flexroc",
+            sections=[],
+        )
+        await registry.register(form, tenant="flexroc")
+
+        body = form.model_dump(mode="json", exclude_none=True)
+        body.pop("tenant", None)  # legitimate client omission
+
+        put_request = make_mocked_request(
+            "PUT",
+            f"/api/v1/t/flexroc/forms/{form.form_uid}",
+            match_info={"form_uid": str(form.form_uid)},
+        )
+        put_request["tenant"] = "flexroc"
+
+        async def _json():
+            return body
+
+        put_request.json = _json
+        put_resp = await handler.update_form(put_request)
+        assert put_resp.status == 200
+
+        # The form must still be readable under its original tenant.
+        get_request = _request(
+            tenant="flexroc",
+            session_programs=["flexroc"],
+            match_info={"form_uid": str(form.form_uid)},
+        )
+        get_resp = await handler.get_form(get_request)
+        assert get_resp.status == 200
+
+    async def test_patch_with_null_body_tenant_does_not_corrupt_form_tenant(
+        self, handler, registry
+    ):
+        form = FormSchema(
+            form_id="contact",
+            title={"en": "Contact"},
+            tenant="flexroc",
+            sections=[],
+        )
+        await registry.register(form, tenant="flexroc")
+
+        patch_request = make_mocked_request(
+            "PATCH",
+            f"/api/v1/t/flexroc/forms/{form.form_uid}",
+            match_info={"form_uid": str(form.form_uid)},
+        )
+        patch_request["tenant"] = "flexroc"
+
+        async def _json():
+            # RFC 7396: an explicit null deletes the key on merge.
+            return {"tenant": None}
+
+        patch_request.json = _json
+        patch_resp = await handler.patch_form(patch_request)
+        assert patch_resp.status == 200
+
+        get_request = _request(
+            tenant="flexroc",
+            session_programs=["flexroc"],
+            match_info={"form_uid": str(form.form_uid)},
+        )
+        get_resp = await handler.get_form(get_request)
+        assert get_resp.status == 200

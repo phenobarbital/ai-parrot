@@ -1283,6 +1283,16 @@ class FormAPIHandler:
         # FormVersionService.publish() may set it (review M1).
         body.pop("published_version", None)
         body["published_version"] = existing.published_version
+        # FEAT-421 review fix (2nd pass, CRITICAL): assert_body_tenant_matches()
+        # only rejects a CONFLICTING body tenant — it is a no-op when the
+        # field is omitted or null, both valid per FormSchema.tenant's
+        # `str | None = None` type. Without this stamp, an ordinary client
+        # that doesn't round-trip the optional `tenant` field would
+        # silently persist form.tenant=None while the form still lives
+        # under the correct registry bucket — permanently 404ing it on
+        # every subsequent tenant-scoped read via _assert_form_tenant. The
+        # URL is authoritative (spec §2): always stamp it, unconditionally.
+        body["tenant"] = tenant
 
         try:
             form = FormSchema.model_validate(body)
@@ -1351,6 +1361,14 @@ class FormAPIHandler:
         # published_version is immutable from the API surface — only
         # FormVersionService.publish() may set it (review M1).
         merged["published_version"] = existing.published_version
+        # FEAT-421 review fix (2nd pass, CRITICAL — same fix as update_form):
+        # assert_body_tenant_matches() only rejects a CONFLICTING body
+        # tenant. A PATCH body of {"tenant": null} would additionally
+        # survive RFC 7396 merge semantics as an explicit key deletion via
+        # _deep_merge, corrupting form.tenant to None on an otherwise
+        # correctly tenant-scoped form. The URL is authoritative (spec
+        # §2): always stamp it, unconditionally, after the merge.
+        merged["tenant"] = tenant
 
         try:
             form = FormSchema.model_validate(merged)
