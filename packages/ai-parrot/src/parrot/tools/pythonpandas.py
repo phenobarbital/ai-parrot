@@ -42,20 +42,12 @@ class PythonPandasTool(PythonREPLTool):
     args_schema = PythonREPLArgs
 
     # Available plotting libraries configuration
+    # NOTE (FEAT-423): matplotlib/seaborn are NOT available — they are
+    # blocked in the sandbox. Standard charts should be returned as
+    # structured data (the system renders them automatically via
+    # structured-chart/A2UI); altair is the sole fallback for complex
+    # visualizations (heatmaps, correlation matrices, network graphs).
     PLOTTING_LIBRARIES = {
-        'matplotlib': {
-            'import_as': 'plt',
-            'import_statement': 'import matplotlib.pyplot as plt',
-            'description': 'Traditional plotting library with extensive customization',
-            'best_for': ['statistical plots', 'publication-quality figures', 'fine-grained control'],
-            'examples': [
-                'plt.figure(figsize=(10, 6))',
-                'plt.plot(df1["column"], df1["value"])',
-                'plt.hist(df1["numeric_column"], bins=20)',
-                'plt.scatter(df1["x"], df1["y"])',
-                'save_current_plot("my_plot.png")'
-            ]
-        },
         'plotly': {
             'import_as': 'px, go, pio',
             'import_statement': 'import plotly.express as px\nimport plotly.graph_objects as go\nimport plotly.io as pio',
@@ -210,10 +202,9 @@ class PythonPandasTool(PythonREPLTool):
     ) -> 'PythonPandasTool':
         """Create a lightweight, session-isolated clone of this tool.
 
-        The clone shares the heavy infrastructure (matplotlib backend,
-        library imports, plot utilities, executor) but gets its own
-        ``locals`` / ``globals`` dicts so concurrent requests cannot
-        overwrite each other's DataFrames.
+        The clone shares the heavy infrastructure (library imports,
+        executor) but gets its own ``locals`` / ``globals`` dicts so
+        concurrent requests cannot overwrite each other's DataFrames.
 
         Eagerly-loaded DataFrames from the source tool are **copied**
         into the clone's namespace.  Table-source DataFrames are NOT
@@ -230,8 +221,8 @@ class PythonPandasTool(PythonREPLTool):
         dm = dataset_manager or self._dataset_manager
 
         # Build a new instance via __new__ to skip the heavy
-        # PythonREPLTool.__init__ (matplotlib backend, optional-lib imports,
-        # _bootstrap). Call AbstractTool.__init__ directly so every base
+        # PythonREPLTool.__init__ (optional-lib imports, _bootstrap). Call
+        # AbstractTool.__init__ directly so every base
         # attribute (routing_meta, executor, webhook_callback_url,
         # remote_timeout_seconds, event registry, json codecs, …) stays in
         # sync with the parent class without manual mirroring.
@@ -264,11 +255,7 @@ class PythonPandasTool(PythonREPLTool):
         # AttributeError: 'PythonPandasTool' object has no attribute
         # '_code_sanitizer' (the clone skips PythonREPLTool.__init__).
         clone._code_sanitizer = self._code_sanitizer
-        clone.plt_style = self.plt_style
-        clone.palette = self.palette
         clone.setup_code = self.setup_code
-        clone.auto_save_plots = self.auto_save_plots
-        clone.return_plot_as_base64 = self.return_plot_as_base64
         clone.debug = self.debug
         clone.BLOCKED_IMPORTS = self.BLOCKED_IMPORTS
         # Code-review fix (post-TASK-1945 AC1 wiring): `_acquire_worker_pool()`
@@ -466,8 +453,12 @@ class PythonPandasTool(PythonREPLTool):
         # Add general recommendations
         guide_parts.extend([
             "## General Tips",
-            "- For static plots: Use `save_current_plot('filename.png')` with matplotlib",
+            "- matplotlib and seaborn are NOT available — for standard charts,",
+            "  return the data as a dict/DataFrame; the system renders it",
+            "  automatically via structured-chart/A2UI.",
             "- For interactive plots: Use plotly and save as HTML",
+            "- For complex visualizations only (heatmaps, correlation matrices,",
+            "  network graphs): use altair and return `.to_dict()`",
             "- For large datasets: Consider aggregation or sampling first",
             "",
         ])

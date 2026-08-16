@@ -8,9 +8,9 @@ deliberately UNTOUCHED by this task — it still calls `_execute_code()`
 in-process; hardening it is out of this task's scope.
 
 Every test that calls `_execute()`/the namespace API spawns a REAL worker
-subprocess (`PythonREPLTool` imports pandas/numpy/matplotlib), so this uses
-the tool's default `WorkerConfig()` (spec default ~4 GiB `RLIMIT_AS`) unless
-a test explicitly needs a tighter deadline.
+subprocess (`PythonREPLTool` imports pandas/numpy), so this uses the tool's
+default `WorkerConfig()` (spec default ~4 GiB `RLIMIT_AS`) unless a test
+explicitly needs a tighter deadline.
 """
 
 from __future__ import annotations
@@ -134,38 +134,13 @@ class TestNamespaceAPI:
         assert snap.get("alpha") == 7
 
 
-class TestPlots:
-    async def test_plot_via_shared_dir(self, tmp_path):
-        """A saved plot lands in the shared output dir; only the path crosses."""
-        tool = PythonREPLTool(report_dir=str(tmp_path))
-        try:
-            result = await tool._execute("plt.plot([1, 2, 3])\nresult = save_current_plot()")
-            assert isinstance(result, str)
-            assert "filename" in result
-
-            saved = list(tmp_path.glob("*.png"))
-            assert saved, f"expected a saved plot file under {tmp_path}"
-        finally:
-            await _shutdown(tool)
-
-    async def test_plot_base64_when_enabled(self, tmp_path):
-        """`return_plot_as_base64=True` is threaded to the worker; output includes base64."""
-        tool = PythonREPLTool(report_dir=str(tmp_path), return_plot_as_base64=True)
-        try:
-            result = await tool._execute("plt.plot([1, 2, 3])\nresult = save_current_plot()")
-            assert isinstance(result, str)
-            assert "base64" in result
-        finally:
-            await _shutdown(tool)
-
-
 class TestE2E:
     async def test_e2e_runaway_loop_recovery(self, tmp_path):
         """Infinite loop -> timeout -> LLM gets a loss error with the variable
         list -> the session is still usable afterward.
 
         `deadline_ms` must cover the freshly-spawned (not prewarmed) worker's
-        own pandas/numpy/matplotlib bootstrap too, since that runs before it
+        own pandas/numpy bootstrap too, since that runs before it
         can process the first `exec` request — too tight a deadline would
         time out the FIRST ("z = 5") call on cold start, not the intended
         infinite loop.

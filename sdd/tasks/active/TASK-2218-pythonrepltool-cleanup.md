@@ -55,7 +55,9 @@ Implements spec §Module 1.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/tools/pythonrepl.py` | MODIFY | Remove all matplotlib/seaborn integration |
-| `packages/ai-parrot/tests/tools/test_pythonrepl.py` | MODIFY | Update/add tests for matplotlib removal |
+| `packages/ai-parrot/tests/tools/test_pythonrepl_no_matplotlib.py` | CREATE | New tests for matplotlib removal (per Test Specification below) — `tests/tools/test_pythonrepl.py` named in the original contract does not exist |
+| `packages/ai-parrot/src/parrot/tools/pythonpandas.py` | MODIFY | **(Scope expansion, resolved 2026-08-16)** `PythonPandasTool(PythonREPLTool)`'s `create_session_clone()` copies `self.plt_style`/`self.palette`/`self.auto_save_plots`/`self.return_plot_as_base64` onto the clone (lines ~267-271) — these attributes no longer exist once this task removes them from `PythonREPLTool.__init__`. Drop those 4 lines. Also fix two now-stale LLM-facing guidance references: a `matplotlib` entry in a library-guide dict (~line 46-55) and a `"...with matplotlib"` hint referencing the deleted `save_current_plot` (~line 469) — replace with altair/structured-chart guidance consistent with TASK-2219's policy. Not in the original spec's Module 1 breakdown; discovered during Codebase Contract verification. |
+| `packages/ai-parrot/tests/repl_worker/test_integration.py` | MODIFY | **(Scope expansion, resolved 2026-08-16)** `TestPlots` class (`test_plot_via_shared_dir`, `test_plot_base64_when_enabled`) directly exercises `plt.plot()`, `save_current_plot()`, `return_plot_as_base64=True` — all removed by this task. Remove this test class. |
 
 ---
 
