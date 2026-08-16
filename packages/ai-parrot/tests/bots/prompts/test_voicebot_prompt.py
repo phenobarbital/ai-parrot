@@ -17,10 +17,13 @@ VOICE_BOT_SOURCE = (
 
 class TestVoiceBotUsesVoicePreset:
 
-    def test_source_has_prompt_builder_assignment(self):
-        """VoiceBot source should assign _prompt_builder = PromptBuilder.voice()."""
+    def test_source_creates_prompt_builder_per_instance(self):
+        """VoiceBot should create a PromptBuilder.voice() per instance in __init__."""
         source = VOICE_BOT_SOURCE.read_text()
-        assert "_prompt_builder = PromptBuilder.voice()" in source
+        # Builder is created per-instance (not as a shared class attribute)
+        # to avoid the mutable-class-attr pitfall where configure() bakes
+        # the first instance's identity into every subsequent one.
+        assert "PromptBuilder.voice()" in source
 
     def test_source_does_not_use_basic_voice_template(self):
         """VoiceBot class should not reference BASIC_VOICE_PROMPT_TEMPLATE."""
