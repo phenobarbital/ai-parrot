@@ -158,10 +158,53 @@ class TestAiohttpDelegation:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Moved jobstore construction out of `__init__` into
+`_build_jobstores(use_redis)`/`_make_redis_jobstore()`/`_ensure_redis_jobstore()`;
+`__init__` now builds the scheduler with `MemoryJobStore` only (no eager
+`RedisJobStore`). Added `start_headless(dsn=None, use_redis=False)` (attach
+Redis jobstore if requested, create an AsyncDB pool only when `dsn` given
+and no pool already set, `define_listeners()`, start scheduler if not
+running, `load_schedules_from_db()` only when a pool exists) and
+`stop_headless(wait=True)` (scheduler shutdown, tolerant of partial init;
+closes the pool only if `start_headless()` created it itself, tracked via
+`self._owns_pool`). `on_startup`/`on_shutdown` signatures are unchanged and
+now delegate to `start_headless(use_redis=True)`/`stop_headless(wait=True)`
+respectively — `on_startup` still assigns `self._pool = conn` first (from
+aiohttp's `PostgresPool`), so `start_headless()` skips its own pool
+creation but still loads schedules from the pool already in place;
+`on_shutdown` never sets `_owns_pool`, so the injected aiohttp pool is left
+untouched, exactly as before the refactor. Bonus (spec-mandated) side
+effect: `define_listeners()` — previously never called anywhere in the
+codebase — is now wired in via `start_headless()`, fixing a latent gap
+without altering any tested behaviour.
 
-**Completed by**:
-**Date**:
-**Notes**:
+9 new unit tests in `test_headless.py` cover: no-dsn/no-redis (MemoryJobStore
+only, no pool, no DB load), Redis jobstore not constructed when disabled,
+Redis jobstore attached when enabled, dsn creates+connects a pool and loads
+schedules, `stop_headless` tolerant of partial init, `stop_headless` closes
+an owned pool, `on_startup` delegates to `start_headless(use_redis=True)`,
+`on_shutdown` preserves an injected (non-owned) pool, and
+`register_bot_schedules()` still works after a headless start. All 9 pass.
 
-**Deviations from spec**: none
+Regression check: ran the pre-existing `test_schedules.py` and
+`test_scheduler_report_decorators.py` suites on both this branch and the
+unmodified main checkout — identical results on both (3 pre-existing
+failures in `test_schedules.py` unrelated to `__init__`/`on_startup`/
+`on_shutdown`; a pre-existing `parrot.scheduler` package-shadowing
+collection error in `test_scheduler_report_decorators.py`). Zero new
+failures attributable to this change.
+
+`ruff check` on `manager.py`: 3 new UP006/UP045 findings (`Dict`/`Optional`
+typing style) in the new code, consistent with the file's pre-existing
+convention (used throughout the other ~140 pre-existing findings in this
+large legacy file); no new BLE001 or other logic-smell categories.
+Modernizing the whole file's typing style is out of scope for this task.
+
+**Deviations from spec**: none. One implementation decision not fully
+spelled out by the spec: pool-ownership tracking (`_owns_pool`) was added
+so `stop_headless()` only closes a pool it created itself via `dsn` — this
+is what makes `on_shutdown()` "tolerant of partial init" while staying
+strictly behaviour-preserving for the aiohttp path (which owns its pool via
+`PostgresPool`/`self.db`, not via the scheduler manager).

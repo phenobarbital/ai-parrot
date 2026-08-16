@@ -32,7 +32,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Only touches ai-parrot-server scheduler/manager.py — disjoint from all agentd package files.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2209-scheduler-headless.md"
+      "completed_at": "2026-08-16T17:49:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2209-scheduler-headless.md"
     },
     {
       "id": "TASK-2210",
