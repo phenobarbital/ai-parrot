@@ -736,6 +736,16 @@ def mcp() -> None:
     show_default=True,
     help="Comma list of page categories included in graph.html.",
 )
+@click.option(
+    "--vault/--no-vault",
+    "vault_mode",
+    default=None,
+    help=(
+        "Treat the path as an Obsidian vault (notes/wikilinks/tags scan) "
+        "instead of a source repository. Default: auto-detect via the "
+        ".obsidian/ directory."
+    ),
+)
 def build(
     path_: str | None,
     name: str | None,
@@ -746,6 +756,7 @@ def build(
     no_export: bool,
     no_graph: bool,
     graph_kinds: str,
+    vault_mode: bool | None,
 ) -> None:
     """Generate (or refresh) the KB graph from the current repository.
 
@@ -771,16 +782,33 @@ def build(
         if backend:
             config.backend = backend  # type: ignore[assignment]
 
-        if not quiet:
-            click.echo(f"Scanning {root} ...")
-        scan = scan_repository(
-            root,
-            suffixes=config.include_suffixes or None,
-            exclude_dirs=config.exclude_dirs,
-            body_max_chars=config.body_max_chars,
-            max_file_bytes=config.max_file_kb * 1024,
-            use_git=not no_git,
+        from parrot.knowledge.wiki.vault_scan import (
+            is_obsidian_vault,
+            scan_vault,
         )
+
+        vault_stats = None
+        if vault_mode is None:
+            vault_mode = is_obsidian_vault(root)
+        if vault_mode:
+            if not quiet:
+                click.echo(f"Scanning Obsidian vault {root} ...")
+            scan, vault_stats = scan_vault(
+                root,
+                body_max_chars=config.body_max_chars,
+                max_file_bytes=config.max_file_kb * 1024,
+            )
+        else:
+            if not quiet:
+                click.echo(f"Scanning {root} ...")
+            scan = scan_repository(
+                root,
+                suffixes=config.include_suffixes or None,
+                exclude_dirs=config.exclude_dirs,
+                body_max_chars=config.body_max_chars,
+                max_file_bytes=config.max_file_kb * 1024,
+                use_git=not no_git,
+            )
 
         output_dir = config.storage_path(root)
 
@@ -847,6 +875,13 @@ def build(
             f"{counts['removed']} removed; "
             f"{stats.get('pages', 0)} pages, {stats.get('edges', 0)} edges."
         )
+        if vault_stats is not None:
+            click.echo(
+                f"Vault: {vault_stats.notes} notes, {vault_stats.tags} tags, "
+                f"{vault_stats.wikilink_edges} wikilink edges, "
+                f"{vault_stats.embed_edges} embed edges, "
+                f"{len(vault_stats.unresolved_links)} unresolved links."
+            )
         okf = counts.get("okf")
         if okf and not quiet:
             click.echo(f"OKF bundle: {okf['files_written']} files exported.")
