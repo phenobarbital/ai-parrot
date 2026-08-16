@@ -50,7 +50,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "New file agentd/config.py + test fakes; no imports from other pending tasks.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2210-agentd-config.md"
+      "completed_at": "2026-08-16T17:52:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2210-agentd-config.md"
     },
     {
       "id": "TASK-2211",

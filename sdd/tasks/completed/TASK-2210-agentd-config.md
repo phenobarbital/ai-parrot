@@ -132,10 +132,28 @@ class TestResolveAgent:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Implemented `config.py` with `SchedulerConfig`, `AgentTargetConfig`,
+`AgentServiceConfig` (fields exactly per spec §2: name, agent, socket,
+scheduler, exposed_methods, log_level, max_line_bytes=10MB,
+shutdown_grace=30.0), `AgentServiceConfig.from_yaml()`/`.from_target()`,
+`default_socket_path()` (XDG_RUNTIME_DIR with `/tmp/parrot-<uid>/` fallback),
+and `resolve_agent()` covering class / instance / sync-factory /
+async-factory targets plus `AgentTargetError` for bad module/attr/shape.
+`resolve_agent()` awaits `configure()` only when it is an async function
+(`inspect.iscoroutinefunction`), matching `AbstractBot.configure(app=None)`.
+`name` validation rejects empty strings and path separators (`/`, `\`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Added `tests/agentd/fakes.py` with a dependency-free, duck-typed `EchoAgent`
+(ask/ask_stream/configure/get_available_tools/get_tools_count/has_tools) plus
+`make_echo_agent`/`make_echo_agent_async` factories and a module-level
+`echo_instance` — used to exercise every branch of the target-resolution
+matrix, and available for later agentd tasks per the spec's fixture note
+(`tests.agentd.fakes:EchoAgent`).
 
-**Deviations from spec**: none
+25 tests pass (14 new in `test_config.py`, 11 pre-existing in
+`test_protocol.py` unaffected). `ruff check` clean after auto-fix (quoted
+forward-ref return types, unused noqa directives, import ordering).
+
+**Deviations from spec**: none.
