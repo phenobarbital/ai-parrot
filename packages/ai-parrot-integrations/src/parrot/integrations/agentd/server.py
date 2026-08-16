@@ -46,12 +46,33 @@ __all__ = [
     "EventBroker",
     "Handler",
     "JsonRpcUnixServer",
+    "RpcHandlerError",
     "Session",
 ]
 
 
 class DaemonAlreadyRunning(Exception):
     """Raised when a live daemon is already listening on the socket path."""
+
+
+class RpcHandlerError(Exception):
+    """Raised by a dispatch handler to return a specific JSON-RPC error.
+
+    Use this instead of a bare exception when a handler needs to surface
+    one of the application-range error codes (spec §2 "Wire Protocol":
+    `AGENT_BUSY`, `UNKNOWN_AGENT_METHOD`, `SCHEDULER_UNAVAILABLE`,
+    `SCHEDULE_NOT_FOUND`) rather than the generic `INTERNAL_ERROR`
+    fallback every other exception gets.
+
+    Attributes:
+        code: The JSON-RPC (or agentd application-range) error code.
+        message: The error message.
+    """
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 class Session:
@@ -170,6 +191,11 @@ class JsonRpcUnixServer:
         self.logger = logging.getLogger(__name__)
         self._server: asyncio.Server | None = None
         self._sessions: dict[str, Session] = {}
+
+    @property
+    def active_connections(self) -> int:
+        """Number of currently connected sessions."""
+        return len(self._sessions)
 
     async def start(self) -> None:
         """Bind and start accepting connections.
@@ -300,6 +326,11 @@ class JsonRpcUnixServer:
             try:
                 result = await handler(session, request.params)
                 response = RpcResponse(id=request.id, result=result)
+            except RpcHandlerError as exc:
+                response = RpcResponse(
+                    id=request.id,
+                    error=RpcError(code=exc.code, message=exc.message),
+                )
             except ValidationError as exc:
                 response = RpcResponse(
                     id=request.id,
