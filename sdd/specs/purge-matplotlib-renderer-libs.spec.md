@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-423
 **Date**: 2026-08-16
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.0 (major release — breaking change)
 
 ---
