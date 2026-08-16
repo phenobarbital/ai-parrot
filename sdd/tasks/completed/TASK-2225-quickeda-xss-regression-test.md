@@ -2,10 +2,10 @@
 
 **Feature**: quickeda-html-escape-xss (FEAT-424)
 **Spec**: n/a — bug fix from [GitHub Issue #1159](https://github.com/phenobarbital/ai-parrot/issues/1159)
-**Status**: [ ] pending
+**Status**: [x] done
 **Priority**: critical
 **Depends-on**: TASK-2224
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ## Context
 
@@ -175,4 +175,24 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+Created `packages/ai-parrot-tools/tests/test_quickeda_xss.py` exactly per
+the test scaffold in this task (`TestDfToHtmlEscaping` +
+`TestDfToHtmlDefaultEscape`, 8 tests total). All 8 pass against the
+TASK-2224 fix.
+
+Writing/running these tests against the literal TASK-2224 fix surfaced
+two gaps that made 3 of the given tests fail (`test_column_name_with_
+html_escaped`, `test_title_does_not_inject`, and — for `DfToHtmlTool` —
+`test_default_escapes`): `.format(escape="html")` alone does not escape
+column headers or `set_caption()` text, and `Styler.to_html()` has no
+functional `escape` kwarg in pandas 2.2 (dftohtml.py's original
+`escape=escape` argument to it was a silent no-op). Both were fixed as a
+TASK-2224 follow-up (see that task's amended Completion Note) since the
+files were already in TASK-2224's scope; this task's commit only adds
+the new test file. Verified the negative control manually: reverting the
+`quickeda.py` escaping calls makes 5 of these 8 tests fail (confirmed,
+then restored) — satisfying the "tests fail if the fix is removed"
+acceptance criterion.
+
+`ruff check` on the new test file: clean.
