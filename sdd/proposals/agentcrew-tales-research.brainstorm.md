@@ -596,28 +596,28 @@ from parrot.template.engine import TemplateEngine                   # used by In
 
 ## Open Questions
 
-- [ ] Deep Research model id `deep-research-pro-preview-12-2025` is a
+- [x] Deep Research model id `deep-research-pro-preview-12-2025` is a
   preview — confirm GA id, quota, and per-run cost ceiling before spec
   freeze; define behavior when the account lacks access (skip node vs fail
-  run). — *Owner: Jesús*
-- [ ] Groundedness evidence gap for Gemini built-in search / Deep Research
+  run). — *Owner: Jesús*: deep research is a flag of "ask()" method at GoogleGenAIClient and other LLM Clients, not a model itself.
+- [x] Groundedness evidence gap for Gemini built-in search / Deep Research
   (no parrot `ToolCall`s): is labeling those claims `provider_grounding`
   acceptable for v1, or should a post-hoc verification pass (e.g. re-fetch
-  cited URLs and score extracts) be a follow-up? — *Owner: Jesús*
-- [ ] Final PDF: v1 ships print-CSS HTML only (Round-3 decision), but the
+  cited URLs and score extracts) be a follow-up? — *Owner: Jesús*: acceptable in v1.
+- [x] Final PDF: v1 ships print-CSS HTML only (Round-3 decision), but the
   weasyprint `PDFRenderer` already exists (SPK-1/FEAT-273, zero new deps) —
   emit a real `.pdf` artifact too when the `pdf` extra is installed? —
-  *Owner: Jesús*
-- [ ] Default `num_decks` (proposal: 3) and hard cap (proposal: 8) — N×M
-  research calls have real cost/latency. — *Owner: Jesús*
-- [ ] Bibliography citation style: house style (site/url/author/date, as in
+  *Owner: Jesús*: yes
+- [x] Default `num_decks` (proposal: 3) and hard cap (proposal: 8) — N×M
+  research calls have real cost/latency. — *Owner: Jesús*: mininum decks will be 10, with no hard cap.
+- [x] Bibliography citation style: house style (site/url/author/date, as in
   the abstract) vs a formal style (APA-ish)? Affects the deterministic
-  formatter only. — *Owner: Jesús*
-- [ ] HTTP surface shape: single `POST /api/v1/tales` + polling, or
+  formatter only. — *Owner: Jesús*: APA-ish format.
+- [x] HTTP surface shape: single `POST /api/v1/tales` + polling, or
   SSE/WebSocket progress from `on_node_event`? (Handler precedent
-  `infographic.py` is request/response.) — *Owner: Jesús*
-- [ ] Oxford Academic and Gallup access model (scraping ToS / licensing;
+  `infographic.py` is request/response.) — *Owner: Jesús*: POST + polling
+- [x] Oxford Academic and Gallup access model (scraping ToS / licensing;
   Gartner almost certainly paywalled) — resolve inside the
-  `tales-research-source-toolkits` follow-up spec, not here. — *Owner: Jesús*
-- [ ] Deck slide visual identity: adopt the hanademi.com deck page as the
-  layout reference for the v1 slide template set? — *Owner: Jesús*
+  `tales-research-source-toolkits` follow-up spec, not here. — *Owner: Jesús*: not on this scope, there is an spec: research-tools-for-agents
+- [x] Deck slide visual identity: adopt the hanademi.com deck page as the
+  layout reference for the v1 slide template set? — *Owner: Jesús*: yes
