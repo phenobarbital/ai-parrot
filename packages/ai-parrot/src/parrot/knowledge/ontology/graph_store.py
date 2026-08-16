@@ -7,7 +7,7 @@ for all database operations, consistent with ``parrot.stores.arango``.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -449,3 +449,273 @@ class OntologyGraphStore:
             logger.error(
                 "Soft delete failed for '%s': %s", collection, e,
             )
+
+    # ------------------------------------------------------------------
+    # Generic document helpers (graph commit protocol support)
+    # ------------------------------------------------------------------
+    #
+    # Thin AQL wrappers used by ``GraphIndexPersistence`` to implement the
+    # audited commit protocol (apply_update / revert_commit / ...).  They
+    # RAISE on failure (like ``execute_traversal``) — the caller owns the
+    # degrade-or-propagate decision.
+
+    async def ensure_collection(
+        self,
+        ctx: TenantContext,
+        name: str,
+        edge: bool = False,
+    ) -> None:
+        """Create a collection when it does not exist (idempotent).
+
+        Mirrors ``initialize_tenant``'s creation pattern for a single
+        collection; logs and swallows failures like its siblings so a
+        pre-existing collection or race never breaks the caller.
+
+        Args:
+            ctx: Tenant context.
+            name: Collection name.
+            edge: Create as an edge collection when ``True``.
+        """
+        db = await self._get_db(ctx)
+        try:
+            if not await db.collection_exists(name):
+                if edge:
+                    await db.create_collection(name, edge=True)
+                else:
+                    await db.create_collection(name)
+                logger.info("Created collection '%s' (edge=%s)", name, edge)
+        except Exception as e:  # noqa: BLE001 — idempotent best-effort
+            logger.debug("ensure_collection('%s') skipped: %s", name, e)
+
+    async def get_document(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        key: str,
+    ) -> Optional[dict[str, Any]]:
+        """Fetch one document by ``_key``.
+
+        Args:
+            ctx: Tenant context.
+            collection: Collection name.
+            key: The ``_key`` value.
+
+        Returns:
+            The document dict, or ``None`` when absent.
+        """
+        db = await self._get_db(ctx)
+        result = await db.execute_query(
+            "FOR doc IN @@collection FILTER doc._key == @key LIMIT 1 RETURN doc",
+            bind_vars={"@collection": collection, "key": key},
+        )
+        rows = list(result) if result else []
+        return rows[0] if rows else None
+
+    async def upsert_document(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        doc: dict[str, Any],
+    ) -> None:
+        """Insert or fully replace one document by its ``_key``.
+
+        Args:
+            ctx: Tenant context.
+            collection: Collection name.
+            doc: Document body; must include ``_key``.
+        """
+        db = await self._get_db(ctx)
+        await db.execute_query(
+            """
+            UPSERT { _key: @key }
+                INSERT @doc
+                REPLACE @doc
+            IN @@collection
+            """,
+            bind_vars={
+                "key": doc.get("_key"),
+                "doc": doc,
+                "@collection": collection,
+            },
+        )
+
+    async def insert_document(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        doc: dict[str, Any],
+    ) -> None:
+        """Insert one document (auto ``_key`` when absent).
+
+        Args:
+            ctx: Tenant context.
+            collection: Collection name.
+            doc: Document body.
+        """
+        db = await self._get_db(ctx)
+        await db.execute_query(
+            "INSERT @doc IN @@collection",
+            bind_vars={"doc": doc, "@collection": collection},
+        )
+
+    async def remove_document(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        key: str,
+    ) -> bool:
+        """Hard-remove one document by ``_key``.
+
+        Args:
+            ctx: Tenant context.
+            collection: Collection name.
+            key: The ``_key`` value.
+
+        Returns:
+            ``True`` when a document was removed.
+        """
+        db = await self._get_db(ctx)
+        result = await db.execute_query(
+            """
+            FOR doc IN @@collection
+                FILTER doc._key == @key
+                REMOVE doc IN @@collection
+                RETURN OLD._key
+            """,
+            bind_vars={"@collection": collection, "key": key},
+        )
+        return bool(list(result) if result else [])
+
+    async def query_documents(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        filters: Optional[dict[str, Any]] = None,
+        sort_desc: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Query documents by ANDed equality filters.
+
+        Args:
+            ctx: Tenant context.
+            collection: Collection name.
+            filters: ``{field: value}`` equality filters (ANDed). Field
+                names must be plain identifiers — they are interpolated
+                into the AQL; values are always bound.
+            sort_desc: Optional field to sort by, descending.
+            limit: Optional maximum rows.
+
+        Returns:
+            Matching document dicts.
+        """
+        db = await self._get_db(ctx)
+        bind_vars: dict[str, Any] = {"@collection": collection}
+        clauses: list[str] = []
+        for i, (field, value) in enumerate((filters or {}).items()):
+            if not field.replace("_", "").isalnum():
+                raise ValueError(f"query_documents: invalid field {field!r}")
+            clauses.append(f"FILTER doc.{field} == @f{i}")
+            bind_vars[f"f{i}"] = value
+        aql = "FOR doc IN @@collection\n" + "\n".join(clauses)
+        if sort_desc is not None:
+            if not sort_desc.replace("_", "").isalnum():
+                raise ValueError(
+                    f"query_documents: invalid sort field {sort_desc!r}"
+                )
+            aql += f"\nSORT doc.{sort_desc} DESC"
+        if limit is not None:
+            aql += f"\nLIMIT {int(limit)}"
+        aql += "\nRETURN doc"
+        result = await db.execute_query(aql, bind_vars=bind_vars)
+        return list(result) if result else []
+
+    async def get_all_edges(
+        self,
+        ctx: TenantContext,
+        collection: str,
+    ) -> list[dict[str, Any]]:
+        """Retrieve every edge document from an edge collection.
+
+        Args:
+            ctx: Tenant context.
+            collection: Edge collection name.
+
+        Returns:
+            Edge document dicts (empty on failure — read parity with
+            ``get_all_nodes``).
+        """
+        db = await self._get_db(ctx)
+        try:
+            result = await db.execute_query(
+                "FOR doc IN @@collection RETURN doc",
+                bind_vars={"@collection": collection},
+            )
+            return list(result) if result else []
+        except Exception as e:  # noqa: BLE001 — read parity with get_all_nodes
+            logger.error("Failed to get edges from '%s': %s", collection, e)
+            return []
+
+    async def edges_incident(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        node_id: str,
+    ) -> list[dict[str, Any]]:
+        """Edges in a collection touching a node (either direction).
+
+        Args:
+            ctx: Tenant context.
+            collection: Edge collection name.
+            node_id: The node's ``node_id``.
+
+        Returns:
+            Matching edge document dicts.
+        """
+        db = await self._get_db(ctx)
+        result = await db.execute_query(
+            """
+            FOR e IN @@collection
+                FILTER e.source_id == @node_id OR e.target_id == @node_id
+                RETURN e
+            """,
+            bind_vars={"@collection": collection, "node_id": node_id},
+        )
+        return list(result) if result else []
+
+    async def remove_edge_by_triple(
+        self,
+        ctx: TenantContext,
+        collection: str,
+        source_id: str,
+        target_id: str,
+        kind: str,
+    ) -> bool:
+        """Hard-remove edge(s) matching a ``(source, target, kind)`` triple.
+
+        Args:
+            ctx: Tenant context.
+            collection: Edge collection name.
+            source_id: Tail ``node_id``.
+            target_id: Head ``node_id``.
+            kind: Edge kind string.
+
+        Returns:
+            ``True`` when at least one edge was removed.
+        """
+        db = await self._get_db(ctx)
+        result = await db.execute_query(
+            """
+            FOR e IN @@collection
+                FILTER e.source_id == @src AND e.target_id == @tgt
+                   AND e.kind == @kind
+                REMOVE e IN @@collection
+                RETURN OLD._key
+            """,
+            bind_vars={
+                "@collection": collection,
+                "src": source_id,
+                "tgt": target_id,
+                "kind": kind,
+            },
+        )
+        return bool(list(result) if result else [])

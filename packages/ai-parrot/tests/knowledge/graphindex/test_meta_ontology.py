@@ -15,17 +15,25 @@ class TestBuildGraphIndexOntology:
         onto = build_graphindex_ontology()
         assert isinstance(onto, MergedOntology)
 
-    def test_six_entity_types(self):
+    def test_entity_types(self):
         onto = build_graphindex_ontology()
-        assert len(onto.entities) == 6
-        expected = {"document", "section", "symbol", "concept", "rationale", "skill"}
+        # graph-knowledge-persistence added wiki_page, run, claim.
+        assert len(onto.entities) == 9
+        expected = {
+            "document", "section", "symbol", "concept", "rationale",
+            "skill", "wiki_page", "run", "claim",
+        }
         assert set(onto.entities.keys()) == expected
 
-    def test_five_relation_types(self):
+    def test_relation_types(self):
         onto = build_graphindex_ontology()
-        # FEAT-240 (TASK-1571) added "extends" for Odoo model inheritance
-        assert len(onto.relations) == 6
-        expected = {"contains", "references", "defines", "mentions", "explains", "extends"}
+        # FEAT-240 added "extends"; graph-knowledge-persistence added the
+        # work-lineage relations.
+        assert len(onto.relations) == 10
+        expected = {
+            "contains", "references", "defines", "mentions", "explains",
+            "extends", "produced", "about", "supported_by", "contradicts",
+        }
         assert set(onto.relations.keys()) == expected
 
     def test_entity_collections_prefixed_gi(self):
@@ -65,24 +73,24 @@ class TestBuildGraphIndexOntology:
     def test_get_entity_collections(self):
         onto = build_graphindex_ontology()
         collections = onto.get_entity_collections()
-        assert len(collections) == 6
+        assert len(collections) == 9
         for c in collections:
             assert c.startswith("gi_")
 
     def test_get_edge_collections(self):
         onto = build_graphindex_ontology()
         edge_collections = onto.get_edge_collections()
-        # FEAT-240 (TASK-1571) added gi_extends
-        assert len(edge_collections) == 6
+        # FEAT-240 added gi_extends; lineage edges added four more.
+        assert len(edge_collections) == 10
 
 
 class TestMappingDicts:
-    def test_kind_to_collection_has_six_entries(self):
-        assert len(KIND_TO_COLLECTION) == 6
+    def test_kind_to_collection_entries(self):
+        assert len(KIND_TO_COLLECTION) == 9
 
-    def test_edge_kind_to_collection_has_five_entries(self):
-        # FEAT-240 (TASK-1571) added "extends" → "gi_extends"
-        assert len(EDGE_KIND_TO_COLLECTION) == 6
+    def test_edge_kind_to_collection_entries(self):
+        # FEAT-240 added "extends"; lineage kinds added four more.
+        assert len(EDGE_KIND_TO_COLLECTION) == 10
 
     def test_round_trip_document(self):
         from parrot.knowledge.graphindex.meta_ontology import COLLECTION_TO_KIND

@@ -1,8 +1,10 @@
 """Universal meta-ontology for GraphIndex.
 
 Provides the programmatic ``MergedOntology``-compatible definition with:
-- 6 entity types: document, section, symbol, concept, rationale, skill
-- 6 relation types: contains, references, defines, mentions, explains, extends
+- 9 entity types: document, section, symbol, concept, rationale, skill,
+  wiki_page, run, claim
+- 10 relation types: contains, references, defines, mentions, explains,
+  extends, produced, about, supported_by, contradicts
 
 These definitions are **additive** — they do not conflict with existing
 tenant ontologies.  They are intended to be merged at tenant initialisation
@@ -24,7 +26,7 @@ from parrot.knowledge.ontology.schema import (
 )
 
 # ---------------------------------------------------------------------------
-# Entity definitions (6 vertex collections)
+# Entity definitions (9 vertex collections)
 # ---------------------------------------------------------------------------
 
 _ENTITY_DEFS: dict[str, EntityDef] = {
@@ -117,11 +119,52 @@ _ENTITY_DEFS: dict[str, EntityDef] = {
         vectorize=["summary", "title"],
         extend=False,
     ),
+    "wiki_page": EntityDef(
+        collection="gi_wiki_pages",
+        key_field="node_id",
+        properties=[
+            {"title": PropertyDef(type="string", required=True)},
+            {"source_uri": PropertyDef(type="string", required=True)},
+            {"kind": PropertyDef(type="string", required=True)},
+            {"summary": PropertyDef(type="string", required=False)},
+            {"embedding_ref": PropertyDef(type="string", required=False)},
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        vectorize=["summary", "title"],
+        extend=False,
+    ),
+    "run": EntityDef(
+        collection="gi_runs",
+        key_field="node_id",
+        properties=[
+            {"title": PropertyDef(type="string", required=True)},
+            {"source_uri": PropertyDef(type="string", required=True)},
+            {"kind": PropertyDef(type="string", required=True)},
+            {"summary": PropertyDef(type="string", required=False)},
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        vectorize=["summary", "title"],
+        extend=False,
+    ),
+    "claim": EntityDef(
+        collection="gi_claims",
+        key_field="node_id",
+        properties=[
+            {"title": PropertyDef(type="string", required=True)},
+            {"source_uri": PropertyDef(type="string", required=True)},
+            {"kind": PropertyDef(type="string", required=True)},
+            {"summary": PropertyDef(type="string", required=False)},
+            {"embedding_ref": PropertyDef(type="string", required=False)},
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        vectorize=["summary", "title"],
+        extend=False,
+    ),
 }
 
 
 # ---------------------------------------------------------------------------
-# Relation definitions (5 edge collections)
+# Relation definitions (10 edge collections)
 # ---------------------------------------------------------------------------
 
 _RELATION_DEFS: dict[str, RelationDef] = {
@@ -180,6 +223,42 @@ _RELATION_DEFS: dict[str, RelationDef] = {
         ],
         "discovery": DiscoveryConfig(strategy="field_match"),
     }),
+    "produced": RelationDef(**{
+        "from": "*",
+        "to": "*",
+        "edge_collection": "gi_produced",
+        "properties": [
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        "discovery": DiscoveryConfig(strategy="field_match"),
+    }),
+    "about": RelationDef(**{
+        "from": "*",
+        "to": "*",
+        "edge_collection": "gi_about",
+        "properties": [
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        "discovery": DiscoveryConfig(strategy="field_match"),
+    }),
+    "supported_by": RelationDef(**{
+        "from": "*",
+        "to": "*",
+        "edge_collection": "gi_supported_by",
+        "properties": [
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        "discovery": DiscoveryConfig(strategy="field_match"),
+    }),
+    "contradicts": RelationDef(**{
+        "from": "*",
+        "to": "*",
+        "edge_collection": "gi_contradicts",
+        "properties": [
+            {"provenance": PropertyDef(type="string", required=True)},
+        ],
+        "discovery": DiscoveryConfig(strategy="field_match"),
+    }),
 }
 
 
@@ -195,6 +274,9 @@ COLLECTION_TO_KIND: dict[str, str] = {
     "gi_concepts": "concept",
     "gi_rationales": "rationale",
     "gi_skills": "skill",
+    "gi_wiki_pages": "wiki_page",
+    "gi_runs": "run",
+    "gi_claims": "claim",
 }
 
 # NodeKind string → collection name
@@ -208,6 +290,10 @@ EDGE_KIND_TO_COLLECTION: dict[str, str] = {
     "mentions": "gi_mentions",
     "explains": "gi_explains",
     "extends": "gi_extends",
+    "produced": "gi_produced",
+    "about": "gi_about",
+    "supported_by": "gi_supported_by",
+    "contradicts": "gi_contradicts",
 }
 
 
@@ -218,7 +304,7 @@ def build_graphindex_ontology() -> MergedOntology:
     with ``gi_`` that do not overlap with any existing tenant ontology.
 
     Returns:
-        A ``MergedOntology`` instance with 6 entities and 6 relations.
+        A ``MergedOntology`` instance with 9 entities and 10 relations.
 """
     return MergedOntology(
         name="graphindex-meta-ontology",

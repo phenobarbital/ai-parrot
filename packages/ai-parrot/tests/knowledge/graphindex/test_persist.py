@@ -167,13 +167,9 @@ class TestGraphIndexPersistence:
     @pytest.mark.asyncio
     async def test_nodes_routed_to_correct_collections(self, persistence, store, ctx):
         """Each NodeKind must route to its correct ArangoDB vertex collection."""
+        # One node per NodeKind — covers every mapped vertex collection.
         nodes = [
-            make_node("d1", NodeKind.DOCUMENT),
-            make_node("s1", NodeKind.SECTION),
-            make_node("sy1", NodeKind.SYMBOL),
-            make_node("c1", NodeKind.CONCEPT),
-            make_node("r1", NodeKind.RATIONALE),
-            make_node("sk1", NodeKind.SKILL),
+            make_node(f"n{i}", kind) for i, kind in enumerate(NodeKind)
         ]
         await persistence.persist_graph(ctx, nodes, [])
 
@@ -185,14 +181,9 @@ class TestGraphIndexPersistence:
     async def test_edges_routed_to_correct_collections(self, persistence, store, ctx):
         """Each EdgeKind must route to its correct ArangoDB edge collection."""
         # Need nodes first (for persistence, edges go directly to create_edges)
+        # One edge per EdgeKind — covers every mapped edge collection.
         edges = [
-            make_edge("a", "b", EdgeKind.CONTAINS),
-            make_edge("a", "c", EdgeKind.REFERENCES),
-            make_edge("a", "d", EdgeKind.DEFINES),
-            make_edge("a", "e", EdgeKind.MENTIONS),
-            make_edge("a", "f", EdgeKind.EXPLAINS),
-            # FEAT-240 (TASK-1571): EXTENDS added for Odoo model inheritance
-            make_edge("a", "g", EdgeKind.EXTENDS),
+            make_edge("a", f"t{i}", kind) for i, kind in enumerate(EdgeKind)
         ]
         # We only test edge routing; no nodes needed for this
         await persistence.persist_graph(ctx, [], edges)
