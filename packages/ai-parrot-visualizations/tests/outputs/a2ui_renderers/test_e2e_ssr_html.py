@@ -43,3 +43,42 @@ async def test_e2e_tool_envelope_to_html():
     assert "&lt;b&gt;Sales&lt;/b&gt;" in doc
     # Baked: no live bindings remain.
     assert "$bind" not in doc
+    # ...and the bound rows actually reach the document. Absence of "$bind" alone
+    # was never proof of that: before row materialisation the resolved rows sat in
+    # an inert property on a childless node and every table rendered empty.
+    assert "EU" in doc
+    assert ">5<" in doc
+
+
+async def test_e2e_bound_rows_render_as_escaped_cells():
+    """Every bound row reaches the document, in declared column order, escaped."""
+    envelope = CreateSurface(
+        surfaceId="report",
+        catalogId="https://parrot.dev/catalogs/v1",
+        components=[
+            Component(
+                id="blk-000",
+                component="DataTable",
+                properties={
+                    "columns": [{"name": "region"}, {"name": "total"}],
+                    "data": {"$bind": "/rows"},
+                },
+            )
+        ],
+        dataModel={
+            "rows": [
+                {"region": "EU", "total": 5},
+                {"region": "APAC", "total": 7},
+                {"region": "<script>alert(1)</script>", "total": None},
+            ]
+        },
+    )
+    doc = (await SSRHTMLRenderer().render(envelope)).content.decode()
+
+    # One cell per column per row.
+    assert doc.count('class="a2ui-text a2ui-cell"') == 6
+    for value in ("EU", "APAC", ">5<", ">7<"):
+        assert value in doc
+    # Cell data is data, never markup.
+    assert "<script>alert(1)</script>" not in doc
+    assert "&lt;script&gt;" in doc
