@@ -68,7 +68,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Imports protocol.py from TASK-2208.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2211-agentd-uds-server.md"
+      "completed_at": "2026-08-16T17:54:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2211-agentd-uds-server.md"
     },
     {
       "id": "TASK-2212",

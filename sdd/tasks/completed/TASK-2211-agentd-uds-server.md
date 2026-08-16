@@ -140,10 +140,33 @@ class TestServer:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Implemented `server.py` with `Session` (session_id, writer,
+subscribed flag, stream_ids, in-flight tasks, per-session write lock via
+`send()`/`notify()`), `Handler` type alias, `EventBroker`
+(subscribe/unsubscribe/publish with dead-subscriber isolation), and
+`JsonRpcUnixServer` (`start()`/`close()`, boot sequence with `0700` parent
+dir + try-connect-then-unlink stale-socket handling +
+`DaemonAlreadyRunning`, `0600` socket chmod after bind, per-connection
+accept loop dispatching `RpcRequest`s as tracked `asyncio.Task`s so a slow
+handler never blocks other requests on the same connection, and
+disconnect handling that cancels in-flight tasks + unsubscribes + closes
+the writer). Every handler failure path (`ValidationError` → `INVALID_
+PARAMS`, unknown method → `METHOD_NOT_FOUND`, any other exception →
+`INTERNAL_ERROR` with full traceback logged) is converted to a JSON-RPC
+error response without killing the connection. Malformed/oversized
+inbound lines are also converted to error responses (`PARSE_ERROR`/
+`INVALID_REQUEST`) rather than propagating.
 
-**Completed by**:
-**Date**:
-**Notes**:
+7 unit tests in `test_server.py` cover: request/response roundtrip over a
+real tmp UDS, unknown-method → −32601, handler-exception isolation
+(connection survives), stale-socket detection+reboot (raw dead socket file
+unlinked and rebound), live-socket refusal (`DaemonAlreadyRunning`), socket/
+dir permission bits (`0600`/`0700`), and event-broker fan-out (two
+subscribers, one disconnects, publish continues to the survivor without
+raising). All 7 pass; full `agentd/` suite (32 tests across protocol,
+config, server) still green. `ruff check` clean after auto-fix (unused
+`noqa`, import ordering).
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
