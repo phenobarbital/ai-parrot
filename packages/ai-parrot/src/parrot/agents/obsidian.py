@@ -311,7 +311,7 @@ class FirefliesObsidianAgent(BasicAgent):
             )
 
             self.logger.info(f"Analyzing with LLM (granularity={granularity})...")
-            llm_response = await self.client.completion(analysis_prompt)
+            llm_response = await self.client.complete(analysis_prompt)
 
             # Parse LLM response
             parsed = self._parse_analysis_response(llm_response)
@@ -341,6 +341,69 @@ class FirefliesObsidianAgent(BasicAgent):
         return result
 
     # ========== Private Helpers ==========
+
+    @staticmethod
+    def _build_okf_frontmatter(
+        fireflies_id: str,
+        title: str,
+        date: str,
+        participants: List[str],
+        duration: float,
+    ) -> Dict[str, Any]:
+        """Build OKF (Open Knowledge Format) frontmatter for knowledge graph integration.
+
+        Generates the `okf:` block that AI-Parrot's knowledge graph expects,
+        enabling the meeting to be indexed and queryable via PageIndex/GraphIndex.
+
+        Args:
+            fireflies_id: Unique identifier from Fireflies
+            title: Meeting title
+            date: Meeting date (YYYY-MM-DD)
+            participants: List of participant emails
+            duration: Duration in minutes
+
+        Returns:
+            Dict with 'okf' key containing the OKF metadata structure.
+        """
+        # Create a node dict compatible with project_okf_block()
+        node = {
+            "concept_id": f"fireflies-{fireflies_id[:8]}",  # Short unique ID
+            "title": title,
+            "node_id": f"obsidian::fireflies::{fireflies_id}",  # FEAT-392 convention
+            "type": "DOCUMENT",  # Meeting is a document type
+            "resource": f"fireflies://transcript/{fireflies_id}",  # Source reference
+            "categories": [
+                "meeting",
+                "fireflies",
+                f"date:{date[:7]}",  # YYYY-MM for easy filtering
+            ] + (["audio-recorded"] if duration > 0 else []),
+            "timestamp": datetime.utcnow().isoformat(),
+            "summary": f"Meeting: {title}. Participants: {', '.join(participants[:3])}{'...' if len(participants) > 3 else ''}. Duration: {duration:.1f} minutes.",
+            "relates_to": [
+                {
+                    "target_id": f"fireflies-participant:{email.split('@')[0]}",
+                    "type": "MENTIONS",
+                }
+                for email in participants[:5]  # Limit to 5 participants
+            ],
+            "source": {
+                "uri": f"fireflies://api/transcript/{fireflies_id}",
+                "name": "Fireflies.ai",
+                "timestamp": date,
+            },
+        }
+
+        # Generate OKF block using AI-Parrot's deterministic projector
+        try:
+            okf_yaml = project_okf_block(node, tree_name="fireflies-meetings")
+            # Parse the YAML string back to dict
+            import yaml
+
+            okf_dict = yaml.safe_load(okf_yaml)
+            return okf_dict  # Contains 'okf' key
+        except Exception as e:
+            logger.warning(f"Failed to generate OKF block: {e}. Skipping OKF metadata.")
+            return {}
 
     @staticmethod
     def _parse_fireflies_response(response_text: str) -> List[Dict[str, Any]]:
