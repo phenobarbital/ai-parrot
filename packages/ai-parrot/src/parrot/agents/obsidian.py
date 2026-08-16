@@ -219,11 +219,9 @@ class FirefliesObsidianAgent(BasicAgent):
                     }
 
                     await self.obsidian_toolkit.create_note(
-                        tree_name=self.vault_path.name,
-                        title=note_title,
-                        body=transcript_text,
-                        parent_node_id=self.meetings_folder,
-                        metadata=metadata,
+                        path=f"{self.meetings_folder}/{note_title}.md",
+                        content=transcript_text,
+                        frontmatter=metadata,
                     )
 
                     self.logger.info(f"✅ Synced: {note_title}")
@@ -279,8 +277,7 @@ class FirefliesObsidianAgent(BasicAgent):
             # Read transcript from Obsidian
             self.logger.info(f"Reading transcript: {note_title}")
             note = await self.obsidian_toolkit.read_note(
-                tree_name=self.vault_path.name,
-                node_id=note_title,
+                path=f"{self.meetings_folder}/{note_title}",
             )
 
             if not note:
@@ -312,9 +309,8 @@ class FirefliesObsidianAgent(BasicAgent):
             )
 
             await self.obsidian_toolkit.update_note(
-                tree_name=self.vault_path.name,
-                node_id=note_title,
-                body=enhanced_content,
+                path=f"{self.meetings_folder}/{note_title}",
+                content=enhanced_content,
             )
 
             result["updated"] = True
@@ -358,11 +354,13 @@ class FirefliesObsidianAgent(BasicAgent):
     async def _get_existing_meeting_titles(self) -> set[str]:
         """List all existing meeting notes in vault."""
         try:
-            notes = await self.obsidian_toolkit.list_notes(
-                tree_name=self.vault_path.name,
+            result = await self.obsidian_toolkit.list_notes(
                 folder=self.meetings_folder,
+                recursive=False,
             )
-            return {note.get("title", "") for note in (notes or [])}
+            # result is a dict with 'notes' key containing list of note dicts
+            notes = result.get("notes", []) if isinstance(result, dict) else result or []
+            return {note.get("title", "") for note in notes}
         except Exception as e:
             self.logger.warning(f"Failed to list existing notes: {e}")
             return set()
