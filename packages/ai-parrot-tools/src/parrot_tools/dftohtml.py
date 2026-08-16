@@ -31,8 +31,8 @@ class DfToHtmlArgs(BaseModel):
         description="Whether to include the DataFrame index in the HTML"
     )
     escape: bool = Field(
-        default=False,
-        description="Whether to escape HTML characters in the data"
+        default=True,
+        description="Whether to escape HTML characters in the data (disable only for pre-sanitized content)"
     )
     max_rows: Optional[int] = Field(
         default=None,
@@ -172,7 +172,7 @@ class DfToHtmlTool(AbstractTool):
         table_id: Optional[str] = None,
         css_classes: str = "dataframe table table-striped table-hover",
         include_index: bool = True,
-        escape: bool = False,
+        escape: bool = True,
         max_rows: Optional[int] = None,
         max_cols: Optional[int] = None,
         table_attributes: Optional[str] = None,

@@ -262,8 +262,16 @@ class QuickEdaTool(AbstractTool):
         return img_base64
 
     def _df_to_html_with_style(self, df_input: pd.DataFrame, title: str = "") -> str:
-        """Convert DataFrame to HTML with styling."""
-        styler = df_input.style.set_table_attributes('class="dataframe"')
+        """Convert DataFrame to HTML with styling.
+
+        Cell values are HTML-escaped to prevent XSS when rendering
+        user-supplied DataFrames.
+        """
+        styler = (
+            df_input.style
+            .set_table_attributes('class="dataframe"')
+            .format(escape="html")
+        )
         if title:
             styler = styler.set_caption(title)
         return styler.to_html()
