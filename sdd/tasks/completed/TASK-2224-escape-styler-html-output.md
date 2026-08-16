@@ -2,10 +2,10 @@
 
 **Feature**: quickeda-html-escape-xss (FEAT-424)
 **Spec**: n/a — bug fix from [GitHub Issue #1159](https://github.com/phenobarbital/ai-parrot/issues/1159)
-**Status**: [ ] pending
+**Status**: [x] done
 **Priority**: critical
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ## Context
 
@@ -141,4 +141,22 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+Applied `.format(escape="html")` to the Styler chain in
+`_df_to_html_with_style()` (`quickeda.py`), and flipped `DfToHtmlArgs.escape`
+default (and the corresponding `_execute()` parameter default) to `True` in
+`dftohtml.py`, matching the "After" snippets in this task exactly. Verified
+manually with the payload from the task's Verification section — `<img`
+does not survive, `&lt;img` does.
+
+Sweep of `parrot_tools/` for other unescaped `to_html()` call sites (item 3
+in Scope):
+- `edareport.py:226` — `ProfileReport.to_html()` (ydata-profiling's own
+  renderer, not raw pandas). Out of scope for this fix; left un-annotated
+  in code since `edareport.py` is not listed in this task's Files to
+  Create/Modify (Cardinal Rule: file fidelity) — documented here instead.
+- `correlationanalysis.py:388` — `correlation_df.to_html(classes=...,
+  table_id=...)` with no `escape=` kwarg, so it uses pandas'
+  `DataFrame.to_html()` default of `escape=True` already. Not a
+  vulnerability; no change needed.
+- No other `.style...to_html()` or `DataFrame.to_html()` call sites found.

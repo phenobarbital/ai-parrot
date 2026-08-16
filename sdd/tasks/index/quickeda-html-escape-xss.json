@@ -14,12 +14,13 @@
       "feature": "quickeda-html-escape-xss",
       "slug": "escape-styler-html-output",
       "title": "Escape DataFrame cell values in _df_to_html_with_style()",
-      "status": "in-progress",
+      "status": "done",
       "priority": "critical",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-2224-escape-styler-html-output.md",
-      "started_at": "2026-08-16T22:50:03+00:00"
+      "file": "sdd/tasks/completed/TASK-2224-escape-styler-html-output.md",
+      "started_at": "2026-08-16T22:50:03+00:00",
+      "completed_at": "2026-08-16T22:52:12+00:00"
     },
     {
       "id": "TASK-2225",
