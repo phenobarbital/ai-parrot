@@ -196,3 +196,30 @@ then restored) — satisfying the "tests fail if the fix is removed"
 acceptance criterion.
 
 `ruff check` on the new test file: clean.
+
+**Critical follow-up (post code-review, before push)**: a dispatched
+`code-reviewer` agent (cross-checked independently by Codex) found the
+initial 8-test suite above did not exercise two further, real
+attacker-reachable escaping gaps in the TASK-2224 fix (row index labels
+on axis=0, and the separate `df.index.name`/`df.columns.name` "axis
+name" gap that neither `.format()` nor `.format_index()` covers — see
+TASK-2224's amended completion note for the full technical detail).
+Added 6 more tests, bringing the file to 14 tests total:
+
+- `test_row_index_label_escaped` — index labels via `pd.Index(...)`.
+- `test_index_name_escaped` / `test_columns_name_escaped` — the
+  axis-name gap directly.
+- `test_execute_categorical_section_value_counts_escaped` — end-to-end
+  through the *real* `QuickEdaTool._execute()` →
+  `_generate_categorical_section` → `value_counts()` path (the
+  reviewer's point that testing the private helper in isolation missed
+  this), with both a malicious column name and a malicious categorical
+  value.
+- `test_column_header_escaped_by_default` /
+  `test_escape_false_column_header_passes_through` — `DfToHtmlTool`
+  column-header coverage for both the new default and the opt-out.
+
+Also strengthened `test_title_does_not_inject` (reviewer nitpick) to
+assert the escaped marker is present, not just that the raw tag is
+absent. All 14 tests pass against the fully-patched code; `ruff check`
+still clean.

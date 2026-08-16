@@ -264,15 +264,34 @@ class QuickEdaTool(AbstractTool):
     def _df_to_html_with_style(self, df_input: pd.DataFrame, title: str = "") -> str:
         """Convert DataFrame to HTML with styling.
 
-        Cell values and column headers are HTML-escaped, and any caption
-        `title` is escaped before being set, to prevent XSS when rendering
-        user-supplied DataFrames (column names and cell values are both
-        attacker-controlled, e.g. via an uploaded CSV).
+        Cell values, column headers, AND the row index are HTML-escaped
+        (`.format()` only covers cell values — index labels on either axis
+        require a separate `.format_index()` call), and any caption `title`
+        is escaped before being set, to prevent XSS when rendering
+        user-supplied DataFrames. Row index labels are just as
+        attacker-controlled as cell values or column names here: several
+        callers (e.g. `_generate_categorical_section`'s `value_counts()`
+        result, `_generate_descriptive_stats_section`'s transposed
+        `describe()`) put user data directly into the index.
+
+        The axis *names* (`df.index.name` / `df.columns.name`, rendered by
+        the Styler as the `index_name` header cell) are a separate gap:
+        neither `.format()` nor `.format_index()` touches them, so they are
+        escaped manually on a copy before styling — this is exactly the
+        path `value_counts().to_frame()` hits, since the resulting index
+        inherits the (attacker-controlled) source column's name.
         """
+        df_input = df_input.copy()
+        if df_input.index.name is not None:
+            df_input.index.name = escape(str(df_input.index.name))
+        if df_input.columns.name is not None:
+            df_input.columns.name = escape(str(df_input.columns.name))
+
         styler = (
             df_input.style
             .set_table_attributes('class="dataframe"')
             .format(escape="html")
+            .format_index(escape="html", axis=0)
             .format_index(escape="html", axis=1)
         )
         if title:

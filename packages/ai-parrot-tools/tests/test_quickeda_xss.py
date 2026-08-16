@@ -71,8 +71,57 @@ class TestDfToHtmlEscaping:
     def test_title_does_not_inject(self, tool):
         df = pd.DataFrame({"col": ["safe"]})
         html = tool._df_to_html_with_style(df, title="<script>bad</script>")
-        # set_caption may or may not escape; verify no raw <script> tag
         assert "<script>bad</script>" not in html
+        assert "&lt;script&gt;bad&lt;/script&gt;" in html
+
+    def test_row_index_label_escaped(self, tool):
+        """Row index labels are attacker-controlled too (e.g. value_counts()
+        results, transposed describe()) — `.format()` alone does not cover
+        them, only `.format_index(axis=0)` does."""
+        df = pd.DataFrame(
+            {"Count": [1]},
+            index=pd.Index(["<script>alert(1)</script>"]),
+        )
+        html = tool._df_to_html_with_style(df)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    def test_index_name_escaped(self, tool):
+        """`df.index.name` is rendered as a separate `index_name` header
+        cell that neither `.format()` nor `.format_index()` touches — it
+        must be escaped independently. This is exactly the shape produced
+        by `value_counts().to_frame()`, which inherits the source column's
+        (attacker-controlled) name as the index name."""
+        df = pd.DataFrame({"Count": [1]})
+        df.index.name = "<script>alert(1)</script>"
+        html = tool._df_to_html_with_style(df)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    def test_columns_name_escaped(self, tool):
+        """`df.columns.name` has the same gap as `df.index.name`."""
+        df = pd.DataFrame({"col": [1]})
+        df.columns.name = "<script>alert(1)</script>"
+        html = tool._df_to_html_with_style(df)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    @pytest.mark.asyncio
+    async def test_execute_categorical_section_value_counts_escaped(self, tool):
+        """End-to-end regression: a malicious column name AND a malicious
+        categorical value must both come out escaped in the full report,
+        via the real `_generate_categorical_section` -> `value_counts()`
+        -> `_df_to_html_with_style()` path (not just the private helper in
+        isolation)."""
+        malicious_col = "<script>alert(1)</script>"
+        malicious_val = "<img src=x onerror=alert(2)>"
+        df = pd.DataFrame({malicious_col: [malicious_val, malicious_val, "safe"]})
+        result = await tool._execute(dataframe=df)
+        html = result["html"]
+        assert malicious_col not in html
+        assert malicious_val not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+        assert "&lt;img src=x onerror=alert(2)&gt;" in html
 
 
 class TestDfToHtmlDefaultEscape:
@@ -87,8 +136,25 @@ class TestDfToHtmlDefaultEscape:
         assert "&lt;script&gt;" in result["html"]
 
     @pytest.mark.asyncio
+    async def test_column_header_escaped_by_default(self):
+        """Column names are just as attacker-controlled as cell values
+        (e.g. CSV headers) — the default `escape=True` must cover them."""
+        tool = DfToHtmlTool()
+        df = pd.DataFrame({"<script>alert(1)</script>": ["safe"]})
+        result = await tool._execute(dataframe=df)
+        assert "<script>alert(1)</script>" not in result["html"]
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in result["html"]
+
+    @pytest.mark.asyncio
     async def test_escape_false_passes_through(self):
         tool = DfToHtmlTool()
         df = pd.DataFrame({"col": ["<b>bold</b>"]})
+        result = await tool._execute(dataframe=df, escape=False)
+        assert "<b>bold</b>" in result["html"]
+
+    @pytest.mark.asyncio
+    async def test_escape_false_column_header_passes_through(self):
+        tool = DfToHtmlTool()
+        df = pd.DataFrame({"<b>bold</b>": ["safe"]})
         result = await tool._execute(dataframe=df, escape=False)
         assert "<b>bold</b>" in result["html"]

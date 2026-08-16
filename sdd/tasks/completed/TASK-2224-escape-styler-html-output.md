@@ -171,6 +171,46 @@ task):
   headers), added `.format_index(escape="html", axis=1)` to the chain
   and `html.escape(title)` before `set_caption()`.
 
+**Critical follow-up (post code-review, before push)**: the dispatched
+`code-reviewer` agent built end-to-end repros against the patched code
+and found the fix above was still materially incomplete — confirmed by
+an independent Codex cross-check with pandas-source citations. Two more
+gaps, closed in the same files:
+
+- **Row index (axis=0) never escaped.** `.format_index(..., axis=1)`
+  only covers column headers; the row *index* needs its own
+  `.format_index(escape="html", axis=0)` call. Real attacker-reachable
+  paths in `quickeda.py`: `_generate_missing_values_section`'s
+  `to_frame()`, `_generate_descriptive_stats_section`'s transposed
+  `describe()`, and — the exact payload class this fix targets —
+  `_generate_categorical_section`'s `value_counts().to_frame()`, whose
+  index holds the actual category *values* from user data. `dftohtml.py`
+  had no `.format_index()` at all for either axis, so `escape=True`
+  (the new default) did not protect column headers or the index either.
+  Added `.format_index(escape="html", axis=0)` (and confirmed axis=1
+  was already/now present) in both files.
+- **Axis *names* (`df.index.name` / `df.columns.name`) are a third,
+  separate gap** — pandas' Styler renders them as a distinct
+  `class="index_name"` header cell that neither `.format()` nor
+  `.format_index()` touches at all (verified against pandas 2.2.3
+  directly: a `.format_index(escape="html")`-wrapped Styler still
+  renders a raw `<script>` tag from `index.name`). This is exactly what
+  `value_counts().to_frame()` produces: the resulting index inherits the
+  source column's (attacker-controlled) name. Fixed by escaping
+  `index.name` / `columns.name` in place on a DataFrame copy, in both
+  `quickeda.py` and `dftohtml.py` (`dftohtml.py`'s escaping is gated on
+  `escape=True`, preserving the `escape=False` pre-sanitized-content
+  opt-out).
+
+Re-verified end-to-end after this follow-up: a malicious column name
+(`<script>alert(1)</script>`) fed through the real
+`QuickEdaTool._execute()` → `_generate_categorical_section` →
+`value_counts()` path, and a malicious categorical value
+(`<img src=x onerror=alert(2)>`), both now come out escaped in the full
+report HTML — this exact case was the reviewer's failing repro before
+the fix. Also added 6 end-to-end regression tests to TASK-2225's test
+file covering all three gaps (see that task's completion note).
+
 Sweep of `parrot_tools/` for other unescaped `to_html()` call sites (item 3
 in Scope):
 - `edareport.py:226` — `ProfileReport.to_html()` (ydata-profiling's own

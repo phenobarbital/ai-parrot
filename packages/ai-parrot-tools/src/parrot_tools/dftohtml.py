@@ -3,6 +3,7 @@ DataFrame to HTML Tool - Convert pandas DataFrames to styled HTML tables.
 """
 from typing import Any, Dict, Optional
 from pathlib import Path
+from html import escape as html_escape
 import pandas as pd
 from pydantic import BaseModel, Field
 from .abstract import AbstractTool
@@ -210,17 +211,37 @@ class DfToHtmlTool(AbstractTool):
 
         # Convert DataFrame to HTML using pandas styler for better control
         try:
+            # NOTE: Styler.to_html() has no `escape` kwarg of its own —
+            # escaping must be applied via `.format(escape="html")` /
+            # `.format_index(escape="html", axis=...)` before rendering,
+            # otherwise cell values, column headers, AND row index labels
+            # (all attacker-controlled, e.g. CSV headers) pass through
+            # unescaped (XSS). `.format()` only covers cell values, so both
+            # axes need their own `.format_index()` call. The axis *names*
+            # (`df.index.name` / `df.columns.name`, rendered as the
+            # `index_name` header cell) are a further gap: neither
+            # `.format()` nor `.format_index()` touches them, so they are
+            # escaped directly on `df_to_convert` (already a copy) before
+            # the styler is built.
+            if escape:
+                if df_to_convert.index.name is not None:
+                    df_to_convert.index.name = html_escape(str(df_to_convert.index.name))
+                if df_to_convert.columns.name is not None:
+                    df_to_convert.columns.name = html_escape(str(df_to_convert.columns.name))
+
             # Use pandas styler for more advanced styling options
             styler = df_to_convert.style
 
             # Set table attributes
             styler = styler.set_table_attributes(table_attrs)
 
-            # NOTE: Styler.to_html() has no `escape` kwarg of its own —
-            # escaping must be applied via `.format(escape="html")` before
-            # rendering, otherwise cell values pass through unescaped (XSS).
             if escape:
-                styler = styler.format(escape="html")
+                styler = (
+                    styler
+                    .format(escape="html")
+                    .format_index(escape="html", axis=0)
+                    .format_index(escape="html", axis=1)
+                )
 
             # Convert to HTML
             table_html = styler.to_html(
