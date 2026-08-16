@@ -60,6 +60,11 @@ from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
+# Silence the extremely chatty aiosqlite DEBUG logging (one line per
+# execute/fetchone/close) which floods build output when the root logger
+# is set to DEBUG (e.g. by navconfig/Navigator).
+logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+
 #: How long `upsert` waits for a contended store lock before skipping.
 #: Long enough to outlast a peer upsert (sub-second), short enough that
 #: a commit hook never stalls behind a multi-minute build.

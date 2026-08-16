@@ -22,8 +22,8 @@ HERE = Path(__file__).parent
 PROMPTS = json.loads((HERE / "prompts.json").read_text())
 RUNS = HERE / "runs.jsonl"
 
-CLAUDE_MODEL = "claude-3-5-sonnet-latest"
-GEMINI_MODEL = "gemini-1.5-pro"
+CLAUDE_MODEL = "claude-sonnet-4-5"
+GEMINI_MODEL = "gemini-3.1-pro-preview"
 TEMPERATURE = 0.2
 MAX_TOKENS = 4096
 

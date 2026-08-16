@@ -1,0 +1,131 @@
+{
+  "feature": "purge-matplotlib-renderer-libs",
+  "feature_id": "FEAT-423",
+  "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-16T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2218",
+      "slug": "pythonrepltool-cleanup",
+      "title": "PythonREPLTool — Remove matplotlib/seaborn integration",
+      "feature_id": "FEAT-423",
+      "feature": "purge-matplotlib-renderer-libs",
+      "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies the core PythonREPLTool — all subsequent tasks depend on or are tightly coupled to this change.",
+      "assigned_to": null,
+      "started_at": "2026-08-16T18:00:22+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2218-pythonrepltool-cleanup.md"
+    },
+    {
+      "id": "TASK-2219",
+      "slug": "system-prompt-rewrite",
+      "title": "System Prompt Rewrite — Direct LLM to structured-chart / A2UI",
+      "feature_id": "FEAT-423",
+      "feature": "purge-matplotlib-renderer-libs",
+      "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2218"
+      ],
+      "parallel": false,
+      "parallelism_notes": "System prompts reference libraries loaded in PythonREPLTool — must be consistent with TASK-2218.",
+      "assigned_to": null,
+      "started_at": "2026-08-16T18:00:22+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2219-system-prompt-rewrite.md"
+    },
+    {
+      "id": "TASK-2220",
+      "slug": "repl-worker-config-cleanup",
+      "title": "REPL Worker & Config Cleanup — Remove matplotlib from sanitizer and config",
+      "feature_id": "FEAT-423",
+      "feature": "purge-matplotlib-renderer-libs",
+      "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2218"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies python_sanitizer.py and clients/base.py which must be consistent with TASK-2218 PythonREPLTool changes.",
+      "assigned_to": null,
+      "started_at": "2026-08-16T18:00:22+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2220-repl-worker-config-cleanup.md"
+    },
+    {
+      "id": "TASK-2221",
+      "slug": "charttool-altair-migration",
+      "title": "ChartTool — Replace matplotlib backend with altair",
+      "feature_id": "FEAT-423",
+      "feature": "purge-matplotlib-renderer-libs",
+      "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Independent satellite package (ai-parrot-tools) but runs sequentially to avoid merge conflicts in the same worktree.",
+      "assigned_to": null,
+      "started_at": "2026-08-16T18:00:22+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2221-charttool-altair-migration.md"
+    },
+    {
+      "id": "TASK-2222",
+      "slug": "analytics-tools-cleanup",
+      "title": "Analytics Tools — Replace matplotlib with altair",
+      "feature_id": "FEAT-423",
+      "feature": "purge-matplotlib-renderer-libs",
+      "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2221"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-2221 for the altair pattern. Modifies 4 files in ai-parrot-tools.",
+      "assigned_to": null,
+      "started_at": "2026-08-16T18:00:22+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2222-analytics-tools-cleanup.md"
+    },
+    {
+      "id": "TASK-2223",
+      "slug": "docs-rules-update",
+      "title": "Documentation & Rules — Update for matplotlib removal",
+      "feature_id": "FEAT-423",
+      "feature": "purge-matplotlib-renderer-libs",
+      "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2218",
+        "TASK-2219",
+        "TASK-2220",
+        "TASK-2221",
+        "TASK-2222"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final task — documentation must reflect all code changes from prior tasks.",
+      "assigned_to": null,
+      "started_at": "2026-08-16T18:00:22+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2223-docs-rules-update.md"
+    }
+  ]
+}

@@ -107,8 +107,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             if response.usage:
                 print(f"Tokens: {response.usage.total_tokens}")
     """
-    # Use composable prompt layers instead of monolithic template
-    _prompt_builder = PromptBuilder.voice()
+    # NOTE: _prompt_builder is created per-instance in __init__ (not as a
+    # class attribute) because configure() bakes instance identity ($name,
+    # $role, $goal) into the builder.  A shared class-level object would
+    # only configure for the first instance; every later one silently
+    # inherits that identity.
 
     def __init__(
         self,
@@ -131,7 +134,11 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             **kwargs: Additional arguments for BaseBot
         """
         # VoiceBot uses configure_llm to create GeminiLiveClient instances
-        # _llm is inherited from AbstractBot
+        # _llm is inherited from AbstractBot.
+        # prompt_builder is created per-instance to avoid the mutable
+        # class-attribute pitfall (see note above).
+        if 'prompt_builder' not in kwargs:
+            kwargs['prompt_builder'] = PromptBuilder.voice()
         super().__init__(
             name=name,
             llm=llm,
