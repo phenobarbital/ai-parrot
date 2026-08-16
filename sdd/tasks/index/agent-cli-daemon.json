@@ -130,7 +130,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -140,8 +140,8 @@
       "parallelism_notes": "Imports client.py; mirrors core parrot.cli loaders (read-only in core).",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2214-agentd-console-proxy.md"
+      "completed_at": "2026-08-16T18:13:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2214-agentd-console-proxy.md"
     },
     {
       "id": "TASK-2215",
