@@ -18,6 +18,17 @@ def _get_request_tenant(request: "web.Request") -> str | None:
 
     Resolution order:
 
+    0. ``request["tenant_context"]`` — a tenant the HOST APPLICATION
+       resolved, authorized and declared for this request (e.g. a
+       navigator middleware validating a ``?program_slug=`` claim
+       against the caller's entitlements before setting the key).
+       Declaring the tenant is the host's job precisely because
+       AUTHORIZING it cannot be this library's: parrot knows nothing
+       about the host's entitlement model. When set, it wins over the
+       session inference below — ``programs[0]`` is an arbitrarily
+       ordered default (a caller with eleven programmes is a member of
+       all eleven), never a statement of which programme this request
+       is about.
     1. First program slug from the navigator-auth session
        (``request.session["session"]["programs"][0]``).
     2. ``request.app["form_registry"].default_tenant`` when the registry
@@ -33,9 +44,13 @@ def _get_request_tenant(request: "web.Request") -> str | None:
         request: Incoming aiohttp web.Request.
 
     Returns:
-        Tenant slug string, or ``None`` if neither the session nor the
-        application registry can provide one.
+        Tenant slug string, or ``None`` if neither the host context, the
+        session nor the application registry can provide one.
     """
+    declared = request.get("tenant_context")
+    if declared:
+        return str(declared)
+
     session = getattr(request, "session", None)
     if session is not None:
         userinfo = session.get("session", {})
