@@ -236,10 +236,24 @@ delivered in TASK-2201.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: `_wrap_auth` gained `*, tenant: str = "required"` composing
+`requires_tenant` as the innermost layer (before `_inner` wraps it), with
+`ValueError` raised eagerly for invalid modes. `_page_wrap` gained the same
+mode parameter, applying the tenant layer BEFORE the `protect=False`
+early-return so fieldsync's `protect_pages=False` deployment still gets
+tenant validation. Marker attribute `_requires_tenant` is set (only when
+`True`, never force-set `False`) on the final composed handler so tests can
+introspect coverage without depending on navigator-auth's decorator
+internals — this also sidesteps `AttributeError` on bound methods when
+`tenant="none"` and `protect=False` combine (no production call site hits
+that combination today, but it's guarded regardless). Verified via ruff
+diff-count that no NEW lint errors were introduced in either file (both
+carry pre-existing, unrelated lint debt from before this feature). Full
+`tests/unit/api/` suite: 93 passed, 1 pre-existing unrelated failure
+(`test_form_controls_endpoint.py`, controls payload shape — not touched by
+this feature). AC grep for `middlewares.append`/`@web.middleware` returns
+nothing.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
