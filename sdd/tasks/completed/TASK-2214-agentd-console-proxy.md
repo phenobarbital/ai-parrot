@@ -158,10 +158,47 @@ loaders.py/commands.py before coding; 4. index → in-progress; 5. implement;
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Implemented `proxy.py` with `_DaemonBotProxy` mirroring
+`_ServerBotProxy` EXACTLY (verified by a signature/coroutine-ness parity
+test against the real `_ServerBotProxy` class): `configure`, `ask`,
+`ask_stream` (async generator over `client.stream()`, terminating on
+`chat.complete`/`chat.error` without raising), `get_available_tools`/
+`get_tools_count`/`has_tools` backed by a `tools.list` fetch cached once
+via `_ensure_tools()`. `DaemonAgentProxy` mirrors `ServerAgentProxy`
+(`load`/`list_agents`/`close`); `load()` connects, subscribes to events,
+constructs the bot proxy, and pre-fetches its tool cache. Event queue: a
+bounded `deque` fed by the `subscribe_events()` callback, formatted via
+`_format_event()` (`"⏱ job <id> ejecutado ✓"` etc.), exposed only through
+`drain_events()` (never surfaced mid-turn — that's orchestrated by
+TASK-2216's attach wiring). `register_daemon_commands(repl, proxy)`
+registers `/status`, `/schedules [list|add|pause|resume|remove ...]`,
+`/invoke <method> [json-kwargs]` via `repl.register_command()`; bad JSON
+in `/schedules add`/`/invoke` renders a friendly `[red]...[/red]` message
+instead of raising.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviation from the task's file list (documented, not silent)**:
+`client.py` (TASK-2213) was additively modified — `AgentDaemonClient.
+call()` gained an optional keyword-only `params: dict | None = None`
+argument (merged with `**kwargs`, kwargs win on collision). This was
+required because `agent.invoke`'s own RPC params legitimately need a key
+literally named `"method"` (the target agent method to invoke), which
+collides with `call()`'s own `method: str` positional parameter — passing
+it via `**kwargs` is impossible regardless of caller. Fixed by allowing
+`call("agent.invoke", params={"method": ..., "kwargs": ...})` as an
+escape hatch. Purely additive/backward-compatible: every existing
+TASK-2213 call site (`call("ping", x=1)` etc.) is untouched and all 6
+pre-existing `test_client.py` tests still pass unchanged.
 
-**Deviations from spec**: none
+Test coverage (`test_proxy.py`): full signature/behavioural parity check
+against `_ServerBotProxy`; `ask`/`ask_stream` (interleaved delta→complete)
+and tool caching (asserting the `tools.list` RPC fires exactly once)
+against a scripted raw UDS server (same harness pattern as TASK-2213, per
+task instruction — not the real `JsonRpcUnixServer`); event queue/format/
+drain; slash-command handlers against a stubbed repl+client (status
+success/error, invoke success/bad-JSON, schedules-add bad-JSON). 9 new
+tests; full `agentd/` suite (58 tests) green. `ruff check` clean after
+auto-fix.
+
+**Deviations from spec**: none.

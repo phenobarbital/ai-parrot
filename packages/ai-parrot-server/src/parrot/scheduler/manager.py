@@ -299,6 +299,10 @@ class AgentSchedulerManager:
         self.app: Optional[web.Application] = None
         self.db: Optional[AsyncDB] = None
         self._pool: Optional[AsyncDB] = None  # Database connection pool
+        # True only when start_headless() created self._pool itself (via a
+        # `dsn`) — used by stop_headless() to decide whether it owns the
+        # pool's lifecycle and should close it.
+        self._owns_pool: bool = False
         self._job_context: Dict[str, Dict[str, Any]] = {}
         self._pending_success_tasks: Set[asyncio.Task] = set()
         self.registered_name = kwargs.get(
@@ -306,17 +310,13 @@ class AgentSchedulerManager:
         )
         self.scheduler: Optional[AsyncIOScheduler] = None
 
-        # Configure APScheduler with AsyncIO
-        jobstores = {
-            'default': MemoryJobStore(),
-            "redis": RedisJobStore(
-                db=6,
-                jobs_key="apscheduler.jobs",
-                run_times_key="apscheduler.run_times",
-                host=CACHE_HOST,
-                port=CACHE_PORT,
-            ),
-        }
+        # Configure APScheduler with AsyncIO.
+        # NOTE: RedisJobStore is intentionally NOT constructed here anymore
+        # (it used to be built unconditionally, which could attempt a Redis
+        # connection even when Redis is never used). Jobstore selection now
+        # happens at start time via `_build_jobstores()`/`start_headless()`;
+        # `self.scheduler` still exists after `__init__` with the always-on
+        # 'default' MemoryJobStore, per existing code that touches it.
         executors = {
             'default': AsyncIOExecutor()
         }
@@ -327,7 +327,7 @@ class AgentSchedulerManager:
         }
 
         self.scheduler = AsyncIOScheduler(
-            jobstores=jobstores,
+            jobstores=self._build_jobstores(use_redis=False),
             executors=executors,
             job_defaults=job_defaults,
             timezone='UTC'
@@ -1460,6 +1460,120 @@ class AgentSchedulerManager:
             AgentSchedule.Meta.connection = conn
             await schedule.delete()
 
+    def _build_jobstores(self, use_redis: bool = False) -> Dict[str, Any]:
+        """Build the APScheduler jobstore mapping.
+
+        Args:
+            use_redis: When True, also include a Redis-backed jobstore under
+                the ``'redis'`` alias (used by schedules whose
+                ``scheduler_type`` is ``'redis'``). The ``'default'``
+                ``MemoryJobStore`` is always present.
+
+        Returns:
+            A jobstore mapping suitable for ``AsyncIOScheduler(jobstores=...)``.
+        """
+        jobstores: Dict[str, Any] = {'default': MemoryJobStore()}
+        if use_redis:
+            jobstores['redis'] = self._make_redis_jobstore()
+        return jobstores
+
+    def _make_redis_jobstore(self) -> RedisJobStore:
+        """Construct a `RedisJobStore` using the shared cache configuration."""
+        return RedisJobStore(
+            db=6,
+            jobs_key="apscheduler.jobs",
+            run_times_key="apscheduler.run_times",
+            host=CACHE_HOST,
+            port=CACHE_PORT,
+        )
+
+    def _ensure_redis_jobstore(self) -> None:
+        """Attach a ``'redis'`` jobstore to the running scheduler if absent.
+
+        Idempotent: safe to call more than once (e.g. if `start_headless()`
+        is invoked again) — APScheduler raises `ValueError` when the alias
+        is already registered, which is swallowed here.
+        """
+        try:
+            self.scheduler.add_jobstore(self._make_redis_jobstore(), alias='redis')
+        except ValueError:
+            # Alias already registered — nothing to do.
+            pass
+
+    async def start_headless(
+        self,
+        *,
+        dsn: Optional[str] = None,
+        use_redis: bool = False,
+        register_listeners: bool = True,
+    ) -> None:
+        """Boot the scheduler without an aiohttp application.
+
+        Only requires a running asyncio event loop. Builds/attaches the
+        Redis jobstore only when requested, creates a Postgres connection
+        pool only when a `dsn` is given (and none is already set),
+        optionally wires the APScheduler event listeners, starts the
+        scheduler, and loads persisted schedules from the database only
+        when a pool exists.
+
+        Args:
+            dsn: Postgres DSN to build a connection pool from. When
+                `None` (and no pool is already assigned via `self._pool`),
+                the scheduler runs with decorator-registered schedules only.
+            use_redis: When True, attach a Redis-backed jobstore under the
+                `'redis'` alias. Defaults to `False` (MemoryJobStore only).
+            register_listeners: When True (default), call
+                `define_listeners()`. `on_startup()` passes `False` to stay
+                strictly behaviour-preserving for the aiohttp path, where
+                these listeners were never wired before FEAT-422 (this
+                param exists so the standalone headless-daemon path — the
+                only caller that needs `job_success`/`job_status`/etc.
+                actually firing — can still opt in without changing
+                aiohttp's existing runtime behaviour).
+        """
+        if use_redis:
+            self._ensure_redis_jobstore()
+
+        if dsn is not None and self._pool is None:
+            self._pool = AsyncDB("pg", dsn=dsn)
+            await self._pool.connection()
+            self._owns_pool = True
+
+        if register_listeners:
+            self.define_listeners()
+
+        if not self.scheduler.running:
+            self.scheduler.start()
+
+        if self._pool is not None:
+            await self.load_schedules_from_db()
+
+        self.logger.notice("Agent Scheduler started (headless)")
+
+    async def stop_headless(self, *, wait: bool = True) -> None:
+        """Stop a scheduler previously started via `start_headless()`.
+
+        Tolerant of partial initialization: safe to call even if
+        `start_headless()` was never called, or failed partway through.
+        Only closes the connection pool when `start_headless()` created it
+        itself (via `dsn`) — a pool injected from elsewhere (e.g. the
+        aiohttp `on_startup()` path) is left for its owner to close.
+
+        Args:
+            wait: Passed through to `AsyncIOScheduler.shutdown(wait=...)`.
+        """
+        if self.scheduler is not None and self.scheduler.running:
+            with contextlib.suppress(Exception):
+                self.scheduler.shutdown(wait=wait)
+
+        if self._owns_pool and self._pool is not None:
+            with contextlib.suppress(Exception):
+                await self._pool.close()
+            self._pool = None
+            self._owns_pool = False
+
+        self.logger.notice("Agent Scheduler stopped (headless)")
+
     def setup(self, app: web.Application) -> web.Application:
         """
         Setup scheduler with aiohttp application.
@@ -1512,11 +1626,20 @@ class AgentSchedulerManager:
             )
             self._pool = app['agentdb']
 
-        # Load schedules from database
-        await self.load_schedules_from_db()
-
-        # Start scheduler
-        self.scheduler.start()
+        # Delegate the transport-free bootstrap steps (jobstore(s),
+        # scheduler start, schedule loading) to start_headless(). `self.
+        # _pool` is already assigned above (owned by aiohttp's PostgresPool
+        # via `conn`) so start_headless()'s own dsn-based pool creation is
+        # skipped, while schedules are still loaded from it. `use_redis=
+        # True` preserves the previous behaviour of always having a Redis
+        # jobstore available under aiohttp. `register_listeners=False`
+        # keeps this strictly behaviour-preserving: `define_listeners()`
+        # was never called anywhere on this path before FEAT-422 (dead
+        # code), so wiring it now would be a silent, undocumented change
+        # to production aiohttp deployments (job_success/job_status
+        # callbacks, notifications, DB updates firing for the first time)
+        # — out of scope for this feature.
+        await self.start_headless(use_redis=True, register_listeners=False)
 
         self.logger.notice(
             "Agent Scheduler started successfully"
@@ -1550,8 +1673,11 @@ class AgentSchedulerManager:
         """Cleanup on app shutdown."""
         self.logger.info("Shutting down Agent Scheduler...")
 
-        if self.scheduler.running:
-            self.scheduler.shutdown(wait=True)
+        # Delegate to stop_headless(): since on_startup() never sets
+        # `_owns_pool` (the pool is owned by aiohttp's PostgresPool, not by
+        # us), stop_headless() will shut the scheduler down but leave pool
+        # teardown to its owner — identical to the previous behaviour.
+        await self.stop_headless(wait=True)
 
         self.logger.notice("Agent Scheduler shut down")
 

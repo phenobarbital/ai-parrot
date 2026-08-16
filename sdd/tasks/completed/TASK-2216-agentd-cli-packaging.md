@@ -179,10 +179,61 @@ read agent_repl.py + cli/__init__.py current state; 4. index → in-progress;
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Implemented `cli.py` with all 6 Click commands: `serve`
+(YAML-vs-`module:attr` detection, `--name`/`--socket`/`--dsn`/`--redis`/
+`--no-redis`/`--log-level` overrides applied via `AgentServiceConfig.
+model_copy()`), `attach` (`DaemonAgentProxy` + existing `AgentREPL`/
+`REPLConfig`, `register_daemon_commands()`, friendly
+`systemctl --user status`/`parrot serve` hint on `DaemonNotRunning`),
+`ask` (one-shot, TTY-conditional Markdown vs plain `click.echo`, exit 0/1),
+`status` (pretty `daemon.status` via `ResponseRenderer.render_info`),
+`install_service` (systemd unit exactly per the task's field list —
+`After=network-online.target`, `Type=notify`, `Restart=on-failure`,
+`Environment=PYTHONUNBUFFERED=1`, `WantedBy=default.target`,
+`ExecStart` resolved from `sys.executable`'s bin dir; user mode writes
+`~/.config/systemd/user/parrot-<name>.service` + prints
+daemon-reload/enable-now follow-ups; `--system` ONLY prints to stdout,
+never writes `/etc`, never sudo), and `mcp_serve` (`asyncio.run(
+run_mcp_proxy(...))`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Core registration (`packages/ai-parrot/src/parrot/cli/__init__.py`): added
+lazy keys `serve`/`attach`/`ask`/`status`/`install-service`/`mcp-serve` →
+`parrot.integrations.agentd.cli` (verified NO key collisions against the
+existing dict first, confirming the Open-Question default: plain
+`parrot serve` etc., not `parrot agentd serve`). `LazyGroup` gained a
+generic `_lazy_extras: dict[str, str]` (any lazy command may register an
+install hint) and `get_command()` now wraps the `importlib.import_module()`
+call in try/except `ImportError`, raising `click.ClickException` with the
+hint when registered, else a generic "could not import `<module>`"
+message — never a raw traceback. Smallest-viable, fully generic change
+(not agentd-specific): all 49 pre-existing core CLI tests
+(`test_setup_wizard.py`, `test_click_wiring.py`) still pass unchanged.
 
-**Deviations from spec**: none
+Packaging: added `agentd = []` (marker extra) to
+`ai-parrot-integrations/pyproject.toml`.
+
+**Attach event-drain seam (documented choice, per task instruction)**:
+`AgentREPL.run()`'s loop is a monolithic method with no exposed post-turn
+hook, and modifying `parrot.cli.repl`/`parrot.cli.commands` in core is out
+of scope for this feature (confirmed in TASK-2214). `_wrap_with_event_
+drain()` instead shadows `repl.send`/`repl.send_stream` at the INSTANCE
+level (assigning new bound-like callables as instance attributes, which
+Python's attribute lookup prefers over the class methods `run()` calls) —
+queued job-event lines print right after a turn completes and before the
+next prompt, achieving the spec's "flush between turns only, never
+mid-stream" requirement without touching core.
+
+Test coverage (`test_cli.py`, CliRunner): `serve` YAML-arg/target-arg/
+missing-`--name`-error/override-application; `ask` success/`DaemonNotRunning`/
+non-TTY-plain-output (asserting no `\x1b[` ANSI codes — CliRunner's
+captured stdout is never a TTY, so this exercises the real plain-text
+path); `install-service` unit content (all required fields + no `sudo`)
+and `--system` stdout-only (`result.stdout` vs `result.stderr`, no file
+written); core `LazyGroup` missing-module message (monkeypatched
+`importlib.import_module`) and lazy-key registration. 11 new tests; full
+`agentd/` suite (73 tests) green. `ruff check` clean after auto-fix +
+2 manual `TRY203` (redundant except-reraise) simplifications.
+
+**Deviations from spec**: none.

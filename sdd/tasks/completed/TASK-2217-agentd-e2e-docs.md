@@ -152,10 +152,68 @@ def test_no_aiohttp_without_server_pkg(tmp_path): ...  # subprocess-isolated
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Created `conftest.py` (promoted `echo_daemon`/`agentd_yaml`
+fixtures + `run_daemon`/`stop_daemon`/`wait_for_socket` helpers — kept
+`test_service.py`'s own local `echo_daemon` fixture untouched, since a
+test-module-local fixture shadows a conftest one of the same name with no
+conflict, and modifying `test_service.py` wasn't in this task's file list)
+and `test_e2e.py` with all 7 cross-module integration tests exercising the
+REAL stack (no scripted fakes): `chat.send`/stream roundtrip, two
+concurrent clients with isolated per-`session_id` history
+(`_TrackingEchoAgent`, module-level so it resolves via `importlib`), a
+real APScheduler `MemoryJobStore` interval job firing + `event.job_executed`
+reaching a subscribed `AgentDaemonClient` (`_IntervalEchoAgent`, same
+skip-if-`ai-parrot-server`-absent pattern as TASK-2212), a real subprocess
+SIGTERM graceful-shutdown test (`parrot serve` via `asyncio.create_subprocess_exec`,
+exit 0 + socket removed), `run_mcp_proxy`'s handler pieces driven directly
+against a real daemon, a CliRunner `parrot ask` end-to-end test (also via
+subprocess — see the design-fix note below), and a subprocess-isolated
+`sys.modules["parrot.scheduler.manager"] = None` test asserting `"aiohttp"
+not in sys.modules` for real (unlike TASK-2212's necessary AST substitute,
+a genuinely fresh subprocess makes this literal check meaningful again).
+Wrote `docs/agentd.md`: quickstart, full `AgentServiceConfig` field
+reference, systemd (user + `--system` print-only) + supervisord, a
+scheduler-modes matrix with a decorator example, MCP registration +
+`exposed_methods` gating warning, and a protocol appendix (method table +
+error codes) — skimmed `bot-cleanup-lifecycle.md` for tone/structure first.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Design fix found (documented, not a silent workaround)**: the original
+plan for `test_ask_oneshot_exit_codes` ran a live `AgentDaemon` in a
+background thread so a synchronous `CliRunner.invoke()` could exercise it
+without an `asyncio.run()`-inside-a-running-loop conflict. This hung
+every run: `AgentDaemon._install_signal_handlers()` calls
+`loop.add_signal_handler()`, which raises `RuntimeError: set_wakeup_fd
+only works in main thread of the main interpreter` when the daemon's loop
+lives on a non-main thread — that `RuntimeError` isn't a `NotImplementedError`,
+so it wasn't caught, crashing the daemon's `run()` task silently inside
+the thread right after the socket was already bound, leaving a dead
+listener the CLI's `ask` could connect to but never get a response from
+(the actual hang). Fixed by switching this test to a real subprocess (same
+technique as the SIGTERM test) instead of a thread — no daemon-code change
+was needed or made; this is a testing-approach fix, not a product bug (a
+real `parrot serve` process always runs in ITS OWN main thread).
 
-**Deviations from spec**: none
+**Spec §5 acceptance criteria → evidence mapping**:
+1. No aiohttp in daemon path → `test_no_aiohttp_without_server_pkg` (subprocess) + `TestNoAiohttp` (TASK-2212, AST-based).
+2. Headless scheduler (no DB/Redis) + DSN path exercised → `test_scheduler_interval_job_fires_and_event_emitted` (e2e) + `TestStartHeadless` (TASK-2209).
+3. Web-server scheduler behaviour unchanged → `packages/ai-parrot-server/tests/scheduler/` (9 tests, unmodified, still green).
+4. `parrot attach` reuses `AgentREPL` + daemon slash commands → `TestSlashCommands`/`TestProxy` (TASK-2214); interactive prompt loop itself intentionally NOT tested (out of scope, per this task's contract).
+5. `parrot ask` pipe-safe → `test_ask_oneshot_exit_codes` (e2e, real subprocess) + `TestAsk` (TASK-2216).
+6. MCP proxy tool gating → `test_mcp_stdio_ask_agent` (e2e) + `TestToolMatrix` (TASK-2215).
+7. Socket `0600`/dir `0700`, stale/already-running → `TestServer::test_permissions/test_stale_socket_reboot/test_live_socket_refuses` (TASK-2211).
+8. SIGTERM graceful, bounded by `shutdown_grace` → `test_graceful_shutdown_sigterm` (e2e, real subprocess) + `TestDegradation::test_sigterm_graceful` (TASK-2212, in-process).
+9. `install-service` valid unit, `Type=notify`/degrades → `TestInstallService` (TASK-2216) + `TestSdNotify` (TASK-2212).
+10. Core CLI degrades with actionable message → `TestCoreRegistration::test_missing_module_message` (TASK-2216).
+11. All unit + integration tests pass → 80/80 in `agentd/`, 9/9 in `ai-parrot-server/tests/scheduler/`.
+12. `docs/agentd.md` → this task.
+13. No breaking changes to existing public API → all pre-existing suites (core CLI, scheduler) verified green throughout the feature; every cross-task deviation was additive-only.
+
+Final sweep: full `agentd/` suite 80/80, `ai-parrot-server/tests/scheduler/`
+9/9, core CLI 49/49 (all run individually — a `tests.conftest` module-name
+collision when combining `ai-parrot` and `ai-parrot-server` test roots in
+ONE invocation is a pre-existing test-infra quirk, unrelated to this
+feature). `ruff check` clean across every agentd file.
+
+**Deviations from spec**: none.

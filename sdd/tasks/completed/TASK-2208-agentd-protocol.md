@@ -131,10 +131,16 @@ class TestFraming:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Implemented `protocol.py` with `RpcRequest`/`RpcResponse`/`RpcError`/
+`RpcNotification` Pydantic v2 models, JSON-RPC + application error-code
+constants, the full method-name constant set from spec §2, and an NDJSON
+codec (`read_message`/`write_message`) built on `asyncio.StreamReader.
+readuntil`/`StreamWriter.write`. Oversize protection checks length both via
+`StreamReader(limit=...)` (`LimitOverrunError`) and an explicit
+`max_line_bytes` check after `readuntil` returns. 11 unit tests cover model
+roundtrips, split/coalesced/oversized/malformed frames, and clean EOF — all
+passing. `ruff check` clean.
 
 **Deviations from spec**: none
