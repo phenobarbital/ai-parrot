@@ -370,7 +370,7 @@ class FirefliesObsidianAgent(BasicAgent):
             "concept_id": f"fireflies-{fireflies_id[:8]}",  # Short unique ID
             "title": title,
             "node_id": f"obsidian::fireflies::{fireflies_id}",  # FEAT-392 convention
-            "type": "DOCUMENT",  # Meeting is a document type
+            "type": ConceptType.DOCUMENT_NODE.value,  # Meeting is a document
             "resource": f"fireflies://transcript/{fireflies_id}",  # Source reference
             "categories": [
                 "meeting",
