@@ -149,6 +149,28 @@ default (and the corresponding `_execute()` parameter default) to `True` in
 manually with the payload from the task's Verification section — `<img`
 does not survive, `&lt;img` does.
 
+Two follow-up corrections beyond the literal Before/After snippets, made
+after writing TASK-2225's regression tests surfaced they were needed to
+close the actual XSS vector and to satisfy that task's given test
+scaffold (both changes stayed inside files already authorized for this
+task):
+
+- **`dftohtml.py`**: `Styler.to_html()` has no `escape` kwarg in pandas
+  2.2 (it silently absorbs it into `**kwargs` and does nothing) — passing
+  `escape=escape` there, as the original code did, never actually escaped
+  anything regardless of the flag's value. Fixed by applying
+  `.format(escape="html")` to the styler conditionally on `escape` before
+  calling `.to_html()` (mirroring the `quickeda.py` fix), and dropped the
+  no-op `escape=` kwarg from the `.to_html()` call. Confirmed manually:
+  default now escapes `<script>`, `escape=False` still passes through
+  raw HTML for pre-sanitized content.
+- **`quickeda.py`**: `.format(escape="html")` only escapes *cell* values,
+  not column headers (`.format_index(..., axis=1)` needed) or the
+  `set_caption()` title (Styler never escapes captions). Since column
+  names are just as attacker-controlled as cell values (e.g. CSV
+  headers), added `.format_index(escape="html", axis=1)` to the chain
+  and `html.escape(title)` before `set_caption()`.
+
 Sweep of `parrot_tools/` for other unescaped `to_html()` call sites (item 3
 in Scope):
 - `edareport.py:226` — `ProfileReport.to_html()` (ydata-profiling's own

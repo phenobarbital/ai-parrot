@@ -216,9 +216,14 @@ class DfToHtmlTool(AbstractTool):
             # Set table attributes
             styler = styler.set_table_attributes(table_attrs)
 
+            # NOTE: Styler.to_html() has no `escape` kwarg of its own —
+            # escaping must be applied via `.format(escape="html")` before
+            # rendering, otherwise cell values pass through unescaped (XSS).
+            if escape:
+                styler = styler.format(escape="html")
+
             # Convert to HTML
             table_html = styler.to_html(
-                escape=escape,
                 table_uuid=table_id
             )
 

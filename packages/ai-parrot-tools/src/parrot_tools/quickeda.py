@@ -264,16 +264,19 @@ class QuickEdaTool(AbstractTool):
     def _df_to_html_with_style(self, df_input: pd.DataFrame, title: str = "") -> str:
         """Convert DataFrame to HTML with styling.
 
-        Cell values are HTML-escaped to prevent XSS when rendering
-        user-supplied DataFrames.
+        Cell values and column headers are HTML-escaped, and any caption
+        `title` is escaped before being set, to prevent XSS when rendering
+        user-supplied DataFrames (column names and cell values are both
+        attacker-controlled, e.g. via an uploaded CSV).
         """
         styler = (
             df_input.style
             .set_table_attributes('class="dataframe"')
             .format(escape="html")
+            .format_index(escape="html", axis=1)
         )
         if title:
-            styler = styler.set_caption(title)
+            styler = styler.set_caption(escape(title))
         return styler.to_html()
 
     def _generate_basic_info_section(self, df: pd.DataFrame) -> str:
