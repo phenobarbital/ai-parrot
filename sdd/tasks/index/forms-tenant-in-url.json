@@ -14,7 +14,7 @@
       "feature_id": "FEAT-421",
       "feature": "forms-tenant-in-url",
       "spec": "sdd/specs/forms-tenant-in-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "New standalone module (api/errors.py); shares no file with any other task.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:03:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2198-tenant-error-responses.md"
+      "completed_at": "2026-08-16T17:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2198-tenant-error-responses.md"
     },
     {
       "id": "TASK-2199",
