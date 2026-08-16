@@ -2,7 +2,7 @@
   "feature": "quickeda-html-escape-xss",
   "feature_id": "FEAT-424",
   "spec": null,
-  "type": "hotfix",
+  "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-17T00:00:00+00:00",
   "completed_at": "2026-08-16T22:57:00+00:00",
@@ -20,7 +20,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-2224-escape-styler-html-output.md",
       "started_at": "2026-08-16T22:50:03+00:00",
-      "completed_at": "2026-08-16T22:52:12+00:00"
+      "completed_at": "2026-08-16T22:52:12+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2225",
@@ -36,7 +37,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-2225-quickeda-xss-regression-test.md",
       "started_at": "2026-08-16T22:50:03+00:00",
-      "completed_at": "2026-08-16T22:57:00+00:00"
+      "completed_at": "2026-08-16T22:57:00+00:00",
+      "verification": "verified"
     }
   ]
 }
