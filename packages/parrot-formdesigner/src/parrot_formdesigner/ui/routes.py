@@ -115,32 +115,41 @@ def setup_form_ui(
     telegram = TelegramWebAppHandler(registry=registry)
 
     bp = base_path.rstrip("/")
+    # FEAT-421: HTML page routes are re-prefixed under the same `t/{tenant}`
+    # marker segment as the JSON REST surface (api/routes.py), for the same
+    # reason — the tenant is a declared, cross-checkable path component.
+    tp = f"{bp}/t/{{tenant}}"
 
     # HTML page routes
-    app.router.add_get(f"{bp}/", _page_wrap(page.index, protect=protect_pages))
+    app.router.add_get(f"{tp}/", _page_wrap(page.index, protect=protect_pages))
     app.router.add_get(
-        f"{bp}/gallery", _page_wrap(page.gallery, protect=protect_pages)
+        f"{tp}/gallery", _page_wrap(page.gallery, protect=protect_pages)
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/schema",
+        f"{tp}/forms/{{form_uid}}/schema",
         _page_wrap(page.view_schema, protect=protect_pages),
     )
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}",
+        f"{tp}/forms/{{form_uid}}",
         _page_wrap(page.render_form, protect=protect_pages),
     )
     app.router.add_post(
-        f"{bp}/forms/{{form_uid}}",
+        f"{tp}/forms/{{form_uid}}",
         _page_wrap(page.submit_form, protect=protect_pages),
     )
 
-    # Telegram WebApp routes — PUBLIC (no auth).
+    # Telegram WebApp routes — PUBLIC (no auth). Re-prefixed for path
+    # consistency (FEAT-421); the tenant is declared but not yet validated
+    # here — the inline tenant check inside the handlers is TASK-2204's job
+    # (these routes are not `_page_wrap`-ed at all, matching the audio WS
+    # route's rationale: Telegram WebApp clients cannot go through
+    # navigator-auth).
     app.router.add_get(
-        f"{bp}/forms/{{form_uid}}/telegram", telegram.serve_webapp
+        f"{tp}/forms/{{form_uid}}/telegram", telegram.serve_webapp
     )
     # Telegram REST fallback (for WebApp payloads > 4 KB) — public.
     app.router.add_post(
-        f"{bp}/api/v1/forms/{{form_uid}}/telegram-submit",
+        f"{bp}/api/v1/t/{{tenant}}/forms/{{form_uid}}/telegram-submit",
         telegram.rest_fallback,
     )
 
