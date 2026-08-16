@@ -193,6 +193,114 @@ class LLMWikiToolkit(AbstractToolkit):
         )
         return report.model_dump()
 
+    async def ingest_obsidian_vault(
+        self,
+        wiki_name: str,
+        vault_path: str,
+        incremental: bool = False,
+        extract_entities: bool = False,
+        granularity: str = "standard",
+    ) -> dict[str, Any]:
+        """Ingest an Obsidian vault into the wiki (FEAT-392).
+
+        Phase 1 stores one PageIndex node per note (no LLM), Phase 1b
+        imports the vault's ``[[wikilink]]`` graph into GraphIndex as
+        pre-curated edges, and Phase 2 (opt-in) runs LLM entity/concept
+        extraction over the ingested pages.
+
+        Args:
+            wiki_name: Name of the target wiki (tree name = wiki name).
+            vault_path: Absolute path of the Obsidian vault directory.
+            incremental: Only re-ingest added/changed files and prune
+                deleted ones (uses the source manifest for staleness).
+            extract_entities: Also run Phase-2 LLM entity extraction.
+            granularity: Entity extraction granularity — ``minimal``,
+                ``standard``, ``fine`` or ``custom``.
+
+        Returns:
+            Dict with the phase reports: ``raw_ingest``, ``graph_bridge``
+            (nodes/edges imported) and optionally ``entity_extraction``.
+        """
+        from parrot.loaders.obsidian import (
+            ObsidianGraphBridge,
+            ObsidianVaultLoader,
+        )
+
+        self.logger.info(
+            "Ingesting Obsidian vault into wiki '%s': %s", wiki_name, vault_path
+        )
+        effective_config = self._config_for(wiki_name)
+        loader = ObsidianVaultLoader(vault_path)
+        if incremental:
+            raw_report = await loader.incremental_update(
+                self._pi, wiki_name, self._sources
+            )
+        else:
+            raw_report = await loader.ingest(self._pi, wiki_name, self._sources)
+
+        # Phase 1b — wikilink graph import (best-effort, no LLM).
+        graph_summary: dict[str, Any] = {
+            "nodes_imported": 0, "edges_imported": 0, "errors": []
+        }
+        if self._gi is not None:
+            notes, canvases = await loader.discover()
+            bridge = ObsidianGraphBridge(
+                notes,
+                canvases,
+                await loader.vault.build_index(),
+                vault_name=loader.vault.vault_name,
+            )
+            nodes, edges = bridge.build_graph()
+            id_map: dict[str, str] = {}
+            for node in nodes:
+                try:
+                    created = await self._gi.create_node(
+                        kind=node.kind.value,
+                        title=node.title,
+                        summary=node.summary,
+                        source_uri=node.source_uri,
+                        domain_tags=node.domain_tags or None,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    graph_summary["errors"].append(f"{node.node_id}: {exc}")
+                    continue
+                if isinstance(created, dict) and created.get("node_id"):
+                    id_map[node.node_id] = created["node_id"]
+                    graph_summary["nodes_imported"] += 1
+                else:
+                    graph_summary["errors"].append(
+                        f"{node.node_id}: {created!r}"
+                    )
+            for edge in edges:
+                source_id = id_map.get(edge.source_id)
+                target_id = id_map.get(edge.target_id)
+                if not source_id or not target_id:
+                    continue
+                try:
+                    linked = await self._gi.link_nodes(
+                        source_id, target_id, edge.kind.value
+                    )
+                    if isinstance(linked, dict) and not linked.get("error"):
+                        graph_summary["edges_imported"] += 1
+                except Exception as exc:  # noqa: BLE001
+                    graph_summary["errors"].append(
+                        f"{edge.source_id}->{edge.target_id}: {exc}"
+                    )
+            graph_summary["errors"] = graph_summary["errors"][:10]
+
+        result: dict[str, Any] = {
+            "raw_ingest": raw_report.model_dump(),
+            "graph_bridge": graph_summary,
+        }
+
+        # Phase 2 — opt-in LLM entity extraction.
+        if extract_entities:
+            entity_report = await self._ingest_orch.extract_entities(
+                wiki_name, effective_config, granularity=granularity
+            )
+            result["entity_extraction"] = entity_report.model_dump()
+        return result
+
     async def query(
         self,
         wiki_name: str,
