@@ -140,10 +140,32 @@ class TestClient:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-16
+**Notes**: Implemented `client.py` with `resolve_socket()` (existing path
+passthrough, else `default_socket_path()` from TASK-2210),
+`AgentDaemonClient.connect()` (fixed-backoff retry, raises
+`DaemonNotRunning` with an actionable message after exhaustion), a
+background `_read_loop()` reader task demuxing responses by `id` (pending
+`asyncio.Future`s) and `chat.*` notifications by `stream_id` (bounded
+per-stream `asyncio.Queue`, maxsize=1024 for backpressure), `call()`
+(raises `RpcRemoteError(code, message)` on error responses),
+`stream()` (async generator yielding typed `StreamEvent` — Pydantic model
+per project convention — terminating on `complete`/`error`),
+`subscribe_events()`, and `close()` (cancels the reader, fails all pending
+calls/streams with `ConnectionClosed`). The reader loop never dies
+silently: EOF, protocol errors, and unexpected exceptions all funnel into
+`_fail_all(ConnectionClosed(...))` so no caller can hang.
 
-**Completed by**:
-**Date**:
-**Notes**:
+6 unit tests in `test_client.py` (5 from the spec + 1 extra for the event
+callback) use a scripted raw `asyncio.start_unix_server` fake — NOT
+`JsonRpcUnixServer` (TASK-2211), per the task's explicit parallel-safety
+instruction — covering: call roundtrip, error-code mapping, two
+interleaved streams demuxed correctly by `stream_id`, retry-then-
+`DaemonNotRunning`, `close()` failing a pending call with
+`ConnectionClosed` (no hang), and `event.*` notifications reaching the
+`on_event`/`subscribe_events()` callback. All 6 pass; full `agentd/` suite
+(38 tests) still green. `ruff check` clean after auto-fix (unused `noqa`,
+import ordering).
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
