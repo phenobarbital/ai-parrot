@@ -35,6 +35,32 @@ from parrot.knowledge.graphindex.schema import (
 logger = logging.getLogger(__name__)
 
 
+def _okf_mappings() -> tuple[dict, dict]:
+    """Lazy OKF ontology → graph enum mappings (import kept local)."""
+    from parrot.knowledge.okf.ontology import ConceptType
+
+    type_map = {
+        ConceptType.CONCEPT_NODE: NodeKind.CONCEPT,
+        ConceptType.SYMBOL: NodeKind.SYMBOL,
+        ConceptType.RATIONALE: NodeKind.RATIONALE,
+        ConceptType.SKILL: NodeKind.SKILL,
+        ConceptType.DOCUMENT_NODE: NodeKind.DOCUMENT,
+        ConceptType.SECTION: NodeKind.SECTION,
+    }
+    rel_map = {
+        "references": EdgeKind.REFERENCES,
+        "defines": EdgeKind.DEFINES,
+        "mentions": EdgeKind.MENTIONS,
+        "explains": EdgeKind.EXPLAINS,
+        "contains": EdgeKind.CONTAINS,
+        "extends": EdgeKind.EXTENDS,
+    }
+    return type_map, rel_map
+
+
+_OKF_TYPE_TO_NODEKIND, _OKF_REL_TO_EDGEKIND = _okf_mappings()
+
+
 class ObsidianGraphBridge:
     """Convert an Obsidian vault's structure into GraphIndex form."""
 
@@ -79,6 +105,16 @@ class ObsidianGraphBridge:
     def _uri(self, rel_path: str) -> str:
         return f"obsidian://{self.vault_name}/{rel_path}"
 
+    def _read_okf(self, note: ObsidianNote):
+        """Read the note's OKF block, tolerating malformed blocks."""
+        from parrot.interfaces.obsidian.okf import read_okf
+
+        try:
+            return read_okf(note)
+        except ValueError as exc:
+            self.logger.warning("%s", exc)
+            return None
+
     # ------------------------------------------------------------------ #
     # Build
     # ------------------------------------------------------------------ #
@@ -111,19 +147,29 @@ class ObsidianGraphBridge:
                 )
 
         # --- Notes -----------------------------------------------------
+        okf_edges: list[tuple[str, str, str]] = []  # (source, target, rel)
         for note in self.notes:
             rel = note.path.as_posix()
             norm = rel[:-3] if rel.lower().endswith(".md") else rel
             domain_tags: dict = {"obsidian_type": "note"}
             if note.aliases:
                 domain_tags["aliases"] = list(note.aliases)
+            kind = NodeKind.DOCUMENT
+            summary = None
+            okf = self._read_okf(note)
+            if okf is not None:
+                kind = _OKF_TYPE_TO_NODEKIND.get(okf.type, NodeKind.DOCUMENT)
+                summary = okf.summary or None
+                domain_tags["okf_type"] = okf.type.value
+                for relates in okf.relates_to:
+                    okf_edges.append((norm, relates.concept, relates.rel.value))
             add_node(
                 UniversalNode(
                     node_id=self.note_id(norm),
-                    kind=NodeKind.DOCUMENT,
+                    kind=kind,
                     title=note.title,
                     source_uri=self._uri(rel),
-                    summary=None,
+                    summary=summary,
                     domain_tags=domain_tags,
                 )
             )
@@ -204,6 +250,27 @@ class ObsidianGraphBridge:
                     tid,
                     EdgeKind.REFERENCES,
                     domain_note={"obsidian_type": "tag_link"},
+                )
+
+        # --- OKF relates_to → typed edges (Phase D) ----------------------
+        for source_norm, target, rel in okf_edges:
+            resolved = self.index.resolve(target, from_path=source_norm)
+            if resolved is None:
+                self.logger.warning(
+                    "OKF relates_to target %r in %s does not resolve — skipped",
+                    target, source_norm,
+                )
+                continue
+            kind = _OKF_REL_TO_EDGEKIND.get(rel)
+            if kind is not None:
+                add_edge(self.note_id(source_norm), self.note_id(resolved), kind)
+            else:
+                # No matching EdgeKind — carry the OKF relation in tags.
+                add_edge(
+                    self.note_id(source_norm),
+                    self.note_id(resolved),
+                    EdgeKind.REFERENCES,
+                    domain_note={"okf_rel": rel},
                 )
 
         # --- Canvas files ------------------------------------------------

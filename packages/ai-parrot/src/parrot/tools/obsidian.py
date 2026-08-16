@@ -39,12 +39,23 @@ _OP_TO_METHOD: Dict[str, str] = {
     "append": "append_note",
     "delete": "delete_note",
     "move": "move_note",
+    "okf_read": "get_okf_metadata",
+    "okf_validate": "validate_okf_frontmatter",
+    "classify": "classify_note",
+    "okf_apply": "apply_okf_frontmatter",
 }
 _ALL_OPS: frozenset = frozenset(_OP_TO_METHOD)
 
 #: Operations that mutate the vault (invalidate the cached VaultIndex).
 _MUTATING_METHODS: frozenset = frozenset(
-    {"create_note", "update_note", "append_note", "delete_note", "move_note"}
+    {
+        "create_note",
+        "update_note",
+        "append_note",
+        "delete_note",
+        "move_note",
+        "apply_okf_frontmatter",
+    }
 )
 
 
@@ -83,6 +94,10 @@ class ObsidianToolkit(AbstractToolkit):
       - ``obsidian_append_note``          — append to a note (confirming)
       - ``obsidian_delete_note``          — delete a note (confirming)
       - ``obsidian_move_note``            — move/rename a note (confirming)
+      - ``obsidian_get_okf_metadata``     — read a note's OKF block
+      - ``obsidian_validate_okf_frontmatter`` — lint OKF metadata
+      - ``obsidian_classify_note``        — suggest OKF ConceptTypes
+      - ``obsidian_apply_okf_frontmatter``— write OKF block (confirming)
 
     Example::
 
@@ -99,7 +114,14 @@ class ObsidianToolkit(AbstractToolkit):
 
     #: Destructive operations requiring human-in-the-loop confirmation.
     confirming_tools: frozenset = frozenset(
-        {"create_note", "update_note", "append_note", "delete_note", "move_note"}
+        {
+            "create_note",
+            "update_note",
+            "append_note",
+            "delete_note",
+            "move_note",
+            "apply_okf_frontmatter",
+        }
     )
 
     def __init__(
@@ -540,4 +562,230 @@ class ObsidianToolkit(AbstractToolkit):
             "from": source,
             "file": info.model_dump(),
             "affected_backlinks": affected,
+        }
+
+    # ------------------------------------------------------------------ #
+    # OKF (Open Knowledge Format) tools — Phase D
+    # ------------------------------------------------------------------ #
+    async def get_okf_metadata(self, path: str) -> Dict[str, Any]:
+        """Read a note's OKF metadata (the ``okf:`` frontmatter block).
+
+        Args:
+            path: Vault-relative note path.
+
+        Returns:
+            Dict with ``okf`` (the parsed block, or null when absent) and
+            ``has_okf``.
+
+        Raises:
+            FileNotFoundError: If the note does not exist.
+            ValueError: If the okf block exists but is malformed.
+        """
+        from parrot.interfaces.obsidian.okf import read_okf
+
+        note = await self.vault.get_note(path)
+        block = read_okf(note)
+        return {
+            "path": note.path.as_posix(),
+            "has_okf": block is not None,
+            "okf": block.model_dump(mode="json") if block else None,
+        }
+
+    async def validate_okf_frontmatter(
+        self, path: Optional[str] = None, folder: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Lint OKF frontmatter for one note or the whole vault.
+
+        Checks type/relation values against the OKF controlled
+        vocabulary and verifies that ``relates_to`` targets resolve to
+        real notes.
+
+        Args:
+            path: Lint one note; when omitted the whole vault (or the
+                given ``folder``) is linted.
+            folder: Restrict the vault-wide lint to one folder.
+
+        Returns:
+            Dict with ``findings`` (list of human-readable strings),
+            ``notes_checked`` and ``notes_with_okf``.
+        """
+        from parrot.interfaces.obsidian.okf import validate_okf
+
+        index = await self.vault.build_index()
+        if path is not None:
+            notes = [await self.vault.get_note(path)]
+        else:
+            notes = await self.vault.load_notes(folder=folder)
+        findings: list[str] = []
+        with_okf = 0
+        for note in notes:
+            if note.frontmatter.get("okf") is not None:
+                with_okf += 1
+            findings.extend(validate_okf(note, index))
+        return {
+            "findings": findings,
+            "notes_checked": len(notes),
+            "notes_with_okf": with_okf,
+        }
+
+    async def classify_note(self, path: str) -> Dict[str, Any]:
+        """Suggest OKF ConceptType classifications for a note.
+
+        Deterministic heuristic over the note's frontmatter, tags and
+        title against the OKF controlled vocabulary — no LLM inside the
+        tool (the agent applies its own reasoning on top and can persist
+        a choice via ``apply_okf_frontmatter``).
+
+        Args:
+            path: Vault-relative note path.
+
+        Returns:
+            Dict with ranked ``candidates`` (type + rationale) and the
+            note's ``tags``/``title`` evidence.
+        """
+        from parrot.knowledge.okf.ontology import ConceptType
+
+        note = await self.vault.get_note(path)
+        candidates: list[Dict[str, str]] = []
+
+        def suggest(concept_type: ConceptType, rationale: str) -> None:
+            if all(c["type"] != concept_type.value for c in candidates):
+                candidates.append(
+                    {"type": concept_type.value, "rationale": rationale}
+                )
+
+        # 1. Explicit frontmatter type wins.
+        raw_type = note.frontmatter.get("type")
+        if isinstance(raw_type, str):
+            try:
+                explicit = ConceptType(raw_type.strip().title())
+                suggest(explicit, f"frontmatter type: {raw_type!r}")
+            except ValueError:
+                pass
+        # 2. Tag / title keyword evidence.
+        evidence = {tag.lower().split("/")[0] for tag in note.tags}
+        evidence.update(note.title.lower().split())
+        keyword_map = {
+            "policy": ConceptType.POLICY,
+            "control": ConceptType.CONTROL,
+            "safeguard": ConceptType.SAFEGUARD,
+            "evidence": ConceptType.EVIDENCE,
+            "playbook": ConceptType.PLAYBOOK,
+            "procedure": ConceptType.PROCEDURE,
+            "howto": ConceptType.PROCEDURE,
+            "standard": ConceptType.STANDARD,
+            "framework": ConceptType.FRAMEWORK,
+            "regulation": ConceptType.REGULATION,
+            "guideline": ConceptType.GUIDELINE,
+            "concept": ConceptType.CONCEPT_NODE,
+            "skill": ConceptType.SKILL,
+            "rationale": ConceptType.RATIONALE,
+            "decision": ConceptType.RATIONALE,
+        }
+        for keyword, concept_type in keyword_map.items():
+            if keyword in evidence:
+                suggest(concept_type, f"keyword {keyword!r} in tags/title")
+        # 3. Structural fallbacks.
+        if note.links and len(note.content) < 400:
+            suggest(
+                ConceptType.CONCEPT_NODE,
+                "short, link-dense note (hub/concept shape)",
+            )
+        suggest(ConceptType.DOCUMENT_NODE, "fallback: ordinary document")
+        return {
+            "path": note.path.as_posix(),
+            "title": note.title,
+            "tags": sorted(note.tags),
+            "candidates": candidates,
+        }
+
+    async def apply_okf_frontmatter(
+        self,
+        path: str,
+        okf: Dict[str, Any],
+        mirror_tags: bool = False,
+    ) -> Dict[str, Any]:
+        """Write/replace a note's ``okf:`` frontmatter block.
+
+        Native frontmatter keys are preserved; the ``okf`` subtree is
+        regenerated wholesale (single-writer rule — hand edits to it are
+        overwritten). The note body is untouched.
+
+        Args:
+            path: Vault-relative note path (must exist).
+            okf: OKF fields — ``type`` (ConceptType value), ``summary``,
+                ``tags``, ``relates_to`` (list of ``{concept, rel}``;
+                ``[[wikilink]]`` targets are normalized), optional
+                ``title``/``id``/``source``. ``id`` and ``resource``
+                default to the note's stable vault id.
+            mirror_tags: Also mirror OKF tags into native ``tags:`` as
+                ``okf/<tag>`` so Obsidian search sees them.
+
+        Returns:
+            Dict with the written file info and the applied okf block.
+
+        Raises:
+            FileNotFoundError: If the note does not exist.
+            ValueError: For unknown ConceptType/RelationType values or
+                unresolvable relates_to targets.
+        """
+        from parrot.interfaces.obsidian.okf import (
+            apply_okf,
+            normalize_relates_target,
+            read_okf,
+        )
+        from parrot.knowledge.okf.ontology import ConceptType, RelationType
+
+        raw = await self.vault.read_note(path)
+        note = await self.vault.get_note(path)
+        index = await self.vault.build_index()
+        norm = note.path.as_posix()
+        norm = norm[:-3] if norm.lower().endswith(".md") else norm
+
+        raw_type = str(okf.get("type", ConceptType.DOCUMENT_NODE.value))
+        try:
+            concept_type = ConceptType(raw_type)
+        except ValueError as exc:
+            valid = sorted(item.value for item in ConceptType)
+            raise ValueError(
+                f"Unknown OKF type {raw_type!r}. Valid types: {valid}"
+            ) from exc
+
+        relates_to: list[Dict[str, str]] = []
+        for row in okf.get("relates_to") or []:
+            target = str(row.get("concept", "")).strip()
+            rel = str(row.get("rel", "references"))
+            try:
+                RelationType(rel)
+            except ValueError as exc:
+                valid = sorted(item.value for item in RelationType)
+                raise ValueError(
+                    f"Unknown relates_to rel {rel!r}. Valid: {valid}"
+                ) from exc
+            resolved = normalize_relates_target(target, index)
+            if resolved is None:
+                raise ValueError(
+                    f"relates_to target {target!r} does not resolve to any note"
+                )
+            relates_to.append({"concept": resolved, "rel": rel})
+
+        node = {
+            "type": concept_type.value,
+            "title": okf.get("title", note.title),
+            "concept_id": okf.get("id", norm),
+            "node_id": okf.get("node_id", ""),
+            "resource": f"obsidian://{self.vault.vault_name}/{norm}",
+            "categories": list(okf.get("tags") or []),
+            "timestamp": okf.get("timestamp", ""),
+            "summary": okf.get("summary", ""),
+            "relates_to": relates_to,
+            "source": okf.get("source"),
+        }
+        new_text = apply_okf(raw, node, self.vault.vault_name, mirror_tags=mirror_tags)
+        info = await self.vault.write_note(path, new_text, overwrite=True)
+        written = read_okf(await self.vault.get_note(path))
+        return {
+            "applied": True,
+            "file": info.model_dump(),
+            "okf": written.model_dump(mode="json") if written else None,
         }

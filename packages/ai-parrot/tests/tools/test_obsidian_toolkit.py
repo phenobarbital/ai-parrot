@@ -38,6 +38,7 @@ class TestToolGeneration:
             "obsidian_append_note",
             "obsidian_delete_note",
             "obsidian_move_note",
+            "obsidian_apply_okf_frontmatter",
         }
 
     def test_allowed_operations_filter(self, fixture_vault):

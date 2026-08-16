@@ -29,6 +29,14 @@ from .models import (
     VaultIngestReport,
     VaultSearchHit,
 )
+from .okf import (
+    OKF_KEY,
+    apply_okf,
+    normalize_relates_target,
+    project_okf_block,
+    read_okf,
+    validate_okf,
+)
 from .parser import ObsidianNoteParser, parse_canvas
 from .rest import RestVaultBackend
 
@@ -36,6 +44,7 @@ __all__ = (
     "CANVAS_SUFFIX",
     "DEFAULT_SKIP_PATTERNS",
     "NOTE_SUFFIX",
+    "OKF_KEY",
     "ExtractionGranularity",
     "LocalVaultBackend",
     "ObsidianCanvas",
@@ -51,8 +60,13 @@ __all__ = (
     "VaultIngestConfig",
     "VaultIngestReport",
     "VaultSearchHit",
+    "apply_okf",
     "create_vault_backend",
+    "normalize_relates_target",
     "parse_canvas",
+    "project_okf_block",
+    "read_okf",
+    "validate_okf",
 )
 
 
