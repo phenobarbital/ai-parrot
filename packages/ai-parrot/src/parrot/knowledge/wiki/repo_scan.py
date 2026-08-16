@@ -86,6 +86,9 @@ DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset({
     ".venv", "venv", "node_modules", ".tox", "build", "dist", ".eggs",
     ".idea", ".vscode", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     ".parrot", ".claude", ".worktrees", ".graphindex",
+    # Obsidian vault internals — never descend into these when a repo
+    # embeds a vault (the vault build mode has its own scanner).
+    ".obsidian", ".trash",
 })
 
 #: File basenames always skipped (lockfiles and similar noise).

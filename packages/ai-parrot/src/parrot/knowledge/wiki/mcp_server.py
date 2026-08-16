@@ -106,12 +106,42 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
             storage, wiki_name=config.wiki_name, backend=config.backend
         )
     tools = create_wiki_tools(store, root=root, config=config)
+
+    # Obsidian vault exposure: when the project has a vault (explicit
+    # `vault_dir` in wiki.json, or the root itself is a vault), register
+    # the full ObsidianToolkit plus the wiki-side vault_ingest tool.
+    # Everything — including resolution, whose vault_scan import pulls in
+    # parrot.interfaces (another stdout-printing navconfig chain) — runs
+    # under the same stdout-redirect discipline as the parrot.mcp.* import
+    # above. Destructive obsidian_* tools carry
+    # routing_meta["requires_confirmation"], which MCPToolAdapter turns
+    # into a required `confirm` argument (soft HITL guard over stdio).
+    description = "Codebase knowledge graph — query, explore, and remember"
+    vault_tools = []
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.knowledge.wiki.project import resolve_vault_dir
+
+        vault = resolve_vault_dir(root, config)
+        if vault is not None:
+            from parrot.knowledge.wiki.tools import VaultIngestTool
+            from parrot.tools.obsidian import ObsidianToolkit
+
+            toolkit = ObsidianToolkit(vault_path=vault)
+            vault_tools = list(toolkit.get_tools_sync())
+            vault_tools.append(VaultIngestTool(store, root=root, config=config))
+            description += (
+                f" — plus Obsidian vault management for {vault.name!r}"
+            )
+    _ensure_stderr_logging()
+
     server = StdioMCPServer(LocalServerConfig(
         name="wikitoolkit",
         version="1.0.0",
-        description="Codebase knowledge graph — query, explore, and remember",
+        description=description,
     ))
     server.register_tools(tools)
+    if vault_tools:
+        server.register_tools(vault_tools)
     return server
 
 
