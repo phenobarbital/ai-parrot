@@ -22,7 +22,7 @@ from parrot.bots.agent import BasicAgent
 from parrot.tools.obsidian import ObsidianToolkit
 from parrot.models.responses import AIMessage
 from parrot.interfaces.obsidian.okf import project_okf_block
-from parrot.knowledge.okf.ontology import ConceptType, SourceProvenance
+from parrot.knowledge.okf.ontology import ConceptType, SourceProvenance, RelationType
 
 
 logger = logging.getLogger(__name__)
@@ -381,8 +381,8 @@ class FirefliesObsidianAgent(BasicAgent):
             "summary": f"Meeting: {title}. Participants: {', '.join(participants[:3])}{'...' if len(participants) > 3 else ''}. Duration: {duration:.1f} minutes.",
             "relates_to": [
                 {
-                    "target_id": f"fireflies-participant:{email.split('@')[0]}",
-                    "type": "MENTIONS",
+                    "concept": f"fireflies-participant:{email.split('@')[0]}",
+                    "rel": RelationType.MENTIONS.value,
                 }
                 for email in participants[:5]  # Limit to 5 participants
             ],
