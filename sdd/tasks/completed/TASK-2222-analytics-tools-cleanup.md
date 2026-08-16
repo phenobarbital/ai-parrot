@@ -231,10 +231,70 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-16
+**Notes**: All 4 files migrated. Key design decisions beyond the spec's
+literal per-file bullets (all necessary consequences of the migration, kept
+within the same already-scoped files):
 
-**Completed by**:
-**Date**:
-**Notes**:
+1. **quickeda.py**: charts embed as interactive Vega-Lite specs rendered
+   client-side via vega-embed CDN scripts (`_get_vega_scripts()` added to
+   the report `<head>`) rather than server-side PNG — no
+   vl-convert-python dependency needed for this report. altair has no
+   native violin-plot mark; reused the density (KDE) chart as the closest
+   single-chart equivalent in the distribution grid (documented in-code)
+   rather than a silent omission — consistent with the spec's Known Risk
+   ("the altair migration requires rewriting chart generation logic, not
+   just swapping imports").
+2. **correlationanalysis.py**: renamed `heatmap_image`/`bar_chart_image` ->
+   `heatmap_vegalite`/`bar_chart_vegalite` in the result dict — the content
+   type changed from base64 PNG to a Vega-Lite JSON dict, so keeping the
+   old key names would silently mislead callers. No other code/tests in
+   the repo consume these keys (verified via grep). File save switched
+   `.png` -> `.json`.
+3. **seasonaldetection.py**: `statsmodels.graphics.tsaplots.plot_acf`/
+   `plot_pacf` are matplotlib-only (draw directly onto a mpl `Axes`) — no
+   altair drop-in exists. Rebuilt from the underlying
+   `statsmodels.tsa.stattools.acf`/`pacf` numeric values as altair bar
+   charts with a 95% confidence band, preserving the same statistical
+   content.
+4. **sandboxtool.py**: found and fixed a real regression the task's literal
+   scope didn't call out — the harness script's `plt.savefig` wrapper
+   transparently rewrote relative save paths to `/output/` (the only
+   writable mount; `/workspace` is read-only). Simply deleting matplotlib
+   from `pip_packages` and the wrapper would have made ALL file-capture
+   silently dead (not just for matplotlib) since `created_files` was only
+   ever populated by that wrapper. Replaced it with a backend-agnostic
+   post-execution scan of `/output/`, and fixed the correlation/distribution
+   `analysis_code` templates' relative paths to explicit `/output/...` paths
+   (verified by extracting and executing the generated template code against
+   real data — both templates run and produce valid Vega-Lite JSON files).
+   Verified `grep -rn "import matplotlib" packages/ai-parrot-tools/src/`
+   returns zero matches (AC).
 
-**Deviations from spec**: none | describe if any
+`ruff check` on the 4 modified source files: 102 errors vs. 101 on `dev`
+baseline — net +1, all in pre-existing UP006/UP045 (deprecated
+`Dict`/`Optional` typing style, matching each file's existing convention)
+from new type-hinted helper methods; zero new BLE001/security-relevant
+categories (verified via code-frequency diff). Fixed one genuinely new
+RUF012 (mutable class-attr default) by adding `ClassVar[Dict[str, str]]` to
+`correlationanalysis.py`'s new `_CMAP_TO_VEGA_SCHEME`.
+
+New test suite (`test_analytics_no_matplotlib.py`, 8 tests) + full
+`test_chart_tool.py` (12) + `shell_tool/test_sandbox.py` (15, pre-existing,
+unrelated to `sandboxtool.py`/gVisor — confirmed unaffected): all 35 pass.
+No other code/tests in the repo call `QuickEdaTool`/`CorrelationAnalysisTool`/
+`SeasonalDetectionTool`/`SandboxTool`/`SandboxPandasTool` (verified via grep)
+— no external callers affected by the output-shape changes.
+
+**Deviations from spec**:
+1. `sandboxtool.py`'s DEFAULT_PACKAGES is actually named `pip_packages`
+   (contract said `DEFAULT_PACKAGES`) — same list, corrected name.
+2. Renamed `heatmap_image`/`bar_chart_image` result keys (see Notes #2) —
+   not itemized in the task's Codebase Contract but required for output
+   honesty.
+3. Replaced (not merely removed) the matplotlib-only `plt.savefig`
+   auto-capture wrapper in `sandboxtool.py` with a backend-agnostic
+   `/output/` scan, and fixed the 2 analysis templates' file paths (see
+   Notes #4) — required to avoid a silent regression, not itemized in the
+   task's line-by-line scope.

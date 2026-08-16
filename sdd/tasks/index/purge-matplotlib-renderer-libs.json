@@ -90,7 +90,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Depends on TASK-2221 for the altair pattern. Modifies 4 files in ai-parrot-tools.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2222-analytics-tools-cleanup.md"
+      "completed_at": "2026-08-16T19:10:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2222-analytics-tools-cleanup.md"
     },
     {
       "id": "TASK-2223",
