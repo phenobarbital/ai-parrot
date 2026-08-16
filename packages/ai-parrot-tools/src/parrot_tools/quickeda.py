@@ -1,22 +1,23 @@
 """
 Quick EDA Tool - Comprehensive Exploratory Data Analysis for pandas DataFrames.
+
+FEAT-423: matplotlib/seaborn replaced with altair. Charts are embedded as
+interactive, client-side-rendered Vega-Lite specs (via the vega-embed CDN
+scripts loaded once in the report's <head>) — no server-side rendering
+dependency (vl-convert-python) is required for this report.
 """
 from typing import Any, Dict, Optional, List
 from datetime import datetime
-import base64
-import io
+import json
+import uuid
 from html import escape
 from pathlib import Path
-import matplotlib
-import matplotlib.pyplot as plt
-import seaborn as sns
+import altair as alt
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 from .abstract import AbstractTool
 
-
-matplotlib.use('Agg')  # Use non-interactive backend
 
 class QuickEdaArgs(BaseModel):
     """Arguments schema for Quick EDA analysis."""
@@ -54,11 +55,14 @@ class QuickEdaArgs(BaseModel):
     )
     plot_style: str = Field(
         default="whitegrid",
-        description="Seaborn plot style"
+        description="Legacy field, kept for backward compatibility. Ignored "
+                     "by the altair backend (FEAT-423) — charts render with "
+                     "the report's default Vega-Lite theme."
     )
     color_palette: str = Field(
         default="husl",
-        description="Color palette for plots"
+        description="Legacy field, kept for backward compatibility. Ignored "
+                     "by the altair backend (FEAT-423)."
     )
     figure_size: tuple = Field(
         default=(12, 8),
@@ -81,6 +85,10 @@ class QuickEdaTool(AbstractTool):
     name: str = "quick_eda"
     description: str = "Perform comprehensive Exploratory Data Analysis on pandas DataFrame"
     args_schema = QuickEdaArgs
+
+    # Default chart color (altair backend, FEAT-423) — no ChartStyle concept
+    # here, so a single sensible default replaces the old seaborn palette.
+    _ALTAIR_PRIMARY_COLOR: str = "#4A90D9"
     return_direct: bool = False
 
     def _default_output_dir(self) -> Optional[Path]:
@@ -251,15 +259,29 @@ class QuickEdaTool(AbstractTool):
         </style>
         """
 
-    def _plot_to_base64(self, plt_figure) -> str:
-        """Convert matplotlib figure to base64 encoded string."""
-        buf = io.BytesIO()
-        plt_figure.savefig(buf, format='png', bbox_inches='tight', dpi=100, facecolor='white')
-        buf.seek(0)
-        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-        buf.close()
-        plt.close(plt_figure)
-        return img_base64
+    def _get_vega_scripts(self) -> str:
+        """CDN script tags required to render embedded Vega-Lite charts client-side."""
+        return """
+        <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+        """
+
+    def _altair_chart_to_html(self, chart, div_id: Optional[str] = None) -> str:
+        """Embed an altair chart as a self-contained <div>+<script> snippet.
+
+        Renders client-side via vega-embed (CDN scripts loaded once by
+        ``_get_vega_scripts()``) — no server-side rendering dependency
+        (vl-convert-python) is needed for this HTML report.
+        """
+        div_id = div_id or f"vega-chart-{uuid.uuid4().hex[:8]}"
+        spec = chart.to_dict()
+        return (
+            f'<div id="{div_id}" class="vega-chart"></div>\n'
+            f'<script type="text/javascript">\n'
+            f"  vegaEmbed('#{div_id}', {json.dumps(spec)}).catch(console.error);\n"
+            f"</script>"
+        )
 
     def _df_to_html_with_style(self, df_input: pd.DataFrame, title: str = "") -> str:
         """Convert DataFrame to HTML with styling."""
@@ -397,21 +419,25 @@ class QuickEdaTool(AbstractTool):
 
         if len(numeric_cols) > 1:
             try:
-                sns.set_style(plot_style)
-                sns.set_palette(color_palette)
-
-                fig_corr, ax_corr = plt.subplots(figsize=figure_size)
                 corr = df[numeric_cols].corr()
 
-                # Create heatmap
-                sns.heatmap(corr, annot=True, cmap='RdYlBu_r', fmt=".2f",
-                           center=0, square=True, ax=ax_corr, cbar_kws={"shrink": .8})
-                ax_corr.set_title("Correlation Matrix", fontsize=16, pad=20)
-                plt.tight_layout()
+                # Melt to long format: var1, var2, correlation (altair
+                # mark_rect() needs one row per cell, not a wide matrix).
+                corr_long = corr.reset_index().melt(id_vars="index")
+                corr_long.columns = ["var1", "var2", "correlation"]
 
-                img_base64 = self._plot_to_base64(fig_corr)
+                chart = alt.Chart(corr_long).mark_rect().encode(
+                    x=alt.X("var1:N", title=None, sort=None),
+                    y=alt.Y("var2:N", title=None, sort=None),
+                    color=alt.Color(
+                        "correlation:Q",
+                        scale=alt.Scale(scheme="redblue", domain=[-1, 1]),
+                    ),
+                    tooltip=["var1", "var2", alt.Tooltip("correlation:Q", format=".2f")],
+                ).properties(title="Correlation Matrix", width=420, height=420)
+
                 html.append('<div class="plot-container">')
-                html.append(f'<img src="data:image/png;base64,{img_base64}" alt="Correlation Matrix">')
+                html.append(self._altair_chart_to_html(chart))
                 html.append('</div>')
 
                 # Find high correlations
@@ -450,40 +476,65 @@ class QuickEdaTool(AbstractTool):
             cols_to_plot = numeric_cols[:min(len(numeric_cols), max_plots)]
             html.append(f'<p>Displaying distributions for {len(cols_to_plot)} numerical columns: <strong>{", ".join(map(escape, cols_to_plot))}</strong></p>')
 
-            sns.set_style(plot_style)
-            sns.set_palette(color_palette)
-
             for col in cols_to_plot:
                 html.append('<div class="plot-container">')
                 html.append(f'<h3>Distribution of {escape(col)}</h3>')
 
                 try:
-                    fig_dist, axes = plt.subplots(2, 2, figsize=(15, 10))
-                    fig_dist.suptitle(f'Distribution Analysis: {escape(col)}', fontsize=16)
-
                     # Remove NaN values for plotting
                     data = df[col].dropna()
+                    base_df = pd.DataFrame({col: data})
 
-                    # Histogram with KDE
-                    sns.histplot(data, kde=True, ax=axes[0, 0], alpha=0.7)
-                    axes[0, 0].set_title('Histogram with KDE')
+                    # Histogram
+                    hist_chart = alt.Chart(base_df).mark_bar(color=self._ALTAIR_PRIMARY_COLOR).encode(
+                        x=alt.X(f"{col}:Q", bin=alt.Bin(maxbins=30), title=col),
+                        y=alt.Y("count()", title="Count"),
+                    ).properties(title="Histogram", width=280, height=240)
 
-                    # Boxplot
-                    sns.boxplot(y=data, ax=axes[0, 1])
-                    axes[0, 1].set_title('Boxplot')
+                    # Density (KDE-equivalent — altair's transform_density)
+                    density_chart = alt.Chart(base_df).transform_density(
+                        col, as_=[col, "density"]
+                    ).mark_area(opacity=0.6, color=self._ALTAIR_PRIMARY_COLOR).encode(
+                        x=alt.X(f"{col}:Q", title=col),
+                        y=alt.Y("density:Q", title="Density"),
+                    ).properties(title="Density (KDE)", width=280, height=240)
 
-                    # Q-Q plot
+                    # Boxplot (altair's native mark_boxplot)
+                    box_chart = alt.Chart(base_df).mark_boxplot(color=self._ALTAIR_PRIMARY_COLOR).encode(
+                        y=alt.Y(f"{col}:Q", title=col),
+                    ).properties(title="Boxplot", width=160, height=240)
+
+                    # Q-Q plot (theoretical vs. ordered quantiles + fit line)
                     from scipy import stats
-                    stats.probplot(data, dist="norm", plot=axes[1, 0])
-                    axes[1, 0].set_title('Q-Q Plot (Normal)')
+                    (osm, osr), (slope, intercept, _r) = stats.probplot(data, dist="norm")
+                    qq_df = pd.DataFrame({"theoretical": osm, "ordered": osr})
+                    qq_points = alt.Chart(qq_df).mark_point(color=self._ALTAIR_PRIMARY_COLOR).encode(
+                        x=alt.X("theoretical:Q", title="Theoretical Quantiles"),
+                        y=alt.Y("ordered:Q", title="Ordered Values"),
+                    )
+                    qq_fit_df = pd.DataFrame({
+                        "theoretical": [float(osm.min()), float(osm.max())],
+                        "fit": [
+                            slope * float(osm.min()) + intercept,
+                            slope * float(osm.max()) + intercept,
+                        ],
+                    })
+                    qq_fit = alt.Chart(qq_fit_df).mark_line(color="red").encode(
+                        x="theoretical:Q", y="fit:Q",
+                    )
+                    qq_chart = (qq_points + qq_fit).properties(
+                        title="Q-Q Plot (Normal)", width=280, height=240
+                    )
 
-                    # Violin plot
-                    sns.violinplot(y=data, ax=axes[1, 1])
-                    axes[1, 1].set_title('Violin Plot')
-
-                    plt.tight_layout()
-                    img_base64 = self._plot_to_base64(fig_dist)
-                    html.append(f'<img src="data:image/png;base64,{img_base64}" alt="Distribution analysis for {escape(col)}">')
+                    # NOTE (FEAT-423): altair has no native violin-plot mark;
+                    # the density chart above is the closest single-chart
+                    # equivalent and is reused here rather than duplicated —
+                    # see spec's Known Risk "the altair migration requires
+                    # rewriting chart generation logic, not just swapping imports".
+                    combined = alt.hconcat(hist_chart, box_chart, qq_chart, density_chart).properties(
+                        title=f"Distribution Analysis: {col}"
+                    )
+                    html.append(self._altair_chart_to_html(combined))
 
                 except Exception as e:
                     html.append(f'<div class="alert alert-warning">Could not generate distribution plot for {escape(col)}: {escape(str(e))}</div>')
@@ -506,9 +557,6 @@ class QuickEdaTool(AbstractTool):
             cols_to_plot = cat_cols[:min(len(cat_cols), max_plots)]
             html.append(f'<p>Displaying analysis for {len(cols_to_plot)} categorical columns: <strong>{", ".join(map(escape, cols_to_plot))}</strong></p>')
 
-            sns.set_style(plot_style)
-            sns.set_palette(color_palette)
-
             for col in cols_to_plot:
                 html.append('<div class="plot-container">')
                 html.append(f'<h3>Analysis of {escape(col)}</h3>')
@@ -521,28 +569,30 @@ class QuickEdaTool(AbstractTool):
                         vc_df['Percentage (%)'] = (vc_df['Count'] / len(df[col].dropna()) * 100).round(2)
                         html.append(self._df_to_html_with_style(vc_df, f"Top {len(value_counts)} values"))
 
-                        # Create visualization
-                        fig_cat, axes = plt.subplots(1, 2, figsize=(15, 6))
-                        fig_cat.suptitle(f'Categorical Analysis: {escape(col)}', fontsize=16)
+                        # Bar chart (top 10 values)
+                        top10 = value_counts.head(10)
+                        bar_df = pd.DataFrame({"category": top10.index.astype(str), "count": top10.values})
+                        bar_chart = alt.Chart(bar_df).mark_bar(color=self._ALTAIR_PRIMARY_COLOR).encode(
+                            x=alt.X("category:N", sort="-y", title=None),
+                            y=alt.Y("count:Q", title="Count"),
+                        ).properties(title="Top 10 Values", width=320, height=280)
 
-                        # Bar chart
-                        value_counts.head(10).plot(kind='bar', ax=axes[0], color=sns.color_palette(color_palette, len(value_counts.head(10))))
-                        axes[0].set_title(f'Top 10 Values')
-                        axes[0].set_ylabel('Count')
-                        axes[0].tick_params(axis='x', rotation=45)
-
-                        # Pie chart (for top 8 values + others)
+                        # Pie chart (top 8 values + others)
                         pie_data = value_counts.head(8)
                         if len(value_counts) > 8:
                             others_count = value_counts.iloc[8:].sum()
                             pie_data = pd.concat([pie_data, pd.Series([others_count], index=['Others'])])
+                        pie_df = pd.DataFrame({"label": pie_data.index.astype(str), "value": pie_data.values})
+                        pie_chart = alt.Chart(pie_df).mark_arc().encode(
+                            theta=alt.Theta("value:Q"),
+                            color=alt.Color("label:N", legend=alt.Legend(title=None)),
+                            tooltip=["label", "value"],
+                        ).properties(title="Distribution (Top 8 + Others)", width=320, height=280)
 
-                        axes[1].pie(pie_data.values, labels=pie_data.index, autopct='%1.1f%%', startangle=90)
-                        axes[1].set_title('Distribution (Top 8 + Others)')
-
-                        plt.tight_layout()
-                        img_base64 = self._plot_to_base64(fig_cat)
-                        html.append(f'<img src="data:image/png;base64,{img_base64}" alt="Categorical analysis for {escape(col)}">')
+                        combined = alt.hconcat(bar_chart, pie_chart).properties(
+                            title=f"Categorical Analysis: {col}"
+                        )
+                        html.append(self._altair_chart_to_html(combined))
                     else:
                         html.append('<div class="alert alert-info">No values found for this column.</div>')
 
@@ -599,6 +649,7 @@ class QuickEdaTool(AbstractTool):
         html_parts.append('<meta charset="UTF-8">')
         html_parts.append('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         html_parts.append(f'<title>{title}</title>')
+        html_parts.append(self._get_vega_scripts())
         html_parts.append(self._get_eda_css())
         html_parts.append('</head>')
         html_parts.append('<body>')
