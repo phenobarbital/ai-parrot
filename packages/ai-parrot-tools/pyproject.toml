@@ -54,9 +54,10 @@ aws = ["boto3>=1.28"]
 docker = ["docker>=7.1"]
 git = ["gitpython>=3.1"]
 analysis = ["pandas>=2.0", "numpy>=1.26", "autoviz>=0.1"]
-# FEAT-423: ChartTool's altair backend. altair itself is a hard dependency
-# of ai-parrot's PythonREPLTool lazy-import path; vl-convert-python is
-# ChartTool-specific — only needed for PNG/SVG export to messaging
+# FEAT-423: ChartTool's altair backend. ai-parrot's PythonREPLTool also
+# lazy-imports altair (optional there, via lazy_import(..., extra="images"))
+# when installed — this extra is what makes it available. vl-convert-python
+# is ChartTool-specific — only needed for PNG/SVG export to messaging
 # integrations (Teams/Telegram). Vega-Lite JSON output needs neither.
 charts = ["altair>=5.0", "vl-convert-python>=1.0"]
 excel = ["openpyxl>=3.1", "odfpy>=1.4"]

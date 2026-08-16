@@ -27,6 +27,19 @@ class TestChartToolAltair:
             ChartTool(output_dir=tmp_path, backend="matplotlib")
 
     @pytest.mark.asyncio
+    async def test_true_default_produces_vegalite_json(self, chart_tool, bar_data):
+        """AC5: ChartTool() defaults to backend="altair" AND produces valid
+        Vega-Lite JSON with NO explicit output_format — the default must not
+        depend on whether the optional vl-convert-python is installed."""
+        result = await chart_tool._execute(chart_type="bar", title="Revenue", data=bar_data)
+        assert result.success
+        chart_path = Path(result.metadata["chart_path"])
+        assert chart_path.suffix == ".json"
+        with open(chart_path) as f:
+            spec = json.load(f)
+        assert "$schema" in spec
+
+    @pytest.mark.asyncio
     async def test_bar_chart_vegalite(self, chart_tool, bar_data):
         result = await chart_tool._execute(
             chart_type="bar", title="Revenue", data=bar_data,

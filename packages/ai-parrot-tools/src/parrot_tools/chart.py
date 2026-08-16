@@ -121,7 +121,7 @@ class GenerateChartInput(BaseModel):
         description="Title for the legend (if applicable)"
     )
     output_format: str = Field(
-        default="png",
+        default="vegalite",
         description=(
             "Output format: vegalite (default Vega-Lite JSON spec, no extra "
             "deps — recommended when the frontend renders charts natively), "
@@ -216,7 +216,7 @@ class ChartTool(AbstractTool):
         x_label: Optional[str] = None,
         y_label: Optional[str] = None,
         legend_title: Optional[str] = None,
-        output_format: str = "png",
+        output_format: str = "vegalite",
         style: str = "default",
         **kwargs
     ) -> ToolResult:
@@ -246,11 +246,13 @@ class ChartTool(AbstractTool):
                           f"Supported: {[t.value for t in ChartType]}"
                 )
 
-            # Validate format
+            # Validate format — fall back to the zero-extra-deps default
+            # (vegalite), not png, since png/svg require the optional
+            # vl-convert-python dependency.
             try:
                 format_enum = ChartFormat(output_format.lower())
             except ValueError:
-                format_enum = ChartFormat.PNG
+                format_enum = ChartFormat.VEGALITE_JSON
 
             # Auto cleanup old charts
             if self.auto_cleanup:

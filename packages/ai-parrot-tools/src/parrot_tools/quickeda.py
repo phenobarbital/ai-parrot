@@ -273,13 +273,24 @@ class QuickEdaTool(AbstractTool):
         Renders client-side via vega-embed (CDN scripts loaded once by
         ``_get_vega_scripts()``) — no server-side rendering dependency
         (vl-convert-python) is needed for this HTML report.
+
+        Security note: the chart spec embeds real DataFrame values (column
+        names, categorical labels), so ``json.dumps()`` output is escaped
+        with ``<`` -> ``\\u003c`` before interpolation into the ``<script>``
+        block — otherwise a value containing ``</script><script>...`` could
+        break out of the script context and inject arbitrary HTML/JS into
+        the generated report.
         """
         div_id = div_id or f"vega-chart-{uuid.uuid4().hex[:8]}"
         spec = chart.to_dict()
+        # Escape '<' so no value in the spec can prematurely close the
+        # </script> tag it's embedded in (JSON syntax never needs '<', so
+        # this is safe and lossless).
+        spec_json = json.dumps(spec).replace("<", "\\u003c")
         return (
             f'<div id="{div_id}" class="vega-chart"></div>\n'
             f'<script type="text/javascript">\n'
-            f"  vegaEmbed('#{div_id}', {json.dumps(spec)}).catch(console.error);\n"
+            f"  vegaEmbed('#{div_id}', {spec_json}).catch(console.error);\n"
             f"</script>"
         )
 
