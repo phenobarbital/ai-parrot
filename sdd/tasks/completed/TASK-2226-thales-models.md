@@ -190,8 +190,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Implemented all models exactly per spec §2 / task scope:
+`ResearchAngle`, `SourceClaim`, `Finding`, `ResearchDeck` (deck.py);
+`SlideSpec`, `Bibliography` (slides.py); `ThalesConfig` (config.py, ge=10
+floor, no upper cap); `ArtifactRef`, `ThalesResult` (result.py). Re-exported
+from `parrot.flows.thales.models` and `parrot.flows.thales`. 12 unit tests
+pass (`pytest packages/ai-parrot/tests/flows/thales/test_models.py -v`).
+`ruff check` reports only `UP045` (`Optional[X]` → `X | None`) style
+suggestions — pre-existing throughout the codebase (e.g.
+`dev_loop/models/base.py` has 47 of the same) and consistent with the
+task's own Codebase Contract pattern and spec §2's explicit `Optional[...]`
+usage; not treated as a blocking lint error.
 
 **Deviations from spec**: none

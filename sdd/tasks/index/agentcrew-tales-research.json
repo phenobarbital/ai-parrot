@@ -14,7 +14,7 @@
       "feature_id": "FEAT-425",
       "feature": "agentcrew-tales-research",
       "spec": "sdd/specs/agentcrew-tales-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — every other task imports these models; must land first.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:33:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2226-thales-models.md"
+      "completed_at": "2026-08-17T00:36:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2226-thales-models.md"
     },
     {
       "id": "TASK-2227",
