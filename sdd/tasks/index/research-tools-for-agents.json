@@ -193,7 +193,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -203,8 +203,8 @@
       "parallelism_notes": "Sole owner of every shared file (research/__init__.py, parrot_tools/__init__.py). This is why 2235-2242 could run in parallel worktrees. Also regenerates TOOL_REGISTRY, without which CI (.github/workflows/ci.yml:30 --check) fails.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2243-integration-and-discovery.md"
+      "completed_at": "2026-08-17T01:17:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2243-integration-and-discovery.md"
     },
     {
       "id": "TASK-2244",
