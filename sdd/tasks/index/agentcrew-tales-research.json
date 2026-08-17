@@ -93,7 +93,7 @@
       "feature_id": "FEAT-425",
       "feature": "agentcrew-tales-research",
       "spec": "sdd/specs/agentcrew-tales-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Modifies nodes/__init__.py created by TASK-2229 and calls TASK-2228 renderer — sequential after both.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:33:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2230-thales-fanin-nodes.md"
+      "completed_at": "2026-08-17T01:02:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2230-thales-fanin-nodes.md"
     },
     {
       "id": "TASK-2231",

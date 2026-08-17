@@ -202,8 +202,46 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Implemented `format_apa` (pure, deterministic dedupe-by-
+normalized-URL + alphabetical ordering + "n.d." for missing dates, never
+invents a year) + `BibliographyNode` fan-in; `ExecSummaryNode` (mirrors
+`SynthesisNode`'s exact `_PartialResult`/`synthesize_results` pattern);
+`FinalDocumentNode` (calls TASK-2228's `render_document`/`rasterize_pdf`,
+persists HTML as `ArtifactType.INTERACTIVE` and PDF as `ArtifactType.EXPORT`
+via injected `ArtifactStore`, `None` ref + warning when weasyprint absent);
+`InfographicNode` (calls `InfographicToolkit.render_template`, degrades to
+`None` + logged warning on any toolkit failure, never raises). Extended
+`nodes/__init__.py` re-exports. 12 unit tests pass (mocked store/toolkit/
+synthesis client); full `packages/ai-parrot/tests/flows/thales/` suite:
+58 passed. `ruff check` on the new files shows only pre-existing style
+categories (`UP006`/`UP017`/`UP035`/`UP045`/`PYI063`) — `UP017`
+(`timezone.utc` vs `datetime.UTC`) matches the exact convention already
+used in `storage/artifacts.py`, the module this code persists through.
+
+Bug found and fixed (scoped to this task's own new files only): the
+`SynthesisNode`/`DecisionNode` precedent's `model_post_init` docstring
+says "call parent hook" but none of the real precedents actually call
+`super().model_post_init()` — leaving `self.logger`/`self._logger` as
+`None` on every custom `Node` subclass built that way (verified: the base
+`Node.model_post_init` is what sets `self._logger`). `InfographicNode`
+needs a working logger for its graceful-degrade log line, so all four of
+this task's node classes explicitly call `super().model_post_init(
+__context)` first. TASK-2229's three node classes (already committed) do
+not call `self.logger` anywhere, so they were left untouched — fixing
+them was out of THIS task's file scope.
+
+Design notes (latitude taken within scope, TASK-2231 wiring still owns
+the actual DAG assembly):
+- `FinalDocumentNode` takes `store`/`user_id`/`agent_id`/`session_id` as
+  constructor fields (all injected via `node_factories`, per the task's own
+  "ArtifactStore... injected via the node factory closure" contract note,
+  extended to the other run-scoped identifiers `ArtifactStore.save_artifact`
+  requires) plus `slide_node_ids`/`bibliography_node_id` fields so it knows
+  which `deps` entries are slides vs. the bibliography.
+- `InfographicNode` similarly takes an injected `toolkit: InfographicToolkit`
+  (already configured with its templates) and an `exec_summary_node_id`
+  field to split `deps` into the summary string vs. deck payloads.
 
 **Deviations from spec**: none
