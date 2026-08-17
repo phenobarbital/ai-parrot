@@ -170,7 +170,7 @@ source ~/ai-parrot-env/bin/activate
 
 # Install AI-Parrot and dependencies
 pip install --upgrade pip
-pip install pandas numpy matplotlib seaborn plotly scipy scikit-learn
+pip install pandas numpy altair plotly scipy scikit-learn
 pip install jupyterlab nbformat
 
 # Install AI-Parrot
@@ -252,7 +252,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python packages
 RUN pip install --no-cache-dir \
-    pandas numpy matplotlib seaborn \
+    pandas numpy altair \
     scikit-learn scipy plotly \
     jupyterlab ipykernel nbformat
 

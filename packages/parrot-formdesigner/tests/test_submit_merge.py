@@ -7,11 +7,10 @@ All dependencies (registry, validator, store, storage) are mocked.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 from aiohttp import web
-
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.partial import PartialFormData
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
@@ -20,16 +19,23 @@ from parrot_formdesigner.services.partial_saves import PartialSaveStore
 from parrot_formdesigner.services.registry import FormRegistry
 from parrot_formdesigner.services.validators import FormValidator, ValidationResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+# FEAT-421: fixed tenant shared by _make_form()/_make_request() so
+# FormAPIHandler._get_tenant() (declared_tenant()) resolves consistently
+# and _assert_form_tenant()'s cross-check never fires for these tests,
+# which are not testing tenant enforcement.
+_TEST_TENANT = "test-tenant"
 
 
 def _make_form(form_id: str = "test-form") -> FormSchema:
     return FormSchema(
         form_id=form_id,
         title="Test Form",
+        tenant=_TEST_TENANT,
         sections=[
             FormSection(
                 section_id="s1",
@@ -48,7 +54,7 @@ def _make_partial(
     session_id: str = "sess-1",
     data: dict | None = None,
 ) -> PartialFormData:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     return PartialFormData(
         form_id=form_id,
         session_id=session_id,
@@ -99,6 +105,16 @@ def _make_request(
         req.json = AsyncMock(return_value=body)
     else:
         req.json = AsyncMock(side_effect=ValueError("no body"))
+
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed.
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+    )
+    # FEAT-421: enforce_membership_unless_public() reads request.session
+    # (attribute access, navigator-auth's user_session shape) to authorize
+    # the caller as a member of _TEST_TENANT for non-public forms.
+    req.session = {"session": {"programs": [_TEST_TENANT]}}
 
     return req
 

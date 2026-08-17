@@ -1,22 +1,20 @@
 """
 Correlation Analysis Tool - Analyze correlations between a key column and other columns.
+
+FEAT-423: matplotlib/seaborn replaced with altair. Heatmap and bar chart
+outputs are Vega-Lite JSON specs the frontend renders natively, instead of
+base64-encoded PNG images.
 """
-from typing import Any, Dict, Optional, List
+from typing import Any, ClassVar, Dict, Optional, List
 from enum import Enum
 from pathlib import Path
 from datetime import datetime
-import base64
-import io
-import matplotlib
-import matplotlib.pyplot as plt
-import seaborn as sns
+import json
+import altair as alt
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel, Field
 from .abstract import AbstractTool
-
-
-matplotlib.use('Agg')  # Use non-interactive backend
 
 
 class CorrelationMethod(str, Enum):
@@ -69,11 +67,13 @@ class CorrelationAnalysisArgs(BaseModel):
     )
     filename: Optional[str] = Field(
         default=None,
-        description="Optional filename to save the heatmap (without extension)"
+        description="Optional filename to save the heatmap Vega-Lite spec as JSON (without extension)"
     )
     heatmap_style: str = Field(
         default="coolwarm",
-        description="Color map for heatmap: coolwarm, viridis, plasma, etc."
+        description="Vega-Lite color scheme for the heatmap: coolwarm (mapped "
+                     "to 'redblue'), viridis, plasma, turbo, etc. — see "
+                     "https://vega.github.io/vega/docs/schemes/"
     )
     figure_size: tuple = Field(
         default=(10, 8),
@@ -94,6 +94,16 @@ class CorrelationAnalysisTool(AbstractTool):
     description: str = "Analyze correlations between a key column and other columns in a DataFrame"
     args_schema = CorrelationAnalysisArgs
     return_direct: bool = False
+
+    # matplotlib/seaborn colormap names -> closest Vega-Lite scheme
+    # (FEAT-423). Names not in this map (viridis, plasma, turbo, ...) are
+    # already valid Vega-Lite scheme names and pass through unchanged.
+    _CMAP_TO_VEGA_SCHEME: ClassVar[Dict[str, str]] = {
+        "coolwarm": "redblue",
+        "RdYlBu_r": "redyellowblue",
+        "RdYlGn": "redyellowgreen",
+        "bwr": "blueorange",
+    }
 
     def _default_output_dir(self) -> Optional[Path]:
         """Default output directory for correlation analysis results."""
@@ -155,77 +165,65 @@ class CorrelationAnalysisTool(AbstractTool):
         key_column: str,
         style: str = "coolwarm",
         figure_size: tuple = (10, 8)
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Create a correlation heatmap.
+        Create a correlation heatmap using altair (FEAT-423).
 
         Args:
             correlations: Series with correlation values
             key_column: Name of the key column
-            style: Color map style
-            figure_size: Figure size tuple
+            style: Vega-Lite color scheme (matplotlib/seaborn cmap names are
+                translated via ``_CMAP_TO_VEGA_SCHEME``)
+            figure_size: Figure size tuple (used to scale chart dimensions)
 
         Returns:
-            Base64 encoded image string
+            Vega-Lite JSON spec (dict) for the heatmap, or ``{}`` on error.
         """
         try:
-            # Create figure
-            fig, ax = plt.subplots(figsize=figure_size)
+            heatmap_df = pd.DataFrame({
+                "key": key_column,
+                "variable": correlations.index,
+                "correlation": correlations.values,
+            })
 
-            # Prepare data for heatmap
-            # Create a matrix with key column vs other columns
-            corr_matrix = correlations.to_frame(name=key_column).T
-
-            # Create heatmap
-            sns.heatmap(
-                corr_matrix,
-                annot=True,
-                cmap=style,
-                center=0,
-                fmt='.3f',
-                cbar_kws={'label': 'Correlation Coefficient'},
-                ax=ax
+            scheme = self._CMAP_TO_VEGA_SCHEME.get(style, style)
+            chart = alt.Chart(heatmap_df).mark_rect().encode(
+                x=alt.X("variable:N", title="Variables", sort=None),
+                y=alt.Y("key:N", title="Key Variable"),
+                color=alt.Color(
+                    "correlation:Q",
+                    scale=alt.Scale(scheme=scheme, domain=[-1, 1]),
+                    legend=alt.Legend(title="Correlation Coefficient"),
+                ),
+                tooltip=["variable", alt.Tooltip("correlation:Q", format=".3f")],
+            ).properties(
+                title=f"Correlation Analysis: {key_column} vs Other Variables",
+                width=min(60 * max(len(correlations), 1), int(figure_size[0] * 80)),
+                height=int(figure_size[1] * 15),
             )
 
-            ax.set_title(f'Correlation Analysis: {key_column} vs Other Variables',
-                        fontsize=14, fontweight='bold', pad=20)
-            ax.set_xlabel('Variables', fontsize=12)
-            ax.set_ylabel('Key Variable', fontsize=12)
-
-            # Rotate x-axis labels for better readability
-            plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
-
-            # Convert to base64
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
-            buf.seek(0)
-            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-            buf.close()
-            plt.close(fig)
-
-            return img_base64
+            return chart.to_dict()
 
         except Exception as e:
             self.logger.error(f"Error creating heatmap: {e}")
-            return ""
+            return {}
 
     def _create_bar_chart(
         self,
         correlations: pd.Series,
         key_column: str,
         figure_size: tuple = (12, 6)
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Create a bar chart of correlations.
+        Create a bar chart of correlations using altair (FEAT-423).
 
         Args:
             correlations: Series with correlation values
             key_column: Name of the key column
-            figure_size: Figure size tuple
+            figure_size: Figure size tuple (used to scale chart dimensions)
 
         Returns:
-            Base64 encoded image string
+            Vega-Lite JSON spec (dict) for the bar chart, or ``{}`` on error.
         """
         try:
             # Sort by absolute correlation value
@@ -233,42 +231,31 @@ class CorrelationAnalysisTool(AbstractTool):
                 correlations.abs().sort_values(ascending=True).index
             )
 
-            # Create figure
-            fig, ax = plt.subplots(figsize=figure_size)
+            bar_df = pd.DataFrame({
+                "variable": sorted_corr.index,
+                "correlation": sorted_corr.values,
+            })
 
-            # Create bar chart
-            colors = ['red' if x < 0 else 'blue' for x in sorted_corr.values]
-            bars = ax.barh(range(len(sorted_corr)), sorted_corr.values, color=colors, alpha=0.7)
+            chart = alt.Chart(bar_df).mark_bar().encode(
+                y=alt.Y("variable:N", sort=None, title=None),
+                x=alt.X("correlation:Q", title="Correlation Coefficient"),
+                color=alt.condition(
+                    alt.datum.correlation < 0,
+                    alt.value("#E74C3C"),
+                    alt.value("#4A90D9"),
+                ),
+                tooltip=["variable", alt.Tooltip("correlation:Q", format=".3f")],
+            ).properties(
+                title=f"Correlation Analysis: {key_column} vs Other Variables",
+                width=int(figure_size[0] * 40),
+                height=max(200, 25 * len(sorted_corr)),
+            )
 
-            # Customize chart
-            ax.set_yticks(range(len(sorted_corr)))
-            ax.set_yticklabels(sorted_corr.index)
-            ax.set_xlabel('Correlation Coefficient')
-            ax.set_title(f'Correlation Analysis: {key_column} vs Other Variables',
-                        fontsize=14, fontweight='bold')
-            ax.axvline(x=0, color='black', linestyle='-', alpha=0.3)
-            ax.grid(True, alpha=0.3)
-
-            # Add value labels on bars
-            for i, (bar, value) in enumerate(zip(bars, sorted_corr.values)):
-                ax.text(value + (0.01 if value >= 0 else -0.01), i, f'{value:.3f}',
-                       ha='left' if value >= 0 else 'right', va='center')
-
-            plt.tight_layout()
-
-            # Convert to base64
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
-            buf.seek(0)
-            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-            buf.close()
-            plt.close(fig)
-
-            return img_base64
+            return chart.to_dict()
 
         except Exception as e:
             self.logger.error(f"Error creating bar chart: {e}")
-            return ""
+            return {}
 
     async def _execute(
         self,
@@ -390,25 +377,27 @@ class CorrelationAnalysisTool(AbstractTool):
 
         if output_format in [OutputFormat.HEATMAP, OutputFormat.ALL]:
             # Create heatmap
-            heatmap_b64 = self._create_correlation_heatmap(
+            heatmap_spec = self._create_correlation_heatmap(
                 correlations, key_column, heatmap_style, figure_size
             )
 
             # Create bar chart
-            bar_chart_b64 = self._create_bar_chart(correlations, key_column, figure_size)
+            bar_chart_spec = self._create_bar_chart(correlations, key_column, figure_size)
 
             result["heatmap_output"] = {
-                "heatmap_image": heatmap_b64,
-                "bar_chart_image": bar_chart_b64,
+                # Vega-Lite JSON specs (FEAT-423) — the frontend renders
+                # these natively; no base64 image bytes are produced.
+                "heatmap_vegalite": heatmap_spec,
+                "bar_chart_vegalite": bar_chart_spec,
                 "heatmap_style": heatmap_style,
                 "figure_size": figure_size
             }
 
-            # Save heatmap to file if filename provided
-            if filename and heatmap_b64:
+            # Save heatmap spec to file if filename provided
+            if filename and heatmap_spec:
                 try:
-                    if not filename.endswith('.png'):
-                        filename = f"{filename}_{timestamp}.png"
+                    if not filename.endswith('.json'):
+                        filename = f"{filename}_{timestamp}.json"
 
                     # Ensure output directory exists
                     if self.output_dir:
@@ -417,12 +406,10 @@ class CorrelationAnalysisTool(AbstractTool):
                     else:
                         file_path = Path(filename)
 
-                    # Decode and save image
-                    img_data = base64.b64decode(heatmap_b64)
-                    with open(file_path, 'wb') as f:
-                        f.write(img_data)
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(heatmap_spec, f, indent=2)
 
-                    self.logger.info(f"Heatmap saved to: {file_path}")
+                    self.logger.info(f"Heatmap Vega-Lite spec saved to: {file_path}")
 
                     result["heatmap_output"].update({
                         "file_path": str(file_path),

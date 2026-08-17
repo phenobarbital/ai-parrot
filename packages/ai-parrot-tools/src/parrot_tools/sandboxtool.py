@@ -32,7 +32,7 @@ class SandboxConfig:
     enable_gpu: bool = False
     mount_paths: List[str] = field(default_factory=list)
     pip_packages: List[str] = field(default_factory=lambda: [
-        "pandas", "numpy", "matplotlib", "seaborn", "scikit-learn",
+        "pandas", "numpy", "altair", "scikit-learn",
         "scipy", "plotly", "jupyterlab", "ipykernel"
     ])
 
@@ -247,9 +247,6 @@ import base64
 import traceback
 import pandas as pd
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend
-import matplotlib.pyplot as plt
 from datetime import datetime
 
 # Load serialized dataframes
@@ -277,16 +274,12 @@ from contextlib import redirect_stdout, redirect_stderr
 stdout_capture = io.StringIO()
 stderr_capture = io.StringIO()
 
-# Custom figure save wrapper
-original_savefig = plt.savefig
-def wrapped_savefig(fname, **kwargs):
-    fname = f"/output/{{fname}}"
-    original_savefig(fname, **kwargs)
-    with open(fname, 'rb') as f:
-        created_files[os.path.basename(fname)] = base64.b64encode(f.read()).decode()
-    plots.append({{"type": "matplotlib", "filename": os.path.basename(fname)}})
-    return fname
-plt.savefig = wrapped_savefig
+# NOTE (FEAT-423): the matplotlib-specific plt.savefig() auto-capture
+# wrapper that used to live here was removed — matplotlib is no longer a
+# default `pip_packages` entry. File capture is now backend-agnostic: any
+# file the user's code writes directly to '/output/' (Vega-Lite JSON,
+# PNG/SVG via an explicitly-installed renderer, or anything else) is picked
+# up by scanning the directory after execution, below.
 
 try:
     with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
@@ -294,13 +287,22 @@ try:
         exec("""
 {code}
 """)
-        
+
         # Capture any created dataframes
         for name, obj in list(globals().items()):
             if isinstance(obj, pd.DataFrame) and name not in ['dataframes', 'pd']:
                 if name not in dataframes or not obj.equals(dataframes.get(name, pd.DataFrame())):
                     output_dataframes[name] = obj
-    
+
+    # Auto-capture any files the user's code wrote directly to /output/
+    # (FEAT-423: backend-agnostic replacement for the old matplotlib-only
+    # plt.savefig() wrapper).
+    for _fname in os.listdir('/output'):
+        _full_path = os.path.join('/output', _fname)
+        if os.path.isfile(_full_path) and _fname != 'result.json' and _fname not in created_files:
+            with open(_full_path, 'rb') as _f:
+                created_files[_fname] = base64.b64encode(_f.read()).decode()
+
     execution_time = (datetime.now() - execution_start).total_seconds() * 1000
     
     # Save results
@@ -592,7 +594,7 @@ class SandboxPandasTool(SandboxTool):
         """Initialize with Pandas-specific configuration"""
         config = SandboxConfig(
             pip_packages=[
-                "pandas", "numpy", "matplotlib", "seaborn", 
+                "pandas", "numpy", "altair",
                 "plotly", "scikit-learn", "scipy", "statsmodels",
                 "openpyxl", "xlrd", "pyarrow", "fastparquet"
             ]
@@ -631,9 +633,9 @@ print(f"\\nMemory Usage:\\n{{df.memory_usage(deep=True)}}")
             """,
             
             "correlation": f"""
+import json
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import altair as alt
 
 df = {df_name}
 numeric_cols = df.select_dtypes(include=['number']).columns
@@ -641,42 +643,52 @@ if len(numeric_cols) > 1:
     corr_matrix = df[numeric_cols].corr()
     print("=== Correlation Matrix ===")
     print(corr_matrix)
-    
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0)
-    plt.title('Correlation Heatmap')
-    plt.tight_layout()
-    plt.savefig('correlation_heatmap.png')
+
+    corr_long = corr_matrix.reset_index().melt(id_vars="index")
+    corr_long.columns = ["var1", "var2", "correlation"]
+    chart = alt.Chart(corr_long).mark_rect().encode(
+        x=alt.X("var1:N", title=None, sort=None),
+        y=alt.Y("var2:N", title=None, sort=None),
+        color=alt.Color("correlation:Q", scale=alt.Scale(scheme="redblue", domain=[-1, 1])),
+        tooltip=["var1", "var2", alt.Tooltip("correlation:Q", format=".2f")],
+    ).properties(title="Correlation Heatmap")
+
+    with open("/output/correlation_heatmap.json", "w") as f:
+        json.dump(chart.to_dict(), f)
 else:
     print("Not enough numeric columns for correlation analysis")
             """,
-            
+
             "distribution": f"""
+import json
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import altair as alt
 
 df = {df_name}
 numeric_cols = df.select_dtypes(include=['number']).columns
 
 for i, col in enumerate(numeric_cols[:6]):  # Limit to first 6 columns
-    plt.figure(figsize=(12, 4))
-    
-    plt.subplot(1, 3, 1)
-    df[col].hist(bins=30, edgecolor='black')
-    plt.title(f'{{col}} - Histogram')
-    
-    plt.subplot(1, 3, 2)
-    df.boxplot(column=col)
-    plt.title(f'{{col}} - Boxplot')
-    
-    plt.subplot(1, 3, 3)
-    df[col].plot(kind='kde')
-    plt.title(f'{{col}} - KDE')
-    
-    plt.tight_layout()
-    plt.savefig(f'distribution_{{col}}.png')
-    plt.close()
+    col_df = df[[col]].dropna()
+
+    hist_chart = alt.Chart(col_df).mark_bar().encode(
+        x=alt.X(f"{{col}}:Q", bin=alt.Bin(maxbins=30), title=col),
+        y=alt.Y("count()", title="Count"),
+    ).properties(title=f"{{col}} - Histogram", width=250, height=200)
+
+    box_chart = alt.Chart(col_df).mark_boxplot().encode(
+        y=alt.Y(f"{{col}}:Q", title=col),
+    ).properties(title=f"{{col}} - Boxplot", width=150, height=200)
+
+    density_chart = alt.Chart(col_df).transform_density(
+        col, as_=[col, "density"]
+    ).mark_area(opacity=0.6).encode(
+        x=alt.X(f"{{col}}:Q", title=col),
+        y=alt.Y("density:Q", title="Density"),
+    ).properties(title=f"{{col}} - Density (KDE)", width=250, height=200)
+
+    combined = alt.hconcat(hist_chart, box_chart, density_chart)
+    with open(f"/output/distribution_{{col}}.json", "w") as f:
+        json.dump(combined.to_dict(), f)
     
 print(f"Generated distribution plots for {{len(numeric_cols)}} numeric columns")
             """

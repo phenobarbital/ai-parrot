@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-16T19:19:45+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-16T19:28:12+00:00",
   "tasks": [
     {
       "id": "TASK-2208",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "New files only (agentd/protocol.py); shares no files or imports with TASK-2209/2210.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2208-agentd-protocol.md"
+      "completed_at": "2026-08-16T17:38:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2208-agentd-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2209",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Only touches ai-parrot-server scheduler/manager.py — disjoint from all agentd package files.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2209-scheduler-headless.md"
+      "completed_at": "2026-08-16T17:49:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2209-scheduler-headless.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2210",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +60,9 @@
       "parallelism_notes": "New file agentd/config.py + test fakes; no imports from other pending tasks.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2210-agentd-config.md"
+      "completed_at": "2026-08-16T17:52:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2210-agentd-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2211",
@@ -68,7 +71,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +81,9 @@
       "parallelism_notes": "Imports protocol.py from TASK-2208.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2211-agentd-uds-server.md"
+      "completed_at": "2026-08-16T17:54:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2211-agentd-uds-server.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2212",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "Integrates scheduler refactor, config and server — sequential by nature.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2212-agentd-daemon-service.md"
+      "completed_at": "2026-08-16T18:06:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2212-agentd-daemon-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2213",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -120,8 +125,9 @@
       "parallelism_notes": "Imports protocol.py (TASK-2208) and config.default_socket_path (TASK-2210); tests use a scripted fake server so it does NOT depend on TASK-2211/2212.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2213-agentd-client.md"
+      "completed_at": "2026-08-16T17:58:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2213-agentd-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2214",
@@ -130,7 +136,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -140,8 +146,9 @@
       "parallelism_notes": "Imports client.py; mirrors core parrot.cli loaders (read-only in core).",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2214-agentd-console-proxy.md"
+      "completed_at": "2026-08-16T18:13:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2214-agentd-console-proxy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2215",
@@ -150,7 +157,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -160,8 +167,9 @@
       "parallelism_notes": "Imports client.py; disjoint files from TASK-2214 but sequential in the single feature worktree.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2215-agentd-mcp-proxy.md"
+      "completed_at": "2026-08-16T18:17:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2215-agentd-mcp-proxy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2216",
@@ -170,7 +178,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -182,8 +190,9 @@
       "parallelism_notes": "Touches shared core file parrot/cli/__init__.py and integrations pyproject — must be last implementation task.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2216-agentd-cli-packaging.md"
+      "completed_at": "2026-08-16T18:23:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2216-agentd-cli-packaging.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2217",
@@ -192,7 +201,7 @@
       "feature_id": "FEAT-422",
       "feature": "agent-cli-daemon",
       "spec": "sdd/specs/agent-cli-daemon.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -202,8 +211,9 @@
       "parallelism_notes": "Tests the as-built full stack; closes spec §5 acceptance criteria.",
       "assigned_to": null,
       "started_at": "2026-08-16T17:35:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2217-agentd-e2e-docs.md"
+      "completed_at": "2026-08-16T18:39:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2217-agentd-e2e-docs.md",
+      "verification": "verified"
     }
   ]
 }

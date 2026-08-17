@@ -14,7 +14,10 @@ pipeline:
 """
 
 from parrot.knowledge.graphindex.extractors.code import CodeExtractor
-from parrot.knowledge.graphindex.extractors.loader import LoaderExtractor
+from parrot.knowledge.graphindex.extractors.loader import (
+    LoaderExtractor,
+    PlainTextLoader,
+)
 from parrot.knowledge.graphindex.extractors.odoo_code import OdooCodeExtractor
 from parrot.knowledge.graphindex.extractors.skill import SkillExtractor
 
@@ -22,6 +25,7 @@ __all__ = [
     "CodeExtractor",
     "LoaderExtractor",
     "OdooCodeExtractor",
+    "PlainTextLoader",
     "SkillExtractor",
     "LLMGraphExtractor",
     "ExtractedGraph",

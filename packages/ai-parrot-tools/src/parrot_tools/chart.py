@@ -5,13 +5,15 @@ Generates visualizations (bar charts, line charts, pie charts, etc.)
 from structured data returned by agents.
 
 Supports multiple backends:
-- matplotlib (default, most compatible)
+- altair (default): Vega-Lite JSON output — the frontend renders it
+  natively (no extra deps); PNG/SVG export is available via the optional
+  `vl-convert-python` dependency (falls back to JSON if not installed).
 - plotly (interactive HTML exports)
 
 Example usage:
     from parrot_tools.chart import ChartTool
 
-    chart_tool = ChartTool(backend="matplotlib")
+    chart_tool = ChartTool(backend="altair")
     agent.add_tool(chart_tool)
 
     # Agent can then use:
@@ -22,10 +24,9 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import tempfile
 import contextlib
+import json
 import uuid
-import asyncio
 import base64
-from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from pydantic import BaseModel, Field, model_validator
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
@@ -54,10 +55,11 @@ class ChartType(str, Enum):
 
 class ChartFormat(str, Enum):
     """Output format for charts."""
-    PNG = "png"
-    SVG = "svg"
+    PNG = "png"  # altair: requires vl-convert-python; falls back to VEGALITE_JSON
+    SVG = "svg"  # altair: requires vl-convert-python; falls back to VEGALITE_JSON
     PDF = "pdf"
     HTML = "html"  # For plotly interactive
+    VEGALITE_JSON = "vegalite"  # altair default — pure-JSON Vega-Lite spec
 
 
 @dataclass
@@ -119,8 +121,14 @@ class GenerateChartInput(BaseModel):
         description="Title for the legend (if applicable)"
     )
     output_format: str = Field(
-        default="png",
-        description="Output format: png (recommended for Teams/Telegram), svg, pdf"
+        default="vegalite",
+        description=(
+            "Output format: vegalite (default Vega-Lite JSON spec, no extra "
+            "deps — recommended when the frontend renders charts natively), "
+            "png/svg (recommended for Teams/Telegram; requires the optional "
+            "vl-convert-python dependency, falls back to vegalite if absent), "
+            "html (plotly backend only)"
+        )
     )
     style: Optional[str] = Field(
         default="default",
@@ -147,7 +155,7 @@ class ChartTool(AbstractTool):
     send images inline in messages.
 
     Attributes:
-        backend: Chart generation library (matplotlib, plotly)
+        backend: Chart generation library (altair, plotly)
         output_dir: Directory for saving generated charts
         style: Default visual styling
         auto_cleanup: Whether to cleanup old charts
@@ -176,12 +184,9 @@ class ChartTool(AbstractTool):
 
     args_schema = GenerateChartInput
 
-    # Thread pool for blocking matplotlib operations
-    _executor: ThreadPoolExecutor = None
-
     def __init__(
         self,
-        backend: Literal["matplotlib", "plotly"] = "matplotlib",
+        backend: Literal["altair", "plotly"] = "altair",
         output_dir: Optional[Path] = None,
         style: Optional[ChartStyle] = None,
         auto_cleanup: bool = True,
@@ -189,6 +194,11 @@ class ChartTool(AbstractTool):
         **kwargs
     ):
         super().__init__(**kwargs)
+        if backend not in ("altair", "plotly"):
+            raise ValueError(
+                f"Unsupported backend: {backend!r}. ChartTool supports "
+                "'altair' (default) or 'plotly'."
+            )
         self.backend = backend
         self.output_dir = output_dir or Path(tempfile.gettempdir()) / "parrot_charts"
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -196,10 +206,6 @@ class ChartTool(AbstractTool):
         self.auto_cleanup = auto_cleanup
         self.cleanup_age_hours = cleanup_age_hours
         self.logger = logging.getLogger("ChartTool")
-
-        # Initialize executor for thread-safe matplotlib
-        if ChartTool._executor is None:
-            ChartTool._executor = ThreadPoolExecutor(max_workers=2)
 
     @tool_schema(GenerateChartInput)
     async def _execute(
@@ -210,7 +216,7 @@ class ChartTool(AbstractTool):
         x_label: Optional[str] = None,
         y_label: Optional[str] = None,
         legend_title: Optional[str] = None,
-        output_format: str = "png",
+        output_format: str = "vegalite",
         style: str = "default",
         **kwargs
     ) -> ToolResult:
@@ -240,11 +246,13 @@ class ChartTool(AbstractTool):
                           f"Supported: {[t.value for t in ChartType]}"
                 )
 
-            # Validate format
+            # Validate format — fall back to the zero-extra-deps default
+            # (vegalite), not png, since png/svg require the optional
+            # vl-convert-python dependency.
             try:
                 format_enum = ChartFormat(output_format.lower())
             except ValueError:
-                format_enum = ChartFormat.PNG
+                format_enum = ChartFormat.VEGALITE_JSON
 
             # Auto cleanup old charts
             if self.auto_cleanup:
@@ -252,8 +260,8 @@ class ChartTool(AbstractTool):
 
 
             # Generate chart based on backend
-            if self.backend == "matplotlib":
-                path = await self._generate_matplotlib(
+            if self.backend == "altair":
+                path = await self._generate_altair(
                     chart_type_enum, title, data,
                     x_label, y_label, legend_title,
                     format_enum, style
@@ -276,9 +284,13 @@ class ChartTool(AbstractTool):
                 f"Generated chart: {path}"
             )
 
-            # Read image and encode as base64 for inline rendering
+            # Read image and encode as base64 for inline rendering.
+            # Check the ACTUAL output suffix, not just the requested
+            # format_enum: the altair backend may have fallen back to a
+            # Vega-Lite JSON file (e.g. vl-convert-python not installed)
+            # when PNG/SVG was requested (see _generate_altair).
             image_base64 = None
-            if format_enum in (ChartFormat.PNG, ChartFormat.SVG):
+            if format_enum in (ChartFormat.PNG, ChartFormat.SVG) and path.suffix.lstrip(".") == format_enum.value:
                 try:
                     with open(path, 'rb') as f:
                         image_bytes = f.read()
@@ -295,7 +307,10 @@ class ChartTool(AbstractTool):
                 images=[path],
                 metadata={
                     "chart_path": str(path),
-                    "format": format_enum.value,
+                    # Actual output suffix — may differ from the requested
+                    # format_enum when the altair backend falls back to
+                    # Vega-Lite JSON (see _generate_altair).
+                    "format": path.suffix.lstrip("."),
                     "title": title,
                     "chart_type": chart_type,
                     "image_base64": image_base64,
@@ -314,166 +329,198 @@ class ChartTool(AbstractTool):
                 error=f"Failed to generate chart: {str(e)}"
             )
 
-    async def _generate_matplotlib(
-        self,
-        chart_type: ChartType,
-        title: str,
-        data: Dict[str, Any],
-        x_label: Optional[str],
-        y_label: Optional[str],
-        legend_title: Optional[str],
-        output_format: ChartFormat,
-        style_name: str
-    ) -> Path:
-        """Generate chart using matplotlib (thread-safe)."""
-        # Run matplotlib in thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self._executor,
-            self._matplotlib_render,
-            chart_type, title, data, x_label, y_label,
-            legend_title, output_format, style_name
-        )
+    def _data_to_dataframe(self, chart_type: ChartType, data: Dict[str, Any]):
+        """Convert the tool's flexible input dict shape into a DataFrame altair can encode.
 
-    def _matplotlib_render(
-        self,
-        chart_type: ChartType,
-        title: str,
-        data: Dict[str, Any],
-        x_label: Optional[str],
-        y_label: Optional[str],
-        legend_title: Optional[str],
-        output_format: ChartFormat,
-        style_name: str
-    ) -> Path:
-        """Synchronous matplotlib rendering (runs in thread pool)."""
-        import matplotlib
-        matplotlib.use('Agg')  # Non-GUI backend
-        import matplotlib.pyplot as plt
-        import numpy as np
+        Mirrors the same key-name fallbacks (``categories``/``labels``/``x``,
+        ``values``/``y``, ``series_labels``, ``data``/``matrix``, ``x_labels``,
+        ``y_labels``) the plotly backend already accepts, for a consistent
+        input contract across backends.
+        """
+        import pandas as pd
 
-        # Apply style
-        style_map = {
-            "default": "seaborn-v0_8-whitegrid",
-            "dark": "dark_background",
-            "minimal": "seaborn-v0_8-white",
-            "corporate": "seaborn-v0_8-paper"
-        }
-        try:
-            plt.style.use(style_map.get(style_name, "seaborn-v0_8-whitegrid"))
-        except OSError:
-            # Fallback if style not available
-            plt.style.use('default')
-
-        # Create figure
-        fig, ax = plt.subplots(
-            figsize=(self.style.figure_width, self.style.figure_height)
-        )
-
-        # Extract data based on chart type
-        if chart_type == ChartType.BAR:
+        if chart_type in (ChartType.BAR, ChartType.HORIZONTAL_BAR):
             categories = data.get("categories", data.get("labels", data.get("x", [])))
             values = data.get("values", data.get("y", []))
-            colors = self._get_colors(len(values))
-            ax.bar(categories, values, color=colors)
+            return pd.DataFrame({"category": categories, "value": values})
 
-        elif chart_type == ChartType.HORIZONTAL_BAR:
-            categories = data.get("categories", data.get("labels", data.get("y", [])))
-            values = data.get("values", data.get("x", []))
-            colors = self._get_colors(len(values))
-            ax.barh(categories, values, color=colors)
-
-        elif chart_type == ChartType.LINE:
-            x = data.get("x", list(range(len(data.get("y", data.get("values", []))))))
+        if chart_type in (ChartType.LINE, ChartType.AREA):
             y = data.get("y", data.get("values", []))
+            x = data.get("x", list(range(len(y))))
+            if y and isinstance(y[0], list):
+                labels = data.get("series_labels", [f"Series {i + 1}" for i in range(len(y))])
+                frames = [
+                    pd.DataFrame({"x": x, "y": series, "series": label})
+                    for series, label in zip(y, labels)
+                ]
+                return pd.concat(frames, ignore_index=True)
+            return pd.DataFrame({"x": x, "y": y})
 
-            # Support multiple series
-            if isinstance(y[0], list) if y else False:
-                labels = data.get("series_labels", [f"Series {i+1}" for i in range(len(y))])
-                colors = self._get_colors(len(y))
-                for i, (series, label, color) in enumerate(zip(y, labels, colors)):
-                    ax.plot(x, series, marker='o', label=label, color=color, linewidth=2)
-                ax.legend(title=legend_title)
-            else:
-                ax.plot(x, y, marker='o', color=self.style.primary_color, linewidth=2)
-
-        elif chart_type == ChartType.AREA:
-            x = data.get("x", list(range(len(data.get("y", data.get("values", []))))))
-            y = data.get("y", data.get("values", []))
-            ax.fill_between(x, y, alpha=0.4, color=self.style.primary_color)
-            ax.plot(x, y, color=self.style.primary_color, linewidth=2)
-
-        elif chart_type == ChartType.PIE:
+        if chart_type == ChartType.PIE:
             labels = data.get("labels", [])
             values = data.get("values", [])
-            colors = self._get_colors(len(values))
-            explode = data.get("explode", [0.02] * len(values))
+            return pd.DataFrame({"label": labels, "value": values})
 
-            wedges, texts, autotexts = ax.pie(
-                values,
-                labels=labels,
-                colors=colors,
-                autopct='%1.1f%%',
-                explode=explode,
-                startangle=90
-            )
-            for autotext in autotexts:
-                autotext.set_fontsize(self.style.tick_font_size)
-
-        elif chart_type == ChartType.SCATTER:
+        if chart_type == ChartType.SCATTER:
             x = data.get("x", [])
             y = data.get("y", [])
-            sizes = data.get("sizes", 50)
-            colors = data.get("colors", self.style.primary_color)
-            ax.scatter(x, y, s=sizes, c=colors, alpha=0.7)
+            return pd.DataFrame({"x": x, "y": y})
 
-        elif chart_type == ChartType.HISTOGRAM:
+        if chart_type == ChartType.HISTOGRAM:
             values = data.get("values", [])
-            bins = data.get("bins", "auto")
-            ax.hist(values, bins=bins, color=self.style.primary_color,
-                   edgecolor='white', alpha=0.7)
+            return pd.DataFrame({"value": values})
 
-        elif chart_type == ChartType.HEATMAP:
-            matrix = np.array(data.get("data", data.get("matrix", [[]])))
-            x_labels = data.get("x_labels", [])
-            y_labels = data.get("y_labels", [])
+        if chart_type == ChartType.HEATMAP:
+            matrix = data.get("data", data.get("matrix", [[]]))
+            x_labels = data.get("x_labels") or [f"X{i}" for i in range(len(matrix[0]) if matrix else 0)]
+            y_labels = data.get("y_labels") or [f"Y{i}" for i in range(len(matrix))]
+            rows = [
+                {"x": x_labels[xi], "y": y_labels[yi], "value": val}
+                for yi, row in enumerate(matrix)
+                for xi, val in enumerate(row)
+            ]
+            return pd.DataFrame(rows)
 
-            im = ax.imshow(matrix, cmap='YlOrRd', aspect='auto')
-            fig.colorbar(im, ax=ax)
+        raise ValueError(f"Unsupported chart type for altair backend: {chart_type}")
 
-            if x_labels:
-                ax.set_xticks(range(len(x_labels)))
-                ax.set_xticklabels(x_labels, rotation=45, ha='right')
-            if y_labels:
-                ax.set_yticks(range(len(y_labels)))
-                ax.set_yticklabels(y_labels)
+    def _build_altair_chart(
+        self,
+        chart_type: ChartType,
+        df,
+        x_label: Optional[str],
+        y_label: Optional[str],
+        legend_title: Optional[str],
+    ):
+        """Build the altair ``Chart`` object for ``chart_type`` (see spec's Chart Type Mapping)."""
+        import altair as alt
 
-        # Set labels and title
-        ax.set_title(title, fontsize=self.style.title_font_size, fontweight='bold', pad=15)
+        color_scale = alt.Scale(range=[self.style.primary_color, *self.style.secondary_colors])
 
-        if x_label and chart_type != ChartType.PIE:
-            ax.set_xlabel(x_label, fontsize=self.style.label_font_size)
-        if y_label and chart_type != ChartType.PIE:
-            ax.set_ylabel(y_label, fontsize=self.style.label_font_size)
+        if chart_type == ChartType.BAR:
+            return alt.Chart(df).mark_bar(color=self.style.primary_color).encode(
+                x=alt.X("category:N", title=x_label or "category", sort=None),
+                y=alt.Y("value:Q", title=y_label or "value"),
+            )
 
-        # Grid
-        if self.style.show_grid and chart_type not in (ChartType.PIE, ChartType.HEATMAP):
-            ax.grid(True, alpha=self.style.grid_alpha, color=self.style.grid_color)
+        if chart_type == ChartType.HORIZONTAL_BAR:
+            return alt.Chart(df).mark_bar(color=self.style.primary_color).encode(
+                y=alt.Y("category:N", title=y_label or "category", sort=None),
+                x=alt.X("value:Q", title=x_label or "value"),
+            )
 
-        # Generate filename
-        filename = f"chart_{uuid.uuid4().hex[:8]}.{output_format.value}"
-        output_path = self.output_dir / filename
+        if chart_type == ChartType.LINE:
+            chart = alt.Chart(df).mark_line(point=True)
+            if "series" in df.columns:
+                return chart.encode(
+                    x=alt.X("x:Q", title=x_label),
+                    y=alt.Y("y:Q", title=y_label),
+                    color=alt.Color("series:N", scale=color_scale, legend=alt.Legend(title=legend_title)),
+                )
+            return chart.encode(
+                x=alt.X("x:Q", title=x_label),
+                y=alt.Y("y:Q", title=y_label),
+                color=alt.value(self.style.primary_color),
+            )
 
-        plt.tight_layout()
-        plt.savefig(
-            output_path,
-            format=output_format.value,
-            dpi=self.style.dpi,
-            bbox_inches='tight',
-            facecolor=self.style.background_color
+        if chart_type == ChartType.AREA:
+            return alt.Chart(df).mark_area(color=self.style.primary_color, opacity=0.6).encode(
+                x=alt.X("x:Q", title=x_label),
+                y=alt.Y("y:Q", title=y_label),
+            )
+
+        if chart_type == ChartType.PIE:
+            return alt.Chart(df).mark_arc().encode(
+                theta=alt.Theta("value:Q"),
+                color=alt.Color("label:N", scale=color_scale, legend=alt.Legend(title=legend_title)),
+            )
+
+        if chart_type == ChartType.SCATTER:
+            return alt.Chart(df).mark_circle(size=80, color=self.style.primary_color, opacity=0.7).encode(
+                x=alt.X("x:Q", title=x_label),
+                y=alt.Y("y:Q", title=y_label),
+            )
+
+        if chart_type == ChartType.HISTOGRAM:
+            return alt.Chart(df).mark_bar(color=self.style.primary_color).encode(
+                x=alt.X("value:Q", bin=True, title=x_label or "value"),
+                y=alt.Y("count()", title=y_label or "count"),
+            )
+
+        if chart_type == ChartType.HEATMAP:
+            return alt.Chart(df).mark_rect().encode(
+                x=alt.X("x:N", title=x_label, sort=None),
+                y=alt.Y("y:N", title=y_label, sort=None),
+                color=alt.Color("value:Q", scale=alt.Scale(scheme="yelloworangered")),
+            )
+
+        raise ValueError(f"Unsupported chart type for altair backend: {chart_type}")
+
+    async def _generate_altair(
+        self,
+        chart_type: ChartType,
+        title: str,
+        data: Dict[str, Any],
+        x_label: Optional[str],
+        y_label: Optional[str],
+        legend_title: Optional[str],
+        output_format: ChartFormat,
+        style_name: str
+    ) -> Path:
+        """Generate chart using altair (Vega-Lite JSON spec by default).
+
+        PNG/SVG export requires the optional ``vl-convert-python`` dependency
+        (``ai-parrot-tools[charts]``) — falls back to a Vega-Lite JSON spec
+        when it is not installed (spec Key Constraint).
+        """
+        df = self._data_to_dataframe(chart_type, data)
+        chart = self._build_altair_chart(chart_type, df, x_label, y_label, legend_title)
+
+        chart = chart.properties(
+            title=title,
+            width=int(self.style.figure_width * 80),
+            height=int(self.style.figure_height * 80),
         )
-        plt.close(fig)
+        if style_name == "dark":
+            chart = (
+                chart.configure(background="#1a1a2e")
+                .configure_title(color="#FFFFFF")
+                .configure_axis(labelColor="#FFFFFF", titleColor="#FFFFFF")
+            )
 
+        filename = f"chart_{uuid.uuid4().hex[:8]}"
+
+        if output_format == ChartFormat.VEGALITE_JSON:
+            output_path = self.output_dir / f"{filename}.json"
+            output_path.write_text(json.dumps(chart.to_dict(), indent=2))
+            return output_path
+
+        if output_format in (ChartFormat.PNG, ChartFormat.SVG):
+            output_path = self.output_dir / f"{filename}.{output_format.value}"
+            try:
+                chart.save(str(output_path))
+            except (ImportError, ValueError) as exc:
+                # altair raises ImportError OR a ValueError whose message
+                # names vl-convert-python (see
+                # altair.utils.mimebundle._validate_normalize_engine) when
+                # the optional PNG/SVG export engine isn't installed. Only
+                # that specific case falls back — re-raise anything else so
+                # real chart-spec errors aren't masked.
+                if "vl-convert" not in str(exc) and "vl_convert" not in str(exc):
+                    raise
+                self.logger.warning(
+                    "vl-convert-python not available (%s) — falling back to "
+                    "Vega-Lite JSON for chart '%s'. Install "
+                    "ai-parrot-tools[charts] for PNG/SVG export.",
+                    exc, title,
+                )
+                output_path = self.output_dir / f"{filename}.json"
+                output_path.write_text(json.dumps(chart.to_dict(), indent=2))
+            return output_path
+
+        # HTML (and anything else not natively supported by altair without
+        # vl-convert, e.g. PDF) — pure-python, no extra deps.
+        output_path = self.output_dir / f"{filename}.html"
+        chart.save(str(output_path), format="html")
         return output_path
 
     async def _generate_plotly(

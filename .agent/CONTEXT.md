@@ -81,8 +81,13 @@ Transform documents (PDF, HTML, DOCX, etc.) into text chunks for RAG.
 Inherit `BaseLoader`, implement `async def load() -> list[Document]`
 
 ### Vector Stores
-- PgVector: `parrot/vectorstores/pgvector.py` — primary store
-- ArangoDB: graph-based, in development
+Base classes and dispatch live in `parrot/stores/`; the concrete backends ship
+from **ai-parrot-embeddings** (`parrot/stores/pgvector.py`, `milvus.py`,
+`arango.py`, `bigquery.py`, `faiss_store.py`) and merge into the same namespace.
+Import paths are unchanged: `from parrot.stores.pgvector import ...`.
+(There is no `parrot/vectorstores/` package — that path is long gone.)
+- PgVector — primary store
+- ArangoDB — graph-based, also backs the GraphIndex server plane
 
 ### Skills
 Location: `parrot/skills/`
@@ -165,6 +170,11 @@ class ToolInput(BaseModel):
 ---
 
 ## What Lives Where
+
+> **Repo layout**: this is a uv workspace. There is no `parrot/` at the repo
+> root — the core source tree is `packages/ai-parrot/src/parrot/`, and the
+> paths below are relative to it. See `CLAUDE.md` for the full package matrix.
+
 ```
 parrot/
 ├── clients/          # LLM provider wrappers (AbstractClient subclasses)
@@ -172,7 +182,16 @@ parrot/
 │   └── flows/          # Orchestration: AgentCrew (crew/), AgentsFlow (flow/),
 │                       #   shared DAG primitives (core/). FEAT-143/163/196.
 │                       #   Legacy bots/orchestration/ and bots/flow/ removed.
-├── tools/            # Tool definitions and toolkits (AbstractTool, AbstractToolkit)
+├── tools/            # Base machinery only: AbstractTool, AbstractToolkit, @tool,
+│                     #   ToolManager, working_memory/. Concrete toolkits ship from
+│                     #   ai-parrot-tools as top-level `parrot_tools`; a sys.meta_path
+│                     #   finder redirects parrot.tools.<x> -> parrot_tools.<x>.
+├── knowledge/        # graphindex/ (6-stage knowledge-graph pipeline, GraphIndexBuilder,
+│                     #   GraphPublisher, GraphMemoryMixin), okf/, ontology/,
+│                     #   pageindex/, wiki/
+├── flows/            # Application-level flows built ON TOP of bots/flows: dev_flow/,
+│                     #   dev_loop/. Use dev_loop/ as the template for a new domain
+│                     #   flow (definition.py + factories.py + nodes/ + runner.py).
 ├── skills/           # On-demand skills: file/composite discovery + two
 │                     #   AbstractToolkits — SkillFileToolkit (file-based) and
 │                     #   SkillRegistryToolkit (DB store). See Core Abstractions.

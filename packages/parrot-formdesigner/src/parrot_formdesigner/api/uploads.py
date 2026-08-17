@@ -63,8 +63,8 @@ from ..services.rest_field_resolver import (
     RestFieldResolver,
     RestFieldSpec,
 )
-from ._utils import _get_request_tenant
 from .handlers import extract_form_uid, extract_uid
+from .tenant import declared_tenant
 
 _rest_spec_adapter: TypeAdapter[RestFieldSpec] | None = None
 
@@ -244,7 +244,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     if registry is None:
         raise web.HTTPInternalServerError(reason="form_registry not configured")
 
-    tenant = _get_request_tenant(request)
+    tenant = declared_tenant(request)
     form = await registry.get(form_uid, tenant=tenant)
     if form is None:
         raise web.HTTPNotFound(reason=f"Form not found: {form_uid!r}")

@@ -240,34 +240,42 @@ This/That (emphasize difference):
 ### Technique 3: Annotation and Highlight
 
 ```python
-import matplotlib.pyplot as plt
+import altair as alt
 import pandas as pd
 
-fig, ax = plt.subplots(figsize=(12, 6))
+df = pd.DataFrame({"date": dates, "revenue": revenue})
 
-# Plot the main data
-ax.plot(dates, revenue, linewidth=2, color='#2E86AB')
-
-# Add annotation for key events
-ax.annotate(
-    'Product Launch\n+32% spike',
-    xy=(launch_date, launch_revenue),
-    xytext=(launch_date, launch_revenue * 1.2),
-    fontsize=10,
-    arrowprops=dict(arrowstyle='->', color='#E63946'),
-    color='#E63946'
+# Main line
+line = alt.Chart(df).mark_line(strokeWidth=2, color='#2E86AB').encode(
+    x=alt.X('date:T', title=None),
+    y=alt.Y('revenue:Q', title='Revenue'),
 )
 
-# Highlight a region
-ax.axvspan(growth_start, growth_end, alpha=0.2, color='green',
-           label='Growth Period')
+# Annotation for a key event (product launch)
+annotation_df = pd.DataFrame({
+    "date": [launch_date],
+    "revenue": [launch_revenue * 1.2],
+    "label": ["Product Launch\n+32% spike"],
+})
+annotation = alt.Chart(annotation_df).mark_text(
+    fontSize=10, color='#E63946', dy=-10,
+).encode(x='date:T', y='revenue:Q', text='label:N')
 
-# Add threshold line
-ax.axhline(y=target, color='gray', linestyle='--',
-           label=f'Target: ${target:,.0f}')
+# Highlight a region (e.g. a growth period)
+region_df = pd.DataFrame({"start": [growth_start], "end": [growth_end]})
+highlight = alt.Chart(region_df).mark_rect(opacity=0.2, color='green').encode(
+    x='start:T', x2='end:T',
+)
 
-ax.set_title('Revenue Growth Story', fontsize=14, fontweight='bold')
-ax.legend()
+# Threshold line
+threshold_df = pd.DataFrame({"target": [target]})
+threshold = alt.Chart(threshold_df).mark_rule(
+    color='gray', strokeDash=[4, 4],
+).encode(y='target:Q')
+
+chart = (highlight + line + annotation + threshold).properties(
+    title='Revenue Growth Story', width=700, height=350,
+)
 ```
 
 ## Presentation Templates

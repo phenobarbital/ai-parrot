@@ -24,7 +24,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import FormData, web
-
 from parrot_formdesigner.api.uploads import handle_rest_upload
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
@@ -126,6 +125,17 @@ def mock_resolver() -> MagicMock:
     return resolver
 
 
+async def _tenant_wrapped_upload(request: web.Request) -> web.Response:
+    """Stash the URL-declared tenant, mirroring what @requires_tenant does.
+
+    These tests exercise the upload handler's own logic (uuid validation,
+    field resolution, blob metadata), not tenant enforcement (covered by
+    TASK-2199's decorator tests).
+    """
+    request["tenant"] = request.match_info["tenant"]
+    return await handle_rest_upload(request)
+
+
 async def _make_client(aiohttp_client, form: FormSchema, mock_storage, mock_resolver):
     app = web.Application()
     registry = FormRegistry()
@@ -134,8 +144,8 @@ async def _make_client(aiohttp_client, form: FormSchema, mock_storage, mock_reso
     app["blob_storage"] = mock_storage
     app["rest_resolver"] = mock_resolver
     app.router.add_post(
-        "/api/v1/forms/{form_uid}/fields/{field_uid}/upload",
-        handle_rest_upload,
+        "/api/v1/t/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
+        _tenant_wrapped_upload,
     )
     return await aiohttp_client(app)
 
@@ -156,7 +166,7 @@ async def test_upload_route_invalid_uuid_400(
     data.add_field("file", io.BytesIO(b"x"), filename="x.jpg", content_type="image/jpeg")
 
     resp = await client.post(
-        f"/api/v1/forms/{form_with_rest.form_uid}/fields/not-a-uuid/upload",
+        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/not-a-uuid/upload",
         data=data,
     )
     assert resp.status == 400
@@ -179,7 +189,7 @@ async def test_upload_route_unknown_uid_404(
 
     unknown_uid = uuid.uuid4()
     resp = await client.post(
-        f"/api/v1/forms/{form_with_rest.form_uid}/fields/{unknown_uid}/upload",
+        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/{unknown_uid}/upload",
         data=data,
     )
     assert resp.status == 404
@@ -208,7 +218,7 @@ async def test_upload_metadata_carries_both_ids(
     )
 
     resp = await client.post(
-        f"/api/v1/forms/{form_with_rest.form_uid}/fields/{rest_field.field_uid}/upload",
+        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/{rest_field.field_uid}/upload",
         data=data,
     )
     assert resp.status == 200

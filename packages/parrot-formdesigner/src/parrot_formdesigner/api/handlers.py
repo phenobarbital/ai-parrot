@@ -28,6 +28,11 @@ from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
+from .tenant import (
+    assert_body_tenant_matches,
+    declared_tenant,
+    enforce_membership_unless_public,
+)
 
 
 def extract_form_uid(request: web.Request) -> _uuid.UUID:
@@ -254,36 +259,91 @@ class FormAPIHandler:
         return userinfo.get("programs", [])
 
     def _get_tenant(self, request: web.Request) -> str:
-        """Extract the effective tenant for this request.
+        """Return the tenant declared in the URL and validated by the decorator.
 
-        Prefers ``request["tenant_context"]`` — a tenant the HOST
-        APPLICATION resolved, authorized and declared for this request
-        (see ``_utils._get_request_tenant``'s step 0 for the full
-        rationale: authorization cannot be this library's job, and the
-        session's ``programs[0]`` is an arbitrarily ordered default, not
-        a statement of which programme the request is about).
-
-        Otherwise returns the first program slug from the navigator-auth
-        session (as set by :meth:`_get_programs`). When no programs are
-        present — anonymous requests, sessions without program scope, or
-        test setups without navigator-auth — falls back to the registry's
-        configured ``default_tenant`` so write paths don't crash on
-        ``require_tenant=True``.
+        FEAT-421: the client declares which tenant a forms request is
+        about, in the URL (``/t/{tenant}/...``); ``requires_tenant``
+        (``api/tenant.py``) validates and authorizes that declaration
+        before the handler ever runs. This method's signature is
+        preserved exactly so the 21 forms call sites are untouched — only
+        this body changed. The old three-step host-context/session/default
+        fallback chain is gone from the forms HTTP boundary entirely; see
+        :meth:`_session_tenant` for the ``/org/*``-only survivor of the
+        session-derived part of that inference.
 
         Args:
-            request: Incoming HTTP request with ``session`` attribute attached
-                by the navigator-auth ``user_session`` decorator.
+            request: Incoming HTTP request with the tenant already
+                validated by ``@requires_tenant``.
+
+        Returns:
+            The declared tenant slug — never ``None``.
+
+        Raises:
+            RuntimeError: The route was mounted without
+                ``@requires_tenant`` — a programming error, never a
+                runtime fallback.
+        """
+        return declared_tenant(request)
+
+    def _session_tenant(self, request: web.Request) -> str:
+        """Legacy session-derived tenant, for ``/org/*`` only (FEAT-421 G7).
+
+        Preserves the pre-0.9.0 :meth:`_get_tenant` behaviour verbatim:
+        the first program slug from the navigator-auth session, falling
+        back to the registry's configured ``default_tenant``. Organizations
+        are the layer that *defines* tenants, so ``/org/*`` is out of scope
+        for the tenant-URL scheme (spec G7) and keeps inferring its tenant
+        from the session exactly as before. The explicit name (rather than
+        sharing :meth:`_get_tenant`) is deliberate: it makes this surviving
+        ``programs[0]`` inference greppable and impossible to reach from a
+        forms handler by accident. See spec §7 "Residual" for why this
+        arbitrary-index inference is left standing rather than fixed here.
+
+        Args:
+            request: Incoming HTTP request with ``session`` attribute
+                attached by the navigator-auth ``user_session`` decorator.
 
         Returns:
             A tenant slug string — never ``None``.
         """
-        declared = request.get("tenant_context")
-        if declared:
-            return str(declared)
         programs = self._get_programs(request)
         if programs:
             return programs[0]
         return self.registry.default_tenant
+
+    def _assert_form_tenant(self, form: FormSchema, tenant: str) -> None:
+        """Assert a resolved form actually belongs to the declared tenant.
+
+        Defense-in-depth after every ``registry.get``/``get_by_slug`` call in
+        forms handlers: those lookups are already tenant-scoped (a form
+        registered under a different tenant is invisible to them, returning
+        ``None``, which callers already turn into a 404), so this assertion
+        should never fire in practice. It exists so a future resolver
+        change that bypasses tenant-scoping fails loudly here rather than
+        silently serving a cross-tenant form. Raises 404, NEVER 403 — a 403
+        would confirm the form exists under some other tenant, which is an
+        existence oracle (spec §2).
+
+        Args:
+            form: The already-resolved (non-``None``) form.
+            tenant: The declared (already-authorized) tenant for this
+                request.
+
+        Raises:
+            web.HTTPNotFound: ``form.tenant`` differs from ``tenant``.
+        """
+        if form.tenant != tenant:
+            self.logger.warning(
+                "Cross-tenant form access blocked: form_uid=%s form.tenant=%s "
+                "declared=%s",
+                form.form_uid,
+                form.tenant,
+                tenant,
+            )
+            raise web.HTTPNotFound(
+                text=json.dumps({"error": "form_not_found"}),
+                content_type="application/json",
+            )
 
     def _build_auth_context(self, request: web.Request) -> AuthContext:
         """Build AuthContext from the inbound aiohttp request.
@@ -433,6 +493,7 @@ class FormAPIHandler:
             )
 
         form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
@@ -460,7 +521,7 @@ class FormAPIHandler:
             if existing is not None:
                 # Stored data is field_uid-keyed (TASK-2003) — map back to
                 # the CURRENT field_id for the wire response.
-                form_for_remap = await self.registry.get(form_uid)
+                form_for_remap = await self.registry.get(form_uid, tenant=tenant)
                 existing = self._remap_partial_to_field_ids(form_for_remap, existing)
                 return JSONResponse(existing.model_dump(mode="json"), status=200)
             return JSONResponse(
@@ -468,11 +529,12 @@ class FormAPIHandler:
                 status=200,
             )
 
-        form = await self.registry.get(form_uid)
+        form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(form, tenant)
 
         # Resolve each incoming field_id to its field_uid BEFORE storing —
         # unknown field_ids are rejected (field error, not stored) instead of
@@ -547,6 +609,7 @@ class FormAPIHandler:
             )
 
         form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
@@ -573,7 +636,7 @@ class FormAPIHandler:
         # Stored data is field_uid-keyed (TASK-2003) — map back to CURRENT
         # field_ids for the wire response; UIDs whose field was deleted
         # (or whose form no longer exists) are dropped silently.
-        form = await self.registry.get(form_uid)
+        form = await self.registry.get(form_uid, tenant=tenant)
         partial = self._remap_partial_to_field_ids(form, partial)
 
         return JSONResponse(
@@ -643,6 +706,7 @@ class FormAPIHandler:
             form = await self.registry.get_by_slug(slug, tenant=tenant)
             if form is None:
                 return JSONResponse({"forms": []})
+            self._assert_form_tenant(form, tenant)
             ts = form.created_at
             return JSONResponse({"forms": [{
                 "form_uid": form.form_uid,
@@ -739,6 +803,14 @@ class FormAPIHandler:
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: this route is mounted tenant="public" (the
+        # SAME route serves public and private forms) — requires_tenant
+        # skipped membership authorization at the decorator level because
+        # it can't know the specific form's is_public flag before it's
+        # resolved. Close that gap here: private forms still require
+        # membership; a truly public form is exempt.
+        enforce_membership_unless_public(request, form, tenant)
         # lifecycle: onBeforeOpen — can abort or mutate (abort only in MVP)
         try:
             await dispatch(
@@ -770,6 +842,10 @@ class FormAPIHandler:
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: see get_form's comment — this route is also
+        # mounted tenant="public".
+        enforce_membership_unless_public(request, form, tenant)
         rendered: RenderedForm = await self.schema_renderer.render(form)
         # lifecycle: onSchemaLoaded — can apply shallow schema_overrides
         try:
@@ -798,6 +874,7 @@ class FormAPIHandler:
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
         style = form.meta.get("style") if form.meta else None
         return JSONResponse(style or {})
 
@@ -836,6 +913,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(form, tenant)
 
         # 3. CSRF validation
         session_id = self._extract_session_id(request)
@@ -896,6 +974,10 @@ class FormAPIHandler:
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: see get_form's comment — this route is also
+        # mounted tenant="public".
+        enforce_membership_unless_public(request, form, tenant)
         try:
             data = await request.json()
         except (json.JSONDecodeError, ValueError):
@@ -938,6 +1020,7 @@ class FormAPIHandler:
         form_id = body.get("form_id") or _slugify(_loc_to_str(title))
 
         tenant = self._get_tenant(request)
+        assert_body_tenant_matches(body, tenant)
         try:
             form = FormSchema(
                 form_id=form_id,
@@ -965,7 +1048,7 @@ class FormAPIHandler:
                 "form_uid": form.form_uid,
                 "form_id": form.form_id,
                 "title": _loc_to_str(title),
-                "url": f"{prefix}/forms/{form.form_uid}",
+                "url": f"{prefix}/t/{tenant}/forms/{form.form_uid}",
             },
             status=201,
         )
@@ -1019,7 +1102,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/forms/{form_uid}",
+            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
         })
 
     async def edit_form(self, request: web.Request) -> web.Response:
@@ -1044,6 +1127,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(existing, tenant)
 
         try:
             body = await request.json()
@@ -1088,30 +1172,40 @@ class FormAPIHandler:
             "form_uid": updated_form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/forms/{updated_form_uid}",
+            "url": f"{prefix}/t/{tenant}/forms/{updated_form_uid}",
         })
 
     async def clone_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_uid}/clone — Clone a form under a new slug.
+        """POST /api/v1/t/{tenant}/forms/{form_uid}/clone — Clone a form under a new slug.
 
         Creates a deep copy of the source form identified by ``form_uid``,
         assigns ``new_form_id`` (slug) from the request body and a freshly
         generated ``form_uid``, optionally applies an RFC 7396 merge-patch,
         validates the result, and persists it.
 
+        FEAT-421: the tenant is the URL-declared, decorator-validated value
+        (:meth:`_get_tenant`) — both the source lookup and the clone
+        registration happen within that tenant scope. A body ``tenant`` is
+        only ever an optional cross-check (spec §2); it is never trusted as
+        an override, closing what would otherwise be a cross-tenant read+
+        write via an unvalidated body field.
+
         Request body (JSON):
             new_form_id (str): Required. Slug for the cloned form.
             patch (dict | None): Optional RFC 7396 merge-patch.
-            tenant (str | None): Optional tenant override for the clone.
+            tenant (str | None): Optional cross-check — must match the URL
+                tenant if present.
 
         Returns:
             201 Created with the full cloned ``FormSchema`` JSON body.
-            400 if ``new_form_id`` is missing or empty.
+            400 if ``new_form_id`` is missing or empty, or the body tenant
+                conflicts with the URL tenant.
             404 if the source form is not found.
             409 if ``new_form_id`` already exists.
             422 if the patch produces an invalid schema.
         """
         form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
 
         try:
             body = await request.json()
@@ -1127,7 +1221,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": "patch must be a JSON object"}, status=400
             )
-        tenant = body.get("tenant") or None
+        assert_body_tenant_matches(body, tenant)
 
         try:
             clone = await self.registry.clone_form(
@@ -1171,6 +1265,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(existing, tenant)
 
         try:
             body = await request.json()
@@ -1181,12 +1276,23 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": "form_uid in URL and body must match"}, status=400
             )
+        assert_body_tenant_matches(body, tenant)
 
         body["version"] = _bump_version(existing.version)
         # published_version is immutable from the API surface — only
         # FormVersionService.publish() may set it (review M1).
         body.pop("published_version", None)
         body["published_version"] = existing.published_version
+        # FEAT-421 review fix (2nd pass, CRITICAL): assert_body_tenant_matches()
+        # only rejects a CONFLICTING body tenant — it is a no-op when the
+        # field is omitted or null, both valid per FormSchema.tenant's
+        # `str | None = None` type. Without this stamp, an ordinary client
+        # that doesn't round-trip the optional `tenant` field would
+        # silently persist form.tenant=None while the form still lives
+        # under the correct registry bucket — permanently 404ing it on
+        # every subsequent tenant-scoped read via _assert_form_tenant. The
+        # URL is authoritative (spec §2): always stamp it, unconditionally.
+        body["tenant"] = tenant
 
         try:
             form = FormSchema.model_validate(body)
@@ -1233,6 +1339,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(existing, tenant)
 
         try:
             body = await request.json()
@@ -1243,6 +1350,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": "PATCH body must not be empty"}, status=400
             )
+        assert_body_tenant_matches(body, tenant)
 
         existing_dict = existing.model_dump()
         merged = _deep_merge(existing_dict, body)
@@ -1253,6 +1361,14 @@ class FormAPIHandler:
         # published_version is immutable from the API surface — only
         # FormVersionService.publish() may set it (review M1).
         merged["published_version"] = existing.published_version
+        # FEAT-421 review fix (2nd pass, CRITICAL — same fix as update_form):
+        # assert_body_tenant_matches() only rejects a CONFLICTING body
+        # tenant. A PATCH body of {"tenant": null} would additionally
+        # survive RFC 7396 merge semantics as an explicit key deletion via
+        # _deep_merge, corrupting form.tenant to None on an otherwise
+        # correctly tenant-scoped form. The URL is authoritative (spec
+        # §2): always stamp it, unconditionally, after the merge.
+        merged["tenant"] = tenant
 
         try:
             form = FormSchema.model_validate(merged)
@@ -1288,6 +1404,7 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(existing, tenant)
 
         # Spec invariant (FEAT-300 §8, Vision IQ parity): a form with ≥1
         # response can never be deleted — only deactivated.
@@ -1352,6 +1469,11 @@ class FormAPIHandler:
             return JSONResponse(
                 {"error": f"Form '{form_uid}' not found"}, status=404
             )
+        self._assert_form_tenant(form, tenant)
+        # FEAT-421 review fix: see get_form's comment — this route is also
+        # mounted tenant="public" (a public form's submission must remain
+        # reachable unauthenticated; a private form's must not).
+        enforce_membership_unless_public(request, form, tenant)
 
         try:
             data = await request.json()
@@ -1663,7 +1785,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_id,
             "title": title,
-            "url": f"{prefix}/forms/{form_uid}",
+            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
         })
 
     # ------------------------------------------------------------------
@@ -1796,6 +1918,7 @@ class FormAPIHandler:
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
             return web.json_response({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
 
         svc = self._get_version_service()
         meta_list = await svc.list_versions(form_uid, tenant=tenant)
@@ -1959,7 +2082,7 @@ class FormAPIHandler:
                 {"error": "org_id not found in session"}, status=400
             )
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             graph = await self._org_graph_service.get_graph(org_id, tenant=tenant)
         except KeyError as exc:
@@ -2027,7 +2150,7 @@ class FormAPIHandler:
                 {"error": "org_id not found in session"}, status=400
             )
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             project = await self._project_service.create_project(
                 accounting_code=str(accounting_code),
@@ -2086,7 +2209,7 @@ class FormAPIHandler:
         if not workday_code:
             return JSONResponse({"error": "workday_code is required"}, status=400)
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             mapping = await self._project_service.map_to_workday(
                 project_id, str(workday_code), tenant=tenant
@@ -2159,7 +2282,7 @@ class FormAPIHandler:
                 status=400,
             )
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
 
         # H-1: assigning roles is a privileged action — ALWAYS enforce (never
         # shadow-only). The caller must hold the "manage_roles" permission.
@@ -2272,7 +2395,7 @@ class FormAPIHandler:
         if org_id is None:
             return JSONResponse({"error": "org_id not found in session"}, status=400)
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             sites = await self._venue_service.list_sites(
                 store_id=store_id, org_id=org_id, tenant=tenant
@@ -2323,7 +2446,7 @@ class FormAPIHandler:
         if org_id is None:
             return JSONResponse({"error": "org_id not found in session"}, status=400)
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             site = await self._venue_service.create_site(
                 store_id=store_id,
@@ -2365,7 +2488,7 @@ class FormAPIHandler:
         if org_id is None:
             return JSONResponse({"error": "org_id not found in session"}, status=400)
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             locations = await self._venue_service.list_locations(
                 site_id=site_id, org_id=org_id, tenant=tenant
@@ -2432,7 +2555,7 @@ class FormAPIHandler:
         if org_id is None:
             return JSONResponse({"error": "org_id not found in session"}, status=400)
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             location = await self._venue_service.create_location(
                 site_id=site_id,
@@ -2479,7 +2602,7 @@ class FormAPIHandler:
         if org_id is None:
             return JSONResponse({"error": "org_id not found in session"}, status=400)
 
-        tenant = self._get_tenant(request)
+        tenant = self._session_tenant(request)
         try:
             location = await self._venue_service.get_location(
                 location_id, org_id=org_id, tenant=tenant

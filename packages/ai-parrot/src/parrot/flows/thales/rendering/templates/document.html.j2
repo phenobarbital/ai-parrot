@@ -1,0 +1,82 @@
+{# Thales final-document shell (FEAT-425 Module 4): print-CSS composer.
+   @page + page-break-after per slide (weasyprint-safe); bibliography is
+   always the final section. Deterministic — no timestamps/uuids here. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 1.5cm;
+  }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #1a1a1a;
+    margin: 0;
+  }
+  .thales-slide {
+    page-break-after: always;
+    padding: 2cm;
+    box-sizing: border-box;
+  }
+  .thales-slide:last-of-type {
+    page-break-after: avoid;
+  }
+  .thales-slide-headline {
+    font-size: 28px;
+    margin-bottom: 0.5em;
+  }
+  .thales-slide-bullets {
+    font-size: 16px;
+  }
+  .thales-slide-table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  .thales-slide-table th,
+  .thales-slide-table td {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+  }
+  .thales-slide-quote {
+    border-left: 4px solid #3b7dd8;
+    padding-left: 1em;
+    font-style: italic;
+  }
+  .thales-bibliography {
+    page-break-before: always;
+    padding: 2cm;
+  }
+  .thales-bibliography ol {
+    font-size: 12px;
+  }
+  .thales-chart-print {
+    display: none;
+  }
+  @media print {
+    .thales-chart-screen {
+      display: none;
+    }
+    .thales-chart-print {
+      display: block;
+    }
+  }
+</style>
+</head>
+<body>
+{% for slide_html in slides_html %}
+{{ slide_html | safe }}
+{% endfor %}
+<section class="thales-bibliography">
+  <h2>Bibliography</h2>
+  <ol>
+    {% for entry in bibliography_entries %}
+    <li>{{ entry }}</li>
+    {% endfor %}
+  </ol>
+</section>
+</body>
+</html>

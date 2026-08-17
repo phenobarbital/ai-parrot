@@ -43,11 +43,19 @@ def _make_partial(
     )
 
 
+# FEAT-421: fixed tenant shared by _make_form()/_make_request() so
+# FormAPIHandler._get_tenant() (declared_tenant()) resolves consistently
+# and _assert_form_tenant()'s cross-check never fires for these tests,
+# which are not testing tenant enforcement.
+_TEST_TENANT = "test-tenant"
+
+
 def _make_form(form_id: str = "test-form") -> FormSchema:
     """Build a minimal FormSchema with a few fields."""
     return FormSchema(
         form_id=form_id,
         title="Test Form",
+        tenant=_TEST_TENANT,
         sections=[
             FormSection(
                 section_id="s1",
@@ -98,6 +106,12 @@ def _make_request(
         req.json = AsyncMock(return_value=body)
     else:
         req.json = AsyncMock(side_effect=ValueError("no body"))
+
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed.
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+    )
 
     return req
 

@@ -402,7 +402,12 @@ class AudioFormRenderer(AbstractFormRenderer):
         if self._synthesizer is not None:
             questions = await self._synthesize_questions(questions, locale=locale)
 
-        ws_endpoint = f"/api/v1/forms/{form.form_uid}/audio/ws"
+        # FEAT-421: the audio WS route is tenant-qualified. `form.tenant` is
+        # set by every write path that can reach this renderer (create/
+        # edit/patch/update all construct FormSchema with an explicit
+        # tenant=), the same invariant handlers.py's _assert_form_tenant
+        # relies on.
+        ws_endpoint = f"/api/v1/t/{form.tenant or ''}/forms/{form.form_uid}/audio/ws"
         form_title = _resolve(form.title, locale) if form.title else form.form_id
 
         manifest = AudioFormManifest(

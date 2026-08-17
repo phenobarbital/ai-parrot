@@ -27,6 +27,11 @@ class LazyGroup(click.Group):
         """
         super().__init__(*args, **kwargs)
         self._lazy_commands: dict[str, str] = {}
+        # Optional per-command install hint shown when a lazy module fails
+        # to import (e.g. an optional extra wasn't installed). Generic --
+        # any lazy command may register one; falls back to a generic
+        # message naming the failing module path when absent (FEAT-422).
+        self._lazy_extras: dict[str, str] = {}
 
     def list_commands(self, ctx):
         """Return sorted list of registered subcommand names.
@@ -52,7 +57,17 @@ class LazyGroup(click.Group):
         if cmd_name not in self._lazy_commands:
             return None
         module_path = self._lazy_commands[cmd_name]
-        mod = importlib.import_module(module_path)
+        try:
+            mod = importlib.import_module(module_path)
+        except ImportError as exc:
+            hint = self._lazy_extras.get(cmd_name)
+            message = (
+                f"'parrot {cmd_name}' requires {hint}"
+                if hint
+                else f"'parrot {cmd_name}' is unavailable: could not import "
+                f"{module_path!r} ({exc})"
+            )
+            raise click.ClickException(message) from exc
         attr_name = cmd_name.replace("-", "_")
         return getattr(mod, attr_name, None) or getattr(mod, cmd_name, None)
 
@@ -76,6 +91,23 @@ cli._lazy_commands = {
     "claude": "parrot.knowledge.wiki.claude_code.cli",
     "generate-keys": "parrot.cli.generate_keys",
     "devloop": "parrot.cli.devloop",
+    # FEAT-422 — Agent CLI Daemon (agentd), ships in ai-parrot-integrations.
+    "serve": "parrot.integrations.agentd.cli",
+    "attach": "parrot.integrations.agentd.cli",
+    "ask": "parrot.integrations.agentd.cli",
+    "status": "parrot.integrations.agentd.cli",
+    "install-service": "parrot.integrations.agentd.cli",
+    "mcp-serve": "parrot.integrations.agentd.cli",
+}
+
+_AGENTD_INSTALL_HINT = "ai-parrot-integrations[agentd]: pip install ai-parrot-integrations[agentd]"
+cli._lazy_extras = {
+    "serve": _AGENTD_INSTALL_HINT,
+    "attach": _AGENTD_INSTALL_HINT,
+    "ask": _AGENTD_INSTALL_HINT,
+    "status": _AGENTD_INSTALL_HINT,
+    "install-service": _AGENTD_INSTALL_HINT,
+    "mcp-serve": _AGENTD_INSTALL_HINT,
 }
 
 if __name__ == "__main__":

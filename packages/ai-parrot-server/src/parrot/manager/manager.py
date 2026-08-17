@@ -94,6 +94,8 @@ from ..handlers.credentials import setup_credentials_routes
 from ..handlers.comm_center import CommCenterHandler
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
+# Thales research flow handler (FEAT-425): POST + polling + artifact listing
+from ..handlers.thales import setup_thales_routes
 # FEAT-146: Web HITL response endpoint + bootstrap
 from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 # Telegram integration
@@ -2037,6 +2039,8 @@ class BotManager:
         setup_credentials_routes(self.app)
         # MCP helper routes (discovery, activation, management)
         setup_mcp_helper_routes(self.app)
+        # Thales research flow routes (FEAT-425): POST + polling + artifacts
+        setup_thales_routes(self.app)
         # CommCenter bulk notification sender routes (FEAT-417)
         CommCenterHandler().setup(self.app)
         if self.enable_swagger_api:

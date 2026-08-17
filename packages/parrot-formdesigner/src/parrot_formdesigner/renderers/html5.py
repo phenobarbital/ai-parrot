@@ -381,6 +381,7 @@ class HTML5Renderer(AbstractFormRenderer):
         "(function() {\n"
         "  var FORM_ID = __FORM_ID__;\n"
         "  var FORM_UID = __FORM_UID__;\n"
+        "  var TENANT = __TENANT__;\n"
         "  var EVENTS_CONFIG = __EVENTS_CONFIG__;\n"
         "  var formEl = document.getElementById('parrot-form-' + FORM_ID);\n"
         "  if (!formEl) return;\n"
@@ -401,7 +402,7 @@ class HTML5Renderer(AbstractFormRenderer):
         "    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;\n"
         "    var timer = ctl ? setTimeout(function() { ctl.abort(); }, timeoutMs) : null;\n"
         "    return fetch(\n"
-        "      '/api/v1/forms/' + FORM_UID + '/events/' + eventName,\n"
+        "      '/api/v1/t/' + TENANT + '/forms/' + FORM_UID + '/events/' + eventName,\n"
         "      {\n"
         "        method: 'POST',\n"
         "        credentials: 'same-origin',\n"
@@ -538,6 +539,13 @@ class HTML5Renderer(AbstractFormRenderer):
             # under FEAT-389) — stdlib json.dumps() cannot serialize UUID
             # objects directly, so stringify explicitly.
             .replace("__FORM_UID__", json.dumps(str(form.form_uid)))
+            # FEAT-421: the remote-event dispatch URL is now tenant-qualified
+            # (/api/v1/t/{tenant}/forms/{form_uid}/events/{event_name}).
+            # `form.tenant` is set by every write path that can reach this
+            # renderer (create/edit/patch/update all construct FormSchema
+            # with an explicit tenant=), so it is a reliable source here —
+            # the same invariant handlers.py's _assert_form_tenant relies on.
+            .replace("__TENANT__", json.dumps(form.tenant or ""))
             .replace("__EVENTS_CONFIG__", json.dumps(events_config))
         )
 
@@ -1087,8 +1095,14 @@ class HTML5Renderer(AbstractFormRenderer):
         if field.constraints and field.constraints.allowed_mime_types:
             mime_types = ",".join(field.constraints.allowed_mime_types)
 
+        # FEAT-421: `{tenant}` is a client-side template placeholder — like
+        # the pre-existing `{form_id}` — that the frontend <RestUploader>
+        # component substitutes with the real tenant slug before issuing
+        # the upload request. This is a required frontend contract update
+        # (see docs/migration/feat-421-forms-tenant-in-url.md); this
+        # function has no `form`/`tenant` in scope to substitute it here.
         upload_url = (
-            f"/api/v1/forms/{{form_id}}/fields/{field.field_id}/upload"
+            f"/api/v1/t/{{tenant}}/forms/{{form_id}}/fields/{field.field_id}/upload"
         )
         required_attr = " required" if field.required else ""
         accept_attr = f' accept="{mime_types}"' if mime_types else ""

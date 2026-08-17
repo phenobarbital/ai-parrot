@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiohttp import web
-
 from parrot_formdesigner.services.registry import FormRegistry
 from parrot_formdesigner.ui import setup_form_ui
 
@@ -12,12 +11,12 @@ def test_routes_mounted():
     app = web.Application()
     setup_form_ui(app, FormRegistry())
     paths = {r.resource.canonical for r in app.router.routes()}
-    assert "/" in paths
-    assert "/gallery" in paths
-    assert "/forms/{form_uid}" in paths
-    assert "/forms/{form_uid}/schema" in paths
-    assert "/forms/{form_uid}/telegram" in paths
-    assert "/api/v1/forms/{form_uid}/telegram-submit" in paths
+    assert "/t/{tenant}/" in paths
+    assert "/t/{tenant}/gallery" in paths
+    assert "/t/{tenant}/forms/{form_uid}" in paths
+    assert "/t/{tenant}/forms/{form_uid}/schema" in paths
+    assert "/t/{tenant}/forms/{form_uid}/telegram" in paths
+    assert "/api/v1/t/{tenant}/forms/{form_uid}/telegram-submit" in paths
 
 
 def test_app_form_registry_set():
@@ -40,14 +39,23 @@ def test_app_form_registry_setdefault_does_not_overwrite():
 
 
 def test_telegram_route_has_no_auth_wrapper():
-    """The Telegram WebApp route is public (no `is_authenticated` wrap)."""
+    """The Telegram WebApp route is public (no `is_authenticated` wrap).
+
+    FEAT-421 TASK-2204: the route IS now wrapped with
+    ``_page_wrap(handler, protect=False, tenant="public")`` so
+    ``declared_tenant()`` works inside the handler — but ``protect=False``
+    means navigator-auth's ``is_authenticated``/``user_session`` are never
+    applied (only the tenant layer is). ``@wraps(handler)`` inside
+    ``requires_tenant`` preserves the original function's ``__name__``, so
+    this assertion still holds.
+    """
 
     app = web.Application()
     setup_form_ui(app, FormRegistry())
 
     # Find the telegram route handler
     for route in app.router.routes():
-        if route.resource.canonical == "/forms/{form_uid}/telegram":
+        if route.resource.canonical == "/t/{tenant}/forms/{form_uid}/telegram":
             handler = route.handler
             # The handler should be the raw bound method (no decorator wrapping
             # — `is_authenticated`/`user_session` would replace it with a

@@ -91,12 +91,22 @@ dependencies = [
     "aiohttp-cors>=0.8.1",
     "brotli==1.2.0",
     "urllib3==2.7.0",
+    # parrot.interfaces.http imports proxylists.proxies unconditionally at
+    # module level, so HTTPService (the base of most HTTP toolkits) cannot be
+    # imported without it. It was previously undeclared — a bare install of
+    # ai-parrot could not `import parrot.interfaces.http`.
+    "proxylists>=0.12.0",
     # aioquic and pylsqpack moved to ai-parrot-server[mcp] extra in FEAT-203
     # API / OpenAPI tools
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
     "openapi-spec-validator>=0.7.1",
-    # async-notify minimal — full notification backends moved to ai-parrot-integrations[messaging]
+    # async-notify minimal — full notification backends moved to ai-parrot-integrations[messaging].
+    # The base package itself must stay in core: parrot/bots/agent.py imports
+    # NotificationMixin unconditionally, and parrot/notifications/__init__.py
+    # does `from notify import Notify` at module level, so `parrot.bots` cannot
+    # be imported without it. Use `ai-parrot[notify-all]` for the backends.
+    "async-notify>=1.4.2",
     "ddgs>=9.5.2",
     # State machine / workflow (core)
     "python-statemachine==2.5.0",

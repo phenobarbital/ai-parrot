@@ -25,14 +25,48 @@ See @.agent/CONTEXT.md for full architectural context.
    ```
    **NEVER** run `uv`, `python`, or `pip` commands without activating first.
 
-3. **Dependencies**: Manage all dependencies via `pyprmodioject.toml`
+3. **Dependencies**: Manage all dependencies via `pyproject.toml`
+
+### Repository layout — this is a uv workspace
+
+The repo root is the `ai-parrot-workspace` declarator
+(`[tool.uv.workspace] members = ["packages/*"]`). **There is no `parrot/`
+directory at the repo root.** The core package source root is:
+
+```
+packages/ai-parrot/src/parrot/
+```
+
+Sibling distributions under `packages/`:
+
+| Directory | Distribution | Contributes |
+|---|---|---|
+| `ai-parrot/` | `ai-parrot` | the whole `parrot.*` namespace (core) |
+| `ai-parrot-advisors/` | `ai-parrot-advisors` | `parrot.advisors` |
+| `ai-parrot-embeddings/` | `ai-parrot-embeddings` | backends under `parrot.embeddings` / `.stores` / `.rerankers` |
+| `ai-parrot-integrations/` | `ai-parrot-integrations` | `parrot.human`, `parrot.integrations`, `parrot.voice` |
+| `ai-parrot-server/` | `ai-parrot-server` | `parrot.a2a`, `parrot.handlers`, `parrot.manager`, `parrot.mcp`, `parrot.server`, … |
+| `ai-parrot-visualizations/` | `ai-parrot-visualizations` | `parrot.outputs` assets |
+| `ai-parrot-tools/` | `ai-parrot-tools` | top-level **`parrot_tools`** |
+| `ai-parrot-loaders/` | `ai-parrot-loaders` | top-level `parrot_loaders` |
+| `ai-parrot-pipelines/` | `ai-parrot-pipelines` | top-level `parrot_pipelines` |
+
+Namespace satellites use PEP 420: their `src/parrot/` has **no**
+`__init__.py`, only the subpackage they exclusively own does.
 
 
 ## Tool-Centric Architecture
 
 AI-Parrot's agents interact with the world through tools. When creating tools:
 
-1. **Location**: Place all external API/service wrappers in `parrot/tools/`
+1. **Location**: Concrete external API/service wrappers live in the
+   **ai-parrot-tools** distribution (`packages/ai-parrot-tools/src/parrot_tools/`).
+   Only the base machinery — `AbstractTool`, `AbstractToolkit`, the `@tool`
+   decorator, `ToolManager`, `working_memory/` — stays in core
+   `parrot/tools/`. A `sys.meta_path` finder in `parrot/tools/__init__.py`
+   redirects `parrot.tools.<x>` → `parrot_tools.<x>` → `plugins.tools.<x>`
+   for any name that is not a core submodule, so legacy import paths keep
+   working; prefer the explicit `parrot_tools.<x>` in new code.
 2. **Decorator Pattern**: Use `@tool` for simple functions
    ```python
    from parrot.tools import tool

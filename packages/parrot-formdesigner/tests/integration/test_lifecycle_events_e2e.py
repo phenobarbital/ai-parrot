@@ -23,7 +23,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
-
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.events import (
     EventResolution,
@@ -57,6 +56,13 @@ def _isolate_stores() -> None:  # type: ignore[return]
 # ---------------------------------------------------------------------------
 
 
+# FEAT-421: fixed tenant shared by _make_form()/the request builders so
+# FormAPIHandler._get_tenant() (declared_tenant()) resolves consistently
+# and _assert_form_tenant()'s cross-check never fires for these
+# lifecycle-hook tests, which are not testing tenant enforcement.
+_TEST_TENANT = "test-tenant"
+
+
 def _make_form(
     form_id: str,
     events: FormEventsConfig | None = None,
@@ -64,6 +70,7 @@ def _make_form(
     return FormSchema(
         form_id=form_id,
         title={"en": "E2E Test Form"},
+        tenant=_TEST_TENANT,
         sections=[],
         events=events,
     )
@@ -79,8 +86,13 @@ def _make_request_get(form_uid: str) -> MagicMock:
     req.headers = {}
     req.__contains__ = MagicMock(return_value=False)
     req.__getitem__ = MagicMock(side_effect=KeyError)
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed.
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+    )
     session = MagicMock()
-    session.get = MagicMock(return_value={})
+    session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
     return req
 
@@ -102,8 +114,13 @@ def _make_request_post(
     req.__setitem__ = MagicMock()
     req.__getitem__ = MagicMock(side_effect=KeyError)
     req.json = AsyncMock(return_value=body or {})
+    # FEAT-421: declared_tenant() reads request.get("tenant") — the value
+    # @requires_tenant would have stashed.
+    req.get = MagicMock(
+        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+    )
     session = MagicMock()
-    session.get = MagicMock(return_value={})
+    session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
     return req
 
@@ -383,7 +400,7 @@ class TestRemoteEventCSRFRoundTrip:
         req.method = "GET"
         req.headers = {}
         req.query = {}
-        session_data = {"id": session_id, "programs": []}
+        session_data = {"id": session_id, "programs": [_TEST_TENANT]}
         session = MagicMock()
         session.get = MagicMock(
             side_effect=lambda k, default=None: session_data.get(k, default)
@@ -391,6 +408,17 @@ class TestRemoteEventCSRFRoundTrip:
         req.__contains__ = MagicMock(side_effect=lambda k: k == "session")
         req.__getitem__ = MagicMock(return_value=session)
         req.__setitem__ = MagicMock()
+        # FEAT-421 review fix: _get_programs/_authorize
+        # (enforce_membership_unless_public) read request.session as an
+        # ATTRIBUTE, not an item — must point at the same data as
+        # request["session"] above or membership authorization sees an
+        # empty session.
+        req.session = {"session": {"programs": [_TEST_TENANT]}}
+        # FEAT-421: declared_tenant() reads request.get("tenant") — the
+        # value @requires_tenant would have stashed.
+        req.get = MagicMock(
+            side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+        )
         return req
 
     async def test_token_issued_by_get_form_validates_remote_event(self) -> None:
@@ -425,7 +453,7 @@ class TestRemoteEventCSRFRoundTrip:
         remote_req.method = "POST"
         headers = {"X-CSRF-Token": token}
         remote_req.headers = headers
-        session_data = {"id": "sess_e2e", "programs": []}
+        session_data = {"id": "sess_e2e", "programs": [_TEST_TENANT]}
         session = MagicMock()
         session.get = MagicMock(
             side_effect=lambda k, default=None: session_data.get(k, default)
@@ -433,6 +461,11 @@ class TestRemoteEventCSRFRoundTrip:
         remote_req.__contains__ = MagicMock(side_effect=lambda k: k == "session")
         remote_req.__getitem__ = MagicMock(return_value=session)
         remote_req.__setitem__ = MagicMock()
+        # FEAT-421: declared_tenant() reads request.get("tenant") — the
+        # value @requires_tenant would have stashed.
+        remote_req.get = MagicMock(
+            side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
+        )
         remote_req.json = AsyncMock(return_value={"payload": {"name": "test"}})
 
         remote_resp = await handler.remote_event(remote_req)

@@ -1,5 +1,5 @@
 import asyncio
-import base64
+import json
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -90,47 +90,45 @@ async def example_usage():
     )
     print(f"Status: {result3.status}")
 
-    # Check if heatmap was generated and show how to access it
+    # Check if heatmap was generated and show how to access it.
+    # FEAT-423: matplotlib base64 PNG output was replaced with Vega-Lite
+    # JSON specs — heatmap_image/bar_chart_image -> heatmap_vegalite/
+    # bar_chart_vegalite. The frontend renders these natively (e.g. via
+    # vega-embed); no image decoding is needed.
     heatmap_output = result3.result.get('heatmap_output', {})
 
-    if 'heatmap_image' in heatmap_output:
-        heatmap_b64 = heatmap_output['heatmap_image']
-        print(f"Heatmap generated: Yes (base64 length: {len(heatmap_b64)} characters)")
+    if heatmap_output.get('heatmap_vegalite'):
+        heatmap_spec = heatmap_output['heatmap_vegalite']
+        print(f"Heatmap generated: Yes (Vega-Lite spec, {len(json.dumps(heatmap_spec))} chars)")
 
-        # Example of how to save/display the heatmap
-        if heatmap_b64:
-            # Save to file for viewing
-            try:
-                img_data = base64.b64decode(heatmap_b64)
-                with open('example_heatmap.png', 'wb') as f:
-                    f.write(img_data)
-                print("✅ Heatmap saved as 'example_heatmap.png'")
-            except Exception as e:
-                print(f"❌ Failed to save heatmap: {e}")
+        # Example of how to save the spec for viewing
+        try:
+            with open('example_heatmap.json', 'w', encoding='utf-8') as f:
+                json.dump(heatmap_spec, f, indent=2)
+            print("✅ Heatmap Vega-Lite spec saved as 'example_heatmap.json'")
+        except Exception as e:
+            print(f"❌ Failed to save heatmap: {e}")
 
-        # Show HTML img tag for web display
-        print(f"HTML img tag: <img src='data:image/png;base64,{heatmap_b64[:50]}...' />")
+        # Show how to embed it client-side (vega-embed)
+        print("Embed with: vegaEmbed('#chart', <heatmap_vegalite spec>)")
     else:
         print("Heatmap generated: No")
 
-    if 'bar_chart_image' in heatmap_output:
-        bar_chart_b64 = heatmap_output['bar_chart_image']
-        print(f"Bar chart generated: Yes (base64 length: {len(bar_chart_b64)} characters)")
+    if heatmap_output.get('bar_chart_vegalite'):
+        bar_chart_spec = heatmap_output['bar_chart_vegalite']
+        print(f"Bar chart generated: Yes (Vega-Lite spec, {len(json.dumps(bar_chart_spec))} chars)")
 
-        # Save bar chart too
-        if bar_chart_b64:
-            try:
-                img_data = base64.b64decode(bar_chart_b64)
-                with open('example_bar_chart.png', 'wb') as f:
-                    f.write(img_data)
-                print("✅ Bar chart saved as 'example_bar_chart.png'")
-            except Exception as e:
-                print(f"❌ Failed to save bar chart: {e}")
+        try:
+            with open('example_bar_chart.json', 'w', encoding='utf-8') as f:
+                json.dump(bar_chart_spec, f, indent=2)
+            print("✅ Bar chart Vega-Lite spec saved as 'example_bar_chart.json'")
+        except Exception as e:
+            print(f"❌ Failed to save bar chart: {e}")
     else:
         print("Bar chart generated: No")
 
-    # Test 4: Show how to use images in different contexts
-    print("\n=== Test 4: Image Usage Examples ===")
+    # Test 4: Show how to use Vega-Lite specs in different contexts
+    print("\n=== Test 4: Vega-Lite Spec Usage Examples ===")
     result4 = await tool.execute(
         dataframe=df,
         key_column="sales",
@@ -142,9 +140,9 @@ async def example_usage():
     if result4.status == "success":
         heatmap_data = result4.result.get('heatmap_output', {})
 
-        print("📊 Available image outputs:")
-        print(f"  - Heatmap base64: {'✅' if heatmap_data.get('heatmap_image') else '❌'}")
-        print(f"  - Bar chart base64: {'✅' if heatmap_data.get('bar_chart_image') else '❌'}")
+        print("📊 Available chart outputs:")
+        print(f"  - Heatmap Vega-Lite spec: {'✅' if heatmap_data.get('heatmap_vegalite') else '❌'}")
+        print(f"  - Bar chart Vega-Lite spec: {'✅' if heatmap_data.get('bar_chart_vegalite') else '❌'}")
 
         if 'file_path' in heatmap_data:
             print(f"  - Saved to file: {heatmap_data['file_path']}")
@@ -153,43 +151,39 @@ async def example_usage():
 
         # Show how to display in Jupyter notebook
         print("\n💡 Usage in Jupyter Notebook:")
-        print("from IPython.display import Image, HTML, display")
-        print("import base64")
+        print("import altair as alt")
         print("")
-        print("# Display heatmap")
-        print("heatmap_b64 = result.result['heatmap_output']['heatmap_image']")
-        print("display(Image(data=base64.b64decode(heatmap_b64)))")
-        print("")
-        print("# Display in HTML")
-        print("html_img = f'<img src=\"data:image/png;base64,{heatmap_b64}\" style=\"max-width:100%\" />'")
-        print("display(HTML(html_img))")
+        print("# Display heatmap (Vega-Lite spec renders natively in Jupyter)")
+        print("heatmap_spec = result.result['heatmap_output']['heatmap_vegalite']")
+        print("alt.Chart.from_dict(heatmap_spec)")
 
         # Show how to use in web apps
         print("\n🌐 Usage in Web Applications:")
-        print("<!-- HTML -->")
-        print("<img src='data:image/png;base64,{{ heatmap_base64 }}' alt='Correlation Heatmap' />")
+        print("<!-- HTML: load vega/vega-lite/vega-embed from CDN, then -->")
+        print("<div id='heatmap'></div>")
+        print("<script>vegaEmbed('#heatmap', {{ heatmap_vegalite_json }});</script>")
         print("")
-        print("# Flask/Django template")
+        print("# Flask/Django template context")
         print("context = {")
-        print("    'heatmap_image': result.result['heatmap_output']['heatmap_image'],")
-        print("    'bar_chart_image': result.result['heatmap_output']['bar_chart_image']")
+        print("    'heatmap_vegalite': result.result['heatmap_output']['heatmap_vegalite'],")
+        print("    'bar_chart_vegalite': result.result['heatmap_output']['bar_chart_vegalite']")
         print("}")
 
 
-# Additional utility functions for working with the images
-def save_correlation_images(result: dict, output_dir: str = "./") -> dict:
+# Additional utility functions for working with the Vega-Lite chart specs
+def save_correlation_charts(result: dict, output_dir: str = "./") -> dict:
     """
-    Save correlation analysis images to files.
+    Save correlation analysis charts (Vega-Lite JSON specs) to files.
+
+    FEAT-423: matplotlib base64 PNG output was replaced with Vega-Lite JSON.
 
     Args:
         result: Result dictionary from CorrelationAnalysisTool
-        output_dir: Directory to save images
+        output_dir: Directory to save chart specs
 
     Returns:
         Dictionary with saved file paths
     """
-
-
     saved_files = {}
     heatmap_output = result.get('heatmap_output', {})
 
@@ -197,54 +191,28 @@ def save_correlation_images(result: dict, output_dir: str = "./") -> dict:
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Save heatmap
-    if 'heatmap_image' in heatmap_output:
-        heatmap_data = base64.b64decode(heatmap_output['heatmap_image'])
-        heatmap_file = output_path / "correlation_heatmap.png"
-        with open(heatmap_file, 'wb') as f:
-            f.write(heatmap_data)
+    if heatmap_output.get('heatmap_vegalite'):
+        heatmap_file = output_path / "correlation_heatmap.json"
+        with open(heatmap_file, 'w', encoding='utf-8') as f:
+            json.dump(heatmap_output['heatmap_vegalite'], f, indent=2)
         saved_files['heatmap'] = str(heatmap_file)
 
     # Save bar chart
-    if 'bar_chart_image' in heatmap_output:
-        bar_chart_data = base64.b64decode(heatmap_output['bar_chart_image'])
-        bar_chart_file = output_path / "correlation_bar_chart.png"
-        with open(bar_chart_file, 'wb') as f:
-            f.write(bar_chart_data)
+    if heatmap_output.get('bar_chart_vegalite'):
+        bar_chart_file = output_path / "correlation_bar_chart.json"
+        with open(bar_chart_file, 'w', encoding='utf-8') as f:
+            json.dump(heatmap_output['bar_chart_vegalite'], f, indent=2)
         saved_files['bar_chart'] = str(bar_chart_file)
 
     return saved_files
 
 
-# def display_correlation_images_jupyter(result: dict):
-#     """
-#     Display correlation analysis images in Jupyter notebook.
-
-#     Args:
-#         result: Result dictionary from CorrelationAnalysisTool
-#     """
-#     try:
-#         from IPython.display import Image, HTML, display
-#         import base64
-
-#         heatmap_output = result.get('heatmap_output', {})
-
-#         if 'heatmap_image' in heatmap_output:
-#             print("📊 Correlation Heatmap:")
-#             heatmap_data = base64.b64decode(heatmap_output['heatmap_image'])
-#             display(Image(data=heatmap_data))
-
-#         if 'bar_chart_image' in heatmap_output:
-#             print("📊 Correlation Bar Chart:")
-#             bar_chart_data = base64.b64decode(heatmap_output['bar_chart_image'])
-#             display(Image(data=bar_chart_data))
-
-#     except ImportError:
-#         print("IPython not available. Use save_correlation_images() to save to files instead.")
-
-
 def create_html_report(result: dict, title: str = "Correlation Analysis Report") -> str:
     """
     Create an HTML report with correlation analysis results.
+
+    FEAT-423: charts embed as interactive Vega-Lite specs (rendered
+    client-side via vega-embed) instead of base64 PNG <img> tags.
 
     Args:
         result: Result dictionary from CorrelationAnalysisTool
@@ -255,12 +223,16 @@ def create_html_report(result: dict, title: str = "Correlation Analysis Report")
     """
     html_parts = []
 
-    # HTML header
+    # HTML header — includes the vega/vega-lite/vega-embed CDN scripts
+    # needed to render the embedded Vega-Lite specs below.
     html_parts.append(f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>{title}</title>
+        <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
         <style>
             body {{ font-family: Arial, sans-serif; margin: 40px; }}
             h1, h2 {{ color: #333; }}
@@ -268,8 +240,7 @@ def create_html_report(result: dict, title: str = "Correlation Analysis Report")
             .correlation-table {{ border-collapse: collapse; width: 100%; }}
             .correlation-table th, .correlation-table td {{ border: 1px solid #ddd; padding: 8px; }}
             .correlation-table th {{ background-color: #f2f2f2; }}
-            .image-container {{ text-align: center; margin: 20px 0; }}
-            .image-container img {{ max-width: 100%; height: auto; }}
+            .chart-container {{ text-align: center; margin: 20px 0; }}
         </style>
     </head>
     <body>
@@ -298,21 +269,29 @@ def create_html_report(result: dict, title: str = "Correlation Analysis Report")
         html_parts.append("<h2>Correlation Results</h2>")
         html_parts.append(result['dataframe_output'].get('dataframe_html', ''))
 
-    # Images
+    # Charts — embedded as Vega-Lite specs, rendered client-side.
+    # Note: spec values are escaped ('<' -> '\\u003c') before embedding in
+    # the <script> block, mirroring QuickEdaTool._altair_chart_to_html —
+    # a value containing '</script>' could otherwise break out of the
+    # script context.
     heatmap_output = result.get('heatmap_output', {})
-    if 'heatmap_image' in heatmap_output:
+    if heatmap_output.get('heatmap_vegalite'):
+        spec_json = json.dumps(heatmap_output['heatmap_vegalite']).replace("<", "\\u003c")
         html_parts.append(f"""
         <h2>Correlation Heatmap</h2>
-        <div class="image-container">
-            <img src="data:image/png;base64,{heatmap_output['heatmap_image']}" alt="Correlation Heatmap" />
+        <div class="chart-container">
+            <div id="heatmap-chart"></div>
+            <script>vegaEmbed('#heatmap-chart', {spec_json}).catch(console.error);</script>
         </div>
         """)
 
-    if 'bar_chart_image' in heatmap_output:
+    if heatmap_output.get('bar_chart_vegalite'):
+        spec_json = json.dumps(heatmap_output['bar_chart_vegalite']).replace("<", "\\u003c")
         html_parts.append(f"""
         <h2>Correlation Bar Chart</h2>
-        <div class="image-container">
-            <img src="data:image/png;base64,{heatmap_output['bar_chart_image']}" alt="Correlation Bar Chart" />
+        <div class="chart-container">
+            <div id="bar-chart"></div>
+            <script>vegaEmbed('#bar-chart', {spec_json}).catch(console.error);</script>
         </div>
         """)
 

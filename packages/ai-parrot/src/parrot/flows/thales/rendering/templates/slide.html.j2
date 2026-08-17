@@ -1,0 +1,59 @@
+{# Thales slide template (FEAT-425 Module 4). Layout reference: hanademi.com
+   deck pages — headline, bullets, chart/table/quote regions, source footer.
+   Deterministic: no timestamps/uuids are introduced here; chart HTML is
+   pre-rendered (and already deterministic) before being passed in. #}
+<section class="thales-slide" data-deck-ref="{{ spec.deck_ref }}" data-layout="{{ spec.layout }}">
+  <header class="thales-slide-header">
+    <h1 class="thales-slide-headline">{{ spec.headline }}</h1>
+  </header>
+  {% if spec.bullets %}
+  <ul class="thales-slide-bullets">
+    {% for bullet in spec.bullets %}
+    <li>{{ bullet }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if charts_html %}
+  <div class="thales-slide-charts">
+    {% for chart_html in charts_html %}
+    {{ chart_html | safe }}
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if tables %}
+  <div class="thales-slide-tables">
+    {% for table in tables %}
+    <table class="thales-slide-table">
+      {% if table.headers %}
+      <thead>
+        <tr>
+          {% for heading in table.headers %}
+          <th>{{ heading }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      {% endif %}
+      <tbody>
+        {% for row in table.rows %}
+        <tr>
+          {% for cell in row %}
+          <td>{{ cell }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if quotes %}
+  <div class="thales-slide-quotes">
+    {% for quote in quotes %}
+    <blockquote class="thales-slide-quote">
+      <p>{{ quote.text }}</p>
+      {% if quote.source %}<footer>{{ quote.source }}</footer>{% endif %}
+    </blockquote>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>

@@ -36,8 +36,9 @@ from ..core.schema import (
     walk_fields,
 )
 from ..services.validators import FormValidator
-from ._utils import _bump_version, _deep_merge, _get_request_tenant
+from ._utils import _bump_version, _deep_merge
 from .handlers import extract_form_uid
+from .tenant import declared_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -548,7 +549,7 @@ async def handle_operations(request: web.Request) -> web.Response:
             {"error": "form registry not configured"}, status=500
         )
 
-    tenant = _get_request_tenant(request)
+    tenant = declared_tenant(request)
     form = await registry.get(form_uid, tenant=tenant)
     if form is None:
         logger.warning("operations: form '%s' not found", form_uid)

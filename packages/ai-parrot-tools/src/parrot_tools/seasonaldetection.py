@@ -1,18 +1,24 @@
 """
 SeasonalDetectionTool for detecting stationarity in time series data using ADF and KPSS tests.
+
+FEAT-423: matplotlib/seaborn replaced with altair. Visualizations are saved
+as Vega-Lite JSON spec files (`.json`) instead of matplotlib-rendered PNGs.
+ACF/PACF plots (previously `statsmodels.graphics.tsaplots.plot_acf`/
+`plot_pacf`, which are matplotlib-only) are rebuilt from the underlying
+`statsmodels.tsa.stattools.acf`/`pacf` values as altair bar charts with a
+95% confidence band.
 """
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
+import json
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import altair as alt
 from pydantic import BaseModel, Field, field_validator
 # Statistical tests
-from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.tsa.stattools import acf, adfuller, kpss, pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from .abstract import AbstractTool
 
 
@@ -409,11 +415,56 @@ class SeasonalDetectionTool(AbstractTool):
         """
         return series.diff().dropna()
 
+    def _build_acf_pacf_chart(self, series: pd.Series, kind: str):
+        """Build an ACF/PACF bar chart with a 95% confidence band.
+
+        Altair replacement for ``statsmodels.graphics.tsaplots.plot_acf``/
+        ``plot_pacf`` (matplotlib-only) — computed from the same underlying
+        ``statsmodels.tsa.stattools.acf``/``pacf`` values.
+
+        Args:
+            series: Time series data.
+            kind: ``"acf"`` or ``"pacf"``.
+
+        Returns:
+            An altair chart (bars + confidence band), or a placeholder chart
+            carrying the error message if computation fails (mirrors the
+            original ``ax.text(...)`` fallback).
+        """
+        clean = series.dropna()
+        title = "Autocorrelation Function" if kind == "acf" else "Partial Autocorrelation Function"
+        try:
+            if kind == "acf":
+                nlags = min(40, max(1, len(clean) // 4))
+                values, confint = acf(clean, nlags=nlags, alpha=0.05)
+            else:
+                nlags = min(20, max(1, len(clean) // 8))
+                values, confint = pacf(clean, nlags=nlags, alpha=0.05)
+        except Exception as e:
+            return alt.Chart(pd.DataFrame({"x": [0], "y": [0]})).mark_text(
+                text=f"{kind.upper()} plot error: {e}"
+            ).encode(x="x:Q", y="y:Q").properties(title=title, width=350, height=250)
+
+        lags = list(range(len(values)))
+        ci_half_width = (confint[:, 1] - confint[:, 0]) / 2
+        chart_df = pd.DataFrame({"lag": lags, "value": values, "ci": ci_half_width})
+
+        bars = alt.Chart(chart_df).mark_bar(size=3, color="#4682B4").encode(
+            x=alt.X("lag:Q", title="Lag"),
+            y=alt.Y("value:Q", title=None),
+        )
+        band = alt.Chart(chart_df).transform_calculate(
+            upper="datum.ci", lower="-datum.ci",
+        ).mark_area(opacity=0.15, color="#4682B4").encode(
+            x="lag:Q", y=alt.Y("upper:Q", title=None), y2="lower:Q",
+        )
+        return (band + bars).properties(title=title, width=350, height=250)
+
     def _create_visualizations(
         self, series: pd.Series, results: Dict[str, Any], output_prefix: str
     ) -> List[str]:
         """
-        Create visualization plots for the analysis.
+        Create Vega-Lite chart specs for the analysis (FEAT-423).
 
         Args:
             series: Time series data
@@ -421,81 +472,69 @@ class SeasonalDetectionTool(AbstractTool):
             output_prefix: Prefix for output files
 
         Returns:
-            List of generated file paths
+            List of generated file paths (Vega-Lite JSON specs, `.json`)
         """
         generated_files = []
 
         try:
-            # Set up the plotting style
-            plt.style.use('seaborn-v0_8-whitegrid')
-            sns.set_palette("Set2")
+            # 1. Time series + rolling statistics + ACF/PACF
+            ts_df = pd.DataFrame({"time": series.index, "value": series.values})
+            ts_chart = alt.Chart(ts_df).mark_line(color="#4682B4").encode(
+                x=alt.X("time:T", title="Time"),
+                y=alt.Y("value:Q", title="Value"),
+            ).properties(title="Original Time Series", width=350, height=250)
 
-            # 1. Time series plot with summary
-            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-            fig.suptitle('Time Series Stationarity Analysis', fontsize=16, fontweight='bold')
+            window = max(1, min(30, len(series) // 4))
+            rolling_mean = series.rolling(window=window).mean()
+            rolling_std = series.rolling(window=window).std()
+            rolling_df = pd.concat([
+                pd.DataFrame({"time": series.index, "value": series.values, "series": "Original"}),
+                pd.DataFrame({"time": rolling_mean.index, "value": rolling_mean.values, "series": "Rolling Mean"}),
+                pd.DataFrame({"time": rolling_std.index, "value": rolling_std.values, "series": "Rolling Std"}),
+            ], ignore_index=True).dropna()
+            rolling_chart = alt.Chart(rolling_df).mark_line().encode(
+                x=alt.X("time:T", title="Time"),
+                y=alt.Y("value:Q", title="Value"),
+                color=alt.Color("series:N", legend=alt.Legend(title=None)),
+            ).properties(title="Rolling Statistics", width=350, height=250)
 
-            # Original series
-            axes[0, 0].plot(series.index, series.values, linewidth=1.5, color='steelblue')
-            axes[0, 0].set_title('Original Time Series')
-            axes[0, 0].set_xlabel('Time')
-            axes[0, 0].set_ylabel('Value')
-            axes[0, 0].grid(True, alpha=0.3)
+            acf_chart = self._build_acf_pacf_chart(series, kind="acf")
+            pacf_chart = self._build_acf_pacf_chart(series, kind="pacf")
 
-            # Rolling statistics
-            rolling_mean = series.rolling(window=min(30, len(series)//4)).mean()
-            rolling_std = series.rolling(window=min(30, len(series)//4)).std()
+            combined = alt.vconcat(
+                alt.hconcat(ts_chart, rolling_chart),
+                alt.hconcat(acf_chart, pacf_chart),
+            ).properties(title="Time Series Stationarity Analysis")
 
-            axes[0, 1].plot(series.index, series.values, alpha=0.7, label='Original', color='steelblue')
-            axes[0, 1].plot(rolling_mean.index, rolling_mean.values, label='Rolling Mean', color='red', linewidth=2)
-            axes[0, 1].plot(rolling_std.index, rolling_std.values, label='Rolling Std', color='orange', linewidth=2)
-            axes[0, 1].set_title('Rolling Statistics')
-            axes[0, 1].legend()
-            axes[0, 1].grid(True, alpha=0.3)
-
-            # ACF and PACF plots
-            try:
-                plot_acf(series.dropna(), ax=axes[1, 0], lags=min(40, len(series)//4), title='Autocorrelation Function')
-                plot_pacf(series.dropna(), ax=axes[1, 1], lags=min(20, len(series)//8), title='Partial Autocorrelation Function')
-            except Exception as e:
-                axes[1, 0].text(0.5, 0.5, f'ACF plot error: {str(e)}', ha='center', va='center', transform=axes[1, 0].transAxes)
-                axes[1, 1].text(0.5, 0.5, f'PACF plot error: {str(e)}', ha='center', va='center', transform=axes[1, 1].transAxes)
-
-            plt.tight_layout()
-
-            # Save the main plot
-            main_plot_path = self.output_dir / f"{output_prefix}_stationarity_analysis.png"
-            plt.savefig(main_plot_path, dpi=300, bbox_inches='tight')
-            plt.close()
+            main_plot_path = self.output_dir / f"{output_prefix}_stationarity_analysis.json"
+            main_plot_path.write_text(json.dumps(combined.to_dict(), indent=2))
             generated_files.append(str(main_plot_path))
 
             # 2. Seasonal decomposition plot (if available)
             if 'decomposition' in results and results['decomposition']['success']:
                 decomp_data = results['decomposition']['decomposition']
 
-                fig, axes = plt.subplots(4, 1, figsize=(15, 12))
-                fig.suptitle('Seasonal Decomposition', fontsize=16, fontweight='bold')
-
-                # Plot each component
                 components = [
-                    ('Observed', decomp_data['observed'], 'steelblue'),
+                    ('Observed', decomp_data['observed'], '#4682B4'),
                     ('Trend', decomp_data['trend'], 'red'),
                     ('Seasonal', decomp_data['seasonal'], 'green'),
                     ('Residual', decomp_data['residual'], 'purple')
                 ]
 
+                component_charts = []
                 for i, (name, data, color) in enumerate(components):
-                    axes[i].plot(data.index, data.values, color=color, linewidth=1.5)
-                    axes[i].set_title(f'{name} Component')
-                    axes[i].grid(True, alpha=0.3)
-                    if i == len(components) - 1:
-                        axes[i].set_xlabel('Time')
+                    comp_df = pd.DataFrame({"time": data.index, "value": data.values})
+                    component_charts.append(
+                        alt.Chart(comp_df).mark_line(color=color).encode(
+                            x=alt.X("time:T", title="Time" if i == len(components) - 1 else None),
+                            y=alt.Y("value:Q", title=name),
+                        ).properties(title=f"{name} Component", width=700, height=120)
+                    )
 
-                plt.tight_layout()
+                decomp_chart = alt.vconcat(*component_charts).properties(title="Seasonal Decomposition")
 
-                # Save decomposition plot
-                decomp_plot_path = self.output_dir / f"{output_prefix}_seasonal_decomposition.png"
-                plt.savefig(decomp_plot_path, dpi=300, bbox_inches='tight')
-                plt.close()
+                decomp_plot_path = self.output_dir / f"{output_prefix}_seasonal_decomposition.json"
+                decomp_plot_path.write_text(json.dumps(decomp_chart.to_dict(), indent=2))
                 generated_files.append(str(decomp_plot_path))
 
         except Exception as e:

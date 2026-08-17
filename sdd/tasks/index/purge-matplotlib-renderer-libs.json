@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-16T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-16T22:07:10+00:00",
   "tasks": [
     {
       "id": "TASK-2218",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Modifies the core PythonREPLTool — all subsequent tasks depend on or are tightly coupled to this change.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2218-pythonrepltool-cleanup.md"
+      "completed_at": "2026-08-16T18:28:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2218-pythonrepltool-cleanup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2219",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "System prompts reference libraries loaded in PythonREPLTool — must be consistent with TASK-2218.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2219-system-prompt-rewrite.md"
+      "completed_at": "2026-08-16T18:33:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2219-system-prompt-rewrite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2220",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Modifies python_sanitizer.py and clients/base.py which must be consistent with TASK-2218 PythonREPLTool changes.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2220-repl-worker-config-cleanup.md"
+      "completed_at": "2026-08-16T18:44:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2220-repl-worker-config-cleanup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2221",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -80,8 +83,9 @@
       "parallelism_notes": "Independent satellite package (ai-parrot-tools) but runs sequentially to avoid merge conflicts in the same worktree.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2221-charttool-altair-migration.md"
+      "completed_at": "2026-08-16T18:53:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2221-charttool-altair-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2222",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "Depends on TASK-2221 for the altair pattern. Modifies 4 files in ai-parrot-tools.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2222-analytics-tools-cleanup.md"
+      "completed_at": "2026-08-16T19:10:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2222-analytics-tools-cleanup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2223",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-423",
       "feature": "purge-matplotlib-renderer-libs",
       "spec": "sdd/specs/purge-matplotlib-renderer-libs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,8 +129,9 @@
       "parallelism_notes": "Final task — documentation must reflect all code changes from prior tasks.",
       "assigned_to": null,
       "started_at": "2026-08-16T18:00:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2223-docs-rules-update.md"
+      "completed_at": "2026-08-16T19:16:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2223-docs-rules-update.md",
+      "verification": "verified"
     }
   ]
 }
