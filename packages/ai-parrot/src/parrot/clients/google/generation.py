@@ -56,12 +56,13 @@ from ...models.google import (
     FictionalSpeaker,
     ALL_VOICE_PROFILES,
     VideoReelRequest,
-    VideoReelScene
+    VideoReelScene,
 )
 from ...exceptions import SpeechGenerationError
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
 import importlib.util
+
 # moviepy is heavy (~3-5s, pulls FFmpeg detection + audio FX chain). Only
 # the _strip_audio / video assembly methods use it. We probe availability
 # at import time and import the actual symbols lazily at point of use.
@@ -72,6 +73,7 @@ class GoogleGeneration:
     """
     Mixin class for Google Generative AI generation capabilities (Image, Video, Audio).
     """
+
     logger: logging.Logger
 
     async def generate_images(
@@ -92,7 +94,7 @@ class GoogleGeneration:
         service_tier: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AIMessage:
         """
         Generates images using Google's Imagen models.
@@ -153,7 +155,7 @@ class GoogleGeneration:
         person_generation = _resolve(person_generation, "person_generation", "allow_adult")
         safety_filter_level = _resolve(safety_filter_level, "safety_filter_level", "BLOCK_ONLY_HIGH")
         # In Gemini Developer API mode, Imagen only supports "BLOCK_LOW_AND_ABOVE" for safety settings.
-        if not getattr(self, 'vertexai', False):
+        if not getattr(self, "vertexai", False):
             if safety_filter_level != "BLOCK_LOW_AND_ABOVE":
                 self.logger.warning(
                     f"safety_filter_level={safety_filter_level!r} is not supported by "
@@ -185,9 +187,7 @@ class GoogleGeneration:
         if reference_image:
             self.logger.info(f"Using reference image: {reference_image}")
             if not reference_image.exists():
-                raise FileNotFoundError(
-                    f"Reference image not found: {reference_image}"
-                )
+                raise FileNotFoundError(f"Reference image not found: {reference_image}")
             # Load the reference image
             ref_image = Image.open(reference_image)
             full_prompt = [full_prompt, ref_image]
@@ -204,7 +204,7 @@ class GoogleGeneration:
 
         # add_watermark, negative_prompt, and seed are only supported in Vertex AI (Enterprise) mode
         # inside GenerateImagesConfig; Gemini Developer API raises ValueError if passed.
-        if getattr(self, 'vertexai', False):
+        if getattr(self, "vertexai", False):
             config_kwargs["add_watermark"] = add_watermark
             if negative_prompt:
                 config_kwargs["negative_prompt"] = negative_prompt
@@ -232,9 +232,7 @@ class GoogleGeneration:
             start_time = time.time()
             # Use the asynchronous client for image generation
             image_response = await self.client.aio.models.generate_images(
-                model=model,
-                prompt=full_prompt,
-                config=config
+                model=model, prompt=full_prompt, config=config
             )
             execution_time = time.time() - start_time
 
@@ -243,18 +241,15 @@ class GoogleGeneration:
             raw_response = {}  # Initialize an empty dict for the raw response
 
             if image_response.generated_images:
-                self.logger.info(
-                    f"Successfully generated {len(image_response.generated_images)} image(s)."
-                )
-                raw_response['generated_images'] = []
+                self.logger.info(f"Successfully generated {len(image_response.generated_images)} image(s).")
+                raw_response["generated_images"] = []
                 for _, generated_image in enumerate(image_response.generated_images):
                     pil_image = generated_image.image
                     pil_images.append(pil_image)
 
-                    raw_response['generated_images'].append({
-                        'uri': getattr(generated_image, 'uri', None),
-                        'seed': getattr(generated_image, 'seed', None)
-                    })
+                    raw_response["generated_images"].append(
+                        {"uri": getattr(generated_image, "uri", None), "seed": getattr(generated_image, "seed", None)}
+                    )
 
                     if output_directory:
                         file_path = self._save_image(pil_image, output_directory)
@@ -272,7 +267,7 @@ class GoogleGeneration:
                 session_id=session_id,
                 provider=image_provider,
                 usage=usage,
-                raw_response=raw_response
+                raw_response=raw_response,
             )
             return ai_message
 
@@ -291,22 +286,16 @@ class GoogleGeneration:
             Voice name string
         """
         if not self.voice_db:
-            self.logger.warning(
-                "Voice database not available, using default voice"
-            )
+            self.logger.warning("Voice database not available, using default voice")
             return "erinome"  # Default fallback
 
         try:
             # First, try to find voices by characteristic
-            characteristic_voices = self.voice_db.get_voices_by_characteristic(
-                speaker.characteristic
-            )
+            characteristic_voices = self.voice_db.get_voices_by_characteristic(speaker.characteristic)
 
             if characteristic_voices:
                 # Filter by gender if possible
-                gender_filtered = [
-                    v for v in characteristic_voices if v.gender == speaker.gender
-                ]
+                gender_filtered = [v for v in characteristic_voices if v.gender == speaker.gender]
                 if gender_filtered:
                     return gender_filtered[0].voice_name.lower()
                 else:
@@ -316,21 +305,15 @@ class GoogleGeneration:
             # Fallback: find by gender only
             gender_voices = self.voice_db.get_voices_by_gender(speaker.gender)
             if gender_voices:
-                self.logger.info(
-                    f"Found voice by gender '{speaker.gender}': {gender_voices[0].voice_name}"
-                )
+                self.logger.info(f"Found voice by gender '{speaker.gender}': {gender_voices[0].voice_name}")
                 return gender_voices[0].voice_name.lower()
 
             # Ultimate fallback
-            self.logger.warning(
-                f"No voice found for speaker {speaker.name}, using default"
-            )
+            self.logger.warning(f"No voice found for speaker {speaker.name}, using default")
             return "erinome"
 
         except Exception as e:
-            self.logger.error(
-                f"Error finding voice for speaker {speaker.name}: {e}"
-            )
+            self.logger.error(f"Error finding voice for speaker {speaker.name}: {e}")
             return "erinome"
 
     async def create_conversation_script(
@@ -341,7 +324,7 @@ class GoogleGeneration:
         session_id: Optional[str] = None,
         temperature: float = 0.7,
         use_structured_output: bool = False,
-        max_lines: int = 20
+        max_lines: int = 20,
     ) -> AIMessage:
         """
         Creates a conversation script using Google's Generative AI.
@@ -360,29 +343,29 @@ class GoogleGeneration:
             Speaker2: You're never going to guess!"
         """
         model = model.value if isinstance(model, GoogleModel) else model
-        self.logger.info(
-            f"Starting Conversation Script with model: {model}"
-        )
+        self.logger.info(f"Starting Conversation Script with model: {model}")
         turn_id = str(uuid.uuid4())
 
         report_text = report_data.report_text
         if not report_text:
-            raise ValueError(
-                "Report text is required for generating a conversation script."
-            )
+            raise ValueError("Report text is required for generating a conversation script.")
         # Calculate conversation length
         conversation_length = min(report_data.length // 50, max_lines)
         if conversation_length < 4:
             conversation_length = max_lines
-        system_prompt = report_data.system_prompt or "Create a natural and engaging conversation script based on the provided report."
-        context = report_data.context or "This conversation is based on a report about a specific topic. The characters will discuss the key findings and insights from the report."
+        system_prompt = (
+            report_data.system_prompt
+            or "Create a natural and engaging conversation script based on the provided report."
+        )
+        context = (
+            report_data.context
+            or "This conversation is based on a report about a specific topic. The characters will discuss the key findings and insights from the report."
+        )
         interviewer = None
         interviewee = None
         for speaker in report_data.speakers:
             if not speaker.name or not speaker.role or not speaker.characteristic:
-                raise ValueError(
-                    "Each speaker must have a name, role, and characteristic."
-                )
+                raise ValueError("Each speaker must have a name, role, and characteristic.")
             # role (interviewer or interviewee) and characteristic (e.g., friendly, professional)
             if speaker.role == "interviewer":
                 interviewer = speaker
@@ -442,10 +425,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             generation_config["max_output_tokens"] = self.max_tokens
 
         # Build contents for the stateless API call
-        contents = [{
-            "role": "user",
-            "parts": [{"text": report_text}]
-        }]
+        contents = [{"role": "user", "parts": [{"text": report_text}]}]
 
         final_config = types.GenerateContentConfig(
             system_instruction=system_instruction,
@@ -460,22 +440,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 ),
             ],
             tools=None,  # No tools needed for conversation script:
-            **generation_config
+            **generation_config,
         )
 
         # Make a stateless call to the model
         await self._ensure_client()
 
         sync_generate_content = partial(
-            self.client.models.generate_content,
-            model=model,
-            contents=contents,
-            config=final_config
+            self.client.models.generate_content, model=model, contents=contents, config=final_config
         )
         # Run the synchronous function in a separate thread
         response = await asyncio.to_thread(sync_generate_content)
         # Extract the generated script text
-        script_text = response.text if hasattr(response, 'text') else str(response)
+        script_text = response.text if hasattr(response, "text") else str(response)
         structured_output = script_text
         if use_structured_output:
             self.logger.info("Creating structured output for TTS system...")
@@ -484,20 +461,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 speaker_configs = []
                 for speaker in report_data.speakers:
                     voice = self._find_voice_for_speaker(speaker)
-                    speaker_configs.append(
-                        SpeakerConfig(name=speaker.name, voice=voice)
-                    )
-                    self.logger.notice(
-                        f"Assigned voice '{voice}' to speaker '{speaker.name}'"
-                    )
-                structured_output = SpeechGenerationPrompt(
-                    prompt=script_text,
-                    speakers=speaker_configs
-                )
+                    speaker_configs.append(SpeakerConfig(name=speaker.name, voice=voice))
+                    self.logger.notice(f"Assigned voice '{voice}' to speaker '{speaker.name}'")
+                structured_output = SpeechGenerationPrompt(prompt=script_text, speakers=speaker_configs)
             except Exception as e:
-                self.logger.error(
-                    f"Failed to create structured output: {e}"
-                )
+                self.logger.error(f"Failed to create structured output: {e}")
                 # Continue without structured output rather than failing
 
         # Create the AIMessage response using the factory
@@ -509,7 +477,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             session_id=session_id,
             turn_id=turn_id,
             structured_output=structured_output,
-            tool_calls=[]
+            tool_calls=[],
         )
         ai_message.provider = "google_genai"
 
@@ -522,11 +490,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         output_directory: Optional[Path] = None,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        mime_format: str = "audio/wav", # or "audio/mpeg", "audio/webm"
+        mime_format: str = "audio/wav",  # or "audio/mpeg", "audio/webm"
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         max_retries: int = 3,
-        retry_delay: float = 1.0
+        retry_delay: float = 1.0,
     ) -> AIMessage:
         """
         Generates speech from text using either a single voice or multiple voices.
@@ -535,9 +503,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         if prompt_data.model:
             model = prompt_data.model
         model = model.value if isinstance(model, GoogleModel) else model
-        self.logger.info(
-            f"Starting Speech generation with model: {model}"
-        )
+        self.logger.info(f"Starting Speech generation with model: {model}")
 
         # Validation of voices and fallback logic before creating the SpeechConfig:
         valid_voices = {v.value for v in TTSVoice}
@@ -546,56 +512,44 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             final_voice = speaker.voice
             if speaker.voice not in valid_voices:
                 self.logger.warning(
-                    f"Invalid voice '{speaker.voice}' for speaker '{speaker.name}'. "
-                    "Using default voice instead."
+                    f"Invalid voice '{speaker.voice}' for speaker '{speaker.name}'. " "Using default voice instead."
                 )
-                gender = speaker.gender.lower() if speaker.gender else 'female'
-                final_voice = 'zephyr' if gender == 'female' else 'charon'
-            processed_speakers.append(
-                SpeakerConfig(name=speaker.name, voice=final_voice, gender=speaker.gender)
-            )
+                gender = speaker.gender.lower() if speaker.gender else "female"
+                final_voice = "zephyr" if gender == "female" else "charon"
+            processed_speakers.append(SpeakerConfig(name=speaker.name, voice=final_voice, gender=speaker.gender))
 
         speech_config = None
         if len(processed_speakers) == 1:
             # Single-speaker configuration
             speaker = processed_speakers[0]
-            gender = speaker.gender or 'female'
-            default_voice = 'Charon' if gender == 'female' else 'Puck'
+            gender = speaker.gender or "female"
+            default_voice = "Charon" if gender == "female" else "Puck"
             voice = speaker.voice or default_voice
             self.logger.info(f"Using single voice: {voice}")
             speech_config = types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
-                ),
-                language_code=prompt_data.language or "en-US"  # Default to US English
+                voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)),
+                language_code=prompt_data.language or "en-US",  # Default to US English
             )
         else:
             # Multi-speaker configuration
-            self.logger.info(
-                f"Using multiple voices: {[s.voice for s in processed_speakers]}"
-            )
+            self.logger.info(f"Using multiple voices: {[s.voice for s in processed_speakers]}")
             speaker_voice_configs = [
                 types.SpeakerVoiceConfig(
                     speaker=s.name,
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name=s.voice
-                        )
-                    )
-                ) for s in processed_speakers
+                    voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=s.voice)),
+                )
+                for s in processed_speakers
             ]
             speech_config = types.SpeechConfig(
-                multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
-                    speaker_voice_configs=speaker_voice_configs
-                ),
-                language_code=prompt_data.language or "en-US"  # Default to US English
+                multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(speaker_voice_configs=speaker_voice_configs),
+                language_code=prompt_data.language or "en-US",  # Default to US English
             )
 
         config = types.GenerateContentConfig(
             response_modalities=["AUDIO"],
             speech_config=speech_config,
             system_instruction=system_prompt,
-            temperature=temperature
+            temperature=temperature,
         )
         # Retry logic for network errors
         await self._ensure_client()
@@ -611,10 +565,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     await asyncio.sleep(delay)
 
                 sync_generate_content = partial(
-                    self.client.models.generate_content,
-                    model=model,
-                    contents=prompt_data.prompt,
-                    config=config
+                    self.client.models.generate_content, model=model, contents=prompt_data.prompt, config=config
                 )
                 # Run the synchronous function in a separate thread
                 response = await asyncio.to_thread(sync_generate_content)
@@ -624,18 +575,18 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     # Log the response structure for debugging
                     self.logger.error("Failed to extract audio data from response")
                     self.logger.debug(f"Response type: {type(response)}")
-                    if hasattr(response, 'candidates'):
+                    if hasattr(response, "candidates"):
                         self.logger.debug(f"Candidates count: {len(response.candidates) if response.candidates else 0}")
                         if response.candidates and len(response.candidates) > 0:
                             candidate = response.candidates[0]
                             self.logger.debug(f"Candidate type: {type(candidate)}")
                             self.logger.debug(f"Candidate has content: {hasattr(candidate, 'content')}")
-                            if hasattr(candidate, 'content'):
+                            if hasattr(candidate, "content"):
                                 content = candidate.content
                                 self.logger.debug(f"Content is None: {content is None}")
                                 if content:
                                     self.logger.debug(f"Content has parts: {hasattr(content, 'parts')}")
-                                    if hasattr(content, 'parts'):
+                                    if hasattr(content, "parts"):
                                         self.logger.debug(f"Parts count: {len(content.parts) if content.parts else 0}")
 
                     raise SpeechGenerationError(
@@ -652,15 +603,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
                     self._save_audio_file(audio_data, file_path, mime_format)
                     saved_file_paths.append(file_path)
-                    self.logger.info(
-                        f"Saved speech to {file_path}"
-                    )
+                    self.logger.info(f"Saved speech to {file_path}")
 
                 total_time = time.time() - start_time
                 usage = CompletionUsage(
                     total_time=total_time,
                     # Speech API does not return token counts
-                    input_tokens=len(prompt_data.prompt), # Approximation
+                    input_tokens=len(prompt_data.prompt),  # Approximation
                 )
 
                 ai_message = AIMessageFactory.from_speech(
@@ -672,7 +621,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     usage=usage,
                     user_id=user_id,
                     session_id=session_id,
-                    raw_response=None  # Response object isn't easily serializable
+                    raw_response=None,  # Response object isn't easily serializable
                 )
                 return ai_message
 
@@ -683,35 +632,26 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 aiohttp.ServerTimeoutError,
                 ConnectionResetError,
                 TimeoutError,
-                asyncio.TimeoutError
+                asyncio.TimeoutError,
             ) as network_error:
                 error_msg = str(network_error)
 
                 # Specific handling for differnet network errors
                 if "TransferEncodingError" in error_msg:
-                    self.logger.warning(
-                        f"Transfer encoding error on attempt {attempt + 1}: {error_msg}")
+                    self.logger.warning(f"Transfer encoding error on attempt {attempt + 1}: {error_msg}")
                 elif "Connection reset by peer" in error_msg:
-                    self.logger.warning(
-                        f"Connection reset on attempt {attempt + 1}: Server closed connection")
+                    self.logger.warning(f"Connection reset on attempt {attempt + 1}: Server closed connection")
                 elif "timeout" in error_msg.lower():
-                    self.logger.warning(
-                        f"Timeout error on attempt {attempt + 1}: {error_msg}")
+                    self.logger.warning(f"Timeout error on attempt {attempt + 1}: {error_msg}")
                 else:
-                    self.logger.warning(
-                        f"Network error on attempt {attempt + 1}: {error_msg}"
-                    )
+                    self.logger.warning(f"Network error on attempt {attempt + 1}: {error_msg}")
 
                 if attempt < max_retries:
-                    self.logger.debug(
-                        f"Will retry in {retry_delay * (2 ** attempt)}s..."
-                    )
+                    self.logger.debug(f"Will retry in {retry_delay * (2 ** attempt)}s...")
                     continue
                 else:
                     # Max retries exceeded
-                    self.logger.error(
-                        f"Speech generation failed after {max_retries + 1} attempts"
-                    )
+                    self.logger.error(f"Speech generation failed after {max_retries + 1} attempts")
                     raise SpeechGenerationError(
                         f"Speech generation failed after {max_retries + 1} attempts. "
                         f"Last error: {error_msg}. This is typically a temporary network issue - please try again."
@@ -720,9 +660,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             except Exception as e:
                 # Non-network errors - don't retry
                 error_msg = str(e)
-                self.logger.error(
-                    f"Speech generation failed with non-retryable error: {error_msg}"
-                )
+                self.logger.error(f"Speech generation failed with non-retryable error: {error_msg}")
 
                 # Provide helpful error messages based on error type
                 if "quota" in error_msg.lower() or "rate limit" in error_msg.lower():
@@ -738,9 +676,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         f"Model error: {error_msg}. The model '{model}' may not support speech generation."
                     ) from e
                 else:
-                    raise SpeechGenerationError(
-                        f"Speech generation failed: {error_msg}"
-                    ) from e
+                    raise SpeechGenerationError(f"Speech generation failed: {error_msg}") from e
 
     def _extract_audio_data(self, response):
         """
@@ -749,31 +685,35 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         """
         try:
             # First attempt: Direct access to expected structure
-            if (hasattr(response, 'candidates') and
-                response.candidates and
-                len(response.candidates) > 0 and
-                hasattr(response.candidates[0], 'content') and
-                response.candidates[0].content and
-                hasattr(response.candidates[0].content, 'parts') and
-                response.candidates[0].content.parts and
-                len(response.candidates[0].content.parts) > 0):
+            if (
+                hasattr(response, "candidates")
+                and response.candidates
+                and len(response.candidates) > 0
+                and hasattr(response.candidates[0], "content")
+                and response.candidates[0].content
+                and hasattr(response.candidates[0].content, "parts")
+                and response.candidates[0].content.parts
+                and len(response.candidates[0].content.parts) > 0
+            ):
 
                 for part in response.candidates[0].content.parts:
                     # Check for inline_data with audio data
-                    if (hasattr(part, 'inline_data') and
-                        part.inline_data and
-                        hasattr(part.inline_data, 'data') and
-                        part.inline_data.data):
+                    if (
+                        hasattr(part, "inline_data")
+                        and part.inline_data
+                        and hasattr(part.inline_data, "data")
+                        and part.inline_data.data
+                    ):
                         self.logger.debug("Found audio data in inline_data.data")
                         return part.inline_data.data
 
                     # Alternative: Check for direct data attribute
-                    if hasattr(part, 'data') and part.data:
+                    if hasattr(part, "data") and part.data:
                         self.logger.debug("Found audio data in part.data")
                         return part.data
 
                     # Alternative: Check for binary data
-                    if hasattr(part, 'binary') and part.binary:
+                    if hasattr(part, "binary") and part.binary:
                         self.logger.debug("Found audio data in part.binary")
                         return part.binary
 
@@ -922,7 +862,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         seed: Optional[int] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AIMessage:
         """
         Generates videos using Google's Veo models.
@@ -988,16 +928,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             out_dir = Path(output_directory)
             out_dir.mkdir(parents=True, exist_ok=True)
         else:
-            out_dir = BASE_DIR.joinpath('static', 'generated_videos')
+            out_dir = BASE_DIR.joinpath("static", "generated_videos")
             out_dir.mkdir(parents=True, exist_ok=True)
 
         # --- Aspect ratio normalisation ----------------------------------------
         ar_str = aspect_ratio.value if isinstance(aspect_ratio, AspectRatio) else str(aspect_ratio)
         # VEO models only support 16:9 and 9:16
         if ar_str not in ("16:9", "9:16"):
-            self.logger.warning(
-                f"Unsupported aspect ratio {ar_str!r} for VEO models; falling back to '16:9'."
-            )
+            self.logger.warning(f"Unsupported aspect ratio {ar_str!r} for VEO models; falling back to '16:9'.")
             ar_str = "16:9"
 
         # --- Reference image (starting frame) ----------------------------------
@@ -1005,9 +943,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         if generate_image_first:
             self.logger.info("Generating reference image for video...")
             img_response = await self.generate_image(
-                prompt=image_prompt or prompt_text,
-                aspect_ratio=ar_str,
-                output_directory=str(out_dir)
+                prompt=image_prompt or prompt_text, aspect_ratio=ar_str, output_directory=str(out_dir)
             )
             if img_response.images:
                 ref_img_pil = Image.open(img_response.images[0])
@@ -1033,11 +969,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         # 'dont_allow' is never supported on VEO 3.x. Force the correct value to
         # avoid a 400 INVALID_ARGUMENT.
         if is_veo31:
-            is_image_to_video = (
-                ref_img_pil is not None
-                or bool(reference_images)
-                or last_frame is not None
-            )
+            is_image_to_video = ref_img_pil is not None or bool(reference_images) or last_frame is not None
             required = "ALLOW_ADULT" if is_image_to_video else "ALLOW_ALL"
             if pg_val != required:
                 self.logger.warning(
@@ -1060,15 +992,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 res_str = resolution.value if isinstance(resolution, VideoResolution) else resolution
                 # Force duration=8 for 1080p/4k
                 if res_str in ("1080p", "4k") and duration != 8:
-                    self.logger.warning(
-                        f"Resolution {res_str!r} requires duration=8; overriding duration."
-                    )
+                    self.logger.warning(f"Resolution {res_str!r} requires duration=8; overriding duration.")
                     config_kwargs["duration_seconds"] = 8
                 config_kwargs["resolution"] = res_str
             else:
-                self.logger.warning(
-                    f"Resolution parameter is not supported by model {model_str!r}; ignoring."
-                )
+                self.logger.warning(f"Resolution parameter is not supported by model {model_str!r}; ignoring.")
 
         # Seed — VEO 3.x only
         if seed is not None and is_veo31:
@@ -1079,9 +1007,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             if is_veo31:
                 config_kwargs["last_frame"] = _pil_to_types_image(self._load_image(last_frame))
             else:
-                self.logger.warning(
-                    "last_frame is only supported on VEO 3.1 models; ignoring."
-                )
+                self.logger.warning("last_frame is only supported on VEO 3.1 models; ignoring.")
 
         # Reference images — VEO 3.1 only (requires duration=8)
         ref_image_objects: Optional[List] = None
@@ -1100,9 +1026,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 # Reference images require duration=8
                 config_kwargs["duration_seconds"] = 8
             else:
-                self.logger.warning(
-                    "reference_images are only supported on VEO 3.1 models; ignoring."
-                )
+                self.logger.warning("reference_images are only supported on VEO 3.1 models; ignoring.")
 
         if ref_image_objects:
             config_kwargs["reference_images"] = ref_image_objects
@@ -1126,16 +1050,12 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 gen_kwargs["video"] = extend_video
                 # Extension requires 720p
                 if resolution and resolution not in ("720p", VideoResolution.RES_720P):
-                    self.logger.warning(
-                        "Video extension only supports 720p resolution; overriding."
-                    )
+                    self.logger.warning("Video extension only supports 720p resolution; overriding.")
                     config_kwargs["resolution"] = "720p"
                     config_kwargs["duration_seconds"] = 8
                     gen_kwargs["config"] = types.GenerateVideosConfig(**config_kwargs)
             else:
-                self.logger.warning(
-                    "Video extension is only supported on VEO 3.1 models; ignoring."
-                )
+                self.logger.warning("Video extension is only supported on VEO 3.1 models; ignoring.")
 
         self.logger.info(
             f"Starting video generation: model={model_str!r}, duration={duration}s, "
@@ -1161,13 +1081,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
             # Download and save
             response = operation.response or operation.result
-            generated_videos = (
-                response.generated_videos if response else None
-            )
+            generated_videos = response.generated_videos if response else None
             if not generated_videos:
                 # Check if videos were filtered by safety (RAI)
-                rai_count = getattr(response, 'rai_media_filtered_count', None)
-                rai_reasons = getattr(response, 'rai_media_filtered_reasons', None)
+                rai_count = getattr(response, "rai_media_filtered_count", None)
+                rai_reasons = getattr(response, "rai_media_filtered_reasons", None)
                 if rai_count or rai_reasons:
                     raise RuntimeError(
                         f"Video blocked by content safety filter: "
@@ -1175,10 +1093,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         f"Reasons: {rai_reasons or 'not specified'}. "
                         f"Try rephrasing the prompt."
                     )
-                raise RuntimeError(
-                    "Video generation completed but returned no videos. "
-                    "The API response was empty."
-                )
+                raise RuntimeError("Video generation completed but returned no videos. " "The API response was empty.")
             generated_paths: List[Path] = []
             for i, vid in enumerate(generated_videos):
                 video_bytes = await client.aio.files.download(file=vid.video)
@@ -1206,18 +1121,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             raise
 
     async def _async_save_video_file(
-        self,
-        video_bytes: bytes,
-        output_directory: Path,
-        video_number: int = 0,
-        mime_format: str = "video/mp4"
+        self, video_bytes: bytes, output_directory: Path, video_number: int = 0, mime_format: str = "video/mp4"
     ) -> Path:
         """Helper to save video bytes efficiently."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"video_{timestamp}_{video_number}.mp4"
         video_path = output_directory / filename
 
-        async with aiofiles.open(video_path, 'wb') as f:
+        async with aiofiles.open(video_path, "wb") as f:
             await f.write(video_bytes)
 
         self.logger.info(f"Saved video to {video_path}")
@@ -1256,7 +1167,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         temperature: float = 1.0,
         density: float = 0.5,
         brightness: float = 0.5,
-        timeout: int = 300
+        timeout: int = 300,
     ) -> AsyncIterator[bytes]:
         """
         Stream music using Lyria RealTime API.
@@ -1281,7 +1192,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             Renamed from generate_music() for API clarity.
         """
         # Lyria RealTime requires the v1alpha API version.
-        music_client = await self.get_client(http_options={'api_version': 'v1alpha'})
+        music_client = await self.get_client(http_options={"api_version": "v1alpha"})
 
         # Build prompts
         prompts = [types.WeightedPrompt(text=prompt, weight=1.0)]
@@ -1292,14 +1203,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         # Config
         config = types.LiveMusicGenerationConfig(
-            bpm=bpm,
-            temperature=temperature,
-            density=density,
-            brightness=brightness
+            bpm=bpm, temperature=temperature, density=density, brightness=brightness
         )
 
         try:
-            async with music_client.aio.live.music.connect(model='models/lyria-realtime-exp') as session:
+            async with music_client.aio.live.music.connect(model="models/lyria-realtime-exp") as session:
                 # Queue to communicate between background receiver and main yielder
                 queue = asyncio.Queue()
 
@@ -1316,13 +1224,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                                     f"Lyria msg #{msg_count}: type={type(message).__name__}, "
                                     f"attrs={[a for a in dir(message) if not a.startswith('_')]}"
                                 )
-                                if hasattr(message, 'server_content'):
+                                if hasattr(message, "server_content"):
                                     sc = message.server_content
                                     if sc:
                                         self.logger.debug(
                                             f"  server_content attrs={[a for a in dir(sc) if not a.startswith('_')]}"
                                         )
-                                        if hasattr(sc, 'audio_chunks') and sc.audio_chunks:
+                                        if hasattr(sc, "audio_chunks") and sc.audio_chunks:
                                             self.logger.debug(
                                                 f"  audio_chunks count={len(sc.audio_chunks)}, "
                                                 f"first chunk attrs={[a for a in dir(sc.audio_chunks[0]) if not a.startswith('_')]}"
@@ -1374,9 +1282,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                             continue
 
                         if chunk is None:
-                            self.logger.info(
-                                f"Lyria: stream ended after {chunks_received} chunks"
-                            )
+                            self.logger.info(f"Lyria: stream ended after {chunks_received} chunks")
                             break
                         chunks_received += 1
                         yield chunk
@@ -1400,7 +1306,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         temperature: float = 1.0,
         density: float = 0.5,
         brightness: float = 0.5,
-        timeout: int = 300
+        timeout: int = 300,
     ) -> AsyncIterator[bytes]:
         """
         Deprecated: Use generate_music_stream() instead.
@@ -1408,9 +1314,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         This method is deprecated and will be removed in a future version.
         """
         warnings.warn(
-            "generate_music() is deprecated, use generate_music_stream() instead",
-            DeprecationWarning,
-            stacklevel=2
+            "generate_music() is deprecated, use generate_music_stream() instead", DeprecationWarning, stacklevel=2
         )
         async for chunk in self.generate_music_stream(
             prompt=prompt,
@@ -1420,7 +1324,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             temperature=temperature,
             density=density,
             brightness=brightness,
-            timeout=timeout
+            timeout=timeout,
         ):
             yield chunk
 
@@ -1433,7 +1337,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         output_directory: Optional[Path] = None,
         genre: Optional[Union[str, MusicGenre]] = None,
         mood: Optional[Union[str, MusicMood]] = None,
-        timeout: int = 120
+        timeout: int = 120,
     ) -> List[Path]:
         """
         Generate music using Vertex AI Lyria batch API.
@@ -1472,11 +1376,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             raise ValueError("sample_count must be between 1 and 4")
 
         # Check Vertex AI is configured
-        if not getattr(self, 'vertexai', False):
-            raise RuntimeError(
-                "generate_music_batch requires Vertex AI. "
-                "Initialize client with vertexai=True"
-            )
+        if not getattr(self, "vertexai", False):
+            raise RuntimeError("generate_music_batch requires Vertex AI. " "Initialize client with vertexai=True")
 
         # 2. Build prompt with genre/mood
         full_prompt = prompt.strip()
@@ -1496,16 +1397,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         if seed is not None:
             instance["seed"] = seed
 
-        payload = {
-            "instances": [instance],
-            "parameters": {}
-        }
+        payload = {"instances": [instance], "parameters": {}}
         if sample_count > 1:
             payload["parameters"]["sample_count"] = sample_count
 
         # 4. Build endpoint URL
-        location = getattr(self, 'vertex_location', None) or 'us-central1'
-        project = getattr(self, 'vertex_project', None)
+        location = getattr(self, "vertex_location", None) or "us-central1"
+        project = getattr(self, "vertex_project", None)
         if not project:
             raise RuntimeError("VERTEX_PROJECT_ID not configured")
 
@@ -1516,13 +1414,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         )
 
         # 5. Get credentials
-        credentials_file = getattr(self, '_credentials_file', None)
+        credentials_file = getattr(self, "_credentials_file", None)
         if credentials_file and Path(credentials_file).exists():
             from google.oauth2 import service_account
             from google.auth.transport.requests import Request
+
             credentials = service_account.Credentials.from_service_account_file(
-                str(credentials_file),
-                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                str(credentials_file), scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             # Refresh if needed
             if not credentials.valid:
@@ -1533,9 +1431,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             try:
                 import google.auth
                 from google.auth.transport.requests import Request
-                credentials, _ = google.auth.default(
-                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
-                )
+
+                credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
                 if not credentials.valid:
                     credentials.refresh(Request())
                 auth_token = credentials.token
@@ -1543,20 +1440,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 raise RuntimeError(f"Failed to get Vertex AI credentials: {e}") from e
 
         # 6. Make HTTP request
-        headers = {
-            "Authorization": f"Bearer {auth_token}",
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
 
         self.logger.debug(f"Calling Lyria batch API: {endpoint_url}")
 
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.post(
-                    endpoint_url,
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=timeout)
+                    endpoint_url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
@@ -1564,9 +1455,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         error_text = await response.text()
                         # Content safety rejection - return empty, don't raise
                         if "safety" in error_text.lower() or "blocked" in error_text.lower():
-                            self.logger.warning(
-                                f"Music generation blocked by content safety: {error_text[:200]}"
-                            )
+                            self.logger.warning(f"Music generation blocked by content safety: {error_text[:200]}")
                             return []
                         raise RuntimeError(f"Lyria API error (400): {error_text[:500]}")
                     elif response.status == 401 or response.status == 403:
@@ -1575,18 +1464,12 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                             "Check Vertex AI credentials and permissions."
                         )
                     elif response.status == 429:
-                        raise RuntimeError(
-                            "Rate limit exceeded. Please try again later."
-                        )
+                        raise RuntimeError("Rate limit exceeded. Please try again later.")
                     else:
                         error_text = await response.text()
-                        raise RuntimeError(
-                            f"Lyria API error ({response.status}): {error_text[:500]}"
-                        )
+                        raise RuntimeError(f"Lyria API error ({response.status}): {error_text[:500]}")
             except asyncio.TimeoutError:
-                raise RuntimeError(
-                    f"Lyria API request timed out after {timeout}s"
-                ) from None
+                raise RuntimeError(f"Lyria API request timed out after {timeout}s") from None
 
         # 7. Setup output directory
         if output_directory:
@@ -1614,13 +1497,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 filename = f"lyria_batch_{uuid.uuid4().hex}_{i}.wav"
                 file_path = output_dir / filename
 
-                async with aiofiles.open(file_path, 'wb') as f:
+                async with aiofiles.open(file_path, "wb") as f:
                     await f.write(audio_data)
 
                 output_paths.append(file_path)
-                self.logger.info(
-                    f"Saved music file: {file_path} ({len(audio_data) / 1024:.1f} KB)"
-                )
+                self.logger.info(f"Saved music file: {file_path} ({len(audio_data) / 1024:.1f} KB)")
             except Exception as e:
                 self.logger.error(f"Failed to save prediction {i}: {e}")
                 continue
@@ -1662,7 +1543,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         stateless: bool = True,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AIMessage:
         """
         Generate images using Google's Gemini image models (a.k.a. Nano-Banana).
@@ -1721,7 +1602,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 return getattr(vin, field)
             return default
 
-        model = _resolve(model, "model", GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW)
+        model = _resolve(model, "model", GoogleModel.GEMINI_3_1_FLASH_IMAGE)
         aspect_ratio = _resolve(aspect_ratio, "aspect_ratio", AspectRatio.RATIO_16_9)
         resolution = _resolve(resolution, "resolution", ImageResolution.RES_2K)
         number_of_images = _resolve(number_of_images, "number_of_images", 1)
@@ -1735,8 +1616,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         auto_upscale = bool(kwargs.get("auto_upscale", _resolve(None, "auto_upscale", False)))
 
         # Imagen-only attributes are not supported by the Gemini backend.
-        for name, val in (("negative_prompt", negative_prompt), ("seed", seed),
-                          ("add_watermark", add_watermark or None)):
+        for name, val in (
+            ("negative_prompt", negative_prompt),
+            ("seed", seed),
+            ("add_watermark", add_watermark or None),
+        ):
             if val:
                 self.logger.debug(
                     f"{name}={val!r} is ignored by generate_image (Gemini backend); "
@@ -1769,17 +1653,17 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 full_prompt, None, user_id, session_id, None
             )
             for msg in messages[:-1]:
-                role = msg['role'].lower()
+                role = msg["role"].lower()
                 parts = [
-                    Part(text=pc.get('text', ''))
-                    for pc in msg.get('content', [])
-                    if isinstance(pc, dict) and pc.get('type') == 'text'
+                    Part(text=pc.get("text", ""))
+                    for pc in msg.get("content", [])
+                    if isinstance(pc, dict) and pc.get("type") == "text"
                 ]
                 if not parts:
                     continue
-                if role == 'user':
+                if role == "user":
                     history.append(UserContent(parts=parts))
-                elif role in ('assistant', 'model'):
+                elif role in ("assistant", "model"):
                     history.append(ModelContent(parts=parts))
 
         # --- Build config ------------------------------------------------------
@@ -1794,7 +1678,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         }
         # output_mime_type and person_generation are only supported in Vertex AI (Enterprise) mode
         # inside GenerateContentConfig's ImageConfig; Gemini Developer API raises ValueError if passed.
-        if getattr(self, 'vertexai', False):
+        if getattr(self, "vertexai", False):
             if output_mime_type:
                 image_config_kwargs["output_mime_type"] = output_mime_type
             if person_generation:
@@ -1811,9 +1695,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     "Agent Platform mode (Vertex AI) and is ignored in Developer API mode."
                 )
 
-        threshold = getattr(
-            types.HarmBlockThreshold, safety_filter_level, types.HarmBlockThreshold.BLOCK_ONLY_HIGH
-        )
+        threshold = getattr(types.HarmBlockThreshold, safety_filter_level, types.HarmBlockThreshold.BLOCK_ONLY_HIGH)
         safety_settings = [
             types.SafetySetting(category=cat, threshold=threshold)
             for cat in (
@@ -1825,7 +1707,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         ]
 
         config_kwargs: dict = {
-            "response_modalities": ['TEXT', 'IMAGE'],
+            "response_modalities": ["TEXT", "IMAGE"],
             "image_config": types.ImageConfig(**image_config_kwargs),
             "safety_settings": safety_settings,
             "tools": tools,
@@ -1843,11 +1725,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         try:
             # --- Call API ------------------------------------------------------
             if stateless:
-                response = await client.aio.models.generate_content(
-                    model=model_str,
-                    contents=contents,
-                    config=config
-                )
+                response = await client.aio.models.generate_content(model=model_str, contents=contents, config=config)
             else:
                 chat = client.aio.chats.create(model=model_str, history=history, config=config)
                 response = await chat.send_message(message=contents)
@@ -1868,7 +1746,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         text_output += part.text + "\n"
 
                     img = None
-                    if hasattr(part, 'as_image'):
+                    if hasattr(part, "as_image"):
                         try:
                             img = part.as_image()
                         except Exception:
@@ -1882,9 +1760,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         if output_directory:
                             filename = f"gen_{uuid.uuid4().hex[:8]}.png"
                             save_path = out_dir / filename
-                            await asyncio.get_running_loop().run_in_executor(
-                                None, img.save, save_path
-                            )
+                            await asyncio.get_running_loop().run_in_executor(None, img.save, save_path)
                             image_paths.append(str(save_path))
 
                         if as_base64:
@@ -1899,12 +1775,21 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
             if not stateless:
                 await self._update_conversation_memory(
-                    user_id, session_id, conversation_session,
-                    messages + [{
-                        "role": "user",
-                        "content": [{"type": "text", "text": f"[Image Generation]: {full_prompt}"}],
-                    }],
-                    None, turn_id, prompt_text, text_output, []
+                    user_id,
+                    session_id,
+                    conversation_session,
+                    messages
+                    + [
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": f"[Image Generation]: {full_prompt}"}],
+                        }
+                    ],
+                    None,
+                    turn_id,
+                    prompt_text,
+                    text_output,
+                    [],
                 )
 
             return AIMessage(
@@ -1915,7 +1800,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 provider="google",
                 usage=CompletionUsage(total_tokens=0),
                 images=[Path(p) for p in image_paths],
-                data={"base64_images": base64_images} if base64_images else None
+                data={"base64_images": base64_images} if base64_images else None,
             )
 
         except Exception as e:
@@ -1933,17 +1818,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 img.save(buffered)
             google_image = types.Image(image_bytes=buffered.getvalue(), mime_type="image/png")
             upscale_resp = await client.aio.models.upscale_image(
-                model="imagen-3.0-generate-002",
-                image=google_image,
-                upscale_factor="x2"
+                model="imagen-3.0-generate-002", image=google_image, upscale_factor="x2"
             )
             if upscale_resp.generated_images:
                 self.logger.info("Image upscaled successfully!")
                 return upscale_resp.generated_images[0].image
         except Exception as ue:
             self.logger.warning(
-                f"Auto-upscaling failed (upscaler may require Vertex AI or is "
-                f"unsupported in this region): {ue}"
+                f"Auto-upscaling failed (upscaler may require Vertex AI or is " f"unsupported in this region): {ue}"
             )
         return img
 
@@ -1957,9 +1839,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             try:
                 img.save(buffered)
             except Exception:
-                if hasattr(img, 'image_bytes'):
+                if hasattr(img, "image_bytes"):
                     buffered.write(img.image_bytes)
-                elif hasattr(img, 'data'):
+                elif hasattr(img, "data"):
                     buffered.write(img.data)
                 else:
                     return None
@@ -2025,21 +1907,16 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         }
         if model_str not in _valid_models:
             raise ValueError(
-                f"generate_videos: unsupported model {model_str!r}. "
-                f"Valid models: {sorted(_valid_models)}"
+                f"generate_videos: unsupported model {model_str!r}. " f"Valid models: {sorted(_valid_models)}"
             )
 
         prompt_text = prompt.prompt if isinstance(prompt, VideoGenerationPrompt) else prompt
         aspect_ratio = prompt.aspect_ratio if isinstance(prompt, VideoGenerationPrompt) else "16:9"
-        negative_prompt = (
-            prompt.negative_prompt if isinstance(prompt, VideoGenerationPrompt) else None
-        )
+        negative_prompt = prompt.negative_prompt if isinstance(prompt, VideoGenerationPrompt) else None
         resolution = prompt.resolution if isinstance(prompt, VideoGenerationPrompt) else None
         duration = prompt.duration if isinstance(prompt, VideoGenerationPrompt) else 8
         seed = prompt.seed if isinstance(prompt, VideoGenerationPrompt) else None
-        include_audio = (
-            prompt.include_audio if isinstance(prompt, VideoGenerationPrompt) else True
-        )
+        include_audio = prompt.include_audio if isinstance(prompt, VideoGenerationPrompt) else True
 
         return await self.video_generation(
             prompt=prompt_text,
@@ -2054,14 +1931,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             include_audio=include_audio,
         )
 
-
     async def generate_video_reel(
         self,
         request: VideoReelRequest,
         output_directory: Optional[Path] = None,
         file_manager: Optional[FileManagerInterface] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> AIMessage:
         """
         Generates a complete video reel from a high-level request.
@@ -2087,18 +1963,12 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         # Initialize FileManager if not provided
         if file_manager is None:
             if request.storage_backend == "fs":
-                base_path = output_directory or BASE_DIR.joinpath(
-                    'static', 'generated_reels'
-                )
+                base_path = output_directory or BASE_DIR.joinpath("static", "generated_reels")
                 base_path.mkdir(parents=True, exist_ok=True)
-                file_manager = FileManagerFactory.create(
-                    "fs", base_path=base_path
-                )
+                file_manager = FileManagerFactory.create("fs", base_path=base_path)
             else:
                 fm_kwargs = dict(request.storage_config or {})
-                file_manager = FileManagerFactory.create(
-                    request.storage_backend, **fm_kwargs
-                )
+                file_manager = FileManagerFactory.create(request.storage_backend, **fm_kwargs)
 
         # Generate a unique job prefix for organizing this reel's artifacts
         job_prefix = f"reels/{uuid.uuid4().hex}"
@@ -2106,7 +1976,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         if output_directory:
             output_directory.mkdir(parents=True, exist_ok=True)
         else:
-            output_directory = BASE_DIR.joinpath('static', 'generated_reels')
+            output_directory = BASE_DIR.joinpath("static", "generated_reels")
             output_directory.mkdir(parents=True, exist_ok=True)
 
         # 1. Breakdown scenes if needed
@@ -2138,10 +2008,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         # 4. Parallel Generation
         # Task 1: Music
         music_task = asyncio.create_task(
-            self._generate_reel_music(
-                request, output_directory,
-                file_manager=file_manager, job_prefix=job_prefix
-            )
+            self._generate_reel_music(request, output_directory, file_manager=file_manager, job_prefix=job_prefix)
         )
 
         # Task 2: Scenes
@@ -2150,8 +2017,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             try:
                 # We await each scene sequentially to maintain order and limit concurrent rate limits
                 scene_path = await self._process_scene(
-                    scene, i, output_directory, request.aspect_ratio,
-                    file_manager=file_manager, job_prefix=job_prefix
+                    scene, i, output_directory, request.aspect_ratio, file_manager=file_manager, job_prefix=job_prefix
                 )
                 scene_video_paths.append(scene_path)
             except Exception as e:
@@ -2175,7 +2041,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             request.transition_type,
             request.output_format,
             file_manager=file_manager,
-            job_prefix=job_prefix
+            job_prefix=job_prefix,
         )
 
         execution_time = time.time() - start_time
@@ -2191,7 +2057,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             provider="google_genai",
             usage=CompletionUsage(total_time=execution_time),
             user_id=user_id,
-            session_id=session_id
+            session_id=session_id,
         )
 
     async def _breakdown_prompt_to_scenes(self, prompt: str) -> List[VideoReelScene]:
@@ -2221,25 +2087,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     "background_prompt": {"type": "string"},
                     "foreground_prompt": {"type": "string"},
                     "video_prompt": {"type": "string"},
-                    "duration": {"type": "number"}
+                    "duration": {"type": "number"},
                 },
-                "required": ["background_prompt", "video_prompt", "duration"]
-            }
+                "required": ["background_prompt", "video_prompt", "duration"],
+            },
         }
 
         config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=schema
+            system_instruction=system_instruction, response_mime_type="application/json", response_schema=schema
         )
 
         model_str = model.value if isinstance(model, GoogleModel) else str(model)
         client = await self.get_client(model=model_str)
-        response = await client.aio.models.generate_content(
-            model=model_str,
-            contents=prompt,
-            config=config
-        )
+        response = await client.aio.models.generate_content(model=model_str, contents=prompt, config=config)
 
         try:
             scenes_data = json.loads(response.text)
@@ -2248,11 +2108,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         except Exception as e:
             self.logger.error(f"Failed to parse scenes from LLM: {e}")
             # Fallback: create one generic scene
-            return [VideoReelScene(
-                background_prompt=prompt,
-                video_prompt="Cinematic movement",
-                duration=5.0
-            )]
+            return [VideoReelScene(background_prompt=prompt, video_prompt="Cinematic movement", duration=5.0)]
 
     async def _process_scene(
         self,
@@ -2261,7 +2117,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         output_dir: Path,
         aspect_ratio: AspectRatio,
         file_manager: Optional[FileManagerInterface] = None,
-        job_prefix: Optional[str] = None
+        job_prefix: Optional[str] = None,
     ) -> tuple[Optional[str], Optional[str]]:
         """Process a single scene and persist artifacts via FileManager.
 
@@ -2300,15 +2156,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             final_image_path = bg_path
             if scene.foreground_prompt:
                 fg_message = await self.generate_image(
-                    prompt=scene.foreground_prompt,
-                    aspect_ratio=aspect_ratio,
-                    output_directory=str(output_dir)
+                    prompt=scene.foreground_prompt, aspect_ratio=aspect_ratio, output_directory=str(output_dir)
                 )
                 if fg_message.images:
                     fg_path = fg_message.images[0]
-                    final_image_path = await self._composite_images(
-                        bg_path, fg_path, output_dir, index
-                    )
+                    final_image_path = await self._composite_images(bg_path, fg_path, output_dir, index)
 
             # 3. Generate Video (Veo)
             video_message = None
@@ -2324,8 +2176,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             except RuntimeError as veo_err:
                 if "content safety filter" in str(veo_err):
                     self.logger.warning(
-                        "Scene %d: reference image blocked by safety filter, "
-                        "retrying as text-to-video: %s", index, veo_err
+                        "Scene %d: reference image blocked by safety filter, " "retrying as text-to-video: %s",
+                        index,
+                        veo_err,
                     )
                     video_message = await self.video_generation(
                         prompt=scene.video_prompt,
@@ -2354,14 +2207,15 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             if scene.narration_text:
                 speech_message = await self.generate_speech(
                     prompt_data=SpeechGenerationPrompt(
-                        prompt=scene.narration_text,
-                        speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
+                        prompt=scene.narration_text, speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
                     ),
-                    output_directory=output_dir
+                    output_directory=output_dir,
                 )
                 if speech_message.files:
                     audio_local_path = Path(speech_message.files[0])
-                    narration_key = f"{job_prefix}/scenes/scene_{index}_narration.wav" if job_prefix else str(audio_local_path)
+                    narration_key = (
+                        f"{job_prefix}/scenes/scene_{index}_narration.wav" if job_prefix else str(audio_local_path)
+                    )
                     if file_manager and job_prefix:
                         async with aiofiles.open(audio_local_path, "rb") as f:
                             audio_bytes = await f.read()
@@ -2377,6 +2231,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         """Merges specific narration audio into the video clip."""
         try:
             from moviepy import VideoFileClip, AudioFileClip
+
             video = VideoFileClip(str(video_path))
             audio = AudioFileClip(str(audio_path))
 
@@ -2393,6 +2248,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
     async def _composite_images(self, bg_path: Path, fg_path: Path, output_dir: Path, index: int) -> Path:
         """Overlays foreground image onto background."""
+
         def _do_composite():
             try:
                 bg = Image.open(bg_path).convert("RGBA")
@@ -2408,14 +2264,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 x = (bg_w - target_w) // 2
                 y = (bg_h - target_h) // 2
 
-                bg.paste(fg, (x, y), fg) # Use fg alpha as mask
+                bg.paste(fg, (x, y), fg)  # Use fg alpha as mask
 
                 out_path = output_dir / f"composite_{index}.png"
                 bg.save(out_path, format="PNG")
                 return out_path
             except Exception as e:
                 self.logger.error(f"Composition failed: {e}")
-                return bg_path # Fallback to background only
+                return bg_path  # Fallback to background only
 
         return await asyncio.to_thread(_do_composite)
 
@@ -2424,7 +2280,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         request: VideoReelRequest,
         output_dir: Path,
         file_manager: Optional[FileManagerInterface] = None,
-        job_prefix: Optional[str] = None
+        job_prefix: Optional[str] = None,
     ) -> Optional[str]:
         """Generates background music matching the reel duration.
 
@@ -2445,9 +2301,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             else:
                 reel_duration = 30.0  # Default if scenes not yet generated
 
-            self.logger.info(
-                f"Generating {reel_duration:.0f}s of background music"
-            )
+            self.logger.info(f"Generating {reel_duration:.0f}s of background music")
 
             # Use generate_music_stream which yields raw PCM bytes
             # We need to collect them and use _save_audio_file to create a valid WAV
@@ -2456,10 +2310,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             audio_chunks = bytearray()
 
             async for chunk in self.generate_music_stream(
-                prompt=prompt,
-                genre=request.music_genre,
-                mood=request.music_mood,
-                timeout=int(reel_duration)
+                prompt=prompt, genre=request.music_genre, mood=request.music_mood, timeout=int(reel_duration)
             ):
                 audio_chunks.extend(chunk)
 
@@ -2469,7 +2320,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
             # Properly encode raw PCM to WAV (saves locally)
             self._save_audio_file(bytes(audio_chunks), file_path, "audio/wav")
-            wav_path = file_path.with_suffix('.wav')
+            wav_path = file_path.with_suffix(".wav")
 
             # Persist via FileManager
             music_key = f"{job_prefix}/music/bg_music.mp3" if job_prefix else str(wav_path)
@@ -2491,7 +2342,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         transition: str,
         output_format: str,
         file_manager: Optional[FileManagerInterface] = None,
-        job_prefix: Optional[str] = None
+        job_prefix: Optional[str] = None,
     ) -> str:
         """Stitches everything together using MoviePy with hybrid storage.
 
@@ -2554,10 +2405,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             def _moviepy_assemble() -> Path:
                 """Blocking MoviePy assembly — runs in a thread."""
                 try:
-                    from moviepy import (
-                        VideoFileClip, AudioFileClip,
-                        concatenate_videoclips, vfx, CompositeAudioClip
-                    )
+                    from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips, vfx, CompositeAudioClip
 
                     clips = []
                     for p_idx, (vid_p, narr_p) in enumerate(local_scenes):
@@ -2578,41 +2426,33 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         try:
                             music = AudioFileClip(str(local_music))
                             if music.duration < final_video.duration:
-                                music = music.with_effects(
-                                    [vfx.Loop(duration=final_video.duration)]
-                                )
+                                music = music.with_effects([vfx.Loop(duration=final_video.duration)])
                             else:
                                 music = music.subclipped(0, final_video.duration)
 
-                            if hasattr(music, 'with_volume_scaled'):
+                            if hasattr(music, "with_volume_scaled"):
                                 music = music.with_volume_scaled(0.3)
-                            elif hasattr(music, 'multiply_volume'):
+                            elif hasattr(music, "multiply_volume"):
                                 music = music.multiply_volume(0.3)
 
                             if final_video.audio is not None:
-                                final_audio = CompositeAudioClip(
-                                    [final_video.audio, music]
-                                )
+                                final_audio = CompositeAudioClip([final_video.audio, music])
                             else:
                                 final_audio = music
 
                             final_video = final_video.with_audio(final_audio)
                         except Exception as me:
-                            self.logger.error(
-                                f"Failed to add background music: {me}"
-                            )
+                            self.logger.error(f"Failed to add background music: {me}")
 
                     final_video.write_videofile(
-                        str(local_output),
-                        codec="libx264" if output_format == "mp4" else "libvpx",
-                        audio_codec="aac"
+                        str(local_output), codec="libx264" if output_format == "mp4" else "libvpx", audio_codec="aac"
                     )
 
                     # Cleanup clips
                     for clip in clips:
                         with contextlib.suppress(Exception):
                             clip.close()
-                    if 'music' in locals():
+                    if "music" in locals():
                         with contextlib.suppress(Exception):
                             music.close()
                     with contextlib.suppress(Exception):
@@ -2631,11 +2471,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             assembled_path = await asyncio.to_thread(_moviepy_assemble)
 
             # --- Upload phase: persist final video to storage ---
-            final_key = (
-                f"{job_prefix}/final/final_reel.{output_format}"
-                if job_prefix
-                else str(assembled_path)
-            )
+            final_key = f"{job_prefix}/final/final_reel.{output_format}" if job_prefix else str(assembled_path)
             if file_manager:
                 await file_manager.upload_file(assembled_path, final_key)
 
@@ -2648,7 +2484,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         persist_results: bool = True,
         batch_id: Optional[str] = None,
         save_dir: Optional[Union[str, Path]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[Union[AIMessage, Exception]]:
         """
         Generate multiple images in batch using Google's image models.
@@ -2688,7 +2524,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         persist_results: bool = True,
         batch_id: Optional[str] = None,
         save_dir: Optional[Union[str, Path]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[Union[AIMessage, Exception]]:
         """
         Generate multiple videos in batch using Google's Veo models.

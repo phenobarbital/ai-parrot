@@ -310,7 +310,7 @@ def test_truncate_result_within_limit():
 
 
 def test_tool_result_redacts_environment_key_view():
-    client = GoogleGenAIClient(api_key="fake_key")
+    client = GoogleGenAIClient(api_key="fake_key", enable_redaction=True)
     leaked = "KeysView(environ({'JIRA_API_TOKEN': 'super-secret-value', " "'NORMAL_SETTING': 'visible'}))"
 
     output = client._process_tool_result_for_api(leaked)
@@ -1279,15 +1279,18 @@ async def test_generate_images_config_vertexai():
 # FEAT-252 / TASK-1613 — _resolve_final_response chokepoint tests
 # =============================================================================
 
+
 def _make_tool_call(result=None, name="some_tool"):
     """Helper: construct a minimal ToolCall for testing."""
     from parrot.models.basic import ToolCall
+
     return ToolCall(id="tc-1", name=name, arguments={}, result=result)
 
 
 def _make_client():
     """Return a GoogleGenAIClient with faked credentials (no real API call)."""
     from unittest.mock import MagicMock
+
     client = GoogleGenAIClient.__new__(GoogleGenAIClient)
     client.model = "gemini-2.5-flash"
     client.temperature = 0.0
@@ -1297,6 +1300,8 @@ def _make_client():
     client.logger.info = MagicMock()
     client.logger.warning = MagicMock()
     from parrot.security.redaction import OutputScrubber, ScrubPolicy
+
+    client.enable_redaction = True
     client._scrubber = OutputScrubber(ScrubPolicy())
     client._echo_threshold = 0.85
     return client
@@ -1308,6 +1313,7 @@ class TestResolveFinalResponse:
     def test_method_exists(self):
         """_resolve_final_response must exist on the client."""
         from parrot.clients.google.client import GoogleGenAIClient
+
         assert hasattr(GoogleGenAIClient, "_resolve_final_response")
 
     def test_synthesis_passes_through(self):
@@ -1360,6 +1366,7 @@ class TestResolveFinalResponse:
     def test_default_api_call_gated(self):
         """_get_function_calls_from_response drops 'default_api' calls."""
         from unittest.mock import MagicMock
+
         client = _make_client()
         # Simulate a response with a default_api function call
         mock_fc = MagicMock()
@@ -1380,6 +1387,7 @@ class TestResolveFinalResponse:
         """google/client.py must have zero scattered redact_text/redact_secrets calls."""
         import inspect
         import parrot.clients.google.client as m
+
         src = inspect.getsource(m)
         count = src.count("redact_text(") + src.count("redact_secrets(")
         assert count == 0, (

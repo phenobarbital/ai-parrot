@@ -110,17 +110,21 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     client_type: str = "google"
     client_name: str = "google"
     _default_model: str = GoogleModel.GEMINI_FLASH_LATEST.value
-    _fallback_model: str = "gemini-3.1-flash-lite-preview"
+    _fallback_model: str = "gemini-3.1-flash-lite"
     _model_garden: bool = False
-    _lightweight_model: str = "gemini-3.1-flash-lite-preview"
+    _lightweight_model: str = "gemini-3.1-flash-lite"
     # Default prefixes for which tools + response_schema may be sent in a
     # single GenerateContentConfig (FEAT-193). Override per-subclass by
     # setting this attribute, or per-instance via the constructor kwarg
     # ``combined_call_prefixes``. Gemini 3.x models listed here have been
     # validated by upstream evaluation to accept both simultaneously.
     _default_combined_call_prefixes: tuple[str, ...] = (
-        "gemini-3.1-pro",
+        "gemini-3.7-flash",
+        "gemini-3.7-pro",
+        "gemini-3.6-flash",
         "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-pro",
         "gemini-3.1-flash-lite",
     )
     _sensitive_tool_result_names: frozenset[str] = frozenset({"python_repl", "python_repl_pandas"})
@@ -133,7 +137,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     # ``data``. Whitelisted Gemini 3.x models (configured via
     # ``combined_call_prefixes``) bypass this reformat step — see
     # ``_supports_combined_tools_and_schema``.
-    _default_reformat_model: str = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
+    _default_reformat_model: str = GoogleModel.GEMINI_3_5_FLASH.value
     # FEAT-181: Gemini requires ≥4096 tokens for CachedContent resources
     _min_cache_tokens: int = 4096
     # Default TTL for CachedContent resources (5 minutes)
@@ -241,6 +245,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return False
         return (
             model.startswith("gemini-2.5-pro")
+            or model.startswith("gemini-3.7-pro")
             or model.startswith("gemini-3.1-pro")
             or model.startswith("gemini-3-pro")
             or GoogleGenAIClient._is_computer_use_model(model)
@@ -1433,9 +1438,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 pre_size = len(result)
                 result = result[: self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
                 self.logger.warning(
-                    "Tool '%s' result truncated (last line of defense, "
-                    "FEAT-380): %d chars -> %d chars (limit=%d)",
-                    _tool_label, pre_size, len(result), self.MAX_TOOL_RESULT_CHARS,
+                    "Tool '%s' result truncated (last line of defense, " "FEAT-380): %d chars -> %d chars (limit=%d)",
+                    _tool_label,
+                    pre_size,
+                    len(result),
+                    self.MAX_TOOL_RESULT_CHARS,
                 )
             return {"result": result}
 
@@ -1476,9 +1483,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 truncated = self._truncate_large_result(clean_result, self.MAX_TOOL_RESULT_CHARS)
                 post_size = len(self._json.dumps(truncated))
                 self.logger.warning(
-                    "Tool '%s' result truncated (last line of defense, "
-                    "FEAT-380): %d chars -> %d chars (limit=%d)",
-                    _tool_label, len(serialized), post_size, self.MAX_TOOL_RESULT_CHARS,
+                    "Tool '%s' result truncated (last line of defense, " "FEAT-380): %d chars -> %d chars (limit=%d)",
+                    _tool_label,
+                    len(serialized),
+                    post_size,
+                    self.MAX_TOOL_RESULT_CHARS,
                 )
                 return {"result": truncated}
             json_compatible_result = self._json.loads(serialized)
@@ -1496,7 +1505,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     "Tool '%s' result truncated (last line of defense, "
                     "FEAT-380, non-serializable fallback path): %d chars -> "
                     "%d chars (limit=%d)",
-                    _tool_label, pre_size, len(fallback), self.MAX_TOOL_RESULT_CHARS,
+                    _tool_label,
+                    pre_size,
+                    len(fallback),
+                    self.MAX_TOOL_RESULT_CHARS,
                 )
             json_compatible_result = fallback
 
@@ -2583,8 +2595,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     # ==========================================================================
 
     _NO_ANSWER_SENTINEL: str = (
-        "[No answer produced: the model consumed its tool budget without "
-        "synthesising a final response.]"
+        "[No answer produced: the model consumed its tool budget without " "synthesising a final response.]"
     )
     _TOOL_NOT_AVAILABLE_SENTINEL: str = (
         "[Tool not available: the requested tool does not exist in the current "
@@ -2646,13 +2657,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 norm_result = result_str.strip().lower()
                 if not norm_result:
                     continue
-                ratio = difflib.SequenceMatcher(
-                    None, norm_result, norm_candidate
-                ).ratio()
+                ratio = difflib.SequenceMatcher(None, norm_result, norm_candidate).ratio()
                 if ratio >= self._echo_threshold and len(norm_candidate) < len(norm_result) * 1.5:
                     self.logger.warning(
-                        "_resolve_final_response: tool_echo detected "
-                        "(tool=%s overlap=%.2f threshold=%.2f)",
+                        "_resolve_final_response: tool_echo detected " "(tool=%s overlap=%.2f threshold=%.2f)",
                         getattr(tc, "name", "?"),
                         ratio,
                         self._echo_threshold,
@@ -3183,8 +3191,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # SDK short-circuit (should_disable_afc) *before* the incompatible-tools
         # check, silencing the warning. Leave ``maximum_remote_calls`` unset to
         # avoid the SDK's secondary "disable + positive max_remote_calls" warning.
-        afc_config = None
-        if tool_type == "computer_use":
+        afc_config = (
+            generation_config.pop("automatic_function_calling", None) if isinstance(generation_config, dict) else None
+        )
+        if afc_config is None and tool_type == "computer_use":
             afc_config = types.AutomaticFunctionCallingConfig(disable=True)
 
         # FEAT-181: resolve List[CacheableSegment] → string before passing to
@@ -3934,6 +3944,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if isinstance(system_prompt, list):
                 system_prompt = self._resolve_system_prompt(system_prompt)
 
+            generation_config = kwargs.get("generation_config", {}) or {}
             generation_config_args = {
                 "temperature": temperature or getattr(self, "temperature", 0.0),
                 "max_output_tokens": current_max_tokens,
@@ -3944,6 +3955,28 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 generation_config_args["system_instruction"] = system_prompt
             if gemini_tools:
                 generation_config_args["tools"] = gemini_tools
+                if tool_type == "custom_functions":
+                    force_tool_call = (
+                        bool(generation_config.get("force_tool_call", False))
+                        if isinstance(generation_config, dict)
+                        else False
+                    )
+                    mode = (
+                        types.FunctionCallingConfigMode.ANY
+                        if force_tool_call and bool((prompt or "").strip())
+                        else types.FunctionCallingConfigMode.AUTO
+                    )
+                    generation_config_args["tool_config"] = types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(mode=mode)
+                    )
+                if isinstance(generation_config, dict) and "automatic_function_calling" in generation_config:
+                    generation_config_args["automatic_function_calling"] = generation_config.get(
+                        "automatic_function_calling"
+                    )
+                elif tool_type == "computer_use":
+                    generation_config_args["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    )
 
             # FEAT-193: whitelisted models can receive tools + response_schema together.
             combined_mode = bool(
@@ -4273,9 +4306,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             # FEAT-252 (TASK-1613): chokepoint — stream assembles text per-chunk;
             # run _resolve_final_response on the final assembled text only (Risk R3)
-            final_text = self._resolve_final_response(
-                final_text or "", all_tool_calls_history, None
-            )
+            final_text = self._resolve_final_response(final_text or "", all_tool_calls_history, None)
 
             ai_message = AIMessageFactory.from_gemini(
                 response=None,
@@ -4806,9 +4837,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                 # FEAT-252 (TASK-1613): chokepoint for batch responses
                 _batch_text = self._safe_extract_text(item)
-                _batch_scrubbed = self._resolve_final_response(
-                    _batch_text or "", all_tool_calls, None
-                )
+                _batch_scrubbed = self._resolve_final_response(_batch_text or "", all_tool_calls, None)
 
                 ai_message = AIMessageFactory.from_gemini(
                     response=item,
@@ -4994,9 +5023,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 [],
             )
         # FEAT-252 (TASK-1613): chokepoint for vision ask
-        _vision_text = self._resolve_final_response(
-            getattr(response, "text", "") or "", [], None
-        )
+        _vision_text = self._resolve_final_response(getattr(response, "text", "") or "", [], None)
 
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -5298,9 +5325,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 final_output = _extracted_text
 
         # FEAT-252 (TASK-1613): route through the single egress chokepoint
-        _stateless_text = self._resolve_final_response(
-            self._safe_extract_text(response) or "", all_tool_calls, None
-        )
+        _stateless_text = self._resolve_final_response(self._safe_extract_text(response) or "", all_tool_calls, None)
 
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -5420,9 +5445,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             assistant_response_text = code_exec_raw
 
         # FEAT-252 (TASK-1613): route through the single egress chokepoint
-        assistant_response_text = self._resolve_final_response(
-            assistant_response_text or "", [], code_exec_raw
-        )
+        assistant_response_text = self._resolve_final_response(assistant_response_text or "", [], code_exec_raw)
 
         ai_message = AIMessageFactory.from_gemini(
             response=final_response,

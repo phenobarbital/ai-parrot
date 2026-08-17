@@ -1,49 +1,75 @@
 """
 Google Related Models to be used in GenAI.
 """
+
 from typing import Any, Literal, List, Dict, Optional
 from enum import Enum
 import json
 from pydantic import BaseModel, Field, field_validator
 
+
 class GoogleModel(Enum):
     """Enum for Google AI models."""
+
     GEMINI_FLASH_LATEST = "gemini-flash-latest"
     GEMINI_PRO_LATEST = "gemini-3.1-pro-preview"
     GEMINI_PRO_CUSTOMTOOLS = "gemini-3.1-pro-preview-customtools"
+    GEMINI_FLASH_LITE_LATEST = "gemini-3.1-flash-lite"
+    # Gemini 3.7 series
+    GEMINI_3_7_FLASH = "gemini-3.7-flash"
+    GEMINI_3_7_PRO = "gemini-3.7-pro"
+    GEMINI_3_7_FLASH_THINKING = "gemini-3.7-flash-thinking"
+    GEMINI_3_7_FLASH_LITE = "gemini-3.7-flash-lite"
+    # Gemini 3.x series
+    GEMINI_3_6_FLASH = "gemini-3.6-flash"
+    GEMINI_3_5_FLASH = "gemini-3.5-flash"
+    GEMINI_3_5_FLASH_LITE = "gemini-3.5-flash-lite"
+    GEMINI_3_1_FLASH_LITE = "gemini-3.1-flash-lite"
+    GEMINI_3_1_PRO_PREVIEW = "gemini-3.1-pro-preview"
+    # Aliases for 3.x models mapped to active GA equivalents
     GEMINI_3_PRO = "gemini-3.1-pro-preview"
     GEMINI_3_PRO_PREVIEW = "gemini-3.1-pro-preview"
-    GEMINI_3_5_FLASH = "gemini-3.5-flash"
     GEMINI_3_FLASH = "gemini-3.5-flash"
     GEMINI_3_FLASH_PREVIEW = "gemini-3.5-flash"
     GEMINI_3_1_FLASH_LITE_PREVIEW = "gemini-3.1-flash-lite"
     GEMINI_3_FLASH_LITE_PREVIEW = "gemini-3.1-flash-lite"
+    GEMINI_3_1_FLASH_TTS_PREVIEW = "gemini-3.1-flash-tts-preview"
     GEMINI_3_FLASH_TTS = "gemini-3.1-flash-tts-preview"
+    GEMINI_3_1_FLASH_LIVE_PREVIEW = "gemini-3.1-flash-live-preview"
+    # Gemini 2.5 series
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_PREVIEW = "gemini-2.5-flash"
-    GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite"
     GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
+    GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite"
     GEMINI_2_5_PRO = "gemini-2.5-pro"
-    GEMINI_DEEP_RESEARCH_PREVIEW = "gemini-deep-research-preview-04-2026"
-    GEMINI_FLASH_LITE_LATEST = "gemini-3.1-flash-lite"
     GEMINI_2_5_FLASH_TTS = "gemini-2.5-flash-preview-tts"
     GEMINI_2_5_PRO_TTS = "gemini-2.5-pro-preview-tts"
-    GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image"
     GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image"
-    GEMINI_3_PRO_IMAGE = "gemini-3-pro-image"
-    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3.1-pro-image-preview"
-    GEMINI_3_1_FLASH_IMAGE_PREVIEW = "gemini-3.1-flash-image-preview"
-    GEMINI_FLASH_IMAGE = "gemini-3.1-flash-image"
     GEMINI_COMPUTER_USE = "gemini-2.5-computer-use-preview-10-2025"
-    GEMINI_COMPUTER_USE_PREVIEW = "gemini-2.5-computer-use-preview-10-2025"
     GEMINI_3_FLASH_COMPUTER_USE = "gemini-3-flash-preview"
+    GEMINI_3_5_FLASH_COMPUTER_USE = "gemini-3.5-flash"
+    # Specialized & Vision models
+    GEMINI_DEEP_RESEARCH = "gemini-deep-research-preview-04-2026"
+    GEMINI_DEEP_RESEARCH_PREVIEW = "gemini-deep-research-preview-04-2026"
+    GEMINI_3_PRO_IMAGE = "gemini-3-pro-image"
+    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image"
+    GEMINI_3_1_PRO_IMAGE_PREVIEW = "gemini-3-pro-image"
+    GEMINI_3_1_FLASH_IMAGE = "gemini-3.1-flash-image"
+    GEMINI_3_1_FLASH_IMAGE_PREVIEW = "gemini-3.1-flash-image"
+    GEMINI_3_1_FLASH_LITE_IMAGE = "gemini-3.1-flash-lite-image"
+    GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image"
+    GEMINI_FLASH_IMAGE = "gemini-3.1-flash-image"
+    # Media & Audio generation models
     VEO_3_1 = "veo-3.1-generate-preview"
     VEO_3_1_FAST = "veo-3.1-fast-generate-preview"
     VEO_3_1_LITE = "veo-3.1-lite-generate-preview"
     LYRIA = "lyria-3-pro-preview"
     LYRIA_CLIP = "lyria-3-clip-preview"
+    IMAGEN_3 = "imagen-3.0-generate-002"
     IMAGEN_4 = "imagen-4.0-generate-001"
     IMAGE_4_ULTRA = "imagen-4.0-ultra-generate-001"
+    IMAGEN_4_ULTRA = "imagen-4.0-ultra-generate-001"
+
 
 class GoogleVoiceModel(str, Enum):
     """
@@ -52,6 +78,7 @@ class GoogleVoiceModel(str, Enum):
     Native Audio models support bidirectional voice streaming.
     See: https://ai.google.dev/gemini-api/docs/live
     """
+
     # Latest Native Audio models
     GEMINI_2_5_FLASH_NATIVE_AUDIO_LATEST = "gemini-2.5-flash-native-audio-preview-12-2025"
     GEMINI_2_5_FLASH_NATIVE_AUDIO_DEC_2025 = "gemini-2.5-flash-native-audio-preview-12-2025"
@@ -64,11 +91,13 @@ class GoogleVoiceModel(str, Enum):
     @classmethod
     def all_models(cls) -> List[str]:
         """Get all available model strings."""
-        return [m.value for m in cls if m.name not in ('DEFAULT',)]
+        return [m.value for m in cls if m.name not in ("DEFAULT",)]
+
 
 # NEW: Enum for all valid TTS voice names
 class TTSVoice(str, Enum):
     """Google TTS voices."""
+
     ACHERNAR = "achernar"
     ACHIRD = "achird"
     ALGENIB = "algenib"
@@ -99,10 +128,12 @@ class TTSVoice(str, Enum):
     VINDEMIATRIX = "vindemiatrix"
     ZEPHYR = "zephyr"
 
+
 class MusicGenre(str, Enum):
     """
     Music Genres supported by Lyria.
     """
+
     ACID_JAZZ = "Acid Jazz"
     AFROBEAT = "Afrobeat"
     ALTERNATIVE_COUNTRY = "Alternative Country"
@@ -174,6 +205,7 @@ class MusicMood(str, Enum):
     """
     Music Moods/Descriptions supported by Lyria.
     """
+
     ACOUSTIC_INSTRUMENTS = "Acoustic Instruments"
     AMBIENT = "Ambient"
     BRIGHT_TONES = "Bright Tones"
@@ -207,81 +239,38 @@ class MusicMood(str, Enum):
 
 class MusicGenerationRequest(BaseModel):
     """Request payload for Lyria music generation."""
-    prompt: str = Field(
-        ...,
-        description="Text description of the desired music."
-    )
-    genre: Optional[MusicGenre] = Field(
-        None,
-        description="Music genre."
-    )
-    mood: Optional[MusicMood] = Field(
-        None,
-        description="Music mood."
-    )
-    bpm: int = Field(
-        90,
-        ge=60,
-        le=200,
-        description="Beats per minute (60-200)."
-    )
-    temperature: float = Field(
-        1.0,
-        ge=0.0,
-        le=3.0,
-        description="Creativity (0.0-3.0)."
-    )
-    density: float = Field(
-        0.5,
-        ge=0.0,
-        le=1.0,
-        description="Note density (0.0-1.0)."
-    )
-    brightness: float = Field(
-        0.5,
-        ge=0.0,
-        le=1.0,
-        description="Tonal brightness (0.0-1.0)."
-    )
-    timeout: int = Field(
-        300,
-        ge=10,
-        le=600,
-        description="Max generation duration in seconds."
-    )
+
+    prompt: str = Field(..., description="Text description of the desired music.")
+    genre: Optional[MusicGenre] = Field(None, description="Music genre.")
+    mood: Optional[MusicMood] = Field(None, description="Music mood.")
+    bpm: int = Field(90, ge=60, le=200, description="Beats per minute (60-200).")
+    temperature: float = Field(1.0, ge=0.0, le=3.0, description="Creativity (0.0-3.0).")
+    density: float = Field(0.5, ge=0.0, le=1.0, description="Note density (0.0-1.0).")
+    brightness: float = Field(0.5, ge=0.0, le=1.0, description="Tonal brightness (0.0-1.0).")
+    timeout: int = Field(300, ge=10, le=600, description="Max generation duration in seconds.")
 
 
 class LyriaModel(str, Enum):
     """Available Lyria models for music generation."""
+
     LYRIA_002 = "lyria-002"
     LYRIA_REALTIME = "lyria-realtime-exp"
 
 
 class MusicBatchRequest(BaseModel):
     """Request payload for Lyria batch music generation (Vertex AI)."""
-    prompt: str = Field(
-        ...,
-        min_length=1,
-        description="Text description of the desired music in US English."
-    )
+
+    prompt: str = Field(..., min_length=1, description="Text description of the desired music in US English.")
     negative_prompt: Optional[str] = Field(
-        None,
-        description="Elements to exclude from generation (e.g., 'drums, vocals')."
+        None, description="Elements to exclude from generation (e.g., 'drums, vocals')."
     )
-    seed: Optional[int] = Field(
-        None,
-        description="Deterministic seed for reproducible output."
-    )
-    sample_count: int = Field(
-        1,
-        ge=1,
-        le=4,
-        description="Number of audio samples to generate (1-4)."
-    )
+    seed: Optional[int] = Field(None, description="Deterministic seed for reproducible output.")
+    sample_count: int = Field(1, ge=1, le=4, description="Number of audio samples to generate (1-4).")
 
 
 class MusicBatchResponse(BaseModel):
     """Response from Lyria batch API."""
+
     audio_content: str = Field(..., description="Base64-encoded WAV audio")
     mime_type: str = Field(default="audio/wav")
 
@@ -292,22 +281,30 @@ class VertexAIModel(Enum):
     Note: Gemini 3.x models require location='global' on Vertex AI.
     Preview models additionally require api_version='v1beta1'.
     """
-    GEMINI_3_1_PRO_PREVIEW = "gemini-3.1-pro-preview"
+
+    GEMINI_3_7_FLASH = "gemini-3.7-flash"
+    GEMINI_3_7_PRO = "gemini-3.7-pro"
+    GEMINI_3_6_FLASH = "gemini-3.6-flash"
     GEMINI_3_5_FLASH = "gemini-3.5-flash"
-    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview"
+    GEMINI_3_5_FLASH_LITE = "gemini-3.5-flash-lite"
+    GEMINI_3_1_PRO_PREVIEW = "gemini-3.1-pro-preview"
     GEMINI_3_1_FLASH_LITE = "gemini-3.1-flash-lite"
-    GEMINI_3_1_FLASH_IMAGE_PREVIEW = "gemini-3.1-flash-image-preview"
-    GEMINI_3_1_PRO_IMAGE_PREVIEW = "gemini-3.1-pro-image-preview"
+    GEMINI_3_PRO_IMAGE = "gemini-3-pro-image"
+    GEMINI_3_1_FLASH_IMAGE = "gemini-3.1-flash-image"
+    GEMINI_3_1_FLASH_LITE_IMAGE = "gemini-3.1-flash-lite-image"
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
     GEMINI_2_5_PRO = "gemini-2.5-pro"
+    IMAGEN_3 = "imagen-3.0-generate-002"
     IMAGEN_4 = "imagen-4.0-generate-001"
+    IMAGEN_4_ULTRA = "imagen-4.0-ultra-generate-001"
 
 
 class AspectRatio(str, Enum):
     """
     Supported aspect ratios for Gemini Image Generation.
     """
+
     RATIO_1_1 = "1:1"
     RATIO_2_3 = "2:3"
     RATIO_3_2 = "3:2"
@@ -325,6 +322,7 @@ class ImageResolution(str, Enum):
     Supported resolutions for Gemini Image Generation.
     NOTE: Not all models enforce this, purely advisory/typed.
     """
+
     RES_1K = "1K"
     RES_2K = "2K"
     RES_4K = "4K"
@@ -332,20 +330,15 @@ class ImageResolution(str, Enum):
 
 class FictionalSpeaker(BaseModel):
     """Configuration for a fictional character in the generated script."""
-    name: str = Field(
-        ...,
-        description="The name of the fictional speaker (e.g., 'Alex', 'Dr. Evans')."
-    )
+
+    name: str = Field(..., description="The name of the fictional speaker (e.g., 'Alex', 'Dr. Evans').")
     characteristic: str = Field(
         ...,
-        description="A descriptive personality trait for the voice model, e.g., 'charismatic and engaging', 'skeptical and cautious', 'bored'."
+        description="A descriptive personality trait for the voice model, e.g., 'charismatic and engaging', 'skeptical and cautious', 'bored'.",
     )
-    role: Literal['interviewer', 'interviewee'] = Field(
-        ...,
-        description="The role of the speaker in the conversation."
-    )
-    gender: Literal['female', 'male', 'neutral'] = Field(
-        default='neutral',
+    role: Literal["interviewer", "interviewee"] = Field(..., description="The role of the speaker in the conversation.")
+    gender: Literal["female", "male", "neutral"] = Field(
+        default="neutral",
         description="The gender of the speaker.",
     )
 
@@ -354,29 +347,19 @@ class ConversationalScriptConfig(BaseModel):
     """
     Configuration for generating a conversational script with fictional characters.
     """
-    report_text: str = Field(
-        ...,
-        description="The main text content of the script."
-    )
-    speakers: List[FictionalSpeaker] = Field(
-        ...,
-        description="A list of fictional speakers to include in the script."
-    )
+
+    report_text: str = Field(..., description="The main text content of the script.")
+    speakers: List[FictionalSpeaker] = Field(..., description="A list of fictional speakers to include in the script.")
     context: str = Field(
-        ...,
-        description="Background context for the conversation, e.g., 'Discussing recent scientific discoveries'."
+        ..., description="Background context for the conversation, e.g., 'Discussing recent scientific discoveries'."
     )
-    length: int = Field(
-        1000,
-        description="Desired length of the script in words."
-    )
+    length: int = Field(1000, description="Desired length of the script in words.")
     system_prompt: Optional[str] = Field(
-        None,
-        description="An optional system prompt to guide the AI's behavior during script generation."
+        None, description="An optional system prompt to guide the AI's behavior during script generation."
     )
     system_instruction: Optional[str] = Field(
         None,
-        description="An optional system instruction to provide additional context or constraints for the script generation."
+        description="An optional system instruction to provide additional context or constraints for the script generation.",
     )
 
 
@@ -389,6 +372,7 @@ class VoiceProfile(BaseModel):
     Represents a single pre-built generative voice, mapping its name
     to its known characteristics and gender.
     """
+
     voice_name: str = Field(..., description="The official name of the voice (e.g., 'Erinome').")
     characteristic: str = Field(..., description="The primary characteristic of the voice (e.g., 'Clear', 'Upbeat').")
     gender: Gender = Field(..., description="The perceived gender of the voice.")
@@ -428,15 +412,15 @@ ALL_VOICE_PROFILES: List[VoiceProfile] = [
     VoiceProfile(voice_name="Sulafat", characteristic="Warm", gender="female"),
 ]
 
+
 class VoiceRegistry:
     """
     A comprehensive registry for managing and querying available voice profiles.
     """
+
     def __init__(self, profiles: List[VoiceProfile]):
         """Initializes the registry with a list of voice profiles."""
-        self._voices: Dict[str, VoiceProfile] = {
-            profile.voice_name.lower(): profile for profile in profiles
-        }
+        self._voices: Dict[str, VoiceProfile] = {profile.voice_name.lower(): profile for profile in profiles}
 
     def find_voice_by_name(self, name: str) -> Optional[VoiceProfile]:
         """
@@ -462,9 +446,7 @@ class VoiceRegistry:
         Returns:
             A list of matching VoiceProfile objects.
         """
-        return [
-            profile for profile in self._voices.values() if profile.gender == gender
-        ]
+        return [profile for profile in self._voices.values() if profile.gender == gender]
 
     def get_voices_by_characteristic(self, characteristic: str) -> List[VoiceProfile]:
         """
@@ -476,55 +458,39 @@ class VoiceRegistry:
             A list of matching VoiceProfile objects.
         """
         search_char = characteristic.lower()
-        return [
-            profile for profile in self._voices.values()
-            if profile.characteristic.lower() == search_char
-        ]
+        return [profile for profile in self._voices.values() if profile.characteristic.lower() == search_char]
+
 
 class VideoReelScene(BaseModel):
     """
     Configuration for a single scene in a video reel.
     """
-    background_prompt: str = Field(
-        ...,
-        description="Prompt for the background image generation."
-    )
+
+    background_prompt: str = Field(..., description="Prompt for the background image generation.")
     foreground_prompt: Optional[str] = Field(
-        None,
-        description="Optional prompt for a foreground image (e.g., chart, KPI) to be overlayed."
+        None, description="Optional prompt for a foreground image (e.g., chart, KPI) to be overlayed."
     )
-    video_prompt: str = Field(
-        ...,
-        description="Prompt for the video generation model (Veo)."
-    )
-    narration_text: Optional[str] = Field(
-        None,
-        description="Text for the narrator to read for this scene."
-    )
-    duration: float = Field(
-        5.0,
-        description="Estimated duration of the scene in seconds."
-    )
+    video_prompt: str = Field(..., description="Prompt for the video generation model (Veo).")
+    narration_text: Optional[str] = Field(None, description="Text for the narrator to read for this scene.")
+    duration: float = Field(5.0, description="Estimated duration of the scene in seconds.")
     reference_image: Optional[str] = Field(
         None,
         description=(
             "Path to a reference image for background generation. "
             "When provided, passed to generate_image(reference_images=[...]) "
             "to guide the background visual style."
-        )
+        ),
     )
+
 
 class VideoReelRequest(BaseModel):
     """
     Request configuration for generating a complete video reel.
     """
-    prompt: str = Field(
-        ...,
-        description="High-level description of the desired video reel."
-    )
+
+    prompt: str = Field(..., description="High-level description of the desired video reel.")
     scenes: Optional[List[VideoReelScene]] = Field(
-        None,
-        description="List of scenes. If not provided, they will be generated from the prompt."
+        None, description="List of scenes. If not provided, they will be generated from the prompt."
     )
     speech: Optional[List[str]] = Field(
         None,
@@ -532,39 +498,21 @@ class VideoReelRequest(BaseModel):
             "List of speech/narration texts, one per scene. "
             "If provided, each text will be used as narration for the corresponding scene. "
             "If not provided, no narration will be added to the video reel."
-        )
+        ),
     )
-    music_prompt: Optional[str] = Field(
-        None,
-        description="Description for the background music."
-    )
-    music_genre: Optional[MusicGenre] = Field(
-        None,
-        description="Genre of the background music."
-    )
-    music_mood: Optional[MusicMood] = Field(
-        None,
-        description="Mood of the background music."
-    )
-    aspect_ratio: AspectRatio = Field(
-        AspectRatio.RATIO_9_16,
-        description="Aspect ratio for the generated reel."
-    )
-    transition_type: str = Field(
-        "crossfade",
-        description="Type of transition between scenes (e.g., 'crossfade')."
-    )
-    output_format: str = Field(
-        "mp4",
-        description="Output video format (mp4 or webm)."
-    )
+    music_prompt: Optional[str] = Field(None, description="Description for the background music.")
+    music_genre: Optional[MusicGenre] = Field(None, description="Genre of the background music.")
+    music_mood: Optional[MusicMood] = Field(None, description="Mood of the background music.")
+    aspect_ratio: AspectRatio = Field(AspectRatio.RATIO_9_16, description="Aspect ratio for the generated reel.")
+    transition_type: str = Field("crossfade", description="Type of transition between scenes (e.g., 'crossfade').")
+    output_format: str = Field("mp4", description="Output video format (mp4 or webm).")
     reference_images: Optional[List[str]] = Field(
         None,
         description=(
             "Ordered list of file paths to reference images, one per scene. "
             "Populated by VideoReelHandler from multipart uploads. "
             "Image i is assigned to scene i."
-        )
+        ),
     )
     storage_backend: Literal["fs", "temp", "s3", "gcs"] = Field(
         "fs",
@@ -572,14 +520,13 @@ class VideoReelRequest(BaseModel):
             "Storage backend for generated artifacts. "
             "'fs' for local filesystem, 'temp' for temporary directory, "
             "'s3' for AWS S3, 'gcs' for Google Cloud Storage."
-        )
+        ),
     )
     storage_config: Optional[Dict[str, Any]] = Field(
         None,
         description=(
-            "Backend-specific configuration (e.g. bucket name, prefix). "
-            "Required for 's3' and 'gcs' backends."
-        )
+            "Backend-specific configuration (e.g. bucket name, prefix). " "Required for 's3' and 'gcs' backends."
+        ),
     )
 
     @field_validator("scenes", "speech", mode="before")
