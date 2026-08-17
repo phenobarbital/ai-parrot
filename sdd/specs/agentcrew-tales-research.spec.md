@@ -380,28 +380,69 @@ def sample_slide_spec():
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] All unit tests pass (`pytest packages/ai-parrot/tests/flows/thales/ -v`)
-- [ ] Integration tests pass (mocked-LLM e2e, checkpoint resume, partial sources)
-- [ ] A run produces, for N angles: N `ResearchDeck` JSON artifacts, N slide
+**Verified truthfully by TASK-2233 (closure task) — two items are
+deliberately left unticked; see the notes under each. Per the sdd-worker
+cardinal rule "do NOT tick unmet criteria," nothing below is ticked
+without a corresponding passing test.**
+
+- [x] All unit tests pass (`pytest packages/ai-parrot/tests/flows/thales/ -v`) — 77 passed.
+- [ ] Integration tests pass (mocked-LLM e2e, checkpoint resume, partial sources) —
+      **e2e and partial-sources: yes.** Checkpoint **resume** specifically is
+      NOT proven — see the note below. Left unticked as a whole because the
+      criterion names all three explicitly.
+- [x] A run produces, for N angles: N `ResearchDeck` JSON artifacts, N slide
       HTML artifacts, 1 final print-CSS HTML (slides + APA-ish bibliography
       as final section), 1 executive summary, 1 infographic — all persisted
-      via `ArtifactStore` AND mirrored under `output_dir` with `manifest.json`
-- [ ] `num_decks` defaults to 10, rejects < 10, has **no upper cap**
-- [ ] Every `Finding` carries ≥1 `SourceClaim` with `source_tool` and
-      `verification` set; missing publication dates render as "n.d.", never invented
-- [ ] Research agents are constructed with `enable_groundedness=True`;
-      `GroundednessReport`s appear in deck provenance for tool-based sources
-- [ ] Rendering is deterministic: same `SlideSpec`/deck inputs → byte-identical
-      HTML (golden-file test); **no matplotlib anywhere** in the feature
-- [ ] With weasyprint importable, a real `.pdf` of the final document is
-      emitted; without it, the run succeeds with a manifest warning
-- [ ] A failed research source degrades (OR-join): deck built from surviving
-      sources with `failed_sources` recorded; run aborts only if ALL decks fail
-- [ ] HTTP surface: `POST /api/v1/thales` returns `run_id`; polling GET
-      reflects node-event progress; artifacts listed with public URLs
-- [ ] No changes to `flow.py`, `crew.py`, `abstract.py`, or any existing
-      public API (purely additive feature)
-- [ ] Documentation added at `docs/flows/thales.md`
+      via `ArtifactStore` AND mirrored under `output_dir` with `manifest.json` —
+      verified end-to-end with a fake `ArtifactStore` + `InfographicToolkit`
+      (`test_thales_e2e_mocked_llm`).
+- [x] `num_decks` defaults to 10, rejects < 10, has **no upper cap**.
+- [x] Every `Finding` carries ≥1 `SourceClaim` with `source_tool` and
+      `verification` set; missing publication dates render as "n.d.", never invented.
+- [ ] Research agents are constructed with `enable_groundedness=True` (**yes**,
+      verified in TASK-2227's unit tests) — **but** `GroundednessReport`s do
+      NOT currently appear in `ResearchDeck.groundedness` (deck-level
+      provenance). Per-claim `SourceClaim.verification` labeling IS correct
+      (arxiv claims backed by a real report are labeled `"groundedness"`),
+      but the raw report dump never reaches the deck-level `groundedness`
+      dict — `_ResearchNode`'s wire format to `DeckBuilderNode` (a
+      JSON-encoded `list[Finding]`) has no channel for it, and widening
+      that format would break TASK-2229's already-shipped
+      `DeckBuilderNode` unit tests' fixtures. Left unticked; not fixed
+      here per this task's own scope note ("NOT in scope: fixing
+      implementation bugs beyond small integration glue").
+- [x] Rendering is deterministic: same `SlideSpec`/deck inputs → byte-identical
+      HTML (golden-file test); **no matplotlib anywhere** in the feature.
+- [x] With weasyprint importable, a real `.pdf` of the final document is
+      emitted; without it, the run succeeds with a manifest warning — both
+      paths unit-tested (TASK-2228/2230), and the e2e integration test in
+      this environment (weasyprint installed) produced a real multi-page PDF.
+- [x] A failed research source degrades (OR-join): deck built from surviving
+      sources with `failed_sources` recorded; run aborts only if ALL decks fail.
+- [x] HTTP surface: `POST /api/v1/thales` returns `run_id`; polling GET
+      reflects node-event progress; artifacts listed with public URLs.
+- [x] No changes to `flow.py`, `crew.py`, or `abstract.py`, or any existing
+      public API (purely additive feature) — verified: `git diff dev...HEAD`
+      touches none of these three files.
+- [x] Documentation added at `docs/flows/thales.md` — includes a dedicated
+      "Known limitation: `AgentsFlow.resume()`" section documenting the
+      checkpoint-resume gap below.
+
+**Checkpoint-resume note** (see `docs/flows/thales.md` and
+`test_integration.py::TestCheckpointResume`'s docstring for the full
+trail): Thales runs with `checkpoint=True`, and a `FlowCheckpointer`
+genuinely persists progress as nodes complete (verified:
+`test_checkpoint_is_written_during_a_run`). A full
+`AgentsFlow.resume(flow_id, checkpoint_id, ...)` round-trip is NOT
+currently supported for Thales's node shapes: `resume()` reconstructs
+nodes via `from_definition()` with no `node_factories` parameter, so
+Thales's custom node fields (`angle`, `config`, `client`, `agent`,
+`store`, `toolkit`, ...) cannot be supplied on reconstruction — every
+node would fail Pydantic validation during `_materialize_nodes()`, not
+just incomplete ones. Adding `node_factories` support to
+`AgentsFlow.resume()` would be an engine change, forbidden by this same
+acceptance-criteria list ("No changes to `flow.py`"). Tracked as an open
+follow-up (candidate for a future FEAT), not silently worked around.
 
 ---
 
@@ -687,3 +728,4 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 |---|---|---|---|
 | 0.1 | 2026-08-17 | Jesús Lara + Claude Code | Initial draft from brainstorm (all 8 open questions pre-resolved) |
 | 0.2 | 2026-08-17 | Jesús Lara + sdd-worker (TASK-2231) | §7 revised: flow assembly is programmatic (`add_node`/`add_edge`), not `FlowDefinition`/`from_definition(node_factories=…)`; every Thales node type IS registered in `NODE_REGISTRY` (idempotently, mirroring `dev_loop`) because `checkpoint=True` requires it via `to_definition()`'s fail-fast export check regardless of assembly mode; edge predicates are CEL expression strings, not Python callables. Both corrections verified by running the assembled flow end-to-end, not just from reading the engine's docstrings. |
+| 0.3 | 2026-08-17 | sdd-worker (TASK-2233) | §5 acceptance criteria walked truthfully against passing tests: 10 of 12 ticked, 2 left unticked with explicit notes (checkpoint `resume()` round-trip not supported for Thales's node shapes — persistence itself IS verified; `ResearchDeck.groundedness` deck-level provenance not populated — per-claim `verification` labeling IS correct). Fixed one real bug found via e2e testing: `FinalDocumentNode` crashed with `artifact_store=None` (now degrades to a bare `ArtifactRef`, matching the pattern everywhere else). Added `docs/flows/thales.md`. §8: note the handler run-registry backend decision recorded there ("Owner: Jesús: redis") was superseded by TASK-2232's own task file, which explicitly scoped an in-memory registry with a redis-shaped seam — TASK-2232 shipped as scoped; not redone here. |
