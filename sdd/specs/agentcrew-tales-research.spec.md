@@ -112,9 +112,13 @@ Research nodes per angle (v1 sources, M=3):
 - **web** — `WebSearchAgent(use_builtin_search=True, contrastive_search=True,
   enable_groundedness=True)` (Gemini internal Google Search via
   `tool_type='builtin_tools'`).
-- **deep** — a node calling `GoogleGenAIClient.ask(prompt, deep_research=True)`
-  (the flag routes to `_deep_research_ask`, background interactions API).
-  v1 is Google-only: no other provider client exposes this flag (verified).
+- **deep** — a node calling the configured client's
+  `ask(prompt, deep_research=True)`. The flag is part of the AbstractClient
+  `ask()` contract (`base.py:1631`) with provider-specific semantics:
+  Google routes to the background Deep Research interactions agent,
+  Anthropic applies an enhanced deep-research system prompt, OpenAI resolves
+  to its o3/o4-deep-research models; Bedrock logs-and-ignores the flag
+  (verified — see Codebase Contract). Default client: Google.
 - **arxiv** — an agent carrying `ArxivTool` (`enable_groundedness=True`);
   its result fields map 1:1 onto `SourceClaim`.
 
@@ -158,7 +162,7 @@ TalesHandler (ai-parrot-server): POST /api/v1/tales ─▶ run_id; GET …/{run_
 |---|---|---|
 | `AgentsFlow` (`bots/flows/flow/flow.py`) | uses | `from_definition(node_factories=…)`, `run_flow`, `on_node_event`, `checkpoint=True` — no changes |
 | `WebSearchAgent` (`bots/search.py`) | uses | `use_builtin_search=True`, `contrastive_search=True`, `enable_groundedness=True` |
-| `GoogleGenAIClient` (`clients/google/client.py`) | uses | `ask(deep_research=True)` → `_deep_research_ask` (background interactions) |
+| `AbstractClient.ask(deep_research=True)` (`clients/base.py:1631`) | uses | cross-provider flag; Google (default) → `_deep_research_ask` background interactions; Anthropic → research system prompt; OpenAI → deep-research models; Bedrock ignores |
 | `ArxivTool` (`parrot_tools/arxiv_tool.py`) | uses | as-is; result fields map to `SourceClaim` |
 | Groundedness (`security/groundedness/`) | uses | `enable_groundedness=True` per research agent (FEAT-398) |
 | `SynthesisNode` (`bots/flows/flow/flow.py`) | uses | executive summary fan-in |
@@ -337,7 +341,7 @@ class TalesHandler:                      # aiohttp, precedent handlers/infograph
 | `test_source_claim_verification_labels` | 1 | verification ∈ {groundedness, provider_grounding, unverified} |
 | `test_factory_websearch_agent_flags` | 2 | agent built with builtin search + contrastive + `enable_groundedness=True` |
 | `test_factory_arxiv_mapping` | 2 | ArxivTool result dict → `SourceClaim` (title/authors/published/pdf_url/journal_ref) |
-| `test_deep_research_node_google_only` | 2 | non-Google client config → clear error/skip, never AttributeError |
+| `test_deep_research_flag_passthrough` | 2 | deep node passes `deep_research=True` to any configured client; Bedrock's log-and-ignore degrades to a plain ask, never an error |
 | `test_planner_min_angles` | 3 | planner output < 10 angles → re-ask/pad behavior per §7 |
 | `test_deck_builder_or_join_degrade` | 3 | one source failed → deck built from survivors, `failed_sources` recorded |
 | `test_bibliography_apa_dedupe` | 3 | duplicate URLs deduped; APA-ish entry; missing dates render "n.d." (never invented) |
@@ -451,6 +455,11 @@ class WebSearchAgent(BasicAgent):                         # L45
     # kwargs['tool_type'] = 'builtin_tools' in _do_search()
     # default llm = 'google:gemini-3-flash'
 
+# packages/ai-parrot/src/parrot/clients/base.py — deep_research is a
+# CROSS-PROVIDER flag on the AbstractClient ask contract:
+#   async def ask(..., deep_research: bool = False, ...)         # L1631
+#   async def ask_stream(..., deep_research: bool = False, ...)  # L1667
+
 # packages/ai-parrot/src/parrot/clients/google/client.py
 class GoogleGenAIClient(...):
     async def ask(self, ..., deep_research: bool = False, ...): ...        # L2876
@@ -459,6 +468,20 @@ class GoogleGenAIClient(...):
     async def _deep_research_ask(...): ...                                 # L5015
     #   model = "deep-research-pro-preview-12-2025"                        # L5026
     async def deep_research(self, query, files=None, ...): ...             # L5102
+
+# packages/ai-parrot/src/parrot/clients/claude.py — AnthropicClient
+#   ask(..., deep_research: bool = False, ...)                   # L425
+#   if deep_research: enhanced research system prompt            # L444/L470
+#   def _get_deep_research_system_prompt(self) -> str            # L1755
+
+# packages/ai-parrot/src/parrot/clients/gpt.py — OpenAI client
+#   def _resolve_deep_research_model(model_str) -> str           # L324 (o3/o4-deep-research)
+#   ask(..., deep_research: bool = False, ...)                   # L679; applied L722+
+#   ask_stream(..., deep_research: bool = False, ...)            # L1268
+
+# packages/ai-parrot/src/parrot/clients/bedrock.py — flag accepted but
+#   NOT supported: logged and ignored                            # L591/L648
+# grok.py L440 and groq.py L690 also accept the flag.
 
 # packages/ai-parrot-tools/src/parrot_tools/arxiv_tool.py
 class ArxivSearchArgsSchema(AbstractToolArgsSchema): ...  # L13
@@ -507,7 +530,7 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 |---|---|---|---|
 | `build_tales_definition()` | `AgentsFlow.from_definition(node_factories=…)` | classmethod call | `flow/flow.py:428` |
 | research node (web) | `WebSearchAgent.ask()` | agent call | `bots/search.py:45` |
-| research node (deep) | `GoogleGenAIClient.ask(deep_research=True)` | flag on ask | `clients/google/client.py:2876` |
+| research node (deep) | `AbstractClient.ask(deep_research=True)` | flag on ask (cross-provider) | `clients/base.py:1631`; google `client.py:2876`; claude.py:425; gpt.py:679 |
 | research node (arxiv) | `ArxivTool._execute()` via agent tools | tool call | `arxiv_tool.py:36` |
 | deck provenance | `AIMessage.metadata["guardrails"]["groundedness"]` | metadata read | `groundedness/guardrail.py` |
 | ExecSummaryNode | `SynthesisNode` / `synthesize_results` | node reuse | `flow/flow.py:1963` |
@@ -522,9 +545,12 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 - ~~`ResearchAngle` / `SourceClaim` / `Finding` / `ResearchDeck` /
   `SlideSpec` / `Bibliography` / `TalesConfig` / `TalesResult`~~ — created
   by this feature (Module 1).
-- ~~`deep_research` flag on any non-Google client~~ — ONLY
-  `clients/google/client.py` implements it (verified by grep across
-  `parrot/clients/`); gpt.py/claude.py/bedrock.py/groq.py/grok.py do NOT.
+- ~~Uniform `deep_research` semantics across providers~~ — the flag exists
+  on every client's `ask()` (base contract, `base.py:1631`) but behavior
+  differs per provider (true Deep Research agent on Google; research
+  system prompt on Anthropic; deep-research models on OpenAI); Bedrock
+  **logs and ignores it** (`bedrock.py:648`) — do not assume it deepens
+  a Bedrock call.
 - ~~A `DeepResearchAgent` bot class~~ — Deep Research is the `ask()` flag
   above, not an agent; Tales wraps it in a node.
 - ~~`WorldBankDataTool` / `EuropeanOpenDataTool` / `OxfordAcademicTool` /
@@ -600,8 +626,9 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 > `sdd/proposals/agentcrew-tales-research.brainstorm.md`).
 
 - [x] Deep Research mechanism — *Resolved in brainstorm*: it is a flag of
-  the `ask()` method on `GoogleGenAIClient` (verified: Google-only today),
-  not a model/agent of its own.
+  the `ask()` method on `GoogleGenAIClient` **and other LLM clients**
+  (verified: cross-provider on the AbstractClient contract, `base.py:1631`;
+  Bedrock accepts but ignores it), not a model/agent of its own.
 - [x] Groundedness evidence gap for built-in search / Deep Research —
   *Resolved in brainstorm*: `provider_grounding` labeling is acceptable in v1.
 - [x] Real PDF artifact in addition to print-CSS HTML — *Resolved in
