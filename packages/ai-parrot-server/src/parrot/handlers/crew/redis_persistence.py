@@ -141,6 +141,25 @@ class CrewRedis:
             if 'updated_at' in crew_dict and isinstance(crew_dict['updated_at'], str):
                 crew_dict['updated_at'] = datetime.fromisoformat(crew_dict['updated_at'])
 
+            # CrewDefinition rejects unknown keys, but rows written before it
+            # did may carry some (a stray "tasks": [] shipped in the bundled
+            # examples for a long time). Refusing to load historical data is
+            # not the job of strictness — its job is to stop *new* definitions
+            # from silently dropping a field. Drop and log instead, so an
+            # already-stored crew stays loadable and the drift stays visible.
+            unknown = set(crew_dict) - set(CrewDefinition.model_fields)
+            if unknown:
+                self.logger.warning(
+                    "Ignoring unknown key(s) %s in stored crew %r; the field(s) "
+                    "are not part of CrewDefinition and were never applied.",
+                    sorted(unknown), crew_dict.get('crew_id', '<unknown>'),
+                )
+                crew_dict = {
+                    key: value
+                    for key, value in crew_dict.items()
+                    if key not in unknown
+                }
+
             return CrewDefinition(**crew_dict)
         except Exception as e:
             self.logger.error("Deserialization error: %s", e)

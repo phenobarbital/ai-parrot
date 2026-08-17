@@ -15,6 +15,14 @@ returns immediately with a job id and the client polls.
 Progress is written to ``Job.metadata`` at every stage, so a poll answers
 "authoring node 4/7" rather than an opaque "running" — which matters
 precisely because the run is long and made of many small steps.
+
+Caveat on that progress: ``JobManager`` mirrors a job to Redis on status
+transitions only, not on metadata mutation, and ``get_job_async`` reads the
+in-memory job first. Live progress is therefore visible to a poller served
+by the same worker, and a poller served by another worker (or one reading
+after a restart) sees the job's last persisted state until it completes.
+The terminal result is durable either way; only the intermediate counter is
+best-effort.
 """
 from __future__ import annotations
 
