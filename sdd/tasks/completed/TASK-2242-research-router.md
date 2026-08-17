@@ -306,8 +306,22 @@ class TestResearchRouter:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: `ResearchRouterArgs(AbstractToolArgsSchema)` + `ResearchRouter
+(AbstractTool)` with `name`/`description`/explicit `args_schema` (guards
+the abstract.py:629 parameter-drop trap) and constructor-injected
+`open_data`/`academic`/`llm` (guards the abstract.py:265 no-bot-
+backreference invariant; `llm` accepts an `AbstractClient`, a string spec
+via `LLMFactory.create()`, or `None` for heuristics-only). LLM
+classification asks for a small JSON-array response, parsed defensively
+via regex + `json.loads`, falling back to keyword heuristics on any
+failure (no LLM, malformed output, exception) — ambiguous queries search
+both categories. Concurrent dispatch via `asyncio.gather(...,
+return_exceptions=True)`; per-category exceptions are recorded in
+`result["failures"]` without ever failing the overall `ToolResult`
+(`success=True`, `status="success"` always). 9/9 new tests pass,
+including the params-reach-`_execute` regression test run through the
+real `.execute()` entrypoint (not `._execute()` directly); full research
+suite (79 tests) green; `ruff check` clean.
+**Deviations from spec**: none

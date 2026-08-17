@@ -172,7 +172,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Join point: imports both toolkits, so it waits for both chains. Carries the two AbstractTool traps found in spec review (mandatory explicit args_schema; no bot back-reference for the LLM).",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2242-research-router.md"
+      "completed_at": "2026-08-17T01:06:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2242-research-router.md"
     },
     {
       "id": "TASK-2243",
