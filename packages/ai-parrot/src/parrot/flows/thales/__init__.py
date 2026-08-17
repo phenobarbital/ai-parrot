@@ -14,7 +14,8 @@ a final print-CSS document (+ optional PDF), and a summary infographic.
 See ``sdd/specs/agentcrew-tales-research.spec.md`` for the full spec.
 
 This ``__init__`` re-exports Module 1's Pydantic contracts (see
-``parrot.flows.thales.models``) for convenient top-level import.
+``parrot.flows.thales.models``) and the public ``ThalesRunner`` API
+(Module 5, ``runner.py``) for convenient top-level import.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from parrot.flows.thales.models import (
     ThalesConfig,
     ThalesResult,
 )
+from parrot.flows.thales.runner import ThalesRunner
 
 __all__ = [
     "ArtifactRef",
@@ -41,4 +43,5 @@ __all__ = [
     "SourceClaim",
     "ThalesConfig",
     "ThalesResult",
+    "ThalesRunner",
 ]
