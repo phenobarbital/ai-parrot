@@ -1307,6 +1307,31 @@ class AgentRegistry:
 
         return _decorator
 
+    def list_agents(self) -> List[BotMetadata]:
+        """Return every registered agent's metadata, sorted by name.
+
+        The public enumerator. Until this existed, callers that needed the
+        whole registry reached into the private ``_registered_agents`` dict
+        (``handlers/config_handler.py``, ``handlers/bots.py``,
+        ``cli/loaders.py``, ``bots/factory/tools/introspection.py``), which
+        coupled them to the storage layout and bypassed the read-only
+        contract ``get_metadata`` documents.
+
+        Returns:
+            A new list of :class:`BotMetadata`, name-sorted so callers get a
+            stable order. Mutating the list does not affect the registry;
+            the ``BotMetadata`` objects themselves are shared.
+        """
+        return sorted(self._registered_agents.values(), key=lambda meta: meta.name)
+
+    def list_agent_names(self) -> List[str]:
+        """Return the names of every registered agent, sorted.
+
+        Returns:
+            Sorted agent names.
+        """
+        return sorted(self._registered_agents)
+
     def list_bots_by_priority(self) -> List[BotMetadata]:
         """Get all registered bots sorted by priority (highest first)."""
         return sorted(
