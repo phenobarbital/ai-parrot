@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from typing import Any, Literal, cast
 
 from datetime import datetime, timezone
@@ -17,9 +18,73 @@ from pydantic import BaseModel, ConfigDict
 
 from ...core.constraints import ConditionOperator, DependencyRule, FieldCondition
 from ...core.options import FieldOption
-from ...core.schema import FormField, FormSchema, FormSection, FormType
+from ...core.schema import (
+    FormField,
+    FormSchema,
+    FormSection,
+    FormSubsection,
+    FormType,
+)
 from ...core.types import FieldType
 from .abstract import AbstractFormService
+
+# ---------------------------------------------------------------------------
+# Stable import identity
+# ---------------------------------------------------------------------------
+
+#: Namespace for every UUIDv5 minted by this importer. Derived (not a magic
+#: literal) so the value is reproducible from the URI alone.
+_IDENTITY_NAMESPACE = uuid.uuid5(
+    uuid.NAMESPACE_URL, "https://parrot-formdesigner/import/networkninja"
+)
+
+
+def stable_form_uid(formid: int | str, orgid: int | str) -> uuid.UUID:
+    """Derive the deterministic ``form_uid`` for a networkninja source form.
+
+    The importer must be idempotent: re-importing the same source form has to
+    yield the SAME ``form_uid``, or ``FormRegistry.register`` rejects it as a
+    new form claiming an already-owned slug (``db-form-<formid>-<orgid>``),
+    and every ``field_uid``-keyed answer, partial save, and resolved rule is
+    orphaned.
+
+    Args:
+        formid: Numeric form identifier at the source.
+        orgid: Organization ID that owns the form.
+
+    Returns:
+        A UUIDv5 that is a pure function of ``(formid, orgid)``.
+    """
+    return uuid.uuid5(_IDENTITY_NAMESPACE, f"networkninja:{orgid}:{formid}")
+
+
+def _apply_stable_identity(schema: FormSchema, form_uid: uuid.UUID) -> None:
+    """Rewrite the schema's auto-generated UUID4 identities to stable UUIDv5s.
+
+    ``FormSchema``/``FormSection``/``FormField`` all default their ``*_uid``
+    to ``uuid.uuid4()``, which makes an import non-reproducible. Every uid is
+    re-derived here from the form's own identity plus the element's stable
+    local id (``section_id`` / ``field_id`` — both already validated unique
+    by ``FormSchema``'s post-init validator, which ran when the schema was
+    constructed).
+
+    Mutates ``schema`` in place.
+
+    Args:
+        schema: The freshly built schema whose uids are still random.
+        form_uid: The deterministic form identity to derive children from.
+    """
+    schema.form_uid = form_uid
+    for section in schema.sections:
+        section.section_uid = uuid.uuid5(form_uid, f"section:{section.section_id}")
+        for item in section.fields:
+            if isinstance(item, FormSubsection):
+                item.subsection_uid = uuid.uuid5(
+                    form_uid, f"subsection:{item.subsection_id}"
+                )
+    for field in schema.iter_fields_recursive():
+        field.field_uid = uuid.uuid5(form_uid, f"field:{field.field_id}")
+
 
 # ---------------------------------------------------------------------------
 # SQL Query
@@ -397,13 +462,20 @@ class NetworkninjaFormService(AbstractFormService):
             if section is not None:
                 sections.append(section)
 
-        return FormSchema(
+        schema = FormSchema(
             form_id=form_id,
             title=form_name,
             description=description,
             sections=sections,
             form_type=form_type,
         )
+
+        # Identity must be a pure function of the source row, never uuid4 —
+        # see stable_form_uid() for why a random uid breaks re-import.
+        _apply_stable_identity(
+            schema, stable_form_uid(row["formid"], row["orgid"])
+        )
+        return schema
 
     @staticmethod
     def _normalize_question_blocks(
