@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-17T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-17T01:19:50+00:00",
   "tasks": [
     {
       "id": "TASK-2234",
@@ -213,7 +213,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -223,8 +223,8 @@
       "parallelism_notes": "Last. Documents the shipped surface, so it must run after exports and the registry are final to avoid documenting names that changed.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2244-research-tools-documentation.md"
+      "completed_at": "2026-08-17T01:19:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2244-research-tools-documentation.md"
     }
   ]
 }

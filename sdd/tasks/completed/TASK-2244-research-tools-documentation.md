@@ -218,8 +218,20 @@ Diff both lists against the tool tables in the doc — they must match exactly.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: `docs/research_tools.md` covers all 11 suggested sections
+(overview, installation, quick start, result model, error contract, both
+toolkits' 5 tools each with per-source caveats, `ResearchRouter` with
+prominent LLM-injection documentation, env-var config table, caching
+TTLs, "not covered in v1"). Verified tool names shipped
+(`OpenDataToolkit`/`AcademicResearchToolkit` `get_tools()`) exactly match
+the doc's tables before writing them. Every code block's imports were
+actually run: `from parrot_tools.research import (...)`, `from
+parrot.bots import Agent`, `ResearchRouter(...)` with both `llm=None` and
+`llm="openai:gpt-4o-mini"`, and a full `Agent(name="analyst",
+tools=[router])` construction (confirmed via log output: "Registered
+tool: research"). Model field lists (`ResearchResult`, `Citation`,
+`IndicatorValue`, `PaperResult`, `DatasetResult`) verified against
+`model_fields` on the real classes.
+**Deviations from spec**: none
