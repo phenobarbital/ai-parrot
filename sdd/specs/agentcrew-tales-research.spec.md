@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-425
 **Date**: 2026-08-17
 **Author**: Jesús Lara (with Claude Code research)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.x
 **Brainstorm**: `sdd/proposals/agentcrew-tales-research.brainstorm.md`
 
@@ -644,8 +644,8 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
   in this scope; handled by the separate `research-tools-for-agents` spec.
 - [x] Slide visual identity — *Resolved in brainstorm*: yes — the
   hanademi.com deck page is the layout reference for the v1 templates.
-- [ ] Handler run-registry backend (in-memory vs redis) for `run_id`
-  polling state — decide during Module 6 implementation. — *Owner: Jesús*
+- [x] Handler run-registry backend (in-memory vs redis) for `run_id`
+  polling state — decide during Module 6 implementation. — *Owner: Jesús*: redis
 
 ---
 
