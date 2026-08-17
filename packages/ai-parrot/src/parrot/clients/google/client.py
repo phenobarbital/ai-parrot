@@ -137,7 +137,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     # ``data``. Whitelisted Gemini 3.x models (configured via
     # ``combined_call_prefixes``) bypass this reformat step — see
     # ``_supports_combined_tools_and_schema``.
-    _default_reformat_model: str = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
+    _default_reformat_model: str = GoogleModel.GEMINI_3_5_FLASH.value
     # FEAT-181: Gemini requires ≥4096 tokens for CachedContent resources
     _min_cache_tokens: int = 4096
     # Default TTL for CachedContent resources (5 minutes)
