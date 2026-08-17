@@ -118,12 +118,24 @@ class TestRegistry:
 
         assert "MarketResearchToolkit" not in " ".join(TOOL_REGISTRY.values())
 
+    def test_base_research_toolkit_deliberately_excluded(self):
+        """`BaseResearchToolkit` is a bare cooperative mixin, not a usable
+        standalone toolkit — registering it would make
+        `ToolManager.load_tool("base_research")` falsely report success
+        while registering zero tools. It must never appear in the
+        registry even though the generator's naming-suffix scan would
+        otherwise pick it up (it ends in "Toolkit")."""
+        from parrot_tools import TOOL_REGISTRY
+
+        assert "BaseResearchToolkit" not in " ".join(TOOL_REGISTRY.values())
+
     def test_research_entries_match_generator_scan(self):
         """The hand-added registry entries exactly match what
         `scripts/generate_tool_registry.py --dry-run --tools-only` would
         compute for `parrot_tools/research/` (see module docstring for
         why they were added by hand rather than via a live regeneration
-        run)."""
+        run) — except `BaseResearchToolkit`, deliberately excluded (see
+        `test_base_research_toolkit_deliberately_excluded`)."""
         result = subprocess.run(
             [sys.executable, "scripts/generate_tool_registry.py",
              "--dry-run", "--tools-only"],
@@ -132,6 +144,7 @@ class TestRegistry:
         research_lines = [
             line for line in result.stdout.splitlines()
             if "parrot_tools.research." in line
+            and "BaseResearchToolkit" not in line
         ]
         assert research_lines == [], (
             "generator scan disagrees with the hand-added research "

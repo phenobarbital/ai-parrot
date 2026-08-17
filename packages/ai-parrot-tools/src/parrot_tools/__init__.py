@@ -24,9 +24,18 @@ TOOL_REGISTRY: dict[str, str] = {
     # uses, so it would never be auto-discovered even with a working
     # writer — it is a legitimate "manual addition" per this file's own
     # docstring contract.
+    #
+    # NOTE: `BaseResearchToolkit` (the generator would key it as
+    # "base_research") is deliberately EXCLUDED here even though the
+    # generator's naming-suffix scan would pick it up (it ends in
+    # "Toolkit"). It is a bare cooperative mixin, not a usable standalone
+    # toolkit — registering it makes `ToolManager.load_tool("base_research")`
+    # falsely report success while registering zero tools (verified via
+    # code review; the class fails `issubclass(cls, AbstractToolkit)` in
+    # `manager.py`'s registry loader, which swallows the resulting failure
+    # into a silent no-op plus a spurious ERROR log entry).
     "open_data": "parrot_tools.research.open_data.OpenDataToolkit",
     "academic_research": "parrot_tools.research.academic.AcademicResearchToolkit",
-    "base_research": "parrot_tools.research.base.BaseResearchToolkit",
     "research_router": "parrot_tools.research.router.ResearchRouter",
     # --- Toolkits (Batch 1 — simple tools) ---
     "zipcode": "parrot_tools.zipcode.ZipcodeAPIToolkit",

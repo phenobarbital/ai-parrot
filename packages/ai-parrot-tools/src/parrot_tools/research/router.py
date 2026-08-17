@@ -34,6 +34,21 @@ from .open_data import OpenDataToolkit
 
 VALID_CATEGORIES = ("open_data", "academic")
 
+# Method names dispatched per category — free-text "search_*" tools only;
+# the identifier-addressable lookups (`get_world_bank_indicator`,
+# `get_oecd_indicator`, `get_paper_details`) need an id the router's
+# natural-language query doesn't provide, so they are reached directly
+# rather than through the router.
+_CATEGORY_METHODS = {
+    "open_data": (
+        "search_world_bank", "search_eu_open_data", "search_oecd_data",
+    ),
+    "academic": (
+        "search_crossref", "search_pubmed",
+        "search_semantic_scholar", "search_arxiv",
+    ),
+}
+
 # Keyword heuristics used when `llm is None` or classification fails.
 _OPEN_DATA_KEYWORDS = (
     "gdp", "indicator", "population", "country", "statistics", "economy",
@@ -89,6 +104,14 @@ class ResearchRouter(AbstractTool):
     )
     args_schema: type[BaseModel] = ResearchRouterArgs
 
+    # FEAT-391: opt in to lazy resource lifecycle so the framework's
+    # standard cleanup path (`ToolManager.cleanup_toolkits()` Phase 2 —
+    # any standalone tool with `_opened` set gets `_close()`-ed) also
+    # releases the aiohttp sessions of the `OpenDataToolkit`/
+    # `AcademicResearchToolkit` this router constructs for itself when
+    # `open_data`/`academic` are not injected (see `_close()` below).
+    auto_open: bool = True
+
     def __init__(
         self,
         open_data: Optional["OpenDataToolkit"] = None,
@@ -113,6 +136,21 @@ class ResearchRouter(AbstractTool):
         self.open_data = open_data or OpenDataToolkit()
         self.academic = academic or AcademicResearchToolkit()
         self.llm = LLMFactory.create(llm) if isinstance(llm, str) else llm
+
+    async def _close(self) -> None:
+        """Release both toolkits' aiohttp sessions, then reset `_opened`.
+
+        Called by `ToolManager.cleanup_toolkits()` (FEAT-391 Phase 2) for
+        any standalone tool with `_opened` set — this ensures the sessions
+        of `self.open_data`/`self.academic` are released even when this
+        router constructed them itself (i.e. they were never separately
+        registered with a `ToolManager`). Safe to call on toolkits that
+        were never opened (`BaseResearchToolkit._close()` no-ops if
+        `_session is None`).
+        """
+        await self.open_data._close()
+        await self.academic._close()
+        await super()._close()
 
     async def _execute(
         self,
@@ -185,54 +223,28 @@ class ResearchRouter(AbstractTool):
     async def _dispatch_category(
         self, category: str, query: str, max_results: int
     ) -> Any:
-        """Run every method of the toolkit for `category` and collect results.
+        """Run every method of the toolkit for `category` concurrently.
 
         Any per-method exception propagates to the caller's
-        `asyncio.gather(..., return_exceptions=True)`, which records it as
-        a category-level failure without ever raising into the agent loop.
+        `asyncio.gather(..., return_exceptions=True)` (in `_execute`),
+        which records it as a category-level failure without ever raising
+        into the agent loop.
         """
-        if category == "open_data":
-            return {
-                "search_world_bank": (
-                    await self.open_data.search_world_bank(
-                        query, max_results=max_results
-                    )
-                ).model_dump(),
-                "search_eu_open_data": (
-                    await self.open_data.search_eu_open_data(
-                        query, max_results=max_results
-                    )
-                ).model_dump(),
-                "search_oecd_data": (
-                    await self.open_data.search_oecd_data(
-                        query, max_results=max_results
-                    )
-                ).model_dump(),
-            }
-        if category == "academic":
-            return {
-                "search_crossref": (
-                    await self.academic.search_crossref(
-                        query, max_results=max_results
-                    )
-                ).model_dump(),
-                "search_pubmed": (
-                    await self.academic.search_pubmed(
-                        query, max_results=max_results
-                    )
-                ).model_dump(),
-                "search_semantic_scholar": (
-                    await self.academic.search_semantic_scholar(
-                        query, max_results=max_results
-                    )
-                ).model_dump(),
-                "search_arxiv": (
-                    await self.academic.search_arxiv(
-                        query, max_results=max_results
-                    )
-                ).model_dump(),
-            }
-        raise ValueError(f"Unknown category: {category}")
+        method_names = _CATEGORY_METHODS.get(category)
+        if method_names is None:
+            raise ValueError(f"Unknown category: {category}")
+
+        toolkit = self.open_data if category == "open_data" else self.academic
+        outcomes = await asyncio.gather(
+            *(
+                getattr(toolkit, name)(query, max_results=max_results)
+                for name in method_names
+            )
+        )
+        return {
+            name: outcome.model_dump()
+            for name, outcome in zip(method_names, outcomes)
+        }
 
     async def _classify(self, query: str) -> tuple[list[str], str]:
         """Classify `query` into one or both categories.

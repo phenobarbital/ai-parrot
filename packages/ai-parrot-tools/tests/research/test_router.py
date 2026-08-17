@@ -164,3 +164,50 @@ class TestResearchRouter:
             query="x", categories=["open_data", "academic"]
         )
         assert set(r.result["results"].keys()) == {"open_data", "academic"}
+
+    async def test_within_category_methods_dispatch_concurrently(self):
+        """Regression: `_dispatch_category` must fan its per-category
+        methods out via `asyncio.gather`, not await them sequentially —
+        otherwise the router's own "dispatches concurrently" claim is
+        false and a slow method serializes behind the others."""
+        import asyncio
+
+        call_order = []
+
+        class _SlowThenFastAcademic(_StubAcademic):
+            async def search_crossref(self, query, max_results=10):
+                call_order.append("crossref_start")
+                await asyncio.sleep(0.05)
+                call_order.append("crossref_end")
+                return await super().search_crossref(query, max_results)
+
+            async def search_pubmed(self, query, max_results=10):
+                call_order.append("pubmed_start")
+                call_order.append("pubmed_end")
+                return await super().search_pubmed(query, max_results)
+
+        router = ResearchRouter(
+            open_data=_StubOpenData(), academic=_SlowThenFastAcademic()
+        )
+        await router.execute(query="x", categories=["academic"])
+
+        # If dispatched sequentially, "crossref_end" would appear before
+        # "pubmed_start"; concurrently, pubmed (fast) finishes while
+        # crossref (slow) is still sleeping.
+        assert call_order.index("pubmed_start") < call_order.index("crossref_end")
+
+    async def test_close_cascades_to_both_toolkits(self):
+        """Regression: `ResearchRouter._close()` must release the aiohttp
+        sessions of default-constructed child toolkits (they are never
+        separately registered with a `ToolManager`, so nothing else would
+        ever close them)."""
+        router = ResearchRouter()
+        await router.open_data._ensure_open()
+        await router.academic._ensure_open()
+        assert router.open_data._opened is True
+        assert router.academic._opened is True
+
+        await router._close()
+
+        assert router.open_data._opened is False
+        assert router.academic._opened is False
