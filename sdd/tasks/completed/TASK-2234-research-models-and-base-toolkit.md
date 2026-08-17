@@ -281,8 +281,14 @@ class TestBaseResearchToolkit:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: All 5 models, `BaseResearchToolkit` cooperative mixin, `research`
+extra + `all` aggregation, and shared `conftest.py` fixtures
+(`load_fixture`, `mock_aiohttp_session`) implemented per spec §2/§3/§7.
+`_make_api_request` splits the network call into an inner
+`_request_with_retry` (backoff-decorated, raises on HTTP 429 to trigger a
+retry) wrapped by an outer try/except so even backoff-exhausted retries
+are caught and returned as `(None, "...")` — never raised. 19/19 tests
+pass offline; `ruff check` clean.
+**Deviations from spec**: none
