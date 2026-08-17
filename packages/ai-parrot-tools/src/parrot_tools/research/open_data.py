@@ -1,17 +1,21 @@
 """
 OpenDataToolkit — direct access to free, no-auth open-data REST APIs
-(FEAT-426 Module 2: World Bank Open Data; Module 2 tail tasks add EU Open
-Data Portal and OECD SDMX).
+(FEAT-426 Module 2: World Bank Open Data, EU Open Data Portal; OECD SDMX
+is added by the tail task in this same module).
 
 World Bank has **no server-side keyword search**: indicators are looked up
 by code or resolved from `query` via indicator metadata, then time-series
-observations are fetched. See spec §3 Module 2 and §7 "Known Risks".
+observations are fetched. The EU Open Data Portal (piveau/DCAT-AP), by
+contrast, supports genuine server-side full-text search. See spec §3
+Module 2 and §7 "Known Risks".
 """
+from urllib.parse import quote
+
 import backoff
 from parrot.tools.toolkit import AbstractToolkit
 
 from .base import BaseResearchToolkit
-from .models import IndicatorValue, ResearchResult
+from .models import DatasetResult, IndicatorValue, ResearchResult
 
 try:
     import wbgapi as wb
@@ -23,6 +27,13 @@ _WB_LICENSE = "CC BY-4.0"
 _WB_MISSING_MESSAGE = (
     "World Bank support requires: pip install 'ai-parrot-tools[research]'"
 )
+
+# EU Open Data Portal — piveau platform (NOT CKAN). Full-text search over
+# an Elasticsearch/DCAT-AP index. `limit` caps at 1000 (plain-text HTTP 400
+# above it); `page` is 0-indexed.
+EU_SEARCH_URL = "https://data.europa.eu/api/hub/search/search"
+_EU_SOURCE_NAME = "EU Open Data Portal"
+_EU_LIMIT_CAP = 1000
 
 
 class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
@@ -217,6 +228,126 @@ class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
             ttl=3600, **cache_params,
         )
         return result
+
+    async def search_eu_open_data(
+        self,
+        query: str,
+        dataset_type: str | None = None,
+        publisher: str | None = None,
+        max_results: int = 10,
+    ) -> ResearchResult:
+        """Search the EU Open Data Portal (piveau/DCAT-AP full-text search).
+
+        Unlike World Bank, this source has genuine server-side full-text
+        search — natural-language queries work well here.
+
+        Args:
+            query: Full-text search query.
+            dataset_type: Optional dataset type/category filter.
+            publisher: Optional publisher name filter.
+            max_results: Maximum number of datasets to return. The portal
+                caps its own `limit` parameter at 1000 (returning a
+                plain-text HTTP 400 above that), so values are clamped.
+
+        Returns:
+            A `ResearchResult` with `result_type="datasets"`.
+        """
+        source = "open_data.search_eu_open_data"
+        limit = min(max_results, _EU_LIMIT_CAP)
+
+        cache_params = {
+            "query": query, "dataset_type": dataset_type,
+            "publisher": publisher, "max_results": max_results,
+        }
+        cached = await self._cache.get(
+            "open_data", "search_eu_open_data", **cache_params
+        )
+        if cached is not None:
+            return ResearchResult(**cached)
+
+        params = {"q": query, "limit": limit, "page": 0}
+        if dataset_type:
+            params["filter"] = dataset_type
+        if publisher:
+            params["publisher"] = publisher
+
+        payload, err = await self._make_api_request(EU_SEARCH_URL, params=params)
+        if err:
+            return self._failure(query, source, "datasets", "error", err)
+
+        hits = (payload or {}).get("result", {}).get("results", [])
+        if not hits:
+            return self._failure(
+                query, source, "datasets", "no_data",
+                f"No EU Open Data datasets matched '{query}'",
+            )
+
+        datasets = [self._dataset_from_hit(hit) for hit in hits[:max_results]]
+        citation = self._build_citation(
+            source_name=_EU_SOURCE_NAME,
+            source_url=f"{EU_SEARCH_URL}?q={quote(query)}",
+        )
+        result = ResearchResult(
+            query=query, source=source, result_type="datasets",
+            status="success", total_results=len(datasets),
+            datasets=datasets, citation=citation,
+        )
+        await self._cache.set(
+            "open_data", "search_eu_open_data", result.model_dump(),
+            ttl=3600, **cache_params,
+        )
+        return result
+
+    @staticmethod
+    def _pick_lang(value, preferred: str = "en") -> str:
+        """Return `preferred` language, else the first available, else ''.
+
+        EU Open Data Portal metadata (`title`, `description`, ...) arrives
+        as a language-keyed dict; English is not guaranteed to be present.
+        """
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict) and value:
+            return value.get(preferred) or next(iter(value.values()))
+        return ""
+
+    def _dataset_from_hit(self, hit: dict) -> DatasetResult:
+        """Convert a raw EU Open Data Portal search hit into a `DatasetResult`."""
+        dataset_id = hit.get("id", "")
+        title = self._pick_lang(hit.get("title")) or "Untitled dataset"
+        description = self._pick_lang(hit.get("description")) or None
+
+        publisher = hit.get("publisher")
+        if isinstance(publisher, dict):
+            publisher_name = self._pick_lang(publisher.get("name")) or None
+        else:
+            publisher_name = publisher or None
+
+        keywords = hit.get("keywords")
+        if isinstance(keywords, dict):
+            keywords = keywords.get("en") or next(iter(keywords.values()), None)
+
+        distributions = hit.get("distributions") or []
+        fmt = None
+        if distributions:
+            fmt_field = distributions[0].get("format")
+            fmt = fmt_field.get("label") if isinstance(fmt_field, dict) else fmt_field
+
+        url = hit.get("landing_page") or (
+            f"https://data.europa.eu/data/datasets/{dataset_id}"
+            if dataset_id else None
+        )
+
+        return DatasetResult(
+            title=title,
+            description=description,
+            publisher=publisher_name,
+            url=url,
+            keywords=keywords,
+            format=fmt,
+            last_modified=hit.get("modified"),
+            source="eu_open_data",
+        )
 
     async def _search_indicator_metadata(self, query: str) -> list:
         """Resolve free-text `query` against World Bank indicator metadata."""

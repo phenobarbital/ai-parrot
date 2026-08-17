@@ -1,0 +1,27 @@
+{
+  "result": {
+    "count": 2,
+    "results": [
+      {
+        "id": "renewable-energy-consumption",
+        "title": {"en": "Renewable Energy Consumption Dataset"},
+        "description": {
+          "en": "Consumption of renewable energy sources across EU member states."
+        },
+        "publisher": {"name": {"en": "Eurostat"}},
+        "keywords": {"en": ["energy", "renewable"]},
+        "distributions": [{"format": {"label": "CSV"}}],
+        "modified": "2024-05-01"
+      },
+      {
+        "id": "solar-power-capacity",
+        "title": {"en": "Solar Power Installed Capacity"},
+        "description": {"en": "Installed solar power capacity by country and year."},
+        "publisher": {"name": {"en": "European Environment Agency"}},
+        "keywords": {"en": ["energy", "solar"]},
+        "distributions": [{"format": {"label": "JSON"}}],
+        "modified": "2024-03-15"
+      }
+    ]
+  }
+}
