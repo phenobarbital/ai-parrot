@@ -34,6 +34,7 @@ from parrot.handlers.google_generation import GoogleGeneration
 from parrot.handlers.programs import ProgramsUserHandler
 ## New Handlers:
 from parrot.handlers.video_reel import VideoReelHandler
+from parrot.handlers.flow_authoring import FlowAuthoringHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot.handlers.understanding import UnderstandingHandler
 from parrot.handlers.mediagen import MediaGen
@@ -213,6 +214,8 @@ class Main(AppHandler):
         )
         ## implement Video Reel Handler:
         VideoReelHandler.setup(self.app)
+        ## Natural-language workflow authoring (Crew/Flow definitions):
+        FlowAuthoringHandler.setup(self.app)
         ## Vector Store Handler API:
         VectorStoreHandler.setup(self.app)
         # AgentCrew Handlers are registered by BotManager.setup() when
