@@ -16,6 +16,7 @@ unchanged for backward compatibility. See spec §3 Module 3 and §7 "Known
 Risks".
 """
 import asyncio
+import re
 
 import backoff
 from navconfig import config
@@ -81,6 +82,36 @@ _ARXIV_SORT_CRITERION_NAMES = {
     "submittedDate": "SubmittedDate",
 }
 
+# get_paper_details: identifier-format detection (spec §3 Module 3 tail task).
+_DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$", re.IGNORECASE)
+_PMID_RE = re.compile(r"^\d{6,9}$")
+_ARXIV_ID_RE = re.compile(r"^(\d{4}\.\d{4,5}(v\d+)?|[a-z-]+(\.[A-Z]{2})?/\d{7})$", re.IGNORECASE)
+_S2_ID_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+
+# Semantic Scholar's own external-id prefixes (also usable as a shortcut
+# for explicit source routing here).
+_ID_PREFIX_SOURCES = {
+    "DOI": "crossref",
+    "PMID": "pubmed",
+    "ARXIV": "arxiv",
+    "CORPUSID": "semantic_scholar",
+}
+_VALID_DETAIL_SOURCES = ("crossref", "pubmed", "arxiv", "semantic_scholar")
+_DETAILS_CACHE_TTL = 86400
+_S2_PAPER_URL = "https://api.semanticscholar.org/graph/v1/paper/"
+_SOURCE_DISPLAY_NAMES = {
+    "crossref": _CROSSREF_SOURCE_NAME,
+    "pubmed": _PUBMED_SOURCE_NAME,
+    "arxiv": _ARXIV_SOURCE_NAME,
+    "semantic_scholar": _S2_SOURCE_NAME,
+}
+_SOURCE_DEFAULT_URLS = {
+    "crossref": "https://api.crossref.org/works",
+    "pubmed": "https://pubmed.ncbi.nlm.nih.gov/",
+    "arxiv": "https://arxiv.org",
+    "semantic_scholar": "https://www.semanticscholar.org/search",
+}
+
 
 class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
     """Direct, structured access to authoritative academic-literature sources.
@@ -88,9 +119,9 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
     Covers Crossref (full-text bibliographic search, also reaching Oxford
     Academic content via DOI prefix "10.1093"), PubMed (two-step
     `esearch`/`efetch` biomedical literature search), Semantic Scholar
-    (aiohttp full-text search), and arXiv (preprint search).
-    `get_paper_details` is added by the tail task in this same module
-    (spec §3 Module 3).
+    (aiohttp full-text search), arXiv (preprint search), and
+    `get_paper_details` (single-paper lookup dispatching across all four
+    by identifier format). Spec §3 Module 3.
     """
 
     async def search_crossref(
@@ -656,3 +687,186 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
             journal=None,
             doi=None,
         )
+
+    async def get_paper_details(
+        self,
+        doi_or_id: str,
+        source: str | None = None,
+    ) -> ResearchResult:
+        """Resolve a single paper by identifier, across all four sources.
+
+        Accepts a DOI (e.g. "10.1093/nar/gkaa1100" — also reaching Oxford
+        Academic content via Crossref), a PubMed PMID, an arXiv id (e.g.
+        "2103.14030"), or a Semantic Scholar paperId (40-char hex).
+        Prefixed forms ("DOI:...", "PMID:...", "ARXIV:...",
+        "CorpusID:...") are also accepted. The source is auto-detected
+        from the identifier's shape unless `source` is given explicitly,
+        which always overrides detection.
+
+        Args:
+            doi_or_id: A DOI, PMID, arXiv id, or Semantic Scholar paperId.
+            source: Optional explicit source — one of "crossref",
+                "pubmed", "arxiv", "semantic_scholar".
+
+        Returns:
+            A `ResearchResult` with `result_type="papers"` containing
+            exactly one entry in `.papers` on success.
+        """
+        method_source = "academic.get_paper_details"
+
+        if source is not None and source not in _VALID_DETAIL_SOURCES:
+            return self._failure(
+                doi_or_id, method_source, "papers", "error",
+                f"Invalid source '{source}'. Valid options: "
+                f"{', '.join(_VALID_DETAIL_SOURCES)}",
+            )
+
+        ident = self._strip_id_prefix(doi_or_id)
+        resolved_source = source or self._detect_source(doi_or_id)
+        if resolved_source is None:
+            return self._failure(
+                doi_or_id, method_source, "papers", "error",
+                "Unrecognised identifier — expected a DOI (10.xxxx/...), "
+                "PubMed PMID, arXiv id (e.g. 2103.14030), or a Semantic "
+                "Scholar paperId (40-char hex).",
+            )
+
+        cache_params = {"doi_or_id": doi_or_id, "source": source}
+        cached = await self._cache.get(
+            "academic", "get_paper_details", **cache_params
+        )
+        if cached is not None:
+            return ResearchResult(**cached)
+
+        try:
+            paper = await self._resolve_paper(resolved_source, ident)
+        except Exception as e:  # noqa: BLE001 — never raise into the agent loop
+            self.logger.error(
+                "get_paper_details failed for %s: %s", doi_or_id, e
+            )
+            return self._failure(
+                doi_or_id, method_source, "papers", "error",
+                f"Paper lookup failed: {e}",
+            )
+
+        if paper is None:
+            return self._failure(
+                doi_or_id, method_source, "papers", "no_data",
+                f"No paper found for '{doi_or_id}'",
+            )
+
+        citation = self._build_citation(
+            source_name=_SOURCE_DISPLAY_NAMES[resolved_source],
+            source_url=paper.url or _SOURCE_DEFAULT_URLS[resolved_source],
+            doi=paper.doi,
+        )
+        result = ResearchResult(
+            query=doi_or_id, source=method_source, result_type="papers",
+            status="success", total_results=1, papers=[paper], citation=citation,
+        )
+        await self._cache.set(
+            "academic", "get_paper_details", result.model_dump(),
+            ttl=_DETAILS_CACHE_TTL, **cache_params,
+        )
+        return result
+
+    @staticmethod
+    def _strip_id_prefix(ident: str) -> str:
+        """Strip a Semantic-Scholar-style 'DOI:'/'PMID:'/'ARXIV:'/'CorpusID:' prefix."""
+        if ":" in ident:
+            prefix, _, rest = ident.partition(":")
+            if prefix.strip().upper() in _ID_PREFIX_SOURCES:
+                return rest.strip()
+        return ident
+
+    def _detect_source(self, ident: str) -> str | None:
+        """Return 'crossref' | 'pubmed' | 'arxiv' | 'semantic_scholar' | None."""
+        if ":" in ident:
+            prefix, _, _rest = ident.partition(":")
+            mapped = _ID_PREFIX_SOURCES.get(prefix.strip().upper())
+            if mapped:
+                return mapped
+
+        bare = self._strip_id_prefix(ident)
+        if _DOI_RE.match(bare):
+            return "crossref"
+        if _PMID_RE.match(bare):
+            return "pubmed"
+        if _ARXIV_ID_RE.match(bare):
+            return "arxiv"
+        if _S2_ID_RE.match(bare):
+            return "semantic_scholar"
+        return None
+
+    async def _resolve_paper(self, resolved_source: str, ident: str) -> PaperResult | None:
+        """Dispatch to the per-source single-paper lookup."""
+        if resolved_source == "crossref":
+            return await self._get_crossref_paper(ident)
+        if resolved_source == "pubmed":
+            return await self._get_pubmed_paper(ident)
+        if resolved_source == "arxiv":
+            return await self._get_arxiv_paper(ident)
+        if resolved_source == "semantic_scholar":
+            return await self._get_s2_paper(ident)
+        return None
+
+    async def _get_crossref_paper(self, doi: str) -> PaperResult | None:
+        """Look up a single Crossref work by DOI."""
+        if Crossref is None:
+            raise RuntimeError(_CROSSREF_MISSING_MESSAGE)
+
+        mailto = config.get("CROSSREF_MAILTO", fallback="noreply@example.com")
+
+        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        def _fetch():
+            cr = Crossref(mailto=mailto)
+            return cr.works(ids=doi)
+
+        payload = await self._run_sync_in_executor(_fetch)
+        item = (payload or {}).get("message")
+        if not item:
+            return None
+        return self._paper_from_item(item)
+
+    async def _get_pubmed_paper(self, pmid: str) -> PaperResult | None:
+        """Look up a single PubMed record by PMID (skips `esearch`)."""
+        if Entrez is None:
+            raise RuntimeError(_PUBMED_MISSING_MESSAGE)
+
+        self._configure_entrez()
+        records = await self._pubmed_efetch([pmid])
+        if not records:
+            return None
+        return self._paper_from_pubmed_record(records[0])
+
+    async def _get_arxiv_paper(self, arxiv_id: str) -> PaperResult | None:
+        """Look up a single arXiv paper by id via `arxiv.Search(id_list=...)`."""
+        if arxiv is None:
+            raise RuntimeError(_ARXIV_MISSING_MESSAGE)
+
+        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        def _fetch():
+            search = arxiv.Search(id_list=[arxiv_id])
+            return list(arxiv.Client().results(search))
+
+        results = await self._run_sync_in_executor(_fetch)
+        if not results:
+            return None
+        return self._paper_from_arxiv_result(results[0])
+
+    async def _get_s2_paper(self, paper_id: str) -> PaperResult | None:
+        """Look up a single Semantic Scholar paper via `/paper/{paper_id}`."""
+        params = {"fields": _S2_FIELDS}
+        headers = {}
+        api_key = config.get("SEMANTIC_SCHOLAR_API_KEY", fallback=None)
+        if api_key:
+            headers["x-api-key"] = api_key
+
+        payload, err = await self._make_api_request(
+            f"{_S2_PAPER_URL}{paper_id}", params=params, headers=headers
+        )
+        if err:
+            raise RuntimeError(err)
+        if not payload:
+            return None
+        return self._paper_from_s2_item(payload)
