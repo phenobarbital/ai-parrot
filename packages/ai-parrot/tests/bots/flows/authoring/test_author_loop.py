@@ -90,18 +90,60 @@ async def test_per_node_prompt_does_not_carry_other_nodes_definitions(crew_catal
 
 
 async def test_node_identity_is_pinned_to_the_stub(crew_catalog):
-    """A drifted id or kind would break assembly; the skeleton is authoritative."""
+    """A drifted id is corrected; the skeleton is authoritative."""
     skeleton = BlueprintSkeleton(**_skeleton_payload())
     author = _author(
         crew_catalog,
         [
-            {"id": "wrong_id", "kind": "tool", "tool": "google_search"},
+            _node_payload("wrong_id"),
             _node_payload("writer"),
         ],
         concurrency=1,
     )
     nodes, _ = await author.author_nodes(skeleton)
     assert nodes[0].id == "researcher"
+    assert nodes[0].kind == "agent"
+
+
+async def test_pinning_a_kind_revalidates_the_whole_node(crew_catalog):
+    """Forcing `kind` must not smuggle through an invalid field combination.
+
+    ``model_copy`` does not re-run validators, so overwriting a node authored
+    as a tool into an agent would leave it carrying `tool` — a combination
+    BlueprintNode rejects outright, which would then compile down the agent
+    branch with the tool silently discarded.
+    """
+    skeleton = BlueprintSkeleton(**_skeleton_payload())
+    author = _author(
+        crew_catalog,
+        [
+            # Answers the 'researcher' agent stub with a tool node.
+            {"id": "researcher", "kind": "tool", "tool": "google_search"},
+            _node_payload("writer"),
+        ],
+        concurrency=1,
+    )
+    nodes, failed = await author.author_nodes(skeleton)
+    # Rejected rather than silently coerced into a malformed agent node.
+    assert failed == ["researcher"]
+    assert [n.id for n in nodes] == ["writer"]
+
+
+async def test_a_compatible_kind_drift_is_reconciled(crew_catalog):
+    """When the fields do not contradict, pinning succeeds."""
+    skeleton = BlueprintSkeleton(**_skeleton_payload())
+    author = _author(
+        crew_catalog,
+        [
+            # 'synthesis' carries no kind-specific fields, so re-validating
+            # it as the requested 'agent' kind is unambiguous.
+            {"id": "researcher", "kind": "synthesis", "title": "R"},
+            _node_payload("writer"),
+        ],
+        concurrency=1,
+    )
+    nodes, failed = await author.author_nodes(skeleton)
+    assert not failed
     assert nodes[0].kind == "agent"
 
 

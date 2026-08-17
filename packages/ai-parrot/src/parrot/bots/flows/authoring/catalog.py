@@ -25,6 +25,10 @@ the slice relevant to one node kind, because the whole point of authoring a
 workflow node-by-node is that no single prompt carries the entire component
 surface. Same discipline, and the same limits, as
 ``parrot.tools.execution_plan.catalog``.
+
+Building one is not free — three registry walks plus a JSON Schema per node
+type — so the plain form is cached per process and invalidated when any
+registry gains an entry. See :func:`build_catalog`.
 """
 from __future__ import annotations
 
@@ -422,11 +426,37 @@ def _build_tools(
     return sorted(merged.values(), key=lambda entry: entry.name)
 
 
+#: Process-wide cache for the unrestricted, manager-less catalog.
+#:
+#: Building one walks three registries and generates a JSON Schema per node
+#: type, which is wasted work on an endpoint that answers "what components
+#: exist?" on every request. The key is the registry sizes: they change only
+#: when something registers, which is exactly when the catalog is stale.
+#: Variants (an allowlist, or a live ``ToolManager``) are request-specific
+#: and deliberately not cached.
+_CATALOG_CACHE: Dict[Any, ComponentCatalog] = {}
+
+
+def _cache_key() -> tuple:
+    """Return a key that changes whenever a registry gains an entry."""
+    from parrot.bots.flows.flow.flow import NODE_REGISTRY  # noqa: PLC0415
+    from parrot.registry import agent_registry  # noqa: PLC0415
+
+    try:
+        from parrot.tools.discovery import discover_from_registry  # noqa: PLC0415
+
+        tool_count = len(discover_from_registry())
+    except Exception:  # pragma: no cover - defensive
+        tool_count = -1
+    return (len(NODE_REGISTRY), len(agent_registry.list_agents()), tool_count)
+
+
 def build_catalog(
     *,
     tool_manager: Any = None,
     allowed_tools: Optional[Sequence[str]] = None,
     include_agents: bool = True,
+    use_cache: bool = True,
 ) -> ComponentCatalog:
     """Build the component catalog from the live registries.
 
@@ -439,12 +469,32 @@ def build_catalog(
             plays for ``ExecutionPlan``.
         include_agents: Set ``False`` to skip agent enumeration when only the
             node/tool surface is needed.
+        use_cache: Reuse a cached catalog when the registries have not grown.
+            Only the plain form (no ``tool_manager``, no ``allowed_tools``,
+            agents included) is ever cached.
 
     Returns:
         A fully populated :class:`ComponentCatalog`.
     """
-    return ComponentCatalog(
+    cacheable = (
+        use_cache
+        and tool_manager is None
+        and allowed_tools is None
+        and include_agents
+    )
+    if cacheable:
+        key = _cache_key()
+        cached = _CATALOG_CACHE.get(key)
+        if cached is not None:
+            return cached
+
+    catalog = ComponentCatalog(
         node_types=_build_node_types(),
         agents=_build_agents() if include_agents else [],
         tools=_build_tools(tool_manager=tool_manager, allowed_tools=allowed_tools),
     )
+
+    if cacheable:
+        _CATALOG_CACHE.clear()  # only the current registry state is useful
+        _CATALOG_CACHE[key] = catalog
+    return catalog

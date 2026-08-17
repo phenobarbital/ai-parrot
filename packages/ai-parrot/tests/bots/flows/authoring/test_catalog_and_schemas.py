@@ -69,6 +69,23 @@ def test_allowed_tools_restricts_the_catalog():
     assert catalog.tool_names() == {"google_search"}
 
 
+def test_the_plain_catalog_is_cached():
+    """It is built per bare GET; three registry walks each time is waste."""
+    first = build_catalog()
+    assert build_catalog() is first
+
+
+def test_restricted_catalogs_are_never_cached():
+    """An allowlist is request-specific and must not leak into the cache."""
+    restricted = build_catalog(allowed_tools=["google_search"])
+    assert build_catalog() is not restricted
+    assert build_catalog().tool_names() != {"google_search"}
+
+
+def test_cache_can_be_bypassed():
+    assert build_catalog(use_cache=False) is not build_catalog()
+
+
 def test_render_for_agent_includes_tools_but_decision_does_not(live_catalog):
     agent_slice = live_catalog.render_for("agent", engine="crew")
     decision_slice = live_catalog.render_for("decision", engine="flow")

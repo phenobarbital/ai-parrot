@@ -60,6 +60,14 @@ _CEL_RESERVED = frozenset(
     {"true", "false", "null", "in", "has", "size", "int", "double", "string", "bool"}
 )
 
+#: CEL comprehension macros bind their first argument as a loop variable, e.g.
+#: ``result.findings.exists(f, f.severity == "high")`` binds ``f``. Those names
+#: are declared by the expression itself, so treating them as free variables
+#: would reject a perfectly valid predicate.
+_CEL_MACRO_RE = re.compile(
+    r"\.(?:all|exists|exists_one|filter|map)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,"
+)
+
 
 @dataclass(frozen=True)
 class ValidationIssue:
@@ -158,13 +166,15 @@ def _cel_roots(expression: str) -> set[str]:
         expression: The predicate source.
 
     Returns:
-        Root identifiers, excluding literals and reserved words.
+        Root identifiers, excluding literals, reserved words and any variable
+        a comprehension macro binds within the expression itself.
     """
     stripped = _CEL_STRING_RE.sub(" ", expression)
+    bound = {match.group(1) for match in _CEL_MACRO_RE.finditer(stripped)}
     return {
         match.group(1)
         for match in _CEL_ROOT_RE.finditer(stripped)
-        if match.group(1) not in _CEL_RESERVED
+        if match.group(1) not in _CEL_RESERVED and match.group(1) not in bound
     }
 
 

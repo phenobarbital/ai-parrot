@@ -261,9 +261,7 @@ class FlowAuthor:
             "Respond with ONLY the JSON document — no prose, no code fences."
         )
         node = await self._call_model(prompt, BlueprintNode)
-        # Pin identity: a drifted id or kind would break assembly, and the
-        # skeleton is authoritative for both.
-        return node.model_copy(update={"id": stub.id, "kind": stub.kind})
+        return self._pin_identity(node, stub)
 
     async def author_nodes(
         self, skeleton: BlueprintSkeleton
@@ -406,9 +404,51 @@ class FlowAuthor:
             "prose, no code fences."
         )
         node = await self._call_model(prompt, BlueprintNode)
-        return node.model_copy(update={"id": stub.id, "kind": stub.kind})
+        return self._pin_identity(node, stub)
 
     # ── plumbing ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _pin_identity(node: BlueprintNode, stub: NodeStub) -> BlueprintNode:
+        """Force ``node``'s identity back to its stub, re-validating the result.
+
+        The skeleton is authoritative for id and kind: a drifted id breaks
+        assembly, and a drifted kind means the model answered a different
+        question than it was asked.
+
+        Re-validation is the point. ``model_copy(update=...)`` does not re-run
+        validators, so overwriting ``kind`` on a node authored as another kind
+        would produce a combination ``BlueprintNode`` rejects outright — an
+        ``agent`` still carrying a ``tool``, say. That node would then compile
+        down the agent branch with its tool silently discarded. Rebuilding
+        through ``model_validate`` makes the contradiction raise here, where
+        the repair round can still see it.
+
+        Args:
+            node: The authored node.
+            stub: The stub it was supposed to author.
+
+        Returns:
+            The node with its stub identity applied.
+
+        Raises:
+            FlowAuthoringError: If the response cannot be reconciled with the
+                stub's kind.
+        """
+        if node.id == stub.id and node.kind == stub.kind:
+            return node
+
+        payload = node.model_dump()
+        payload["id"] = stub.id
+        payload["kind"] = stub.kind
+        try:
+            return BlueprintNode.model_validate(payload)
+        except ValidationError as exc:
+            raise FlowAuthoringError(
+                f"Node {stub.id!r} was authored as kind {node.kind!r} but the "
+                f"skeleton declares {stub.kind!r}, and the two cannot be "
+                f"reconciled: {exc}"
+            ) from exc
 
     def _parse_transitions(self, document: Any) -> List[BlueprintTransition]:
         """Coerce a transitions response into models.

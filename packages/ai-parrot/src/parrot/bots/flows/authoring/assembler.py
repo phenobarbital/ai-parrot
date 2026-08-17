@@ -123,33 +123,29 @@ def _infer_execution_mode(
 ) -> str:
     """Pick the crew execution mode implied by the graph shape.
 
-    Only meaningful for ``engine="crew"`` (a flow's DAG is its own schedule),
-    but computed unconditionally so the blueprint is fully specified either
-    way.
+    Only the no-transition case is a real choice. As soon as a workflow
+    declares any dependency, ``to_crew_definition`` compiles it as ``"flow"``
+    — that is the only mode in which ``AgentCrew.from_definition`` wires
+    ``flow_relations`` into the graph at all, so calling a dependency chain
+    ``"sequential"`` would quietly discard the dependencies and leave list
+    order as the only thing sequencing the run.
+
+    With no transitions, the distinction does reach the executor:
+    ``execution_handler`` dispatches on ``execution_mode``, and a set of nodes
+    that declared no dependency on each other is exactly what
+    ``run_parallel`` is for.
 
     Args:
         nodes: The surviving nodes.
         transitions: The surviving transitions.
 
     Returns:
-        ``"parallel"`` when nothing depends on anything, ``"sequential"``
-        for an unbranched chain, otherwise ``"flow"``.
+        ``"parallel"`` for several independent nodes, ``"sequential"`` for a
+        lone node, and ``"flow"`` whenever any dependency exists.
     """
-    if not transitions:
-        return "parallel" if len(nodes) > 1 else "sequential"
-
-    out_degree: Dict[str, int] = {}
-    in_degree: Dict[str, int] = {}
-    for transition in transitions:
-        for source in transition.source_ids():
-            out_degree[source] = out_degree.get(source, 0) + len(transition.target_ids())
-        for target in transition.target_ids():
-            in_degree[target] = in_degree.get(target, 0) + len(transition.source_ids())
-
-    branching = any(count > 1 for count in out_degree.values()) or any(
-        count > 1 for count in in_degree.values()
-    )
-    return "flow" if branching else "sequential"
+    if transitions:
+        return "flow"
+    return "parallel" if len(nodes) > 1 else "sequential"
 
 
 # ─── compilation ─────────────────────────────────────────────────────────────

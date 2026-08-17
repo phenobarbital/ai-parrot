@@ -201,10 +201,39 @@ def test_orphan_node_is_a_warning_not_an_error(crew_catalog):
         ("size(result.items) > 0", {"result"}),
         # A quoted literal must not be read as a variable.
         ('result.name == "ctx"', {"result"}),
+        # Comprehension macros bind their first argument; it is declared by
+        # the expression itself, not a free variable.
+        ('result.findings.exists(f, f.severity == "high")', {"result"}),
+        ("result.filter(x, x > 3).size() > 0", {"result"}),
+        ("result.items.all(i, i.ok)", {"result"}),
+        ("result.map(v, v.id).size() > 0", {"result"}),
     ],
 )
 def test_cel_root_extraction(expression, expected):
     assert _cel_roots(expression) == expected
+
+
+def test_a_valid_comprehension_predicate_is_accepted(catalog):
+    """A macro-bound variable must not be flagged as unknown."""
+    from parrot.bots.flows.authoring.blueprint import BlueprintNode, BlueprintTransition
+
+    blueprint = _blueprint(
+        engine="flow",
+        nodes=[
+            BlueprintNode(id="a", kind="agent", agent_ref="researcher_agent"),
+            BlueprintNode(id="b", kind="agent", agent_ref="writer_agent"),
+        ],
+        transitions=[
+            BlueprintTransition(
+                source="a",
+                target="b",
+                condition="on_condition",
+                predicate='result.findings.exists(f, f.severity == "high")',
+            )
+        ],
+    )
+    report = validate_blueprint(blueprint, catalog)
+    assert "predicate_unknown_variable" not in _codes(report)
 
 
 def test_predicate_reading_an_unknown_variable_is_rejected(catalog):

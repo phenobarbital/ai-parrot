@@ -171,6 +171,32 @@ async def test_a_repaired_node_recovers_the_run(crew_catalog):
     assert publisher.tool == "rest_api"
 
 
+async def test_a_lateral_repair_is_rejected_not_shipped(crew_catalog):
+    """A repair that swaps one error for another is churn, not progress.
+
+    The first attempt names a tool that does not exist; the repair round
+    names a *different* nonexistent tool. Error count is unchanged, so the
+    original must be kept — otherwise the caller ends up with a different
+    problem than the one already reported to them.
+    """
+    first = dict(_NODES[3], tool="wordpress_publish")
+    second = dict(_NODES[3], tool="medium_publish")
+    responses = [
+        _SKELETON,
+        *_NODES[:3],
+        first,
+        _TRANSITIONS,
+        second,  # repair: still invalid, same count
+        _TRANSITIONS,
+    ]
+    result = await _orchestrator(crew_catalog, responses).build(
+        FlowAuthoringRequest(description=BLOG_REQUEST, engine="crew")
+    )
+    assert result.status is AuthoringStatus.FAILED
+    gaps = {gap.requested for gap in result.capability_gaps}
+    assert gaps == {"wordpress_publish"}, "the original report must be kept"
+
+
 async def test_a_dropped_node_degrades_rather_than_failing(crew_catalog):
     responses = [
         _SKELETON,

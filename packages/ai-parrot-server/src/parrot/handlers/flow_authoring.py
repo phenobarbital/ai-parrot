@@ -184,7 +184,9 @@ class FlowAuthoringHandler(BaseView):
         if job_id:
             return await self._get_job_status(job_id)
 
-        catalog = build_catalog()
+        # Same tool_manager the POST path uses, so the catalog this endpoint
+        # advertises is the one an authoring run would actually see.
+        catalog = build_catalog(tool_manager=self.request.app.get("tool_manager"))
         return self.json_response(
             {
                 "request_schema": FlowAuthoringRequest.model_json_schema(),

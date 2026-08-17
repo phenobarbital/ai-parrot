@@ -91,8 +91,11 @@ def test_assemble_rejects_an_empty_node_set():
 @pytest.mark.parametrize(
     "transitions,expected",
     [
+        # No declared dependency between nodes → run them concurrently.
         ([], "parallel"),
-        ("chain", "sequential"),
+        # Any dependency at all → "flow", because that is the only mode in
+        # which AgentCrew.from_definition wires flow_relations into the graph.
+        ("chain", "flow"),
         ("fanout", "flow"),
     ],
 )

@@ -266,10 +266,12 @@ class FlowAuthoringOrchestrator:
             return blueprint, report, 1
 
         repaired_report = validate_blueprint(repaired, catalog)
-        # Keep whichever attempt is actually better — a repair round can make
-        # things worse, and silently shipping the worse one would be a
-        # regression the caller cannot see.
-        if len(repaired_report.errors) <= len(report.errors):
+        # Keep the repair only when it is *strictly* better. Comparing counts
+        # alone would accept a lateral trade — one tool-name error swapped for
+        # a fresh predicate error — which is churn, not progress, and would
+        # leave the caller with different problems than the ones already
+        # reported to them.
+        if len(repaired_report.errors) < len(report.errors):
             return repaired, repaired_report, 1
         return blueprint, report, 1
 
