@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 2,
+    "items": [
+      {
+        "DOI": "10.1000/xyz123",
+        "title": ["Transformers for Time Series Forecasting"],
+        "author": [
+          {"given": "Jane", "family": "Doe"},
+          {"given": "John", "family": "Smith"}
+        ],
+        "container-title": ["Journal of Machine Learning"],
+        "issued": {"date-parts": [[2022, 6, 1]]},
+        "URL": "https://doi.org/10.1000/xyz123",
+        "is-referenced-by-count": 42
+      },
+      {
+        "DOI": "10.1093/abc456",
+        "title": ["A Survey of Deep Learning for Sequential Data"],
+        "author": [
+          {"given": "Alice", "family": "Nguyen"}
+        ],
+        "container-title": ["Oxford Review of Computing"],
+        "issued": {"date-parts": [[2021]]},
+        "URL": "https://doi.org/10.1093/abc456",
+        "is-referenced-by-count": 10
+      }
+    ]
+  }
+}
