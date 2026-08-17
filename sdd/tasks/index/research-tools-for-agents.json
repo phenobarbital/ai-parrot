@@ -14,14 +14,14 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation. Every other task imports models.py and base.py, and needs the `research` extra this task adds to pyproject.toml. Must complete before anything else starts.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2234-research-models-and-base-toolkit.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2234"],
+      "depends_on": [
+        "TASK-2234"
+      ],
       "parallel": true,
       "parallelism_notes": "Head of the open-data chain (2235>2236>2237), which writes only open_data.py. Runs in a worktree parallel to the academic chain (2238>2241, academic.py). The two chains share no source file; all shared-file edits are deferred to TASK-2243.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2235-world-bank-methods.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2235"],
+      "depends_on": [
+        "TASK-2235"
+      ],
       "parallel": true,
       "parallelism_notes": "Open-data chain. Same file as 2235/2237 so sequential within the chain, but the chain as a whole runs parallel to the academic chain.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2236-eu-open-data-search.md"
     },
@@ -68,14 +72,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-2236"],
+      "depends_on": [
+        "TASK-2236"
+      ],
       "parallel": true,
       "parallelism_notes": "Tail of the open-data chain. Hardest source (SDMX 3.0, positional dimensions, DSD fetch, unpaginated responses). Closes the chain and, with 2241, unblocks the router.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2237-oecd-sdmx-methods.md"
     },
@@ -86,14 +92,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2234"],
+      "depends_on": [
+        "TASK-2234"
+      ],
       "parallel": true,
       "parallelism_notes": "Head of the academic chain (2238>2239>2240>2241), which writes only academic.py. Runs in a worktree parallel to the open-data chain. Also covers Oxford Academic content via DOI prefix 10.1093.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2238-crossref-search.md"
     },
@@ -104,14 +112,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2238"],
+      "depends_on": [
+        "TASK-2238"
+      ],
       "parallel": true,
       "parallelism_notes": "Academic chain. Same file as 2238/2240/2241 so sequential within the chain. Only source with a mandatory two-call workflow and hard documented rate limits.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2239-pubmed-search.md"
     },
@@ -122,14 +132,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2239"],
+      "depends_on": [
+        "TASK-2239"
+      ],
       "parallel": true,
       "parallelism_notes": "Academic chain. Two small sources grouped: S2 is plain aiohttp, arXiv is a port of existing arxiv_tool.py logic (original must stay unmodified).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2240-semantic-scholar-and-arxiv.md"
     },
@@ -140,14 +152,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2240"],
+      "depends_on": [
+        "TASK-2240"
+      ],
       "parallel": true,
       "parallelism_notes": "Tail of the academic chain. Dispatches across the three identifier-addressable sources built in 2238-2240, so it must come last. Closes the chain and, with 2237, unblocks the router.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2241-get-paper-details.md"
     },
@@ -158,14 +172,17 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2237", "TASK-2241"],
+      "depends_on": [
+        "TASK-2237",
+        "TASK-2241"
+      ],
       "parallel": false,
       "parallelism_notes": "Join point: imports both toolkits, so it waits for both chains. Carries the two AbstractTool traps found in spec review (mandatory explicit args_schema; no bot back-reference for the LLM).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2242-research-router.md"
     },
@@ -176,14 +193,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2242"],
+      "depends_on": [
+        "TASK-2242"
+      ],
       "parallel": false,
       "parallelism_notes": "Sole owner of every shared file (research/__init__.py, parrot_tools/__init__.py). This is why 2235-2242 could run in parallel worktrees. Also regenerates TOOL_REGISTRY, without which CI (.github/workflows/ci.yml:30 --check) fails.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2243-integration-and-discovery.md"
     },
@@ -194,14 +213,16 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2243"],
+      "depends_on": [
+        "TASK-2243"
+      ],
       "parallel": false,
       "parallelism_notes": "Last. Documents the shipped surface, so it must run after exports and the registry are final to avoid documenting names that changed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2244-research-tools-documentation.md"
     }
