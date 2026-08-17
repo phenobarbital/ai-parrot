@@ -1,0 +1,26 @@
+[
+  {
+    "series": "NY.GDP.MKTP.KD.ZG",
+    "seriesName": "GDP growth (annual %)",
+    "economy": "BRA",
+    "economyName": "Brazil",
+    "time": "YR2020",
+    "value": -3.3
+  },
+  {
+    "series": "NY.GDP.MKTP.KD.ZG",
+    "seriesName": "GDP growth (annual %)",
+    "economy": "BRA",
+    "economyName": "Brazil",
+    "time": "YR2021",
+    "value": 4.8
+  },
+  {
+    "series": "NY.GDP.MKTP.KD.ZG",
+    "seriesName": "GDP growth (annual %)",
+    "economy": "BRA",
+    "economyName": "Brazil",
+    "time": "YR2022",
+    "value": null
+  }
+]
