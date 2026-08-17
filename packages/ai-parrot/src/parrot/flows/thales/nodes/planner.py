@@ -19,6 +19,7 @@ from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.thales.models import ResearchAngle, ThalesConfig
+from parrot.flows.thales.nodes.registry import register_thales_node
 
 
 class _AnglesEnvelope(BaseModel):
@@ -59,6 +60,7 @@ def _build_prompt(thesis: str, count: int, *, retry: bool) -> str:
     return base
 
 
+@register_thales_node("thales.planner")
 class PlannerNode(Node):
     """Thesis -> ``list[ResearchAngle]`` (LLM structured output).
 

@@ -22,10 +22,12 @@ from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.thales.models import ArtifactRef, Bibliography
+from parrot.flows.thales.nodes.registry import register_thales_node
 from parrot.flows.thales.rendering.document import rasterize_pdf, render_document
 from parrot.storage.models import Artifact, ArtifactType
 
 
+@register_thales_node("thales.final_document")
 class FinalDocumentNode(Node):
     """Fan-in: rendered slide HTML + bibliography -> persisted final document.
 

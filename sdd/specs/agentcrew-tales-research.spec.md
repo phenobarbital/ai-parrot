@@ -576,8 +576,25 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 ### Patterns to Follow
 - Domain-flow package layout per `parrot/flows/dev_loop/`
   (`definition.py + factories.py + models/ + nodes/ + runner.py`).
-- Inject node types via `from_definition(node_factories=…)`; do NOT touch
-  the global `NODE_REGISTRY`.
+- **Revised during TASK-2231 implementation (two rounds of verification,
+  both user-approved):** the flow is assembled **programmatically** —
+  `AgentsFlow(name=..., checkpoint=True)` + `add_node()`/`add_edge()` —
+  not via a declarative `FlowDefinition`/`from_definition(node_factories=…)`.
+  `from_definition()` requires every node type to already be registered in
+  `NODE_REGISTRY` regardless of `node_factories` (which only overrides
+  *construction* of an already-registered type); separately,
+  `checkpoint=True` *itself* unconditionally calls `to_definition()` as a
+  fail-fast export check, which has the same registry requirement
+  regardless of assembly mode. So every Thales node type **is** registered
+  — idempotently, via `nodes/registry.py`'s `register_thales_node()` —
+  mirroring `parrot.flows.dev_loop.nodes.base.register_dev_loop_node`
+  exactly (which registers its own nodes for the same reason). Programmatic
+  ("explicit-edge") mode is also what naturally provides the OR-join +
+  skip-propagation semantics `DeckBuilderNode` needs. Edge predicates
+  (e.g. the "don't render a dropped deck" gate) are CEL expression
+  strings, not Python callables — `to_definition()` only round-trips CEL
+  strings, mirroring `parrot.flows.dev_loop.definition`'s own CEL-string
+  predicates.
 - Async-first throughout; Pydantic for every contract; `self.logger`.
 - ECharts option-JSON primary + static-SVG pre-render for anything that
   must survive weasyprint (executes no JS) — SPK-1 constraint
@@ -669,3 +686,4 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-17 | Jesús Lara + Claude Code | Initial draft from brainstorm (all 8 open questions pre-resolved) |
+| 0.2 | 2026-08-17 | Jesús Lara + sdd-worker (TASK-2231) | §7 revised: flow assembly is programmatic (`add_node`/`add_edge`), not `FlowDefinition`/`from_definition(node_factories=…)`; every Thales node type IS registered in `NODE_REGISTRY` (idempotently, mirroring `dev_loop`) because `checkpoint=True` requires it via `to_definition()`'s fail-fast export check regardless of assembly mode; edge predicates are CEL expression strings, not Python callables. Both corrections verified by running the assembled flow end-to-end, not just from reading the engine's docstrings. |

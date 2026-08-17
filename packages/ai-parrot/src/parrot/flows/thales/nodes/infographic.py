@@ -16,8 +16,10 @@ from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.thales.nodes.registry import register_thales_node
 
 
+@register_thales_node("thales.infographic")
 class InfographicNode(Node):
     """Fan-in: executive summary + decks -> ``InfographicRenderResult`` (or ``None``).
 

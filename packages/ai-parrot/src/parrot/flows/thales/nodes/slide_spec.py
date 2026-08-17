@@ -17,6 +17,7 @@ from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.thales.models import ResearchDeck, SlideSpec
+from parrot.flows.thales.nodes.registry import register_thales_node
 
 
 def _extract_slide_spec(message: Any) -> SlideSpec:
@@ -48,6 +49,7 @@ def _build_prompt(deck: ResearchDeck) -> str:
     )
 
 
+@register_thales_node("thales.slide_spec")
 class SlideSpecNode(Node):
     """``ResearchDeck`` -> ``SlideSpec`` (LLM structured output).
 

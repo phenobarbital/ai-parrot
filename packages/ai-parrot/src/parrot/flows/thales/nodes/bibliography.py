@@ -16,6 +16,7 @@ from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.thales.models import Bibliography, ResearchDeck, SourceClaim
+from parrot.flows.thales.nodes.registry import register_thales_node
 
 
 def _normalize_url(url: str) -> str:
@@ -110,6 +111,7 @@ def _parse_deck(raw: str) -> Optional[ResearchDeck]:
         return None
 
 
+@register_thales_node("thales.bibliography")
 class BibliographyNode(Node):
     """Fan-in over all decks -> one deterministic ``Bibliography``.
 

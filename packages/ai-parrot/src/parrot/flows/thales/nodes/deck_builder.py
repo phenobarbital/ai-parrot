@@ -19,6 +19,7 @@ from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.thales.models import Finding, ResearchAngle, ResearchDeck
+from parrot.flows.thales.nodes.registry import register_thales_node
 
 #: Sentinel key: when present (and truthy) in a DeckBuilderNode's JSON
 #: output, the runner (TASK-2231) drops the deck and logs the warning
@@ -26,6 +27,7 @@ from parrot.flows.thales.models import Finding, ResearchAngle, ResearchDeck
 DROPPED_DECK_SENTINEL = "_thales_dropped_deck"
 
 
+@register_thales_node("thales.deck_builder")
 class DeckBuilderNode(Node):
     """OR-join fan-in: one angle's research node outputs -> ``ResearchDeck``.
 

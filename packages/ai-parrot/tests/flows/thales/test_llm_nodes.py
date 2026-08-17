@@ -1,22 +1,56 @@
 """Unit tests for `parrot.flows.thales.nodes` (FEAT-425 TASK-2229).
 
 All LLM calls are mocked — no network, no real LLM.
+
+**Correction (TASK-2231):** this module originally asserted NO "thales"-
+prefixed key ever appears in the global ``NODE_REGISTRY`` (spec §7's
+original wiring plan). Verified during TASK-2231: ``AgentsFlow``'s
+``checkpoint=True`` (FEAT-399) unconditionally requires every node type to
+round-trip through ``NODE_REGISTRY`` via ``to_definition()``'s fail-fast
+export check — regardless of assembly mode (declarative or programmatic).
+Per user decision ("Option C"), every Thales node type IS now registered,
+idempotently, mirroring ``parrot.flows.dev_loop``'s own
+``register_dev_loop_node`` pattern (which registers its nodes for the
+exact same reason). See ``parrot/flows/thales/nodes/registry.py`` and
+``sdd/specs/agentcrew-tales-research.spec.md`` §7 (revised).
 """
 
 import json
 from unittest.mock import AsyncMock
 
 import pytest
-
 from parrot.bots.flows.flow.flow import NODE_REGISTRY
-from parrot.flows.thales.models import Finding, ResearchAngle, ResearchDeck, SlideSpec, ThalesConfig
+from parrot.flows.thales.models import (
+    Finding,
+    ResearchAngle,
+    ResearchDeck,
+    SlideSpec,
+    ThalesConfig,
+)
 from parrot.flows.thales.nodes import DeckBuilderNode, PlannerNode, SlideSpecNode
 from parrot.flows.thales.nodes.deck_builder import DROPPED_DECK_SENTINEL
 from parrot.flows.thales.nodes.planner import _AnglesEnvelope
+from parrot.flows.thales.nodes.registry import register_thales_node
 
 
-def test_no_global_registry_pollution():
-    assert not any(k.startswith("thales") for k in NODE_REGISTRY)
+def test_thales_nodes_are_registered_for_checkpointing():
+    """Every Thales node type IS in NODE_REGISTRY (see module docstring)."""
+    thales_types = {k for k in NODE_REGISTRY if k.startswith("thales.")}
+    assert "thales.planner" in thales_types
+    assert "thales.deck_builder" in thales_types
+    assert "thales.slide_spec" in thales_types
+
+
+def test_registration_is_idempotent():
+    """Re-registering the same name is a no-op, never raises."""
+
+    class _Dummy(PlannerNode):
+        pass
+
+    # First call registers "thales._idempotency_probe"; second is a no-op.
+    register_thales_node("thales._idempotency_probe")(_Dummy)
+    register_thales_node("thales._idempotency_probe")(_Dummy)
+    assert NODE_REGISTRY["thales._idempotency_probe"] is _Dummy
 
 
 def _angle(angle_id: str = "a1") -> ResearchAngle:

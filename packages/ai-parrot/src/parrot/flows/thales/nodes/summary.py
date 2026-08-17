@@ -16,6 +16,7 @@ from parrot.bots.flows.core.fsm import AgentTaskMachine
 from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.core.storage.synthesis import synthesize_results
 from parrot.bots.flows.core.types import DependencyResults
+from parrot.flows.thales.nodes.registry import register_thales_node
 
 
 class _PartialResult:
@@ -26,6 +27,7 @@ class _PartialResult:
         self.summary = ""
 
 
+@register_thales_node("thales.exec_summary")
 class ExecSummaryNode(Node):
     """Fan-in over all decks -> one executive-summary string (LLM synthesis).
 
