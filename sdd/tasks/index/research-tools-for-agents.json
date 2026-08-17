@@ -92,7 +92,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Head of the academic chain (2238>2239>2240>2241), which writes only academic.py. Runs in a worktree parallel to the open-data chain. Also covers Oxford Academic content via DOI prefix 10.1093.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2238-crossref-search.md"
+      "completed_at": "2026-08-17T00:53:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2238-crossref-search.md"
     },
     {
       "id": "TASK-2239",
