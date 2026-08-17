@@ -32,7 +32,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Head of the open-data chain (2235>2236>2237), which writes only open_data.py. Runs in a worktree parallel to the academic chain (2238>2241, academic.py). The two chains share no source file; all shared-file edits are deferred to TASK-2243.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2235-world-bank-methods.md"
+      "completed_at": "2026-08-17T00:42:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2235-world-bank-methods.md"
     },
     {
       "id": "TASK-2236",
