@@ -28,6 +28,25 @@ def _chart_id(chart: dict[str, Any]) -> str:
     return f"thales-chart-{digest[:12]}"
 
 
+def _safe_json_for_script(value: Any) -> str:
+    """JSON-encode ``value`` for safe interpolation into an inline ``<script>`` tag.
+
+    ``json.dumps`` does not escape ``</`` — a chart title/label containing
+    the literal substring ``</script>`` would otherwise close the tag
+    early and inject arbitrary markup/script (security finding: chart
+    content ultimately originates from LLM-filled ``SlideSpec.charts``,
+    seeded by live web/arxiv/deep-research content, i.e. attacker-
+    influenceable). Escaping ``<``/``>``/``&`` as unicode escapes is the
+    standard technique for embedding JSON in HTML `<script>` bodies.
+    """
+    encoded = json.dumps(value, sort_keys=True)
+    return (
+        encoded.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
 def echarts_option_block(chart: dict[str, Any]) -> str:
     """Build an ECharts option-JSON container for the interactive browser path.
 
@@ -42,7 +61,7 @@ def echarts_option_block(chart: dict[str, Any]) -> str:
     """
     chart_id = _chart_id(chart)
     option = _to_echarts_option(chart)
-    option_json = json.dumps(option, sort_keys=True)
+    option_json = _safe_json_for_script(option)
     return (
         f'<div class="thales-chart thales-chart--browser">'
         f'<div id="{chart_id}" class="thales-chart-canvas" '

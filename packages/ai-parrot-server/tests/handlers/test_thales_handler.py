@@ -77,6 +77,44 @@ class TestThalesRunHandlerPost:
         assert "10" in body["error"]
 
     @pytest.mark.asyncio
+    async def test_rejects_unknown_source(self):
+        """Code-review fix: an unknown source is surfaced as 400, not
+        silently dropped by definition-assembly's source-label filter.
+        """
+        request = _make_mock_request(body={"thesis": "t", "sources": ["web", "bogus"]})
+        handler = _make_handler(request)
+        response = await ThalesRunHandler.post(handler)
+        assert response.status == 400
+        body = jsonlib.loads(response.body)
+        assert "bogus" in body["error"]
+
+    @pytest.mark.asyncio
+    async def test_output_dir_from_body_is_ignored(self):
+        """Security regression: a client-supplied `output_dir` must never
+        reach `ThalesRunner` (path-injection / arbitrary-file-write
+        finding from code review) — HTTP-launched runs persist via
+        ArtifactStore only.
+        """
+        request = _make_mock_request(body={"thesis": "t", "output_dir": "/etc/evil"})
+        handler = _make_handler(request)
+
+        with patch("parrot.handlers.thales.ThalesRunner") as mock_runner_cls:
+            mock_runner = MagicMock()
+            mock_runner.add_progress_listener = MagicMock()
+
+            async def fake_run():
+                return MagicMock()
+
+            mock_runner.run = fake_run
+            mock_runner_cls.return_value = mock_runner
+
+            response = await ThalesRunHandler.post(handler)
+            assert response.status == 202
+
+            _, kwargs = mock_runner_cls.call_args
+            assert "output_dir" not in kwargs
+
+    @pytest.mark.asyncio
     async def test_handler_post_poll(self):
         """POST -> run_id; poll GET transitions pending -> running -> completed."""
         request = _make_mock_request(body={"thesis": "t"})

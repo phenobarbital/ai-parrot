@@ -114,6 +114,15 @@ class TestThalesE2EMockedLLM:
             assert (tmp_path / f"deck-{deck.angle.angle_id}.json").exists()
             assert (tmp_path / f"slide-{deck.angle.angle_id}.html").exists()
 
+        # Code-review fix regression: the final document (+ pdf, when
+        # weasyprint is available) must ALSO be mirrored under output_dir,
+        # not just reachable via ArtifactStore.
+        assert (tmp_path / "final-document.html").exists()
+        assert result.final_document.path == tmp_path / "final-document.html"
+        if result.final_pdf is not None:
+            assert (tmp_path / "final-document.pdf").exists()
+            assert result.final_pdf.path == tmp_path / "final-document.pdf"
+
         assert not result.warnings or all("weasyprint" in w for w in result.warnings)
 
 

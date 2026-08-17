@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 #: Number of most-recent node events kept in a status document response.
 _MAX_STATUS_EVENTS = 20
 
+#: Valid `sources` entries (mirrors `ThalesConfig.sources`'s default list /
+#: `parrot.flows.thales.definition._SOURCE_LABELS` keys). An unrecognized
+#: value used to be silently dropped by the definition-assembly filter
+#: instead of surfaced as a 400 (code-review finding).
+_KNOWN_SOURCES = {"web", "deep_research", "arxiv"}
+
 
 @dataclass
 class _RunEntry:
@@ -106,7 +112,8 @@ class ThalesRunHandler(BaseView):
     """``POST /api/v1/thales`` — launch a Thales research run.
 
     Request body (JSON): ``{"thesis": str, "num_decks"?: int,
-    "sources"?: list[str], "output_dir"?: str, "llm"?: str}``.
+    "sources"?: list[str], "llm"?: str}``. ``output_dir`` is deliberately
+    NOT an accepted field — see the security note in :meth:`post`.
     """
 
     async def post(self) -> web.Response:
@@ -129,6 +136,15 @@ class ThalesRunHandler(BaseView):
         num_decks = body.get("num_decks", 10)
         sources = body.get("sources")
 
+        if sources is not None:
+            unknown = set(sources) - _KNOWN_SOURCES
+            if unknown:
+                return self.error(
+                    f"Invalid request: unknown source(s) {sorted(unknown)!r} — "
+                    f"valid sources are {sorted(_KNOWN_SOURCES)!r}.",
+                    status=400,
+                )
+
         try:
             ThalesConfig(thesis=thesis, num_decks=num_decks, sources=sources or ["web", "deep_research", "arxiv"])
         except ValidationError:
@@ -139,11 +155,19 @@ class ThalesRunHandler(BaseView):
             )
 
         run_id = str(uuid.uuid4())
+        # SECURITY: `output_dir` is intentionally NOT accepted from the
+        # request body — ThalesRunner/`_mirror_to_output_dir` writes
+        # `deck-*.json`/`slide-*.html`/`manifest.json` directly to whatever
+        # path is given (`Path(output_dir).mkdir(parents=True, ...)`), and
+        # this endpoint has no safe-base-directory confinement to validate
+        # a client-supplied path against. HTTP-launched runs persist via
+        # `ArtifactStore` (public URLs) only; local filesystem mirroring
+        # remains available through the Python API (`ThalesRunner(...,
+        # output_dir=...)`), where the caller controls their own trusted path.
         runner = ThalesRunner(
             thesis=thesis,
             num_decks=num_decks,
             sources=sources,
-            output_dir=body.get("output_dir"),
             llm=body.get("llm"),
         )
         runner.add_progress_listener(

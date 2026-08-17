@@ -13,6 +13,7 @@ import base64
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional, Set
 
 from pydantic import Field
@@ -43,6 +44,13 @@ class FinalDocumentNode(Node):
         bibliography_node_id: node_id whose ``deps`` value is the
             JSON-encoded ``Bibliography`` (``BibliographyNode``'s output).
         title: Document title.
+        output_dir: Optional filesystem directory to ALSO mirror the final
+            document (+ PDF, when rasterized) into, independent of
+            ``store`` — each persistence surface fails independently
+            (spec: never aborts the run). Fixes a code-review finding: the
+            final document — the feature's headline deliverable — was
+            previously only ever reachable via ``ArtifactStore``, silently
+            dropped in the documented ``output_dir``-only configuration.
         dependencies: Set of node_ids that must complete first.
         successors: Set of node_ids that depend on this one.
         fsm: Auto-created if ``None``.
@@ -56,6 +64,7 @@ class FinalDocumentNode(Node):
     slide_node_ids: list[str] = Field(default_factory=list)
     bibliography_node_id: str = "bibliography"
     title: str = "Thales Research Report"
+    output_dir: Optional[Path] = None
     dependencies: Set[str] = Field(default_factory=set)
     successors: Set[str] = Field(default_factory=set)
     fsm: Optional[AgentTaskMachine] = None
@@ -121,49 +130,77 @@ class FinalDocumentNode(Node):
         )
 
     async def _persist_html(self, html: str, now: datetime) -> ArtifactRef:
-        """Persist the final document HTML via the injected ``ArtifactStore``.
+        """Persist the final document HTML via ``ArtifactStore`` AND/OR ``output_dir``.
 
-        Degrades to a bare ``ArtifactRef`` (no ``artifact_id``/``url``) when
-        no store is configured — mirrors ``ThalesRunner._persist()``'s own
-        "no store configured" degrade path (spec: each persistence surface
-        fails independently, never aborts the run).
+        Each surface fails/is skipped independently — mirrors
+        ``ThalesRunner._persist()``'s own "no store configured" degrade
+        path (spec: never aborts the run). Returns a bare ``ArtifactRef``
+        when NEITHER surface is configured.
         """
-        if self.store is None:
-            return ArtifactRef(kind="final_html")
-        artifact_id = f"{self.node_id}-html-{uuid.uuid4().hex[:8]}"
-        artifact = Artifact(
-            artifact_id=artifact_id,
-            artifact_type=ArtifactType.INTERACTIVE,
-            title=self.title,
-            created_at=now,
-            updated_at=now,
-            definition={"html": html},
-        )
-        await self.store.save_artifact(self.user_id, self.agent_id, self.session_id, artifact)
-        url = await self.store.get_public_url(
-            self.user_id, self.agent_id, self.session_id, artifact_id,
-        )
-        return ArtifactRef(kind="final_html", artifact_id=artifact_id, url=url)
+        artifact_id: Optional[str] = None
+        url: Optional[str] = None
+        if self.store is not None:
+            artifact_id = f"{self.node_id}-html-{uuid.uuid4().hex[:8]}"
+            artifact = Artifact(
+                artifact_id=artifact_id,
+                artifact_type=ArtifactType.INTERACTIVE,
+                title=self.title,
+                created_at=now,
+                updated_at=now,
+                definition={"html": html},
+            )
+            await self.store.save_artifact(self.user_id, self.agent_id, self.session_id, artifact)
+            url = await self.store.get_public_url(
+                self.user_id, self.agent_id, self.session_id, artifact_id,
+            )
+
+        path = self._mirror_to_output_dir("final-document.html", html)
+
+        return ArtifactRef(kind="final_html", artifact_id=artifact_id, url=url, path=path)
 
     async def _persist_pdf(self, pdf_bytes: bytes, now: datetime) -> ArtifactRef:
-        """Persist the final document PDF via the injected ``ArtifactStore``.
+        """Persist the final document PDF via ``ArtifactStore`` AND/OR ``output_dir``.
 
-        Degrades to a bare ``ArtifactRef`` (no ``artifact_id``/``url``) when
-        no store is configured — see :meth:`_persist_html`.
+        See :meth:`_persist_html`.
         """
-        if self.store is None:
-            return ArtifactRef(kind="final_pdf")
-        artifact_id = f"{self.node_id}-pdf-{uuid.uuid4().hex[:8]}"
-        artifact = Artifact(
-            artifact_id=artifact_id,
-            artifact_type=ArtifactType.EXPORT,
-            title=f"{self.title} (PDF)",
-            created_at=now,
-            updated_at=now,
-            definition={"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii")},
-        )
-        await self.store.save_artifact(self.user_id, self.agent_id, self.session_id, artifact)
-        url = await self.store.get_public_url(
-            self.user_id, self.agent_id, self.session_id, artifact_id,
-        )
-        return ArtifactRef(kind="final_pdf", artifact_id=artifact_id, url=url)
+        artifact_id: Optional[str] = None
+        url: Optional[str] = None
+        if self.store is not None:
+            artifact_id = f"{self.node_id}-pdf-{uuid.uuid4().hex[:8]}"
+            artifact = Artifact(
+                artifact_id=artifact_id,
+                artifact_type=ArtifactType.EXPORT,
+                title=f"{self.title} (PDF)",
+                created_at=now,
+                updated_at=now,
+                definition={"pdf_base64": base64.b64encode(pdf_bytes).decode("ascii")},
+            )
+            await self.store.save_artifact(self.user_id, self.agent_id, self.session_id, artifact)
+            url = await self.store.get_public_url(
+                self.user_id, self.agent_id, self.session_id, artifact_id,
+            )
+
+        path = self._mirror_to_output_dir("final-document.pdf", pdf_bytes)
+
+        return ArtifactRef(kind="final_pdf", artifact_id=artifact_id, url=url, path=path)
+
+    def _mirror_to_output_dir(self, filename: str, content: "str | bytes") -> Optional[Path]:
+        """Best-effort mirror of the final document/PDF under ``output_dir``.
+
+        Never raises — a mirroring failure degrades silently (logged),
+        matching every other persistence surface in this feature.
+        """
+        if self.output_dir is None:
+            return None
+        try:
+            directory = Path(self.output_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / filename
+            if isinstance(content, bytes):
+                target.write_bytes(content)
+            else:
+                target.write_text(content, encoding="utf-8")
+            return target
+        except Exception as exc:  # noqa: BLE001 - mirroring failures degrade, never abort
+            self.logger.warning("Failed to mirror %s to output_dir: %s", filename, exc)
+            return None

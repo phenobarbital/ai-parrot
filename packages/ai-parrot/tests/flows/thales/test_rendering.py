@@ -1,7 +1,6 @@
 """Golden-file determinism tests for `parrot.flows.thales.rendering` (TASK-2228)."""
 
 import pytest
-
 from parrot.flows.thales.models import Bibliography, SlideSpec
 from parrot.flows.thales.rendering import charts, document, slides
 
@@ -107,6 +106,20 @@ class TestCharts:
         svg = charts.static_svg_chart(chart)
         assert svg.startswith("<svg")
         assert "<polyline" in svg
+
+    def test_echarts_block_escapes_script_breakout(self):
+        """Security regression: chart content ultimately originates from
+        LLM-filled SlideSpec.charts (seeded by live web/arxiv/deep-research
+        content) — a title containing a literal '</script>' must not be
+        able to break out of the inline <script> tag.
+        """
+        chart = {
+            "type": "bar", "title": "</script><script>alert(1)</script>",
+            "labels": ["a"], "series": [{"name": "s", "data": [1]}],
+        }
+        block = charts.echarts_option_block(chart)
+        assert "</script><script>alert(1)</script>" not in block
+        assert "\\u003c/script\\u003e" in block
 
 
 def test_no_matplotlib_import():

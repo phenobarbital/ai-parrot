@@ -154,6 +154,7 @@ class ThalesRunner:
             session_id=self.session_id,
             accessed_date=accessed_date,
             title=f"Thales Research Report — {self.config.thesis}",
+            output_dir=self.config.output_dir,
         )
 
         # Phase 2: assemble + run.

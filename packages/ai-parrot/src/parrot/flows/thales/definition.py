@@ -127,6 +127,10 @@ class ThalesNodeDeps:
         accessed_date: ISO date this run's sources were retrieved (injected
             once per run — never derived deep inside a node, for testability).
         title: Final document title.
+        output_dir: Optional filesystem directory `FinalDocumentNode` ALSO
+            mirrors the final document (+ PDF) into, independent of
+            `store` (code-review fix: the final document was previously
+            only reachable via `ArtifactStore`).
     """
 
     client: Any
@@ -137,6 +141,7 @@ class ThalesNodeDeps:
     session_id: str
     accessed_date: str
     title: str = "Thales Research Report"
+    output_dir: Optional[Any] = None
 
 
 #: CEL predicate: only proceed to slide_spec when the deck was NOT dropped.
@@ -374,6 +379,7 @@ def build_thales_nodes_and_edges(
             slide_node_ids=slide_render_ids,
             bibliography_node_id="bibliography",
             title=deps.title,
+            output_dir=deps.output_dir,
         )
     )
     for slide_render_id in slide_render_ids:

@@ -193,6 +193,38 @@ class TestFinalDocumentNode:
         assert payload["final_document"] == {"kind": "final_html", "artifact_id": None, "url": None, "path": None}
         assert payload["final_pdf"] == {"kind": "final_pdf", "artifact_id": None, "url": None, "path": None}
 
+    @pytest.mark.asyncio
+    async def test_mirrors_to_output_dir_independent_of_store(self, monkeypatch, tmp_path):
+        """Code-review fix regression: the final document (+ pdf) must be
+        mirrored under `output_dir` even with NO ArtifactStore configured
+        — previously only reachable via ArtifactStore, silently dropped
+        in the documented output_dir-only configuration.
+        """
+        import parrot.flows.thales.nodes.document as document_module
+
+        async def fake_render_document(slides_html, bibliography, *, title):
+            return "<html>doc</html>"
+
+        monkeypatch.setattr(document_module, "render_document", fake_render_document)
+        monkeypatch.setattr(document_module, "rasterize_pdf", lambda html: b"%PDF-fake")
+
+        node = FinalDocumentNode(
+            node_id="final_document", store=None,
+            user_id="u1", agent_id="thales", session_id="s1",
+            slide_node_ids=["slide-a1"], output_dir=tmp_path,
+        )
+        deps = {"slide-a1": "<section>slide</section>", "bibliography": Bibliography().model_dump_json()}
+        result = await node.execute(ctx=None, deps=deps)
+        payload = json.loads(result)
+
+        assert (tmp_path / "final-document.html").read_text() == "<html>doc</html>"
+        assert (tmp_path / "final-document.pdf").read_bytes() == b"%PDF-fake"
+        assert payload["final_document"]["path"] == str(tmp_path / "final-document.html")
+        assert payload["final_pdf"]["path"] == str(tmp_path / "final-document.pdf")
+        # No store configured -> no artifact_id/url, only the mirrored path.
+        assert payload["final_document"]["artifact_id"] is None
+        assert payload["final_pdf"]["artifact_id"] is None
+
 
 class TestInfographicNode:
     @pytest.mark.asyncio
