@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-426
 **Date**: 2026-08-17
 **Author**: Jesus Lara + Claude (Opus 4.6, revised by Opus 5 after adversarial review)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-tools next minor
 
 > **Prior exploration**: `sdd/proposals/research-tools-for-agents.brainstorm.md`
