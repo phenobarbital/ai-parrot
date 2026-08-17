@@ -224,8 +224,75 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Two significant, user-approved architecture corrections were
+required (both discovered via direct verification against `dev`, not
+assumption — the second only surfaced by actually running the assembled
+flow end-to-end through the real `AgentsFlow` scheduler):
 
-**Deviations from spec**: none
+1. **`FlowDefinition`/`from_definition(node_factories=…)` abandoned.**
+   Verified: `from_definition()` requires every node type — including
+   `node_factories`-injected ones — to already be in `NODE_REGISTRY`;
+   `node_factories` only overrides *construction*, never registration
+   (confirmed against FEAT-250 TASK-001, the feature that introduced it).
+   **User decision: Option B** — build the `AgentsFlow` programmatically
+   (`add_node`/`add_edge`, "explicit-edge mode"), which also naturally
+   provides the OR-join + skip-propagation semantics `DeckBuilderNode`
+   needs.
+2. **Programmatic mode alone didn't fully avoid `NODE_REGISTRY` either.**
+   Running the built flow end-to-end surfaced `FlowNotExportableError`:
+   `checkpoint=True` unconditionally calls `to_definition()` as a
+   fail-fast export check (`_ensure_checkpointer`), which requires
+   `NODE_REGISTRY` membership regardless of assembly mode, and also
+   rejects Python-callable edge predicates (CEL strings only).
+   **User decision: Option C** — register every Thales node type
+   idempotently (`nodes/registry.py`, mirroring
+   `parrot.flows.dev_loop.nodes.base.register_dev_loop_node`), and
+   convert the one predicate-gated edge (`deck -> slide_spec`, "don't
+   render a dropped deck") to a CEL string
+   (`!result.contains("_thales_dropped_deck")`, verified against
+   `celpy`'s actual string-extension support).
+
+Implemented `build_thales_nodes_and_edges`/`assemble_thales_flow`
+(`definition.py`) — 1 start + N×M research + N deck_builder + N slide_spec
++ N slide_render + bibliography + exec_summary + final_document +
+infographic + 1 end, wired with `on_success`+`on_error` edges into each
+deck_builder (OR-join) — and `ThalesRunner` (`runner.py`): phase-1
+standalone `PlannerNode.execute()` call (its angle count shapes phase-2's
+graph, per spec's two-phase design), projected-call-count logging,
+phase-2 `assemble_thales_flow(..., checkpoint=True, flow_id=run_id)` +
+`run_flow()`, then result aggregation + persistence (deck JSON + slide
+HTML + final doc/pdf artifacts via `ArtifactStore`, `output_dir`
+mirroring, `manifest.json`), warnings for per-angle dropped decks, and a
+hard `RuntimeError` when every angle's deck was dropped. Also introduced
+two node types the spec's Component Diagram names but no prior task file
+covers building (`_ResearchNode` for web/deep/arxiv, `_SlideRenderNode`
+wrapping TASK-2228's `render_slide`) — both private, living in this
+task's own `definition.py`.
+
+18 new unit tests pass (`test_definition.py`: 9, `test_runner.py`: 5, plus
+2 registration tests + itself replacing TASK-2229's now-incorrect
+`test_no_global_registry_pollution` in `test_llm_nodes.py`); full
+`packages/ai-parrot/tests/flows/thales/` suite: **73 passed**. Verified
+the real fix end-to-end with a throwaway (never committed) smoke script
+run through pytest: the assembled flow executes via the genuine
+`AgentsFlow` scheduler, `to_definition()` succeeds, and it only stops
+short at a real Redis connection for the checkpoint store (expected —
+no Redis in this sandbox; not a code defect). `ruff check` on every
+touched file shows only pre-existing style categories
+(`UP006`/`UP017`/`UP035`/`UP045`/`PYI063`). `grep -r matplotlib` empty.
+
+**Cross-task correction**: applied the `@register_thales_node(...)`
+decorator + import to TASK-2229's `PlannerNode`/`DeckBuilderNode`/
+`SlideSpecNode` and TASK-2230's `BibliographyNode`/`ExecSummaryNode`/
+`FinalDocumentNode`/`InfographicNode` (no `execute()` logic changed), and
+replaced TASK-2229's `test_no_global_registry_pollution` (asserted the
+opposite of the corrected, verified behavior). Committed separately
+(`fix(agentcrew-tales-research): register all Thales node types`) from
+this task's own deliverables for a clean audit trail. Spec bumped to
+rev 0.2 documenting both corrections in §7.
+
+**Deviations from spec**: See the two corrections above (both
+user-approved, both required by verified `AgentsFlow` behavior, both
+documented in spec rev 0.2 §7 and in `definition.py`'s module docstring).
