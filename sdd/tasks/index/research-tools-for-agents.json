@@ -152,7 +152,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Tail of the academic chain. Dispatches across the three identifier-addressable sources built in 2238-2240, so it must come last. Closes the chain and, with 2237, unblocks the router.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2241-get-paper-details.md"
+      "completed_at": "2026-08-17T01:03:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2241-get-paper-details.md"
     },
     {
       "id": "TASK-2242",

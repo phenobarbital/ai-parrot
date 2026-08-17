@@ -223,8 +223,16 @@ class TestGetPaperDetails:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: Added `get_paper_details` + `_detect_source`/`_strip_id_prefix`
+helpers to `AcademicResearchToolkit`. Reuses existing transport rather
+than adding new dependencies: Crossref via `cr.works(ids=doi)`, PubMed via
+the existing `_pubmed_efetch([pmid])` (skips `esearch`), arXiv via
+`arxiv.Search(id_list=[...])`, Semantic Scholar via `/paper/{paper_id}`
+with the same `fields=` set as search. Explicit `source` overrides
+auto-detection; prefixed ids (`DOI:`, `PMID:`, `ARXIV:`, `CorpusID:`) are
+accepted. Closes the academic chain (2238-2241) — together with TASK-2237
+this unblocks TASK-2242 (router). 11/11 new tests pass offline; full
+research suite (70 tests) green; `ruff check` clean.
+**Deviations from spec**: none
