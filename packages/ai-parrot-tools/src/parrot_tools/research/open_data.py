@@ -1,13 +1,16 @@
 """
 OpenDataToolkit — direct access to free, no-auth open-data REST APIs
-(FEAT-426 Module 2: World Bank Open Data, EU Open Data Portal; OECD SDMX
-is added by the tail task in this same module).
+(FEAT-426 Module 2: World Bank Open Data, EU Open Data Portal, OECD SDMX).
 
 World Bank has **no server-side keyword search**: indicators are looked up
 by code or resolved from `query` via indicator metadata, then time-series
 observations are fetched. The EU Open Data Portal (piveau/DCAT-AP), by
-contrast, supports genuine server-side full-text search. See spec §3
-Module 2 and §7 "Known Risks".
+contrast, supports genuine server-side full-text search. OECD's SDMX 3.0
+API has no keyword search either — its ~1,500-dataflow catalog is listed
+and filtered client-side, and its DSD (Data Structure Definition) must be
+fetched before a data query can be built, since dimension order is
+positional and dataflow-specific. See spec §3 Module 2 and §7 "Known
+Risks".
 """
 from urllib.parse import quote
 
@@ -22,6 +25,12 @@ try:
 except ImportError:
     wb = None
 
+try:
+    # PyPI distribution is `sdmx1`; the importable module is `sdmx`.
+    import sdmx
+except ImportError:
+    sdmx = None
+
 _WB_SOURCE_NAME = "World Bank Open Data"
 _WB_LICENSE = "CC BY-4.0"
 _WB_MISSING_MESSAGE = (
@@ -35,13 +44,25 @@ EU_SEARCH_URL = "https://data.europa.eu/api/hub/search/search"
 _EU_SOURCE_NAME = "EU Open Data Portal"
 _EU_LIMIT_CAP = 1000
 
+# OECD SDMX 3.0. `OECD3` is the v2/SDMX-3.0 `sdmx1` source id — `OECD` is
+# the older v1 entry and must not be used. Data queries are unpaginated
+# and can reach tens of MB, so every query is bounded by a dimension key
+# and a starting period; rows mapped into IndicatorValue are also capped.
+_OECD_SOURCE_ID = "OECD3"
+_OECD_SOURCE_NAME = "OECD SDMX"
+_OECD_MISSING_MESSAGE = (
+    "OECD support requires: pip install 'ai-parrot-tools[research]'"
+)
+_OECD_DEFAULT_START_PERIOD = "2015"
+_OECD_MAX_OBSERVATIONS = 500
+
 
 class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
     """Direct, structured access to authoritative open-data sources.
 
-    Currently covers World Bank Open Data (indicator/time-series lookup).
-    EU Open Data Portal and OECD SDMX methods are added by later tasks in
-    this same module (spec §3 Module 2).
+    Covers World Bank Open Data (indicator/time-series lookup), the EU
+    Open Data Portal (piveau full-text search), and OECD SDMX 3.0 (dataflow
+    catalog browsing + bounded data queries). See spec §3 Module 2.
     """
 
     def _time_kwargs(
@@ -349,6 +370,176 @@ class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
             source="eu_open_data",
         )
 
+    async def search_oecd_data(
+        self,
+        query: str,
+        dataset: str | None = None,
+        country: str | None = None,
+        max_results: int = 10,
+    ) -> ResearchResult:
+        """Browse the OECD SDMX 3.0 dataflow catalog and filter client-side.
+
+        OECD has no server-side keyword search over its ~1,500 dataflows;
+        this method lists the catalog (cached 24h — it changes rarely) and
+        filters dataflow ids/names against `query`. Use the resulting
+        dataflow id with `get_oecd_indicator` to fetch actual data.
+
+        Args:
+            query: Free-text filter matched against dataflow id/name.
+            dataset: Optional exact dataflow id — skips catalog filtering.
+            country: Unused for catalog search; accepted for symmetry with
+                `get_oecd_indicator`.
+            max_results: Maximum number of dataflows to return.
+
+        Returns:
+            A `ResearchResult` with `result_type="datasets"`.
+        """
+        source = "open_data.search_oecd_data"
+        if sdmx is None:
+            return self._failure(
+                query, source, "datasets", "error", _OECD_MISSING_MESSAGE
+            )
+
+        cache_params = {
+            "query": query, "dataset": dataset,
+            "country": country, "max_results": max_results,
+        }
+        cached = await self._cache.get(
+            "open_data", "search_oecd_data", **cache_params
+        )
+        if cached is not None:
+            return ResearchResult(**cached)
+
+        try:
+            flows = await self._fetch_oecd_catalog()
+        except Exception as e:  # noqa: BLE001 — never raise into the agent loop
+            self.logger.error("OECD catalog fetch failed: %s", e)
+            return self._failure(
+                query, source, "datasets", "error",
+                f"OECD catalog fetch failed: {e}",
+            )
+
+        if dataset:
+            flows = [f for f in flows if f.get("id") == dataset]
+        elif query:
+            q = query.lower()
+            flows = [
+                f for f in flows
+                if q in f.get("id", "").lower() or q in f.get("name", "").lower()
+            ]
+
+        if not flows:
+            return self._failure(
+                query, source, "datasets", "no_data",
+                f"No OECD dataflows matched '{query}'",
+            )
+
+        datasets = [
+            DatasetResult(
+                title=f.get("name") or f.get("id", ""),
+                publisher="OECD",
+                url=f"https://sdmx.oecd.org/public/rest/v2/dataflow/{f.get('id', '')}",
+                source="oecd",
+            )
+            for f in flows[:max_results]
+        ]
+        citation = self._build_citation(
+            source_name=_OECD_SOURCE_NAME,
+            source_url="https://sdmx.oecd.org/public/rest/v2/dataflow",
+        )
+        result = ResearchResult(
+            query=query, source=source, result_type="datasets",
+            status="success", total_results=len(datasets),
+            datasets=datasets, citation=citation,
+        )
+        await self._cache.set(
+            "open_data", "search_oecd_data", result.model_dump(),
+            ttl=86400, **cache_params,
+        )
+        return result
+
+    async def get_oecd_indicator(
+        self,
+        dataset_id: str,
+        country: str,
+        frequency: str | None = None,
+    ) -> ResearchResult:
+        """Fetch an OECD SDMX 3.0 data series for a dataflow + country.
+
+        Requires a dataflow id (found via `search_oecd_data`), e.g.
+        "DSD_FUA_CLIM@DF_TEMPERATURES" — agency ids may be dotted and
+        dataflow ids `@`-joined; pass them through verbatim. Fetches the
+        Data Structure Definition first, since dimension order is
+        positional and dataflow-specific, then bounds the data query by
+        country and a starting period (OECD data responses are
+        unpaginated and can reach tens of MB).
+
+        Args:
+            dataset_id: OECD dataflow id, e.g. "DSD_FUA_CLIM@DF_TEMPERATURES".
+            country: ISO country code used as the REF_AREA dimension key.
+            frequency: Optional frequency filter (e.g. "A", "M", "Q").
+
+        Returns:
+            A `ResearchResult` with `result_type="indicators"`.
+        """
+        source = "open_data.get_oecd_indicator"
+        if sdmx is None:
+            return self._failure(
+                dataset_id, source, "indicators", "error", _OECD_MISSING_MESSAGE
+            )
+
+        cache_params = {
+            "dataset_id": dataset_id, "country": country, "frequency": frequency,
+        }
+        cached = await self._cache.get(
+            "open_data", "get_oecd_indicator", **cache_params
+        )
+        if cached is not None:
+            return ResearchResult(**cached)
+
+        try:
+            rows = await self._fetch_oecd_series(dataset_id, country, frequency)
+        except Exception as e:  # noqa: BLE001 — never raise into the agent loop
+            self.logger.error("OECD series fetch failed: %s", e)
+            return self._failure(
+                dataset_id, source, "indicators", "error",
+                f"OECD series fetch failed: {e}",
+            )
+
+        if not rows:
+            return self._failure(
+                dataset_id, source, "indicators", "no_data",
+                f"No OECD observations found for {dataset_id}/{country}",
+            )
+
+        truncated = len(rows) > _OECD_MAX_OBSERVATIONS
+        indicators = [
+            IndicatorValue(
+                indicator_id=dataset_id,
+                indicator_name=row.get("series_name", dataset_id),
+                country=row.get("country", country),
+                country_name=row.get("country_name", row.get("country", country)),
+                year=str(row.get("period", "")),
+                value=row.get("value"),
+            )
+            for row in rows[:_OECD_MAX_OBSERVATIONS]
+        ]
+        citation = self._build_citation(
+            source_name=_OECD_SOURCE_NAME,
+            source_url=f"https://sdmx.oecd.org/public/rest/v2/data/{dataset_id}",
+        )
+        result = ResearchResult(
+            query=dataset_id, source=source, result_type="indicators",
+            status="success", total_results=len(indicators),
+            indicators=indicators, citation=citation,
+            raw_metadata={"truncated": truncated} if truncated else None,
+        )
+        await self._cache.set(
+            "open_data", "get_oecd_indicator", result.model_dump(),
+            ttl=3600, **cache_params,
+        )
+        return result
+
     async def _search_indicator_metadata(self, query: str) -> list:
         """Resolve free-text `query` against World Bank indicator metadata."""
 
@@ -390,3 +581,85 @@ class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
             year=str(row.get("time", "")).lstrip("YR"),
             value=row.get("value"),
         )
+
+    async def _fetch_oecd_catalog(self) -> list:
+        """List OECD dataflows via the SDMX 3.0 (`OECD3`) source.
+
+        Cached 24h under its own key — the catalog is large (~1,500
+        dataflows) and slow-changing, so it is fetched at most once a day
+        regardless of the query parameters callers pass.
+        """
+        cached = await self._cache.get("open_data", "_oecd_catalog")
+        if cached is not None:
+            return cached
+
+        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        def _fetch():
+            client = sdmx.Client(_OECD_SOURCE_ID)
+            flow_msg = client.dataflow()
+            return [
+                {"id": flow_id, "name": str(getattr(flow, "name", flow_id))}
+                for flow_id, flow in flow_msg.dataflow.items()
+            ]
+
+        flows = await self._run_sync_in_executor(_fetch)
+        await self._cache.set("open_data", "_oecd_catalog", flows, ttl=86400)
+        return flows
+
+    async def _fetch_oecd_series(
+        self,
+        dataset_id: str,
+        country: str,
+        frequency: str | None,
+    ) -> list:
+        """Fetch the DSD, then a bounded data query, for one OECD dataflow.
+
+        The DSD (`client.dataflow(dataset_id)`) is always fetched before
+        the data query, since dimension order is positional and
+        dataflow-specific. The data query itself is bounded by a
+        `REF_AREA` (+ optional `FREQ`) dimension key and a `startPeriod`
+        param — OECD data responses are unpaginated and can reach tens of
+        MB, so a bare all-dimensions query is never issued.
+        """
+
+        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        def _fetch():
+            client = sdmx.Client(_OECD_SOURCE_ID)
+            client.dataflow(dataset_id)  # DSD — resolves dimension order first
+
+            key = {"REF_AREA": country}
+            if frequency:
+                key["FREQ"] = frequency
+            params = {"startPeriod": _OECD_DEFAULT_START_PERIOD}
+
+            data_msg = client.data(dataset_id, key=key, params=params)
+            return self._rows_from_oecd_message(data_msg)
+
+        return await self._run_sync_in_executor(_fetch)
+
+    def _rows_from_oecd_message(self, data_msg) -> list:
+        """Normalize an `sdmx1` data message into plain observation dicts.
+
+        `sdmx1` typically requires `sdmx.to_pandas(data_msg)` to turn a
+        parsed data message into a pandas Series/DataFrame. This helper
+        prefers an already-normalized `.observations` list (used by
+        offline tests, spec goal G6) and falls back to `sdmx.to_pandas()`
+        for a real message when available.
+        """
+        if hasattr(data_msg, "observations"):
+            return list(data_msg.observations)
+
+        if sdmx is not None and hasattr(sdmx, "to_pandas"):
+            try:
+                series = sdmx.to_pandas(data_msg)
+            except Exception as e:  # noqa: BLE001 — surfaced by the caller
+                self.logger.warning("sdmx.to_pandas() conversion failed: %s", e)
+                return []
+            rows = []
+            for idx, value in series.items():
+                row = dict(zip(series.index.names, idx)) if isinstance(idx, tuple) else {}
+                row["value"] = value
+                rows.append(row)
+            return rows
+
+        return []
