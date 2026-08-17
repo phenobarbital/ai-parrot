@@ -8,7 +8,7 @@ base_branch: dev
 
 **Feature ID**: FEAT-426
 **Date**: 2026-08-17
-**Author**: Jesus Lara + Claude (Opus 4.6)
+**Author**: Jesus Lara + Claude (Opus 4.6, revised by Opus 5 after adversarial review)
 **Status**: draft
 **Target version**: ai-parrot-tools next minor
 
@@ -16,6 +16,11 @@ base_branch: dev
 > (status: exploration, recommended Option A — Category-Based AbstractToolkit
 > Subclasses with Shared Base). All resolved open questions from the brainstorm
 > are carried forward below; none have been re-opened.
+>
+> **Revision 0.2 — post-review.** This spec was reviewed against the live
+> codebase (empirical probes + `codex exec` adversarial pass). Five blocking
+> defects were fixed and `MarketResearchToolkit` was dropped from v1. See
+> §9 Review Log for the full disposition.
 
 ---
 
@@ -24,8 +29,8 @@ base_branch: dev
 ### Problem Statement
 
 AI-Parrot agents that need factual, citable data (economic indicators, academic
-research, market statistics) currently have **no direct path to authoritative
-sources**. The only options are:
+research) currently have **no direct path to authoritative sources**. The only
+options are:
 
 1. **Google/SerpAPI web search** — returns noisy results, requires filtering,
    costs per query, and the data is second-hand (news articles *about*
@@ -38,40 +43,46 @@ sources**. The only options are:
 
 ### Goals
 
-- **G1**: Three category-based toolkits (`OpenDataToolkit`,
-  `AcademicResearchToolkit`, `MarketResearchToolkit`) that give agents direct,
-  structured access to authoritative data sources without web-search
-  intermediaries.
+- **G1**: Two category-based toolkits (`OpenDataToolkit`,
+  `AcademicResearchToolkit`) that give agents direct, structured access to
+  authoritative data sources without web-search intermediaries.
 - **G2**: A shared `ResearchResult` / `Citation` Pydantic model enforced across
-  all toolkits — every result includes `source_url`, `access_date`,
-  `data_vintage`, and a `formatted_citation` string.
-- **G3**: A lightweight `ResearchRouter` tool that uses LLM-based intent
-  classification to dispatch cross-category queries to the right toolkit(s).
-- **G4**: Existing `ArxivTool` migrated into `AcademicResearchToolkit` as a
-  method (resolved in brainstorm).
+  both toolkits — every **successful** result carries a `Citation` with
+  `source_name`, `source_url`, `access_date`, and `formatted_citation`
+  populated. `data_vintage` is best-effort (populated when the source
+  exposes it).
+- **G3**: A `ResearchRouter` tool that classifies a natural-language query
+  into categories using an **explicitly injected** LLM client and dispatches
+  to the relevant toolkit method(s).
+- **G4**: Existing `ArxivTool` logic migrated into `AcademicResearchToolkit`
+  as a `search_arxiv()` method (resolved in brainstorm).
 - **G5**: Redis-backed `ToolCache` integration for all API calls with
   configurable per-toolkit TTLs.
 - **G6**: Fixture-based tests — no live API calls in CI.
+- **G7**: **No research tool ever raises into the agent loop.** Failures are
+  returned as data (see §2 "Error Contract").
 
 ### Non-Goals (explicitly out of scope)
 
-- No paid/authenticated API integrations (Gallup Analytics subscription,
-  Gartner enterprise portal, Statista Connect paid API). These are stubbed
-  with clear interfaces for future integration. Research confirmed: Gallup
-  has NO public API; Gartner has NO public API and aggressive bot protection;
-  Statista has a contract-gated API ("Statista Connect") with no self-serve
-  signup.
+- **`MarketResearchToolkit` is deferred out of v1.** Gallup and Gartner have
+  no public API and no viable scraping path; Statista's legal notice
+  prohibits crawler access, and its only sanctioned programmatic path
+  ("Statista Connect" REST API + MCP server) is contract-gated with no
+  self-serve signup. A toolkit of one ToS-questionable scraper plus two
+  stubs is not worth shipping. Revisit if a Statista Connect contract is
+  acquired — the `BaseResearchToolkit` seam makes it additive.
+- **No paid or contract-gated integrations.** Optional *free* API keys that
+  merely raise rate limits (PubMed `api_key`, Semantic Scholar `x-api-key`)
+  ARE supported — they are never required for correct operation.
 - No modification to existing `FredAPITool` or standalone `ArxivTool` — the
-  latter is migrated (copied + adapted) into the academic toolkit, but the
-  original remains for backward compatibility.
+  latter's logic is re-implemented inside the academic toolkit; the original
+  class remains for backward compatibility (accepted duplication, see §7).
 - No changes to core `parrot/tools/` — all new code lives in
   `parrot_tools/research/` (ai-parrot-tools satellite).
-- No scraping of Gallup/Gartner — research confirmed both sites have no
-  viable scraping path (no API, ToS prohibits, aggressive bot protection).
-  Brainstorm Option A's `MarketResearchToolkit` scope is reduced to Statista
-  public-page summaries only, plus stub interfaces.
 - No OpenAPI-based dynamic generation (brainstorm Option B rejected — most
   target APIs lack official OpenAPI specs).
+- No use of `parrot.interfaces.HTTPService` (see §7 — it is `requests`/`httpx`
+  backed and would introduce blocking I/O).
 
 ---
 
@@ -79,49 +90,59 @@ sources**. The only options are:
 
 ### Overview
 
-Three `AbstractToolkit` subclasses in `parrot_tools/research/`, each exposing
-domain-specific async methods that automatically become agent tools. A
-`BaseResearchToolkit` mixin provides shared infrastructure: the
-`ResearchResult` / `Citation` Pydantic models, aiohttp session management
-(via `auto_open=True` / `_open` / `_close` lifecycle per FEAT-391), and
-`ToolCache` integration.
+Two `AbstractToolkit` subclasses in `parrot_tools/research/`, each exposing
+domain-specific async methods that automatically become agent tools, plus a
+`ResearchRouter` standalone tool. A `BaseResearchToolkit` mixin provides
+shared infrastructure: aiohttp session management (via `auto_open=True` /
+`_open` / `_close` per FEAT-391), `ToolCache` integration, and citation
+construction.
 
 **Category 1 — Open Data (free REST APIs, no auth):**
 - **World Bank Open Data** (`api.worldbank.org/v2/`) — indicator-code-based
-  lookup (no server-side keyword search). Uses `wbgapi` library via
-  `run_in_executor` to avoid blocking the event loop (resolved in brainstorm).
+  lookup (no server-side keyword search). Uses `wbgapi` via `run_in_executor`.
 - **EU Open Data Portal** (`data.europa.eu/api/hub/search/`) — piveau platform
   (NOT CKAN) with full-text Elasticsearch search. Direct aiohttp calls.
-- **OECD Data** (`sdmx.oecd.org/public/rest/v2/`) — SDMX 3.0 REST API
-  preferred (resolved in brainstorm). Uses `sdmx1` library via
-  `run_in_executor`.
+- **OECD Data** (`sdmx.oecd.org/public/rest/v2/`) — SDMX 3.0 REST preferred.
+  Uses `sdmx1` via `run_in_executor`.
 
-**Category 2 — Academic Research (free APIs, optional keys):**
-- **Crossref** (`api.crossref.org`) — full keyword search, polite pool
-  (mailto). Uses `habanero` library via `run_in_executor`. Also covers
-  Oxford Academic content via DOI prefix `10.1093` (Oxford Academic has no
-  public API of its own).
-- **PubMed** (`eutils.ncbi.nlm.nih.gov`) — two-step search→fetch workflow.
-  Uses `Bio.Entrez` from Biopython via `run_in_executor` (**NOT** `pymed`,
-  which is abandoned since 2019).
-- **Semantic Scholar** (`api.semanticscholar.org/graph/v1`) — full search,
-  default free tier with backoff (resolved in brainstorm). Direct aiohttp
-  calls (response is JSON, fields must be explicitly requested).
-- **ArXiv** — migrated from existing `ArxivTool` into this toolkit as
-  `search_arxiv()` method (resolved in brainstorm). Uses `arxiv` library.
-
-**Category 3 — Market Research (limited free access):**
-- **Statista** — scrape publicly available statistic page summaries only
-  (chart title, key value, source citation). Full data requires Statista
-  Connect paid API.
-- **Gallup** / **Gartner** — stub interfaces only (no API, no viable
-  scraping path). Gallup partner-hosted datasets (World Bank Global Findex,
-  FAO Voices of the Hungry, etc.) are reachable through `OpenDataToolkit`.
+**Category 2 — Academic Research (free APIs, optional free keys):**
+- **Crossref** (`api.crossref.org`) — full keyword search, polite pool via
+  `mailto`. Uses `habanero` via `run_in_executor`. Also covers Oxford
+  Academic content (DOI prefix `10.1093`; OUP has no API of its own).
+- **PubMed** (`eutils.ncbi.nlm.nih.gov`) — two-step search→fetch. Uses
+  `Bio.Entrez` from Biopython via `run_in_executor` (**NOT** `pymed`,
+  abandoned since 2019).
+- **Semantic Scholar** (`api.semanticscholar.org/graph/v1`) — direct aiohttp;
+  free tier with backoff.
+- **ArXiv** — migrated from `ArxivTool`; uses `arxiv` via `run_in_executor`.
 
 **Cross-category dispatch:**
-- **`ResearchRouter`** — standalone `AbstractTool` that uses LLM-based intent
-  classification (resolved in brainstorm) to route a natural-language query
-  to the right toolkit method(s), then merges and ranks results.
+- **`ResearchRouter`** — an `AbstractTool` constructed with toolkit instances
+  and an **explicitly injected** LLM client for intent classification.
+
+### Error Contract (normative — resolves the framework's raise-on-error path)
+
+Verified framework behavior (`manager.py:1594` → `:1614`): `ToolManager.execute_tool()`
+**raises `ValueError(result.error)`** whenever a tool yields a `ToolResult`
+with `status == "error"`. Therefore G7 ("never raise into the agent loop")
+requires the following rules:
+
+1. **Toolkit methods return `ResearchResult` — never a `ToolResult`, never an
+   exception.** `AbstractTool.execute()` wraps the raw return into a
+   successful `ToolResult` automatically (verified empirically: a method
+   returning `ResearchResult` yields `ToolResult(success=True,
+   status="success", result=<ResearchResult>)`).
+2. **Failures are encoded as data** in `ResearchResult.status` /
+   `.error_message`, not as an error `ToolResult`. Valid `status` values:
+   `success`, `partial`, `no_data`, `error`.
+3. **`ResearchRouter._execute()` returns `ToolResult(success=True,
+   status="success", result=...)`** even when some categories fail; per-
+   category failures live in the payload.
+4. `ToolResult(success=False, status="error", ...)` is **reserved** for
+   genuinely unrecoverable conditions where raising into the agent loop is
+   the *intended* behavior. If used, `success=False` MUST be passed
+   explicitly — `ToolResult(status="error")` alone leaves `success=True`
+   (verified: the field defaults to `True` independently of `status`).
 
 ### Component Diagram
 
@@ -129,10 +150,9 @@ domain-specific async methods that automatically become agent tools. A
 Agent
   │
   ├──→ ResearchRouter.research(query, categories?, max_results?)
-  │        │  (LLM intent classification → dispatch)
+  │        │  (injected LLM classifies → dispatch; heuristic fallback)
   │        ├──→ OpenDataToolkit
-  │        ├──→ AcademicResearchToolkit
-  │        └──→ MarketResearchToolkit
+  │        └──→ AcademicResearchToolkit
   │
   ├──→ OpenDataToolkit (direct)
   │        ├── search_world_bank(query, indicator?, country?, date_range?)
@@ -141,39 +161,36 @@ Agent
   │        ├── search_oecd_data(query, dataset?, country?)
   │        └── get_oecd_indicator(dataset_id, country, frequency?)
   │
-  ├──→ AcademicResearchToolkit (direct)
-  │        ├── search_crossref(query, author?, year_range?, journal?)
-  │        ├── search_pubmed(query, mesh_terms?, date_range?, max_results?)
-  │        ├── search_semantic_scholar(query, fields_of_study?, year?, ...)
-  │        ├── search_arxiv(query, max_results?, sort_by?, category?)
-  │        └── get_paper_details(doi_or_id, source?)
-  │
-  └──→ MarketResearchToolkit (direct)
-           ├── search_statista(query, industry?, region?)
-           ├── search_gallup(query, topic?, region?)  [stub]
-           └── search_gartner(query, research_type?)  [stub]
+  └──→ AcademicResearchToolkit (direct)
+           ├── search_crossref(query, author?, year_range?, journal?)
+           ├── search_pubmed(query, mesh_terms?, date_range?, max_results?)
+           ├── search_semantic_scholar(query, fields_of_study?, year?, ...)
+           ├── search_arxiv(query, max_results?, sort_by?, category?)
+           └── get_paper_details(doi_or_id, source?)
 
 Shared base:
-  BaseResearchToolkit (mixin)
-  ├── ResearchResult / Citation / IndicatorValue (Pydantic models)
+  BaseResearchToolkit (cooperative mixin — see §7 MRO rules)
   ├── aiohttp.ClientSession lifecycle (_open/_close, auto_open=True)
   ├── ToolCache integration (Redis, per-toolkit TTL)
-  └── _make_api_request() / _run_sync_in_executor() helpers
+  └── _make_api_request() / _run_sync_in_executor() / _build_citation()
 ```
 
 ### Integration Points
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `parrot.tools.toolkit.AbstractToolkit` | inherits | Base class for all three category toolkits |
-| `parrot.tools.abstract.AbstractTool` | inherits | Base class for ResearchRouter |
-| `parrot.tools.abstract.ToolResult` | uses | Standard return type from all tools |
-| `parrot_tools.cache.ToolCache` | uses | Redis-backed response caching |
-| `parrot.interfaces.http.HTTPService` | uses (selectively) | For REST calls where aiohttp.ClientSession is insufficient |
-| `parrot_tools.arxiv_tool.ArxivTool` | migrates (copy+adapt) | ArXiv search logic moved into AcademicResearchToolkit |
-| `parrot_tools.ddgo.DuckDuckGoToolkit` | pattern reference | backoff + run_in_executor pattern for sync libraries |
-| `parrot_tools.fred_api.FredAPITool` | pattern reference | HTTPService + ToolCache pattern |
-| Agent tool registration (ToolManager) | extends | New toolkits registered as additional tool sources |
+| `parrot.tools.toolkit.AbstractToolkit` | inherits | Base for both category toolkits |
+| `parrot.tools.abstract.AbstractTool` | inherits | Base for `ResearchRouter` |
+| `parrot.tools.abstract.ToolResult` | produced indirectly | Framework wraps toolkit returns; router returns it directly |
+| `parrot_tools.cache.ToolCache` | uses | Redis-backed response caching via `.get()` / `.set()` |
+| `parrot.clients.factory.LLMFactory` | uses | Resolves a string model spec for the router's classifier |
+| `parrot.clients.base.AbstractClient` | uses | Injected classifier client type |
+| `parrot_tools.arxiv_tool.ArxivTool` | pattern reference | ArXiv logic re-implemented; original untouched |
+| `parrot_tools.ddgo.DuckDuckGoToolkit` | pattern reference | backoff + `run_in_executor` for sync libraries |
+| `parrot_tools.__init__.TOOL_REGISTRY` | **regenerated** | Auto-generated; CI fails if stale (Module 5) |
+| `scripts/generate_tool_registry.py` | **must be run** | `--check` runs in CI (`.github/workflows/ci.yml:30`) |
+| `packages/ai-parrot-tools/pyproject.toml` | modifies | New `research` extra (Module 1) |
+| `parrot.interfaces.http.HTTPService` | **NOT used** | `requests`/`httpx` backed — would block the loop |
 
 ### Data Models
 
@@ -181,30 +198,28 @@ Shared base:
 # NEW — parrot_tools/research/models.py
 
 class Citation(BaseModel):
-    """Machine-readable citation for every research result."""
-    source_name: str          # "World Bank Open Data", "Crossref", etc.
+    """Machine-readable citation. Present on every successful result."""
+    source_name: str          # "World Bank Open Data", "Crossref", ...
     source_url: str           # Direct URL to the data/paper
     access_date: str          # ISO-8601 date of the API call
-    data_vintage: Optional[str] = None  # When the data was published/updated
     formatted_citation: str   # Human-readable citation string
-    doi: Optional[str] = None # For academic papers
-    license: Optional[str] = None  # Data license if known
+    data_vintage: Optional[str] = None  # Best-effort: source publish/update date
+    doi: Optional[str] = None
+    license: Optional[str] = None
 
 class IndicatorValue(BaseModel):
-    """A single data point from an indicator/time-series source."""
     indicator_id: str         # e.g. "NY.GDP.MKTP.KD.ZG"
-    indicator_name: str       # e.g. "GDP growth (annual %)"
+    indicator_name: str
     country: str              # ISO-3166 code
     country_name: str
-    year: str                 # or date string
-    value: Optional[float]    # null for missing observations
+    year: str
+    value: Optional[float]    # None for missing observations
     unit: Optional[str] = None
     source_note: Optional[str] = None
 
 class PaperResult(BaseModel):
-    """A single academic paper result."""
     title: str
-    authors: List[str]
+    authors: List[str] = Field(default_factory=list)
     abstract: Optional[str] = None
     published_date: Optional[str] = None
     doi: Optional[str] = None
@@ -213,30 +228,37 @@ class PaperResult(BaseModel):
     citation_count: Optional[int] = None
     fields_of_study: Optional[List[str]] = None
     open_access: Optional[bool] = None
-    source: str               # "crossref", "pubmed", "semantic_scholar", "arxiv"
+    source: str               # "crossref" | "pubmed" | "semantic_scholar" | "arxiv"
 
 class DatasetResult(BaseModel):
-    """A dataset/statistic result from open data or market research."""
     title: str
     description: Optional[str] = None
     publisher: Optional[str] = None
     url: Optional[str] = None
     keywords: Optional[List[str]] = None
-    format: Optional[str] = None      # "JSON", "CSV", "API", etc.
+    format: Optional[str] = None
     last_modified: Optional[str] = None
-    source: str               # "eu_open_data", "statista", etc.
+    source: str               # "eu_open_data" | "oecd"
 
 class ResearchResult(BaseModel):
-    """Unified result container returned by all research tools."""
+    """Unified container returned by every research toolkit method.
+
+    Failures are represented here as DATA — never as an exception and never
+    as ToolResult(status="error"). See §2 Error Contract.
+    """
     query: str
     source: str               # toolkit + method identifier
-    result_type: str           # "indicators", "papers", "datasets"
+    result_type: str          # "indicators" | "papers" | "datasets"
+    status: str = "success"   # "success" | "partial" | "no_data" | "error"
+    error_message: Optional[str] = None
     total_results: Optional[int] = None
     indicators: Optional[List[IndicatorValue]] = None
     papers: Optional[List[PaperResult]] = None
     datasets: Optional[List[DatasetResult]] = None
-    citation: Citation
-    raw_metadata: Optional[Dict[str, Any]] = None  # source-specific extras
+    # Required in practice for status="success" (enforced by test, not by the
+    # type) — Optional so that no_data/error results need not fabricate one.
+    citation: Optional[Citation] = None
+    raw_metadata: Optional[Dict[str, Any]] = None
 ```
 
 ### New Public Interfaces
@@ -244,199 +266,184 @@ class ResearchResult(BaseModel):
 ```python
 # parrot_tools/research/base.py
 class BaseResearchToolkit:
-    """Mixin providing shared infrastructure for research toolkits."""
+    """Cooperative mixin. MUST be listed BEFORE AbstractToolkit in bases."""
     auto_open: bool = True
-    _cache: ToolCache
-    _session: aiohttp.ClientSession
 
-    async def _open(self) -> None: ...
-    async def _close(self) -> None: ...
+    def __init__(self, *, cache_ttl: int = 3600, **kwargs):
+        # MUST forward to AbstractToolkit.__init__ or _opened/_open_lock/
+        # logger/_tool_cache are never initialised.
+        super().__init__(**kwargs)
+        ...
+
+    async def _open(self) -> None: ...          # creates aiohttp.ClientSession
+    async def _close(self) -> None: ...         # closes session, then super()._close()
     async def _make_api_request(
         self, url: str, params: dict = None, headers: dict = None
-    ) -> dict: ...
+    ) -> tuple[Optional[dict], Optional[str]]: ...   # (payload, error) — never raises
     async def _run_sync_in_executor(self, func, *args, **kwargs) -> Any: ...
     def _build_citation(
         self, source_name: str, source_url: str,
         data_vintage: str = None, doi: str = None, license: str = None
     ) -> Citation: ...
+    def _failure(
+        self, query: str, source: str, result_type: str,
+        status: str, message: str
+    ) -> ResearchResult: ...     # canonical no_data / error result factory
 
 # parrot_tools/research/open_data.py
 class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
-    async def search_world_bank(
-        self, query: str, indicator: str = None,
+    async def search_world_bank(self, query: str, indicator: str = None,
         country: str = None, date_range: str = None,
-        max_results: int = 10
-    ) -> ResearchResult: ...
-
-    async def get_world_bank_indicator(
-        self, indicator_id: str, country: str,
-        year: str = None, date_range: str = None
-    ) -> ResearchResult: ...
-
-    async def search_eu_open_data(
-        self, query: str, dataset_type: str = None,
-        publisher: str = None, max_results: int = 10
-    ) -> ResearchResult: ...
-
-    async def search_oecd_data(
-        self, query: str, dataset: str = None,
-        country: str = None, max_results: int = 10
-    ) -> ResearchResult: ...
-
-    async def get_oecd_indicator(
-        self, dataset_id: str, country: str,
-        frequency: str = None
-    ) -> ResearchResult: ...
+        max_results: int = 10) -> ResearchResult: ...
+    async def get_world_bank_indicator(self, indicator_id: str, country: str,
+        year: str = None, date_range: str = None) -> ResearchResult: ...
+    async def search_eu_open_data(self, query: str, dataset_type: str = None,
+        publisher: str = None, max_results: int = 10) -> ResearchResult: ...
+    async def search_oecd_data(self, query: str, dataset: str = None,
+        country: str = None, max_results: int = 10) -> ResearchResult: ...
+    async def get_oecd_indicator(self, dataset_id: str, country: str,
+        frequency: str = None) -> ResearchResult: ...
 
 # parrot_tools/research/academic.py
 class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
-    async def search_crossref(
-        self, query: str, author: str = None,
+    async def search_crossref(self, query: str, author: str = None,
         year_range: str = None, journal: str = None,
-        max_results: int = 10
-    ) -> ResearchResult: ...
-
-    async def search_pubmed(
-        self, query: str, mesh_terms: str = None,
-        date_range: str = None, max_results: int = 10
-    ) -> ResearchResult: ...
-
-    async def search_semantic_scholar(
-        self, query: str, fields_of_study: str = None,
-        year: str = None, open_access_only: bool = False,
-        max_results: int = 10
-    ) -> ResearchResult: ...
-
-    async def search_arxiv(
-        self, query: str, max_results: int = 10,
-        sort_by: str = "relevance", category: str = None
-    ) -> ResearchResult: ...
-
-    async def get_paper_details(
-        self, doi_or_id: str, source: str = None
-    ) -> ResearchResult: ...
-
-# parrot_tools/research/market.py
-class MarketResearchToolkit(BaseResearchToolkit, AbstractToolkit):
-    async def search_statista(
-        self, query: str, industry: str = None,
-        region: str = None, max_results: int = 10
-    ) -> ResearchResult: ...
-
-    async def search_gallup(
-        self, query: str, topic: str = None,
-        region: str = None, max_results: int = 10
-    ) -> ResearchResult: ...  # stub — returns not_available status
-
-    async def search_gartner(
-        self, query: str, research_type: str = None,
-        max_results: int = 10
-    ) -> ResearchResult: ...  # stub — returns not_available status
+        max_results: int = 10) -> ResearchResult: ...
+    async def search_pubmed(self, query: str, mesh_terms: str = None,
+        date_range: str = None, max_results: int = 10) -> ResearchResult: ...
+    async def search_semantic_scholar(self, query: str,
+        fields_of_study: str = None, year: str = None,
+        open_access_only: bool = False, max_results: int = 10) -> ResearchResult: ...
+    async def search_arxiv(self, query: str, max_results: int = 10,
+        sort_by: str = "relevance", category: str = None) -> ResearchResult: ...
+    async def get_paper_details(self, doi_or_id: str,
+        source: str = None) -> ResearchResult: ...
+        # Returns ResearchResult with result_type="papers" and exactly one
+        # entry in .papers (or status="no_data").
 
 # parrot_tools/research/router.py
+class ResearchRouterArgs(AbstractToolArgsSchema):
+    """REQUIRED — AbstractTool discards all kwargs without an explicit schema."""
+    query: str = Field(description="Natural-language research question")
+    categories: Optional[List[str]] = Field(
+        default=None, description="Restrict to: open_data, academic")
+    max_results: int = Field(default=10, ge=1, le=50)
+
 class ResearchRouter(AbstractTool):
-    async def _execute(
-        self, query: str, categories: List[str] = None,
-        max_results: int = 10
-    ) -> ToolResult: ...
+    name: str = "research"
+    description: str = (
+        "Answer a research question using authoritative sources: World Bank, "
+        "EU Open Data, OECD (economic/statistical indicators) and Crossref, "
+        "PubMed, Semantic Scholar, arXiv (academic literature). Returns "
+        "structured results with citations."
+    )
+    args_schema: Type[BaseModel] = ResearchRouterArgs
+
+    def __init__(
+        self,
+        open_data: Optional["OpenDataToolkit"] = None,
+        academic: Optional["AcademicResearchToolkit"] = None,
+        llm: Optional[Union["AbstractClient", str]] = None,
+        **kwargs,
+    ):
+        """`llm` is the classifier client — a string spec is resolved via
+        LLMFactory.create(). Tools have NO back-reference to the calling
+        agent's LLM (framework invariant), so it must be injected here.
+        When llm is None the router uses keyword heuristics only."""
+
+    async def _execute(self, query: str, categories: List[str] = None,
+        max_results: int = 10, **kwargs) -> ToolResult: ...
 ```
 
 ---
 
 ## 3. Module Breakdown
 
-### Module 1: Shared Models & Base Toolkit
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/research/__init__.py`,
-  `packages/ai-parrot-tools/src/parrot_tools/research/models.py`,
-  `packages/ai-parrot-tools/src/parrot_tools/research/base.py`
-- **Responsibility**: `Citation`, `IndicatorValue`, `PaperResult`,
-  `DatasetResult`, `ResearchResult` Pydantic models.
-  `BaseResearchToolkit` mixin with aiohttp session lifecycle
-  (`_open`/`_close`, `auto_open=True`), `ToolCache` integration,
-  `_make_api_request()` helper for GET requests with error handling and
-  backoff, `_run_sync_in_executor()` helper for sync library wrappers,
-  `_build_citation()` factory.
+> **Each module ships its own unit tests** in `tests/research/test_<module>.py`
+> plus its own fixtures under `tests/research/fixtures/<source>.*`. Only
+> Module 1 creates the shared `conftest.py`; Module 5 owns every other
+> shared-file edit.
+
+### Module 1: Models, Base Toolkit & Packaging
+- **Path**:
+  `packages/ai-parrot-tools/src/parrot_tools/research/__init__.py` (stub),
+  `.../research/models.py`, `.../research/base.py`,
+  `packages/ai-parrot-tools/pyproject.toml`,
+  `packages/ai-parrot-tools/tests/research/conftest.py`
+- **Responsibility**: The five Pydantic models. `BaseResearchToolkit` as a
+  **cooperative mixin** (`__init__` forwards via `super().__init__(**kwargs)`;
+  `_close()` calls `await super()._close()`). aiohttp session lifecycle,
+  `ToolCache` wiring via `.get()`/`.set()`, `_make_api_request()` returning
+  `(payload, error)` and never raising, `_run_sync_in_executor()`,
+  `_build_citation()`, `_failure()`. **Also adds the `research` extra to the
+  satellite `pyproject.toml`** so Modules 2–4 can install and test their own
+  dependencies. Shared test helpers (`mock_aiohttp_session`, fixture loader).
 - **Depends on**: `parrot.tools.toolkit.AbstractToolkit`,
   `parrot_tools.cache.ToolCache`, `aiohttp`, `backoff`
+- **Blocks**: Modules 2, 3, 4
 
 ### Module 2: OpenDataToolkit
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/research/open_data.py`
 - **Responsibility**: `OpenDataToolkit` with 5 async methods:
-  - `search_world_bank` — uses `wbgapi` via `run_in_executor` for indicator
-    search/listing; no server-side keyword search, so client-side filtering
-    against indicator metadata. Returns `IndicatorValue` list.
-  - `get_world_bank_indicator` — direct indicator+country lookup via `wbgapi`.
-    Returns `IndicatorValue` list with time series.
-  - `search_eu_open_data` — direct aiohttp GET to
-    `data.europa.eu/api/hub/search/search` with `q=` full-text Elasticsearch
-    query. Handles multilingual metadata (fallback to first available
-    language if `en` missing). Returns `DatasetResult` list.
-  - `search_oecd_data` — uses `sdmx1` via `run_in_executor` to browse OECD
-    dataflow catalog. SDMX 3.0 endpoint preferred. Returns `DatasetResult`
-    list with dataflow metadata.
-  - `get_oecd_indicator` — uses `sdmx1` via `run_in_executor` to fetch
-    actual data series from a known dataflow. Returns `IndicatorValue` list.
+  - `search_world_bank` — `wbgapi` via `run_in_executor`; no server-side
+    keyword search, so indicator-metadata search / client-side filtering.
+  - `get_world_bank_indicator` — direct indicator+country time series.
+  - `search_eu_open_data` — aiohttp GET to
+    `data.europa.eu/api/hub/search/search` with `q=`. Multilingual metadata:
+    fall back to the first available language when `en` is absent.
+  - `search_oecd_data` — `sdmx1` (`OECD3` source) via `run_in_executor`;
+    dataflow catalog browse.
+  - `get_oecd_indicator` — `sdmx1` data series fetch; fetch the DSD first
+    (dimension order is positional).
 - **Depends on**: Module 1, `wbgapi`, `sdmx1`, `aiohttp`
 
 ### Module 3: AcademicResearchToolkit
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/research/academic.py`
 - **Responsibility**: `AcademicResearchToolkit` with 5 async methods:
-  - `search_crossref` — uses `habanero` via `run_in_executor`. Polite pool
-    via `mailto` parameter. Uses `query.bibliographic` for better relevance
-    (per Crossref best practice). Cursor pagination for >10k results if
-    needed. Returns `PaperResult` list. Also covers Oxford Academic content
-    (DOI prefix `10.1093`).
-  - `search_pubmed` — uses `Bio.Entrez` from Biopython via
-    `run_in_executor`. Two-step: `esearch` (term→PMIDs) then `efetch`
-    (PMIDs→records). Sets `Entrez.email` and optional `Entrez.api_key` from
-    env vars. Returns `PaperResult` list.
-  - `search_semantic_scholar` — direct aiohttp GET to
-    `api.semanticscholar.org/graph/v1/paper/search` with explicit `fields=`
-    param (default response only returns paperId+title). Handles hyphenated
-    query terms (replace with spaces). Free tier with backoff on 429.
-    Returns `PaperResult` list.
-  - `search_arxiv` — migrated from existing `ArxivTool`. Uses `arxiv`
-    library via `run_in_executor`. Returns `PaperResult` list.
-  - `get_paper_details` — resolves a DOI or paper ID across Crossref,
-    Semantic Scholar, or PubMed (auto-detect source from ID format, or
-    explicit `source` param). Returns single `PaperResult`.
-- **Depends on**: Module 1, `habanero`, `biopython` (Bio.Entrez), `arxiv`,
-  `aiohttp`
+  - `search_crossref` — `habanero` via `run_in_executor`; polite pool via
+    `mailto`; prefer `query.bibliographic` over generic `query`.
+  - `search_pubmed` — `Bio.Entrez` via `run_in_executor`; two-step
+    `esearch`→`efetch`; set `Entrez.email` (required by NCBI) and optional
+    `Entrez.api_key`; throttle to ≤3 req/s unkeyed, ≤10 req/s keyed.
+  - `search_semantic_scholar` — aiohttp GET with explicit `fields=`;
+    replace hyphens with spaces in query terms; backoff on 429.
+  - `search_arxiv` — `arxiv` library via `run_in_executor`.
+  - `get_paper_details` — auto-detects DOI / PMID / arXiv-ID format (or uses
+    explicit `source`) and returns a single-entry `papers` list.
+- **Depends on**: Module 1, `habanero`, `biopython`, `arxiv`, `aiohttp`
 
-### Module 4: MarketResearchToolkit
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/research/market.py`
-- **Responsibility**: `MarketResearchToolkit` with 3 async methods:
-  - `search_statista` — aiohttp GET to Statista's public statistics pages,
-    BeautifulSoup parsing to extract statistic title, key value, source
-    citation, chart description. Returns `DatasetResult` list. Best-effort:
-    returns `scrape_status="no_data"` on extraction failure, never raises.
-  - `search_gallup` — **stub**: returns `ResearchResult` with
-    `result_type="not_available"` and a message directing to Gallup partner
-    datasets accessible through `OpenDataToolkit` (World Bank Global Findex,
-    FAO Voices of the Hungry, etc.).
-  - `search_gartner` — **stub**: returns `ResearchResult` with
-    `result_type="not_available"` and a message about Gartner enterprise
-    subscription requirements.
-- **Depends on**: Module 1, `aiohttp`, `beautifulsoup4`
-
-### Module 5: ResearchRouter
+### Module 4: ResearchRouter
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/research/router.py`
-- **Responsibility**: `ResearchRouter(AbstractTool)` with LLM-based intent
-  classification. Receives a natural-language query, uses the agent's own
-  LLM (via a lightweight prompt template) to classify into categories
-  (`open_data`, `academic`, `market`), dispatches to the appropriate
-  toolkit method(s), merges results into a ranked `ToolResult`. Falls back
-  to keyword heuristics if LLM classification fails or is unavailable.
-- **Depends on**: Modules 2-4, `parrot.tools.abstract.AbstractTool`
+- **Responsibility**: `ResearchRouterArgs` schema (**mandatory** — without it
+  the framework discards all parameters) and `ResearchRouter(AbstractTool)`.
+  Constructor-injected toolkits and classifier `llm` (string spec resolved
+  via `LLMFactory.create()`). Classifies the query into `open_data` /
+  `academic`, dispatches concurrently to the selected toolkit methods,
+  merges results. Falls back to keyword heuristics when `llm is None` or
+  classification fails. Returns a **successful** `ToolResult` whose payload
+  records any per-category failures.
+- **Depends on**: Modules 1–3, `parrot.clients.factory.LLMFactory`
 
-### Module 6: Tests & Fixtures
-- **Path**: `packages/ai-parrot-tools/tests/research/`
-- **Responsibility**: Fixture-based unit tests for all modules. Recorded
-  API responses stored as JSON/XML fixture files. Mocked `aiohttp` sessions,
-  mocked sync library calls. Live smoke tests (`@pytest.mark.live`, skipped
-  in CI) for manual validation. Dependencies declared in satellite
-  `pyproject.toml` extras.
-- **Depends on**: Modules 1-5
+### Module 5: Integration & Discovery (shared-file owner)
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/research/__init__.py`
+  (final exports), `packages/ai-parrot-tools/src/parrot_tools/__init__.py`
+  (**regenerated**)
+- **Responsibility**: Export `OpenDataToolkit`, `AcademicResearchToolkit`,
+  `ResearchRouter`, and the models from `research/__init__.py`. Run
+  `python scripts/generate_tool_registry.py` and commit the regenerated
+  `TOOL_REGISTRY` so lazy discovery works and
+  `generate_tool_registry.py --check` passes in CI. Cross-toolkit
+  integration tests.
+- **Depends on**: Modules 2, 3, 4
+- **Note**: This module exists specifically so no two parallel worktrees
+  edit the same file. Do not perform these edits inside Modules 2–4.
+
+### Module 6: Documentation
+- **Path**: `docs/research_tools.md`
+- **Responsibility**: Usage guide — toolkit construction, router LLM
+  injection, the `research` extra, per-source rate limits and caveats,
+  worked examples.
+- **Depends on**: Modules 1–5
 
 ---
 
@@ -446,288 +453,270 @@ class ResearchRouter(AbstractTool):
 
 | Test | Module | Description |
 |---|---|---|
-| `test_citation_model_required_fields` | 1 | Citation requires source_name, source_url, access_date, formatted_citation |
-| `test_research_result_indicator_mode` | 1 | ResearchResult with indicators populated, papers/datasets None |
-| `test_research_result_papers_mode` | 1 | ResearchResult with papers populated |
-| `test_base_toolkit_session_lifecycle` | 1 | _open creates aiohttp session, _close closes it, auto_open triggers on first call |
-| `test_make_api_request_success` | 1 | _make_api_request returns parsed JSON on 200 |
-| `test_make_api_request_rate_limit_retry` | 1 | 429 response triggers backoff retry |
-| `test_make_api_request_timeout` | 1 | Timeout returns error, not exception |
-| `test_cache_hit_skips_api` | 1 | Cached response returned without API call |
-| `test_cache_miss_stores_result` | 1 | API response cached after successful call |
-| `test_search_world_bank_fixture` | 2 | Mocked wbgapi returns fixture data → IndicatorValue list |
-| `test_get_world_bank_indicator_fixture` | 2 | Direct indicator lookup → time series |
-| `test_search_eu_open_data_fixture` | 2 | Mocked aiohttp GET → DatasetResult list |
-| `test_eu_open_data_multilingual_fallback` | 2 | Missing `en` title → falls back to first available language |
-| `test_search_oecd_fixture` | 2 | Mocked sdmx1 → DatasetResult list |
-| `test_get_oecd_indicator_fixture` | 2 | Mocked sdmx1 data fetch → IndicatorValue list |
+| `test_citation_required_fields` | 1 | Citation requires source_name, source_url, access_date, formatted_citation |
+| `test_research_result_defaults` | 1 | `status` defaults to "success"; `citation` may be None |
+| `test_failure_factory` | 1 | `_failure()` yields status in {no_data,error} + error_message, citation None |
+| `test_base_toolkit_mro_and_init` | 1 | `OpenDataToolkit()` constructs; `_opened`, `_open_lock`, `logger`, `_tool_cache` all initialised |
+| `test_base_toolkit_session_lifecycle` | 1 | `auto_open` triggers `_open()` on first execute; `_close()` resets `_opened` to False |
+| `test_no_private_helpers_exposed` | 1 | `get_tools()` exposes no name starting with `_` and no base-mixin helper |
+| `test_make_api_request_success` | 1 | Returns `(payload, None)` on 200 |
+| `test_make_api_request_error_returns_tuple` | 1 | 500/timeout returns `(None, "…")` — does NOT raise |
+| `test_make_api_request_rate_limit_retry` | 1 | 429 triggers backoff retry |
+| `test_cache_hit_skips_api` / `test_cache_miss_stores_result` | 1 | ToolCache `.get()`/`.set()` round-trip |
+| `test_search_world_bank_fixture` | 2 | Mocked wbgapi → IndicatorValue list |
+| `test_get_world_bank_indicator_fixture` | 2 | Direct lookup → time series |
+| `test_search_eu_open_data_fixture` | 2 | Mocked aiohttp → DatasetResult list |
+| `test_eu_open_data_multilingual_fallback` | 2 | Missing `en` title → first available language |
+| `test_search_oecd_fixture` / `test_get_oecd_indicator_fixture` | 2 | Mocked sdmx1 → datasets / indicators |
 | `test_search_crossref_fixture` | 3 | Mocked habanero → PaperResult list with DOIs |
-| `test_search_pubmed_fixture` | 3 | Mocked Bio.Entrez esearch+efetch → PaperResult list |
-| `test_search_semantic_scholar_fixture` | 3 | Mocked aiohttp GET → PaperResult list |
-| `test_semantic_scholar_hyphen_fix` | 3 | Hyphenated query terms replaced with spaces |
-| `test_search_arxiv_fixture` | 3 | Mocked arxiv library → PaperResult list |
-| `test_get_paper_details_doi` | 3 | DOI format auto-detected → Crossref lookup |
-| `test_get_paper_details_pmid` | 3 | PMID format auto-detected → PubMed lookup |
-| `test_search_statista_fixture` | 4 | Mocked aiohttp + BeautifulSoup → DatasetResult |
-| `test_search_gallup_stub` | 4 | Returns not_available with partner dataset message |
-| `test_search_gartner_stub` | 4 | Returns not_available with subscription message |
-| `test_router_dispatches_to_academic` | 5 | Academic query dispatched to AcademicResearchToolkit |
-| `test_router_dispatches_to_open_data` | 5 | Economic query dispatched to OpenDataToolkit |
-| `test_router_explicit_categories` | 5 | Explicit categories param overrides LLM classification |
-| `test_router_merges_results` | 5 | Multi-category results merged and ranked |
-| `test_all_citations_complete` | 1-4 | Every ResearchResult from every method has a complete Citation |
+| `test_crossref_uses_mailto` | 3 | Polite-pool `mailto` present in the request |
+| `test_search_pubmed_fixture` | 3 | Mocked Entrez esearch+efetch → PaperResult list |
+| `test_pubmed_sets_email` | 3 | `Entrez.email` set before any call |
+| `test_search_semantic_scholar_fixture` | 3 | Mocked aiohttp → PaperResult list |
+| `test_semantic_scholar_requests_fields` | 3 | Explicit `fields=` present in query string |
+| `test_semantic_scholar_hyphen_fix` | 3 | Hyphens replaced with spaces |
+| `test_search_arxiv_fixture` | 3 | Mocked arxiv → PaperResult list |
+| `test_get_paper_details_doi` / `_pmid` / `_arxiv` | 3 | ID format auto-detected → correct source |
+| `test_router_args_schema_receives_params` | 4 | **Regression**: `execute(query=…, max_results=3)` reaches `_execute` with values intact |
+| `test_router_dispatches_open_data` / `_academic` | 4 | Classifier result routes to the right toolkit |
+| `test_router_explicit_categories` | 4 | Explicit `categories` bypasses the LLM |
+| `test_router_heuristic_fallback_without_llm` | 4 | `llm=None` → keyword heuristics, no crash |
+| `test_router_partial_failure_is_success` | 4 | One toolkit raising → `ToolResult.success is True`, failure in payload |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
-| `test_toolkit_tools_exposed` | Each toolkit's `get_tools()` includes all expected methods |
-| `test_router_tool_schema` | ResearchRouter has valid args_schema with query, categories, max_results |
-| `test_toolkit_cache_integration` | ToolCache correctly caches and returns results across calls |
+| `test_toolkit_tools_exposed` | Each toolkit's `get_tools()` lists exactly its 5 expected tool names |
+| `test_no_tool_raises_into_agent_loop` | **Contract test**: every toolkit method, forced to fail (network mocked to error), returns a `ResearchResult` and never raises through `ToolManager.execute_tool()` |
+| `test_successful_results_carry_citation` | Every `status="success"` result has a fully populated `Citation` |
+| `test_tool_registry_not_stale` | `python scripts/generate_tool_registry.py --check` exits 0 |
+| `test_research_exports` | `from parrot_tools.research import OpenDataToolkit, AcademicResearchToolkit, ResearchRouter` resolves |
 
 ### Test Data / Fixtures
 
 ```python
-# tests/research/conftest.py
+# tests/research/conftest.py  (created by Module 1)
 @pytest.fixture
-def world_bank_indicator_response() -> dict:
-    """Recorded JSON from api.worldbank.org/v2/ for GDP indicator."""
-    ...
-
-@pytest.fixture
-def eu_open_data_search_response() -> dict:
-    """Recorded JSON from data.europa.eu/api/hub/search/ for energy query."""
-    ...
-
-@pytest.fixture
-def crossref_works_response() -> dict:
-    """Recorded JSON from api.crossref.org/works for transformer papers."""
-    ...
-
-@pytest.fixture
-def pubmed_esearch_response() -> str:
-    """Recorded XML from eutils.ncbi.nlm.nih.gov esearch."""
-    ...
-
-@pytest.fixture
-def pubmed_efetch_response() -> str:
-    """Recorded XML from eutils.ncbi.nlm.nih.gov efetch."""
-    ...
-
-@pytest.fixture
-def semantic_scholar_search_response() -> dict:
-    """Recorded JSON from api.semanticscholar.org/graph/v1/paper/search."""
-    ...
-
-@pytest.fixture
-def statista_page_html() -> str:
-    """Recorded HTML from a Statista public statistics page."""
-    ...
+def load_fixture():
+    """Load a recorded API response from tests/research/fixtures/."""
 
 @pytest.fixture
 def mock_aiohttp_session(monkeypatch):
-    """Mock aiohttp.ClientSession returning fixture responses."""
-    ...
+    """Patch BaseResearchToolkit._session with a stub returning fixtures."""
 
-@pytest.fixture
-def mock_wbgapi(monkeypatch):
-    """Mock wbgapi library calls."""
-    ...
+# Per-module fixture files (no cross-module file conflicts):
+#   fixtures/world_bank_indicator.json     (Module 2)
+#   fixtures/eu_open_data_search.json      (Module 2)
+#   fixtures/oecd_dataflows.xml            (Module 2)
+#   fixtures/crossref_works.json           (Module 3)
+#   fixtures/pubmed_esearch.xml            (Module 3)
+#   fixtures/pubmed_efetch.xml             (Module 3)
+#   fixtures/semantic_scholar_search.json  (Module 3)
+#   fixtures/arxiv_feed.xml                (Module 3)
 ```
+
+The `live` marker is already registered in the root `pytest.ini` — opt-in
+smoke tests may use `@pytest.mark.live` without further configuration.
 
 ---
 
 ## 5. Acceptance Criteria
 
-- [ ] `OpenDataToolkit` exposes 5 tools via `get_tools()`:
-  `search_world_bank`, `get_world_bank_indicator`, `search_eu_open_data`,
-  `search_oecd_data`, `get_oecd_indicator`.
-- [ ] `AcademicResearchToolkit` exposes 5 tools via `get_tools()`:
-  `search_crossref`, `search_pubmed`, `search_semantic_scholar`,
-  `search_arxiv`, `get_paper_details`.
-- [ ] `MarketResearchToolkit` exposes 3 tools via `get_tools()`:
-  `search_statista`, `search_gallup` (stub), `search_gartner` (stub).
-- [ ] `ResearchRouter` is a standalone `AbstractTool` with `_execute(query,
-  categories?, max_results?)` that dispatches to the right toolkit(s).
-- [ ] **Every** `ResearchResult` returned by any tool method includes a
-  complete `Citation` with non-empty `source_name`, `source_url`,
-  `access_date`, and `formatted_citation`.
-- [ ] All three toolkits use `auto_open=True` and manage an
-  `aiohttp.ClientSession` via `_open`/`_close` (FEAT-391 lifecycle).
-- [ ] All API calls are cached via `ToolCache` with configurable TTL
-  (default: 1 hour for indicators, 24 hours for papers, 5 minutes for
-  market research).
-- [ ] No tool method raises into the agent loop — all errors are returned
-  as `ToolResult(status="error", error=...)` or `ResearchResult` with
-  appropriate error metadata.
-- [ ] Sync library calls (`wbgapi`, `sdmx1`, `habanero`, `Bio.Entrez`,
-  `arxiv`) are wrapped in `asyncio.get_running_loop().run_in_executor(None, ...)`
-  — no blocking the event loop.
-- [ ] `pytest packages/ai-parrot-tools/tests/research/ -v` passes with
-  fixtures only (no network); live tests opt-in via `-m live`.
-- [ ] Satellite `pyproject.toml` declares new dependencies in a `research`
-  optional extra.
-- [ ] Missing optional libraries produce clear `ImportError` messages
-  with install instructions (like ArxivTool pattern), not cryptic failures.
-- [ ] Stub methods (`search_gallup`, `search_gartner`) return a structured
-  `ResearchResult` with `result_type="not_available"` and a helpful message.
+- [ ] `OpenDataToolkit.get_tools()` exposes exactly: `search_world_bank`,
+      `get_world_bank_indicator`, `search_eu_open_data`, `search_oecd_data`,
+      `get_oecd_indicator`.
+- [ ] `AcademicResearchToolkit.get_tools()` exposes exactly: `search_crossref`,
+      `search_pubmed`, `search_semantic_scholar`, `search_arxiv`,
+      `get_paper_details`.
+- [ ] Neither toolkit exposes any `BaseResearchToolkit` helper as a tool.
+- [ ] `ResearchRouter` declares `name`, `description`, **and an explicit
+      `args_schema`**; a call with `query`/`categories`/`max_results`
+      delivers all three values into `_execute` (regression test required —
+      without an explicit schema the framework silently drops them).
+- [ ] `ResearchRouter` accepts an injected `llm` (client instance or string
+      spec resolved via `LLMFactory.create()`) and degrades to keyword
+      heuristics when it is `None`. It does **not** attempt to reach the
+      calling agent's LLM.
+- [ ] **No research tool raises into the agent loop.** With every network
+      dependency mocked to fail, each toolkit method returns a
+      `ResearchResult` with `status` in `{no_data, error}`, and
+      `ToolManager.execute_tool()` completes without raising.
+- [ ] Any `ToolResult` constructed with `status="error"` also passes
+      `success=False` explicitly.
+- [ ] Every `ResearchResult` with `status="success"` carries a `Citation`
+      with non-empty `source_name`, `source_url`, `access_date`, and
+      `formatted_citation`.
+- [ ] Both toolkits set `auto_open=True` and manage an
+      `aiohttp.ClientSession` via `_open`/`_close`; `_close()` calls
+      `await super()._close()` so `_opened` resets.
+- [ ] `BaseResearchToolkit.__init__` forwards through
+      `super().__init__(**kwargs)` (verified by constructing each toolkit
+      and asserting `_opened`, `_open_lock`, `logger`, `_tool_cache` exist).
+- [ ] API responses are cached via `ToolCache.get()` / `.set()` (not
+      `_build_key`) with configurable TTL — default 1 h indicators,
+      24 h papers.
+- [ ] Sync libraries (`wbgapi`, `sdmx1`, `habanero`, `Bio.Entrez`, `arxiv`)
+      are called only through `run_in_executor`; no blocking call and no use
+      of `HTTPService` in `parrot_tools/research/`.
+- [ ] `packages/ai-parrot-tools/pyproject.toml` declares a `research` extra
+      (added in **Module 1**, not at the end).
+- [ ] **`python scripts/generate_tool_registry.py --check` exits 0** — the
+      regenerated `TOOL_REGISTRY` is committed, so CI
+      (`.github/workflows/ci.yml:30`) passes.
+- [ ] `from parrot_tools.research import OpenDataToolkit,
+      AcademicResearchToolkit, ResearchRouter` resolves.
+- [ ] Missing optional libraries produce a clear actionable message naming
+      the `ai-parrot-tools[research]` extra.
+- [ ] `pytest packages/ai-parrot-tools/tests/research/ -v` passes offline
+      (fixtures only); live tests opt-in via `-m live`.
+- [ ] `docs/research_tools.md` exists and documents router LLM injection.
+- [ ] No breaking change: `ArxivTool` and `FredAPITool` remain importable
+      and behaviourally unchanged.
 
 ---
 
 ## 6. Codebase Contract
 
-> **CRITICAL — Anti-Hallucination Anchor.** All entries carried forward from
-> brainstorm and re-verified 2026-08-17 on `dev` @ `e2694ea`. Key imports
-> verified via live `python -c` execution in the project venv.
+> **CRITICAL — Anti-Hallucination Anchor.** Re-verified 2026-08-17 on `dev`
+> @ `1c48c4c`. Entries marked **[probe]** were confirmed by executing code in
+> the project venv, not by reading alone.
 
 ### Verified Imports
 
 ```python
 # Core toolkit/tool base classes
-from parrot.tools.toolkit import AbstractToolkit    # parrot/tools/toolkit.py
-from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
-    # parrot/tools/abstract.py — ToolResult has: status, result, error, metadata
+from parrot.tools.toolkit import AbstractToolkit        # [probe] instantiated OK
+from parrot.tools.abstract import (
+    AbstractTool, AbstractToolArgsSchema, ToolResult,
+)                                                        # [probe]
 
-# Satellite re-exports
-from parrot_tools.toolkit import AbstractToolkit    # parrot_tools/toolkit.py:2 (re-export)
-from parrot_tools.cache import ToolCache, DEFAULT_TOOL_CACHE_TTL
-    # parrot_tools/cache.py — ToolCache(prefix, ttl, redis_url), .get(), .set()
+# Satellite
+from parrot_tools.cache import ToolCache, DEFAULT_TOOL_CACHE_TTL  # cache.py
 
-# HTTP / networking
-import aiohttp                                      # core dep
-from parrot.interfaces.http import HTTPService      # parrot/interfaces/http.py
-    # HTTPService(base_url=...) → .request(url, method) returns (response, error)
-    # HTTPService(accept=..., headers=...) → .session(url, method) returns (result, error)
+# LLM injection for the router
+from parrot.clients.base import AbstractClient           # db.py:29
+from parrot.clients.factory import LLMFactory            # db.py:30 (LLMFactory.create)
 
-# Retry / backoff
-import backoff                                      # pyproject.toml:45, backoff==2.2.1
+# HTTP / retry / parsing
+import aiohttp                                           # core dep
+import backoff                                           # backoff==2.2.1
 
-# Parsing
-from bs4 import BeautifulSoup                       # satellite dep, beautifulsoup4>=4.12
+# External data libraries — ALL must be added to the `research` extra
+import wbgapi                    # NOT installed — PyPI latest 1.0.14
+import sdmx                      # package name is `sdmx1` — PyPI latest 2.27.0
+from habanero import Crossref    # NOT installed — PyPI latest 2.9.2
+from Bio import Entrez           # package `biopython` — PyPI latest 1.88
+import arxiv                     # extra already exists (see below) — latest 4.0.1
 
-# External data libraries (to be added as deps)
-import wbgapi                   # World Bank — NOT currently installed
-import sdmx                     # sdmx1 package — NOT currently installed
-from habanero import Crossref   # Crossref — NOT currently installed
-from Bio import Entrez          # Biopython — NOT currently installed
-import arxiv                    # Already used by ArxivTool (arxiv_tool.py:7)
-
-# DuckDuckGo (pattern reference — NOT used directly)
-from ddgs import DDGS                               # ddgo.py:11
-from ddgs.exceptions import RatelimitException      # ddgo.py:14
-
-# Config / logging
-from navconfig import config                        # env var access
-from navconfig.logging import logging               # logger
-
-# Pydantic
+# Config / logging / pydantic
+from navconfig import config
+from navconfig.logging import logging
 from pydantic import BaseModel, Field
 ```
 
 ### Existing Class Signatures
 
 ```python
+# packages/ai-parrot/src/parrot/tools/abstract.py
+class ToolResult(BaseModel):                     # line 199
+    success: bool = True                         # line 201  ← INDEPENDENT of `status`
+    status: str = "success"                      # line 202
+    result: Any                                  # line 203
+    error: Optional[str] = None                  # line 204
+    metadata: Dict[str, Any] = {}                # line 205
+    timestamp: str                               # line 206
+    files / images / voice_text / display_data   # lines 209-218
+
+class AbstractTool:
+    args_schema: Type[BaseModel] = AbstractToolArgsSchema   # line ~249
+    auto_open: bool = False                                  # line 274
+    # line 265 (comment): "tools have no bot back-reference by design"
+    async def execute(self, *args, **kwargs) -> ToolResult:  # line 778
+    # line 629 — validation guard:
+    #   if not self.args_schema or self.args_schema == AbstractToolArgsSchema:
+    #       return AbstractToolArgsSchema()      ← ALL kwargs DISCARDED
+    # line ~934 — non-ToolResult returns are wrapped: ToolResult(result=raw)
+
+# packages/ai-parrot/src/parrot/tools/manager.py
+class ToolManager:
+    def register_toolkit(...)                    # line 920
+    async def execute_tool(...)                  # line ~1566
+        # line 1594: if result.status == "error":
+        # line 1614:     raise ValueError(result.error)   ← RAISES into agent loop
+
 # packages/ai-parrot/src/parrot/tools/toolkit.py
 class AbstractToolkit(ABC):
     auto_open: bool = False
     exclude_tools: tuple[str, ...] = ()
-    tool_prefix: Optional[str] = None
-    credential_provider: Optional[str] = None
-
-    def __init__(self, **kwargs): ...
-    async def _open(self) -> None: ...               # acquire resources
-    async def _close(self) -> None: ...              # release resources
-    async def _ensure_open(self) -> None: ...        # idempotent gate (Lock-guarded)
-    async def _pre_execute(self, tool_name, /, **kwargs) -> None: ...
-    async def _post_execute(self, tool_name, result, /, **kwargs) -> Any: ...
-    def get_tools(self, ...) -> List[AbstractTool]: ...
-    def _generate_tools(self) -> None: ...           # auto-generates tools from async methods
-
-# packages/ai-parrot/src/parrot/tools/abstract.py
-class AbstractTool:
-    name: str
-    description: str
-    args_schema: Type[BaseModel]
-    return_direct: bool = False
-    async def _execute(self, **kwargs) -> Any: ...
-
-class ToolResult:
-    # Fields: status (str), result (Any), error (Optional[str]), metadata (Optional[Dict])
+    def __init__(self, **kwargs)                 # sets _opened, _open_lock,
+                                                 # logger, _tool_cache, _tools_generated
+    async def _open(self) / _close(self) / _ensure_open(self)
+    def _generate_tools(self)                    # skips names starting with "_"
+    def get_tools(...) -> List[AbstractTool]
 
 # packages/ai-parrot-tools/src/parrot_tools/cache.py
 class ToolCache:
-    def __init__(self, prefix="tool_cache", ttl=300, redis_url=None): ...
-    async def get(self, tool_name: str, method: str, **params) -> Optional[Any]: ...
-    async def set(self, tool_name: str, method: str, value: Any,
-                  ttl: int = None, **params) -> None: ...
-    async def close(self) -> None: ...
+    def __init__(self, prefix="tool_cache", ttl=300, redis_url=None)
+    async def get(self, tool_name, method, **params) -> Optional[Any]
+    async def set(self, tool_name, method, value, ttl=None, **params) -> None
+    async def close(self) -> None
+    # _build_key() is PRIVATE — call get()/set(), never _build_key() directly.
 
-# packages/ai-parrot-tools/src/parrot_tools/arxiv_tool.py
-class ArxivTool(AbstractTool):
-    name: str = "arxiv_search"
-    description: str = "Search for academic papers on arXiv.org..."
-    args_schema: Type[BaseModel] = ArxivSearchArgsSchema
-    def _format_paper(self, paper: arxiv.Result) -> Dict[str, Any]: ...
-    async def _execute(self, query, max_results=5, sort_by="relevance",
-                       sort_order="descending", **kwargs) -> Any: ...
-
-# packages/ai-parrot-tools/src/parrot_tools/ddgo.py (pattern reference)
-class DuckDuckGoToolkit(AbstractToolkit):
-    # Pattern: backoff.on_exception(backoff.expo, (RatelimitException,...), ...)
-    # Pattern: loop.run_in_executor(None, _search)
-    async def web_search(self, query, ...) -> ToolResult: ...
-
-# packages/ai-parrot-tools/src/parrot_tools/fred_api.py (pattern reference)
-class FredAPITool(AbstractTool):
-    BASE_URL: str = "https://api.stlouisfed.org/fred"
-    # Pattern: HTTPService + ToolCache + ToolResult
+# packages/ai-parrot-tools/src/parrot_tools/db.py — LLM-injection pattern
+    llm: Optional[Union[AbstractClient, str]] = None      # line 177
+    self.llm = LLMFactory.create(llm) if isinstance(llm, str) else llm  # 196-199
 ```
 
-### Integration Points
+### Verified Framework Behaviour **[probe]**
 
-| New Component | Connects To | Via | Verified At |
-|---|---|---|---|
-| `BaseResearchToolkit._open()` | `aiohttp.ClientSession()` | constructor | standard aiohttp API |
-| `BaseResearchToolkit._close()` | `aiohttp.ClientSession.close()` | method call | standard aiohttp API |
-| `BaseResearchToolkit._close()` | `AbstractToolkit._close()` | `await super()._close()` | toolkit.py `_close` resets `_opened` |
-| `BaseResearchToolkit._cache` | `ToolCache(prefix, ttl)` | constructor | cache.py |
-| `OpenDataToolkit.search_world_bank` | `wbgapi.economy.coder()` / `wbgapi.data.DataFrame()` | `run_in_executor` | to be installed |
-| `OpenDataToolkit.search_eu_open_data` | `data.europa.eu/api/hub/search/search` | `_make_api_request()` GET | verified URL pattern |
-| `OpenDataToolkit.search_oecd_data` | `sdmx.Client("OECD3")` | `run_in_executor` | to be installed |
-| `AcademicResearchToolkit.search_crossref` | `habanero.Crossref().works()` | `run_in_executor` | to be installed |
-| `AcademicResearchToolkit.search_pubmed` | `Bio.Entrez.esearch()` / `Bio.Entrez.efetch()` | `run_in_executor` | to be installed |
-| `AcademicResearchToolkit.search_semantic_scholar` | `api.semanticscholar.org/graph/v1/paper/search` | `_make_api_request()` GET | verified URL |
-| `AcademicResearchToolkit.search_arxiv` | `arxiv.Client().results()` | `run_in_executor` | arxiv_tool.py |
-| `MarketResearchToolkit.search_statista` | `statista.com/statistics/` pages | aiohttp GET + BeautifulSoup | public pages |
-| `ResearchRouter._execute` | toolkit instances | method dispatch | internal |
-| Tool registration | `ToolManager.register_toolkit()` | toolkit.get_tools() | toolkit.py |
+Executed against the real classes; these results are load-bearing for §2:
+
+```text
+MRO: OpenDataToolkit -> BaseResearchToolkit -> AbstractToolkit -> ABC -> object
+  __init__ OK (mixin without its own __init__)   auto_open = True
+  _opened present: True     logger present: True
+  get_tools() -> ['search_world_bank']   leaked private tools: none
+  execute() -> _open() fired -> ToolResult(result=<ResearchResult>)  _opened=True
+  _close() -> _opened=False
+A method returning ToolResult(status="error", error="boom") yields:
+  outer.success = True   outer.status = "error"   (success NOT auto-derived)
+```
+
+### Packaging & Discovery Facts
+
+| Fact | Location |
+|---|---|
+| `TOOL_REGISTRY` dict is **auto-generated** | `parrot_tools/__init__.py:7,34`; `__all__` at :152 |
+| Generator scans `pkg_dir.rglob("*.py")`; no decorator needed | `scripts/generate_tool_registry.py:53,72` |
+| CI fails when the registry is stale | `.github/workflows/ci.yml:30` → `--check` |
+| An `arxiv` extra already exists: `arxiv = ["arxiv>=3.0.0"]` | `packages/ai-parrot-tools/pyproject.toml:79` |
+| `beautifulsoup4>=4.12` already declared | `packages/ai-parrot-tools/pyproject.toml:48` |
+| `live` pytest marker IS registered | root `pytest.ini` (`markers = … live: …`) |
+| `HTTPService` is `requests`- and `httpx`-backed | `parrot/interfaces/http.py:15,31` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
-- ~~`parrot_tools.research`~~ — package does not exist yet (this spec creates it)
-- ~~`parrot_tools.worldbank`~~ — no World Bank tool/module exists
-- ~~`parrot_tools.crossref`~~ — no Crossref tool/module exists
-- ~~`parrot_tools.pubmed`~~ — no PubMed tool/module exists
-- ~~`ResearchResult` model~~ — does not exist; Module 1 creates it
-- ~~`Citation` model~~ — does not exist; Module 1 creates it
-- ~~`BaseResearchToolkit`~~ — does not exist; Module 1 creates it
-- ~~`pymed` package~~ — **ABANDONED** (last release 2019). Do NOT use.
-  Use `Bio.Entrez` from Biopython instead.
-- ~~Oxford Academic API~~ — **does not exist**. Oxford Academic
-  (`academic.oup.com`) has no public API and no OAI-PMH feed. OUP content
-  (DOI prefix `10.1093`) is accessed through Crossref.
-- ~~Gallup public API~~ — **does not exist**. Gallup has no developer
-  portal or public API. `api.gallup.com` returns 403 on all paths.
-- ~~Gartner public API~~ — **does not exist**. Enterprise subscription
-  only, aggressive Cloudflare bot protection.
-- ~~`duckduckgo_search` package in satellite~~ — the satellite uses
-  `ddgs` (see `ddgo.py:11`), not `duckduckgo_search`.
-- ~~`HTTPService.session()` as async context manager~~ — `session()` is a
-  regular async method returning `(result, error)`, NOT a context manager.
-- ~~`wbgapi` in pyproject.toml~~ — not currently a dependency; must be added
-- ~~`sdmx1` in pyproject.toml~~ — not currently a dependency; must be added
-- ~~`habanero` in pyproject.toml~~ — not currently a dependency; must be added
-- ~~`biopython` in pyproject.toml~~ — not currently a dependency; must be added
+- ~~`parrot_tools.research`~~ — created by this feature
+- ~~`ResearchResult` / `Citation` / `BaseResearchToolkit`~~ — Module 1 creates them
+- ~~`MarketResearchToolkit` / `parrot_tools/research/market.py`~~ — **dropped
+  from v1** (§1 Non-Goals). Do NOT implement Statista/Gallup/Gartner.
+- ~~`ResearchResult.scrape_status`~~ — no such field; use `.status`
+- ~~`pymed`~~ — **ABANDONED** (last release 2019). Use `Bio.Entrez`.
+- ~~Oxford Academic API~~ — no public API, no OAI-PMH. Reach OUP via Crossref.
+- ~~Gallup / Gartner public APIs~~ — do not exist.
+- ~~A tool's back-reference to the calling agent's LLM~~ — **does not exist by
+  design** (`abstract.py:265`). Inject a client explicitly.
+- ~~Automatic `args_schema` inference from `_execute`~~ — does NOT happen for
+  `AbstractTool`; without an explicit schema all kwargs are dropped
+  (`abstract.py:629`). (`ToolkitTool` DOES infer from method signatures —
+  that is why toolkit methods need no schema.)
+- ~~`ToolResult(status="error")` implying `success=False`~~ — it does not
+  **[probe]**.
+- ~~Returning `ToolResult(status="error")` as a "safe" error path~~ — it makes
+  `ToolManager` raise (`manager.py:1614`).
+- ~~`ToolCache._build_key()` as public API~~ — private; use `.get()`/`.set()`.
+- ~~`wbgapi` / `sdmx1` / `habanero` / `biopython` in pyproject~~ — must be added.
 
 ---
 
@@ -735,93 +724,97 @@ class FredAPITool(AbstractTool):
 
 ### Patterns to Follow
 
-- **Toolkit lifecycle** (FEAT-391): `auto_open = True`, `_open()` creates
-  `aiohttp.ClientSession`, `_close()` closes it and calls
-  `await super()._close()` to reset `_opened`. See AbstractToolkit in
-  `toolkit.py`.
-- **Sync library wrapping** (from `ddgo.py`): For sync libraries (`wbgapi`,
-  `sdmx1`, `habanero`, `Bio.Entrez`, `arxiv`), wrap calls in:
+- **Cooperative mixin (mandatory shape).** Declare
+  `class X(BaseResearchToolkit, AbstractToolkit)` — mixin first.
+  `BaseResearchToolkit.__init__` must call `super().__init__(**kwargs)`;
+  `_close()` must `await super()._close()`. Skipping either leaves the
+  toolkit half-initialised or permanently "open". **[probe]**-verified working.
+- **Keep every helper underscore-prefixed.** `_generate_tools()` turns *any*
+  public async method into an LLM-callable tool. A future public async helper
+  on the mixin would silently become a tool on both toolkits; add it to
+  `exclude_tools` if one is ever needed.
+- **Sync library wrapping** (from `ddgo.py`):
   ```python
   loop = asyncio.get_running_loop()
-  result = await loop.run_in_executor(None, sync_function)
+  result = await loop.run_in_executor(None, _sync_call)
   ```
-  Use `backoff.on_exception(backoff.expo, ...)` on the inner sync function
-  for rate-limit retries.
-- **Error handling**: Never raise into the agent loop. Return
-  `ToolResult(status="error", error=str(e))` or populate
-  `ResearchResult.raw_metadata["error"]`. Follow `FredAPITool._execute()`
-  pattern.
-- **Cache key construction**: Use `ToolCache._build_key(tool_name, method,
-  **params)` — it hashes sorted params deterministically. Exclude API keys
-  from cache params.
-- **Optional dependency imports**: Use try/except pattern from `ArxivTool`:
+  with `backoff.on_exception(backoff.expo, …)` on the inner sync function.
+- **Error handling** — see §2 Error Contract. Return `self._failure(...)`;
+  do **not** return `ToolResult(status="error")` and do **not** let
+  exceptions escape. If an error `ToolResult` is ever genuinely wanted,
+  write `ToolResult(success=False, status="error", result=None, error=…)`
+  with `success=False` explicit (`FredAPITool` does this correctly; the
+  bare `status="error"` form does not).
+- **Caching**: `await self._cache.get(tool_name, method, **params)` /
+  `.set(...)`. Never call `_build_key()`. Exclude API keys from params.
+- **Optional dependency imports** (ArxivTool pattern):
   ```python
   try:
       import wbgapi
   except ImportError:
       wbgapi = None
-  # ... in method:
+  # in the method:
   if wbgapi is None:
-      raise ImportError("Install ai-parrot-tools[research] for World Bank support")
+      return self._failure(..., status="error",
+          message="World Bank support requires: pip install 'ai-parrot-tools[research]'")
   ```
-- **Docstrings become tool descriptions**: Every public async method's
-  docstring is the LLM's tool description. Write them for the LLM, not for
-  developers. Include example queries and parameter guidance.
-- **Async-first, Google-style docstrings, type hints, `self.logger`**
-  throughout (repo rules).
+  Note this returns a failure result rather than raising, per G7.
+- **Do NOT use `parrot.interfaces.HTTPService`.** `.request()` is
+  `requests`-backed and `.session()` is `httpx`-backed — both block the
+  event loop and violate the repo's aiohttp-only rule. `FredAPITool` uses
+  it; follow that file for *cache/result shape* only, never for transport.
+- **Docstrings are the LLM's tool descriptions.** Write them for the model:
+  state what the source is authoritative for, and give parameter guidance
+  (e.g. for World Bank, that indicator codes beat free text).
+- Async-first, Google-style docstrings, type hints, `self.logger`.
 
 ### Known Risks / Gotchas
 
-- **World Bank API default format is XML** — must always pass `format=json`
-  explicitly when using direct aiohttp calls. `wbgapi` handles this
-  internally.
-- **World Bank has no keyword search** — `search_world_bank` must use
-  client-side filtering against indicator metadata or `wbgapi`'s built-in
-  indicator search functions. The method's docstring must tell the agent
-  that indicator codes or topic areas are more effective than free-text.
-- **OECD dimension order is positional** — must fetch the Data Structure
-  Definition (DSD) before constructing data queries. `sdmx1` handles this.
-- **PubMed requires two API calls** — `esearch` (query→PMIDs) then `efetch`
-  (PMIDs→records). Cannot get results in a single call.
-- **Semantic Scholar `fields=` is mandatory** — default response returns
-  only `paperId` + `title`. Must explicitly request `title,abstract,
-  authors,year,citationCount,openAccessPdf,externalIds,fieldsOfStudy`.
-- **Semantic Scholar hyphens** — hyphenated query terms return zero
-  results. Replace hyphens with spaces before querying.
-- **Semantic Scholar rate limits are shared globally** — unauthenticated
-  pool (1000 req/sec) is shared across ALL users. Easy to get 429'd.
-  Backoff is essential.
-- **Crossref `offset` capped at 10,000** — for deep pagination use
-  cursor-based pagination (`cursor=*` + `next-cursor`). For typical agent
-  use (10-50 results), offset is sufficient.
-- **EU Open Data multilingual metadata** — English title/description is
-  NOT guaranteed. Must handle `title` as a dict with language keys and
-  fall back to first available.
-- **Statista selector drift** — public page structure may change. Extraction
-  is best-effort; failures return empty results, never exceptions.
-- **Missing optional deps** — all external libraries (`wbgapi`, `sdmx1`,
-  etc.) are optional. Each toolkit must gracefully handle missing deps
-  with clear import error messages.
+- **World Bank**: default response format is XML — `format=json` required on
+  raw calls (`wbgapi` handles it). No server-side keyword search; discovery
+  is by indicator/topic code, so `search_world_bank` must filter
+  client-side and say so in its docstring.
+- **OECD**: two incompatible API versions live side by side; target SDMX 3.0
+  (`/public/rest/v2/`). Dimension order is positional and dataflow-specific —
+  fetch the DSD first. Data responses are unpaginated and can reach tens of
+  MB; always bound with time/dimension filters.
+- **PubMed**: two calls required (`esearch`→`efetch`); `efetch` returns XML
+  only for full records. NCBI requires an identifying email and limits to
+  3 req/s unkeyed, 10 req/s keyed.
+- **Semantic Scholar**: `fields=` is mandatory (default returns only
+  `paperId`+`title`); hyphenated terms return zero results; the
+  unauthenticated pool is shared globally, so 429s are common — backoff is
+  essential.
+- **Crossref**: `offset` capped at 10 000 (use cursor pagination beyond
+  that); send `mailto` for the polite pool.
+- **EU Open Data**: multilingual metadata — `title["en"]` may be absent;
+  `limit` caps at 1000 and returns plain-text HTTP 400 above it.
+- **ArXiv duplication**: `search_arxiv` re-implements `ArxivTool` logic
+  because the original returns a plain dict and must stay untouched for
+  backward compatibility. Accepted debt — a future task may collapse
+  `ArxivTool` into a thin wrapper over the toolkit method.
+- **Registry staleness**: forgetting Module 5's regeneration step turns into
+  a red CI run, not a local failure — run the generator before pushing.
 
 ### External Dependencies
 
 | Package | Version | Reason |
 |---|---|---|
-| `wbgapi` | `>=1.0` | World Bank Indicators API — indicator search, country data, time series |
-| `sdmx1` | `>=2.27` | OECD/Eurostat SDMX data access — dataflow catalog, data series |
-| `habanero` | `>=2.9` | Crossref API — academic paper search, DOI resolution |
-| `biopython` | `>=1.80` | PubMed E-utilities via `Bio.Entrez` — biomedical paper search |
-| `arxiv` | `>=2.0` | ArXiv paper search (already used by `ArxivTool`) |
-| `beautifulsoup4` | `>=4.12` | Statista page scraping (already a satellite dependency) |
-| `aiohttp` | (existing) | Direct REST API calls to EU Open Data, Semantic Scholar |
-| `backoff` | (existing) | Exponential backoff for rate limits |
+| `wbgapi` | `>=1.0` | World Bank indicators, country data, time series |
+| `sdmx1` | `>=2.27` | OECD SDMX 3.0 dataflow catalog + data series |
+| `habanero` | `>=2.9` | Crossref search / DOI resolution |
+| `biopython` | `>=1.80` | PubMed E-utilities via `Bio.Entrez` |
+| `arxiv` | `>=3.0.0` | ArXiv search — **matches the existing `arxiv` extra** (`pyproject.toml:79`); do not lower the bound |
+| `aiohttp`, `backoff` | (existing) | Async transport, rate-limit retry |
 
-All new packages go into a `research` optional extra in the satellite
-`pyproject.toml`:
+Added in **Module 1** to `packages/ai-parrot-tools/pyproject.toml`:
 ```toml
-[project.optional-dependencies]
-research = ["wbgapi>=1.0", "sdmx1>=2.27", "habanero>=2.9", "biopython>=1.80", "arxiv>=2.0"]
+research = [
+    "wbgapi>=1.0", "sdmx1>=2.27", "habanero>=2.9",
+    "biopython>=1.80", "arxiv>=3.0.0",
+]
 ```
+Also append `research` to the aggregate `all` extra (line ~88).
 
 ---
 
@@ -829,68 +822,98 @@ research = ["wbgapi>=1.0", "sdmx1>=2.27", "habanero>=2.9", "biopython>=1.80", "a
 
 > **Resolved in brainstorm — carried forward, do NOT re-ask:**
 
-- [x] **Which Python SDK for World Bank?** — *Resolved in brainstorm*:
-  Uses `wbgapi`, run in `asyncio.run_in_executor` to avoid blocking the
-  event loop.
-- [x] **OECD API version?** — *Resolved in brainstorm*: Preferable SDMX
-  3.0 (`sdmx.oecd.org/public/rest/v2/`). `sdmx1` library supports both
-  v1 and v2 via the `OECD3` source entry.
-- [x] **Semantic Scholar API key?** — *Resolved in brainstorm*: Default
-  free tier with backoff retry. API key support via env var
-  (`SEMANTIC_SCHOLAR_API_KEY`) for higher limits but not required.
-- [x] **ArxivTool integration?** — *Resolved in brainstorm*: Migrated
-  into `AcademicResearchToolkit` as a `search_arxiv()` method. Original
-  standalone `ArxivTool` preserved for backward compatibility.
-- [x] **ResearchRouter query classification?** — *Resolved in brainstorm*:
-  LLM-based intent classification with keyword heuristic fallback.
+- [x] **World Bank SDK?** — `wbgapi`, run via `run_in_executor`.
+- [x] **OECD API version?** — SDMX 3.0 (`sdmx.oecd.org/public/rest/v2/`),
+      `sdmx1` `OECD3` source.
+- [x] **Semantic Scholar API key?** — free tier + backoff; optional
+      `SEMANTIC_SCHOLAR_API_KEY` raises limits but is never required.
+- [x] **ArxivTool integration?** — logic migrated into
+      `AcademicResearchToolkit.search_arxiv()`; original class preserved.
+- [x] **Router query classification?** — LLM-based, with keyword heuristic
+      fallback.
 
 > **Resolved during spec research:**
 
-- [x] **Gallup/Gartner scraping feasibility?** — *Resolved by API research*:
-  NOT feasible. Gallup has no public API (partner datasets accessible via
-  World Bank etc.). Gartner has no public API and aggressive bot protection.
-  Both are stubbed with clear interfaces. Statista has a public page path
-  for basic data but its full API ("Statista Connect") is contract-gated.
-- [x] **PubMed Python library?** — *Resolved by API research*: `pymed` is
-  abandoned (last release 2019). Use `Bio.Entrez` from Biopython (v1.88,
-  actively maintained).
-- [x] **Oxford Academic integration?** — *Resolved by API research*: Oxford
-  Academic has no public API. OUP content is accessible through Crossref
-  (DOI prefix `10.1093`) — no separate source needed.
+- [x] **PubMed library?** — `pymed` abandoned (2019); use `Bio.Entrez`.
+- [x] **Oxford Academic?** — no public API; reached via Crossref (`10.1093`).
+
+> **Resolved during review (rev 0.2):**
+
+- [x] **Gallup / Gartner / Statista feasibility?** — none viable for v1.
+      Gallup and Gartner have no public API; Statista's legal notice bars
+      crawler access and its sanctioned API is contract-gated.
+      `MarketResearchToolkit` is **dropped from v1** (§1 Non-Goals) rather
+      than shipped as one fragile scraper plus two stubs.
+- [x] **How does the router reach an LLM?** — constructor injection
+      (`llm=` client or string spec via `LLMFactory.create()`). Tools have
+      no bot back-reference by design.
+- [x] **How do tools avoid raising into the agent loop?** — §2 Error
+      Contract: return `ResearchResult` with a failure `status`; never an
+      error `ToolResult`.
 
 > **Unresolved — defer to implementation:**
 
-- [ ] **Statista page structure stability** — whether current public
-  statistics pages have stable-enough structure for reliable scraping.
-  The `-m live` smoke test will validate during implementation. If
-  fragile, may need to be demoted to stub. — *Owner: implementer*
-- [ ] **ResearchRouter LLM prompt design** — exact prompt template for
-  query classification (category detection). Should be lightweight (few
-  tokens) and work across providers. — *Owner: implementer*
-- [ ] **ToolCache TTL tuning** — optimal TTLs per data type. Starting
-  values: 1h indicators, 24h papers, 5min market research. May need
-  adjustment based on usage patterns. — *Owner: implementer*
+- [ ] **Router classification prompt** — exact template and whether a single
+      call can return both category selection and per-category sub-queries.
+      Must stay small and provider-neutral. — *Owner: implementer (Module 4)*
+- [ ] **Router classifier default** — whether `ResearchRouter` should default
+      to a cheap model when `llm` is omitted, or stay heuristic-only. Current
+      spec: heuristic-only. — *Owner: Jesus*
+- [ ] **ToolCache TTL tuning** — starting values 1 h indicators / 24 h
+      papers; revisit after real usage. — *Owner: implementer*
+
+---
+
+## 9. Review Log (rev 0.2)
+
+Independent verification against the live codebase plus a `codex exec`
+adversarial pass. Disposition of every finding:
+
+| # | Finding | Disposition |
+|---|---|---|
+| B1 | `ResearchRouter` had no `args_schema` → framework drops all params (`abstract.py:629`) | **CONFIRM** — explicit `ResearchRouterArgs` added; regression test required |
+| B2 | AC promised "never raises" while prescribing `ToolResult(status="error")`, which makes `ToolManager` raise (`manager.py:1594` → `:1614`) | **CONFIRM** — §2 Error Contract added; ACs rewritten |
+| B3 | `ToolResult(status="error")` leaves `success=True` **[probe]** | **CONFIRM** — §7 corrected to require explicit `success=False` |
+| B4 | Router specified to use "the agent's own LLM"; tools have no bot back-reference (`abstract.py:265`) | **CONFIRM** — constructor injection via `LLMFactory`, per `db.py:177` |
+| B5 | `TOOL_REGISTRY` regeneration never mentioned; CI runs `--check` and fails when stale (`ci.yml:30`) | **CONFIRM** — Module 5 owns it; AC added |
+| S1 | Parallelism claim ignored 3 shared files | **CONFIRM** — Module 5 owns all shared-file edits |
+| S2 | Deps landed in the last module but were needed by earlier ones | **CONFIRM** — moved to Module 1 |
+| S3 | Statista ToS bars crawlers | **CONFIRM** — module dropped from v1 |
+| S4 | `arxiv>=2.0` regressed the existing `arxiv>=3.0.0` extra | **CONFIRM** — aligned to `>=3.0.0` |
+| S5 | `scrape_status` field did not exist on the model | **CONFIRM** — moot (module dropped); `status` field added regardless |
+| S6 | Required `citation` forced fabrication on error paths | **CONFIRM** — now `Optional`, enforced by test for `status="success"` |
+| S7 | `data_vintage` required in G2 but Optional in the model | **CONFIRM** — G2 reworded to best-effort |
+| S8 | Non-goals barred "authenticated" APIs while specifying optional keys | **CONFIRM** — reworded to "no paid or contract-gated" |
+| S9 | `HTTPService` is `requests`/`httpx`-backed (blocking) | **CONFIRM** — explicitly forbidden in §1/§7 |
+| S10 | `get_paper_details` return type inconsistent | **CONFIRM** — returns `ResearchResult` with one entry in `.papers` |
+| S11 | §7 told implementers to call private `ToolCache._build_key` | **CONFIRM** — corrected to `.get()`/`.set()` |
+| — | Codex: auto-generation may expose public async helpers as tools | **REJECT as defect** — **[probe]** shows no leakage with this design; retained as a forward-looking caution in §7 |
+| — | Reviewer's own concern that the `live` marker was unregistered | **REJECT** — root `pytest.ini` registers it |
+| — | Dependency versions (`wbgapi` 1.0.14, `sdmx1` 2.27.0, `habanero` 2.9.2, `biopython` 1.88, `arxiv` 4.0.1) | **VERIFIED** against PyPI — original research accurate |
 
 ---
 
 ## Worktree Strategy
 
-- **Isolation unit**: `mixed` — Module 1 (base models + mixin) must be
-  implemented first; Modules 2, 3, and 4 can then run in parallel in
-  separate worktrees since they are in different files within
-  `parrot_tools/research/`. Module 5 (router) depends on 2-4. Module 6
-  (tests) spans all.
-- **Recommended task ordering**:
-  1. Module 1 (base) — sequential, blocks everything
-  2. Modules 2 + 3 + 4 (three toolkits) — **parallel** after Module 1
-  3. Module 5 (router) — after 2 + 3 + 4
-  4. Module 6 (tests) — throughout, per-module tests with each module
-- **Cross-feature dependencies**: None. All files are new
-  (`parrot_tools/research/`). No existing files are modified except the
-  satellite `pyproject.toml` (Module 6, adding extras).
-- Worktree base: `git worktree add -b feat-426-research-tools-for-agents
-  .claude/worktrees/feat-426-research-tools-for-agents HEAD` (from `dev`,
-  after `/sdd-task`).
+- **Isolation unit**: `mixed`.
+- **Task ordering**:
+  1. **Module 1** (models, base mixin, `pyproject` extra, `conftest`) —
+     sequential; blocks everything.
+  2. **Modules 2 + 3** — **parallel** worktrees (disjoint files:
+     `open_data.py` / `academic.py`, own test files, own fixtures).
+  3. **Module 4** (router) — after 2 + 3.
+  4. **Module 5** (exports + `TOOL_REGISTRY` regeneration + integration
+     tests) — sequential, sole owner of shared files.
+  5. **Module 6** (docs) — last, or parallel with 5.
+- **Shared files** (never edited in a parallel worktree):
+  `parrot_tools/research/__init__.py`, `parrot_tools/__init__.py`,
+  `packages/ai-parrot-tools/pyproject.toml`.
+- **Cross-feature dependencies**: none.
+- Worktree base:
+  ```bash
+  git worktree add -b feat-426-research-tools-for-agents \
+    .claude/worktrees/feat-426-research-tools-for-agents HEAD
+  ```
 
 ---
 
@@ -898,4 +921,5 @@ research = ["wbgapi>=1.0", "sdmx1>=2.27", "habanero>=2.9", "biopython>=1.80", "a
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-08-17 | Jesus Lara + Claude (Opus 4.6) | Initial draft from FEAT-426 brainstorm; scope adjusted based on API research (Gallup/Gartner stubbed, pymed→Biopython, Oxford Academic→Crossref) |
+| 0.1 | 2026-08-17 | Jesus Lara + Claude (Opus 4.6) | Initial draft from FEAT-426 brainstorm; scope adjusted from API research (pymed→Biopython, Oxford Academic→Crossref) |
+| 0.2 | 2026-08-17 | Claude (Opus 5) + codex adversarial pass | Fixed 5 blocking defects (router args_schema, error contract, `success=False`, router LLM injection, TOOL_REGISTRY/CI); dropped `MarketResearchToolkit` from v1; reworked module ordering so shared files have a single owner; added §9 Review Log and probe-verified framework behaviour |
