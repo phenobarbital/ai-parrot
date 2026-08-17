@@ -207,8 +207,24 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Implemented `rendering/charts.py` (`echarts_option_block` +
+`static_svg_chart`, bar/line, deterministic content-derived element ids —
+no uuids/timestamps), `rendering/slides.py` (`render_slide`, TemplateEngine-
+backed, chart/table/quote fallback), `rendering/document.py`
+(`render_document` print-CSS composer + `rasterize_pdf` lazy-weasyprint,
+returns `None`+warning when unavailable per the task's own
+`_import_weasyprint` snippet — patchable to `None` directly, matching the
+test spec), and the two Jinja templates. 11 unit tests pass, including
+golden-file determinism (byte-identical repeat renders) and a
+`test_no_matplotlib_import` AST-based guard. `ruff check` on `rendering/`
+is fully clean (0 findings). `grep -r matplotlib` empty.
+
+Note: both charts follow FEAT-273/SPK-1 — every chart emits BOTH an
+ECharts (`.thales-chart-screen`) and a static-SVG (`.thales-chart-print`)
+variant, toggled via `@media print` CSS, since a single chart call site
+can't know at render time whether it will hit the browser or the
+weasyprint PDF path.
 
 **Deviations from spec**: none
