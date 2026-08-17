@@ -183,8 +183,36 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Followed `handlers/mcp_helper.py` as the routing precedent
+instead of `infographic.py` — verified at implementation time that
+`infographic.py`'s `InfographicTalk(AgentTalk)` is a heavy, per-agent-
+scoped handler class (auth + PBAC + session + agent lookup) unsuited to
+Thales's standalone, non-agent-scoped routes; `mcp_helper.py`'s
+`BaseView`-derived classes + a plain `setup_*_routes(app)` function
+(registered from `manager/manager.py`) is the generic pattern that
+actually fits, and is also its OWN test file's convention (direct
+`await HandlerClass.method(mock_self)` calls, no full aiohttp app/auth
+middleware needed).
 
-**Deviations from spec**: none
+Implemented `ThalesRunHandler` (POST, `num_decks<10` → 400 naming the
+floor, launches `ThalesRunner.run()` as a background `asyncio.Task`),
+`ThalesStatusHandler` (GET status document from node events, embeds the
+full `ThalesResult` on completion, error summary + HTTP 200 on failure),
+`ThalesArtifactsHandler` (GET artifact list — refs already carry public
+URLs from `ThalesRunner`'s own `ArtifactStore.get_public_url` calls, no
+second lookup needed here), and `RunRegistry` (in-memory, `attach`/`get`/
+`record_event`/`complete`/`fail` — the seam for a future redis backend
+per spec §8). Registered via `setup_thales_routes()`, wired into
+`manager.py` mirroring `setup_mcp_helper_routes(self.app)` exactly.
+
+11 unit tests pass (mocked `ThalesRunner`, no network/real run). `ruff
+check` shows only `BLE001`/`G201` — both match `mcp_helper.py`'s own
+unaddressed pattern verbatim (bare "Invalid JSON body" catch; `logger.
+error(..., exc_info=True)` instead of `.exception(...)`) — plus the usual
+pre-existing `UP006`/`UP035`/`UP037`/`UP045` style categories.
+
+**Deviations from spec**: none (the routing-module precedent choice
+(`mcp_helper.py` over `infographic.py`) was explicitly left open by the
+task itself: "verify at implementation time").
