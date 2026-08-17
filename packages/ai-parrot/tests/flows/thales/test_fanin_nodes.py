@@ -8,8 +8,13 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-
-from parrot.flows.thales.models import Bibliography, Finding, ResearchAngle, ResearchDeck, SourceClaim
+from parrot.flows.thales.models import (
+    Bibliography,
+    Finding,
+    ResearchAngle,
+    ResearchDeck,
+    SourceClaim,
+)
 from parrot.flows.thales.nodes.bibliography import BibliographyNode, format_apa
 from parrot.flows.thales.nodes.deck_builder import DROPPED_DECK_SENTINEL
 from parrot.flows.thales.nodes.document import FinalDocumentNode
@@ -159,6 +164,34 @@ class TestFinalDocumentNode:
         assert payload["final_pdf"] is None
         assert any("weasyprint" in w for w in payload["warnings"])
         assert store.save_artifact.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_no_store_configured_degrades_gracefully(self, monkeypatch):
+        """No ArtifactStore injected (store=None) -> bare ArtifactRefs, no crash.
+
+        Regression test (found via TASK-2233 integration testing): a real
+        end-to-end run with ``artifact_store=None`` used to raise
+        ``AttributeError: 'NoneType' object has no attribute 'save_artifact'``.
+        """
+        import parrot.flows.thales.nodes.document as document_module
+
+        async def fake_render_document(slides_html, bibliography, *, title):
+            return "<html>doc</html>"
+
+        monkeypatch.setattr(document_module, "render_document", fake_render_document)
+        monkeypatch.setattr(document_module, "rasterize_pdf", lambda html: b"%PDF-fake")
+
+        node = FinalDocumentNode(
+            node_id="final_document", store=None,
+            user_id="u1", agent_id="thales", session_id="s1",
+            slide_node_ids=["slide-a1"],
+        )
+        deps = {"slide-a1": "<section>slide</section>", "bibliography": Bibliography().model_dump_json()}
+        result = await node.execute(ctx=None, deps=deps)
+        payload = json.loads(result)
+
+        assert payload["final_document"] == {"kind": "final_html", "artifact_id": None, "url": None, "path": None}
+        assert payload["final_pdf"] == {"kind": "final_pdf", "artifact_id": None, "url": None, "path": None}
 
 
 class TestInfographicNode:

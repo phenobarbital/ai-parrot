@@ -121,7 +121,15 @@ class FinalDocumentNode(Node):
         )
 
     async def _persist_html(self, html: str, now: datetime) -> ArtifactRef:
-        """Persist the final document HTML via the injected ``ArtifactStore``."""
+        """Persist the final document HTML via the injected ``ArtifactStore``.
+
+        Degrades to a bare ``ArtifactRef`` (no ``artifact_id``/``url``) when
+        no store is configured — mirrors ``ThalesRunner._persist()``'s own
+        "no store configured" degrade path (spec: each persistence surface
+        fails independently, never aborts the run).
+        """
+        if self.store is None:
+            return ArtifactRef(kind="final_html")
         artifact_id = f"{self.node_id}-html-{uuid.uuid4().hex[:8]}"
         artifact = Artifact(
             artifact_id=artifact_id,
@@ -138,7 +146,13 @@ class FinalDocumentNode(Node):
         return ArtifactRef(kind="final_html", artifact_id=artifact_id, url=url)
 
     async def _persist_pdf(self, pdf_bytes: bytes, now: datetime) -> ArtifactRef:
-        """Persist the final document PDF via the injected ``ArtifactStore``."""
+        """Persist the final document PDF via the injected ``ArtifactStore``.
+
+        Degrades to a bare ``ArtifactRef`` (no ``artifact_id``/``url``) when
+        no store is configured — see :meth:`_persist_html`.
+        """
+        if self.store is None:
+            return ArtifactRef(kind="final_pdf")
         artifact_id = f"{self.node_id}-pdf-{uuid.uuid4().hex[:8]}"
         artifact = Artifact(
             artifact_id=artifact_id,
