@@ -176,8 +176,53 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Implemented `conftest.py` (`FakeAgent`/`FakeClient` dispatching
+by call shape — `structured_output=` for planner/slide_spec,
+`deep_research=True` for the deep node, plain `question=` for
+`synthesize_results`; `mock_research_outputs` fixture with a duplicate
+arxiv URL across every angle for bibliography dedupe and one date-less
+angle for "n.d."; an autouse `patched_checkpoint_store` in-memory
+`CheckpointStore` fixture, since `assemble_thales_flow` always passes
+`checkpoint=True` and every test that runs a real flow would otherwise
+hit a real Redis) and `test_integration.py` (e2e — now exercising BOTH
+persistence surfaces + a populated infographic, not just output_dir;
+checkpoint persistence; partial sources). All 3 pass offline; full
+`packages/ai-parrot/tests/flows/thales/` suite: **77 passed**.
 
-**Deviations from spec**: none
+Found and fixed one real bug via genuine e2e execution (not caught by
+any prior unit test, since none constructed `FinalDocumentNode` with
+`store=None`): it crashed with `AttributeError: 'NoneType' object has
+no attribute 'save_artifact'`. Fixed with the same None-guard pattern
+used everywhere else in the feature; regression test added to TASK-2230's
+`test_fanin_nodes.py`.
+
+Walked spec §5 truthfully (10/12 ticked): two criteria explicitly
+NOT ticked, per the cardinal rule against ticking unmet criteria:
+1. **Checkpoint resume** — persistence during a run IS verified
+   (`test_checkpoint_is_written_during_a_run`), but a full
+   `AgentsFlow.resume()` round-trip genuinely does not work for Thales's
+   node shapes (`resume()` calls `from_definition()` with no
+   `node_factories` param — confirmed by reading its body — so none of
+   Thales's custom-field-heavy nodes can be reconstructed). Fixing this
+   is an engine change the spec's own AC list forbids ("No changes to
+   flow.py"). Documented in both the spec and `docs/flows/thales.md`.
+2. **`ResearchDeck.groundedness` deck-level provenance** — never
+   populated (per-claim `SourceClaim.verification` labeling IS correct
+   and tested; the separate deck-level dict field is simply unused).
+   Closing this would require widening `_ResearchNode`'s deps wire
+   format, which would break TASK-2229's already-shipped
+   `DeckBuilderNode` test fixtures — left as a reported gap rather than
+   a risky ripple-effect change, per this task's own scope note.
+
+Wrote `docs/flows/thales.md` (quickstart Python + HTTP, the `num_decks`
+floor and its N×M cost, source list + the `research-tools-for-agents`
+extension contract, artifact/manifest layout, PDF behavior, verification
+channels, and a dedicated section on the checkpoint-resume limitation).
+`ruff check` on every touched/created file shows only pre-existing style
+categories. `grep -r matplotlib` empty. Verified `git diff dev...HEAD`
+touches none of `flow.py`/`crew.py`/`abstract.py`.
+
+**Deviations from spec**: See the two unticked acceptance criteria above
+(both verified, both documented, neither silently worked around).
