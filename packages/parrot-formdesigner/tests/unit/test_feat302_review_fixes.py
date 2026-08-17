@@ -19,6 +19,8 @@ import pytest
 from parrot_formdesigner.services.org_graph import OrgGraphService
 from parrot_formdesigner.services.project_service import ProjectService
 
+from tests.unit.real_db_shapes import assert_real_columns
+
 
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool that records every (sql, args) call
@@ -36,6 +38,7 @@ def _make_pool(rows_by_marker: dict[str, list[dict]] | None = None) -> tuple[Mag
         return r
 
     async def _fetch(sql: str, *args: Any) -> list:
+        assert_real_columns(sql)
         calls.append((sql, args))
         for marker, rows in rows_by_marker.items():
             if marker in sql:
@@ -43,6 +46,7 @@ def _make_pool(rows_by_marker: dict[str, list[dict]] | None = None) -> tuple[Mag
         return []
 
     async def _fetchrow(sql: str, *args: Any) -> Any:
+        assert_real_columns(sql)
         calls.append((sql, args))
         for marker, rows in rows_by_marker.items():
             if marker in sql:
