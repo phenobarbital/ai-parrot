@@ -410,10 +410,73 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-start (Claude Sonnet 4.5, worktree feat-427-fix-generate-tool-registry-annassign)
+**Date**: 2026-08-17
+**Status**: done-with-issues (verification=partial)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: Implemented `_assign_target_and_value()` exactly as specified
+and rewired `scan_exports()`, `read_existing_registry()`, and the
+`update_init_file()` rewrite loop to use it. Created
+`tests/scripts/test_generate_tool_registry.py` with all 6 tests from the
+spec's Test Specification plus the CLI integration test.
 
-**Deviations from spec**: none | describe if any
+5/7 tests pass, including all tests that exercise the actual AST fix:
+- `test_read_existing_registry_annassign` ✅
+- `test_read_existing_registry_plain_assign_unchanged` ✅ (regression guard)
+- `test_read_existing_registry_bare_annotation_no_value` ✅
+- `test_update_init_file_rewrites_annassign_in_place` ✅
+- `test_scan_exports_annassign` ✅
+- `test_check_mode_clean_on_current_repo_files` ❌ (see Deviations)
+- `test_check_cli_exits_zero_on_repo` ❌ (see Deviations)
+
+`ruff check` on the two changed files: 4 remaining findings, 3
+pre-existing/unrelated to this change (`I001` import-block-unsorted at
+the top of `generate_tool_registry.py`, `SIM114` in `_class_to_key()`,
+`UP045` on the pre-existing `read_existing_registry()` signature — all
+confirmed present on `dev` HEAD *before* this task's changes) plus 1
+new, unavoidable `I001` in the test file caused by the
+`sys.path.insert()`-before-import pattern the task's own Test
+Specification specifies verbatim. My own new code
+(`_assign_target_and_value()`) uses `str | None` / `ast.expr | None`
+and introduces zero new lint findings.
+
+**Deviations from spec**: The two acceptance criteria "`--check` exits
+0 against the current repo state" and "plain write mode … prints 'All
+registries are up to date.'" do NOT hold, and were NOT made to hold by
+this task. Root cause: the *AST-parsing fix itself is correct and
+verified* — `--check` now correctly reads existing registry contents
+(previously always `{}`, this is what proves the fix works: the diff
+now shows a specific per-key delta instead of "every entry is
+`added`"). However, that correct read reveals genuine, pre-existing
+drift: 92 `TOOL_REGISTRY` entries and 1 `LOADER_REGISTRY` entry exist
+as real classes in the source tree (e.g. `EC2Toolkit` in
+`packages/ai-parrot-tools/src/parrot_tools/aws/ec2.py`) but were never
+added to their `__init__.py` registries, plus one renamed dotted path
+(`odoo` → `parrot_tools.odoo.toolkit.OdooToolkit`). Confirmed via `git
+log` that many of these source files were added across dozens of prior
+commits — consistent with the spec's own stated root cause (§7 Known
+Risks: "the bug has silently affected every package this script
+manages since its introduction," i.e. the plain write mode has
+*never* actually applied a change, so registry drift has been
+accumulating silently for a long time).
+
+Per the task's explicit "Files to Create/Modify" table (only
+`scripts/generate_tool_registry.py` and the new test file) and the
+spec's Integration Points table (both `__init__.py` files marked
+"verify only"), I did NOT modify
+`packages/ai-parrot-tools/src/parrot_tools/__init__.py` or
+`packages/ai-parrot-loaders/src/parrot_loaders/__init__.py` to sync
+the 93 missing/changed entries — doing so would (a) be out of this
+task's file scope, and (b) make a functionally significant change
+(newly exposing 92 tools + 1 loader to any `ToolManager`/registry
+consumer) that deserves its own reviewed change, not a silent
+side-effect of an AST-parsing bug fix.
+
+**Recommendation for a follow-up task**: once this fix lands, run
+`python scripts/generate_tool_registry.py` (plain write mode, no
+flags) once, review the resulting diff against
+`packages/ai-parrot-tools/src/parrot_tools/__init__.py` and
+`packages/ai-parrot-loaders/src/parrot_loaders/__init__.py` for
+correctness (particularly the `odoo` path rename), and commit it
+separately. After that sync, `--check` and both currently-failing
+tests should pass as originally specified.
