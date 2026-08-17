@@ -132,7 +132,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Academic chain. Two small sources grouped: S2 is plain aiohttp, arXiv is a port of existing arxiv_tool.py logic (original must stay unmodified).",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2240-semantic-scholar-and-arxiv.md"
+      "completed_at": "2026-08-17T01:00:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2240-semantic-scholar-and-arxiv.md"
     },
     {
       "id": "TASK-2241",
