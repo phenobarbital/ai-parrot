@@ -104,7 +104,7 @@ class OrgGraph(BaseModel):
 # ---------------------------------------------------------------------------
 
 _SQL_GET_ORG = """
-SELECT org_id, name
+SELECT org_id, organization AS name
 FROM auth.organizations
 WHERE org_id = $1
 """

@@ -19,6 +19,12 @@ import pytest
 
 from parrot_formdesigner.services.org_graph import OrgGraph, OrgGraphService, OrgNode
 
+from tests.unit.real_db_shapes import (
+    REAL_AUTH_ORGANIZATIONS_COLUMNS,
+    FakeUndefinedColumnError,
+    assert_real_columns,
+)
+
 
 # ---------------------------------------------------------------------------
 # Fake pool helpers
@@ -27,6 +33,9 @@ from parrot_formdesigner.services.org_graph import OrgGraph, OrgGraphService, Or
 
 def _make_conn(fetchrow_results: dict | None = None, fetch_results: dict | None = None) -> MagicMock:
     """Build a fake asyncpg-style connection.
+
+    Queries against ``auth.organizations`` are validated against the REAL
+    column shape (see ``real_db_shapes``); a bad column raises like Postgres.
 
     Args:
         fetchrow_results: Mapping of SQL → row dict (or None for not found).
@@ -37,6 +46,7 @@ def _make_conn(fetchrow_results: dict | None = None, fetch_results: dict | None 
     fetch_results = fetch_results or {}
 
     async def _fetchrow(sql: str, *args: Any) -> MagicMock | None:
+        assert_real_columns(sql)
         # Match on sql prefix
         for key, val in fetchrow_results.items():
             if key in sql:
@@ -49,6 +59,7 @@ def _make_conn(fetchrow_results: dict | None = None, fetch_results: dict | None 
         return None
 
     async def _fetch(sql: str, *args: Any) -> list[MagicMock]:
+        assert_real_columns(sql)
         for key, val in fetch_results.items():
             if key in sql:
                 rows = []
@@ -242,6 +253,49 @@ class TestOrgGraphServiceGetGraph:
         # Each graph has its own organization child
         assert g1.root.children[0].node_id == "1"
         assert g2.root.children[0].node_id == "2"
+
+
+# ---------------------------------------------------------------------------
+# Regression — auth.organizations has NO "name" column
+# ---------------------------------------------------------------------------
+
+
+class TestSqlMatchesRealOrganizationsShape:
+    """FEAT-302 shipped ``SELECT org_id, name FROM auth.organizations``.
+
+    The real table has ``organization``, not ``name`` — the first statement
+    of get_graph raised UndefinedColumnError in every environment and the
+    endpoint returned a 500. The SQL must alias: ``organization AS name``.
+    """
+
+    def test_sql_get_org_selects_only_real_columns(self) -> None:
+        from parrot_formdesigner.services.org_graph import _SQL_GET_ORG
+
+        # Raises FakeUndefinedColumnError if the SELECT list names a
+        # column the real table does not have (e.g. bare ``name``).
+        assert_real_columns(_SQL_GET_ORG)
+
+    def test_real_shape_has_no_name_column(self) -> None:
+        assert "name" not in REAL_AUTH_ORGANIZATIONS_COLUMNS
+        assert "organization" in REAL_AUTH_ORGANIZATIONS_COLUMNS
+
+    def test_validator_rejects_bare_name_column(self) -> None:
+        """Positive control: the validator can still go RED."""
+        with pytest.raises(FakeUndefinedColumnError, match='column "name"'):
+            assert_real_columns(
+                "SELECT org_id, name FROM auth.organizations WHERE org_id = $1"
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_graph_works_against_real_shape(self) -> None:
+        """The alias keeps ``org_row['name']`` access working downstream."""
+        conn = _make_conn(
+            fetchrow_results={"auth.organizations": {"name": "Acme Corp"}},
+            fetch_results={"auth.clients": []},
+        )
+        svc = OrgGraphService(_make_pool(conn))
+        graph = await svc.get_graph(7, tenant="acme", depth=2)
+        assert graph.root.children[0].metadata["name"] == "Acme Corp"
 
 
 # ---------------------------------------------------------------------------
