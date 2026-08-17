@@ -51,6 +51,20 @@ bake data into the artifact (FEAT-326 data-splice pattern) instead of leaking ke
 
 - Output = A2UI `CreateSurface` envelope (frontend) **and** persisted self-contained
   HTML artifact + URL (backend renderer). Single source of truth: the envelope.
+- HTML delivery is **dual-write** (resolved): canonical copy via `ArtifactStore`
+  (signed public URL) PLUS a physical copy under
+  `STATIC_DIR/<agent_id>/dashboards/` for direct file access. The artifact store is
+  the source of truth; the static copy is a convenience export written in the same
+  persist step.
+- Embedded-data budget (resolved): total baked dataModel JSON ≤ **8 MB** per
+  dashboard, with a configurable per-widget row cap (default 25k rows); on excess
+  the renderer truncates/aggregates with `truncated=true` and a visible note.
+- Filter control set v1 (resolved, extended): multi-select with search, numeric
+  range slider, date-range, single-select dropdown, boolean toggle — all recomputed
+  100% client-side over the baked data.
+- Geo map widget (resolved): **in scope for v1** — the `dashboard-html` renderer
+  ports the inline d3-geo `geoAlbersUsa` US map + radius-slider behavior from
+  `documents/test.html` (bundled inline, no CDN), lowering the A2UI `Map` component.
 - Refresh must be deterministic-first: replay recorded provenance, no LLM in the loop
   (LLM only as fallback for schema-drift repair — out of v1 scope).
 - Build ON TOP of FEAT-324 recipes (RecipeRunner, stores, transformer_registry,
@@ -59,6 +73,9 @@ bake data into the artifact (FEAT-326 data-splice pattern) instead of leaking ke
 - New recipe step type `python_code` is accepted (discovery decision): recipes may
   store literal LLM-authored pandas code, replayed inside the same sandbox
   `PythonPandasTool` uses. Registry transformers remain the preferred path.
+  Guardrails (resolved): every `PythonCodeStep` MUST declare its inputs/outputs and
+  `requires_columns` (so `dry_run` can gate it) and carries a per-step execution
+  timeout (default 30s); freeze rejects code steps without a declared contract.
 - Excel/TmpFile datasets: freeze a **parquet snapshot** at generation time,
   referenced by the manifest; refresh reuses the snapshot unless a new file is
   provided as a parameter (discovery decision).
@@ -84,8 +101,8 @@ Extend the existing recipe subsystem from "one infographic = one recipe" to
 dashboard vocabulary:
 
 1. **A2UI catalog**: new `Dashboard` composite component (tabs → widget slots) plus a
-   `FilterBar` component (multi-select w/ search, range slider, date-range — the
-   controls observed in `documents/test.html`). Widgets are the existing `Chart`,
+   `FilterBar` component (multi-select w/ search, range slider, date-range,
+   single-select dropdown, boolean toggle). Widgets are the existing `Chart`,
    `DataTable`, `KPICard`, `Map` components — no widget duplication. This finally
    types the "tabs" concept that today survives only as an unschema'd `Chart`
    property that the infographic adapter flattens away.
@@ -103,7 +120,10 @@ dashboard vocabulary:
 4. **Renderer**: new `dashboard-html` render profile in ai-parrot-visualizations,
    generalizing `InteractiveHTMLRenderer`: baked Chart.js, baked JSON dataModel,
    tab switching + FilterBar behavior (client-side recompute per filter selection)
-   in vanilla JS. Self-contained, no external calls.
+   in vanilla JS, plus the inline d3-geo `geoAlbersUsa` US map + radius-slider
+   behavior ported from `documents/test.html` to lower the `Map` component.
+   Self-contained, no external calls. Persist step dual-writes: `ArtifactStore`
+   (canonical, signed URL) + `STATIC_DIR/<agent_id>/dashboards/` file copy.
 5. **Template lane**: dashboard templates are **declarative A2UI layout JSON**
    (parametrized Dashboard/FilterBar/widget-slot trees) stored in
    `BASE_DIR/templates/infographics/`. If the requested template is missing, the
@@ -330,8 +350,9 @@ trivial: reload the page. The manifest exists only to rebuild widget *definition
   partial).
 - **Excel snapshot missing/corrupt**: refresh errors with an actionable "provide
   `replace_file`" message; other (slug-fed) widgets unaffected.
-- **Oversized dataModel**: renderer enforces a per-dashboard embedded-data budget
-  (row caps per widget with `truncated=true` flags, mirroring DataTable semantics).
+- **Oversized dataModel**: renderer enforces the per-dashboard embedded-data budget
+  (≤8 MB total baked JSON; per-widget row cap, default 25k) with `truncated=true`
+  flags and a visible truncation note, mirroring DataTable semantics.
 - **Template generation produces invalid layout**: catalog validation rejects before
   persistence; agent retries or falls back to the seed template.
 - **No recipe store configured**: dashboard recipe tools are excluded from
@@ -350,7 +371,9 @@ trivial: reload the page. The manifest exists only to rebuild widget *definition
 - `excel-snapshot-source`: `FileSnapshotSource` DataSource (parquet snapshot,
   replaceable on refresh) + DatasetManager registration.
 - `dashboard-html-renderer`: `dashboard-html` A2UI render profile
-  (ai-parrot-visualizations) — tabs, filters, baked data, no external calls.
+  (ai-parrot-visualizations) — tabs, filters, baked data, inline d3-geo US map
+  (Map component lowering + radius slider), no external calls; dual-write persist
+  (ArtifactStore + STATIC_DIR copy).
 - `infographic-template-store`: declarative dashboard templates under
   `BASE_DIR/templates/infographics/` + LLM template-generation tool + seed
   `payroll-contribution` template.
@@ -606,29 +629,50 @@ from parrot.registry import register_agent                     # agents/porygon.
 
 ## Open Questions
 
-- [ ] "URL al HTML guardado en disco duro": the existing pipeline persists HTML via
+- [x] "URL al HTML guardado en disco duro": the existing pipeline persists HTML via
   `ArtifactStore` (DB + S3 overflow) and serves it through signed
   `/api/v1/artifacts/public/...` URLs — NOT as a plain file on disk. Is the artifact
   public URL acceptable as "the URL", or must the renderer ALSO write a copy under
-  `STATIC_DIR/<agent_id>/dashboards/` for direct file access? — *Owner: jesuslara*
-- [ ] Dashboard recipe/manifest storage: `FileRecipeStore` directory (YAML, matches
+  `STATIC_DIR/<agent_id>/dashboards/` for direct file access? — *Owner: jesuslara*:
+  **Dual-write.** ArtifactStore is canonical (signed public URL returned to the
+  caller) AND the persist step writes a physical copy under
+  `STATIC_DIR/<agent_id>/dashboards/` for direct file access.
+- [x] Dashboard recipe/manifest storage: `FileRecipeStore` directory (YAML, matches
   "JSON on disk" intent and FEAT-324) vs Redis `DBRecipeStore` — pick the default
   for `DataAgent` and whether the manifest is ALSO embedded in the artifact
-  definition for self-description. — *Owner: jesuslara*
-- [ ] `python_code` step guardrails: same REPL sandbox as PythonPandasTool — do we
+  definition for self-description. — *Owner: jesuslara*: **FileRecipeStore +
+  embedded summary.** Default store is a `FileRecipeStore` directory (e.g.
+  `BASE_DIR/dashboards/recipes/`), and a manifest summary is embedded in the
+  artifact `definition` so each dashboard artifact is self-describing.
+- [x] `python_code` step guardrails: same REPL sandbox as PythonPandasTool — do we
   additionally require declared `requires_columns`/output contract per step (so
-  dry-run can gate it), and cap execution time? Proposed: yes to both. — *Owner: jesuslara*
-- [ ] Filter semantics v1: proposed control set = multi-select (with search),
+  dry-run can gate it), and cap execution time? Proposed: yes to both. — *Owner:
+  jesuslara*: **Contract + timeout.** Every `PythonCodeStep` declares inputs/outputs
+  and `requires_columns` (dry-run gateable) and has a per-step timeout (default
+  30s); freeze rejects contract-less code steps. No import allowlist beyond the
+  existing REPL sandbox in v1.
+- [x] Filter semantics v1: proposed control set = multi-select (with search),
   range slider, date-range; filters recompute client-side over baked data only
-  (no server round-trip). Confirm this covers the Payroll Contribution use case. — *Owner: jesuslara*
-- [ ] Embedded-data budget: `documents/test.html` is 457 KB *without* data. Define
+  (no server round-trip). Confirm this covers the Payroll Contribution use case. —
+  *Owner: jesuslara*: **Extended set.** Multi-select with search, numeric range
+  slider, date-range, single-select dropdown, and boolean toggle — all client-side
+  over baked data.
+- [x] Embedded-data budget: `documents/test.html` is 457 KB *without* data. Define
   per-dashboard cap (e.g. total baked JSON ≤ 3–5 MB, per-widget row caps with
-  `truncated` flags) and the degrade behavior. — *Owner: jesuslara*
-- [ ] Opus 5 extended thinking: adaptive thinking on `anthropic:claude-opus-5` is the
+  `truncated` flags) and the degrade behavior. — *Owner: jesuslara*: **≤8 MB total
+  baked JSON** per dashboard; per-widget row cap default 25k (configurable); on
+  excess the renderer truncates/aggregates with `truncated=true` and a visible note.
+- [x] Opus 5 extended thinking: adaptive thinking on `anthropic:claude-opus-5` is the
   default; if explicit budgets are wanted, that's a separate small feature on
   `AnthropicClient` (Bedrock already has `thinking_budget`). Accept adaptive-only
-  for v1? — *Owner: jesuslara*
-- [ ] Seed template scope: derive the `payroll-contribution` seed template's tab/
+  for v1? — *Owner: jesuslara*: **Adaptive-only for v1.** No client changes;
+  explicit `thinking_budget` on the direct client stays a separate mini-feature if
+  ever needed.
+- [x] Seed template scope: derive the `payroll-contribution` seed template's tab/
   filter/widget structure from `documents/test.html` (4 tabs incl. the d3-geo map)
   — is the US map widget in scope for v1, or charts/tables/KPIs only (Map component
-  exists but the dashboard renderer would need the geo behavior ported)? — *Owner: jesuslara*
+  exists but the dashboard renderer would need the geo behavior ported)? — *Owner:
+  jesuslara*: **Map IN scope for v1.** The `dashboard-html` renderer ports the
+  inline d3-geo `geoAlbersUsa` US map + radius-slider behavior (bundled inline, no
+  CDN) as the lowering for the A2UI `Map` component; the seed template keeps all 4
+  tabs including Proximity Staffing.
