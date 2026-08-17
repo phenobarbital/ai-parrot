@@ -15,6 +15,7 @@ Risks".
 from urllib.parse import quote
 
 import backoff
+import requests
 from parrot.tools.toolkit import AbstractToolkit
 
 from .base import BaseResearchToolkit
@@ -28,8 +29,32 @@ except ImportError:
 try:
     # PyPI distribution is `sdmx1`; the importable module is `sdmx`.
     import sdmx
+    from sdmx.exceptions import ParseError as _SdmxParseError
+    from sdmx.exceptions import XMLParseError as _SdmxXMLParseError
 except ImportError:
     sdmx = None
+    _SdmxParseError = RuntimeError  # placeholder: unused, guarded by `sdmx is None`
+    _SdmxXMLParseError = RuntimeError
+
+# Exception tuples for the @backoff.on_exception retry decorators below —
+# each library's own transport/HTTP exception types, not bare `Exception`,
+# so a retry never masks a genuine programming error (KeyError, ValueError,
+# ...) as a transient failure worth retrying.
+#
+# - World Bank (wbgapi): `_queryAPI()` calls `requests.get()` unguarded
+#   (raises `requests.exceptions.RequestException` on network failure) and
+#   raises its own `wbgapi.APIError` (covers `APIResponseError`) for
+#   non-200/malformed responses.
+# - OECD (sdmx1): `Client.get()` can raise `requests.exceptions.
+#   ConnectionError`/`HTTPError` (both `RequestException` subclasses) or
+#   `sdmx.exceptions.ParseError`/`XMLParseError` while parsing the response.
+_WB_RETRYABLE_EXCEPTIONS = (
+    (wb.APIError, requests.exceptions.RequestException)
+    if wb is not None else (RuntimeError,)
+)
+_OECD_RETRYABLE_EXCEPTIONS = (
+    requests.exceptions.RequestException, _SdmxParseError, _SdmxXMLParseError
+)
 
 _WB_SOURCE_NAME = "World Bank Open Data"
 _WB_LICENSE = "CC BY-4.0"
@@ -543,7 +568,7 @@ class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
     async def _search_indicator_metadata(self, query: str) -> list:
         """Resolve free-text `query` against World Bank indicator metadata."""
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _WB_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _search():
             return list(wb.series.info(q=query))
 
@@ -559,7 +584,7 @@ class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
         """Fetch raw `wbgapi` observation rows for one or more indicators."""
         time_kwargs = self._time_kwargs(year=year, date_range=date_range)
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _WB_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _fetch():
             rows = []
             for indicator_id in indicator_ids:
@@ -593,7 +618,7 @@ class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
         if cached is not None:
             return cached
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _OECD_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _fetch():
             client = sdmx.Client(_OECD_SOURCE_ID)
             flow_msg = client.dataflow()
@@ -622,7 +647,7 @@ class OpenDataToolkit(BaseResearchToolkit, AbstractToolkit):
         MB, so a bare all-dimensions query is never issued.
         """
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _OECD_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _fetch():
             client = sdmx.Client(_OECD_SOURCE_ID)
             client.dataflow(dataset_id)  # DSD — resolves dimension order first

@@ -17,8 +17,10 @@ Risks".
 """
 import asyncio
 import re
+from urllib.error import URLError
 
 import backoff
+import requests
 from navconfig import config
 from parrot.tools.toolkit import AbstractToolkit
 
@@ -27,8 +29,10 @@ from .models import PaperResult, ResearchResult
 
 try:
     from habanero import Crossref
+    from habanero.exceptions import RequestError as _CrossrefRequestError
 except ImportError:
     Crossref = None
+    _CrossrefRequestError = RuntimeError  # placeholder: unused, guarded by `Crossref is None`
 
 try:
     # PyPI distribution is `biopython`; the importable module is `Bio`.
@@ -41,6 +45,27 @@ try:
     import arxiv
 except ImportError:
     arxiv = None
+
+# Exception tuples for the @backoff.on_exception retry decorators below —
+# each library's own transport/HTTP exception types, not bare `Exception`,
+# so a retry never masks a genuine programming error (KeyError, ValueError,
+# ...) as a transient failure worth retrying.
+#
+# - Crossref (habanero): raises its own `RequestError` for HTTP-status
+#   errors, or wraps unexpected httpx errors in a bare `RuntimeError`
+#   (habanero/request_class.py `_req()`).
+# - PubMed (Bio.Entrez): `_open()` retries internally on `urllib.error.
+#   HTTPError`/`URLError` and re-raises on final failure; `Entrez.read()`
+#   raises `RuntimeError` for an NCBI-side `<ERROR>` in the response.
+# - arXiv: `arxiv.Client()._parse_feed()` retries internally, then raises
+#   `arxiv.ArxivError` (covers `HTTPError`/`UnexpectedEmptyPageError`) or
+#   `requests.exceptions.ConnectionError` after giving up.
+_CROSSREF_RETRYABLE_EXCEPTIONS = (_CrossrefRequestError, RuntimeError)
+_PUBMED_RETRYABLE_EXCEPTIONS = (URLError, RuntimeError)
+_ARXIV_RETRYABLE_EXCEPTIONS = (
+    (arxiv.ArxivError, requests.exceptions.RequestException)
+    if arxiv is not None else (RuntimeError,)
+)
 
 _CROSSREF_SOURCE_NAME = "Crossref"
 _CROSSREF_MISSING_MESSAGE = (
@@ -210,9 +235,14 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
         )
         return result
 
-    @staticmethod
-    def _crossref_filters(year_range: str | None) -> dict | None:
-        """Build a Crossref `filter=` dict for a "YYYY-YYYY" year range."""
+    def _crossref_filters(self, year_range: str | None) -> dict | None:
+        """Build a Crossref `filter=` dict for a "YYYY-YYYY" year range.
+
+        A malformed `year_range` (wrong shape, non-numeric parts) is not
+        silently dropped: it is logged as a warning so the caller can see
+        why no date filter was applied, then the search proceeds
+        unfiltered rather than failing the whole request.
+        """
         if not year_range:
             return None
         parts = year_range.split("-")
@@ -222,6 +252,10 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
                 "from-pub-date": f"{start}-01-01",
                 "until-pub-date": f"{end}-12-31",
             }
+        self.logger.warning(
+            "Crossref: malformed year_range %r (expected \"YYYY-YYYY\") — "
+            "searching without a date filter", year_range,
+        )
         return None
 
     async def _fetch_crossref_works(
@@ -235,7 +269,7 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
     ) -> dict:
         """Run the blocking `habanero.Crossref.works()` call in an executor."""
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _CROSSREF_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _fetch():
             cr = Crossref(mailto=mailto)
             # Prefer `query_bibliographic` over the generic `query` param —
@@ -405,7 +439,7 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
     async def _pubmed_esearch(self, term: str, max_results: int) -> list:
         """Resolve a PubMed search term to a list of PMIDs."""
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _PUBMED_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _esearch():
             with Entrez.esearch(db="pubmed", term=term, retmax=max_results) as h:
                 return Entrez.read(h)
@@ -416,7 +450,7 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
     async def _pubmed_efetch(self, pmids: list) -> list:
         """Fetch full PubMed records (XML) for a list of PMIDs."""
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _PUBMED_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _efetch():
             with Entrez.efetch(db="pubmed", id=",".join(pmids), retmode="xml") as h:
                 return Entrez.read(h)
@@ -654,7 +688,7 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
         criterion_name = _ARXIV_SORT_CRITERION_NAMES.get(sort_by, "Relevance")
         sort_criterion = getattr(arxiv.SortCriterion, criterion_name)
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _ARXIV_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _fetch():
             search = arxiv.Search(
                 query=query,
@@ -817,7 +851,7 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
 
         mailto = config.get("CROSSREF_MAILTO", fallback="noreply@example.com")
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _CROSSREF_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _fetch():
             cr = Crossref(mailto=mailto)
             return cr.works(ids=doi)
@@ -844,7 +878,7 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
         if arxiv is None:
             raise RuntimeError(_ARXIV_MISSING_MESSAGE)
 
-        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        @backoff.on_exception(backoff.expo, _ARXIV_RETRYABLE_EXCEPTIONS, max_tries=3)
         def _fetch():
             search = arxiv.Search(id_list=[arxiv_id])
             return list(arxiv.Client().results(search))

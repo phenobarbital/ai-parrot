@@ -106,3 +106,29 @@ class TestCrossref:
         monkeypatch.setattr(academic_module, "Crossref", None)
         r = await AcademicResearchToolkit().search_crossref("x")
         assert r.status == "error" and "ai-parrot-tools[research]" in r.error_message
+
+    async def test_valid_year_range_applies_filter(self, capture_crossref_call):
+        await AcademicResearchToolkit().search_crossref(
+            "x", year_range="2020-2023"
+        )
+        assert capture_crossref_call.kwargs["filter"] == {
+            "from-pub-date": "2020-01-01",
+            "until-pub-date": "2023-12-31",
+        }
+
+    async def test_malformed_year_range_is_ignored_not_silent(
+        self, capture_crossref_call, caplog
+    ):
+        """A malformed year_range must not be silently dropped (spec §2 /
+        FEAT-426 code review): no filter is sent, but a warning is logged
+        so the caller can see why the search ran unfiltered."""
+        with caplog.at_level("WARNING"):
+            r = await AcademicResearchToolkit().search_crossref(
+                "x", year_range="not-a-range"
+            )
+        assert r.status in {"success", "no_data"}
+        assert "filter" not in capture_crossref_call.kwargs
+        assert any(
+            "malformed year_range" in record.message
+            for record in caplog.records
+        )

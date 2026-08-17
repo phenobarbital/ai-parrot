@@ -277,8 +277,9 @@ method + call parameters:
 | Data kind | Default TTL |
 |---|---|
 | Indicators (World Bank, OECD data queries) | 1 hour |
+| Datasets (EU Open Data Portal search) | 1 hour |
 | OECD dataflow catalog | 24 hours (large, slow-changing) |
-| Papers/datasets (Crossref, PubMed, Semantic Scholar, arXiv, EU Open Data) | 24 hours |
+| Papers (Crossref, PubMed, Semantic Scholar, arXiv) | 24 hours |
 
 ## 11. Not Covered in v1
 

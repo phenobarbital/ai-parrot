@@ -230,10 +230,12 @@ class ResearchRouter(AbstractTool):
         which records it as a category-level failure without ever raising
         into the agent loop.
         """
-        method_names = _CATEGORY_METHODS.get(category)
-        if method_names is None:
-            raise ValueError(f"Unknown category: {category}")
-
+        # `category` is always a member of `VALID_CATEGORIES` by the time it
+        # reaches here — filtered by the explicit-categories branch or by
+        # `_classify()`/`_classify_with_heuristics()` in `_execute()` before
+        # dispatch — so a direct lookup is correct; a `.get()` + defensive
+        # `None` check here was dead code (it could never be `None`).
+        method_names = _CATEGORY_METHODS[category]
         toolkit = self.open_data if category == "open_data" else self.academic
         outcomes = await asyncio.gather(
             *(
