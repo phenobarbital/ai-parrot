@@ -14,14 +14,14 @@
       "feature_id": "FEAT-427",
       "feature": "fix-generate-tool-registry-annassign",
       "spec": "sdd/specs/fix-generate-tool-registry-annassign.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single-file fix, single task. No parallelism to consider.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-17T09:22:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2245-fix-generate-tool-registry-annassign.md"
     }
