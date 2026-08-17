@@ -112,7 +112,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Academic chain. Same file as 2238/2240/2241 so sequential within the chain. Only source with a mandatory two-call workflow and hard documented rate limits.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2239-pubmed-search.md"
+      "completed_at": "2026-08-17T00:56:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2239-pubmed-search.md"
     },
     {
       "id": "TASK-2240",
