@@ -228,8 +228,19 @@ class TestOECD:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: Added `search_oecd_data` (catalog listing via `sdmx.Client("OECD3")`
++ client-side id/name filtering, cached 24h) and `get_oecd_indicator`
+(fetches the DSD via `client.dataflow(dataset_id)` before building a
+bounded `client.data(dataset_id, key={"REF_AREA": ..., "FREQ": ...},
+params={"startPeriod": ...})` query, cached 1h). `sdmx1` is not installed
+in this environment, so tests patch `open_data.sdmx` with a fake module
+whose `Client` records source id, call order, and query key/params —
+verifying the `OECD3` source, DSD-before-data ordering, and query
+boundedness without a real SDMX server (spec goal G6). `_rows_from_oecd_message`
+normalizes either a test-provided `.observations` list or (best-effort,
+untested here since the library isn't installed) `sdmx.to_pandas()`
+output. 7/7 new tests pass; full research suite (38 tests) green;
+`ruff check` clean.
+**Deviations from spec**: none

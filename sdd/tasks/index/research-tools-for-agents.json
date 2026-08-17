@@ -72,7 +72,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Tail of the open-data chain. Hardest source (SDMX 3.0, positional dimensions, DSD fetch, unpaginated responses). Closes the chain and, with 2241, unblocks the router.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2237-oecd-sdmx-methods.md"
+      "completed_at": "2026-08-17T00:49:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2237-oecd-sdmx-methods.md"
     },
     {
       "id": "TASK-2238",
