@@ -213,8 +213,35 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Implemented `build_web_agent`, `build_arxiv_agent`,
+`build_deep_research_caller` (LLMFactory-backed, default
+`google:gemini-3-flash`, cross-provider `deep_research=True` passthrough),
+`build_agent_registry` (per-angle singleton registration for `web`/`arxiv`
+sources), and normalizers `websearch_to_findings`, `deep_research_to_findings`,
+`arxiv_to_findings` plus `extract_groundedness_report`. 26 unit tests pass
+(mocked — no network/LLM). `ruff check` reports only pre-existing `UP045`
+style findings (see TASK-2226 note).
+
+Design notes (verified against actual registry code, not guessed):
+- `AgentRegistry.register()` requires a *class* factory (`issubclass` check)
+  and only its sync `get_bot_instance()` reads a cached `_instance` — so
+  `build_agent_registry` registers `singleton=True` per (angle, source) under
+  deterministic names; eager `get_instance()` resolution is left to TASK-2231
+  (`from_definition` wiring), matching FEAT-163's established eager-resolve
+  pattern.
+- `build_deep_research_caller` uses `LLMFactory.create(llm=...)`
+  (`clients/factory.py:179`, verified) to build the configured client from a
+  `"provider:model"` string — not in the task's Verified Imports list, but
+  independently confirmed to exist before use, per the anti-hallucination rule.
+- Websearch/deep-research normalizers extract structured per-source grounding
+  data when present under common metadata keys, else fall back to one
+  aggregate claim per response — the codebase does not yet expose a single
+  stable parsed citation list for Gemini built-in search / Deep Research.
+- Local worktree environment gap (pre-existing, unrelated to this task):
+  `parrot.utils.types` / `parrot.utils.parsers.toml` compiled `.so` extensions
+  were missing from this worktree; copied from the main checkout's build
+  output so tests could import `parrot.bots.*` (gitignored, not committed).
 
 **Deviations from spec**: none

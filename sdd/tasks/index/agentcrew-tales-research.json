@@ -32,7 +32,7 @@
       "feature_id": "FEAT-425",
       "feature": "agentcrew-tales-research",
       "spec": "sdd/specs/agentcrew-tales-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "File-disjoint from TASK-2228 (factories.py vs rendering/); both only import TASK-2226 models — can run concurrently after 2226.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:33:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2227-thales-research-factories.md"
+      "completed_at": "2026-08-17T00:45:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2227-thales-research-factories.md"
     },
     {
       "id": "TASK-2228",
