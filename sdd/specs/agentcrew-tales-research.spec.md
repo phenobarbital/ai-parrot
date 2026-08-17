@@ -4,7 +4,7 @@ type: feature
 base_branch: dev
 ---
 
-# Feature Specification: "Tales" — Research Flow with Structured Citations, Decks & Final Report
+# Feature Specification: "Thales" — Research Flow with Structured Citations, Decks & Final Report
 
 **Feature ID**: FEAT-425
 **Date**: 2026-08-17
@@ -13,10 +13,12 @@ base_branch: dev
 **Target version**: 0.26.x
 **Brainstorm**: `sdd/proposals/agentcrew-tales-research.brainstorm.md`
 
-> Named after Thales of Miletus. Despite the working slug
-> `agentcrew-tales-research`, the orchestration backbone is **AgentsFlow**
-> (DAG), decided in brainstorm Round 1 — the pipeline's fan-out → fan-in →
-> per-deck transform shape maps to explicit edges, not `AgentCrew.run_flow()`.
+> Named after **Thales of Miletus** (the codename's English spelling is
+> "Thales"; the Spanish "Tales" survives only in the working slug
+> `agentcrew-tales-research`, kept for ledger/file continuity). Despite that
+> slug, the orchestration backbone is **AgentsFlow** (DAG), decided in
+> brainstorm Round 1 — the pipeline's fan-out → fan-in → per-deck transform
+> shape maps to explicit edges, not `AgentCrew.run_flow()`.
 
 ---
 
@@ -33,7 +35,7 @@ deterministic groundedness scoring, InfographicToolkit, an ArtifactStore, a
 weasyprint PDF renderer) but **no flow that assembles them into a research
 product**.
 
-Tales closes that gap: a parallel multi-agent investigation whose every
+Thales closes that gap: a parallel multi-agent investigation whose every
 factual claim carries **source metadata** (URL, publication date, authors,
 publisher), materialized as research decks (structured JSON), per-deck HTML
 slides (charts/tables/quotes), a final print-CSS HTML document with an
@@ -58,7 +60,7 @@ and an executive summary + summary infographic.
   (`ResearchDeck`, `SlideSpec`); slide/document HTML is produced by pure
   Python (TemplateEngine/Jinja2 + ECharts option-JSON with static-SVG print
   fallback, FEAT-273 convention). No LLM in the render path.
-- G5. **Four delivery surfaces in this spec**: Python API (`TalesRunner`),
+- G5. **Four delivery surfaces in this spec**: Python API (`ThalesRunner`),
   aiohttp HTTP handler (POST + polling — resolved in brainstorm),
   filesystem output dir with `manifest.json`, and persistence via
   `ArtifactStore` (public URLs).
@@ -94,7 +96,7 @@ and an executive summary + summary infographic.
 
 ### Overview
 
-Tales is a **domain flow package** at `parrot/flows/tales/`, following the
+Thales is a **domain flow package** at `parrot/flows/thales/`, following the
 documented application-flow pattern (`parrot/flows/dev_loop/` template:
 `definition.py + factories.py + models/ + nodes/ + runner.py`) built on
 `AgentsFlow.from_definition(..., node_factories=...)` so live dependencies
@@ -133,12 +135,12 @@ weasyprint when importable), `infographic` (`InfographicToolkit`).
 
 All artifacts persist through `ArtifactStore.save_artifact` /
 `get_public_url`, mirror to `output_dir`, and are indexed in
-`manifest.json` + the returned `TalesResult`.
+`manifest.json` + the returned `ThalesResult`.
 
 ### Component Diagram
 
 ```
-TalesRunner.run()
+ThalesRunner.run()
   │ phase 1: planner LLM ──▶ list[ResearchAngle]  (len ≥ 10, no cap)
   │ phase 2: build FlowDefinition ──▶ AgentsFlow.from_definition(node_factories=…, checkpoint=True)
   ▼
@@ -151,9 +153,9 @@ start ─▶ per angle i (parallel):
          final_document ◀── slides + bibliography (print-CSS HTML [+ .pdf])             │
          infographic   ◀── exec_summary + decks (InfographicToolkit) ─▶ end ◀───────────┘
   ▼
-ArtifactStore + output_dir/manifest.json ──▶ TalesResult
+ArtifactStore + output_dir/manifest.json ──▶ ThalesResult
   ▲
-TalesHandler (ai-parrot-server): POST /api/v1/tales ─▶ run_id; GET …/{run_id} ─▶ status/manifest
+ThalesHandler (ai-parrot-server): POST /api/v1/thales ─▶ run_id; GET …/{run_id} ─▶ status/manifest
 ```
 
 ### Integration Points
@@ -170,13 +172,13 @@ TalesHandler (ai-parrot-server): POST /api/v1/tales ─▶ run_id; GET …/{run_
 | `ArtifactStore` (`storage/artifacts.py`) | uses | persistence + signed public URLs for all artifacts |
 | `TemplateEngine` (`template/engine.py`) | uses | slide + document Jinja templates |
 | `weasyprint` (lazy, pdf extra) | optional uses | real `.pdf` of the final document; mirror `_import_weasyprint` pattern (`a2ui_renderers/pdf.py:36`) |
-| ai-parrot-server `handlers/` | extends | new `handlers/tales.py` (precedent: `handlers/infographic.py`) |
+| ai-parrot-server `handlers/` | extends | new `handlers/thales.py` (precedent: `handlers/infographic.py`) |
 | `research-tools-for-agents` (separate spec) | contract consumer | implements research nodes against `SourceClaim` / research-node contract |
 
 ### Data Models
 
 ```python
-# parrot/flows/tales/models/ — key Pydantic contracts (names are normative)
+# parrot/flows/thales/models/ — key Pydantic contracts (names are normative)
 
 class ResearchAngle(BaseModel):
     angle_id: str
@@ -219,7 +221,7 @@ class Bibliography(BaseModel):
     entries: list[str]                   # APA-ish formatted, deduped
     claims: list[SourceClaim]
 
-class TalesConfig(BaseModel):
+class ThalesConfig(BaseModel):
     thesis: str
     num_decks: int = Field(default=10, ge=10)   # minimum 10, NO upper cap (resolved)
     sources: list[str] = ["web", "deep_research", "arxiv"]
@@ -233,7 +235,7 @@ class ArtifactRef(BaseModel):
     url: Optional[str]
     path: Optional[Path]
 
-class TalesResult(BaseModel):            # the manifest
+class ThalesResult(BaseModel):            # the manifest
     thesis: str
     decks: list[ResearchDeck]
     slides: list[ArtifactRef]
@@ -249,21 +251,21 @@ class TalesResult(BaseModel):            # the manifest
 ### New Public Interfaces
 
 ```python
-# parrot/flows/tales/runner.py
-class TalesRunner:
+# parrot/flows/thales/runner.py
+class ThalesRunner:
     def __init__(self, thesis: str, *, num_decks: int = 10,
                  sources: Optional[list[str]] = None,
                  output_dir: Optional[Path] = None,
                  artifact_store: Optional[ArtifactStore] = None,
                  llm: Optional[str] = None, **kwargs) -> None: ...
-    async def run(self) -> TalesResult: ...
+    async def run(self) -> ThalesResult: ...
     # progress: forwards AgentsFlow on_node_event to registered listeners
 
-# packages/ai-parrot-server/src/parrot/handlers/tales.py
-class TalesHandler:                      # aiohttp, precedent handlers/infographic.py
-    # POST /api/v1/tales               → {"run_id": ...}          (launch)
-    # GET  /api/v1/tales/{run_id}      → status + manifest-so-far  (polling)
-    # GET  /api/v1/tales/{run_id}/artifacts → ArtifactStore public URLs
+# packages/ai-parrot-server/src/parrot/handlers/thales.py
+class ThalesHandler:                      # aiohttp, precedent handlers/infographic.py
+    # POST /api/v1/thales               → {"run_id": ...}          (launch)
+    # GET  /api/v1/thales/{run_id}      → status + manifest-so-far  (polling)
+    # GET  /api/v1/thales/{run_id}/artifacts → ArtifactStore public URLs
 ```
 
 ---
@@ -271,14 +273,14 @@ class TalesHandler:                      # aiohttp, precedent handlers/infograph
 ## 3. Module Breakdown
 
 ### Module 1: Deck & Config Models
-- **Path**: `packages/ai-parrot/src/parrot/flows/tales/models/` (`__init__.py`, `deck.py`, `slides.py`, `config.py`, `result.py`)
+- **Path**: `packages/ai-parrot/src/parrot/flows/thales/models/` (`__init__.py`, `deck.py`, `slides.py`, `config.py`, `result.py`)
 - **Responsibility**: All Pydantic contracts (§2 Data Models). This module IS
   the interface the `research-tools-for-agents` spec implements against —
   keep it dependency-light (pydantic + stdlib only).
 - **Depends on**: nothing new.
 
 ### Module 2: Research Agent & Node Factories
-- **Path**: `packages/ai-parrot/src/parrot/flows/tales/factories.py`
+- **Path**: `packages/ai-parrot/src/parrot/flows/thales/factories.py`
 - **Responsibility**: Build per-run research agents — WebSearchAgent
   (builtin search + contrastive + groundedness), Deep Research node
   (`GoogleGenAIClient.ask(deep_research=True)`), Arxiv agent — registered in
@@ -287,7 +289,7 @@ class TalesHandler:                      # aiohttp, precedent handlers/infograph
 - **Depends on**: Module 1.
 
 ### Module 3: Flow Nodes
-- **Path**: `packages/ai-parrot/src/parrot/flows/tales/nodes/` (`planner.py`, `deck_builder.py`, `slide_spec.py`, `bibliography.py`, `summary.py`, `document.py`, `infographic.py`)
+- **Path**: `packages/ai-parrot/src/parrot/flows/thales/nodes/` (`planner.py`, `deck_builder.py`, `slide_spec.py`, `bibliography.py`, `summary.py`, `document.py`, `infographic.py`)
 - **Responsibility**: PlannerNode (thesis → ≥10 `ResearchAngle`s, structured
   output); DeckBuilderNode (per-angle OR-join fan-in → `ResearchDeck`);
   SlideSpecNode (deck → `SlideSpec`, structured output); BibliographyNode
@@ -299,7 +301,7 @@ class TalesHandler:                      # aiohttp, precedent handlers/infograph
 - **Depends on**: Modules 1–2, Module 4 (document/slide rendering calls).
 
 ### Module 4: Deterministic Renderer
-- **Path**: `packages/ai-parrot/src/parrot/flows/tales/rendering/` (`slides.py`, `document.py`, `charts.py`, `templates/*.html.j2`)
+- **Path**: `packages/ai-parrot/src/parrot/flows/thales/rendering/` (`slides.py`, `document.py`, `charts.py`, `templates/*.html.j2`)
 - **Responsibility**: Jinja2 slide templates (hanademi.com deck page as the
   v1 layout reference); chart emission as ECharts option-JSON (browser path)
   + static SVG (print path, FEAT-273/SPK-1 constraint); print-CSS
@@ -310,23 +312,23 @@ class TalesHandler:                      # aiohttp, precedent handlers/infograph
 - **Depends on**: Module 1.
 
 ### Module 5: Definition Assembly + Runner
-- **Path**: `packages/ai-parrot/src/parrot/flows/tales/definition.py`, `runner.py`, `__init__.py`
-- **Responsibility**: Pure function `build_tales_definition(angles, config)
+- **Path**: `packages/ai-parrot/src/parrot/flows/thales/definition.py`, `runner.py`, `__init__.py`
+- **Responsibility**: Pure function `build_thales_definition(angles, config)
   -> FlowDefinition` (N×M research nodes, per-deck chains, fan-in edges);
-  `TalesRunner` (two-phase run, ephemeral `AgentRegistry`,
+  `ThalesRunner` (two-phase run, ephemeral `AgentRegistry`,
   `checkpoint=True`, ArtifactStore persistence, `output_dir` mirroring,
-  `manifest.json`, `TalesResult` aggregation, node-event forwarding).
+  `manifest.json`, `ThalesResult` aggregation, node-event forwarding).
 - **Depends on**: Modules 1–4.
 
 ### Module 6: HTTP Handler
-- **Path**: `packages/ai-parrot-server/src/parrot/handlers/tales.py`
+- **Path**: `packages/ai-parrot-server/src/parrot/handlers/thales.py`
 - **Responsibility**: POST + polling surface (§2 New Public Interfaces);
   in-memory/redis run registry keyed by `run_id`; status document updated
   from `on_node_event`; artifact listing via `ArtifactStore.get_public_url`.
 - **Depends on**: Module 5.
 
 ### Module 7: Tests, Fixtures & Docs
-- **Path**: `packages/ai-parrot/tests/flows/tales/`, `packages/ai-parrot-server/tests/…`, `docs/flows/tales.md`
+- **Path**: `packages/ai-parrot/tests/flows/thales/`, `packages/ai-parrot-server/tests/…`, `docs/flows/thales.md`
 - **Responsibility**: §4 test spec + user guide (API + HTTP examples).
 - **Depends on**: Modules 1–6.
 
@@ -337,7 +339,7 @@ class TalesHandler:                      # aiohttp, precedent handlers/infograph
 ### Unit Tests
 | Test | Module | Description |
 |---|---|---|
-| `test_models_roundtrip` | 1 | Deck/SlideSpec/TalesResult serialize/deserialize; `num_decks` ge=10 enforced; no upper cap |
+| `test_models_roundtrip` | 1 | Deck/SlideSpec/ThalesResult serialize/deserialize; `num_decks` ge=10 enforced; no upper cap |
 | `test_source_claim_verification_labels` | 1 | verification ∈ {groundedness, provider_grounding, unverified} |
 | `test_factory_websearch_agent_flags` | 2 | agent built with builtin search + contrastive + `enable_groundedness=True` |
 | `test_factory_arxiv_mapping` | 2 | ArxivTool result dict → `SourceClaim` (title/authors/published/pdf_url/journal_ref) |
@@ -349,15 +351,15 @@ class TalesHandler:                      # aiohttp, precedent handlers/infograph
 | `test_document_print_css` | 4 | final HTML has `@page` rules + page-break per slide + bibliography last |
 | `test_pdf_optional` | 4 | weasyprint absent → no `.pdf`, warning in manifest; present → `.pdf` artifact emitted |
 | `test_build_definition_shape` | 5 | N angles × M sources → expected node/edge counts, valid `FlowDefinition` |
-| `test_runner_manifest` | 5 | artifacts persisted (mock store), `manifest.json` written, `TalesResult` complete |
+| `test_runner_manifest` | 5 | artifacts persisted (mock store), `manifest.json` written, `ThalesResult` complete |
 | `test_handler_post_poll` | 6 | POST returns run_id; GET reflects node-event progress; artifact listing |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `test_tales_e2e_mocked_llm` | Full run with mocked LLM/tool responses: thesis → ≥10 decks → slides → document (+pdf if available) → infographic; manifest complete |
-| `test_tales_checkpoint_resume` | Kill after research phase; resume via FEAT-399 checkpoint completes the run |
-| `test_tales_partial_sources` | deep_research disabled/unavailable → run degrades, decks cite web+arxiv only |
+| `test_thales_e2e_mocked_llm` | Full run with mocked LLM/tool responses: thesis → ≥10 decks → slides → document (+pdf if available) → infographic; manifest complete |
+| `test_thales_checkpoint_resume` | Kill after research phase; resume via FEAT-399 checkpoint completes the run |
+| `test_thales_partial_sources` | deep_research disabled/unavailable → run degrades, decks cite web+arxiv only |
 
 ### Test Data / Fixtures
 ```python
@@ -378,7 +380,7 @@ def sample_slide_spec():
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] All unit tests pass (`pytest packages/ai-parrot/tests/flows/tales/ -v`)
+- [ ] All unit tests pass (`pytest packages/ai-parrot/tests/flows/thales/ -v`)
 - [ ] Integration tests pass (mocked-LLM e2e, checkpoint resume, partial sources)
 - [ ] A run produces, for N angles: N `ResearchDeck` JSON artifacts, N slide
       HTML artifacts, 1 final print-CSS HTML (slides + APA-ish bibliography
@@ -395,11 +397,11 @@ def sample_slide_spec():
       emitted; without it, the run succeeds with a manifest warning
 - [ ] A failed research source degrades (OR-join): deck built from surviving
       sources with `failed_sources` recorded; run aborts only if ALL decks fail
-- [ ] HTTP surface: `POST /api/v1/tales` returns `run_id`; polling GET
+- [ ] HTTP surface: `POST /api/v1/thales` returns `run_id`; polling GET
       reflects node-event progress; artifacts listed with public URLs
 - [ ] No changes to `flow.py`, `crew.py`, `abstract.py`, or any existing
       public API (purely additive feature)
-- [ ] Documentation added at `docs/flows/tales.md`
+- [ ] Documentation added at `docs/flows/thales.md`
 
 ---
 
@@ -528,7 +530,7 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 ### Integration Points
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `build_tales_definition()` | `AgentsFlow.from_definition(node_factories=…)` | classmethod call | `flow/flow.py:428` |
+| `build_thales_definition()` | `AgentsFlow.from_definition(node_factories=…)` | classmethod call | `flow/flow.py:428` |
 | research node (web) | `WebSearchAgent.ask()` | agent call | `bots/search.py:45` |
 | research node (deep) | `AbstractClient.ask(deep_research=True)` | flag on ask (cross-provider) | `clients/base.py:1631`; google `client.py:2876`; claude.py:425; gpt.py:679 |
 | research node (arxiv) | `ArxivTool._execute()` via agent tools | tool call | `arxiv_tool.py:36` |
@@ -537,13 +539,13 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 | InfographicNode | `InfographicToolkit.render` / `render_template` | toolkit call | `infographic_toolkit.py:403/520` |
 | persistence | `ArtifactStore.save_artifact` / `get_public_url` | method calls | `storage/artifacts.py:46/177` |
 | PDF emission | weasyprint via lazy import | `_import_weasyprint` pattern | `a2ui_renderers/pdf.py:36` |
-| `TalesHandler` | aiohttp handler registration | precedent | `packages/ai-parrot-server/src/parrot/handlers/infographic.py` |
+| `ThalesHandler` | aiohttp handler registration | precedent | `packages/ai-parrot-server/src/parrot/handlers/infographic.py` |
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`parrot/flows/tales/`~~ — created by this feature (no "tales" reference
-  in `parrot/` today; verified by grep).
+- ~~`parrot/flows/thales/`~~ — created by this feature (no "tales"/"thales"
+  reference in `parrot/` today; verified by grep).
 - ~~`ResearchAngle` / `SourceClaim` / `Finding` / `ResearchDeck` /
-  `SlideSpec` / `Bibliography` / `TalesConfig` / `TalesResult`~~ — created
+  `SlideSpec` / `Bibliography` / `ThalesConfig` / `ThalesResult`~~ — created
   by this feature (Module 1).
 - ~~Uniform `deep_research` semantics across providers~~ — the flag exists
   on every client's `ask()` (base contract, `base.py:1631`) but behavior
@@ -552,7 +554,7 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
   **logs and ignores it** (`bedrock.py:648`) — do not assume it deepens
   a Bedrock call.
 - ~~A `DeepResearchAgent` bot class~~ — Deep Research is the `ask()` flag
-  above, not an agent; Tales wraps it in a node.
+  above, not an agent; Thales wraps it in a node.
 - ~~`WorldBankDataTool` / `EuropeanOpenDataTool` / `OxfordAcademicTool` /
   `GallupTool`~~ — deferred to the separate `research-tools-for-agents` spec.
 - ~~A bibliography/citation formatter anywhere in `parrot/`~~ — none exists;
@@ -564,7 +566,7 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
   none → label `provider_grounding` (resolved in brainstorm).
 - ~~A generic "deck"/slide template in `infographic_registry`~~ — only
   infographic templates exist (`multi_tab`, `crew_report`); Module 4 ships
-  Tales' own Jinja slide/document templates.
+  Thales' own Jinja slide/document templates.
 - ~~SSE/WebSocket progress endpoints~~ — out of scope; POST + polling only.
 
 ---
@@ -603,10 +605,10 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 - **Citation honesty**: `published_date` is Optional; APA-ish formatter
   renders "n.d." — inventing dates is a spec violation.
 - **`num_decks ≥ 10` floor** may surprise API users expecting small cheap
-  runs — document prominently in `docs/flows/tales.md` and the handler's
+  runs — document prominently in `docs/flows/thales.md` and the handler's
   400 error message.
 - **Dynamic FlowDefinition per run**: build-then-run two-phase; keep
-  `build_tales_definition()` a pure function so it is exhaustively
+  `build_thales_definition()` a pure function so it is exhaustively
   unit-testable without executing anything.
 
 ### External Dependencies
@@ -636,7 +638,7 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
 - [x] `num_decks` default/cap — *Resolved in brainstorm*: minimum decks is
   10, with no hard cap.
 - [x] Bibliography citation style — *Resolved in brainstorm*: APA-ish format.
-- [x] HTTP surface shape — *Resolved in brainstorm*: `POST /api/v1/tales`
+- [x] HTTP surface shape — *Resolved in brainstorm*: `POST /api/v1/thales`
   + polling.
 - [x] Oxford Academic / Gallup access model — *Resolved in brainstorm*: not
   in this scope; handled by the separate `research-tools-for-agents` spec.
@@ -655,7 +657,7 @@ class PDFRenderer(AbstractA2UIRenderer):                  # L99 (weasyprint; SPK
   independent once Module 1 lands — may interleave inside the same worktree,
   not separate worktrees.
 - **Cross-feature dependencies**: none to merge first — all new files under
-  `parrot/flows/tales/` + one new server handler; no edits to `flow.py`,
+  `parrot/flows/thales/` + one new server handler; no edits to `flow.py`,
   `crew.py`, or `abstract.py`. The separate `research-tools-for-agents`
   spec consumes Module 1's `SourceClaim` contract and can proceed in its
   own worktree in parallel once Module 1 is merged.
