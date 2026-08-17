@@ -52,7 +52,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Open-data chain. Same file as 2235/2237 so sequential within the chain, but the chain as a whole runs parallel to the academic chain.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2236-eu-open-data-search.md"
+      "completed_at": "2026-08-17T00:45:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2236-eu-open-data-search.md"
     },
     {
       "id": "TASK-2237",

@@ -207,8 +207,14 @@ class TestEUOpenData:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: Added `search_eu_open_data` to `OpenDataToolkit` via
+`self._make_api_request()` against the piveau full-text search endpoint,
+with `limit` clamped to 1000 and `page=0`. `_pick_lang()` resolves
+language-keyed `title`/`description`/`publisher.name` metadata, falling
+back to the first available language when `en` is absent. 5/5 new tests
+pass offline (multilingual fallback, limit clamp via a `_make_api_request`
+capture fixture, transport-error and empty-result data-not-exception
+paths); full research suite (31 tests) green; `ruff check` clean.
+**Deviations from spec**: none
