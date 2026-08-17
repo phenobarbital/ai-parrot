@@ -1,14 +1,19 @@
 """
 AcademicResearchToolkit — direct access to free academic-literature APIs
-(FEAT-426 Module 3: Crossref, PubMed; Semantic Scholar, arXiv, and
-`get_paper_details` are added by later tasks in this same module).
+(FEAT-426 Module 3: Crossref, PubMed, Semantic Scholar, arXiv;
+`get_paper_details` is added by the tail task in this same module).
 
 Crossref also covers Oxford Academic (OUP) content via DOI prefix
 "10.1093" — OUP has no API of its own, so there is no separate Oxford
 source anywhere in this feature. PubMed requires a mandatory two-step
 `esearch` -> `efetch` workflow and NCBI's documented rate limits (3 req/s
-unkeyed, 10 req/s with a free API key). See spec §3 Module 3 and §7
-"Known Risks".
+unkeyed, 10 req/s with a free API key). Semantic Scholar requires an
+explicit `fields=` parameter (the default response is title-only) and
+rejects hyphenated query terms. arXiv search logic is a deliberate,
+accepted-debt port of `parrot_tools.arxiv_tool.ArxivTool` — that module
+is never imported or modified here so its plain-dict return shape stays
+unchanged for backward compatibility. See spec §3 Module 3 and §7 "Known
+Risks".
 """
 import asyncio
 
@@ -30,6 +35,12 @@ try:
 except ImportError:
     Entrez = None
 
+try:
+    # Extra already exists: arxiv = ["arxiv>=3.0.0"] (pyproject.toml:79).
+    import arxiv
+except ImportError:
+    arxiv = None
+
 _CROSSREF_SOURCE_NAME = "Crossref"
 _CROSSREF_MISSING_MESSAGE = (
     "Crossref support requires: pip install 'ai-parrot-tools[research]'"
@@ -47,15 +58,39 @@ _PUBMED_CACHE_TTL = 86400
 _PUBMED_UNKEYED_DELAY = 1.0 / 3
 _PUBMED_KEYED_DELAY = 1.0 / 10
 
+# Semantic Scholar: fields= is mandatory — the default response is only
+# paperId+title. Free tier + optional SEMANTIC_SCHOLAR_API_KEY (raises
+# limits, never required); sent as `x-api-key`, NOT `Authorization`.
+_S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
+_S2_SOURCE_NAME = "Semantic Scholar"
+_S2_FIELDS = (
+    "title,abstract,authors,year,venue,citationCount,"
+    "openAccessPdf,externalIds,fieldsOfStudy"
+)
+_S2_LIMIT_CAP = 100
+_S2_CACHE_TTL = 86400
+
+_ARXIV_SOURCE_NAME = "arXiv"
+_ARXIV_MISSING_MESSAGE = (
+    "arXiv support requires: pip install 'ai-parrot-tools[research]'"
+)
+_ARXIV_CACHE_TTL = 86400
+_ARXIV_SORT_CRITERION_NAMES = {
+    "relevance": "Relevance",
+    "lastUpdatedDate": "LastUpdatedDate",
+    "submittedDate": "SubmittedDate",
+}
+
 
 class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
     """Direct, structured access to authoritative academic-literature sources.
 
     Covers Crossref (full-text bibliographic search, also reaching Oxford
-    Academic content via DOI prefix "10.1093") and PubMed (two-step
-    `esearch`/`efetch` biomedical literature search). Semantic Scholar,
-    arXiv, and `get_paper_details` are added by later tasks in this same
-    module (spec §3 Module 3).
+    Academic content via DOI prefix "10.1093"), PubMed (two-step
+    `esearch`/`efetch` biomedical literature search), Semantic Scholar
+    (aiohttp full-text search), and arXiv (preprint search).
+    `get_paper_details` is added by the tail task in this same module
+    (spec §3 Module 3).
     """
 
     async def search_crossref(
@@ -398,4 +433,226 @@ class AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit):
             url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else None,
             journal=journal,
             source="pubmed",
+        )
+
+    async def search_semantic_scholar(
+        self,
+        query: str,
+        fields_of_study: str | None = None,
+        year: str | None = None,
+        open_access_only: bool = False,
+        max_results: int = 10,
+    ) -> ResearchResult:
+        """Search Semantic Scholar for scholarly papers.
+
+        Sends an explicit `fields=` parameter — the default response is
+        only `paperId`+`title`. Hyphenated query terms return zero matches
+        and are rewritten to spaces. The unauthenticated pool is shared
+        globally, so 429s are common; `_make_api_request` already retries
+        with backoff. An optional free `SEMANTIC_SCHOLAR_API_KEY` raises
+        rate limits but is never required.
+
+        Args:
+            query: Free-text search query.
+            fields_of_study: Optional comma-separated field-of-study filter
+                (e.g. "Computer Science,Medicine").
+            year: Optional publication year or range, e.g. "2020-2023".
+            open_access_only: When True, keep only papers with an open
+                access PDF.
+            max_results: Maximum number of papers to return (server caps
+                `limit` at 100 per page).
+
+        Returns:
+            A `ResearchResult` with `result_type="papers"`.
+        """
+        source = "academic.search_semantic_scholar"
+        cache_params = {
+            "query": query, "fields_of_study": fields_of_study, "year": year,
+            "open_access_only": open_access_only, "max_results": max_results,
+        }
+        cached = await self._cache.get(
+            "academic", "search_semantic_scholar", **cache_params
+        )
+        if cached is not None:
+            return ResearchResult(**cached)
+
+        # Hyphens kill matching — rewrite to spaces before sending.
+        params = {
+            "query": query.replace("-", " "),
+            "fields": _S2_FIELDS,
+            "limit": min(max_results, _S2_LIMIT_CAP),
+        }
+        if fields_of_study:
+            params["fieldsOfStudy"] = fields_of_study
+        if year:
+            params["year"] = year
+
+        headers = {}
+        api_key = config.get("SEMANTIC_SCHOLAR_API_KEY", fallback=None)
+        if api_key:
+            headers["x-api-key"] = api_key
+
+        payload, err = await self._make_api_request(
+            _S2_SEARCH_URL, params=params, headers=headers
+        )
+        if err:
+            return self._failure(query, source, "papers", "error", err)
+
+        items = (payload or {}).get("data", [])
+        if open_access_only:
+            items = [i for i in items if i.get("openAccessPdf")]
+        if not items:
+            return self._failure(
+                query, source, "papers", "no_data",
+                f"No Semantic Scholar papers matched '{query}'",
+            )
+
+        papers = [self._paper_from_s2_item(item) for item in items[:max_results]]
+        citation = self._build_citation(
+            source_name=_S2_SOURCE_NAME,
+            source_url="https://www.semanticscholar.org/search",
+        )
+        result = ResearchResult(
+            query=query, source=source, result_type="papers",
+            status="success", total_results=len(papers),
+            papers=papers, citation=citation,
+        )
+        await self._cache.set(
+            "academic", "search_semantic_scholar", result.model_dump(),
+            ttl=_S2_CACHE_TTL, **cache_params,
+        )
+        return result
+
+    def _paper_from_s2_item(self, item: dict) -> PaperResult:
+        """Convert a raw Semantic Scholar `/paper/search` item into a `PaperResult`."""
+        authors = [
+            a.get("name") for a in (item.get("authors") or []) if a.get("name")
+        ]
+        external_ids = item.get("externalIds") or {}
+        open_access_pdf = item.get("openAccessPdf")
+
+        return PaperResult(
+            title=item.get("title") or "Untitled paper",
+            authors=authors,
+            abstract=item.get("abstract"),
+            published_date=str(item["year"]) if item.get("year") else None,
+            doi=external_ids.get("DOI"),
+            url=(open_access_pdf or {}).get("url"),
+            journal=item.get("venue") or None,
+            citation_count=item.get("citationCount"),
+            fields_of_study=item.get("fieldsOfStudy"),
+            open_access=bool(open_access_pdf),
+            source="semantic_scholar",
+        )
+
+    async def search_arxiv(
+        self,
+        query: str,
+        max_results: int = 10,
+        sort_by: str = "relevance",
+        category: str | None = None,
+    ) -> ResearchResult:
+        """Search arXiv for preprints.
+
+        Ported from `parrot_tools.arxiv_tool.ArxivTool`'s mapping logic —
+        that module is never imported or modified here, so its plain-dict
+        return shape stays unchanged for backward compatibility (accepted
+        duplication, see spec §7).
+
+        Args:
+            query: arXiv query string (keywords, `au:`, `cat:`, ...).
+            max_results: Maximum number of results.
+            sort_by: 'relevance' | 'lastUpdatedDate' | 'submittedDate'.
+            category: Optional arXiv category to prefix the query with
+                (`cat:<category> AND <query>`).
+
+        Returns:
+            A `ResearchResult` with `result_type="papers"`.
+        """
+        source = "academic.search_arxiv"
+        if arxiv is None:
+            return self._failure(
+                query, source, "papers", "error", _ARXIV_MISSING_MESSAGE
+            )
+
+        cache_params = {
+            "query": query, "max_results": max_results,
+            "sort_by": sort_by, "category": category,
+        }
+        cached = await self._cache.get("academic", "search_arxiv", **cache_params)
+        if cached is not None:
+            return ResearchResult(**cached)
+
+        full_query = f"cat:{category} AND {query}" if category else query
+
+        try:
+            results = await self._fetch_arxiv_results(
+                full_query, max_results, sort_by
+            )
+        except Exception as e:  # noqa: BLE001 — never raise into the agent loop
+            self.logger.error("arXiv search failed: %s", e)
+            return self._failure(
+                query, source, "papers", "error", f"arXiv search failed: {e}"
+            )
+
+        if not results:
+            return self._failure(
+                query, source, "papers", "no_data",
+                f"No arXiv results for '{query}'",
+            )
+
+        papers = [self._paper_from_arxiv_result(p) for p in results]
+        citation = self._build_citation(
+            source_name=_ARXIV_SOURCE_NAME, source_url="https://arxiv.org"
+        )
+        result = ResearchResult(
+            query=query, source=source, result_type="papers",
+            status="success", total_results=len(papers),
+            papers=papers, citation=citation,
+        )
+        await self._cache.set(
+            "academic", "search_arxiv", result.model_dump(),
+            ttl=_ARXIV_CACHE_TTL, **cache_params,
+        )
+        return result
+
+    async def _fetch_arxiv_results(
+        self, query: str, max_results: int, sort_by: str
+    ) -> list:
+        """Run the blocking `arxiv.Client().results()` call in an executor."""
+        criterion_name = _ARXIV_SORT_CRITERION_NAMES.get(sort_by, "Relevance")
+        sort_criterion = getattr(arxiv.SortCriterion, criterion_name)
+
+        @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+        def _fetch():
+            search = arxiv.Search(
+                query=query,
+                max_results=max_results,
+                sort_by=sort_criterion,
+                sort_order=arxiv.SortOrder.Descending,
+            )
+            return list(arxiv.Client().results(search))
+
+        return await self._run_sync_in_executor(_fetch)
+
+    def _paper_from_arxiv_result(self, paper) -> PaperResult:
+        """Convert an `arxiv.Result` into a `PaperResult`.
+
+        Mirrors `ArxivTool._format_paper()` field-for-field, but produces
+        a `PaperResult` instead of a plain dict.
+        """
+        published = getattr(paper, "published", None)
+        published_date = published.strftime("%Y-%m-%d") if published else None
+        summary = getattr(paper, "summary", None)
+
+        return PaperResult(
+            title=paper.title,
+            authors=[a.name for a in getattr(paper, "authors", [])],
+            abstract=summary.replace("\n", " ").strip() if summary else None,
+            published_date=published_date,
+            url=getattr(paper, "pdf_url", None),
+            fields_of_study=list(getattr(paper, "categories", []) or []) or None,
+            source="arxiv",
+            journal=None,
+            doi=None,
         )
