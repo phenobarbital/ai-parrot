@@ -73,7 +73,7 @@ async def main():
                     granularity="standard",  # minimal | standard | detailed
                 )
 
-                print(f"\n✅ Analysis Report:")
+                print("\n✅ Analysis Report:")
                 print(f"   Note: {recent_note}")
                 print(f"   Status: {analysis['status']}")
                 if analysis["status"] == "ok":
