@@ -132,6 +132,39 @@ def _class_to_key(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Normalize ast.Assign / ast.AnnAssign nodes
+# ---------------------------------------------------------------------------
+def _assign_target_and_value(
+    node: ast.AST,
+) -> tuple[str | None, ast.expr | None]:
+    """Normalize an ast.Assign or ast.AnnAssign into (name, value).
+
+    Handles both the unannotated form (``NAME = {...}``, ``ast.Assign``
+    with a ``targets`` list) and the annotated form
+    (``NAME: dict[str, str] = {...}``, ``ast.AnnAssign`` with a single
+    ``target``). Returns ``(None, None)`` when the node is neither, when
+    the target is not a plain ``ast.Name``, or when an ``AnnAssign`` has
+    no right-hand-side value (a bare annotation like ``NAME: int``).
+
+    Args:
+        node: An AST node encountered while walking a module.
+
+    Returns:
+        ``(target_name, value_node)`` or ``(None, None)``.
+    """
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                return target.id, node.value
+        return None, None
+    if isinstance(node, ast.AnnAssign):
+        if node.value is None or not isinstance(node.target, ast.Name):
+            return None, None
+        return node.target.id, node.value
+    return None, None
+
+
+# ---------------------------------------------------------------------------
 # Scan for non-class exports (functions, constants)
 # ---------------------------------------------------------------------------
 def scan_exports(
@@ -167,10 +200,10 @@ def scan_exports(
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.FunctionDef) and node.name in names:
                 registry[node.name] = f"{module_path}.{node.name}"
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id in names:
-                        registry[target.id] = f"{module_path}.{target.id}"
+            else:
+                name, value = _assign_target_and_value(node)
+                if name in names and value is not None:
+                    registry[name] = f"{module_path}.{name}"
 
     return registry
 
@@ -221,13 +254,12 @@ def read_existing_registry(init_file: Path, var_name: str) -> Optional[dict[str,
         return None
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == var_name:
-                    try:
-                        return ast.literal_eval(node.value)
-                    except (ValueError, TypeError):
-                        return None
+        name, value = _assign_target_and_value(node)
+        if name == var_name and value is not None:
+            try:
+                return ast.literal_eval(value)
+            except (ValueError, TypeError):
+                return None
     return None
 
 
@@ -287,24 +319,23 @@ def update_init_file(
 
         # Find the assignment line range
         for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == var_name:
-                        # Replace from assignment start to end
-                        lines = content.splitlines(keepends=True)
-                        start_line = node.lineno - 1  # 0-indexed
-                        end_line = node.end_lineno  # exclusive
+            name, value = _assign_target_and_value(node)
+            if name == var_name and value is not None:
+                # Replace from assignment start to end
+                lines = content.splitlines(keepends=True)
+                start_line = node.lineno - 1  # 0-indexed
+                end_line = node.end_lineno  # exclusive
 
-                        # Build new assignment
-                        new_lines = [f"{var_name}: dict[str, str] = {{\n"]
-                        for key, path in merged.items():
-                            new_lines.append(f'    "{key}": "{path}",\n')
-                        new_lines.append("}\n")
+                # Build new assignment
+                new_lines = [f"{var_name}: dict[str, str] = {{\n"]
+                for key, path in merged.items():
+                    new_lines.append(f'    "{key}": "{path}",\n')
+                new_lines.append("}\n")
 
-                        # Replace
-                        lines[start_line:end_line] = new_lines
-                        init_file.write_text("".join(lines), encoding="utf-8")
-                        return True, diff
+                # Replace
+                lines[start_line:end_line] = new_lines
+                init_file.write_text("".join(lines), encoding="utf-8")
+                return True, diff
 
     return bool(diff), diff
 
