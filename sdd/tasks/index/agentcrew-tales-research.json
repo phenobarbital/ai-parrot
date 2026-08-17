@@ -72,7 +72,7 @@
       "feature_id": "FEAT-425",
       "feature": "agentcrew-tales-research",
       "spec": "sdd/specs/agentcrew-tales-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Creates nodes/ package shared with TASK-2230 (nodes/__init__.py) — keep sequential to avoid init-file conflicts.",
       "assigned_to": null,
       "started_at": "2026-08-17T00:33:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2229-thales-llm-nodes.md"
+      "completed_at": "2026-08-17T00:56:30+00:00",
+      "file": "sdd/tasks/completed/TASK-2229-thales-llm-nodes.md"
     },
     {
       "id": "TASK-2230",

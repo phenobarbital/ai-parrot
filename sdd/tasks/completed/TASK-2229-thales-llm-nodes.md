@@ -190,8 +190,48 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-17
+**Notes**: Implemented `PlannerNode` (thesis → ≥`num_decks` angles: one
+explicit re-prompt then deterministic decomposition-padding, never fewer),
+`DeckBuilderNode` (deterministic OR-join aggregation — no LLM; per-source
+JSON-parse failure degrades that source into `failed_sources`; all-fail
+returns a `DROPPED_DECK_SENTINEL` JSON payload for the runner to drop), and
+`SlideSpecNode` (structured-output `SlideSpec` fill, post-hoc chart
+filtering so `charts` is forced to `[]` whenever no `Finding.numeric_series`
+is present in the deck, regardless of what the LLM proposed). 9 unit tests
+pass (mocked LLM clients). No `NODE_REGISTRY` writes (verified by test).
+`ruff check` on `nodes/` shows only pre-existing style categories
+(`UP006`/`UP035`/`UP045`/`PYI063`) — the same `PYI063` (`__context: Any`
+dunder-param) fires on the very `SynthesisNode`/`Node.model_post_init`
+precedent this code mirrors, confirming it's codebase-wide, not new.
+
+Design notes (latitude taken within scope, since TASK-2231 "definition
+assembly & wiring" is explicitly out of scope here):
+- `DependencyResults = Dict[str, str]` (verified in
+  `bots/flows/core/types.py`) — the real scheduler coerces every upstream
+  result via `str(results[dep])` before handing it to `deps`. Research
+  nodes (TASK-2231's job to wire) must therefore return a JSON string from
+  `execute()`; `DeckBuilderNode`/`SlideSpecNode` parse that JSON back into
+  `Finding`/`ResearchDeck`. This mirrors the literal test-spec hint
+  (`deps = {web: findings, deep: EXCEPTION, arxiv: findings}`) — a
+  non-JSON-parseable string (`"EXCEPTION"` or any upstream failure marker)
+  degrades that source exactly like a genuine parse failure.
+- `DeckBuilderNode.sources` defaults to `["web", "deep", "arxiv"]` — labels
+  for the three v1 sources *within one angle's sub-graph*, distinct from
+  `ThalesConfig.sources` (`["web", "deep_research", "arxiv"]`, the
+  machine-readable source-selection list from TASK-2226). TASK-2231 maps
+  its actual per-angle node_ids onto these labels (or overrides `sources`
+  via `node_factories`).
+- `PlannerNode`/`SlideSpecNode` take a duck-typed `client: Any` constructor
+  field (`arbitrary_types_allowed=True` on the `Node` base) rather than a
+  concrete `AbstractClient` import, matching the "nodes close over live
+  dependencies via `node_factories`" pattern documented in `flow.py:428`'s
+  eager-resolve precedent — TASK-2231 is expected to inject the real client.
+- `_extract_angles`/`_extract_slide_spec` read `AIMessage.structured_output`
+  first, falling back to `.data` — both fields are populated by
+  `AIMessageFactory` across every client backend (verified in
+  `models/responses.py`); the exact combined tools+schema mechanics named
+  in the Codebase Contract were not independently re-derived beyond that.
 
 **Deviations from spec**: none
