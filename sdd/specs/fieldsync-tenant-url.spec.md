@@ -111,11 +111,21 @@ nodes are tested before the dynamic (variable) child. Therefore:
   `{tenant}` → literal `forms`. ✓
 
 The only residual risk: a tenant slug that *equals* a reserved literal
-(e.g., a programme named `"org"`). A request to `/api/v1/org/forms` would
-match the literal `org` branch, find no `/org/forms` route, and 404 — the
-`{tenant}` branch is never reached. This is a **non-issue in practice**
-(programme slugs are organization names, never router keywords), but
-documented in §7 as a known edge case worth logging.
+(e.g., a programme named `"org"`). **Verified behavior (aiohttp 3.14.3, real
+server, both registration orders — v0.2 review)**: aiohttp FALLS THROUGH from
+a literal branch with no matching sub-route to the dynamic sibling. So:
+
+- `GET /api/v1/org/forms` → no `/org/forms` route exists → falls through →
+  **matches `{tenant}` with `tenant="org"` and returns 200.**
+- `GET /api/v1/org/graph` → the literal route exists → **served by the org
+  handler**, never the tenant branch.
+- `GET /api/v1/org/unknown` → 404 (no route in either branch).
+
+A colliding tenant therefore gets a **mixed surface**: it works on every
+forms route EXCEPT the paths shadowed by real literals, where it silently
+receives the other branch's data. That is worse than a benign 404, so the
+mitigation is a **registration-time reserved-segment guard** (Module 5),
+not a runtime log — see §7 and the resolved Q1 in §8.
 
 For UI routes (`base_path=""`), `/{tenant}/` is the only dynamic root. Any
 host-level literal routes (`/health`, `/api/...`) take priority
@@ -198,17 +208,41 @@ only the `expected` hint string embedded in their bodies is updated.
   - `api/handlers.py:1179` — docstring
   - `services/public_forms.py:3,39-43,46` — module docstring + glob
     construction
+  - `renderers/html5.py:405` — **generated client-side JavaScript** for the
+    remote event bridge (FEAT-188): builds `'/api/v1/t/' + TENANT + ...` at
+    runtime — breaks remote form events with no red test if missed
   - `renderers/html5.py:543` — comment
   - `renderers/html5.py:1105` — upload URL template (client-side placeholder)
   - `renderers/jsonschema.py:468` — upload URL template (client-side placeholder)
   - `ui/telegram.py:50,77,91` — docstrings + URL construction
+  - `api/errors.py:41` — second docstring example
 - **Depends on**: nothing (can run in parallel with Module 1, but sequenced
   for simplicity).
 
+### Module 2b: UI HTML surfaces + audio WS endpoints (added in v0.2)
+
+- **Path**: `ui/handlers.py`, `ui/templates.py`, `api/audio_ws.py`,
+  `renderers/audio.py`
+- **Responsibility**: the four files G1 names (HTML pages, audio WS) that
+  v0.1's breakdown did not own — 21 occurrences, almost all RUNTIME
+  client-facing:
+  - `ui/handlers.py:106,121,123,175,182,295,296,308` — `<a href>` and
+    `<form action>` served to the user; `:245` comment
+  - `ui/templates.py:220,221,434,435,474` — nav links; `:333,350` — **two
+    JavaScript `fetch()` calls** (create form / import from DB — break form
+    creation at runtime with no red test); `:451-454` — endpoint docs list
+  - `api/audio_ws.py:510` — `ws_endpoint` handed to the client
+  - `renderers/audio.py:410` — `ws_endpoint` template
+- **Definition of done**: AC2's grep is the authority — this list is the
+  verified inventory as of v0.2 (13 source files, matching `grep -rc "/t/"`),
+  but a zero-hit grep over `src/` is what closes the module, not the list.
+- **Depends on**: nothing (parallel with Modules 1–2).
+
 ### Module 3: Test suite migration
 
-- **Path**: `packages/parrot-formdesigner/tests/` (~60 references across
-  ~15 test files)
+- **Path**: `packages/parrot-formdesigner/tests/` (**163 references across
+  23 test files** — measured `grep -ro "/t/" tests/ | wc -l`, v0.2; v0.1's
+  "~60 across ~15" undercounted ~3x)
 - **Responsibility**: Update every `/t/{tenant}/` URL pattern in test
   assertions, route registrations, and comments. **Key files**:
   - `unit/api/test_setup_form_api.py` — route path assertions
@@ -232,6 +266,30 @@ only the `expected` hint string embedded in their bodies is updated.
   still won't have `/{tenant}/`.
 - **Depends on**: Modules 1, 2 (tests must reference the new URL shape to
   pass against the updated source).
+
+### Module 5 (added in v0.2): Reserved-segment guard
+
+- **Path**: `api/tenant.py`, `api/routes.py` (and `ui/routes.py` for the UI
+  root level)
+- **Responsibility**: removing `/t/` is what CREATES the literal/tenant
+  collision surface, so the guard belongs to this feature:
+  1. `setup_form_api` / `setup_form_ui` compute the reserved set — the
+     literal segments they themselves register at the same tree level as
+     `{tenant}` (today: `org`, `form-controls` at `{bp}/`; the UI root's own
+     literals) — and stash it on the app (e.g.
+     `app["formdesigner_reserved_tenant_segments"]`). Derived from what is
+     actually registered, never hardcoded, so a future literal is reserved
+     automatically.
+  2. `requires_tenant` rejects a declared tenant contained in the reserved
+     set with **404** (not 403 — no existence oracle; and 404 makes the
+     colliding slug's surface CONSISTENT instead of mixed).
+  3. A boot-time `WARNING` when `registry.list_tenants()` intersects the
+     reserved set — the operator's signal that a provisioned tenant is
+     unreachable by design.
+- **Rationale**: v0.1's Q1 offered "runtime log vs startup validation"
+  against the §2 belief that collisions 404 benignly. The verified behavior
+  (mixed surface — §2) makes the passive options insufficient.
+- **Depends on**: Module 1.
 
 ### Module 4: Migration guide update
 
@@ -261,6 +319,12 @@ only the `expected` hint string embedded in their bodies is updated.
 | `test_public_form_paths_no_t_prefix` | 2 | Globs use `/{tenant}/`, not `/t/{tenant}/` |
 | `test_upload_url_template_no_t_prefix` | 2 | Both renderers emit `/{tenant}/` in upload URL |
 | `test_no_t_prefix_in_source` | 3 | `grep -rn "/t/{tenant}" src/` returns zero hits (belt-and-braces) |
+| `test_ui_links_no_t_prefix` | 2b | Rendered gallery/detail HTML contains `/{tenant}/` hrefs and form actions, no `/t/` |
+| `test_event_bridge_js_no_t_prefix` | 2 | html5 renderer's generated JS builds `'/api/v1/' + TENANT + …` (`:405` site) |
+| `test_ws_endpoint_no_t_prefix` | 2b | `audio_ws.py` and `renderers/audio.py` emit `/{tenant}/…/audio/ws` |
+| `test_reserved_segment_declared_404` | 5 | declared tenant `"org"` / `"form-controls"` → 404 on EVERY forms route (consistent surface) |
+| `test_literal_fallthrough_documented` | 5 | regression net for the REAL routing: `/api/v1/org/graph` → org handler; without the guard `/api/v1/org/forms` would reach `{tenant}` — guard turns it into 404 |
+| `test_boot_warning_on_colliding_tenant` | 5 | registry pre-loaded with tenant `"org"` → WARNING at setup |
 
 ### Integration Tests
 
@@ -286,10 +350,11 @@ reused unchanged — only the URL strings in test request calls change.
 - [ ] **AC3** — All `/org/*` route paths are byte-identical to their FEAT-421
       state. No `/org/*` test file is modified (G5).
 - [ ] **AC4** — `/api/v1/form-controls` path is unchanged.
-- [ ] **AC5** — `requires_tenant` decorator, `declared_tenant()`,
-      `assert_body_tenant_matches()`, `enforce_membership_unless_public()` —
-      function bodies are **not modified** (only the `_EXPECTED_HINT` string
-      is updated).
+- [ ] **AC5** — `declared_tenant()`, `assert_body_tenant_matches()`,
+      `enforce_membership_unless_public()` — function bodies are **not
+      modified**. `requires_tenant` changes ONLY by the addition of the
+      reserved-segment check (Module 5) plus the `_EXPECTED_HINT` update —
+      its declare/authorize/stash semantics are byte-compatible otherwise.
 - [ ] **AC6** — Error responses (`tenant_not_declared`, `tenant_forbidden`,
       `tenant_conflict`) include the corrected `expected` URL pattern
       without `/t/`.
@@ -304,6 +369,11 @@ reused unchanged — only the URL strings in test request calls change.
 - [ ] **AC11** — Full package suite green:
       `pytest packages/parrot-formdesigner/tests/ -v`.
 - [ ] **AC12** — `ruff check packages/parrot-formdesigner/` clean.
+- [ ] **AC13** — Reserved-segment guard live: a declared tenant equal to any
+      literal registered at the tenant's tree level returns 404 on every
+      forms route, the reserved set is DERIVED from the actual route
+      registrations (not hardcoded), and setup logs a WARNING when a
+      registry tenant collides.
 
 ---
 
@@ -374,6 +444,29 @@ def public_form_paths(form_uid, tenant, base_path="/api/v1"):  # line 13
 
 # ui/telegram.py
 # line 77: f"{prefix}/api/v1/t/{tenant}/forms/{form_uid}/telegram-submit"
+
+# ——— added in v0.2 (sites v0.1 missed; verified on dev @ 6305b9ac3) ———
+
+# renderers/html5.py
+# line 405: generated client JS — "'/api/v1/t/' + TENANT + '/forms/' + FORM_UID + '/events/' + eventName"
+
+# api/errors.py
+# line 41: docstring example "/api/v1/t/{tenant}/forms/{form_uid}"
+
+# ui/handlers.py  (9 hits — served HTML)
+# lines 106, 121, 123, 175, 182, 295, 296, 308: <a href>/<form action> with /t/
+# line 245: comment
+
+# ui/templates.py  (11 hits — served HTML + generated JS)
+# lines 220, 221, 434, 435, 474: nav links
+# lines 333, 350: JavaScript fetch() → POST /api/v1/t/…/forms[,/from-db]
+# lines 451-454: endpoint documentation list
+
+# api/audio_ws.py
+# line 510: ws_endpoint=f"/api/v1/t/{declared_tenant}/forms/{form_uid}/audio/ws"
+
+# renderers/audio.py
+# line 410: ws_endpoint = f"/api/v1/t/{form.tenant or ''}/forms/{form.form_uid}/audio/ws"
 ```
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -407,23 +500,25 @@ def public_form_paths(form_uid, tenant, base_path="/api/v1"):  # line 13
 
 ### Known Risks / Gotchas
 
-- **Reserved-literal tenant slug collision**: if a programme slug exactly
-  matches a literal route prefix (`org`, `form-controls`), requests to
-  `/{slug}/forms` would hit the literal branch and 404. This is
-  **extremely unlikely in practice** (programme slugs are organization names
-  like `"flexroc"`, `"navigator"`, never router keywords). Mitigation: add
-  a `WARNING`-level log in `requires_tenant` if the validated tenant matches
-  a known reserved prefix. This is advisory, not blocking — do not reject
-  the request, because a tenant named `"org"` that was somehow provisioned
-  should still work via the `/org/*` branch not having a `/forms` sub-route.
-  Actually: requests to `/api/v1/org/forms` would NOT match any `/org/*`
-  route (there is no `org/forms` registered), so aiohttp would fall through
-  to the `{tenant}` branch. **Verify this behavior in a test** (AC11 test
-  suite covers it).
-- **The 60 test references are the highest-effort item.** They are
-  mechanical but numerous. A missed test URL produces a false-green (test
-  hits the old route, gets a 404, and may still pass if the assertion is
-  on status code rather than response body). Mitigate with the belt-and-
+- **Reserved-literal tenant slug collision — verified behavior (v0.2)**:
+  aiohttp falls through from a literal branch with no matching sub-route to
+  the dynamic sibling, in BOTH registration orders (reproduced with a real
+  server on aiohttp 3.14.3). A tenant slug equal to `org` therefore WORKS on
+  every forms route (`/api/v1/org/forms` → 200, `tenant="org"`) and is
+  silently shadowed only where a real literal exists (`/api/v1/org/graph` →
+  the org handler's data). A mixed surface, not a benign 404 — which is why
+  Module 5 rejects reserved segments at the decorator (404, consistent) and
+  warns at boot. Note the reserved set is release-dependent: every new
+  literal registered at that tree level reserves another slug retroactively,
+  hence the set is derived from the router, never hardcoded.
+- **Dispatcher semantics evidence is version-specific**: the pin is
+  `aiohttp>=3.9` (`pyproject.toml:35`) but literal-before-dynamic and the
+  fall-through were verified on **3.14.3 only**. The §4 integration tests
+  are the version net — they run against whatever aiohttp CI installs.
+- **The 163 test references (23 files) are the highest-effort item.** They
+  are mechanical but numerous. A missed test URL produces a false-green
+  (test hits the old route, gets a 404, and may still pass if the assertion
+  is on status code rather than response body). Mitigate with the belt-and-
   braces grep in AC2.
 - **Renderer upload URL templates are client-side placeholders** — `{tenant}`,
   `{form_id}`, `{field_id}` are substituted by the frontend `<RestUploader>`
@@ -458,11 +553,13 @@ All blocking questions are resolved.
 - [x] Backward compatibility for `/t/` format? — *Resolved by Jesus Lara*:
       hard cut, no backward compatibility. Old `/t/`-prefixed routes are
       not registered.
-- [ ] **Q1 — Should the reserved-literal guard be a runtime log or a
-      startup-time validation?** A startup check could reject a
-      FormRegistry tenant list containing `"org"` or `"form-controls"`.
-      A runtime log is less intrusive. Deferrable to implementation.
-      — *Owner: implementation*
+- [x] **Q1 — Runtime log or startup validation for the reserved-literal
+      guard?** — *Resolved in v0.2 review (evidence-based)*: BOTH options
+      were framed against §2's original belief that a collision 404s
+      benignly. The verified behavior (fall-through → mixed surface, see §2)
+      makes passive mitigation insufficient. Resolution: Module 5 —
+      registration-derived reserved set + decorator-level 404 for reserved
+      declarations + boot WARNING on a colliding registry tenant.
 
 ---
 
@@ -488,3 +585,4 @@ All blocking questions are resolved.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-18 | Jesus Lara + Claude | Initial draft — remove `/t/` marker from FEAT-421 tenant URLs before first production release |
+| 0.2 | 2026-08-18 | Juan + Claude (fieldsync-side independent review) | Coverage: Module 2b added — the 4 G1-claimed files v0.1 missed (`ui/handlers.py`, `ui/templates.py`, `api/audio_ws.py`, `renderers/audio.py`, 21 hits) + `html5.py:405` (generated event-bridge JS) + `errors.py:41`; AC2's grep declared the definition of done. Routing: §2 corrected with the VERIFIED fall-through behavior (real-server repro, aiohttp 3.14.3, both registration orders) — collision is a mixed surface, not a 404; Q1 resolved as Module 5 (registration-derived reserved-segment guard, decorator 404, boot WARNING; AC5 amended, AC13 added). Estimation: test migration is 163 refs / 23 files. NOTE: tasks TASK-2246..2249 were decomposed from v0.1 and need a scope refresh (Module 2b + Module 5). |
