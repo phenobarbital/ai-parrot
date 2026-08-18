@@ -14,7 +14,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Edits api/routes.py and ui/routes.py — same files that TASK-2248 tests validate. Sequential to avoid test breakage window.",
       "assigned_to": null,
       "started_at": "2026-08-18T23:31:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2246-route-table-drop-t-prefix.md"
+      "completed_at": "2026-08-18T23:33:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2246-route-table-drop-t-prefix.md"
     },
     {
       "id": "TASK-2247",
