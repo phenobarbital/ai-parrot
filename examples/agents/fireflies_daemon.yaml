@@ -1,0 +1,43 @@
+# Fireflies → Obsidian Sync — agentd config
+#
+# Runs a FirefliesObsidianAgent as a long-lived CLI daemon (FEAT-422).
+# The daemon syncs Fireflies.ai transcripts into a local Obsidian vault,
+# and optionally exposes LLM-powered summarization.
+#
+# Usage:
+#   parrot serve examples/agents/fireflies_daemon.yaml
+#
+# Then, from another terminal:
+#   parrot attach fireflies-sync       # interactive Rich console
+#   parrot ask fireflies-sync "sync"   # one-shot sync trigger
+#   parrot status fireflies-sync       # daemon health
+#
+# MCP registration (expose to Claude Code):
+#   claude mcp add fireflies-sync -- parrot mcp-serve fireflies-sync
+#
+# Environment variables (set before starting):
+#   FIREFLIES_API_KEY   — Fireflies.ai API token (required)
+#   OBSIDIAN_VAULT_PATH — path to your vault (default: ~/vaults/notes)
+
+name: fireflies-sync
+
+agent:
+  target: "parrot.agents.obsidian:FirefliesObsidianAgent"
+  kwargs:
+    name: "FirefliesObsidianSync"
+    vault_path: "~/vaults/notes"          # adjust to your vault
+    meetings_folder: "meetings"
+
+# Expose sync + summarize so parrot attach /invoke and MCP invoke_method
+# can call them.  Remove a method from this list to block external access.
+exposed_methods:
+  - sync_fireflies_transcripts
+  - summarize_transcript
+
+scheduler:
+  enabled: true
+  # Uncomment for persistent schedules (survives restarts):
+  # dsn: "postgresql://user:pass@localhost:5432/parrot"
+  # redis: true
+
+log_level: INFO
