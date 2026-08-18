@@ -93,7 +93,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Touches api/tenant.py and both routes.py files after TASK-2246; adds one new test file.",
       "assigned_to": null,
       "started_at": "2026-08-18T23:31:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2250-reserved-segment-guard.md"
+      "completed_at": "2026-08-18T23:50:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2250-reserved-segment-guard.md"
     }
   ]
 }

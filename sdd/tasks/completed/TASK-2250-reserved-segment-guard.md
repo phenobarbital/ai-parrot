@@ -153,10 +153,79 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-18
+**Notes**: Implemented all three scope items.
 
-**Completed by**: *(session or agent ID)*
-**Date**: YYYY-MM-DD
-**Notes**: *(What was implemented, any deviations from scope, issues encountered.)*
+1. **Reserved-set computation**: `setup_form_api` computes
+   `{"org", "form-controls"}` as a local literal set (introspecting the
+   router was judged impractical per the task's own guidance) and merges
+   it (union) into `app["formdesigner_reserved_tenant_segments"]`.
+   `setup_form_ui` does the same for `{"api"}` — the literal prefix of its
+   own telegram-submit fallback route (`{bp}/api/v1/...`), which is a
+   sibling of `{tp}` = `{bp}/{tenant}` at the UI root's tree level. Both
+   functions read-then-merge (`app.get(key, frozenset()) | own_set`)
+   instead of overwriting, so the guard is correct regardless of whether
+   `setup_form_api` or `setup_form_ui` runs first on a shared `app`
+   (fieldsync mounts both).
+2. **Decorator rejection**: `requires_tenant`'s `_inner` reads
+   `request.config_dict.get("formdesigner_reserved_tenant_segments",
+   frozenset())` (config_dict, not app, per the contract, for subapp
+   correctness) and raises plain `web.HTTPNotFound()` when the declared
+   tenant is in the reserved set — placed after the empty-declaration
+   check and before `_authorize()`, so it applies uniformly regardless of
+   session/membership state.
+3. **Boot warning**: a single `_warn_reserved_tenant_collisions` coroutine
+   registered via `app.on_startup.append(...)` in `setup_form_api` (not
+   duplicated in `setup_form_ui` — it reads the FINAL merged reserved set
+   from `app` at actual startup time, by which point both setup functions'
+   synchronous merges have already run, so one site covers both surfaces
+   regardless of registration order). Logs a `WARNING` naming every
+   colliding `registry.list_tenants()` entry.
 
-**Deviations from spec**: none | describe if any
+**Codebase Contract deviation, corrected in place**: the contract's
+`services/registry.py: def list_tenants(self) -> list[str]` entry omitted
+that the real method is `async def list_tenants(self)` — verified via
+`grep`/`Read` before use; the boot-warning coroutine `await`s it correctly.
+
+Wrote `tests/unit/api/test_reserved_segment_guard.py` with the three named
+tests from spec §4 (`test_reserved_segment_declared_404` →
+`TestReservedSegmentDeclared404`, parametrized over
+org/form-controls × member/non-member/superuser, plus a multi-route check;
+`test_literal_fallthrough_documented` → `TestLiteralFallthroughDocumented`,
+asserting `/api/v1/org/graph` still reaches the org handler (501, no
+service configured — proof of reachability, not a 404) while
+`/api/v1/org/forms`'s fallthrough is now blocked (404);
+`test_boot_warning_on_colliding_tenant` → `TestBootWarningOnCollidingTenant`,
+plus a negative case with no collision). Tests bypass navigator-auth
+(`is_authenticated`/`user_session` monkeypatched to pass-through, mirroring
+`tests/integration/test_operations_e2e.py`'s existing bypass philosophy)
+since the guard fires before authorization and this environment lacks a
+real auth backend.
+
+**Environment fix carried through from this task onward**: discovered that
+the fieldsync venv's editable install of `parrot_formdesigner`
+(`__editable__.parrot_formdesigner-*.pth`) points at the main `ai-parrot`
+checkout, not this worktree — `pytest` run without `PYTHONPATH` override
+silently tests the WRONG source tree. All suite runs from this task onward
+use `PYTHONPATH=<worktree>/packages/parrot-formdesigner/src`. Also
+discovered `pytest-aiohttp` is not installed in this venv (the
+`aiohttp_client` fixture is unavailable — a pre-existing gap, already
+present in the true baseline's error count), which is why this task's new
+tests use `aiohttp.test_utils.TestClient`/`TestServer` directly instead of
+the fixture used elsewhere in this suite.
+
+Full-suite re-measurement (corrected PYTHONPATH) after this task:
+**65 failed, 1834 passed, 20 skipped, 81 errors** — vs. the true baseline
+(38/1850/20/81): errors are back to baseline (the 11 extra errors seen
+right after TASK-2246/2247 were this task's own then-broken test file,
+now fixed and passing), passed grew by 11 (this task's new tests), and the
+27 extra failures are the same pre-existing, expected `/t/`-URL-mismatch
+test breakage documented in TASK-2246/2247, to be resolved by TASK-2248.
+
+`ruff check` on the three touched source files + the new test file: 0 new
+errors (`api/tenant.py` and the test file are 100% clean; `api/routes.py`
++ `ui/routes.py` retain the same 19 pre-existing errors as before this
+task, confirmed via `git stash`/`git stash pop`).
+
+**Deviations from spec**: none (one contract correction, documented above).
