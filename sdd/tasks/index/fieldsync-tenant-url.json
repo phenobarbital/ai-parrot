@@ -50,7 +50,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Must run after source changes so tests validate the new URL shape. ~60 references across ~15 test files.",
       "assigned_to": null,
       "started_at": "2026-08-18T23:31:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2248-test-suite-url-migration.md"
+      "completed_at": "2026-08-18T23:55:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2248-test-suite-url-migration.md"
     },
     {
       "id": "TASK-2249",
