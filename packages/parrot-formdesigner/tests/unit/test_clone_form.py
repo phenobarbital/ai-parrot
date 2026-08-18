@@ -293,3 +293,63 @@ async def test_clone_source_still_present(
     assert source is not None
     assert source.form_id == "source-form"
     assert source.version == "2.3"
+
+
+# ---------------------------------------------------------------------------
+# Slug collision against STORAGE (cold cache) — regression for the silent
+# rename: a slug living only in the persisted table must 409, never become
+# an unrequested "<slug>-2".
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_clone_slug_taken_in_storage_only_raises(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """A slug persisted in storage but absent from the in-memory index is
+    still a collision: clone_form raises FormAlreadyExistsError (HTTP 409
+    at the handler), instead of falling through to register()'s free-slug
+    renaming."""
+    from parrot_formdesigner.services.registry import FormAlreadyExistsError
+
+    persisted_owner = FormSchema(
+        form_id="taken-in-db",
+        title="Persisted Elsewhere",
+        sections=[],
+    )
+
+    class _ColdCacheStorage:
+        async def load(self, *a, **kw):  # noqa: ANN001, ANN003
+            return None
+
+        async def load_by_slug(self, form_id, tenant, *a, **kw):  # noqa: ANN001, ANN003
+            if form_id == "taken-in-db":
+                return persisted_owner
+            return None
+
+    registry.set_storage(_ColdCacheStorage())
+    with pytest.raises(FormAlreadyExistsError, match="already exists"):
+        await registry.clone_form(
+            sample_form.form_uid, "taken-in-db", persist=False
+        )
+
+
+@pytest.mark.asyncio
+async def test_clone_storage_probe_fault_is_fail_soft(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """A storage probe that raises must not turn a working clone into an
+    error: the probe reads as "no owner" and the clone proceeds."""
+
+    class _ExplodingStorage:
+        async def load(self, *a, **kw):  # noqa: ANN001, ANN003
+            raise RuntimeError("pool is down")
+
+        async def load_by_slug(self, *a, **kw):  # noqa: ANN001, ANN003
+            raise RuntimeError("pool is down")
+
+    registry.set_storage(_ExplodingStorage())
+    clone = await registry.clone_form(
+        sample_form.form_uid, "survives-probe-fault", persist=False
+    )
+    assert clone.form_id == "survives-probe-fault"
