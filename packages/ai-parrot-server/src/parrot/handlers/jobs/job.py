@@ -116,6 +116,55 @@ class JobManager:
             self.logger.warning("RedisJobStore.delete failed for job %s: %s", job_id, exc)
 
     # ------------------------------------------------------------------
+    # Progress reporting
+    # ------------------------------------------------------------------
+
+    async def update_metadata(self, job_id: str, **values: Any) -> Optional[Job]:
+        """Merge ``values`` into a job's metadata and persist the change.
+
+        Metadata is the only part of a running job that changes without a
+        status transition, and ``_persist`` is otherwise only called on those
+        transitions — so a handler mutating ``job.metadata`` directly updates
+        the in-memory object and nothing else. A poll served by another
+        worker, or served after the in-memory entry is gone, then reports the
+        job's state from whenever it last changed status. For a long job that
+        publishes progress, that is the whole point of the field.
+
+        Args:
+            job_id: The job to update.
+            **values: Keys merged into ``job.metadata``.
+
+        Returns:
+            The updated :class:`Job`, or ``None`` when it is unknown.
+        """
+        job = self.jobs.get(job_id)
+        if job is None:
+            self.logger.warning("update_metadata: job %s not found", job_id)
+            return None
+
+        if job.metadata is None:
+            job.metadata = {}
+        job.metadata.update(values)
+        await self._persist(job)
+        return job
+
+    async def report_progress(self, job_id: str, progress: Any) -> Optional[Job]:
+        """Record a progress payload against a job, durably.
+
+        Args:
+            job_id: The job to update.
+            progress: A JSON-serialisable progress value. A Pydantic model is
+                dumped, so callers can pass a typed progress object without
+                the job layer knowing its shape.
+
+        Returns:
+            The updated :class:`Job`, or ``None`` when it is unknown.
+        """
+        if hasattr(progress, "model_dump"):
+            progress = progress.model_dump(mode="json")
+        return await self.update_metadata(job_id, progress=progress)
+
+    # ------------------------------------------------------------------
     # Job CRUD
     # ------------------------------------------------------------------
 

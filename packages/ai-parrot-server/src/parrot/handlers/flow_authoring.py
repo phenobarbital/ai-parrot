@@ -12,17 +12,11 @@ calls — far past what an HTTP request should hold open. It therefore runs on
 the ``JobManager``, following the ``video_reel.py`` template: the POST
 returns immediately with a job id and the client polls.
 
-Progress is written to ``Job.metadata`` at every stage, so a poll answers
-"authoring node 4/7" rather than an opaque "running" — which matters
-precisely because the run is long and made of many small steps.
-
-Caveat on that progress: ``JobManager`` mirrors a job to Redis on status
-transitions only, not on metadata mutation, and ``get_job_async`` reads the
-in-memory job first. Live progress is therefore visible to a poller served
-by the same worker, and a poller served by another worker (or one reading
-after a restart) sees the job's last persisted state until it completes.
-The terminal result is durable either way; only the intermediate counter is
-best-effort.
+Progress is reported through ``JobManager.report_progress`` at every stage,
+so a poll answers "authoring node 4/7" rather than an opaque "running" —
+which matters precisely because the run is long and made of many small
+steps. That call mirrors the change to the job store, so the counter is
+visible to a poll served by any worker, not only the one running the job.
 """
 from __future__ import annotations
 
@@ -141,6 +135,7 @@ class FlowAuthoringHandler(BaseView):
         ).model_dump(mode="json")
 
         tool_manager = self.request.app.get("tool_manager")
+        job_manager = self.job_manager
 
         async def run_logic() -> Dict[str, Any]:
             """Author the workflow, recording progress as it goes."""
@@ -148,8 +143,12 @@ class FlowAuthoringHandler(BaseView):
                 planner_llm, tool_manager=tool_manager
             )
 
-            def _on_progress(progress: AuthoringProgress) -> None:
-                job.metadata["progress"] = progress.model_dump(mode="json")
+            async def _on_progress(progress: AuthoringProgress) -> None:
+                # Through the manager, not by mutating job.metadata directly:
+                # only this path mirrors the change to the store, which is
+                # what makes "authoring node 4/7" visible to a poll served by
+                # another worker.
+                await job_manager.report_progress(job.job_id, progress)
 
             result = await orchestrator.build(request, on_progress=_on_progress)
 
