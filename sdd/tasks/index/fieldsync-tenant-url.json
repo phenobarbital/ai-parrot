@@ -32,7 +32,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches 12 source files with hardcoded URL strings. No file overlap with TASK-2246 but sequenced for clean commits.",
       "assigned_to": null,
       "started_at": "2026-08-18T23:31:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2247-source-url-pattern-references.md"
+      "completed_at": "2026-08-18T23:36:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2247-source-url-pattern-references.md"
     },
     {
       "id": "TASK-2248",

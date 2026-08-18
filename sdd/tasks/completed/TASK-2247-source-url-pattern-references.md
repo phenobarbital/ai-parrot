@@ -264,10 +264,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-18
+**Notes**: Mechanically stripped the literal `/t/` segment from every
+tenant-qualified URL string across the 11 listed files (`api/tenant.py`,
+`api/errors.py`, `api/handlers.py`, `api/audio_ws.py`,
+`services/public_forms.py`, `renderers/html5.py`, `renderers/jsonschema.py`,
+`renderers/audio.py`, `ui/handlers.py`, `ui/templates.py`, `ui/telegram.py`)
+via a targeted `s#/t/#/#g` substitution, verified per-file against the
+Codebase Contract's site list before/after. The `ui/handlers.py:245` comment
+about a `"{prefix}/t//"` empty-segment artifact correctly became
+`"{prefix}//"` — same semantic (empty tenant segment), consistent with the
+new URL shape. Verification grep
+(`grep -rn '"/t/{tenant}\|/t/{{tenant}}\|/t/' packages/parrot-formdesigner/src/`)
+returns zero hits. Additionally reworded two explanatory comments in
+`api/routes.py:233` and `ui/routes.py:136` (TASK-2246's files) that used the
+literal backtick-quoted `` `/t/` `` in prose — committed separately as a
+small AC2 follow-up fix, since AC2's grep has no "explanatory comment"
+carve-out and those files are otherwise TASK-2246's scope. `ruff check
+packages/parrot-formdesigner/src/` shows 330 pre-existing errors, confirmed
+identical (same count) before and after this task's edits via
+`git stash`/`git stash pop` — all pre-existing debt, out of scope. Full
+suite comparison against the pre-FEAT-429 baseline (38 failed, 1850 passed,
+20 skipped, 81 errors) shows an **identical** failed/error test set — no
+regressions; some `/t/`-referencing test assertions are false-green
+(status-code-only checks) as flagged in spec §7, to be fixed by TASK-2248.
 
-**Completed by**: *(session or agent ID)*
-**Date**: YYYY-MM-DD
-**Notes**: *(What was implemented, any deviations from scope, issues encountered.)*
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
