@@ -144,7 +144,7 @@ async def _make_client(aiohttp_client, form: FormSchema, mock_storage, mock_reso
     app["blob_storage"] = mock_storage
     app["rest_resolver"] = mock_resolver
     app.router.add_post(
-        "/api/v1/t/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
+        "/api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
         _tenant_wrapped_upload,
     )
     return await aiohttp_client(app)
@@ -166,7 +166,7 @@ async def test_upload_route_invalid_uuid_400(
     data.add_field("file", io.BytesIO(b"x"), filename="x.jpg", content_type="image/jpeg")
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/not-a-uuid/upload",
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/not-a-uuid/upload",
         data=data,
     )
     assert resp.status == 400
@@ -189,7 +189,7 @@ async def test_upload_route_unknown_uid_404(
 
     unknown_uid = uuid.uuid4()
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/{unknown_uid}/upload",
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/{unknown_uid}/upload",
         data=data,
     )
     assert resp.status == 404
@@ -218,7 +218,7 @@ async def test_upload_metadata_carries_both_ids(
     )
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/{rest_field.field_uid}/upload",
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/{rest_field.field_uid}/upload",
         data=data,
     )
     assert resp.status == 200

@@ -19,7 +19,7 @@ def handler(registry):
 
 def _request(*, tenant=None, session_programs=None, match_info=None):
     request = make_mocked_request(
-        "GET", "/api/v1/t/x/forms", match_info=match_info or {}
+        "GET", "/api/v1/x/forms", match_info=match_info or {}
     )
     if tenant is not None:
         request["tenant"] = tenant
@@ -164,7 +164,7 @@ class TestBodyCrossCheck:
     async def test_conflicting_body_tenant_is_400(self, handler):
         request = make_mocked_request(
             "POST",
-            "/api/v1/t/flexroc/forms/blank",
+            "/api/v1/flexroc/forms/blank",
             match_info={},
         )
         request["tenant"] = "flexroc"
@@ -187,7 +187,7 @@ class TestBodyCrossCheck:
     async def test_matching_body_tenant_succeeds(self, handler):
         request = make_mocked_request(
             "POST",
-            "/api/v1/t/flexroc/forms/blank",
+            "/api/v1/flexroc/forms/blank",
             match_info={},
         )
         request["tenant"] = "flexroc"
@@ -202,7 +202,7 @@ class TestBodyCrossCheck:
     async def test_absent_body_tenant_succeeds(self, handler):
         request = make_mocked_request(
             "POST",
-            "/api/v1/t/flexroc/forms/blank",
+            "/api/v1/flexroc/forms/blank",
             match_info={},
         )
         request["tenant"] = "flexroc"
@@ -244,7 +244,7 @@ class TestPutPatchTenantStamp:
 
         put_request = make_mocked_request(
             "PUT",
-            f"/api/v1/t/flexroc/forms/{form.form_uid}",
+            f"/api/v1/flexroc/forms/{form.form_uid}",
             match_info={"form_uid": str(form.form_uid)},
         )
         put_request["tenant"] = "flexroc"
@@ -278,7 +278,7 @@ class TestPutPatchTenantStamp:
 
         patch_request = make_mocked_request(
             "PATCH",
-            f"/api/v1/t/flexroc/forms/{form.form_uid}",
+            f"/api/v1/flexroc/forms/{form.form_uid}",
             match_info={"form_uid": str(form.form_uid)},
         )
         patch_request["tenant"] = "flexroc"

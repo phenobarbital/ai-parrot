@@ -50,7 +50,7 @@ def _request(*, match_info=None, token="valid-jwt"):
     headers = {"Sec-WebSocket-Protocol": f"{token}, json"} if token else {}
     return make_mocked_request(
         "GET",
-        "/api/v1/t/x/forms/f1/audio/ws",
+        "/api/v1/x/forms/f1/audio/ws",
         headers=headers,
         match_info=match_info or {},
     )

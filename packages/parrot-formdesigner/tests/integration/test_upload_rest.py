@@ -1,4 +1,4 @@
-"""Integration tests for POST /api/v1/t/navigator/forms/{form_uid}/fields/{field_uid}/upload.
+"""Integration tests for POST /api/v1/navigator/forms/{form_uid}/fields/{field_uid}/upload.
 
 Tests the full upload pipeline via aiohttp test client (no real S3 or
 external network). All blob storage and resolver calls are mocked.
@@ -104,7 +104,7 @@ async def _make_client(aiohttp_client, form: FormSchema, mock_storage, mock_reso
     app["blob_storage"] = mock_storage
     app["rest_resolver"] = mock_resolver
     app.router.add_post(
-        "/api/v1/t/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
+        "/api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
         _tenant_wrapped_upload,
     )
     return await aiohttp_client(app)
@@ -136,7 +136,7 @@ async def test_upload_callback_happy_path(
     )
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
         f"{_field_uid(form_with_rest, 'planogram_photo')}/upload",
         data=data,
     )
@@ -167,7 +167,7 @@ async def test_upload_blob_stored(
     )
 
     await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
         f"{_field_uid(form_with_rest, 'planogram_photo')}/upload",
         data=data,
     )
@@ -195,7 +195,7 @@ async def test_upload_prior_blob_deleted(
     )
 
     await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
         f"{_field_uid(form_with_rest, 'planogram_photo')}/upload",
         data=data,
         headers={"X-Parrot-Prior-Blob-Ref": "s3://bucket/old-blob"},
@@ -228,7 +228,7 @@ async def test_upload_404_unknown_form(
     # FEAT-393: field segment must also be a well-formed UUID now that the
     # route keys on field_uid — extract_uid() validates format first too.
     resp = await client.post(
-        "/api/v1/t/navigator/forms/00000000-0000-0000-0000-000000000000/fields/"
+        "/api/v1/navigator/forms/00000000-0000-0000-0000-000000000000/fields/"
         "11111111-1111-1111-1111-111111111111/upload",
         data=data,
     )
@@ -252,7 +252,7 @@ async def test_upload_404_unknown_field(
 
     # FEAT-393: well-formed but unknown field_uid (no real field has this UUID).
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
         "22222222-2222-2222-2222-222222222222/upload",
         data=data,
     )
@@ -275,7 +275,7 @@ async def test_upload_400_no_file_part(
     data.add_field("other_field", "not a file")
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
         f"{_field_uid(form_with_rest, 'planogram_photo')}/upload",
         data=data,
     )
@@ -317,7 +317,7 @@ async def test_upload_415_disallowed_mime(
     )
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form.form_uid}/fields/{_field_uid(form, 'photo')}/upload",
+        f"/api/v1/navigator/forms/{form.form_uid}/fields/{_field_uid(form, 'photo')}/upload",
         data=data,
     )
     assert resp.status == 415
@@ -346,7 +346,7 @@ async def test_upload_delete_failure_appends_warning(
     )
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
         f"{_field_uid(form_with_rest, 'planogram_photo')}/upload",
         data=data,
         headers={"X-Parrot-Prior-Blob-Ref": "s3://bucket/old-blob"},
@@ -390,7 +390,7 @@ async def test_upload_resolver_failure_returns_200_with_success_false(
     )
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
         f"{_field_uid(form_with_rest, 'planogram_photo')}/upload",
         data=data,
     )
@@ -457,7 +457,7 @@ async def test_e2e_backwards_compat_existing_forms(
     data.add_field("file", io.BytesIO(b"ignored"), filename="f.jpg", content_type="image/jpeg")
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{legacy_form.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{legacy_form.form_uid}/fields/"
         f"{_field_uid(legacy_form, 'name')}/upload",
         data=data,
     )
@@ -512,7 +512,7 @@ async def test_e2e_concurrent_uploads_last_write_wins(
             content_type="image/jpeg",
         )
         resp = await client.post(
-            f"/api/v1/t/navigator/forms/{form_with_rest.form_uid}/fields/"
+            f"/api/v1/navigator/forms/{form_with_rest.form_uid}/fields/"
             f"{_field_uid(form_with_rest, 'planogram_photo')}/upload",
             data=data,
         )
@@ -608,7 +608,7 @@ async def test_upload_merges_public_and_private_args(
     data.add_field("n", "5")
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_args.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_args.form_uid}/fields/"
         f"{_field_uid(form_with_args, 'image_analyze')}/upload",
         data=data,
     )
@@ -647,7 +647,7 @@ async def test_upload_private_arg_cannot_be_overridden_by_frontend(
     data.add_field("prompt", "HACKED")  # attempt to override private arg
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_args.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_args.form_uid}/fields/"
         f"{_field_uid(form_with_args, 'image_analyze')}/upload",
         data=data,
     )
@@ -679,7 +679,7 @@ async def test_upload_missing_required_public_arg_returns_400(
     # 'tenant' is required but omitted
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_args.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_args.form_uid}/fields/"
         f"{_field_uid(form_with_args, 'image_analyze')}/upload",
         data=data,
     )
@@ -708,7 +708,7 @@ async def test_upload_public_arg_falls_back_to_default(
     data.add_field("tenant", "acme")  # required, but skip 'n'
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_args.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_args.form_uid}/fields/"
         f"{_field_uid(form_with_args, 'image_analyze')}/upload",
         data=data,
     )
@@ -741,7 +741,7 @@ async def test_upload_invalid_data_type_returns_400(
     data.add_field("n", "not-a-number")
 
     resp = await client.post(
-        f"/api/v1/t/navigator/forms/{form_with_args.form_uid}/fields/"
+        f"/api/v1/navigator/forms/{form_with_args.form_uid}/fields/"
         f"{_field_uid(form_with_args, 'image_analyze')}/upload",
         data=data,
     )
