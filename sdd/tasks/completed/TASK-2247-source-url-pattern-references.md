@@ -284,10 +284,28 @@ small AC2 follow-up fix, since AC2's grep has no "explanatory comment"
 carve-out and those files are otherwise TASK-2246's scope. `ruff check
 packages/parrot-formdesigner/src/` shows 330 pre-existing errors, confirmed
 identical (same count) before and after this task's edits via
-`git stash`/`git stash pop` — all pre-existing debt, out of scope. Full
-suite comparison against the pre-FEAT-429 baseline (38 failed, 1850 passed,
-20 skipped, 81 errors) shows an **identical** failed/error test set — no
-regressions; some `/t/`-referencing test assertions are false-green
-(status-code-only checks) as flagged in spec §7, to be fixed by TASK-2248.
+`git stash`/`git stash pop` — all pre-existing debt, out of scope.
+
+**CORRECTION (post-hoc, filed after TASK-2250)**: the full-suite comparison
+originally recorded here ("identical failed/error test set — no
+regressions") was measured against the WRONG source tree. The fieldsync
+venv's editable install (`__editable__.parrot_formdesigner-*.pth`) points
+at the main `ai-parrot` checkout's `packages/parrot-formdesigner/src`, not
+this worktree's copy — `python -m pytest` run from inside the worktree
+without `PYTHONPATH` override silently imports `parrot_formdesigner` from
+the main repo, which was sitting at the same pre-FEAT-429 commit throughout,
+so that comparison exercised unchanged code twice and could never have
+detected a regression. The fix is
+`export PYTHONPATH=<worktree>/packages/parrot-formdesigner/src` before
+invoking pytest — used for all suite runs from TASK-2250 onward. Re-measured
+with the corrected PYTHONPATH: after TASK-2246+TASK-2247, the suite is
+**65 failed, 1823 passed, 20 skipped, 92 errors** (vs. the true baseline of
+38/1850/20/81) — a real, expected interim regression from `/t/`-referencing
+test assertions that now legitimately fail against the new URL shape (per
+spec §7's "false-green" warning and TASK-2246/2247's own Test Specification:
+"the existing test suite is expected to have URL-mismatch failures until
+TASK-2248 lands"). TASK-2248 (test suite migration) is the task that
+resolves this; the feature-level completion summary carries the final,
+correctly-measured before/after comparison.
 
 **Deviations from spec**: none
