@@ -14,14 +14,14 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Edits api/routes.py and ui/routes.py — same files that TASK-2248 tests validate. Sequential to avoid test breakage window.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-18T23:31:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2246-route-table-drop-t-prefix.md"
     },
@@ -32,14 +32,14 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Touches 12 source files with hardcoded URL strings. No file overlap with TASK-2246 but sequenced for clean commits.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-18T23:31:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2247-source-url-pattern-references.md"
     },
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": false,
       "parallelism_notes": "Must run after source changes so tests validate the new URL shape. ~60 references across ~15 test files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-18T23:31:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2248-test-suite-url-migration.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallel": false,
       "parallelism_notes": "Documentation-only. Depends on source tasks to know the final URL shape.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-18T23:31:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2249-migration-guide-update.md"
     },
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,9 +102,9 @@
       "parallel": false,
       "parallelism_notes": "Touches api/tenant.py and both routes.py files after TASK-2246; adds one new test file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-18T23:31:25+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2247-source-url-pattern-references.md"
+      "file": "sdd/tasks/active/TASK-2250-reserved-segment-guard.md"
     }
   ]
 }
