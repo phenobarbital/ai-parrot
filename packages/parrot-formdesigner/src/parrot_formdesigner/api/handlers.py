@@ -1750,8 +1750,14 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         from ..tools.database_form import DatabaseFormTool
         db_tool = DatabaseFormTool(registry=self.registry, tenant=tenant)
+        # persist=True: an import that only ever reached the in-memory registry
+        # is invisible to every table-backed reader (the caller's very next
+        # request usually IS one), which surfaced as a 404 on a form the
+        # importer had just reported loading. Safe only because import identity
+        # is now deterministic — with the former uuid4 this path silently
+        # created db-form-X-Y-2, -3, -4, one duplicate per import.
         result = await db_tool.execute(
-            service=service, formid=formid, orgid=orgid, persist=False
+            service=service, formid=formid, orgid=orgid, persist=True
         )
 
         if not result.success:
