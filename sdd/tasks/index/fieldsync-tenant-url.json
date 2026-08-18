@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-18T23:57:16+00:00",
   "tasks": [
     {
       "id": "TASK-2246",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-429",
       "feature": "fieldsync-tenant-url",
       "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Documentation-only. Depends on source tasks to know the final URL shape.",
       "assigned_to": null,
       "started_at": "2026-08-18T23:31:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2249-migration-guide-update.md"
+      "completed_at": "2026-08-18T23:57:16+00:00",
+      "file": "sdd/tasks/completed/TASK-2249-migration-guide-update.md"
     },
     {
       "id": "TASK-2250",
