@@ -228,4 +228,27 @@ errors (`api/tenant.py` and the test file are 100% clean; `api/routes.py`
 + `ui/routes.py` retain the same 19 pre-existing errors as before this
 task, confirmed via `git stash`/`git stash pop`).
 
-**Deviations from spec**: none (one contract correction, documented above).
+**CORRECTION / follow-up fix (filed during TASK-2248)**: running the full
+suite while implementing TASK-2248 surfaced a real regression this task
+introduced: `reserved = request.config_dict.get(...)` raised
+`AttributeError` against `tests/unit/api/test_requires_tenant.py`'s
+`_FakeRequest` double (a plain `dict` subclass with no `config_dict`
+attribute), failing 5 previously-passing tests
+(`test_passes_declared_tenant`, `test_403_non_member`,
+`test_allows_superuser`, `test_403_no_session`,
+`test_public_skips_authorization`) — a direct violation of AC5's
+byte-compatibility requirement. Fixed with
+`getattr(request, "config_dict", request).get(...)`: real aiohttp
+requests still resolve via `config_dict` (app-level storage, subapp-aware,
+per the original contract); the fake double falls back to its own
+dict-like `.get()`, which correctly returns the empty-set default since
+neither ever carries this key under per-request storage. Committed
+separately: `fix(formdesigner): reserved-segment guard must tolerate
+requests without config_dict (FEAT-429 TASK-2250 follow-up)`. Re-verified:
+`test_requires_tenant.py` (14/14) and `test_reserved_segment_guard.py`
+(11/11) both pass after the fix; full-suite re-measurement now matches the
+true baseline's failed/error sets exactly, plus 11 new passing tests (see
+TASK-2248's completion note for the final numbers).
+
+**Deviations from spec**: none (one contract correction, documented above;
+one post-hoc regression fix, documented above).
