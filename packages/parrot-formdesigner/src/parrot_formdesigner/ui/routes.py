@@ -137,6 +137,18 @@ def setup_form_ui(
     # segment as unnecessary (see spec §2).
     tp = f"{bp}/{{tenant}}"
 
+    # FEAT-429 Module 5: reserved-segment guard. `api` is the one literal
+    # segment THIS function registers at the same tree level as `{tenant}`
+    # (below `bp`) — the telegram-submit REST fallback route below lives at
+    # `{bp}/api/v1/...`, sibling to `{tp}`. Merged (union) with any reserved
+    # set already stashed by setup_form_api on the same app — see that
+    # function's matching comment for the full rationale.
+    ui_reserved_tenant_segments: frozenset[str] = frozenset({"api"})
+    app["formdesigner_reserved_tenant_segments"] = (
+        app.get("formdesigner_reserved_tenant_segments", frozenset())
+        | ui_reserved_tenant_segments
+    )
+
     # HTML page routes
     app.router.add_get(f"{tp}/", _page_wrap(page.index, protect=protect_pages))
     app.router.add_get(

@@ -233,6 +233,21 @@ def setup_form_api(
     # literal `t` disambiguation marker segment as unnecessary (see spec §2).
     tp = f"{bp}/{{tenant}}"
 
+    # FEAT-429 Module 5: reserved-segment guard. `org` and `form-controls`
+    # are the literal segments THIS function registers at the same tree
+    # level as `{tenant}` (below `bp`) — kept as a literal set right here,
+    # next to the registrations below, so a new literal added to this
+    # function must touch this line in the same diff (introspecting the
+    # router was judged impractical — see spec Module 5). Merged (union)
+    # with any reserved set already stashed by the other setup function on
+    # the same app, since requires_tenant() is shared across the API and UI
+    # surfaces and a tenant identity is not siloed per mount.
+    api_reserved_tenant_segments: frozenset[str] = frozenset({"org", "form-controls"})
+    app["formdesigner_reserved_tenant_segments"] = (
+        app.get("formdesigner_reserved_tenant_segments", frozenset())
+        | api_reserved_tenant_segments
+    )
+
     # CRUD + listing
     app.router.add_get(f"{tp}/forms", _wrap_auth(handler.list_forms))
     app.router.add_post(f"{tp}/forms", _wrap_auth(handler.create_form))
@@ -543,5 +558,27 @@ def setup_form_api(
             "setup_form_api: exclude-provider registered for restart re-hydration (base_path=%s)",
             _bp_m7,
         )
+
+    # FEAT-429 Module 5: boot-time warning when a provisioned tenant
+    # collides with a reserved literal segment (see the reserved-segment
+    # guard above and api/tenant.py's requires_tenant()). Reads the
+    # reserved set from `app` at startup time (not the local variable
+    # above) so it reflects the FINAL merged set regardless of whether
+    # setup_form_api or setup_form_ui ran last.
+    async def _warn_reserved_tenant_collisions(app: web.Application) -> None:
+        reserved = app.get("formdesigner_reserved_tenant_segments", frozenset())
+        if not reserved:
+            return
+        colliding = sorted(set(await registry.list_tenants()) & reserved)
+        if colliding:
+            logger.warning(
+                "setup_form_api: registry tenant(s) %s collide with a reserved "
+                "literal route segment — these tenants are UNREACHABLE via the "
+                "tenant-qualified forms routes (requires_tenant() returns 404 "
+                "for them). Rename the tenant or the colliding literal route.",
+                colliding,
+            )
+
+    app.on_startup.append(_warn_reserved_tenant_collisions)
 
     logger.info("setup_form_api: mounted on %s", bp)

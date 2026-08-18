@@ -127,6 +127,21 @@ def requires_tenant(*, public: bool = False) -> Callable[[_Handler], _Handler]:
             tenant = (request.match_info.get("tenant") or "").strip()
             if not tenant:
                 raise TenantNotDeclaredError(expected=_EXPECTED_HINT)
+            # FEAT-429 Module 5: reserved-segment guard. Removing the `/t/`
+            # marker put `{tenant}` at the same URL tree level as literal
+            # segments (`org`, `form-controls`, ...). Verified behavior
+            # (spec §2): aiohttp falls through from a literal branch with no
+            # matching sub-route to the dynamic sibling, so a tenant slug
+            # equal to a reserved literal gets a MIXED surface — 200 with
+            # that literal's data wherever a real route exists under it, and
+            # 200 via {tenant} everywhere else. Reject up front with a plain
+            # 404 (no existence oracle) so the colliding slug's surface is
+            # uniformly unreachable instead of mixed.
+            reserved = request.config_dict.get(
+                "formdesigner_reserved_tenant_segments", frozenset()
+            )
+            if tenant in reserved:
+                raise web.HTTPNotFound()
             if not public:
                 _authorize(request, tenant)
             request["tenant"] = tenant
