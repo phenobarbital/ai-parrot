@@ -165,7 +165,7 @@ class AnalyticsResult:
     Args:
         god_nodes: Top-K nodes by centrality.  Each dict contains
             ``node_id``, ``title``, ``kind``, ``betweenness``,
-            ``eigenvector``.
+            ``eigenvector`` (actually PageRank; key kept for compat).
         surprising_connections: Cross-domain ``mentions`` edges ranked by
             confidence (descending).  Each dict contains ``source_id``,
             ``target_id``, ``confidence``, ``source_kind``, ``target_kind``.
@@ -252,7 +252,14 @@ def compute_analytics(
 def _compute_god_nodes(
     graph: rustworkx.PyDiGraph, top_k: int
 ) -> list[dict]:
-    """Compute and rank nodes by betweenness and eigenvector centrality.
+    """Compute and rank nodes by betweenness and PageRank centrality.
+
+    PageRank is used as the primary influence metric because it converges
+    reliably on sparse directed graphs with dangling nodes.  Eigenvector
+    centrality is attempted as a fallback if PageRank fails.
+
+    The result dict key is kept as ``eigenvector`` for backward
+    compatibility with downstream consumers and report templates.
 
     Args:
         graph: The assembled PyDiGraph.
@@ -272,12 +279,25 @@ def _compute_god_nodes(
         logger.warning("Could not compute betweenness centrality: %s", exc)
         betweenness = {}
 
+    # PageRank converges reliably on sparse directed graphs with dangling
+    # nodes; eigenvector centrality is kept as a fallback for the (rare)
+    # case where PageRank itself fails to converge.
     try:
-        _ec = rustworkx.eigenvector_centrality(graph, max_iter=1000)
+        _ec = rustworkx.pagerank(graph, alpha=0.85, max_iter=1000)
         eigenvector: dict[int, float] = dict(_ec.items())
-    except Exception as exc:
-        logger.warning("Could not compute eigenvector centrality: %s", exc)
-        eigenvector = {}
+    except Exception:
+        try:
+            _ec = rustworkx.eigenvector_centrality(graph, max_iter=1000)
+            eigenvector = dict(_ec.items())
+            logger.debug(
+                "PageRank did not converge; fell back to eigenvector centrality"
+            )
+        except Exception as exc:
+            logger.warning(
+                "Neither PageRank nor eigenvector centrality converged: %s",
+                exc,
+            )
+            eigenvector = {}
 
     result: list[dict] = []
     for idx in graph.node_indices():
@@ -835,8 +855,8 @@ def _render_report(analytics: AnalyticsResult) -> str:
     # --- God-Nodes ---
     lines.append("## God-Nodes (Most Central)")
     lines.append("")
-    lines.append("| Rank | Node | Kind | Betweenness | Eigenvector |")
-    lines.append("|------|------|------|-------------|-------------|")
+    lines.append("| Rank | Node | Kind | Betweenness | PageRank |")
+    lines.append("|------|------|------|-------------|----------|")
     for rank, node in enumerate(analytics.god_nodes, start=1):
         lines.append(
             f"| {rank} | {node['title']} | {node['kind']} "
