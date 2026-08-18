@@ -130,10 +130,12 @@ def setup_form_ui(
     telegram = TelegramWebAppHandler(registry=registry)
 
     bp = base_path.rstrip("/")
-    # FEAT-421: HTML page routes are re-prefixed under the same `t/{tenant}`
-    # marker segment as the JSON REST surface (api/routes.py), for the same
-    # reason — the tenant is a declared, cross-checkable path component.
-    tp = f"{bp}/t/{{tenant}}"
+    # FEAT-421: HTML page routes are mounted under the same `{tenant}`
+    # path component as the JSON REST surface (api/routes.py), for the
+    # same reason — the tenant is a declared, cross-checkable path
+    # component. FEAT-429 removed the `/t/` disambiguation marker as
+    # unnecessary (see spec §2).
+    tp = f"{bp}/{{tenant}}"
 
     # HTML page routes
     app.router.add_get(f"{tp}/", _page_wrap(page.index, protect=protect_pages))
@@ -166,7 +168,7 @@ def setup_form_ui(
     )
     # Telegram REST fallback (for WebApp payloads > 4 KB) — public.
     app.router.add_post(
-        f"{bp}/api/v1/t/{{tenant}}/forms/{{form_uid}}/telegram-submit",
+        f"{bp}/api/v1/{{tenant}}/forms/{{form_uid}}/telegram-submit",
         _page_wrap(telegram.rest_fallback, protect=False, tenant="public"),
     )
 

@@ -224,13 +224,14 @@ def setup_form_api(
     )
 
     bp = base_path.rstrip("/")
-    # FEAT-421: every FORMS route is mounted under a literal `t/{tenant}`
-    # marker segment so the tenant is a declared, cross-checkable path
-    # component rather than an inferred value. The `t` marker removes
-    # router ambiguity between `/forms/{tenant}` and `/forms/{form_uid}`
-    # (both one path segment) and keeps the forms namespace visibly
-    # disjoint from `/org/*`, which is UNCHANGED (spec G7, AC11).
-    tp = f"{bp}/t/{{tenant}}"
+    # FEAT-421: every FORMS route is mounted under a declared `{tenant}`
+    # path component so the tenant is a declared, cross-checkable path
+    # component rather than an inferred value. aiohttp's UrlDispatcher
+    # resolves literal child nodes before dynamic ones at every tree
+    # level, so `{tenant}` safely coexists with the literal `/org/*`
+    # branch, which is UNCHANGED (spec G7, AC11). FEAT-429 removed the
+    # `/t/` disambiguation marker as unnecessary (see spec §2).
+    tp = f"{bp}/{{tenant}}"
 
     # CRUD + listing
     app.router.add_get(f"{tp}/forms", _wrap_auth(handler.list_forms))
@@ -354,7 +355,7 @@ def setup_form_api(
             f"{tp}/forms/{{form_uid}}/audio/ws",
             audio_handler.handle_websocket,
         )
-        logger.info("setup_form_api: audio WS endpoint mounted at %s/t/{tenant}/forms/{form_uid}/audio/ws", bp)
+        logger.info("setup_form_api: audio WS endpoint mounted at %s/{tenant}/forms/{form_uid}/audio/ws", bp)
     # FEAT-300 — publish, question-bank, version history, import-report
     # Note: /versions and /import-report routes are registered BEFORE the
     # generic /{form_uid} catch-all to avoid shadowing issues if the router
