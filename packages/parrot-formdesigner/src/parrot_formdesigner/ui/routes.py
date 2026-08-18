@@ -133,8 +133,8 @@ def setup_form_ui(
     # FEAT-421: HTML page routes are mounted under the same `{tenant}`
     # path component as the JSON REST surface (api/routes.py), for the
     # same reason — the tenant is a declared, cross-checkable path
-    # component. FEAT-429 removed the `/t/` disambiguation marker as
-    # unnecessary (see spec §2).
+    # component. FEAT-429 removed the literal `t` disambiguation marker
+    # segment as unnecessary (see spec §2).
     tp = f"{bp}/{{tenant}}"
 
     # HTML page routes

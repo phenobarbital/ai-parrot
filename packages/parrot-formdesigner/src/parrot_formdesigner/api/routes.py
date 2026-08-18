@@ -230,7 +230,7 @@ def setup_form_api(
     # resolves literal child nodes before dynamic ones at every tree
     # level, so `{tenant}` safely coexists with the literal `/org/*`
     # branch, which is UNCHANGED (spec G7, AC11). FEAT-429 removed the
-    # `/t/` disambiguation marker as unnecessary (see spec §2).
+    # literal `t` disambiguation marker segment as unnecessary (see spec §2).
     tp = f"{bp}/{{tenant}}"
 
     # CRUD + listing
