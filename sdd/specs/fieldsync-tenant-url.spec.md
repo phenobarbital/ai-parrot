@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-429
 **Date**: 2026-08-18
 **Author**: Jesus Lara + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.9.0 (amends FEAT-421 before first production release)
 
 ---
@@ -585,4 +585,4 @@ All blocking questions are resolved.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-18 | Jesus Lara + Claude | Initial draft — remove `/t/` marker from FEAT-421 tenant URLs before first production release |
-| 0.2 | 2026-08-18 | Juan + Claude (fieldsync-side independent review) | Coverage: Module 2b added — the 4 G1-claimed files v0.1 missed (`ui/handlers.py`, `ui/templates.py`, `api/audio_ws.py`, `renderers/audio.py`, 21 hits) + `html5.py:405` (generated event-bridge JS) + `errors.py:41`; AC2's grep declared the definition of done. Routing: §2 corrected with the VERIFIED fall-through behavior (real-server repro, aiohttp 3.14.3, both registration orders) — collision is a mixed surface, not a 404; Q1 resolved as Module 5 (registration-derived reserved-segment guard, decorator 404, boot WARNING; AC5 amended, AC13 added). Estimation: test migration is 163 refs / 23 files. NOTE: tasks TASK-2246..2249 were decomposed from v0.1 and need a scope refresh (Module 2b + Module 5). |
+| 0.2 | 2026-08-18 | Juan + Claude (fieldsync-side independent review) | Coverage: Module 2b added — the 4 G1-claimed files v0.1 missed (`ui/handlers.py`, `ui/templates.py`, `api/audio_ws.py`, `renderers/audio.py`, 21 hits) + `html5.py:405` (generated event-bridge JS) + `errors.py:41`; AC2's grep declared the definition of done. Routing: §2 corrected with the VERIFIED fall-through behavior (real-server repro, aiohttp 3.14.3, both registration orders) — collision is a mixed surface, not a 404; Q1 resolved as Module 5 (registration-derived reserved-segment guard, decorator 404, boot WARNING; AC5 amended, AC13 added). Estimation: test migration is 163 refs / 23 files. Tasks reconciled same day: TASK-2247's own sweep already covered Module 2b's files (its site list completed to the full 45-site inventory); Module 5 decomposed as new TASK-2250; TASK-2248 re-counted to 163/23. Approved by Juan 2026-08-18. |

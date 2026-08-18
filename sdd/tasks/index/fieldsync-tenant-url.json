@@ -53,7 +53,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2246", "TASK-2247"],
+      "depends_on": [
+        "TASK-2246",
+        "TASK-2247",
+        "TASK-2250"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run after source changes so tests validate the new URL shape. ~60 references across ~15 test files.",
       "assigned_to": null,
@@ -71,13 +75,36 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2246", "TASK-2247"],
+      "depends_on": [
+        "TASK-2246",
+        "TASK-2247"
+      ],
       "parallel": false,
       "parallelism_notes": "Documentation-only. Depends on source tasks to know the final URL shape.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2249-migration-guide-update.md"
+    },
+    {
+      "id": "TASK-2250",
+      "slug": "reserved-segment-guard",
+      "title": "Reserved-segment guard for tenant/literal collisions (spec v0.2 Module 5)",
+      "feature_id": "FEAT-429",
+      "feature": "fieldsync-tenant-url",
+      "spec": "sdd/specs/fieldsync-tenant-url.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2246"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches api/tenant.py and both routes.py files after TASK-2246; adds one new test file.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2247-source-url-pattern-references.md"
     }
   ]
 }

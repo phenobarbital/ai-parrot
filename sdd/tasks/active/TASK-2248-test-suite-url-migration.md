@@ -13,7 +13,7 @@
 ## Context
 
 TASK-2246 changed the route table and TASK-2247 changed all source URL
-references. This task updates the **~60 test references** across ~15 test
+references. This task updates the **163 test references** across 23 test
 files so assertions match the new URL shape. Without this, tests that check
 route paths or make requests to specific URLs will fail.
 
@@ -31,7 +31,7 @@ Update every `/t/{tenant}/` URL pattern in test files under
 - Route registrations in test helpers
 - Docstrings and comments
 
-### Files to update (~15, ~60 references total)
+### Files to update (23 files, 163 references total — measured `grep -ro "/t/" tests/ | wc -l`, spec v0.2; the key files below are the largest, the grep is authoritative)
 
 **Unit tests**:
 - `unit/api/test_setup_form_api.py` — route path assertions
@@ -169,7 +169,7 @@ Expected: **zero lines** after this task.
 
 ## Acceptance Criteria
 
-- [ ] All ~60 test URL references updated from `/t/{tenant}/` to `/{tenant}/`.
+- [ ] All 163 test URL references updated from `/t/{tenant}/` to `/{tenant}/`.
 - [ ] `test_route_tenant_coverage.py:75` (`assert not any("/t/" in p ...)`)
       is **unchanged**.
 - [ ] No `/org/*` test assertions were modified.

@@ -55,13 +55,19 @@ following source files (all paths under
 - `ui/handlers.py:106` — "Create one!" link
 - `ui/handlers.py:121` — form link
 - `ui/handlers.py:123` — schema link
+- `ui/handlers.py:175` — `<form action>` URL (spec v0.2 addition)
+- `ui/handlers.py:182` — schema link (spec v0.2 addition)
+- `ui/handlers.py:245` — comment referencing `{prefix}/t//` (spec v0.2 addition)
 - `ui/handlers.py:295` — "Fill again" link
 - `ui/handlers.py:296` — "Create another form" link
 - `ui/handlers.py:308` — form action URL
 
-### UI templates (inline JavaScript)
+### UI templates (inline JavaScript + HTML)
+- `ui/templates.py:220,221` — "New Form" / "Gallery" nav links (spec v0.2 addition)
 - `ui/templates.py:333` — JS fetch `/api/v1/t/` + TENANT + `/forms`
 - `ui/templates.py:350` — JS fetch `/api/v1/t/` + TENANT + `/forms/from-db`
+- `ui/templates.py:434,435` — "View Form" / "Gallery" links (spec v0.2 addition)
+- `ui/templates.py:451-454` — endpoint documentation list (spec v0.2 addition)
 - `ui/templates.py:474` — "Go back" link
 
 ### Telegram
@@ -72,7 +78,8 @@ following source files (all paths under
 ### Audio WebSocket
 - `api/audio_ws.py:510` — WS endpoint URL f-string
 
-**Total**: ~36 sites across 12 source files.
+**Total**: ~45 sites across 11 source files (spec v0.2 recount). The
+AC verification grep is authoritative — this list is the verified inventory.
 
 **NOT in scope**:
 - Route registration (`api/routes.py`, `ui/routes.py`) — that is TASK-2246.
@@ -93,8 +100,8 @@ following source files (all paths under
 | `.../renderers/html5.py` | MODIFY | JS fetch URL + comment + upload template |
 | `.../renderers/jsonschema.py` | MODIFY | Upload URL template |
 | `.../renderers/audio.py` | MODIFY | WS endpoint URL |
-| `.../ui/handlers.py` | MODIFY | 6 HTML link/action URLs |
-| `.../ui/templates.py` | MODIFY | 2 JS fetch URLs + 1 HTML link |
+| `.../ui/handlers.py` | MODIFY | 8 HTML link/action URLs + 1 comment |
+| `.../ui/templates.py` | MODIFY | 2 JS fetch URLs + 9 HTML link/doc sites |
 | `.../ui/telegram.py` | MODIFY | 1 fallback URL + 2 docstrings |
 
 ---
@@ -225,8 +232,8 @@ Expected: **zero lines** (excluding this task file if it's in the tree).
 - [ ] `public_form_paths` glob uses `/{tenant}/`, not `/t/{tenant}/`.
 - [ ] Both renderer upload URL templates use `/{tenant}/`.
 - [ ] `renderers/audio.py` WS endpoint uses `/{tenant}/`.
-- [ ] All 6 `ui/handlers.py` HTML URLs use `/{tenant}/`.
-- [ ] Both `ui/templates.py` JS fetch URLs use `/{tenant}/`.
+- [ ] All 8 `ui/handlers.py` HTML URLs (and the :245 comment) use `/{tenant}/`.
+- [ ] Both `ui/templates.py` JS fetch URLs and all 9 HTML/doc sites use `/{tenant}/`.
 - [ ] `ui/templates.py:474` "Go back" link uses `/{tenant}/`.
 - [ ] `ui/telegram.py` fallback URL uses `/{tenant}/`.
 - [ ] `api/audio_ws.py` WS endpoint uses `/{tenant}/`.
