@@ -507,7 +507,7 @@ class AudioFormWSHandler:
             title=form_title,
             total_questions=len(questions),
             questions=questions,
-            ws_endpoint=f"/api/v1/t/{declared_tenant}/forms/{form_uid}/audio/ws",
+            ws_endpoint=f"/api/v1/{declared_tenant}/forms/{form_uid}/audio/ws",
             locale=locale,
         )
 

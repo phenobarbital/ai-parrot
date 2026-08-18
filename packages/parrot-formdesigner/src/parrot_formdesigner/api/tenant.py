@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 _Handler = Callable[[web.Request], Awaitable[web.Response]]
 
-_EXPECTED_HINT = "/api/v1/t/{tenant}/forms/{form_uid}"
+_EXPECTED_HINT = "/api/v1/{tenant}/forms/{form_uid}"
 
 
 def _get_programs(request: web.Request) -> list[str]:

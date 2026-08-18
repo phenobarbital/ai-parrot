@@ -465,7 +465,7 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 # issuing the upload request (see docs/migration/
                 # feat-421-forms-tenant-in-url.md).
                 "upload_url_template": (
-                    "/api/v1/t/{tenant}/forms/{form_id}/fields/{field_id}/upload"
+                    "/api/v1/{tenant}/forms/{form_id}/fields/{field_id}/upload"
                 ),
                 "additional_args": all_args,
                 "public_args": public_args,

@@ -103,7 +103,7 @@ class FormPageHandler:
         if not forms:
             items_html = (
                 f"<p>No forms created yet. "
-                f"<a href='{p}/t/{escape(tenant or '')}/'>Create one!</a></p>"
+                f"<a href='{p}/{escape(tenant or '')}/'>Create one!</a></p>"
             )
         else:
             items = []
@@ -118,9 +118,9 @@ class FormPageHandler:
                     f'<span><strong>{escape(title)}</strong> '
                     f'<span style="color:var(--muted);font-size:.85rem">({escape(fid)})</span></span>'
                     f'<span style="display:flex;gap:.5rem;">'
-                    f'<a href="{p}/t/{escape(tenant or "")}/forms/{escape(fid)}" class="btn btn-secondary" '
+                    f'<a href="{p}/{escape(tenant or "")}/forms/{escape(fid)}" class="btn btn-secondary" '
                     f'style="padding:.35rem .8rem; font-size:.85rem;">Open</a>'
-                    f'<a href="{p}/t/{escape(tenant or "")}/forms/{escape(fid)}/schema" class="btn btn-secondary" '
+                    f'<a href="{p}/{escape(tenant or "")}/forms/{escape(fid)}/schema" class="btn btn-secondary" '
                     f'style="padding:.35rem .8rem; font-size:.85rem;">Schema</a>'
                     f'</span>'
                     f'</li>'
@@ -172,14 +172,14 @@ class FormPageHandler:
         t = escape(tenant or "")
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="{p}/t/{t}/forms/{escape(form_uid)}" method="post" ',
+            f'<form action="{p}/{t}/forms/{escape(form_uid)}" method="post" ',
             1,
         )
 
         title = form.title if isinstance(form.title, str) else form.title.get("en", "Form")
         schema_link = (
             f'<div style="margin-top:1rem;">'
-            f'<a href="{p}/t/{t}/forms/{escape(form_uid)}/schema" class="btn btn-secondary"'
+            f'<a href="{p}/{t}/forms/{escape(form_uid)}/schema" class="btn btn-secondary"'
             f' style="font-size:.85rem;">View JSON Schema</a></div>'
         )
         return web.Response(
@@ -242,7 +242,7 @@ class FormPageHandler:
                 # FEAT-421 review fix (2nd pass): every sibling page_shell()
                 # call passes tenant= so the top nav ("New Form"/"Gallery")
                 # links stay tenant-qualified — this one was missing it,
-                # which rendered them as "{prefix}/t//" (empty segment).
+                # which rendered them as "{prefix}//" (empty segment).
                 tenant=form.tenant or "",
             ),
             content_type="text/html",
@@ -292,8 +292,8 @@ class FormPageHandler:
   <pre>{escape(sanitized_json)}</pre>
 </div>
 <div style="display:flex; gap:.75rem;">
-  <a href="{p}/t/{escape(tenant or "")}/forms/{escape(form_uid)}" class="btn btn-secondary">Fill again</a>
-  <a href="{p}/t/{escape(tenant or "")}/" class="btn btn-primary">Create another form</a>
+  <a href="{p}/{escape(tenant or "")}/forms/{escape(form_uid)}" class="btn btn-secondary">Fill again</a>
+  <a href="{p}/{escape(tenant or "")}/" class="btn btn-primary">Create another form</a>
 </div>"""
             return web.Response(
                 text=page_shell(
@@ -305,7 +305,7 @@ class FormPageHandler:
         rendered = await self.renderer.render(form, prefilled=submission, errors=result.errors)
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="{p}/t/{escape(tenant or "")}/forms/{escape(form_uid)}" method="post" ',
+            f'<form action="{p}/{escape(tenant or "")}/forms/{escape(form_uid)}" method="post" ',
             1,
         )
         error_count = len(result.errors)
