@@ -859,21 +859,36 @@ None. No new packages, no migration.
 - [x] **Q4 — Module 4 in or out? → IN. Decided 2026-08-19.** Cheap, and
       the only thing between `_bump_version("1.2.3")` and a silently
       misordered history.
-- [ ] **Q5 (NEW) — Should `publish()` promote the current version in
-      place instead of bumping to a new tag?** Today publish computes
-      `_bump(live.version)` and writes a *new* row, so publishing draft
-      `1.5` produces published `1.6` — a content-identical twin, and `1.5`
-      stays a draft forever. Under D1 that is version inflation: every
-      publish doubles a row and the history alternates draft/published
-      copies of the same form. The alternative — stamp
-      `published_version = version` on the existing row and let the next
-      editor save bump to a new draft — matches "publish the version I am
-      looking at", produces one row per actual change, and is what a
-      version-history UI naturally renders. It is **out of scope here**
-      (this feature repairs the read path; changing publish's write
-      semantics is a separate decision with its own blast radius), but it
-      should be settled before the FieldSync UI ships, because the two
-      models produce visibly different histories —
+- [~] **Q5 (NEW) — Should `publish()` promote the current version in
+      place instead of bumping to a new tag? → FieldSync answers YES
+      (promote in place), 2026-08-19. AWAITING MAINTAINER CONFIRMATION.**
+      Today publish computes `_bump(live.version)` and writes a *new* row,
+      so publishing draft `1.5` produces published `1.6` — a
+      content-identical twin, and `1.5` stays a draft forever. Under D1
+      that is version inflation: every publish doubles a row and the
+      history alternates draft/published copies of the same form.
+      Promoting in place — stamp `published_version = version` on the
+      existing row, let the next editor save bump to a new draft — matches
+      "publish the version I am looking at", produces one row per actual
+      change, and is what the FieldSync history UI naturally renders.
+      That is the FieldSync position and the shape we will build the UI
+      against.
+      **This question is owned by the maintainer** (`*Owner: Jesús*`), and
+      it governs parrot's write path, so it is recorded here as a request,
+      not as a closed decision. Two things follow if it is confirmed:
+      - **It changes Module 6 / TASK-2269.** That module assumes publish
+        *inserts* a new row and guards it insert-only
+        (`ON CONFLICT … DO NOTHING`). Promote-in-place makes publish an
+        **UPDATE of an existing row**, so the guard becomes "refuse to
+        promote a row that is already published"
+        (`UPDATE … WHERE published_version IS DISTINCT FROM version`,
+        checking the affected-row count) rather than insert-only. The
+        editor's save path keeps its UPSERT either way.
+      - **`publish()` stops calling `_bump()`**, and its immutability
+        pre-check changes target accordingly.
+      Whether this folds into FEAT-433 or becomes its own feature is the
+      maintainer's call; §1 currently lists it as a non-goal, and TASK-2269
+      should not start until it is settled either way —
       *Owner: Jesús, before FieldSync UI freeze*
 
 ---
@@ -883,5 +898,6 @@ None. No new packages, no migration.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-19 | Juan Ruffato (FieldSync) | Initial draft from `form-version-history-repair.brainstorm.md`; submitted for parrot maintainer review |
+| 0.4 | 2026-08-19 | Juan Ruffato (FieldSync) | Q5 answered from the FieldSync side (promote in place) and flagged as awaiting maintainer confirmation; recorded that it reshapes Module 6 / TASK-2269 from insert-only to a promote guard |
 | 0.3 | 2026-08-19 | Juan Ruffato (FieldSync) | Submitter acceptance (§0.1): D1–D5 and Modules 5–6 adopted; S1 closes the version-format thread, S2 keeps test-data fabrication out of scope. Status → approved; decomposed into TASK-2264…TASK-2269 |
 | 0.2 | 2026-08-19 | Jesús Lara (maintainer) | **Review pass.** Defects 1–3 confirmed against `dev@28e84a440` — the diagnosis is correct and `PostgresFormStorage` versioning was never the problem; the bug is entirely on the read path. Changes: §0 maintainer decisions (D1–D5); §1.1 normative front-editor contract; Q1 closed **preserving draft/published** as a derived label with no migration, Q2 and Q4 closed, Q5 raised; Module 3 rewritten from "retire the filter" to "demote gate → label" and ungated; **Module 5 added** — `get_published()` carries the same filter, so `GET .../versions/{version}` 404s every editor-saved version (missed by the submission, which claims it works); **Module 6 added** — `publish()`'s documented immutability guard does not hold, `_upsert_sql` is `ON CONFLICT DO UPDATE` and the `InMemoryStorage` double is stricter than production, a hole that Module 1 makes reachable; SQL hardened (projected columns instead of whole `schema_json`, guarded `::int` cast against `22P02`); `VersionMeta` gains `is_published`, `is_frozen` stops being hardcoded `True`; draft `published_at` no longer falls back to wall-clock now; `api/handlers.py` line anchors corrected (off by one throughout); tests, fixtures and acceptance criteria extended accordingly |

@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-2264
+**Depends-on**: TASK-2264 — **BLOCKED on spec §8 Q5** (see below)
 **Assigned-to**: unassigned
 
 ---
@@ -44,9 +44,19 @@ introduces the regression.
 - Align the `InMemoryStorage` double with whichever contract the protocol
   declares, so the double stops being the stricter of the two.
 
-**NOT in scope**: changing what `publish()` versions — whether publish
-should promote in place instead of bumping to a new tag is spec §8 Q5,
-open and explicitly out of this feature.
+**NOT in scope**: changing what `publish()` versions.
+
+> ⚠ **BLOCKED — read spec §8 Q5 before starting.** FieldSync answered Q5
+> on 2026-08-19: **publish should promote the current version in place**
+> instead of bumping to a new tag. Awaiting maintainer confirmation.
+> If confirmed, this task's premise changes: publish stops *inserting* a
+> new row and becomes an **UPDATE of the existing one**, so the guard is
+> no longer insert-only (`ON CONFLICT … DO NOTHING`) but "refuse to
+> promote a row that is already published"
+> (`UPDATE … WHERE published_version IS DISTINCT FROM version`, checking
+> the affected-row count). The editor's save path keeps its UPSERT either
+> way, and the docstring fix at `:209-211` is needed under both shapes.
+> Do not start until Q5 is settled.
 
 ---
 

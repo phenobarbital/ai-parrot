@@ -108,14 +108,14 @@
       "feature_id": "FEAT-433",
       "feature": "form-version-history-repair",
       "spec": "sdd/specs/form-version-history-repair.spec.md",
-      "status": "pending",
+      "status": "blocked",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-2264"
       ],
       "parallel": true,
-      "parallelism_notes": "Parallel with 2265/2266 but MUST NOT ship without it: 2264 turns an unreachable hole into a live overwrite path.",
+      "parallelism_notes": "Parallel with 2265/2266 but MUST NOT ship without it: 2264 turns an unreachable hole into a live overwrite path. BLOCKED on spec 8 Q5: FieldSync answered 'promote in place' (2026-08-19), awaiting maintainer confirmation. If confirmed, publish becomes an UPDATE of an existing row and this task's guard changes from insert-only to 'refuse to promote an already-published row'. Do not start until settled.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
