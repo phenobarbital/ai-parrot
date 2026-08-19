@@ -489,6 +489,46 @@ class FormSchema(BaseModel):
         return self
 
 
+
+def derive_stable_identities(schema: FormSchema, form_uid: uuid.UUID) -> None:
+    """Re-derive a schema's child identities from ``form_uid``, in place.
+
+    ``section_uid``, ``subsection_uid`` and ``field_uid`` default to random
+    UUID4s (see the ``Field(default_factory=uuid.uuid4)`` declarations above),
+    which is correct when a form is authored but wrong whenever a whole schema
+    is copied: the copy inherits the original's identities verbatim, so two
+    distinct forms end up claiming the same ``field_uid``.
+
+    Each uid is derived as a UUID5 of the owning form's identity plus the
+    element's stable local id (``section_id`` / ``subsection_id`` /
+    ``field_id``), all of which ``FormSchema``'s post-init validator already
+    guarantees unique within the form. That makes this:
+
+    * **collision-free** — a different ``form_uid`` yields a different uid for
+      every child, so no two forms can share one;
+    * **deterministic** — the same (form_uid, local id) pair always produces
+      the same uid, so the operation is idempotent and reproducible;
+    * **structure-preserving** — nothing but the uids changes.
+
+    Args:
+        schema: The schema to rewrite. Mutated in place.
+        form_uid: The form identity to derive children from. Normally
+            ``schema.form_uid``; passed explicitly so callers that mint a new
+            identity cannot accidentally derive from the stale one.
+    """
+    for section in schema.sections:
+        section.section_uid = uuid.uuid5(
+            form_uid, f"section:{section.section_id}"
+        )
+        for item in section.fields:
+            if isinstance(item, FormSubsection):
+                item.subsection_uid = uuid.uuid5(
+                    form_uid, f"subsection:{item.subsection_id}"
+                )
+    for field in schema.iter_fields_recursive():
+        field.field_uid = uuid.uuid5(form_uid, f"field:{field.field_id}")
+
+
 class RenderWarning(BaseModel):
     """Warning emitted when a renderer uses degraded fallback for a field type.
 

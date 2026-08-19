@@ -38,7 +38,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-from ..core.schema import FormSchema
+from ..core.schema import FormSchema, derive_stable_identities
 from ..core.style import StyleSchema
 from .validators import FormValidator
 
@@ -849,6 +849,17 @@ class FormRegistry:
             clone = FormSchema.model_validate(merged)
             clone.created_at = None
             clone.tenant = resolved
+
+        # A deep copy inherits the SOURCE's section/subsection/field uids, so
+        # without this the clone and its original would claim the same
+        # `field_uid` — the identity FEAT-393 documents as "stable, immutable
+        # ... the primary key for edit operations, rule references, blob
+        # storage keys". `FormSchema`'s own validator only enforces uniqueness
+        # WITHIN a form, so it cannot catch the collision across two.
+        # Derived AFTER the patch so a patch that adds fields gets stable uids
+        # too, and so the invariant holds on both code paths: every child uid
+        # of a clone comes from the clone's own form_uid.
+        derive_stable_identities(clone, clone.form_uid)
 
         errors = FormValidator().check_schema(clone)
         if errors:
