@@ -439,10 +439,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Added the 7 new model imports (`ChainBlock`, `ChainNode`,
+`StepsBlock`, `StepItem`, `CodeBlock`, `CardGridBlock`, `GridCard`) to the
+`...models.infographic` import block, 4 entries to `_BLOCK_MODEL_MAP`, and
+4 entries to `self._block_renderers`. Implemented `_render_chain()`
+(`.chain__node` + `.chain__connector` between nodes, `direction`-aware),
+`_render_steps()` (`.steps__marker` numbered/icon), `_render_code()`
+(`<pre class="code-block"><code class="language-{lang}">`, escaped body,
+`highlight_lines` marking, out-of-range highlights ignored, micro-syntax
+never expanded on code), `_render_card_grid()` (`.card-grid` with
+`repeat({columns}, minmax(0, 1fr))`, defensively clamped 1-6). All four
+titles/labels/descriptions route through `_render_i18n_span()` /
+`_expand_microsyntax()` from TASK-2252, never raw `escape()`. Added CSS
+for all four blocks to `BASE_CSS` using `var(--code-bg)`, `var(--surface-bg)`,
+`var(--soft-primary)`, etc. Added unit tests for all four renderers
+(bilingual titles, XSS payloads, out-of-range highlights, microsyntax
+non-expansion in code, malicious `language` attribute) plus an
+all-19-block-types integration fixture, petrol-theme render, nested-in-tab
+rendering, and an existing-15-block regression test (117 tests in
+`tests/test_infographic_html.py`, all passing; 43 in
+`tests/test_infographic_multi_tab.py`, all passing).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+`ruff check --select F`: F541 count unchanged (3, pre-existing in
+`_render_accordion`, not touched by this task). F401 grew from 9 to 12 —
+the 3 new "unused" imports (`ChainNode`, `StepItem`, `GridCard`) follow
+the exact same pre-existing pattern as `AccordionItem`/`ChecklistItem`/
+`TabPane` (support models imported for module contract clarity even
+though only accessed via attribute, never as a bare name) and were
+explicitly required by this task's Scope/Codebase Contract.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `<code>` carries only the bare
+`language-{lang}` class (no combined `code-block__code` class), and the
+outer wrapper uses `.code-block-wrapper` while `<pre>` itself carries
+`.code-block` — this exact split was needed to satisfy the acceptance
+criterion's literal `'class="language-python"'` string match. The
+`language` sanitizer was changed from a character-stripping `re.sub` to a
+whole-string `re.fullmatch` gate (invalid language hints are dropped
+entirely rather than partially sanitized) after discovering that
+character-stripping could leave attribute-breakout substrings like
+`onload` intact inside an otherwise word-only remnant.

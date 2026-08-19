@@ -71,7 +71,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Needs the 4 models (2263), the code/surface tokens (2251) and the i18n emitter (2252). Edits infographic_html.py — same file as 2252/2254/2255.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2253-html-block-renderers.md"
+      "completed_at": "2026-08-19T12:01:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2253-html-block-renderers.md"
     },
     {
       "id": "TASK-2254",
