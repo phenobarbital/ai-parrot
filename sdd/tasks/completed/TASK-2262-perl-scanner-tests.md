@@ -271,10 +271,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: Created `tests/knowledge/wiki/languages/test_perl.py` with 37
+test cases (≥19 required) across `TestRegistration`, `TestHeuristic`
+(14 tests, using the shared `force_heuristic` fixture from
+`conftest.py`), `TestTreeSitter` (6 tests, `skipif` guarded on grammar
+availability), module-level mode tests, `TestImportResolution` (5 tests),
+and `TestSafety` (4 tests: garbage, empty, binary, and a monkeypatched
+extraction failure verifying the never-raise degrade-to-empty contract).
+All 37 pass; full `tests/knowledge/wiki/languages/` suite passes
+(183 passed, no regressions). `ruff check` clean on both the test file
+and `perl.py`. Verified locally with `tree-sitter-perl` installed in the
+dev venv (temporarily, for cross-checking node types across TASK-2261)
+so both `TestHeuristic` (forced) and `TestTreeSitter` (native) paths
+actually executed rather than one being skipped.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
