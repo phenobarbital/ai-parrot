@@ -85,6 +85,10 @@ class BlockType(str, Enum):
     ACCORDION = "accordion"
     CHECKLIST = "checklist"
     TAB_VIEW = "tab_view"
+    CHAIN = "chain"
+    STEPS = "steps"
+    CODE = "code"
+    CARD_GRID = "card_grid"
 
 
 class ChartType(str, Enum):
@@ -133,6 +137,20 @@ class BulletListStyle(str, Enum):
     DEFAULT = "default"
     TITLED = "titled"
     COMPACT = "compact"
+
+
+# ──────────────────────────────────────────────
+# I18n text
+# ──────────────────────────────────────────────
+
+I18nText = Union[str, Dict[str, str]]
+"""Bilingual text: plain ``str`` for single-language content, or
+``{"en": "...", "es": "..."}`` for locale-dispatched content.
+
+``str`` is listed first in the union so Pydantic v2 prefers it for
+plain-string payloads, keeping every existing single-language payload
+valid without changes.
+"""
 
 
 # ──────────────────────────────────────────────
@@ -204,6 +222,52 @@ class TabPane(BaseModel):
         default_factory=list,
         description="InfographicBlock items inside this tab pane.",
     )
+
+
+class ChainNode(BaseModel):
+    """A single node within a ChainBlock flow/chain diagram."""
+    label: I18nText = Field(..., description="Node label text")
+    description: Optional[I18nText] = Field(
+        None, description="Optional supporting text for the node"
+    )
+    icon: Optional[str] = Field(None, description="Emoji or CSS icon class for the node")
+    color: Optional[str] = Field(None, description="Node accent color")
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
+
+
+class StepItem(BaseModel):
+    """A single step within a StepsBlock step-by-step guide."""
+    label: I18nText = Field(..., description="Step label text")
+    description: Optional[I18nText] = Field(
+        None, description="Optional supporting text for the step"
+    )
+    icon: Optional[str] = Field(None, description="Emoji or CSS icon class for the step")
+    color: Optional[str] = Field(None, description="Step accent color")
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
+
+
+class GridCard(BaseModel):
+    """A single card within a CardGridBlock."""
+    title: I18nText = Field(..., description="Card title text")
+    body: Optional[I18nText] = Field(None, description="Card body text")
+    icon: Optional[str] = Field(None, description="Emoji or CSS icon class for the card")
+    color: Optional[str] = Field(None, description="Card accent color")
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
 
 
 # ──────────────────────────────────────────────
@@ -818,6 +882,49 @@ class TabViewBlock(BaseModel):
     )
 
 
+class ChainBlock(BaseModel):
+    """Flow/chain diagram block — sequential process with labeled nodes."""
+    type: Literal["chain"] = "chain"
+    title: Optional[I18nText] = Field(None, description="Chain diagram heading")
+    nodes: List[ChainNode] = Field(..., description="Ordered list of chain nodes")
+    direction: Literal["horizontal", "vertical"] = Field(
+        "horizontal", description="Layout direction of the chain"
+    )
+
+
+class StepsBlock(BaseModel):
+    """Step-by-step guide with numbered/labeled stages."""
+    type: Literal["steps"] = "steps"
+    title: Optional[I18nText] = Field(None, description="Steps guide heading")
+    steps: List[StepItem] = Field(..., description="Ordered list of steps")
+    style: Literal["numbered", "icon"] = Field(
+        "numbered", description="Visual style for step markers"
+    )
+
+
+class CodeBlock(BaseModel):
+    """Code snippet block with optional language hint and line highlights."""
+    type: Literal["code"] = "code"
+    title: Optional[I18nText] = Field(None, description="Code block heading")
+    code: str = Field(..., description="Raw source text, rendered verbatim")
+    language: Optional[str] = Field(
+        None, description="Language hint, e.g. 'python'"
+    )
+    highlight_lines: Optional[List[int]] = Field(
+        None, description="1-based line numbers to highlight"
+    )
+
+
+class CardGridBlock(BaseModel):
+    """Grid of cards (e.g., feature comparison, team roster)."""
+    type: Literal["card_grid"] = "card_grid"
+    title: Optional[I18nText] = Field(None, description="Card grid heading")
+    cards: List[GridCard] = Field(..., description="List of cards in the grid")
+    columns: int = Field(
+        default=3, ge=1, le=6, description="Number of grid columns"
+    )
+
+
 # ──────────────────────────────────────────────
 # Union type for all blocks
 # ──────────────────────────────────────────────
@@ -838,7 +945,32 @@ InfographicBlock = Union[
     AccordionBlock,
     ChecklistBlock,
     TabViewBlock,
+    ChainBlock,
+    StepsBlock,
+    CodeBlock,
+    CardGridBlock,
 ]
+
+
+# ──────────────────────────────────────────────
+# Document Chrome (version bar, changelog, authorship)
+# ──────────────────────────────────────────────
+
+class ChangelogEntry(BaseModel):
+    """A single changelog entry for document chrome rendering."""
+    version: str = Field(..., description="Version label, e.g. '1.0'")
+    date: str = Field(..., description="Date or time label for this entry")
+    summary: I18nText = Field(..., description="Summary of the change")
+
+
+class DocumentMeta(BaseModel):
+    """Top-level document metadata for chrome rendering."""
+    version: Optional[str] = Field(None, description="Document version label")
+    status: Optional[str] = Field(None, description="Document status, e.g. 'approved'")
+    author: Optional[str] = Field(None, description="Document author name")
+    changelog: Optional[List[ChangelogEntry]] = Field(
+        None, description="Ordered list of changelog entries"
+    )
 
 
 # ──────────────────────────────────────────────
@@ -866,6 +998,10 @@ class InfographicResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         default_factory=dict,
         description="Extra metadata (data sources, generation params, etc.)"
+    )
+    document_meta: Optional[DocumentMeta] = Field(
+        None,
+        description="Optional document chrome metadata (version, status, changelog)"
     )
 
     @model_validator(mode="before")
