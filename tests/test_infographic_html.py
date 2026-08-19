@@ -304,6 +304,85 @@ class TestPetrolTheme:
 
 
 # ──────────────────────────────────────────────
+# I18n Span Emitter, Micro-Syntax Expander & setLang() JS (FEAT-301 / TASK-2252)
+# ──────────────────────────────────────────────
+
+class TestI18nEmitter:
+    """Tests for _render_i18n_span() / _i18n_plain()."""
+
+    def test_plain_str_has_no_span(self, renderer):
+        assert renderer._render_i18n_span("Hello") == "Hello"
+
+    def test_dict_emits_dual_spans(self, renderer):
+        html = renderer._render_i18n_span({"en": "Hello", "es": "Hola"})
+        assert html.index('lang="en"') < html.index('lang="es"')
+        assert "Hello" in html and "Hola" in html
+
+    def test_none_is_empty(self, renderer):
+        assert renderer._render_i18n_span(None) == ""
+
+    def test_dict_values_escaped(self, renderer):
+        html = renderer._render_i18n_span({"en": "<script>x</script>"})
+        assert "<script>" not in html
+
+    def test_i18n_plain_prefers_en(self, renderer):
+        assert renderer._i18n_plain({"es": "Hola", "en": "Hello"}) == "Hello"
+
+    def test_i18n_plain_none_is_empty(self, renderer):
+        assert renderer._i18n_plain(None) == ""
+
+
+class TestMicroSyntax:
+    """Tests for _expand_microsyntax()."""
+
+    def test_chip(self, renderer):
+        assert 'class="chip"' in renderer._expand_microsyntax("[[chip:Active]]")
+
+    def test_method_badge_case_insensitive(self, renderer):
+        for marker in ("[[m:GET]]", "[[m:get]]"):
+            out = renderer._expand_microsyntax(marker)
+            assert "method-badge--get" in out
+            assert ">GET<" in out
+
+    def test_component_ref(self, renderer):
+        out = renderer._expand_microsyntax("[[comp:AgentCrew]]")
+        assert 'class="component-ref"' in out and "AgentCrew" in out
+
+    def test_malformed_left_verbatim(self, renderer):
+        for marker in ("[[chip:]]", "[[bogus:x]]"):
+            assert marker in renderer._expand_microsyntax(marker)
+
+    def test_no_double_escaping(self, renderer):
+        out = renderer._expand_microsyntax("[[chip:A &amp; B]]")
+        assert "&amp;amp;" not in out
+
+
+class TestSetLangInjection:
+    """Tests for _has_i18n() and SETLANG_JS injection via render_to_html()."""
+
+    def test_js_present_when_bilingual(self, renderer):
+        # TitleBlock.title is a plain str (TASK-2263 scope); CodeBlock.title
+        # is the model surface that genuinely supports I18nText, so it is
+        # used here to exercise setLang() injection end-to-end.
+        html = renderer.render_to_html({
+            "blocks": [{"type": "code", "code": "x", "title": {"en": "Hi", "es": "Hola"}}],
+        })
+        assert "setLang" in html
+
+    def test_js_absent_when_monolingual(self, renderer):
+        html = renderer.render_to_html({
+            "blocks": [{"type": "title", "title": "Hi"}],
+        })
+        assert "setLang" not in html
+
+    def test_page_title_plain_for_str_title(self, renderer):
+        html = renderer.render_to_html({
+            "blocks": [{"type": "title", "title": "Hi"}],
+        })
+        assert "<title>Hi</title>" in html
+
+
+# ──────────────────────────────────────────────
 # Block Renderer Tests
 # ──────────────────────────────────────────────
 

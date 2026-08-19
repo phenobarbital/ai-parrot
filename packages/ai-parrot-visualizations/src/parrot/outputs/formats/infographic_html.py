@@ -8,6 +8,7 @@ This renderer is a sibling to InfographicRenderer (JSON); content
 negotiation in get_infographic() decides which one to use.
 """
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -15,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import markdown_it
 import orjson
 from markupsafe import escape
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 try:
     import nh3 as _nh3
@@ -83,6 +84,15 @@ _BLOCK_MODEL_MAP: Dict[str, Any] = {
     "accordion": AccordionBlock,
     "tab_view": TabViewBlock,
 }
+
+# ──────────────────────────────────────────────
+# Micro-syntax markers (FEAT-301)
+# ──────────────────────────────────────────────
+# Applied AFTER escape() — the captured groups are already-escaped HTML and
+# must not be re-escaped (spec §7 "Escape policy").
+_MICRO_CHIP_RE = re.compile(r"\[\[chip:([^\]\[]{1,64})\]\]")
+_MICRO_METHOD_RE = re.compile(r"\[\[m:(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\]\]", re.I)
+_MICRO_COMP_RE = re.compile(r"\[\[comp:([\w.\-]{1,64})\]\]")
 
 # ──────────────────────────────────────────────
 # Chart styling defaults
@@ -614,6 +624,44 @@ footer.infographic-footer {
     .tab-view__nav { gap: 4px; }
     .tab-view__btn { font-size: 11px; padding: 4px 10px; }
 }
+
+/* ── I18n & Micro-syntax (FEAT-301) ────────────── */
+.chip {
+    display: inline-block;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+.method-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+}
+.method-badge--get { background: var(--badge-get, #10b981); }
+.method-badge--post { background: var(--badge-post, #6366f1); }
+.method-badge--put { background: var(--badge-put, #f59e0b); }
+.method-badge--delete { background: var(--badge-delete, #ef4444); }
+.method-badge--patch { background: var(--badge-patch, #8b5cf6); }
+.method-badge--head { background: var(--badge-get, #10b981); }
+.method-badge--options { background: var(--badge-get, #10b981); }
+.component-ref {
+    display: inline-block;
+    font-family: monospace;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+.i18n { display: none; }
+.i18n--default { display: inline; }
 """
 
 
@@ -648,6 +696,19 @@ function toggleAccordion(el) {
         });
     }
     item.classList.toggle('open');
+}
+</script>"""
+
+SETLANG_JS = """
+<script>
+function setLang(code) {
+    document.querySelectorAll('.i18n').forEach(function(el) {
+        if (el.getAttribute('lang') === code) {
+            el.style.display = 'inline';
+        } else {
+            el.style.display = 'none';
+        }
+    });
 }
 </script>"""
 
@@ -770,7 +831,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         page_title = "Infographic"
         for block in data.blocks:
             if getattr(block, "type", None) == "title":
-                page_title = str(escape(block.title))
+                page_title = self._i18n_plain(block.title)
                 break
 
         # Check if charts exist (ECharts JS needed)
@@ -934,13 +995,123 @@ class InfographicHTMLRenderer(BaseRenderer):
             js += TAB_JS
         if has_accordion:
             js += ACCORDION_JS
+        if self._has_i18n(data):
+            js += SETLANG_JS
         return js
+
+    def _has_i18n(self, data: InfographicResponse) -> bool:
+        """Detect whether any bilingual ``I18nText`` value is present.
+
+        Scans top-level block fields, one level of nested support-model
+        fields (e.g. ``ChainNode``/``StepItem``/``GridCard``,
+        ``DocumentMeta``/``ChangelogEntry``), and lists of those.
+
+        Args:
+            data: The InfographicResponse to scan.
+
+        Returns:
+            True if any bilingual ``{locale: text}`` mapping is found.
+        """
+
+        def _scan(value: Any) -> bool:
+            if isinstance(value, dict):
+                return True
+            if isinstance(value, BaseModel):
+                return any(_scan(v) for v in value.__dict__.values())
+            if isinstance(value, (list, tuple)):
+                return any(_scan(v) for v in value)
+            return False
+
+        for block in data.blocks:
+            if isinstance(block, BaseModel) and _scan(block):
+                return True
+        if data.document_meta is not None and _scan(data.document_meta):
+            return True
+        return False
+
+    def _render_i18n_span(self, text: Any) -> str:
+        """Render an ``I18nText`` value as escaped, locale-aware HTML.
+
+        Args:
+            text: A plain ``str``, or a ``{locale: text}`` mapping.
+
+        Returns:
+            The escaped string for the ``str`` case (no wrapper span, so
+            existing single-language renders stay byte-identical), or one
+            ``<span lang="…" class="i18n">…</span>`` per locale, in
+            insertion order, for the mapping case. ``None`` yields ``""``.
+        """
+        if text is None:
+            return ""
+        if isinstance(text, dict):
+            spans = []
+            for index, (locale, value) in enumerate(text.items()):
+                css_cls = "i18n i18n--default" if index == 0 else "i18n"
+                spans.append(
+                    f'<span lang="{escape(str(locale))}" class="{css_cls}">'
+                    f"{escape(str(value))}</span>"
+                )
+            return "".join(spans)
+        return str(escape(text))
+
+    def _i18n_plain(self, text: Any) -> str:
+        """Render an ``I18nText`` value as a single plain escaped string.
+
+        For contexts where markup is illegal (``<title>``, HTML attributes).
+
+        Args:
+            text: A plain ``str``, or a ``{locale: text}`` mapping.
+
+        Returns:
+            The escaped string; for a mapping, prefers the ``"en"`` value
+            if present, otherwise the first value in insertion order.
+            ``None`` yields ``""``.
+        """
+        if text is None:
+            return ""
+        if isinstance(text, dict):
+            value = text.get("en", next(iter(text.values()), ""))
+            return str(escape(value))
+        return str(escape(text))
+
+    def _expand_microsyntax(self, html: str) -> str:
+        """Expand micro-syntax markers into semantic inline HTML fragments.
+
+        Must run AFTER escaping — the captured groups are already-escaped
+        HTML and are not re-escaped here (spec §7 "Escape policy").
+
+        Supported markers:
+            ``[[chip:Label]]`` -> ``<span class="chip">Label</span>``
+            ``[[m:GET]]`` -> ``<span class="method-badge
+            method-badge--get">GET</span>``
+            ``[[comp:AgentCrew]]`` -> ``<span
+            class="component-ref">AgentCrew</span>``
+
+        Args:
+            html: Already-escaped HTML text to scan for markers.
+
+        Returns:
+            HTML with recognized markers expanded; malformed or unknown
+            markers are left verbatim.
+        """
+        if not html:
+            return html
+        html = _MICRO_CHIP_RE.sub(r'<span class="chip">\1</span>', html)
+        html = _MICRO_METHOD_RE.sub(
+            lambda m: (
+                f'<span class="method-badge method-badge--{m.group(1).lower()}">'
+                f"{m.group(1).upper()}</span>"
+            ),
+            html,
+        )
+        html = _MICRO_COMP_RE.sub(r'<span class="component-ref">\1</span>', html)
+        return html
 
     # ── Individual block renderers ──────────────
 
     def _render_title(self, block: TitleBlock) -> str:
         """Render TitleBlock as hero header."""
-        title = escape(block.title)
+        title = self._expand_microsyntax(str(escape(block.title)))
         subtitle_html = ""
         if block.subtitle:
             subtitle_html = f"\n            <p>{escape(block.subtitle)}</p>"
@@ -991,7 +1162,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         if block.title:
             title_html = f'\n            <h3>{escape(block.title)}</h3>'
         # markdown_it renders safe HTML (html=False by default)
-        content_html = self._md.render(block.content)
+        content_html = self._expand_microsyntax(self._md.render(block.content))
         return (
             f'        <div class="summary-block{highlight_cls}">'
             f"{title_html}\n"
@@ -1513,7 +1684,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
     def _render_quote(self, block: QuoteBlock) -> str:
         """Render QuoteBlock as blockquote."""
-        text = escape(block.text)
+        text = self._expand_microsyntax(str(escape(block.text)))
         attr_parts = []
         if block.author:
             attr_parts.append(str(escape(block.author)))
@@ -1538,7 +1709,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         title_html = ""
         if block.title:
             title_html = f"\n            <h3>{escape(block.title)}</h3>"
-        content = escape(block.content)
+        content = self._expand_microsyntax(str(escape(block.content)))
         return (
             f'        <div class="callout-block {escape(level)}">'
             f"{title_html}\n"
