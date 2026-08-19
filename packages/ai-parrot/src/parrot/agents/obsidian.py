@@ -88,6 +88,34 @@ class FirefliesObsidianAgent(BasicAgent):
         self._mcp_fireflies_initialized = False
         self.logger = logging.getLogger(f"{self.name}.Agent")
 
+    async def configure(self, app=None) -> None:
+        """Async setup: register Obsidian toolkit and Fireflies MCP tools.
+
+        The ObsidianToolkit is instantiated in ``__init__`` but must be
+        registered with the ``ToolManager`` so the LLM can discover and
+        invoke its tools.  Fireflies MCP is also initialized eagerly here
+        (instead of lazily in ``sync_fireflies_transcripts``) so the LLM
+        can answer free-text questions about meetings.
+        """
+        await super().configure(app)
+
+        # --- Register Obsidian toolkit tools with ToolManager ---
+        self._initialize_tools([self.obsidian_toolkit])
+        self.logger.info(
+            "Registered ObsidianToolkit tools: %s",
+            [t.name for t in self.obsidian_toolkit.get_tools()],
+        )
+
+        # --- Eagerly init Fireflies MCP so tools are available to the LLM ---
+        try:
+            await self._ensure_fireflies_mcp()
+        except Exception as exc:
+            # Warning-only: agent should still boot without Fireflies
+            self.logger.warning(
+                "Fireflies MCP not available (agent will work without "
+                "Fireflies tools): %s", exc,
+            )
+
     async def _ensure_fireflies_mcp(self) -> None:
         """Lazy-init Fireflies MCP server on first use."""
         if self._mcp_fireflies_initialized:

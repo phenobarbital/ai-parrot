@@ -9,7 +9,6 @@ import traceback
 from typing import Any, List, Optional
 
 from rich.console import Console
-from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
@@ -22,7 +21,7 @@ class ResponseRenderer:
     """Renders AIMessage responses to the terminal via Rich.
 
     Supports both batch mode (full response rendered at once) and streaming
-    mode (incremental token display via ``rich.live.Live``).
+    mode (incremental token display via direct stdout writes).
 
     Attributes:
         console: Rich Console instance used for all output.
@@ -32,7 +31,6 @@ class ResponseRenderer:
         """Initialise the renderer with a Rich Console."""
         self.logger = logging.getLogger(__name__)
         self.console = Console()
-        self._live: Optional[Live] = None
         self._stream_buffer: str = ""
 
     # ------------------------------------------------------------------
@@ -184,53 +182,42 @@ class ResponseRenderer:
     # ------------------------------------------------------------------
 
     def render_stream_start(self) -> None:
-        """Begin a streaming live display session.
+        """Begin a streaming session.
 
         Must be called before the first ``render_stream_chunk()`` call.
-        Creates a ``rich.live.Live`` context that accumulates token output.
+
+        Uses direct incremental writes (``sys.stdout``) instead of
+        ``rich.live.Live``.  ``Live`` emits ANSI cursor-control sequences
+        (``\\x1b[2K``, ``\\x1b[?25l``, …) that conflict with
+        ``prompt_toolkit.patch_stdout()`` — the patched stdout does not
+        forward them correctly, so they render as literal ``?[2K`` garbage.
+        Plain writes avoid this entirely and match the character-by-character
+        streaming UX users expect.
         """
         self._stream_buffer = ""
-        self._live = Live(
-            Text(""),
-            console=self.console,
-            refresh_per_second=10,
-            vertical_overflow="visible",
-        )
-        self._live.start(refresh=True)
 
     def render_stream_chunk(self, text: str) -> None:
-        """Append a streamed token chunk to the live display.
+        """Write a streamed token chunk directly to stdout.
 
         Args:
-            text: The text chunk to append to the live output.
+            text: The text chunk to append to the output.
         """
-        if self._live is None:
-            # Fallback: print without live context
-            self.console.print(text, end="")
-            return
+        import sys
         self._stream_buffer += text
         try:
-            self._live.update(Markdown(self._stream_buffer))
+            sys.stdout.write(text)
+            sys.stdout.flush()
         except Exception:
-            # If markdown parse fails on partial input, show as plain text
-            self._live.update(Text(self._stream_buffer))
+            pass
 
     def render_stream_end(self, response: Optional[AIMessage] = None) -> None:
         """Finalise the streaming display and show metadata.
 
         Args:
             response: The final AIMessage (used for tool calls and usage stats).
-                      May be None if only streaming text was available.
+                      May be ``None`` if only streaming text was available.
         """
-        if self._live is not None:
-            try:
-                self._live.stop()
-            except Exception as exc:
-                self.logger.debug("Live stop error: %s", exc)
-            finally:
-                self._live = None
-
-        # Ensure a newline after stream
+        # Newline after the streamed text
         self.console.print()
 
         if response is not None:
