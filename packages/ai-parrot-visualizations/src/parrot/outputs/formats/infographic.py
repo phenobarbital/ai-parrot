@@ -31,6 +31,28 @@ Available block types:
 - divider: Visual separator
 - timeline: Chronological sequence of events
 - progress: Completion/progress indicators
+- accordion: Collapsible sections; items[] each with title and content_blocks[]
+- checklist: Task list; items[] each with text and checked (bool)
+- tab_view: Tabbed container; tabs[] each with label and blocks[]
+- chain: Flow/chain diagram; nodes[] each with label; direction "horizontal"|"vertical"
+- steps: Step-by-step guide; steps[] each with label and optional description;
+  style "numbered"|"icon"
+- code: Code snippet; code (verbatim string), optional language, highlight_lines[]
+- card_grid: Grid of cards; cards[] each with title and body; columns 1-6
+
+Bilingual text (optional):
+- Any text field accepts a plain string OR an object of locale->text,
+  e.g. {"en": "Overview", "es": "Resumen"}. Use the object form only when
+  bilingual output is requested.
+
+Document metadata (optional):
+- Top-level "document_meta": {"version": "1.2", "status": "approved",
+  "author": "Name", "changelog": [{"version": "1.2", "date": "2026-08-19",
+  "summary": "What changed"}]}
+
+Inline markers (optional, inside prose text fields):
+- [[chip:Label]] renders a small pill; [[m:GET]] renders an HTTP method badge;
+  [[comp:ClassName]] renders a component reference.
 
 Rules:
 - Every block MUST include a "type" field
@@ -42,6 +64,7 @@ Rules:
 - Use callout (not hero_card) for alerts/warnings/info boxes
 - chart blocks: include labels array and series with name+values
 - All text fields support markdown formatting
+- code blocks: put raw source in "code" with NO markdown fences (no ```)
 - Output ONLY valid JSON, no explanatory text before or after
 """
 

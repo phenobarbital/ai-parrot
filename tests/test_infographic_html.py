@@ -52,6 +52,7 @@ from parrot.models.infographic import (
     ChangelogEntry,
 )
 from parrot.outputs.formats.infographic_html import BASE_CSS, InfographicHTMLRenderer
+from parrot.outputs.formats.infographic import INFOGRAPHIC_SYSTEM_PROMPT
 
 
 # ──────────────────────────────────────────────
@@ -387,6 +388,52 @@ class TestThemeConfigNewV2Tokens:
         assert "--callout-warning-text: #92400e;" in css
         assert "--callout-error-text: #991b1b;" in css
         assert "--callout-tip-text: #115e59;" in css
+
+
+# ──────────────────────────────────────────────
+# System Prompt — All 19 Block Types (FEAT-301 / TASK-2256)
+# ──────────────────────────────────────────────
+
+class TestSystemPrompt:
+    """Tests for INFOGRAPHIC_SYSTEM_PROMPT coverage of all 19 block types."""
+
+    def test_system_prompt_19_blocks(self):
+        """Every BlockType value is named in the prompt."""
+        missing = [
+            bt.value for bt in BlockType
+            if bt.value not in INFOGRAPHIC_SYSTEM_PROMPT
+        ]
+        assert missing == [], f"undocumented block types: {missing}"
+
+    def test_previously_missing_blocks_documented(self):
+        for name in ("accordion", "checklist", "tab_view"):
+            assert f"- {name}:" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_new_blocks_documented(self):
+        for name in ("chain", "steps", "code", "card_grid"):
+            assert f"- {name}:" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_system_prompt_i18n(self):
+        assert '"es"' in INFOGRAPHIC_SYSTEM_PROMPT
+        assert '"en"' in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_system_prompt_document_meta(self):
+        assert "document_meta" in INFOGRAPHIC_SYSTEM_PROMPT
+        assert "changelog" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_system_prompt_microsyntax(self):
+        for marker in ("[[chip:", "[[m:", "[[comp:"):
+            assert marker in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_existing_hero_card_guidance_preserved(self):
+        assert 'REQUIRE flat "label" and "value"' in INFOGRAPHIC_SYSTEM_PROMPT
+        assert '{"type": "hero_card", "label": "Total Revenue"' in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_prompt_ends_with_json_only_rule(self):
+        assert "Output ONLY valid JSON" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_code_block_no_markdown_fences_rule(self):
+        assert "NO markdown fences" in INFOGRAPHIC_SYSTEM_PROMPT
 
 
 # ──────────────────────────────────────────────
