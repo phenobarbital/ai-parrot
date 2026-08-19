@@ -114,9 +114,33 @@ def test_major_bump_survives(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: `services/form_version.py::_bump` is the surviving implementation
+(per the task's own file-list wording); `api/_utils.py::_bump_version` now
+delegates to it (`bump="minor"`, the only mode that call site ever used)
+via a lazy import (matching this module's "no import-time side effects"
+docstring and the same lazy-import style `handlers.py` already uses for
+`FormVersionService`). Grammar: `major.minor` or `major.minor.patch`
+increments the last present component (`bump="minor"`) or the major
+component with the rest reset (`bump="major"`, drops any patch); anything
+that doesn't even parse as `N.N` is NOT rejected — appended `.1` instead,
+staying total (never raises) since `_bump_version` runs on the editor's
+hot path. Also fixed `_parse_major_minor`'s fallback: it no longer
+degrades an unparseable version to `(1, 0)` (which silently mis-sorted it
+as the OLDEST version); it now returns a maximal sentinel
+(`_UNPARSEABLE_SORT_KEY`) so it sorts LAST, matching the SQL ordering
+guard's `NULLS LAST` semantics (Module 2). Verified against real call
+sites: no other module in the tree references `_SEMVER_RE`,
+`_parse_major_minor`'s old fallback value, or 3-part version behavior
+besides the two bumpers and their own tests.
+**Deviations from spec**: Rewrote the pre-existing
+`test_parse_major_minor_invalid_falls_back` (this task's own listed test
+file) — it asserted the exact `(1, 0)` degradation this task exists to
+replace; left unmodified, it would fail as an expected consequence of
+this change. Also added `test_parse_major_minor_three_part_ignores_patch`
+and `test_non_conforming_input_is_total_not_raising`, beyond the task's
+minimal Test Specification snippet, to cover the parsing-fallback change
+the acceptance criteria call for ("not a silent (1, 0) degradation") and
+the total/non-raising constraint explicitly called out in Key
+Constraints.

@@ -72,7 +72,7 @@
       "feature_id": "FEAT-433",
       "feature": "form-version-history-repair",
       "spec": "sdd/specs/form-version-history-repair.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -80,8 +80,8 @@
       "parallelism_notes": "Fully independent — no shared files with any other task. Run in parallel from day one.",
       "assigned_to": null,
       "started_at": "2026-08-19T23:07:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2267-unify-version-bumpers.md"
+      "completed_at": "2026-08-19T23:48:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2267-unify-version-bumpers.md"
     },
     {
       "id": "TASK-2268",
