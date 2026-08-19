@@ -377,10 +377,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Added `DocumentMeta`/`ChangelogEntry` imports. Added
+`_render_document_chrome()` (top bar with version/status pills +
+changelog panel when non-empty) and `_render_document_footer()`
+(authorship footer), both returning `""` when nothing is set and a
+trailing-newline-terminated string otherwise (so concatenation into the
+`_assemble_document()` template never glues lines together). Extended
+`_assemble_document()` with `chrome_html`/`footer_html` (default `""`)
+parameters and wired them from `render_to_html()` — only invoked when
+`data.document_meta is not None`. Added `.doc-bar`/`.doc-pill`/
+`.doc-changelog*`/`.doc-footer` CSS to `BASE_CSS`, all colors via
+`var(--token, fallback)`. Verified `document_meta=None` and the
+`document_meta` key entirely absent produce byte-identical output
+(`test_document_meta_none_byte_identical`). Added the full test suite
+(129 tests in `tests/test_infographic_html.py`, all passing); 43 tests in
+`tests/test_infographic_multi_tab.py` pass unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the task's own literal test spec asserted
+`"doc-bar" not in html` / `"doc-footer" not in html` as bare substrings —
+but `BASE_CSS` unconditionally declares the `.doc-bar` / `.doc-footer`
+CSS selectors in every rendered document's `<style>` block, so those
+bare-substring assertions can never pass regardless of implementation.
+Adapted the absence/ordering assertions to check the actual HTML element
+usage (`'class="doc-bar"'`, `'class="doc-changelog__entry"'`,
+`'class="doc-footer"'`) instead of the bare class-name substring — this
+is the same class of test-spec-vs-CSS-always-present issue as would
+affect any of this feature's other "not in html" assertions once CSS
+rules are unconditionally embedded.

@@ -93,7 +93,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Needs DocumentMeta (2263) and _render_i18n_span for ChangelogEntry.summary (2252). Edits _assemble_document() in infographic_html.py — same file as 2252/2253/2255.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2254-document-chrome.md"
+      "completed_at": "2026-08-19T12:05:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2254-document-chrome.md"
     },
     {
       "id": "TASK-2255",
