@@ -50,6 +50,8 @@ Because this is a hard cut, `navigator-svelte`, `fieldsync`, and the
       it matches the URL tenant exactly, or drop it — a mismatch is a hard
       400.
 - [ ] Confirm you did **not** also prefix any `/org/*` URL — see below.
+- [ ] Confirm no tenant/programme is named `org`, `form-controls`, or
+      `api` (FEAT-429 reserved-segment guard — see below).
 - [ ] Deploy `parrot-formdesigner>=0.9.0`, then the client changes, in the
       same release window (or the client changes first, since the URLs they
       call would 404 against `<0.9.0` too — coordinate the exact order with
@@ -84,6 +86,19 @@ migration.
 
 `/api/v1/form-controls` (the static field-type catalog) is also **unchanged
 and unprefixed** — it carries no per-tenant data.
+
+## Reserved tenant segments (FEAT-429)
+
+Removing the `/t/` marker put the dynamic `{tenant}` segment at the same
+URL tree level as literal segments like `org` and `form-controls` (and
+`api`, on the HTML/Telegram surface's root). A tenant slug that exactly
+matches one of these literals — e.g. a programme actually named `"org"` —
+is rejected by `requires_tenant()` with a plain **404** on every forms
+route, and the server logs a boot-time `WARNING` if a provisioned tenant
+collides with a reserved segment. This set is derived automatically from
+the routes the package registers, not a fixed list, so it grows if a
+future release adds another top-level literal route. **Do not name a
+tenant/programme `org`, `form-controls`, or `api`.**
 
 ## Old → new URL table
 
