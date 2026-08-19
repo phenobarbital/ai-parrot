@@ -14,7 +14,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module. Modifies parrot/models/infographic.py (enum, block models, union, response field) — shares that file with TASK-2251 and is a hard dependency of 2252/2253/2254/2256/2257. Must run first in the shared worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2263-block-models-i18ntext.md"
+      "completed_at": "2026-08-19T11:39:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2263-block-models-i18ntext.md"
     },
     {
       "id": "TASK-2251",
