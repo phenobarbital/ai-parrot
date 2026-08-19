@@ -1,11 +1,11 @@
-# TASK-2269: Make publish's immutability guard real (insert-only snapshot write)
+# TASK-2269: Make publish's immutability guard real (promote-in-place guard)
 
 **Feature**: FEAT-433 — Form Version History — repair the read path
 **Spec**: `sdd/specs/form-version-history-repair.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-2264 — **BLOCKED on spec §8 Q5** (see below)
+**Depends-on**: TASK-2264
 **Assigned-to**: unassigned
 
 ---
@@ -35,36 +35,37 @@ introduces the regression.
 
 ## Scope
 
-- Add an insert-only write path for snapshot publication:
-  `INSERT … ON CONFLICT (form_uid, version) DO NOTHING RETURNING id`;
-  an empty result means the tag exists → raise the frozen `ValueError`.
+> **Reshaped by spec §8 Q5, closed 2026-08-19: publish promotes the
+> current version in place.** The originally specified insert-only write
+> (`ON CONFLICT … DO NOTHING`) assumed publish creates a NEW row. It does
+> not any more, so the guard changes shape — read §8 Q5 before starting.
+
+- `publish()` stops calling `_bump()`. It targets the **live version** and
+  stamps it: `published_version = version`, plus the `meta.published_at`
+  stamp it already writes.
+- Add a promote write path to storage:
+  `UPDATE <qualified> SET schema_json = …  WHERE form_uid = $1 AND version = $2
+  AND published_version IS DISTINCT FROM version RETURNING id`.
+  **No affected row means the version is already published** → raise the
+  frozen `ValueError`. That is the guard, and it is the first time one
+  actually exists.
 - Keep the existing UPSERT for the editor's save path, which legitimately
   rewrites a draft in place. **Two write paths, deliberately.**
-- Point `_save_snapshot` at the insert-only path.
+- Point `_save_snapshot` at the promote path.
+- Fix the docstring at `:209-211`, which documents a UNIQUE-violation
+  guarantee that never held.
 - Align the `InMemoryStorage` double with whichever contract the protocol
   declares, so the double stops being the stricter of the two.
 
-**NOT in scope**: changing what `publish()` versions.
-
-> ⚠ **BLOCKED — read spec §8 Q5 before starting.** FieldSync answered Q5
-> on 2026-08-19: **publish should promote the current version in place**
-> instead of bumping to a new tag. Awaiting maintainer confirmation.
-> If confirmed, this task's premise changes: publish stops *inserting* a
-> new row and becomes an **UPDATE of the existing one**, so the guard is
-> no longer insert-only (`ON CONFLICT … DO NOTHING`) but "refuse to
-> promote a row that is already published"
-> (`UPDATE … WHERE published_version IS DISTINCT FROM version`, checking
-> the affected-row count). The editor's save path keeps its UPSERT either
-> way, and the docstring fix at `:209-211` is needed under both shapes.
-> Do not start until Q5 is settled.
-
----
+**NOT in scope**: the `is_published` label derivation (TASK-2266 — the
+rule stays `published_version == version` and is unaffected), and the
+`get_published` filter (TASK-2268).
 
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `.../services/storage.py` | MODIFY | insert-only SQL + method; keep `_upsert_sql` for saves |
+| `.../services/storage.py` | MODIFY | promote SQL + method; keep `_upsert_sql` for saves |
 | `.../services/form_version.py` | MODIFY | `_save_snapshot` (`:497`) uses it |
 | `packages/parrot-formdesigner/tests/unit/test_feat300_review_fixes.py` | MODIFY | align the `InMemoryStorage` double (`:53`, `:224`) |
 
@@ -99,10 +100,13 @@ def test_unique_violation_surfaces_as_frozen_error(...)  # line 224
 
 ### Key Constraints
 - Do **not** replace the editor's UPSERT. Saves must keep rewriting a
-  draft in place; only snapshot publication is insert-only.
-- `DO NOTHING RETURNING id` returns no row on conflict — treat the empty
-  result as the collision signal; do not rely on rowcount semantics that
-  differ between drivers.
+  draft in place; only publication uses the promote path.
+- `RETURNING id` yields no row when the `IS DISTINCT FROM` predicate
+  excludes it — treat the empty result as the "already published" signal;
+  do not rely on rowcount semantics that differ between drivers.
+- `IS DISTINCT FROM` (not `<>`) is required: `published_version` is NULL
+  on every unpublished row, and `NULL <> version` is NULL, not true — a
+  plain `<>` would exclude exactly the rows this path exists to promote.
 - Once real, the guard makes `publish()` raise where it used to overwrite.
   That is the point, and it pairs with TASK-2268 making the pre-check
   honest.
@@ -113,9 +117,13 @@ def test_unique_violation_surfaces_as_frozen_error(...)  # line 224
 
 ## Acceptance Criteria
 
-- [ ] The snapshot path emits `ON CONFLICT … DO NOTHING`, not `DO UPDATE`
-- [ ] Publishing over an existing tag raises `ValueError` **and** leaves
-      the stored row byte-identical
+- [ ] Publishing stamps `published_version = version` on the **existing**
+      row — no new row is created, and the version count is unchanged
+- [ ] `publish()` no longer calls `_bump()`
+- [ ] Publishing an already-published version raises `ValueError` **and**
+      leaves the stored row byte-identical
+- [ ] Promoting a row whose `published_version` is NULL works (the
+      `IS DISTINCT FROM` case)
 - [ ] The editor's save path still upserts (a draft rewrite still works)
 - [ ] The `InMemoryStorage` double and `PostgresFormStorage` agree on
       duplicate-key behaviour for **both** write paths
@@ -127,8 +135,9 @@ def test_unique_violation_surfaces_as_frozen_error(...)  # line 224
 ## Test Specification
 
 ```python
-async def test_publish_over_existing_tag_raises_not_overwrites(...): ...
-async def test_snapshot_write_is_insert_only(...): ...
+async def test_publish_promotes_in_place_no_new_row(...): ...
+async def test_publish_already_published_raises_not_overwrites(...): ...
+async def test_promote_matches_null_published_version(...): ...
 async def test_inmemory_double_matches_postgres_contract(...): ...
 async def test_publish_twice_same_tag_does_not_overwrite(pg_storage): ...  # integration
 ```

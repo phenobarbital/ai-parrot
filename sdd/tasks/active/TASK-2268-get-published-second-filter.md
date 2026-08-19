@@ -82,8 +82,13 @@ TASK-2269.
 
 ### Key Constraints
 - This changes what `publish()`'s pre-check sees: it will now find draft
-  rows at the target tag and raise the frozen `ValueError` where it used
-  to pass. That is the intended correction — the pre-check is a fast path,
+  rows at the target version and raise the frozen `ValueError` where it
+  used to pass.
+- **Coordinate with TASK-2269 (spec §8 Q5, closed 2026-08-19).** With
+  publish promoting in place there is no *bumped* tag to pre-check: the
+  question becomes "is the **live** version already published?". Keep the
+  pre-check honest under that target, and let TASK-2269's promote guard be
+  the authoritative one. That is the intended correction — the pre-check is a fast path,
   and TASK-2269 provides the authoritative guard.
 - The method name becomes a misnomer once the filter is gone. Update the
   docstring; leave the name.
