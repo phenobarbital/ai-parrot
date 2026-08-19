@@ -114,7 +114,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Needs the v2 callout/surface tokens (2251). Refactors BASE_CSS in infographic_html.py and adds a few more ThemeConfig tokens, so it touches both files other tasks edit. Scheduled after 2252/2253/2254 so it migrates a stable BASE_CSS rather than racing new rules.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2255-css-variable-migration.md"
+      "completed_at": "2026-08-19T12:14:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2255-css-variable-migration.md"
     },
     {
       "id": "TASK-2256",

@@ -334,12 +334,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Re-ran the inventory grep against the post-TASK-2252/2253/2254
+file state (line numbers had shifted, `BASE_CSS` now spans 176-802).
+Migrated all 18 in-scope literal colors to `var(--token, fallback)`
+form: `.container`/`.kpi-card`/`.chart-container` backgrounds →
+`var(--surface-bg, #fff)`; `.hero`/`th`/checklist-checked/accordion-number
+text → `var(--on-primary, #fff)`; `tr:hover` → `var(--body-bg)` (existing
+v1 token); all 5 callout backgrounds → `var(--callout-{level}-bg, ...)`;
+4 callout `h3` text colors → `var(--callout-{level}-text, ...)`; tip
+callout border → `var(--accent-teal, #14b8a6)`. Added the 6 new
+`ThemeConfig` v2 fields (`on_primary`, `callout_{success,warning,error,
+tip}_text`, `accent_teal`) following TASK-2251's exact pattern (Optional,
+`None` default, added to `_validate_color_fields`, conditionally emitted
+by `to_css_variables()`). Added the no-literal-colors regression test,
+callout-variable-usage test, print-styles-untouched test, a
+parametrized 5-theme render-integrity test, and new-token
+emit/non-emit tests (139 tests in `tests/test_infographic_html.py`, all
+passing on first run — the migration inventory and fallback values were
+correct); 89 tests across `tests/test_infographic_models.py` +
+`tests/test_infographic_multi_tab.py` unaffected. `ruff check --select F`
+unchanged from pre-task baseline on both files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Shadow decision**: left literal | tokenized as … (justify)
-**Print-style decision**: left literal | migrated (justify)
+Also fixed one bare `color: #fff;` in `.method-badge` (authored by
+TASK-2252) to `var(--on-primary, #fff)` — technically outside this
+task's file-ownership boundary, but required for the feature-wide
+"zero literal colors outside var()" acceptance criterion to hold across
+the whole `BASE_CSS` string, which this task's regression test asserts
+unconditionally.
 
-**Deviations from spec**: none | describe if any
+**Shadow decision**: left literal — both `rgba(0,0,0,0.05)` /
+`rgba(0,0,0,0.06)` box-shadows kept as-is per spec §7 Known Risk 4
+(opacity-based black shadow is theme-safe on every background); the
+regression test explicitly excludes `rgba(0,0,0,*)` rather than
+inventing an unused shadow token.
+**Print-style decision**: left literal — the 3 `@media print` overrides
+(body background, `.hero` colors, `.progress-fill`) are intentionally
+theme-independent per spec §7 Known Risk 3; the regression test strips
+the `@media print` block before scanning.
+
+**Deviations from spec**: none beyond the `.method-badge` fix noted above.
