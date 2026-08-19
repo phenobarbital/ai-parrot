@@ -73,6 +73,11 @@ class TestSuffixSets:
     def test_php_is_code_suffix(self):
         assert ".php" in CODE_SUFFIXES
 
+    def test_pl_pm_t_are_code_suffixes(self):
+        assert ".pl" in CODE_SUFFIXES
+        assert ".pm" in CODE_SUFFIXES
+        assert ".t" in CODE_SUFFIXES
+
     def test_html_and_htm_are_doc_suffixes(self):
         assert ".html" in DOC_SUFFIXES
         assert ".htm" in DOC_SUFFIXES

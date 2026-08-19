@@ -166,10 +166,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-18
+**Notes**: Changed `tp` in `api/routes.py:233` and `ui/routes.py:136` from
+`f"{bp}/t/{{tenant}}"` to `f"{bp}/{{tenant}}"`. Updated the telegram-submit
+route (`ui/routes.py:169`) and the audio-WS log message (`api/routes.py:358`,
+one line off from the task's stated :357 — verified via grep before editing).
+Updated the FEAT-421 comment blocks in both files to describe the new URL
+shape while preserving the original rationale. Verified `/org/*` and
+`/form-controls` routes still build from `bp` directly (untouched) and route
+registration order is unchanged. `ruff check` on both files shows 19
+pre-existing errors (import sorting, `UP037` quoted annotations, one
+`BLE001`) — confirmed identical before and after this change via
+`git stash`/`git stash pop`, so out of scope for this task.
 
-**Completed by**: *(session or agent ID)*
-**Date**: YYYY-MM-DD
-**Notes**: *(What was implemented, any deviations from scope, issues encountered.)*
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

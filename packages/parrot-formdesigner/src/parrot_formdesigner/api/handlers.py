@@ -262,7 +262,7 @@ class FormAPIHandler:
         """Return the tenant declared in the URL and validated by the decorator.
 
         FEAT-421: the client declares which tenant a forms request is
-        about, in the URL (``/t/{tenant}/...``); ``requires_tenant``
+        about, in the URL (``/{tenant}/...``); ``requires_tenant``
         (``api/tenant.py``) validates and authorizes that declaration
         before the handler ever runs. This method's signature is
         preserved exactly so the 21 forms call sites are untouched — only
@@ -1048,7 +1048,7 @@ class FormAPIHandler:
                 "form_uid": form.form_uid,
                 "form_id": form.form_id,
                 "title": _loc_to_str(title),
-                "url": f"{prefix}/t/{tenant}/forms/{form.form_uid}",
+                "url": f"{prefix}/{tenant}/forms/{form.form_uid}",
             },
             status=201,
         )
@@ -1102,7 +1102,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
+            "url": f"{prefix}/{tenant}/forms/{form_uid}",
         })
 
     async def edit_form(self, request: web.Request) -> web.Response:
@@ -1172,11 +1172,11 @@ class FormAPIHandler:
             "form_uid": updated_form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/t/{tenant}/forms/{updated_form_uid}",
+            "url": f"{prefix}/{tenant}/forms/{updated_form_uid}",
         })
 
     async def clone_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/t/{tenant}/forms/{form_uid}/clone — Clone a form under a new slug.
+        """POST /api/v1/{tenant}/forms/{form_uid}/clone — Clone a form under a new slug.
 
         Creates a deep copy of the source form identified by ``form_uid``,
         assigns ``new_form_id`` (slug) from the request body and a freshly
@@ -1750,8 +1750,14 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         from ..tools.database_form import DatabaseFormTool
         db_tool = DatabaseFormTool(registry=self.registry, tenant=tenant)
+        # persist=True: an import that only ever reached the in-memory registry
+        # is invisible to every table-backed reader (the caller's very next
+        # request usually IS one), which surfaced as a 404 on a form the
+        # importer had just reported loading. Safe only because import identity
+        # is now deterministic — with the former uuid4 this path silently
+        # created db-form-X-Y-2, -3, -4, one duplicate per import.
         result = await db_tool.execute(
-            service=service, formid=formid, orgid=orgid, persist=False
+            service=service, formid=formid, orgid=orgid, persist=True
         )
 
         if not result.success:
@@ -1785,7 +1791,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_id,
             "title": title,
-            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
+            "url": f"{prefix}/{tenant}/forms/{form_uid}",
         })
 
     # ------------------------------------------------------------------

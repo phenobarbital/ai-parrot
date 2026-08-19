@@ -34,6 +34,8 @@ def test_scan_repository_polyglot_fixture(polyglot_repo):
     assert "native/src/parser.rs" in paths
     assert "public/index.html" in paths
     assert "composer.json" in paths
+    assert "lib/MyApp/Schema.pm" in paths
+    assert "lib/MyApp/User.pm" in paths
 
     # Language field set correctly.
     by_path = {fs.rel_path: fs for fs in scan.files}
@@ -41,6 +43,7 @@ def test_scan_repository_polyglot_fixture(polyglot_repo):
     assert by_path["src/Service.php"].language == "php"
     assert by_path["web/index.ts"].language == "javascript"
     assert by_path["native/src/lib.rs"].language == "rust"
+    assert by_path["lib/MyApp/User.pm"].language == "perl"
     assert by_path["public/index.html"].language is None  # shallow scan, no scanner
     assert by_path["composer.json"].language is None  # config, no scanner
 
@@ -53,6 +56,7 @@ def test_scan_repository_polyglot_fixture(polyglot_repo):
     assert "## API outline" in by_path["src/Service.php"].record.body
     assert "## API outline" in by_path["web/index.ts"].record.body
     assert "## API outline" in by_path["native/src/lib.rs"].record.body
+    assert "## API outline" in by_path["lib/MyApp/User.pm"].record.body
 
     edges = set(scan.import_edges)
 
@@ -67,6 +71,13 @@ def test_scan_repository_polyglot_fixture(polyglot_repo):
     assert (
         file_concept_id("native/src/lib.rs"),
         file_concept_id("native/src/parser.rs"),
+        "references",
+    ) in edges
+
+    # Perl edge: lib/MyApp/User.pm `use MyApp::Schema;` -> lib/MyApp/Schema.pm.
+    assert (
+        file_concept_id("lib/MyApp/User.pm"),
+        file_concept_id("lib/MyApp/Schema.pm"),
         "references",
     ) in edges
 
@@ -89,6 +100,7 @@ def test_stats_languages_block():
     assert "php" in languages
     assert "javascript" in languages
     assert "rust" in languages
+    assert "perl" in languages
     assert set(languages.values()) <= {"ast", "tree-sitter", "heuristic"}
 
 

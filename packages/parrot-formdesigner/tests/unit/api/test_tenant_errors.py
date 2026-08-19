@@ -15,12 +15,12 @@ class TestTenantErrors:
     """Status code, content-type, and body-shape assertions."""
 
     def test_not_declared_is_400(self):
-        exc = TenantNotDeclaredError(expected="/api/v1/t/{tenant}/forms")
+        exc = TenantNotDeclaredError(expected="/api/v1/{tenant}/forms")
         assert exc.status == 400
         assert exc.content_type == "application/json"
         body = json.loads(exc.text)
         assert body["error"] == "tenant_not_declared"
-        assert body["expected"] == "/api/v1/t/{tenant}/forms"
+        assert body["expected"] == "/api/v1/{tenant}/forms"
         assert "message" in body
 
     def test_not_declared_without_expected(self):

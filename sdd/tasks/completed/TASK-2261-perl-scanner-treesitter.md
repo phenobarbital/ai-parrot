@@ -270,10 +270,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: Implemented `_outline_treesitter()` and updated `mode`. Verified
+actual `tree-sitter-perl` 1.2.1 node types with a live parse (installed
+the wheel in the dev venv for verification, per the task's own
+instructions) — several node types differ from the spec/task's assumed
+names, all confirmed and adapted:
+- Package/class/role name is a **named field `"name"`** on
+  `package_statement`/`class_statement`/`role_statement` (of node type
+  `"package"` itself, not `"identifier"` — verified via
+  `child_by_field_name("name")`, which works uniformly across all three).
+- `field_statement` does **not exist** — Corinna `field $x :param;`
+  parses as `variable_declaration` whose first (unnamed) child is a
+  `"field"` token; distinguished from `my (...)` declarations (also
+  `variable_declaration`, first child `"my"`) by checking that first
+  child's type.
+- `method_statement` does **not exist** — it is
+  `method_declaration_statement`.
+- `require_statement`/`use_statement`'s targets are not consulted here —
+  import extraction stays regex-only in both modes per the spec, so
+  tree-sitter's `use_statement`/`require_expression` nodes are skipped
+  (fall through to generic recursion, which finds nothing under them).
+- Moose `has(...)` appears as `function_call_expression` **only when
+  parens are used**; the no-parens `has 'x' => (...)` idiom (used in the
+  spec's own Moose fixture) parses as `ambiguous_function_call_expression`
+  — both wrapped in an `expression_statement`. Both are handled.
+- `pod_statement` does **not exist** — the node type is `"pod"`.
+- Params: neither `subroutine_declaration_statement` nor
+  `method_declaration_statement` expose a `"signature"`/`"prototype"`
+  *field*; located by child *type* instead (`signature` when an explicit
+  Perl signature is present, `prototype` for the empty-parens Corinna
+  method form).
+- Classic (non-block) `package Foo;` has no `block` child at all — it
+  rebinds a mutable `in_context` for forward sibling statements at the
+  same level (Perl's real scoping rule) rather than nesting; block-form
+  `package Foo { ... }` and `class`/`role` bodies recurse into their
+  `block.named_children` instead. Verified with the spec's
+  `multi_package_source` fixture (two packages, each package's subs
+  correctly attributed) and a synthetic block-form package.
+- Verified with all spec/task fixtures (Moose `has`, Corinna `class`/
+  `field`/`method`, `role`, POD `=head1 NAME`, multi-package,
+  never-raises-on-garbage) plus the full existing
+  `tests/knowledge/wiki/languages/` suite (146 passed, no regressions).
+  `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Every node-type deviation above was explicitly
+anticipated by the task's own "verify against the actual grammar" warning
+(the grammar is tagged "unstable" tier) — none is a design deviation from
+the task's intent, only from its illustrative (unverified) node-type
+names. No behavioral deviation from the acceptance criteria.

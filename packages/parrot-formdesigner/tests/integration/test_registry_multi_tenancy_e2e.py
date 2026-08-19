@@ -134,11 +134,11 @@ async def test_handlers_pass_tenant_to_registry(aiohttp_client) -> None:
     app = web.Application(middlewares=[middleware])
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}", handle_render
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}", handle_render
     )
 
     client = await aiohttp_client(app)
-    resp = await client.get(f"/api/v1/t/epson/forms/{form.form_uid}/render/html")
+    resp = await client.get(f"/api/v1/epson/forms/{form.form_uid}/render/html")
 
     # The form exists under tenant="epson"; with the session carrying "epson",
     # the handler should find it and return 200.

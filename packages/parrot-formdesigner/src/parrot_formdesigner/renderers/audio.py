@@ -407,7 +407,7 @@ class AudioFormRenderer(AbstractFormRenderer):
         # edit/patch/update all construct FormSchema with an explicit
         # tenant=), the same invariant handlers.py's _assert_form_tenant
         # relies on.
-        ws_endpoint = f"/api/v1/t/{form.tenant or ''}/forms/{form.form_uid}/audio/ws"
+        ws_endpoint = f"/api/v1/{form.tenant or ''}/forms/{form.form_uid}/audio/ws"
         form_title = _resolve(form.title, locale) if form.title else form.form_id
 
         manifest = AudioFormManifest(

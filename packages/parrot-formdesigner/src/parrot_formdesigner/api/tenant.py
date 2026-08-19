@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 _Handler = Callable[[web.Request], Awaitable[web.Response]]
 
-_EXPECTED_HINT = "/api/v1/t/{tenant}/forms/{form_uid}"
+_EXPECTED_HINT = "/api/v1/{tenant}/forms/{form_uid}"
 
 
 def _get_programs(request: web.Request) -> list[str]:
@@ -127,6 +127,32 @@ def requires_tenant(*, public: bool = False) -> Callable[[_Handler], _Handler]:
             tenant = (request.match_info.get("tenant") or "").strip()
             if not tenant:
                 raise TenantNotDeclaredError(expected=_EXPECTED_HINT)
+            # FEAT-429 Module 5: reserved-segment guard. Removing the
+            # literal `t` marker put `{tenant}` at the same URL tree level
+            # as literal segments (`org`, `form-controls`, ...). Verified
+            # behavior (spec §2): aiohttp falls through from a literal
+            # branch with no matching sub-route to the dynamic sibling, so
+            # a tenant slug equal to a reserved literal gets a MIXED
+            # surface — 200 with that literal's data wherever a real route
+            # exists under it, and 200 via {tenant} everywhere else. Reject
+            # up front with a plain 404 (no existence oracle) so the
+            # colliding slug's surface is uniformly unreachable instead of
+            # mixed.
+            # ``getattr(..., request)``: real aiohttp ``web.Request`` always
+            # exposes ``config_dict`` (a ``ChainMapProxy`` over the app +
+            # any parent subapps — the contract's rationale for using it
+            # over ``request.app``). Unit tests exercise this decorator
+            # directly against lightweight request doubles that only
+            # implement the Mapping protocol (no ``config_dict``); falling
+            # back to ``request`` itself keeps this byte-compatible with
+            # those doubles (AC5) while behaving identically on real
+            # requests, since neither ever carries this app-level key under
+            # per-request storage.
+            reserved = getattr(request, "config_dict", request).get(
+                "formdesigner_reserved_tenant_segments", frozenset()
+            )
+            if tenant in reserved:
+                raise web.HTTPNotFound()
             if not public:
                 _authorize(request, tenant)
             request["tenant"] = tenant

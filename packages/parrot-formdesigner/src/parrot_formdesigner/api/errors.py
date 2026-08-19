@@ -8,7 +8,7 @@ the stable JSON body contract navigator-svelte branches on:
 {
   "error": "tenant_not_declared",
   "message": "This endpoint requires an explicit tenant.",
-  "expected": "/api/v1/t/{tenant}/forms/{form_uid}"
+  "expected": "/api/v1/{tenant}/forms/{form_uid}"
 }
 ```
 
@@ -38,7 +38,7 @@ class TenantNotDeclaredError(web.HTTPBadRequest):
 
         Args:
             expected: Optional hint describing the expected URL shape,
-                e.g. ``"/api/v1/t/{tenant}/forms/{form_uid}"``.
+                e.g. ``"/api/v1/{tenant}/forms/{form_uid}"``.
         """
         body: dict[str, str] = {
             "error": self.error_slug,

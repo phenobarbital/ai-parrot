@@ -1,6 +1,6 @@
 """Helper for computing auth-exempt URL patterns for public forms (FEAT-241).
 
-FEAT-421: paths are now tenant-qualified (``/t/{tenant}/forms/...``) — the
+FEAT-421: paths are now tenant-qualified (``/{tenant}/forms/...``) — the
 client-declared tenant segment introduced by the forms-tenant-in-url
 feature. A stale, unqualified glob here would silently make a public form
 unreachable (navigator-auth's exclusion matcher would never match the real,
@@ -36,14 +36,14 @@ def public_form_paths(
     Returns:
         List of five URL patterns (fnmatch globs):
 
-          - ``{base_path}/t/{tenant}/forms/{form_uid}``            — GET form object
-          - ``{base_path}/t/{tenant}/forms/{form_uid}/schema``     — GET JSON schema
-          - ``{base_path}/t/{tenant}/forms/{form_uid}/render/*``   — GET rendered formats (glob)
-          - ``{base_path}/t/{tenant}/forms/{form_uid}/data``       — POST submit results
-          - ``{base_path}/t/{tenant}/forms/{form_uid}/validate``   — POST pre-submit validation
+          - ``{base_path}/{tenant}/forms/{form_uid}``            — GET form object
+          - ``{base_path}/{tenant}/forms/{form_uid}/schema``     — GET JSON schema
+          - ``{base_path}/{tenant}/forms/{form_uid}/render/*``   — GET rendered formats (glob)
+          - ``{base_path}/{tenant}/forms/{form_uid}/data``       — POST submit results
+          - ``{base_path}/{tenant}/forms/{form_uid}/validate``   — POST pre-submit validation
     """
     bp = base_path.rstrip("/")
-    base = f"{bp}/t/{tenant}/forms/{form_uid}"
+    base = f"{bp}/{tenant}/forms/{form_uid}"
     return [
         base,
         f"{base}/schema",

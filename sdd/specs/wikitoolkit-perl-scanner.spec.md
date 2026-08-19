@@ -106,6 +106,7 @@ __init__.py     ──→  _SCANNERS["perl"] = PerlScanner()
 | `treesitter._GRAMMAR_MODULES` | registration | One new entry: `"perl": "tree_sitter_perl"` |
 | `treesitter._GRAMMAR_CALLABLES` | registration | One new entry: `"perl": ("language",)` |
 | `pyproject.toml` wiki-languages extra | dependency | Add `tree-sitter-perl>=0.23` |
+| `repo_scan.CODE_SUFFIXES` | registration | Add `".pl"`, `".pm"`, `".t"` — **mandatory**: `discover_repo_files()`/`is_wiki_relevant()` filter files against this set *before* the scanner registry is ever consulted, so a scanner registered in `_SCANNERS` without a matching `CODE_SUFFIXES` entry is silently never reached by `wikitoolkit build`. Every prior deep-scan language (`.php`, `.rs`, `.js`/`.ts`, `.svelte`) added its suffixes here; this table omitted it in v0.1 of this spec and the gap shipped undetected until code review caught it empirically (§9 Revision History). |
 
 ### Data Models
 
@@ -176,6 +177,27 @@ class PerlScanner(LanguageScanner):
 - **Responsibility**: Unit tests for `PerlScanner` covering both modes, edge
   cases, import resolution, and the never-raise contract.
 - **Depends on**: Module 2
+
+### Module 6: Repo-scan discovery registration
+
+- **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/repo_scan.py`
+- **Responsibility**: Add `".pl"`, `".pm"`, `".t"` to `CODE_SUFFIXES` so
+  `wikitoolkit build`'s default file discovery (`discover_repo_files()` →
+  `is_wiki_relevant()`) actually surfaces Perl files to the scanner
+  registry. Without this, `PerlScanner` being registered in `_SCANNERS`
+  has no effect — files are filtered out one layer earlier and the
+  registered scanner is never reached.
+- **Depends on**: nothing (additive; independent of Modules 1-5)
+- **Note**: added in v0.2 of this spec. v0.1 omitted this module
+  entirely — a real gap, not a documentation-only oversight — caught by
+  code review (`code-reviewer` agent) reproducing `wikitoolkit build`
+  producing 0 Perl pages on a synthetic fixture, then verifying 5 pages +
+  a correct `references` edge after this one-line fix. Also added the
+  precedent-mirroring `test_pl_pm_t_are_code_suffixes` regression test
+  and extended the shared `polyglot_repo` integration fixture with real
+  Perl coverage (the previous 37 Perl-specific unit tests all called
+  `PerlScanner` methods directly, bypassing discovery entirely — the
+  integration-test gap that let Module 6's omission ship undetected).
 
 ---
 
@@ -472,13 +494,22 @@ Already in existing extras (no new additions beyond the above):
 
 ## 8. Open Questions
 
-- [ ] Should `.t` (Perl test) files be included in `suffixes`? They are
+- [x] Should `.t` (Perl test) files be included in `suffixes`? They are
       valid Perl but mostly test code. Including them means more outline
       coverage but also more noise. — *Owner: Jesus*
-- [ ] Should `has` (Moose/Moo) extraction in tree-sitter mode walk into
+      **Decided: yes.** TASK-2260 resolved this in its Scope (`suffixes =
+      frozenset({".pl", ".pm", ".t"})`) rather than leaving it open;
+      shipped as specified, covered by `TestRegistration.test_scanner_for_t`.
+- [x] Should `has` (Moose/Moo) extraction in tree-sitter mode walk into
       `function_call_expression` nodes, or should it remain regex-only
       (like import extraction)? Regex is simpler and more robust against
       node-type changes. — *Owner: implementer*
+      **Decided: AST-based, not regex-only.** TASK-2261 resolved this in
+      its Scope (walk `function_call_expression`/`ambiguous_function_call_expression`
+      nodes where the callee is `has`) rather than leaving it open. In
+      practice the real `tree-sitter-perl` grammar splits `has(...)` (explicit
+      parens) as `function_call_expression` and `has 'x' => (...)` (bareword
+      form) as `ambiguous_function_call_expression` — both are handled.
 
 ---
 
@@ -497,3 +528,4 @@ Already in existing extras (no new additions beyond the above):
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-19 | Jesus Lara | Initial draft from spike research |
+| 0.2 | 2026-08-19 | sdd-worker (code review follow-up) | Added Module 6 (`repo_scan.CODE_SUFFIXES` registration) and its Integration Points row — a real gap in v0.1 that made `wikitoolkit build` discover zero `.pl`/`.pm`/`.t` files despite `PerlScanner` being correctly registered; caught by adversarial code review, fixed, and regression-tested. Resolved both §8 Open Questions per the decisions already made in TASK-2260/2261's Scope. |

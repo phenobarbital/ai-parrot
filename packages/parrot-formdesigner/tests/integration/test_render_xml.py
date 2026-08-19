@@ -67,13 +67,13 @@ async def test_e2e_xml_render(aiohttp_client, sample_form):
     app = web.Application()
     app["form_registry"] = registry
     app.router.add_get(
-        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
         _tenant_wrapped_render,
     )
 
     client = await aiohttp_client(app)
     resp = await client.get(
-        f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/xml"
+        f"/api/v1/navigator/forms/{sample_form.form_uid}/render/xml"
     )
     assert resp.status == 200
     assert resp.content_type == "application/xml"

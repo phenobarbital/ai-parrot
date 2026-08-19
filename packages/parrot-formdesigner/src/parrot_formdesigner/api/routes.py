@@ -113,6 +113,45 @@ def _wrap_auth(handler: _Handler, *, tenant: str = "required") -> _Handler:
     return decorated
 
 
+def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
+    """Derive reserved literal segments from the router (FEAT-429 Module 5).
+
+    Introspects every route already registered on ``app`` and collects the
+    literal (non-``{tenant}``) first path segment of any route mounted
+    directly under ``bp`` — the exact tree level the dynamic ``{tenant}``
+    segment occupies. This is what makes the reserved set DERIVED rather
+    than hardcoded (spec Module 5 / AC13): calling this AFTER a module's
+    own routes are registered means any literal added later in that same
+    function is picked up automatically, with no second edit required.
+
+    Args:
+        app: The aiohttp application whose router has already had this
+            module's routes registered.
+        bp: The stripped base path (``base_path.rstrip("/")``) routes in
+            this module were mounted under — ``""`` for a root mount.
+
+    Returns:
+        The set of literal first-segment strings sitting at the same tree
+        level as ``{tenant}`` under ``bp`` (e.g. ``{"org",
+        "form-controls"}``). Empty when no such literal exists.
+    """
+    reserved: set[str] = set()
+    for route in app.router.routes():
+        resource = route.resource
+        if resource is None:
+            continue
+        canonical = resource.canonical
+        if bp and not canonical.startswith(f"{bp}/"):
+            continue
+        remainder = canonical[len(bp):].lstrip("/")
+        if not remainder:
+            continue
+        first_segment = remainder.split("/", 1)[0]
+        if first_segment and not first_segment.startswith("{"):
+            reserved.add(first_segment)
+    return frozenset(reserved)
+
+
 def setup_form_api(
     app: web.Application,
     registry: FormRegistry,
@@ -224,13 +263,14 @@ def setup_form_api(
     )
 
     bp = base_path.rstrip("/")
-    # FEAT-421: every FORMS route is mounted under a literal `t/{tenant}`
-    # marker segment so the tenant is a declared, cross-checkable path
-    # component rather than an inferred value. The `t` marker removes
-    # router ambiguity between `/forms/{tenant}` and `/forms/{form_uid}`
-    # (both one path segment) and keeps the forms namespace visibly
-    # disjoint from `/org/*`, which is UNCHANGED (spec G7, AC11).
-    tp = f"{bp}/t/{{tenant}}"
+    # FEAT-421: every FORMS route is mounted under a declared `{tenant}`
+    # path component so the tenant is a declared, cross-checkable path
+    # component rather than an inferred value. aiohttp's UrlDispatcher
+    # resolves literal child nodes before dynamic ones at every tree
+    # level, so `{tenant}` safely coexists with the literal `/org/*`
+    # branch, which is UNCHANGED (spec G7, AC11). FEAT-429 removed the
+    # literal `t` disambiguation marker segment as unnecessary (see spec §2).
+    tp = f"{bp}/{{tenant}}"
 
     # CRUD + listing
     app.router.add_get(f"{tp}/forms", _wrap_auth(handler.list_forms))
@@ -354,7 +394,7 @@ def setup_form_api(
             f"{tp}/forms/{{form_uid}}/audio/ws",
             audio_handler.handle_websocket,
         )
-        logger.info("setup_form_api: audio WS endpoint mounted at %s/t/{tenant}/forms/{form_uid}/audio/ws", bp)
+        logger.info("setup_form_api: audio WS endpoint mounted at %s/{tenant}/forms/{form_uid}/audio/ws", bp)
     # FEAT-300 — publish, question-bank, version history, import-report
     # Note: /versions and /import-report routes are registered BEFORE the
     # generic /{form_uid} catch-all to avoid shadowing issues if the router
@@ -542,5 +582,43 @@ def setup_form_api(
             "setup_form_api: exclude-provider registered for restart re-hydration (base_path=%s)",
             _bp_m7,
         )
+
+    # FEAT-429 Module 5: reserved-segment guard. Every route above is now
+    # registered, so introspect the router for literal (non-`{tenant}`)
+    # first-path-segments sitting directly under `bp` — the exact tree
+    # level `{tenant}` occupies (today: `org`, `form-controls`). DERIVED
+    # from the actual registrations (spec Module 5 / AC13: "never
+    # hardcoded"), so a future literal route added anywhere above is
+    # reserved automatically, with no second edit required. Merged (union)
+    # with any reserved set already stashed by the other setup function on
+    # the same app, since requires_tenant() is shared across the API and UI
+    # surfaces and a tenant identity is not siloed per mount.
+    api_reserved_tenant_segments = _reserved_tenant_segments(app, bp)
+    app["formdesigner_reserved_tenant_segments"] = (
+        app.get("formdesigner_reserved_tenant_segments", frozenset())
+        | api_reserved_tenant_segments
+    )
+
+    # FEAT-429 Module 5: boot-time warning when a provisioned tenant
+    # collides with a reserved literal segment (see the reserved-segment
+    # guard above and api/tenant.py's requires_tenant()). Reads the
+    # reserved set from `app` at startup time (not the local variable
+    # above) so it reflects the FINAL merged set regardless of whether
+    # setup_form_api or setup_form_ui ran last.
+    async def _warn_reserved_tenant_collisions(app: web.Application) -> None:
+        reserved = app.get("formdesigner_reserved_tenant_segments", frozenset())
+        if not reserved:
+            return
+        colliding = sorted(set(await registry.list_tenants()) & reserved)
+        if colliding:
+            logger.warning(
+                "setup_form_api: registry tenant(s) %s collide with a reserved "
+                "literal route segment — these tenants are UNREACHABLE via the "
+                "tenant-qualified forms routes (requires_tenant() returns 404 "
+                "for them). Rename the tenant or the colliding literal route.",
+                colliding,
+            )
+
+    app.on_startup.append(_warn_reserved_tenant_collisions)
 
     logger.info("setup_form_api: mounted on %s", bp)
