@@ -113,6 +113,45 @@ def _wrap_auth(handler: _Handler, *, tenant: str = "required") -> _Handler:
     return decorated
 
 
+def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
+    """Derive reserved literal segments from the router (FEAT-429 Module 5).
+
+    Introspects every route already registered on ``app`` and collects the
+    literal (non-``{tenant}``) first path segment of any route mounted
+    directly under ``bp`` — the exact tree level the dynamic ``{tenant}``
+    segment occupies. This is what makes the reserved set DERIVED rather
+    than hardcoded (spec Module 5 / AC13): calling this AFTER a module's
+    own routes are registered means any literal added later in that same
+    function is picked up automatically, with no second edit required.
+
+    Args:
+        app: The aiohttp application whose router has already had this
+            module's routes registered.
+        bp: The stripped base path (``base_path.rstrip("/")``) routes in
+            this module were mounted under — ``""`` for a root mount.
+
+    Returns:
+        The set of literal first-segment strings sitting at the same tree
+        level as ``{tenant}`` under ``bp`` (e.g. ``{"org",
+        "form-controls"}``). Empty when no such literal exists.
+    """
+    reserved: set[str] = set()
+    for route in app.router.routes():
+        resource = route.resource
+        if resource is None:
+            continue
+        canonical = resource.canonical
+        if bp and not canonical.startswith(f"{bp}/"):
+            continue
+        remainder = canonical[len(bp):].lstrip("/")
+        if not remainder:
+            continue
+        first_segment = remainder.split("/", 1)[0]
+        if first_segment and not first_segment.startswith("{"):
+            reserved.add(first_segment)
+    return frozenset(reserved)
+
+
 def setup_form_api(
     app: web.Application,
     registry: FormRegistry,
@@ -232,21 +271,6 @@ def setup_form_api(
     # branch, which is UNCHANGED (spec G7, AC11). FEAT-429 removed the
     # literal `t` disambiguation marker segment as unnecessary (see spec §2).
     tp = f"{bp}/{{tenant}}"
-
-    # FEAT-429 Module 5: reserved-segment guard. `org` and `form-controls`
-    # are the literal segments THIS function registers at the same tree
-    # level as `{tenant}` (below `bp`) — kept as a literal set right here,
-    # next to the registrations below, so a new literal added to this
-    # function must touch this line in the same diff (introspecting the
-    # router was judged impractical — see spec Module 5). Merged (union)
-    # with any reserved set already stashed by the other setup function on
-    # the same app, since requires_tenant() is shared across the API and UI
-    # surfaces and a tenant identity is not siloed per mount.
-    api_reserved_tenant_segments: frozenset[str] = frozenset({"org", "form-controls"})
-    app["formdesigner_reserved_tenant_segments"] = (
-        app.get("formdesigner_reserved_tenant_segments", frozenset())
-        | api_reserved_tenant_segments
-    )
 
     # CRUD + listing
     app.router.add_get(f"{tp}/forms", _wrap_auth(handler.list_forms))
@@ -558,6 +582,22 @@ def setup_form_api(
             "setup_form_api: exclude-provider registered for restart re-hydration (base_path=%s)",
             _bp_m7,
         )
+
+    # FEAT-429 Module 5: reserved-segment guard. Every route above is now
+    # registered, so introspect the router for literal (non-`{tenant}`)
+    # first-path-segments sitting directly under `bp` — the exact tree
+    # level `{tenant}` occupies (today: `org`, `form-controls`). DERIVED
+    # from the actual registrations (spec Module 5 / AC13: "never
+    # hardcoded"), so a future literal route added anywhere above is
+    # reserved automatically, with no second edit required. Merged (union)
+    # with any reserved set already stashed by the other setup function on
+    # the same app, since requires_tenant() is shared across the API and UI
+    # surfaces and a tenant identity is not siloed per mount.
+    api_reserved_tenant_segments = _reserved_tenant_segments(app, bp)
+    app["formdesigner_reserved_tenant_segments"] = (
+        app.get("formdesigner_reserved_tenant_segments", frozenset())
+        | api_reserved_tenant_segments
+    )
 
     # FEAT-429 Module 5: boot-time warning when a provisioned tenant
     # collides with a reserved literal segment (see the reserved-segment

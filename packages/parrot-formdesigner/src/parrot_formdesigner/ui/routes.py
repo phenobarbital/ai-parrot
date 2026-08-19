@@ -35,6 +35,48 @@ _Handler = Callable[[web.Request], Awaitable[web.Response]]
 _TENANT_MODES = ("required", "public", "none")
 
 
+def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
+    """Derive reserved literal segments from the router (FEAT-429 Module 5).
+
+    Introspects every route already registered on ``app`` and collects the
+    literal (non-``{tenant}``) first path segment of any route mounted
+    directly under ``bp`` — the exact tree level the dynamic ``{tenant}``
+    segment occupies. This is what makes the reserved set DERIVED rather
+    than hardcoded (spec Module 5 / AC13): calling this AFTER this
+    module's own routes are registered means any literal added later in
+    this same function is picked up automatically, with no second edit
+    required. Duplicated from ``api/routes.py`` rather than shared — this
+    package's convention (see ``_TENANT_MODES`` above) keeps the two route
+    modules independent.
+
+    Args:
+        app: The aiohttp application whose router has already had this
+            module's routes registered.
+        bp: The stripped base path (``base_path.rstrip("/")``) routes in
+            this module were mounted under — ``""`` for a root mount.
+
+    Returns:
+        The set of literal first-segment strings sitting at the same tree
+        level as ``{tenant}`` under ``bp`` (e.g. ``{"api"}``). Empty when
+        no such literal exists.
+    """
+    reserved: set[str] = set()
+    for route in app.router.routes():
+        resource = route.resource
+        if resource is None:
+            continue
+        canonical = resource.canonical
+        if bp and not canonical.startswith(f"{bp}/"):
+            continue
+        remainder = canonical[len(bp):].lstrip("/")
+        if not remainder:
+            continue
+        first_segment = remainder.split("/", 1)[0]
+        if first_segment and not first_segment.startswith("{"):
+            reserved.add(first_segment)
+    return frozenset(reserved)
+
+
 def _page_wrap(
     handler: _Handler, *, protect: bool, tenant: str = "required"
 ) -> _Handler:
@@ -137,18 +179,6 @@ def setup_form_ui(
     # segment as unnecessary (see spec §2).
     tp = f"{bp}/{{tenant}}"
 
-    # FEAT-429 Module 5: reserved-segment guard. `api` is the one literal
-    # segment THIS function registers at the same tree level as `{tenant}`
-    # (below `bp`) — the telegram-submit REST fallback route below lives at
-    # `{bp}/api/v1/...`, sibling to `{tp}`. Merged (union) with any reserved
-    # set already stashed by setup_form_api on the same app — see that
-    # function's matching comment for the full rationale.
-    ui_reserved_tenant_segments: frozenset[str] = frozenset({"api"})
-    app["formdesigner_reserved_tenant_segments"] = (
-        app.get("formdesigner_reserved_tenant_segments", frozenset())
-        | ui_reserved_tenant_segments
-    )
-
     # HTML page routes
     app.router.add_get(f"{tp}/", _page_wrap(page.index, protect=protect_pages))
     app.router.add_get(
@@ -182,6 +212,23 @@ def setup_form_ui(
     app.router.add_post(
         f"{bp}/api/v1/{{tenant}}/forms/{{form_uid}}/telegram-submit",
         _page_wrap(telegram.rest_fallback, protect=False, tenant="public"),
+    )
+
+    # FEAT-429 Module 5: reserved-segment guard. Every route above is now
+    # registered, so introspect the router for literal (non-`{tenant}`)
+    # first-path-segments sitting directly under `bp` — the exact tree
+    # level `{tenant}` occupies (today: `api`, from the telegram-submit
+    # fallback route above). DERIVED from the actual registrations (spec
+    # Module 5 / AC13: "never hardcoded"), so a future literal route added
+    # anywhere above is reserved automatically, with no second edit
+    # required. Merged (union) with any reserved set already stashed by
+    # setup_form_api on the same app, since requires_tenant() is shared
+    # across the API and UI surfaces and a tenant identity is not siloed
+    # per mount.
+    ui_reserved_tenant_segments = _reserved_tenant_segments(app, bp)
+    app["formdesigner_reserved_tenant_segments"] = (
+        app.get("formdesigner_reserved_tenant_segments", frozenset())
+        | ui_reserved_tenant_segments
     )
 
     logger.info(
