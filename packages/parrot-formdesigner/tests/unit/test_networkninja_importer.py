@@ -10,6 +10,7 @@ from parrot_formdesigner.tools.services.networkninja import (
     ImportDiffEntry,
     ImportDiffReport,
     NetworkninjaFormService,
+    stable_form_uid,
 )
 
 
@@ -847,3 +848,91 @@ def test_malformed_metadata_options_do_not_crash():
     assert not fields["field_2493"].options
     # select column: the one valid option survived, the non-dict was dropped
     assert [o.value for o in fields["field_2500"].options] == ["6091"]
+
+
+# ---------------------------------------------------------------------------
+# Stable import identity — re-import must be idempotent
+# ---------------------------------------------------------------------------
+
+
+def test_form_uid_is_stable_across_imports(networkninja_formula_row):
+    """Two imports of the same source row yield the SAME form_uid.
+
+    Regression: FormSchema.form_uid defaulted to uuid4(), so every import
+    minted a new identity and re-registering hit FormRegistry's slug
+    uniqueness check (FormAlreadyExistsError) while form_id stayed constant.
+    """
+    svc = _svc()
+    first = svc.to_form_schema(networkninja_formula_row)
+    second = svc.to_form_schema(networkninja_formula_row)
+
+    assert first.form_id == second.form_id
+    assert first.form_uid == second.form_uid
+    assert first.form_uid == stable_form_uid(999, 1)
+
+
+def test_child_uids_are_stable_across_imports(networkninja_survey_row):
+    """section_uid / field_uid are derived, not random.
+
+    field_uid-keyed state (answers, partial saves, resolved rules) must
+    survive a re-import of the same source form.
+    """
+    svc = _svc()
+    first = svc.to_form_schema(networkninja_survey_row)
+    second = svc.to_form_schema(networkninja_survey_row)
+
+    assert [s.section_uid for s in first.sections] == [
+        s.section_uid for s in second.sections
+    ]
+    assert {f.field_id: f.field_uid for f in first.iter_all_fields()} == {
+        f.field_id: f.field_uid for f in second.iter_all_fields()
+    }
+
+
+def test_distinct_source_forms_get_distinct_uids(networkninja_formula_row):
+    """A different (formid, orgid) must never collide with another form."""
+    svc = _svc()
+    base = svc.to_form_schema(networkninja_formula_row)
+
+    other_form = {**networkninja_formula_row, "formid": 1000}
+    other_org = {**networkninja_formula_row, "orgid": 2}
+
+    uids = {
+        base.form_uid,
+        svc.to_form_schema(other_form).form_uid,
+        svc.to_form_schema(other_org).form_uid,
+    }
+    assert len(uids) == 3
+
+
+def test_all_uids_within_a_form_are_unique(networkninja_survey_row):
+    """Deriving uids must not introduce duplicates inside one form."""
+    svc = _svc()
+    schema = svc.to_form_schema(networkninja_survey_row)
+
+    uids = (
+        [schema.form_uid]
+        + [s.section_uid for s in schema.sections]
+        + [f.field_uid for f in schema.iter_all_fields()]
+    )
+    assert len(uids) == len(set(uids))
+
+
+@pytest.mark.asyncio
+async def test_reimport_reregisters_without_slug_conflict(networkninja_formula_row):
+    """The end-to-end symptom: re-registering a re-imported form must not raise.
+
+    Before the fix this raised FormAlreadyExistsError ("Slug 'db-form-999-1'
+    already in use by form_uid=..."), which DatabaseFormTool surfaced to the
+    API as HTTP 500 "Form load succeeded but form_uid missing".
+    """
+    from parrot_formdesigner.services.registry import FormRegistry
+
+    svc = _svc()
+    registry = FormRegistry(require_tenant=False, default_tenant="troc")
+
+    for _ in range(3):
+        schema = svc.to_form_schema(networkninja_formula_row)
+        await registry.register(schema, persist=False, tenant="troc")
+
+    assert await registry.list_form_ids(tenant="troc") == ["db-form-999-1"]
