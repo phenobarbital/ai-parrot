@@ -40,10 +40,12 @@ Available block types:
 - code: Code snippet; code (verbatim string), optional language, highlight_lines[]
 - card_grid: Grid of cards; cards[] each with title and body; columns 1-6
 
-Bilingual text (optional):
-- Any text field accepts a plain string OR an object of locale->text,
+Bilingual text (optional, chain/steps/code/card_grid title/label/description/body
+fields and changelog "summary" only):
+- These fields accept a plain string OR an object of locale->text,
   e.g. {"en": "Overview", "es": "Resumen"}. Use the object form only when
-  bilingual output is requested.
+  bilingual output is requested. All other text fields (title, summary,
+  bullet_list items, quote, callout, etc.) remain plain strings.
 
 Document metadata (optional):
 - Top-level "document_meta": {"version": "1.2", "status": "approved",
