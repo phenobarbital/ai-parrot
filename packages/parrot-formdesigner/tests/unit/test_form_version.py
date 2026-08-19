@@ -77,9 +77,24 @@ def test_parse_major_minor_normal():
 
 
 def test_parse_major_minor_invalid_falls_back():
-    assert _parse_major_minor("not-semver") == (1, 0)
-    assert _parse_major_minor("") == (1, 0)
-    assert _parse_major_minor(None) == (1, 0)
+    """FEAT-433 TASK-2267: an unparseable version sorts LAST — the sentinel
+    is NOT (1, 0), which used to silently mistake it for the OLDEST version
+    in the history (the exact misordering Module 4 exists to close)."""
+    from parrot_formdesigner.services.form_version import _UNPARSEABLE_SORT_KEY
+
+    assert _parse_major_minor("not-semver") == _UNPARSEABLE_SORT_KEY
+    assert _parse_major_minor("") == _UNPARSEABLE_SORT_KEY
+    assert _parse_major_minor(None) == _UNPARSEABLE_SORT_KEY
+    # And it really does sort last next to real versions:
+    assert sorted(
+        ["1.0", "not-semver", "2.5"], key=_parse_major_minor
+    ) == ["1.0", "2.5", "not-semver"]
+
+
+def test_parse_major_minor_three_part_ignores_patch():
+    """A trailing patch component doesn't degrade to the sentinel — it
+    shares its parent's (major, minor) ordering bucket."""
+    assert _parse_major_minor("1.2.3") == (1, 2)
 
 
 def test_bump_minor():
@@ -95,6 +110,47 @@ def test_bump_major():
 
 def test_bump_twice():
     assert _bump(_bump("1.0")) == "1.2"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-433 TASK-2267 — unify the two version bumpers
+# ---------------------------------------------------------------------------
+
+
+def test_bump_grammar_is_single():
+    """Both former call sites (api._utils._bump_version and this module's
+    _bump) produce identical output — _bump_version now delegates here."""
+    from parrot_formdesigner.api._utils import _bump_version
+
+    for v in ("1.0", "1.9", "1.14"):
+        assert _bump_version(v) == _bump(v)
+
+
+def test_three_component_input_has_one_documented_behaviour():
+    """Three-part input has one documented, tested behaviour — the last
+    component is incremented, the shape is preserved. Not a silent (1, 0)
+    degradation, and identical across both former call sites."""
+    from parrot_formdesigner.api._utils import _bump_version
+
+    assert _bump("1.2.3") == "1.2.4"
+    assert _bump_version("1.2.3") == "1.2.4"
+    # bump="major" on 3-part input drops the patch, same rule as 2-part.
+    assert _bump("1.2.3", bump="major") == "2.0"
+
+
+def test_major_bump_survives():
+    """bump="major" still works after the merge."""
+    assert _bump("1.0", bump="major") == "2.0"
+    assert _bump("1.9", bump="major") == "2.0"
+
+
+def test_non_conforming_input_is_total_not_raising():
+    """_bump_version is called on the editor's hot path (every save) and
+    must never raise — even on a legacy/malformed value already stored."""
+    from parrot_formdesigner.api._utils import _bump_version
+
+    assert _bump("garbage") == "garbage.1"
+    assert _bump_version("1") == "1.1"  # bare major-only input, pre-existing case
 
 
 # ---------------------------------------------------------------------------

@@ -69,23 +69,41 @@ class VersionMeta(BaseModel):
 # Semver helpers
 # ---------------------------------------------------------------------------
 
-_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)$")
+#: FEAT-433 TASK-2267 — the one grammar both former bumpers now share.
+#: ``major.minor`` (spec S1's canonical, unchanged format) is required; an
+#: optional third ``.patch`` component is accepted (matching the pre-merge
+#: ``api/_utils._bump_version`` behavior) but never participates in
+#: ordering — the stored format is ``major.minor`` (D2/S1), so a
+#: patch-shaped input shares its parent's ``(major, minor)`` bucket.
+_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?$")
+
+#: Sentinel returned by :func:`_parse_major_minor` for a version string that
+#: does not even match ``major.minor`` — sorts LAST, deterministically,
+#: matching the SQL ordering guard's ``NULLS LAST`` (Module 2). Replaces the
+#: previous ``(1, 0)`` fallback, which silently misordered an unparseable
+#: row as if it were the OLDEST version in the history — the opposite of
+#: harmless.
+_UNPARSEABLE_SORT_KEY = (2**63 - 1, 2**63 - 1)
 
 
 def _parse_major_minor(version: str) -> tuple[int, int]:
-    """Parse a ``major.minor`` version string.
+    """Parse a version string's ``(major, minor)`` for ordering purposes.
 
     Args:
-        version: Version string, e.g. ``"1.0"`` or ``"2.3"``.
+        version: Version string, e.g. ``"1.0"``, ``"2.3"``, or ``"1.2.3"``
+            (a trailing patch component is accepted but ignored here).
 
     Returns:
-        ``(major, minor)`` ints. Falls back to ``(1, 0)`` on parse failure.
+        ``(major, minor)`` ints. Falls back to :data:`_UNPARSEABLE_SORT_KEY`
+        — NOT ``(1, 0)`` — when ``version`` doesn't match ``major.minor``
+        at all, so an unparseable row sorts last instead of being mistaken
+        for the oldest version.
     """
     m = _SEMVER_RE.match(version or "")
     if m:
         return int(m.group(1)), int(m.group(2))
-    logger.warning("Could not parse version %r as major.minor — defaulting to (1, 0)", version)
-    return 1, 0
+    logger.warning("Could not parse version %r as major.minor — sorting it last", version)
+    return _UNPARSEABLE_SORT_KEY
 
 
 def _is_published_label(published_version: str | None, version: str) -> bool:
@@ -110,19 +128,48 @@ def _is_published_label(published_version: str | None, version: str) -> bool:
 
 
 def _bump(current: str, bump: str = "minor") -> str:
-    """Bump a ``major.minor`` version string.
+    """Bump a version string — the single grammar for both former bumpers.
+
+    FEAT-433 TASK-2267: collapses the pre-existing ``api/_utils._bump_version``
+    (incremented the last component, accepted a three-part version) and this
+    module's own ``_bump`` (matched only ``major.minor``, silently degraded
+    anything else) into one implementation. ``api/_utils._bump_version`` now
+    delegates here.
+
+    Grammar:
+        - ``"major.minor"`` (the canonical, documented format — spec S1,
+          unchanged) or ``"major.minor.patch"``: ``bump="minor"`` (default)
+          increments the LAST present component, preserving a three-part
+          shape (``"1.2.3"`` → ``"1.2.4"``); ``bump="major"`` increments the
+          major component and resets the rest, dropping any patch
+          (``"1.2.3"`` → ``"2.0"``, same rule as the two-part case).
+        - Anything that doesn't even parse as a leading ``N.N`` is NOT
+          rejected: this runs on the editor's hot path (every save, via
+          ``api/_utils._bump_version``) and must be cheap and total — a
+          bump that raises on a legacy/malformed value already in storage
+          would break saving. It is passed through as ``"<current>.1"``,
+          the same total fallback the pre-merge ``_bump_version`` used for
+          a bare major-only input (e.g. ``"1"`` → ``"1.1"``).
 
     Args:
-        current: Current version (e.g. ``"1.0"``).
+        current: Current version string, e.g. ``"1.0"`` or ``"1.2.3"``.
         bump: ``"minor"`` (default) or ``"major"``.
 
     Returns:
-        New version string. ``"1.0"`` + minor → ``"1.1"``; + major → ``"2.0"``.
+        The bumped version string.
     """
-    major, minor = _parse_major_minor(current)
-    if bump == "major":
-        return f"{major + 1}.0"
-    return f"{major}.{minor + 1}"
+    parts = (current or "").split(".")
+    if len(parts) >= 2 and all(p.isdigit() for p in parts[:2]) and all(
+        p.isdigit() for p in parts[2:]
+    ):
+        if bump == "major":
+            return f"{int(parts[0]) + 1}.0"
+        parts[-1] = str(int(parts[-1]) + 1)
+        return ".".join(parts)
+    logger.warning(
+        "Could not parse version %r as major.minor[.patch] — appending '.1'", current
+    )
+    return f"{current}.1"
 
 
 # ---------------------------------------------------------------------------
