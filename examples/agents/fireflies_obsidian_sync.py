@@ -8,9 +8,7 @@ Usage:
     python examples/agents/fireflies_obsidian_sync.py
 
     # 2. Or schedule via /schedule
-    /schedule create fireflies-sync \
-        --cron "0 */8 * * *" \
-        --command "agent FirefliesObsidianAgent sync"
+    /schedule create fireflies-sync --cron "0 */8 * * *" --command "agent FirefliesObsidianAgent sync"
 
 Requirements:
     - FIREFLIES_API_KEY environment variable set
@@ -64,9 +62,14 @@ async def main():
         if sync_report["synced"] > 0:
             # Get the first synced note to analyze
             existing_notes = await agent._get_existing_meeting_titles()
-            if existing_notes:
+            # Sort descending so the most recent meeting comes first
+            if sorted_notes := sorted(existing_notes, reverse=True):
+                recent_note = sorted_notes[0]
+            else:
                 # Pick the first one
                 recent_note = list(existing_notes)[0]
+
+            if recent_note:
 
                 analysis = await agent.summarize_transcript(
                     note_title=recent_note,

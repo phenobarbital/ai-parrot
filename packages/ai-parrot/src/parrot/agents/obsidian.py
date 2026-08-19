@@ -508,7 +508,11 @@ class FirefliesObsidianAgent(BasicAgent):
             )
             # result is a dict with 'notes' key containing list of note dicts
             notes = result.get("notes", []) if isinstance(result, dict) else result or []
-            return {note.get("title", "") for note in notes}
+            return {
+                title
+                for note in notes
+                if (title := note.get("title", ""))
+            }
         except Exception as e:
             self.logger.warning(f"Failed to list existing notes: {e}")
             return set()
