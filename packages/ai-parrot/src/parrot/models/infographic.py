@@ -1166,6 +1166,89 @@ class JSBundle(BaseModel):
 # Theme System
 # ──────────────────────────────────────────────
 
+class CodePalette(BaseModel):
+    """Syntax-highlight token colors for CodeBlock rendering."""
+    keyword: str = Field("#c678dd", description="Keyword token color")
+    string: str = Field("#98c379", description="String literal token color")
+    comment: str = Field("#5c6370", description="Comment token color")
+    number: str = Field("#d19a66", description="Number literal token color")
+    function: str = Field("#61afef", description="Function name token color")
+    background: str = Field("#282c34", description="Code block background color")
+    text: str = Field("#abb2bf", description="Default code text color")
+
+    @field_validator(
+        "keyword", "string", "comment", "number", "function", "background", "text",
+        mode="before",
+    )
+    @classmethod
+    def _validate_color_fields(cls, v: Any) -> Any:
+        """Validate CSS color values — raises ValueError on invalid input."""
+        if v is not None and not _CSS_COLOR_RE.match(str(v).strip()):
+            raise ValueError(
+                f"Invalid CSS color value: {v!r}. "
+                "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
+            )
+        return v
+
+
+class MethodBadgePalette(BaseModel):
+    """Color tokens for HTTP method badges in micro-syntax."""
+    get: str = Field("#10b981", description="GET method badge color")
+    post: str = Field("#6366f1", description="POST method badge color")
+    put: str = Field("#f59e0b", description="PUT method badge color")
+    delete: str = Field("#ef4444", description="DELETE method badge color")
+    patch: str = Field("#8b5cf6", description="PATCH method badge color")
+
+    @field_validator("get", "post", "put", "delete", "patch", mode="before")
+    @classmethod
+    def _validate_color_fields(cls, v: Any) -> Any:
+        """Validate CSS color values — raises ValueError on invalid input."""
+        if v is not None and not _CSS_COLOR_RE.match(str(v).strip()):
+            raise ValueError(
+                f"Invalid CSS color value: {v!r}. "
+                "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
+            )
+        return v
+
+
+def derive_soft(hex_color: str, alpha: float = 0.12) -> str:
+    """Derive a soft/tinted background from a hex color.
+
+    Used for pill backgrounds, chip tints, and callout backgrounds where a
+    low-opacity wash of an accent color is wanted over the page background.
+
+    Args:
+        hex_color: A 3-, 6-, or 8-digit hex color (``#rgb`` / ``#rrggbb``).
+        alpha: Opacity of the returned color, 0.0-1.0.
+
+    Returns:
+        An ``rgba(r, g, b, a)`` string — accepted by ``_CSS_COLOR_RE``.
+
+    Raises:
+        ValueError: If ``hex_color`` is not a parseable hex color or ``alpha``
+            is outside 0.0-1.0.
+    """
+    if not (0.0 <= alpha <= 1.0):
+        raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha!r}")
+    value = str(hex_color).strip()
+    if not value.startswith("#"):
+        raise ValueError(f"Invalid hex color: {hex_color!r}")
+    digits = value[1:]
+    if len(digits) == 3:
+        digits = "".join(c * 2 for c in digits)
+    elif len(digits) in (6, 8):
+        digits = digits[:6]
+    else:
+        raise ValueError(f"Invalid hex color: {hex_color!r}")
+    try:
+        r = int(digits[0:2], 16)
+        g = int(digits[2:4], 16)
+        b = int(digits[4:6], 16)
+    except ValueError:
+        raise ValueError(f"Invalid hex color: {hex_color!r}")
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
 class ThemeConfig(BaseModel):
     """CSS variable configuration for infographic HTML themes.
 
@@ -1190,12 +1273,32 @@ class ThemeConfig(BaseModel):
         'Helvetica, Arial, sans-serif',
         description="CSS font-family stack",
     )
+    code_palette: Optional[CodePalette] = Field(
+        None, description="Syntax-highlight token colors for CodeBlock rendering"
+    )
+    method_badge_palette: Optional[MethodBadgePalette] = Field(
+        None, description="Color tokens for HTTP method badges in micro-syntax"
+    )
+    surface_bg: Optional[str] = Field(
+        None, description="Card/surface background (derives from neutral_bg if unset)"
+    )
+    soft_primary: Optional[str] = Field(
+        None, description="Pill/chip tinted background (derives from primary if unset)"
+    )
+    callout_info_bg: Optional[str] = Field(None, description="Info callout background")
+    callout_success_bg: Optional[str] = Field(None, description="Success callout background")
+    callout_warning_bg: Optional[str] = Field(None, description="Warning callout background")
+    callout_error_bg: Optional[str] = Field(None, description="Error callout background")
+    callout_tip_bg: Optional[str] = Field(None, description="Tip callout background")
 
     @field_validator(
         "primary", "primary_dark", "primary_light",
         "accent_green", "accent_amber", "accent_red",
         "neutral_bg", "neutral_border", "neutral_muted",
         "neutral_text", "body_bg",
+        "surface_bg", "soft_primary",
+        "callout_info_bg", "callout_success_bg", "callout_warning_bg",
+        "callout_error_bg", "callout_tip_bg",
         mode="before",
     )
     @classmethod
@@ -1228,6 +1331,28 @@ class ThemeConfig(BaseModel):
             f"    --body-bg: {self.body_bg};",
             f"    --font-family: {self.font_family};",
         ]
+        if self.surface_bg is not None:
+            props.append(f"    --surface-bg: {self.surface_bg};")
+        if self.soft_primary is not None:
+            props.append(f"    --soft-primary: {self.soft_primary};")
+        for level in ("info", "success", "warning", "error", "tip"):
+            value = getattr(self, f"callout_{level}_bg")
+            if value is not None:
+                props.append(f"    --callout-{level}-bg: {value};")
+        if self.code_palette is not None:
+            props.append(f"    --code-bg: {self.code_palette.background};")
+            props.append(f"    --code-text: {self.code_palette.text};")
+            props.append(f"    --code-keyword: {self.code_palette.keyword};")
+            props.append(f"    --code-string: {self.code_palette.string};")
+            props.append(f"    --code-comment: {self.code_palette.comment};")
+            props.append(f"    --code-number: {self.code_palette.number};")
+            props.append(f"    --code-function: {self.code_palette.function};")
+        if self.method_badge_palette is not None:
+            props.append(f"    --badge-get: {self.method_badge_palette.get};")
+            props.append(f"    --badge-post: {self.method_badge_palette.post};")
+            props.append(f"    --badge-put: {self.method_badge_palette.put};")
+            props.append(f"    --badge-delete: {self.method_badge_palette.delete};")
+            props.append(f"    --badge-patch: {self.method_badge_palette.patch};")
         return ":root {\n" + "\n".join(props) + "\n}"
 
 
@@ -1361,4 +1486,23 @@ theme_registry.register(ThemeConfig(
         '-apple-system, BlinkMacSystemFont, "Segoe UI", '
         'sans-serif'
     ),
+))
+
+theme_registry.register(ThemeConfig(
+    name="petrol",
+    primary="#0e7490",        # cyan-700 — links, KPIs, accents
+    primary_dark="#155e75",   # cyan-800 — hover states, borders
+    primary_light="#22d3ee",  # cyan-400 — subtle highlights
+    accent_green="#0d9488",   # teal-600 — success, in-progress
+    accent_amber="#d97706",   # amber-600 — warnings, notices
+    accent_red="#b91c1c",     # red-700 — errors, blockers
+    neutral_bg="#ffffff",     # card / section surface
+    neutral_border="#cbd5e1",  # slate-300 — borders, dividers
+    neutral_muted="#475569",  # slate-600 — labels, secondary text
+    neutral_text="#0f172a",   # slate-900 — primary text
+    body_bg="#ecfeff",        # cyan-50 — page background
+    surface_bg="#ffffff",
+    soft_primary=derive_soft("#0e7490", 0.10),
+    code_palette=CodePalette(),          # editor-dark defaults are intentional
+    method_badge_palette=MethodBadgePalette(),
 ))

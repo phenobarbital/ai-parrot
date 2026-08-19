@@ -59,6 +59,9 @@ from .infographic import (
     ThemeConfig,
     ThemeRegistry,
     theme_registry,
+    CodePalette,
+    MethodBadgePalette,
+    derive_soft,
 )
 from .infographic_templates import (
     BlockSpec,
@@ -212,6 +215,9 @@ __all__ = (
     "ThemeConfig",
     "ThemeRegistry",
     "theme_registry",
+    "CodePalette",
+    "MethodBadgePalette",
+    "derive_soft",
     # Infographic templates
     "BlockSpec",
     "InfographicTemplate",

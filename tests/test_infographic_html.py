@@ -10,6 +10,7 @@ Covers:
 - Edge cases (empty, unknown, XSS, special characters)
 """
 import pytest
+from pydantic import ValidationError
 
 from parrot.models.infographic import (
     BlockType,
@@ -35,6 +36,9 @@ from parrot.models.infographic import (
     TitleBlock,
     TrendDirection,
     theme_registry,
+    CodePalette,
+    MethodBadgePalette,
+    derive_soft,
 )
 from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
 
@@ -231,6 +235,72 @@ class TestThemeRegistry:
         reg.register(ThemeConfig(name="x", primary="#aaa"))
         reg.register(ThemeConfig(name="x", primary="#bbb"))
         assert reg.get("x").primary == "#bbb"
+
+
+# ──────────────────────────────────────────────
+# ThemeConfig v2 Tokens & Petrol Theme (FEAT-301 / TASK-2251)
+# ──────────────────────────────────────────────
+
+class TestThemeConfigV2:
+    """Tests for the v2 ThemeConfig fields (code/badge palettes, soft/surface/callout tokens)."""
+
+    def test_theme_config_v2_backward_compat(self):
+        theme = ThemeConfig(name="v1only")
+        css = theme.to_css_variables()
+        assert "--surface-bg" not in css
+        assert "--code-bg" not in css
+        assert css.count("--") == 12
+
+    def test_theme_config_v2_fields(self):
+        theme = ThemeConfig(
+            name="v2", surface_bg="#ffffff", soft_primary="rgba(99, 102, 241, 0.12)",
+            callout_info_bg="#eff6ff", code_palette=CodePalette(),
+            method_badge_palette=MethodBadgePalette(),
+        )
+        css = theme.to_css_variables()
+        assert "--surface-bg: #ffffff;" in css
+        assert "--callout-info-bg: #eff6ff;" in css
+        assert "--code-bg: #282c34;" in css
+        assert "--badge-get: #10b981;" in css
+
+    def test_invalid_v2_color_rejected(self):
+        with pytest.raises(ValidationError):
+            ThemeConfig(name="bad", surface_bg="#not-a-hex-!!")
+
+
+class TestDeriveSoft:
+    """Tests for the derive_soft() helper."""
+
+    def test_derive_soft(self):
+        value = derive_soft("#6366f1", 0.12)
+        assert value == "rgba(99, 102, 241, 0.12)"
+        from parrot.models.infographic import _CSS_COLOR_RE
+        assert _CSS_COLOR_RE.match(value)
+
+    def test_derive_soft_shorthand_and_errors(self):
+        assert derive_soft("#abc", 0.5).startswith("rgba(170, 187, 204")
+        with pytest.raises(ValueError):
+            derive_soft("not-a-color")
+        with pytest.raises(ValueError):
+            derive_soft("#6366f1", 1.5)
+
+
+class TestPetrolTheme:
+    """Tests for the petrol built-in theme registration."""
+
+    def test_petrol_theme_registered(self):
+        theme = theme_registry.get("petrol")
+        assert theme.name == "petrol"
+        assert theme.code_palette is not None
+
+    def test_petrol_in_theme_listings(self):
+        assert "petrol" in theme_registry.list_themes()
+        assert "petrol" in [t["name"] for t in theme_registry.list_themes_detailed()]
+
+    def test_all_builtin_themes_emit_css(self):
+        for name in ("light", "dark", "corporate", "midnight", "petrol"):
+            css = theme_registry.get(name).to_css_variables()
+            assert css.startswith(":root {") and css.endswith("}")
 
 
 # ──────────────────────────────────────────────
