@@ -539,6 +539,11 @@ class TestTitleBlock:
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
 
+    def test_subtitle_microsyntax_expands(self, renderer):
+        block = TitleBlock(type="title", title="T", subtitle="[[chip:Active]]")
+        html = renderer._render_title(block)
+        assert 'class="chip"' in html
+
 
 class TestHeroCardBlock:
     def test_render(self, renderer):
@@ -588,6 +593,19 @@ class TestSummaryBlock:
         html = renderer._render_summary(block)
         assert "Summary" in html
 
+    def test_raw_html_in_markdown_is_escaped_not_executed(self, renderer):
+        """SECURITY (code review, FEAT-301): markdown-it's "commonmark" preset
+        defaults to html=True (raw HTML passes through verbatim); the
+        renderer must construct MarkdownIt with html=False so this doesn't
+        become a live-script injection vector.
+        """
+        block = SummaryBlock(
+            type="summary", content="<script>alert(1)</script>"
+        )
+        html = renderer._render_summary(block)
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
 
 class TestChartBlock:
     def test_render_contains_echarts(self, renderer):
@@ -626,6 +644,18 @@ class TestBulletListBlock:
         )
         html = renderer._render_bullet_list(block)
         assert "My List" in html
+
+    def test_item_microsyntax_expands(self, renderer):
+        block = BulletListBlock(type="bullet_list", items=["[[chip:Active]]"])
+        html = renderer._render_bullet_list(block)
+        assert 'class="chip"' in html
+
+    def test_colored_item_microsyntax_expands(self, renderer):
+        block = BulletListBlock(
+            type="bullet_list", items=["[[m:GET]]"], color="#ff0000",
+        )
+        html = renderer._render_bullet_list(block)
+        assert "method-badge--get" in html
 
 
 class TestTableBlock:
@@ -1244,6 +1274,44 @@ class TestAllBlocksIntegration:
         assert "<!DOCTYPE html>" in html
         assert "Full Test Report" in html
 
+    def test_existing_15_blocks_deterministic_across_renders(self, basic_response):
+        """Same input renders byte-identically across renderer instances
+        (a stronger form of the visual-regression guarantee: if this ever
+        diverges, some renderer state is leaking across the FEAT-301
+        surface, not just "close enough" text markers).
+
+        Uses ``basic_response`` (no chart blocks) rather than
+        ``full_infographic_response`` — chart containers embed a
+        ``uuid.uuid4()``-derived element id, which is intentionally
+        non-deterministic per render and unrelated to this feature.
+        """
+        first = InfographicHTMLRenderer().render_to_html(basic_response)
+        second = InfographicHTMLRenderer().render_to_html(basic_response)
+        assert first == second
+
+    def test_base_css_fallbacks_match_pre_migration_literals(self):
+        """The FEAT-301 CSS variable migration (TASK-2255) must not change
+        any unthemed color — every var(--token, fallback) fallback must be
+        byte-identical to the literal it replaced."""
+        original_literals = {
+            "var(--surface-bg, white)",
+            "var(--on-primary, #fff)",
+            "var(--surface-bg, #fff)",
+            "var(--body-bg)",  # tr:hover — reuses the existing v1 token
+            "var(--callout-info-bg, #eff6ff)",
+            "var(--callout-success-bg, #ecfdf5)",
+            "var(--callout-success-text, #065f46)",
+            "var(--callout-warning-bg, #fffbeb)",
+            "var(--callout-warning-text, #92400e)",
+            "var(--callout-error-bg, #fef2f2)",
+            "var(--callout-error-text, #991b1b)",
+            "var(--callout-tip-bg, #f0fdfa)",
+            "var(--accent-teal, #14b8a6)",
+            "var(--callout-tip-text, #115e59)",
+        }
+        for literal in original_literals:
+            assert literal in BASE_CSS, f"missing/changed fallback: {literal}"
+
 
 # ──────────────────────────────────────────────
 # Document Chrome — Version Bar, Changelog & Footer (FEAT-301 / TASK-2254)
@@ -1289,6 +1357,15 @@ class TestDocumentChrome:
         })
         assert html.count('class="doc-changelog__entry"') == 2
         assert html.index("First") < html.index("Second")
+
+    def test_changelog_summary_microsyntax_expands(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"changelog": [
+                {"version": "1.0", "date": "2026-08-19", "summary": "[[chip:New]]"},
+            ]},
+        })
+        assert 'class="chip"' in html
 
     def test_bilingual_changelog_summary(self, renderer):
         html = renderer.render_to_html({

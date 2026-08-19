@@ -864,7 +864,12 @@ class InfographicHTMLRenderer(BaseRenderer):
     """
 
     def __init__(self) -> None:
-        self._md = markdown_it.MarkdownIt()  # html=False by default (safe)
+        # SECURITY (code review, FEAT-301): the "commonmark" preset's actual
+        # default is html=True (raw HTML passes through verbatim), despite
+        # the misleading comment this replaced. Explicitly disable it so a
+        # SummaryBlock.content of "<script>...</script>" renders as escaped
+        # text, not live markup, in the self-contained HTML document.
+        self._md = markdown_it.MarkdownIt(options_update={"html": False})
         self._tab_view_counter: int = 0  # reset per render_to_html() call
         # Active theme config for the in-progress render. Set in
         # render_to_html() so chart builders can pull palette colors
@@ -1072,9 +1077,12 @@ class InfographicHTMLRenderer(BaseRenderer):
                     f'              <span class="doc-changelog__date">'
                     f"{escape(entry.date)}</span>"
                 )
+                summary_html = self._expand_microsyntax(
+                    self._render_i18n_span(entry.summary)
+                )
                 parts.append(
                     f'              <span class="doc-changelog__summary">'
-                    f"{self._render_i18n_span(entry.summary)}</span>"
+                    f"{summary_html}</span>"
                 )
                 parts.append("            </li>")
             parts.append("          </ul>")
@@ -1331,7 +1339,8 @@ class InfographicHTMLRenderer(BaseRenderer):
         title = self._expand_microsyntax(str(escape(block.title)))
         subtitle_html = ""
         if block.subtitle:
-            subtitle_html = f"\n            <p>{escape(block.subtitle)}</p>"
+            subtitle_text = self._expand_microsyntax(str(escape(block.subtitle)))
+            subtitle_html = f"\n            <p>{subtitle_text}</p>"
         meta_parts = []
         if block.author:
             meta_parts.append(str(escape(block.author)))
@@ -1776,15 +1785,17 @@ class InfographicHTMLRenderer(BaseRenderer):
             # Render with colored dot indicators
             items_parts = []
             for item in block.items:
+                item_text = self._expand_microsyntax(str(escape(item)))
                 items_parts.append(
                     f'                <li class="bullet-list__item-dot">'
                     f'<span class="bullet-list__dot" style="background:{escape(block.color)}"></span>'
-                    f'<span>{escape(item)}</span></li>'
+                    f'<span>{item_text}</span></li>'
                 )
             items = "\n".join(items_parts)
         else:
             items = "\n".join(
-                f"                <li>{escape(item)}</li>" for item in block.items
+                f"                <li>{self._expand_microsyntax(str(escape(item)))}</li>"
+                for item in block.items
             )
 
         # Wrap in grid if columns specified
@@ -2129,13 +2140,13 @@ class InfographicHTMLRenderer(BaseRenderer):
                 f'          <div class="accordion__item{open_cls}" id="{escape(item_id)}">'
             )
             parts.append(
-                f'            <button class="accordion__header"'
-                f' onclick="toggleAccordion(this)">'
+                '            <button class="accordion__header"'
+                ' onclick="toggleAccordion(this)">'
             )
             for hp in header_parts:
                 parts.append(f"              {hp}")
             parts.append("            </button>")
-            parts.append(f'            <div class="accordion__body">')
+            parts.append('            <div class="accordion__body">')
             if body_html:
                 parts.append(body_html)
             parts.append("            </div>")
