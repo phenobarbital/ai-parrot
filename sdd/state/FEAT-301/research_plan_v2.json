@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "note": "Fresh plan targeting delta since run-1 (8 features landed). Old findings F001-F013 retained as historical; new findings use F100+.",
+  "queries": [
+    {
+      "id": "Q100", "type": "wiki_query", "priority": 1,
+      "intent": "Locate current A2UI adapter for InfographicResponse",
+      "params": { "question": "A2UI adapter infographic_response_to_envelope _Converter walk block mapping" }
+    },
+    {
+      "id": "Q101", "type": "read", "priority": 1,
+      "intent": "Full read of A2UI infographic adapter — verify block→component mapping completeness",
+      "params": { "path": "packages/ai-parrot/src/parrot/outputs/a2ui/adapters/infographic.py" }
+    },
+    {
+      "id": "Q102", "type": "wiki_query", "priority": 1,
+      "intent": "Locate InfographicHTMLRenderer and its block renderers",
+      "params": { "question": "InfographicHTMLRenderer render_block block renderers CSS BASE_CSS literal colors" }
+    },
+    {
+      "id": "Q103", "type": "read", "priority": 1,
+      "intent": "Read InfographicHTMLRenderer — verify block renderer methods and CSS literal colors",
+      "params": { "path": "packages/ai-parrot-visualizations/src/parrot/outputs/infographic_html.py", "lines": "1-100,600-800" }
+    },
+    {
+      "id": "Q104", "type": "wiki_query", "priority": 1,
+      "intent": "Locate SectionDescriptor contract and data-splice render mode",
+      "params": { "question": "SectionDescriptor data-splice render_data_template InfographicAuthoringMixin" }
+    },
+    {
+      "id": "Q105", "type": "read", "priority": 2,
+      "intent": "Read SectionDescriptor model + authoring mixin block awareness",
+      "params": { "path": "packages/ai-parrot/src/parrot/bots/mixins/infographic_authoring.py" }
+    },
+    {
+      "id": "Q106", "type": "wiki_query", "priority": 2,
+      "intent": "Locate RecipeRunner and transformer registry for block impact",
+      "params": { "question": "RecipeRunner transformer registry recipe transformer block types" }
+    },
+    {
+      "id": "Q107", "type": "wiki_query", "priority": 2,
+      "intent": "Locate Thales infographic fan-in node",
+      "params": { "question": "Thales fan-in infographic node build_infographic_section FEAT-425" }
+    },
+    {
+      "id": "Q108", "type": "read", "priority": 2,
+      "intent": "Read INFOGRAPHIC_SYSTEM_PROMPT — current documented blocks",
+      "params": { "path": "packages/ai-parrot-visualizations/src/parrot/outputs/infographic.py", "lines": "1-60" }
+    },
+    {
+      "id": "Q109", "type": "grep", "priority": 2,
+      "intent": "Check markdown-it-py and markupsafe in pyproject.toml declarations",
+      "params": { "pattern": "markdown.it|markupsafe", "paths": ["packages/ai-parrot-visualizations/pyproject.toml"] }
+    },
+    {
+      "id": "Q110", "type": "wiki_query", "priority": 2,
+      "intent": "Check InfographicComponent catalog lowering for block awareness",
+      "params": { "question": "InfographicComponent lower composite catalog nested components" }
+    },
+    {
+      "id": "Q111", "type": "grep", "priority": 2,
+      "intent": "Find all consumers of BlockType enum to assess impact of adding new members",
+      "params": { "pattern": "BlockType\\.|block_type.*==|type.*==.*title|type.*==.*chart", "paths": ["packages/"] }
+    },
+    {
+      "id": "Q112", "type": "wiki_query", "priority": 2,
+      "intent": "Check A2UI builders for infographic-specific helpers",
+      "params": { "question": "build_infographic A2UI builders envelope builder infographic" }
+    },
+    {
+      "id": "Q113", "type": "read", "priority": 2,
+      "intent": "Read the A2UI builders module for infographic builder API",
+      "params": { "path": "packages/ai-parrot/src/parrot/outputs/a2ui/builders.py" }
+    },
+    {
+      "id": "Q114", "type": "git_log", "priority": 3,
+      "intent": "Recent changes to infographic.py model file",
+      "params": { "path": "packages/ai-parrot/src/parrot/models/infographic.py", "since": "2026-07-10" }
+    }
+  ]
+}

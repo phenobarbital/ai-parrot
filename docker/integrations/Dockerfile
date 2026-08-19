@@ -67,7 +67,7 @@
 #   liveness check.
 # ---------------------------------------------------------------------------
 
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.12
 
 FROM python:${PYTHON_VERSION}-slim AS builder
 

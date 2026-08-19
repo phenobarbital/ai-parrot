@@ -312,6 +312,36 @@ class FormRegistry:
     # Public API — write paths
     # ------------------------------------------------------------------
 
+    async def _persisted_slug_owner(
+        self, form_id: str, tenant: str
+    ) -> uuid.UUID | None:
+        """Return the ``form_uid`` owning ``form_id`` in storage, if any.
+
+        Probe-only and fail-soft: a storage backend that raises reads as
+        "no owner" — the caller's own persist path will surface real
+        storage faults. The isinstance guard matters because a stub/mock
+        storage returns truthy non-FormSchema objects whose ``form_uid``
+        is not a UUID — those must never read as a collision.
+
+        Args:
+            form_id: The slug to probe.
+            tenant: The resolved tenant scope.
+
+        Returns:
+            The persisted owner's ``form_uid``, or ``None`` when the slug
+            is unclaimed in storage (or no storage is configured).
+        """
+        if self._storage is None:
+            return None
+        try:
+            persisted = await self._storage.load_by_slug(form_id, tenant)
+        except Exception:  # noqa: BLE001 — probe only, see docstring
+            return None
+        persisted_uid = getattr(persisted, "form_uid", None)
+        if isinstance(persisted_uid, uuid.UUID):
+            return persisted_uid
+        return None
+
     async def _next_free_slug(
         self, base: str, tenant: str, form_uid: uuid.UUID
     ) -> str:
@@ -342,21 +372,9 @@ class FormRegistry:
         for suffix in range(2, 202):
             owner = self._slug_index.get(self._make_slug_key(tenant, candidate))
             taken = owner is not None and owner != form_uid
-            if not taken and self._storage is not None:
-                try:
-                    persisted = await self._storage.load_by_slug(candidate, tenant)
-                except Exception:  # noqa: BLE001 — probe only; register's
-                    # own persist path will surface real storage faults
-                    persisted = None
-                # isinstance guard: a stub/mock storage returns truthy
-                # non-FormSchema objects whose `.form_uid` is not a UUID —
-                # those must never read as a collision (they would suffix
-                # forever). A real backend returns FormSchema | None.
-                persisted_uid = getattr(persisted, "form_uid", None)
-                taken = (
-                    isinstance(persisted_uid, uuid.UUID)
-                    and persisted_uid != form_uid
-                )
+            if not taken:
+                persisted_uid = await self._persisted_slug_owner(candidate, tenant)
+                taken = persisted_uid is not None and persisted_uid != form_uid
             if not taken:
                 return candidate
             candidate = f"{base}-{suffix}"
@@ -787,6 +805,14 @@ class FormRegistry:
         new_slug_key = self._make_slug_key(resolved, new_form_id)
         async with self._lock:
             slug_taken = new_slug_key in self._slug_index
+        if not slug_taken:
+            # The in-memory slug index starts empty on every boot; a slug
+            # that lives only in the persisted table must still 409 here,
+            # not fall through to register()'s free-slug renaming.
+            slug_taken = (
+                await self._persisted_slug_owner(new_form_id, resolved)
+                is not None
+            )
         if slug_taken:
             raise FormAlreadyExistsError(
                 f"Form '{new_form_id}' already exists"

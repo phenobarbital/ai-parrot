@@ -8,6 +8,7 @@ This renderer is a sibling to InfographicRenderer (JSON); content
 negotiation in get_infographic() decides which one to use.
 """
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -15,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import markdown_it
 import orjson
 from markupsafe import escape
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 try:
     import nh3 as _nh3
@@ -57,6 +58,15 @@ from ...models.infographic import (
     ChecklistItem,
     TabViewBlock,
     TabPane,
+    ChainBlock,
+    ChainNode,
+    StepsBlock,
+    StepItem,
+    CodeBlock,
+    CardGridBlock,
+    GridCard,
+    DocumentMeta,
+    ChangelogEntry,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +92,20 @@ _BLOCK_MODEL_MAP: Dict[str, Any] = {
     "checklist": ChecklistBlock,
     "accordion": AccordionBlock,
     "tab_view": TabViewBlock,
+    "chain": ChainBlock,
+    "steps": StepsBlock,
+    "code": CodeBlock,
+    "card_grid": CardGridBlock,
 }
+
+# ──────────────────────────────────────────────
+# Micro-syntax markers (FEAT-301)
+# ──────────────────────────────────────────────
+# Applied AFTER escape() — the captured groups are already-escaped HTML and
+# must not be re-escaped (spec §7 "Escape policy").
+_MICRO_CHIP_RE = re.compile(r"\[\[chip:([^\]\[]{1,64})\]\]")
+_MICRO_METHOD_RE = re.compile(r"\[\[m:(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\]\]", re.I)
+_MICRO_COMP_RE = re.compile(r"\[\[comp:([\w.\-]{1,64})\]\]")
 
 # ──────────────────────────────────────────────
 # Chart styling defaults
@@ -162,14 +185,14 @@ body {
 .container {
     max-width: 900px;
     margin: 0 auto;
-    background: white;
+    background: var(--surface-bg, white);
     padding: 32px;
     border-radius: 24px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.05);
 }
 .hero {
     background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    color: #fff;
+    color: var(--on-primary, #fff);
     padding: 40px 32px;
     border-radius: 16px;
     margin-bottom: 32px;
@@ -213,7 +236,7 @@ body {
     margin-bottom: 32px;
 }
 .kpi-card {
-    background: #fff;
+    background: var(--surface-bg, #fff);
     border-radius: 12px;
     padding: 20px;
     text-align: center;
@@ -240,7 +263,7 @@ body {
 .kpi-trend.down { color: var(--accent-red); }
 .kpi-trend.flat { color: var(--neutral-muted); }
 .chart-container {
-    background: #fff;
+    background: var(--surface-bg, #fff);
     padding: 24px;
     border-radius: 16px;
     border: 1px solid var(--neutral-border);
@@ -260,7 +283,7 @@ table {
 }
 th {
     background: var(--primary);
-    color: #fff;
+    color: var(--on-primary, #fff);
     padding: 12px 16px;
     text-align: left;
     font-size: 0.9rem;
@@ -271,7 +294,7 @@ td {
     font-size: 0.95rem;
 }
 tr:nth-child(even) { background: var(--neutral-bg); }
-tr:hover { background: #f1f5f9; }
+tr:hover { background: var(--body-bg); }
 .table-container { margin-bottom: 32px; }
 .table-container h3 {
     margin: 0 0 12px;
@@ -343,30 +366,30 @@ blockquote.quote-block .attribution {
 }
 .callout-block h3 { margin-top: 0; }
 .callout-block.info {
-    background: #eff6ff;
+    background: var(--callout-info-bg, #eff6ff);
     border-left: 4px solid var(--primary);
 }
 .callout-block.info h3 { color: var(--primary-dark); }
 .callout-block.success {
-    background: #ecfdf5;
+    background: var(--callout-success-bg, #ecfdf5);
     border-left: 4px solid var(--accent-green);
 }
-.callout-block.success h3 { color: #065f46; }
+.callout-block.success h3 { color: var(--callout-success-text, #065f46); }
 .callout-block.warning {
-    background: #fffbeb;
+    background: var(--callout-warning-bg, #fffbeb);
     border-left: 4px solid var(--accent-amber);
 }
-.callout-block.warning h3 { color: #92400e; }
+.callout-block.warning h3 { color: var(--callout-warning-text, #92400e); }
 .callout-block.error {
-    background: #fef2f2;
+    background: var(--callout-error-bg, #fef2f2);
     border-left: 4px solid var(--accent-red);
 }
-.callout-block.error h3 { color: #991b1b; }
+.callout-block.error h3 { color: var(--callout-error-text, #991b1b); }
 .callout-block.tip {
-    background: #f0fdfa;
-    border-left: 4px solid #14b8a6;
+    background: var(--callout-tip-bg, #f0fdfa);
+    border-left: 4px solid var(--accent-teal, #14b8a6);
 }
-.callout-block.tip h3 { color: #115e59; }
+.callout-block.tip h3 { color: var(--callout-tip-text, #115e59); }
 hr.divider {
     border: none;
     margin: 32px 0;
@@ -550,7 +573,7 @@ footer.infographic-footer {
     flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px;
 }
 .checklist__item--checked .checklist__checkbox {
-    background: var(--accent-green); border-color: var(--accent-green); color: #fff;
+    background: var(--accent-green); border-color: var(--accent-green); color: var(--on-primary, #fff);
 }
 .checklist__desc { font-size: 11px; color: var(--neutral-muted); margin-left: 24px; }
 .checklist--acceptance .checklist__title { color: var(--primary); }
@@ -571,7 +594,7 @@ footer.infographic-footer {
 .accordion__number {
     width: 28px; height: 28px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 600; color: #fff; flex-shrink: 0;
+    font-size: 12px; font-weight: 600; color: var(--on-primary, #fff); flex-shrink: 0;
 }
 .accordion__item-title { font-size: 13px; font-weight: 500; color: var(--neutral-text); flex: 1; }
 .accordion__subtitle { font-size: 11px; color: var(--neutral-muted); }
@@ -614,6 +637,168 @@ footer.infographic-footer {
     .tab-view__nav { gap: 4px; }
     .tab-view__btn { font-size: 11px; padding: 4px 10px; }
 }
+
+/* ── I18n & Micro-syntax (FEAT-301) ────────────── */
+.chip {
+    display: inline-block;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+.method-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 700;
+    color: var(--on-primary, #fff);
+    text-transform: uppercase;
+}
+.method-badge--get { background: var(--badge-get, #10b981); }
+.method-badge--post { background: var(--badge-post, #6366f1); }
+.method-badge--put { background: var(--badge-put, #f59e0b); }
+.method-badge--delete { background: var(--badge-delete, #ef4444); }
+.method-badge--patch { background: var(--badge-patch, #8b5cf6); }
+.method-badge--head { background: var(--badge-get, #10b981); }
+.method-badge--options { background: var(--badge-get, #10b981); }
+.component-ref {
+    display: inline-block;
+    font-family: monospace;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+.i18n { display: none; }
+.i18n--default { display: inline; }
+
+/* ── Chain Block (FEAT-301) ─────────────────────── */
+.chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 1rem;
+}
+.chain--vertical { flex-direction: column; align-items: stretch; }
+.chain__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.chain__node {
+    background: var(--surface-bg, var(--neutral-bg));
+    border: 1px solid var(--neutral-border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    color: var(--neutral-text);
+}
+.chain__label { font-weight: 600; }
+.chain__desc { font-size: 0.85em; color: var(--neutral-muted); margin-top: 4px; }
+.chain__connector { color: var(--neutral-muted); font-size: 1.2rem; }
+.chain--vertical .chain__connector { text-align: center; transform: rotate(90deg); }
+
+/* ── Steps Block (FEAT-301) ─────────────────────── */
+.steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 1rem; }
+.steps__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.steps__item { display: flex; gap: 12px; align-items: flex-start; }
+.steps__marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.steps--icon .steps__marker { border-radius: 8px; background: transparent; }
+.steps__label { font-weight: 600; color: var(--neutral-text); }
+.steps__desc { font-size: 0.9em; color: var(--neutral-muted); margin-top: 2px; }
+
+/* ── Code Block (FEAT-301) ──────────────────────── */
+.code-block-wrapper { margin-bottom: 1rem; }
+.code-block__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.code-block {
+    background: var(--code-bg, #282c34);
+    color: var(--code-text, #abb2bf);
+    padding: 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+.code-block__line--highlight {
+    display: inline-block;
+    width: 100%;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.18));
+}
+
+/* ── Card Grid Block (FEAT-301) ─────────────────── */
+.card-grid-wrapper { margin-bottom: 1rem; }
+.card-grid__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.card-grid { display: grid; gap: 16px; }
+.card-grid__card {
+    background: var(--surface-bg, var(--neutral-bg));
+    border: 1px solid var(--neutral-border);
+    border-radius: 12px;
+    padding: 16px;
+}
+.card-grid__card-title { font-weight: 700; color: var(--neutral-text); }
+.card-grid__body { font-size: 0.9em; color: var(--neutral-muted); margin-top: 6px; }
+
+@media (max-width: 600px) {
+    .card-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── Document Chrome (FEAT-301) ─────────────────── */
+.doc-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+.doc-pill {
+    display: inline-block;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    padding: 3px 12px;
+    border-radius: 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.doc-pill--status { background: var(--surface-bg, var(--neutral-bg)); border: 1px solid var(--neutral-border); }
+.doc-changelog {
+    background: var(--surface-bg, var(--neutral-bg));
+    border: 1px solid var(--neutral-border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+}
+.doc-changelog__title { margin: 0 0 10px; font-size: 1rem; color: var(--neutral-text); }
+.doc-changelog__entry {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    font-size: 0.9em;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--neutral-border);
+}
+.doc-changelog__entry:last-child { border-bottom: none; }
+.doc-changelog__version { font-weight: 700; color: var(--primary, #6366f1); }
+.doc-changelog__date { color: var(--neutral-muted); font-size: 0.85em; }
+.doc-changelog__summary { color: var(--neutral-text); }
+.doc-footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--neutral-border);
+    color: var(--neutral-muted);
+    font-size: 0.85rem;
+    text-align: center;
+}
 """
 
 
@@ -651,6 +836,19 @@ function toggleAccordion(el) {
 }
 </script>"""
 
+SETLANG_JS = """
+<script>
+function setLang(code) {
+    document.querySelectorAll('.i18n').forEach(function(el) {
+        if (el.getAttribute('lang') === code) {
+            el.style.display = 'inline';
+        } else {
+            el.style.display = 'none';
+        }
+    });
+}
+</script>"""
+
 
 @register_renderer(OutputMode.INFOGRAPHIC)
 class InfographicHTMLRenderer(BaseRenderer):
@@ -666,7 +864,12 @@ class InfographicHTMLRenderer(BaseRenderer):
     """
 
     def __init__(self) -> None:
-        self._md = markdown_it.MarkdownIt()  # html=False by default (safe)
+        # SECURITY (code review, FEAT-301): the "commonmark" preset's actual
+        # default is html=True (raw HTML passes through verbatim), despite
+        # the misleading comment this replaced. Explicitly disable it so a
+        # SummaryBlock.content of "<script>...</script>" renders as escaped
+        # text, not live markup, in the self-contained HTML document.
+        self._md = markdown_it.MarkdownIt(options_update={"html": False})
         self._tab_view_counter: int = 0  # reset per render_to_html() call
         # Active theme config for the in-progress render. Set in
         # render_to_html() so chart builders can pull palette colors
@@ -688,6 +891,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             "checklist": self._render_checklist,
             "accordion": self._render_accordion,
             "tab_view": self._render_tab_view,
+            "chain": self._render_chain,
+            "steps": self._render_steps,
+            "code": self._render_code,
+            "card_grid": self._render_card_grid,
         }
 
     # ── BaseRenderer interface ──────────────────
@@ -770,7 +977,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         page_title = "Infographic"
         for block in data.blocks:
             if getattr(block, "type", None) == "title":
-                page_title = str(escape(block.title))
+                page_title = self._i18n_plain(block.title)
                 break
 
         # Check if charts exist (ECharts JS needed)
@@ -782,11 +989,22 @@ class InfographicHTMLRenderer(BaseRenderer):
         # Determine which interactive JS to inject
         interaction_js = self._build_interaction_js(data)
 
+        # Document chrome (version/status bar, changelog, authorship footer)
+        # — only rendered when document_meta is populated, so a response
+        # with no document_meta produces byte-identical output.
+        chrome_html = ""
+        footer_html = ""
+        if data.document_meta is not None:
+            chrome_html = self._render_document_chrome(data.document_meta)
+            footer_html = self._render_document_footer(data.document_meta)
+
         return self._assemble_document(
             page_title=page_title,
             theme_css=theme_cfg.to_css_variables(),
             blocks_html=blocks_html,
             echarts_script=echarts_script + interaction_js,
+            chrome_html=chrome_html,
+            footer_html=footer_html,
         )
 
     # ── Document assembly ───────────────────────
@@ -797,6 +1015,8 @@ class InfographicHTMLRenderer(BaseRenderer):
         theme_css: str,
         blocks_html: str,
         echarts_script: str = "",
+        chrome_html: str = "",
+        footer_html: str = "",
     ) -> str:
         """Assemble the full HTML5 document."""
         return f"""<!DOCTYPE html>
@@ -813,10 +1033,76 @@ class InfographicHTMLRenderer(BaseRenderer):
 </head>
 <body>
     <div class="container">
-{blocks_html}
-    </div>
+{chrome_html}{blocks_html}
+{footer_html}    </div>
 </body>
 </html>"""
+
+    def _render_document_chrome(self, meta: DocumentMeta) -> str:
+        """Render the document chrome — version/status bar and changelog.
+
+        Args:
+            meta: DocumentMeta with optional version, status, and changelog.
+
+        Returns:
+            HTML string ending in a newline, or ``""`` if no chrome fields
+            are set — so a ``DocumentMeta`` with nothing set adds no markup
+            and a response with no ``document_meta`` renders unchanged.
+        """
+        parts: list[str] = []
+        if meta.version or meta.status:
+            parts.append('        <div class="doc-bar">')
+            if meta.version:
+                parts.append(
+                    f'          <span class="doc-pill doc-pill--version">'
+                    f"{escape(meta.version)}</span>"
+                )
+            if meta.status:
+                parts.append(
+                    f'          <span class="doc-pill doc-pill--status">'
+                    f"{escape(meta.status)}</span>"
+                )
+            parts.append("        </div>")
+        if meta.changelog:
+            parts.append('        <aside class="doc-changelog">')
+            parts.append('          <h4 class="doc-changelog__title">Changelog</h4>')
+            parts.append("          <ul>")
+            for entry in meta.changelog:
+                parts.append('            <li class="doc-changelog__entry">')
+                parts.append(
+                    f'              <span class="doc-changelog__version">'
+                    f"{escape(entry.version)}</span>"
+                )
+                parts.append(
+                    f'              <span class="doc-changelog__date">'
+                    f"{escape(entry.date)}</span>"
+                )
+                summary_html = self._expand_microsyntax(
+                    self._render_i18n_span(entry.summary)
+                )
+                parts.append(
+                    f'              <span class="doc-changelog__summary">'
+                    f"{summary_html}</span>"
+                )
+                parts.append("            </li>")
+            parts.append("          </ul>")
+            parts.append("        </aside>")
+        if not parts:
+            return ""
+        return "\n".join(parts) + "\n"
+
+    def _render_document_footer(self, meta: DocumentMeta) -> str:
+        """Render the authorship footer.
+
+        Args:
+            meta: DocumentMeta with an optional author.
+
+        Returns:
+            HTML string ending in a newline, or ``""`` if no author is set.
+        """
+        if not meta.author:
+            return ""
+        return f'        <footer class="doc-footer">{escape(meta.author)}</footer>\n'
 
     # ── Block rendering ─────────────────────────
 
@@ -934,16 +1220,127 @@ class InfographicHTMLRenderer(BaseRenderer):
             js += TAB_JS
         if has_accordion:
             js += ACCORDION_JS
+        if self._has_i18n(data):
+            js += SETLANG_JS
         return js
+
+    def _has_i18n(self, data: InfographicResponse) -> bool:
+        """Detect whether any bilingual ``I18nText`` value is present.
+
+        Scans top-level block fields, one level of nested support-model
+        fields (e.g. ``ChainNode``/``StepItem``/``GridCard``,
+        ``DocumentMeta``/``ChangelogEntry``), and lists of those.
+
+        Args:
+            data: The InfographicResponse to scan.
+
+        Returns:
+            True if any bilingual ``{locale: text}`` mapping is found.
+        """
+
+        def _scan(value: Any) -> bool:
+            if isinstance(value, dict):
+                return True
+            if isinstance(value, BaseModel):
+                return any(_scan(v) for v in value.__dict__.values())
+            if isinstance(value, (list, tuple)):
+                return any(_scan(v) for v in value)
+            return False
+
+        for block in data.blocks:
+            if isinstance(block, BaseModel) and _scan(block):
+                return True
+        if data.document_meta is not None and _scan(data.document_meta):
+            return True
+        return False
+
+    def _render_i18n_span(self, text: Any) -> str:
+        """Render an ``I18nText`` value as escaped, locale-aware HTML.
+
+        Args:
+            text: A plain ``str``, or a ``{locale: text}`` mapping.
+
+        Returns:
+            The escaped string for the ``str`` case (no wrapper span, so
+            existing single-language renders stay byte-identical), or one
+            ``<span lang="…" class="i18n">…</span>`` per locale, in
+            insertion order, for the mapping case. ``None`` yields ``""``.
+        """
+        if text is None:
+            return ""
+        if isinstance(text, dict):
+            spans = []
+            for index, (locale, value) in enumerate(text.items()):
+                css_cls = "i18n i18n--default" if index == 0 else "i18n"
+                spans.append(
+                    f'<span lang="{escape(str(locale))}" class="{css_cls}">'
+                    f"{escape(str(value))}</span>"
+                )
+            return "".join(spans)
+        return str(escape(text))
+
+    def _i18n_plain(self, text: Any) -> str:
+        """Render an ``I18nText`` value as a single plain escaped string.
+
+        For contexts where markup is illegal (``<title>``, HTML attributes).
+
+        Args:
+            text: A plain ``str``, or a ``{locale: text}`` mapping.
+
+        Returns:
+            The escaped string; for a mapping, prefers the ``"en"`` value
+            if present, otherwise the first value in insertion order.
+            ``None`` yields ``""``.
+        """
+        if text is None:
+            return ""
+        if isinstance(text, dict):
+            value = text.get("en", next(iter(text.values()), ""))
+            return str(escape(value))
+        return str(escape(text))
+
+    def _expand_microsyntax(self, html: str) -> str:
+        """Expand micro-syntax markers into semantic inline HTML fragments.
+
+        Must run AFTER escaping — the captured groups are already-escaped
+        HTML and are not re-escaped here (spec §7 "Escape policy").
+
+        Supported markers:
+            ``[[chip:Label]]`` -> ``<span class="chip">Label</span>``
+            ``[[m:GET]]`` -> ``<span class="method-badge
+            method-badge--get">GET</span>``
+            ``[[comp:AgentCrew]]`` -> ``<span
+            class="component-ref">AgentCrew</span>``
+
+        Args:
+            html: Already-escaped HTML text to scan for markers.
+
+        Returns:
+            HTML with recognized markers expanded; malformed or unknown
+            markers are left verbatim.
+        """
+        if not html:
+            return html
+        html = _MICRO_CHIP_RE.sub(r'<span class="chip">\1</span>', html)
+        html = _MICRO_METHOD_RE.sub(
+            lambda m: (
+                f'<span class="method-badge method-badge--{m.group(1).lower()}">'
+                f"{m.group(1).upper()}</span>"
+            ),
+            html,
+        )
+        html = _MICRO_COMP_RE.sub(r'<span class="component-ref">\1</span>', html)
+        return html
 
     # ── Individual block renderers ──────────────
 
     def _render_title(self, block: TitleBlock) -> str:
         """Render TitleBlock as hero header."""
-        title = escape(block.title)
+        title = self._expand_microsyntax(str(escape(block.title)))
         subtitle_html = ""
         if block.subtitle:
-            subtitle_html = f"\n            <p>{escape(block.subtitle)}</p>"
+            subtitle_text = self._expand_microsyntax(str(escape(block.subtitle)))
+            subtitle_html = f"\n            <p>{subtitle_text}</p>"
         meta_parts = []
         if block.author:
             meta_parts.append(str(escape(block.author)))
@@ -991,7 +1388,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         if block.title:
             title_html = f'\n            <h3>{escape(block.title)}</h3>'
         # markdown_it renders safe HTML (html=False by default)
-        content_html = self._md.render(block.content)
+        content_html = self._expand_microsyntax(self._md.render(block.content))
         return (
             f'        <div class="summary-block{highlight_cls}">'
             f"{title_html}\n"
@@ -1388,15 +1785,17 @@ class InfographicHTMLRenderer(BaseRenderer):
             # Render with colored dot indicators
             items_parts = []
             for item in block.items:
+                item_text = self._expand_microsyntax(str(escape(item)))
                 items_parts.append(
                     f'                <li class="bullet-list__item-dot">'
                     f'<span class="bullet-list__dot" style="background:{escape(block.color)}"></span>'
-                    f'<span>{escape(item)}</span></li>'
+                    f'<span>{item_text}</span></li>'
                 )
             items = "\n".join(items_parts)
         else:
             items = "\n".join(
-                f"                <li>{escape(item)}</li>" for item in block.items
+                f"                <li>{self._expand_microsyntax(str(escape(item)))}</li>"
+                for item in block.items
             )
 
         # Wrap in grid if columns specified
@@ -1513,7 +1912,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
     def _render_quote(self, block: QuoteBlock) -> str:
         """Render QuoteBlock as blockquote."""
-        text = escape(block.text)
+        text = self._expand_microsyntax(str(escape(block.text)))
         attr_parts = []
         if block.author:
             attr_parts.append(str(escape(block.author)))
@@ -1538,7 +1937,7 @@ class InfographicHTMLRenderer(BaseRenderer):
         title_html = ""
         if block.title:
             title_html = f"\n            <h3>{escape(block.title)}</h3>"
-        content = escape(block.content)
+        content = self._expand_microsyntax(str(escape(block.content)))
         return (
             f'        <div class="callout-block {escape(level)}">'
             f"{title_html}\n"
@@ -1741,13 +2140,13 @@ class InfographicHTMLRenderer(BaseRenderer):
                 f'          <div class="accordion__item{open_cls}" id="{escape(item_id)}">'
             )
             parts.append(
-                f'            <button class="accordion__header"'
-                f' onclick="toggleAccordion(this)">'
+                '            <button class="accordion__header"'
+                ' onclick="toggleAccordion(this)">'
             )
             for hp in header_parts:
                 parts.append(f"              {hp}")
             parts.append("            </button>")
-            parts.append(f'            <div class="accordion__body">')
+            parts.append('            <div class="accordion__body">')
             if body_html:
                 parts.append(body_html)
             parts.append("            </div>")
@@ -1818,6 +2217,208 @@ class InfographicHTMLRenderer(BaseRenderer):
 
             parts.append("          </div>")
 
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    # ── FEAT-301 new block renderers ────────────
+
+    def _render_chain(self, block: ChainBlock) -> str:
+        """Render ChainBlock as a connected node sequence.
+
+        Args:
+            block: ChainBlock with nodes and a direction.
+
+        Returns:
+            HTML string with one ``.chain__node`` per node and a
+            ``.chain__connector`` between consecutive nodes (not after the
+            last one).
+        """
+        direction_cls = ""
+        if block.direction == "vertical":
+            direction_cls = " chain--vertical"
+
+        parts = [f'        <div class="chain{direction_cls}">']
+        if block.title:
+            parts.append(
+                f'          <h3 class="chain__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+        node_count = len(block.nodes)
+        for index, node in enumerate(block.nodes):
+            color_style = ""
+            if node.color:
+                color_style = f' style="--node-color: {escape(node.color)}"'
+            icon_html = ""
+            if node.icon:
+                icon_html = f'<span class="chain__icon">{escape(node.icon)}</span> '
+            desc_html = ""
+            if node.description:
+                desc_html = (
+                    f'\n              <div class="chain__desc">'
+                    f"{self._expand_microsyntax(self._render_i18n_span(node.description))}"
+                    f"</div>"
+                )
+            parts.append(f'          <div class="chain__node"{color_style}>')
+            parts.append(
+                f"            {icon_html}"
+                f'<span class="chain__label">'
+                f"{self._expand_microsyntax(self._render_i18n_span(node.label))}</span>"
+                f"{desc_html}"
+            )
+            parts.append("          </div>")
+            if index < node_count - 1:
+                parts.append('          <div class="chain__connector">&#8594;</div>')
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    def _render_steps(self, block: StepsBlock) -> str:
+        """Render StepsBlock as a step-by-step guide.
+
+        Args:
+            block: StepsBlock with steps and a marker style.
+
+        Returns:
+            HTML string with one ``.steps__item`` per step, each carrying a
+            ``.steps__marker`` (1-based index for ``numbered``, an icon
+            glyph for ``icon``).
+        """
+        style_cls = ""
+        if block.style == "icon":
+            style_cls = " steps--icon"
+
+        parts = [f'        <div class="steps{style_cls}">']
+        if block.title:
+            parts.append(
+                f'          <h3 class="steps__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+        for index, step in enumerate(block.steps, start=1):
+            if block.style == "icon" and step.icon:
+                marker = escape(step.icon)
+            else:
+                marker = str(index)
+            color_style = ""
+            if step.color:
+                color_style = f' style="--step-color: {escape(step.color)}"'
+            desc_html = ""
+            if step.description:
+                desc_html = (
+                    f'\n              <div class="steps__desc">'
+                    f"{self._expand_microsyntax(self._render_i18n_span(step.description))}"
+                    f"</div>"
+                )
+            parts.append(f'          <div class="steps__item"{color_style}>')
+            parts.append(f'            <div class="steps__marker">{marker}</div>')
+            parts.append('            <div class="steps__body">')
+            parts.append(
+                f'              <div class="steps__label">'
+                f"{self._expand_microsyntax(self._render_i18n_span(step.label))}</div>"
+                f"{desc_html}"
+            )
+            parts.append("            </div>")
+            parts.append("          </div>")
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    def _render_code(self, block: CodeBlock) -> str:
+        """Render CodeBlock as a themed ``<pre><code>`` snippet.
+
+        Args:
+            block: CodeBlock with code, optional language and
+                highlight_lines.
+
+        Returns:
+            HTML string with a ``language-{lang}`` class and highlighted
+            lines. The code body is escaped and never passed through
+            micro-syntax expansion.
+        """
+        title_html = ""
+        if block.title:
+            title_html = (
+                f'\n            <h3 class="code-block__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+
+        # Only the bare "language-{lang}" class lands on <code>, matching
+        # the plain highlight.js-style convention consumers expect. The
+        # WHOLE value must match the safe pattern — a partial strip could
+        # still leave attribute-breakout substrings (e.g. "onload")
+        # embedded in otherwise-word-only remnants, so a language hint
+        # that fails validation is dropped entirely rather than sanitized.
+        code_cls = ""
+        if block.language and re.fullmatch(r"[\w+#.\-]{1,32}", block.language):
+            code_cls = f' class="language-{block.language}"'
+
+        highlight_set = set(block.highlight_lines or [])
+        lines = str(escape(block.code)).split("\n")
+        rendered_lines = []
+        for line_no, line in enumerate(lines, start=1):
+            if line_no in highlight_set:
+                rendered_lines.append(
+                    f'<span class="code-block__line--highlight">{line}</span>'
+                )
+            else:
+                rendered_lines.append(line)
+        code_html = "\n".join(rendered_lines)
+
+        return (
+            f'        <div class="code-block-wrapper">'
+            f"{title_html}\n"
+            f'            <pre class="code-block">'
+            f"<code{code_cls}>{code_html}</code></pre>\n"
+            f"        </div>"
+        )
+
+    def _render_card_grid(self, block: CardGridBlock) -> str:
+        """Render CardGridBlock as a CSS grid of cards.
+
+        Args:
+            block: CardGridBlock with cards and a column count.
+
+        Returns:
+            HTML string with a ``.card-grid`` container using
+            ``grid-template-columns: repeat({columns}, minmax(0, 1fr))``.
+        """
+        # columns is model-constrained (ge=1, le=6), but a raw dict can
+        # still reach this renderer via _BLOCK_MODEL_MAP, so clamp defensively.
+        columns = max(1, min(6, block.columns or 3))
+
+        title_html = ""
+        if block.title:
+            title_html = (
+                f'\n          <h3 class="card-grid__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+
+        parts = [
+            '        <div class="card-grid-wrapper">' + title_html,
+            f'          <div class="card-grid" '
+            f'style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">',
+        ]
+        for card in block.cards:
+            color_style = ""
+            if card.color:
+                color_style = f' style="--card-color: {escape(card.color)}"'
+            icon_html = ""
+            if card.icon:
+                icon_html = f'<span class="card-grid__icon">{escape(card.icon)}</span> '
+            body_html = ""
+            if card.body:
+                body_html = (
+                    f'\n              <div class="card-grid__body">'
+                    f"{self._expand_microsyntax(self._render_i18n_span(card.body))}"
+                    f"</div>"
+                )
+            parts.append(f'            <div class="card-grid__card"{color_style}>')
+            parts.append(
+                f'              <div class="card-grid__card-title">'
+                f"{icon_html}"
+                f"{self._expand_microsyntax(self._render_i18n_span(card.title))}"
+                f"</div>"
+                f"{body_html}"
+            )
+            parts.append("            </div>")
+        parts.append("          </div>")
         parts.append("        </div>")
         return "\n".join(parts)
 

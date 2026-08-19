@@ -1,0 +1,90 @@
+{
+  "feature": "wikitoolkit-perl-scanner",
+  "feature_id": "FEAT-432",
+  "spec": "sdd/specs/wikitoolkit-perl-scanner.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-19T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2259",
+      "slug": "perl-registration-and-deps",
+      "title": "Perl tree-sitter registration & dependency wiring",
+      "feature_id": "FEAT-432",
+      "feature": "wikitoolkit-perl-scanner",
+      "spec": "sdd/specs/wikitoolkit-perl-scanner.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Must land before TASK-2260 (import in __init__.py requires perl.py)",
+      "assigned_to": null,
+      "started_at": "2026-08-19T11:20:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2259-perl-registration-and-deps.md"
+    },
+    {
+      "id": "TASK-2260",
+      "slug": "perl-scanner-heuristic",
+      "title": "PerlScanner — heuristic mode, imports & resolution",
+      "feature_id": "FEAT-432",
+      "feature": "wikitoolkit-perl-scanner",
+      "spec": "sdd/specs/wikitoolkit-perl-scanner.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2259"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core implementation — TASK-2261 and TASK-2262 depend on this",
+      "assigned_to": null,
+      "started_at": "2026-08-19T11:20:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2260-perl-scanner-heuristic.md"
+    },
+    {
+      "id": "TASK-2261",
+      "slug": "perl-scanner-treesitter",
+      "title": "PerlScanner — tree-sitter outline extraction",
+      "feature_id": "FEAT-432",
+      "feature": "wikitoolkit-perl-scanner",
+      "spec": "sdd/specs/wikitoolkit-perl-scanner.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2260"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Adds tree-sitter path to perl.py created by TASK-2260",
+      "assigned_to": null,
+      "started_at": "2026-08-19T11:20:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2261-perl-scanner-treesitter.md"
+    },
+    {
+      "id": "TASK-2262",
+      "slug": "perl-scanner-tests",
+      "title": "PerlScanner test suite",
+      "feature_id": "FEAT-432",
+      "feature": "wikitoolkit-perl-scanner",
+      "spec": "sdd/specs/wikitoolkit-perl-scanner.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2260",
+        "TASK-2261"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests both modes — needs both TASK-2260 and TASK-2261 complete",
+      "assigned_to": null,
+      "started_at": "2026-08-19T11:20:08+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2262-perl-scanner-tests.md"
+    }
+  ]
+}

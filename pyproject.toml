@@ -37,6 +37,7 @@ llms = ["ai-parrot[llms]"]
 # package (FEAT-201); re-export the package directly (like `pipelines`).
 embeddings = ["ai-parrot-embeddings"]
 pipelines = ["ai-parrot-pipelines"]
+wiki = ["ai-parrot[wiki]"]
 
 [build-system]
 requires = ["setuptools>=67.6.1"]

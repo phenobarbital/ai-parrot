@@ -60,10 +60,14 @@ from parrot.knowledge.wiki.store import BaseWikiStore, create_wiki_store
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
-# Silence the extremely chatty aiosqlite DEBUG logging (one line per
-# execute/fetchone/close) which floods build output when the root logger
-# is set to DEBUG (e.g. by navconfig/Navigator).
+# Silence chatty DEBUG logging that floods build/query output when the
+# root logger is set to DEBUG (e.g. by navconfig/Navigator).
 logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+# Per-record debug messages from store (replace_source_slice) and
+# sources (is_stale) are useful for troubleshooting but noisy during
+# normal operation.  Default to INFO; --verbose restores DEBUG.
+logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.INFO)
+logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.INFO)
 
 #: How long `upsert` waits for a contended store lock before skipping.
 #: Long enough to outlast a peer upsert (sub-second), short enough that
@@ -690,13 +694,23 @@ def _write_build_stats(
 
 
 @click.group(name="wiki")
-def wiki() -> None:
+@click.option(
+    "-v", "--verbose",
+    is_flag=True,
+    default=False,
+    help="Lower wiki loggers to DEBUG (shows per-record store/source messages).",
+)
+@click.pass_context
+def wiki(ctx: click.Context, verbose: bool) -> None:
     """LLM Wiki — codebase knowledge base for agents (FEAT-260).
 
     Build a machine-first knowledge graph of the current repository
     and query it with scoped, token-budgeted questions instead of
     grepping raw files.
     """
+    if verbose:
+        logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.DEBUG)
+        logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.DEBUG)
 
 
 @wiki.command()

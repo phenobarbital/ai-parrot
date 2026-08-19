@@ -3,6 +3,7 @@ Notification Mixin for AI-Parrot Agents.
 
 Provides notification capabilities to agents using the async-notify library.
 """
+import json
 import logging
 from typing import Union, List, Optional, Dict, Any
 from pathlib import Path
@@ -16,7 +17,9 @@ from notify.models import (
     Chat,
     TeamsChannel,
     TeamsWebhook,
-    TeamsCard
+    TeamsCard,
+    CardAction,
+    TeamsSection,
 )
 
 
@@ -49,6 +52,7 @@ class NotificationConfig:
     with_attachments: bool = True
     # Teams specific
     teams_config: Optional[Dict[str, Any]] = None
+    teams_card: Optional[Union[TeamsCard, Dict[str, Any]]] = None
     # Additional provider kwargs
     provider_kwargs: Optional[Dict[str, Any]] = None
 
@@ -63,6 +67,98 @@ class NotificationMixin:
     """
 
     logger = logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------
+    # Adaptive Card helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_teams_card(message: Any) -> bool:
+        """Check if a message is an Adaptive Card (TeamsCard, dict, or JSON string).
+
+        Returns:
+            True when ``message`` is a ``TeamsCard`` instance, a dict whose
+            ``type`` is ``"AdaptiveCard"`` or ``@type`` is ``"MessageCard"``,
+            or a JSON string containing ``"AdaptiveCard"`` markers.
+        """
+        if isinstance(message, TeamsCard):
+            return True
+        if isinstance(message, dict):
+            return (
+                message.get("type") == "AdaptiveCard"
+                or message.get("@type") == "MessageCard"
+                or message.get("contentType") == "application/vnd.microsoft.card.adaptive"
+            )
+        if isinstance(message, str):
+            return (
+                '"AdaptiveCard"' in message
+                or '"http://adaptivecards.io"' in message
+            )
+        return False
+
+    @staticmethod
+    def build_teams_card(
+        title: str,
+        text: str = "",
+        *,
+        summary: Optional[str] = None,
+        sections: Optional[List[Dict[str, Any]]] = None,
+        actions: Optional[List[Dict[str, Any]]] = None,
+        files: Optional[List[Path]] = None,
+        version: str = "1.5",
+    ) -> TeamsCard:
+        """Build a ``TeamsCard`` from simple parameters.
+
+        This is a convenience factory so callers don't need to import
+        ``TeamsCard``/``CardAction``/``TeamsSection`` directly.
+
+        Args:
+            title: Card title (rendered as a heading).
+            text: Card body text.
+            summary: Optional summary line (shown in notifications/toasts).
+            sections: Optional list of section dicts with keys matching
+                ``TeamsSection`` fields (``activityTitle``, ``text``,
+                ``facts``, etc.).
+            actions: Optional list of action dicts with keys matching
+                ``CardAction`` fields (``type``, ``title``, ``url``,
+                ``data``).
+            files: Optional file paths to append as "View <name>" OpenUrl
+                actions (useful when Graph-upload share links are available).
+            version: Adaptive Card schema version (default ``"1.5"``).
+
+        Returns:
+            A fully populated ``TeamsCard`` ready for
+            :meth:`send_teams_card` or :meth:`send_notification`.
+        """
+        card = TeamsCard(
+            title=title,
+            text=text or None,
+            summary=summary or title,
+            version=version,
+        )
+
+        if sections:
+            for sec in sections:
+                card.addSection(**sec)
+
+        if actions:
+            for act in actions:
+                card.addAction(**act)
+
+        if files:
+            for file_path in files:
+                p = Path(file_path)
+                card.addAction(
+                    type="Action.OpenUrl",
+                    title=f"📎 {p.name}",
+                    url=str(p),
+                )
+
+        return card
+
+    # ------------------------------------------------------------------
+    # File classification
+    # ------------------------------------------------------------------
 
     def _classify_file(self, file_path: Path) -> FileType:
         """
@@ -192,15 +288,26 @@ class NotificationMixin:
             if isinstance(provider, str):
                 provider = NotificationProvider(provider.lower())
 
+            # Preserve original message — card objects must survive extraction.
+            original_message = message
+
             # Extract message content from AgentResponse/AIMessage if needed
-            message_text, files = self._extract_message_content(message, report)
+            # For Teams card objects, extract files from report only;
+            # the card itself is used as the message payload.
+            if provider == NotificationProvider.TEAMS and self._is_teams_card(message):
+                # Extract files from report but keep the card as message.
+                _, files = self._extract_message_content("", report)
+                card_message = message
+            else:
+                card_message = None
+                message_text, files = self._extract_message_content(message, report)
 
             # Parse recipients
             recipient_list = self._parse_recipients(recipients, provider)
 
             # Prepare notification arguments
             notify_args = {
-                "message": message_text,
+                "message": card_message if card_message is not None else message_text,
                 "recipient": recipient_list
             }
 
@@ -219,8 +326,9 @@ class NotificationMixin:
                 )
 
             elif provider == NotificationProvider.TEAMS:
-                # Teams might need special card formatting
-                pass
+                # Card passed via kwargs (e.g. from send_teams_card)
+                if "teams_card" in kwargs:
+                    notify_args["message"] = kwargs.pop("teams_card")
 
             # Merge additional kwargs
             notify_args |= kwargs
@@ -674,7 +782,18 @@ class NotificationMixin:
         """
         Send Microsoft Teams notification.
 
-        Teams supports file attachments in cards.
+        Supports three message shapes:
+
+        * **Plain text** — wrapped in a simple ``MessageCard`` by async-notify.
+        * **``TeamsCard`` object** — rendered as an Adaptive Card via
+          ``to_adaptative()`` (first-class path).
+        * **``dict`` / JSON string** — forwarded verbatim when it looks like
+          an Adaptive Card payload; async-notify's ``_render_`` handles it.
+
+        When ``files`` are provided alongside a card, Graph-upload share links
+        (or filename-fallbacks) are injected as ``Action.OpenUrl`` actions on the
+        card.  For plain-text messages, files are listed in the message body
+        (existing FEAT-273 behaviour).
         """
         from notify.providers.teams import Teams
         from ..conf import (
@@ -693,46 +812,167 @@ class NotificationMixin:
             password=TEAMS_NOTIFY_PASSWORD
         )
 
+        message = notify_args.get("message", "")
+        is_card = self._is_teams_card(message)
+
         # FEAT-273: a bridge may pass a public-URL downgrade hint; consume it here.
         a2ui_url = notify_args.pop("a2ui_artifact_url", None)
 
-        # If files provided, we can add them as attachments or links in the card
+        # ------------------------------------------------------------------
+        # File handling — inject links into card actions or message text
+        # ------------------------------------------------------------------
         if files and len(files) > 0:
-            message_text = notify_args.get("message", "")
-
             # FEAT-273: attempt real Graph-API upload → org-view share links.
             share_links = await self._teams_graph_upload_links(files)
-            if share_links:
-                links_md = "\n".join(
-                    f"- [{f.name}]({url})" for f, url in zip(files, share_links)
-                )
-                notify_args["message"] = f"{message_text}\n\n**Attached Files:**\n{links_md}"
-                self.logger.info(
-                    "Teams notification with %d Graph-uploaded file link(s)", len(share_links)
-                )
-            elif a2ui_url:
-                notify_args["message"] = (
-                    f"{message_text}\n\nView the full artifact: {a2ui_url}"
-                )
-                self.logger.warning(
-                    "A2UI degraded delivery: Teams Graph upload unavailable; sending "
-                    "public URL for %d file(s).",
-                    len(files),
+
+            if is_card:
+                # Inject file links as card actions
+                notify_args["message"] = self._teams_card_attach_files(
+                    message, files, share_links, a2ui_url
                 )
             else:
-                file_list = "\n".join([f"- {f.name}" for f in files])
-                notify_args["message"] = (
-                    f"{message_text}\n\n**Attached Files:**\n{file_list}"
-                )
-                self.logger.warning(
-                    "A2UI degraded delivery: Teams Graph upload unavailable; listing "
-                    "%d filename(s) in message text.",
-                    len(files),
-                )
+                # Plain text — existing behaviour: append links/filenames
+                message_text = message if isinstance(message, str) else str(message)
+                if share_links:
+                    links_md = "\n".join(
+                        f"- [{f.name}]({url})" for f, url in zip(files, share_links)
+                    )
+                    notify_args["message"] = f"{message_text}\n\n**Attached Files:**\n{links_md}"
+                    self.logger.info(
+                        "Teams notification with %d Graph-uploaded file link(s)", len(share_links)
+                    )
+                elif a2ui_url:
+                    notify_args["message"] = (
+                        f"{message_text}\n\nView the full artifact: {a2ui_url}"
+                    )
+                    self.logger.warning(
+                        "A2UI degraded delivery: Teams Graph upload unavailable; sending "
+                        "public URL for %d file(s).",
+                        len(files),
+                    )
+                else:
+                    file_list = "\n".join([f"- {f.name}" for f in files])
+                    notify_args["message"] = (
+                        f"{message_text}\n\n**Attached Files:**\n{file_list}"
+                    )
+                    self.logger.warning(
+                        "A2UI degraded delivery: Teams Graph upload unavailable; listing "
+                        "%d filename(s) in message text.",
+                        len(files),
+                    )
+        elif not is_card and a2ui_url:
+            # No files but a public URL hint — append to text.
+            message_text = message if isinstance(message, str) else str(message)
+            notify_args["message"] = (
+                f"{message_text}\n\nView the full artifact: {a2ui_url}"
+            )
 
         async with teams as conn:
             result = await conn.send(**notify_args)
         return result
+
+    def _teams_card_attach_files(
+        self,
+        card: Union[TeamsCard, Dict[str, Any], str],
+        files: List[Path],
+        share_links: Optional[List[str]],
+        a2ui_url: Optional[str] = None,
+    ) -> Union[TeamsCard, Dict[str, Any], str]:
+        """Inject file links into an Adaptive Card as ``Action.OpenUrl`` actions.
+
+        Mutates a ``TeamsCard`` in place; returns a new dict/string for
+        dict/JSON-string cards.
+
+        Falls back to a single A2UI public URL action when Graph upload is
+        unavailable. When neither is available, lists filenames as actions
+        with no ``url`` (visible label only).
+        """
+        if isinstance(card, TeamsCard):
+            if share_links:
+                for file_path, url in zip(files, share_links):
+                    card.addAction(
+                        type="Action.OpenUrl",
+                        title=f"📎 {file_path.name}",
+                        url=url,
+                    )
+                self.logger.info(
+                    "Teams card with %d Graph-uploaded file action(s)", len(share_links)
+                )
+            elif a2ui_url:
+                card.addAction(
+                    type="Action.OpenUrl",
+                    title="📄 View Artifact",
+                    url=a2ui_url,
+                )
+                self.logger.warning(
+                    "A2UI degraded delivery: Teams card using public URL for %d file(s).",
+                    len(files),
+                )
+            else:
+                for file_path in files:
+                    card.addAction(
+                        type="Action.OpenUrl",
+                        title=f"📎 {file_path.name}",
+                        url="#",
+                    )
+                self.logger.warning(
+                    "A2UI degraded delivery: Teams card listing %d filename(s) "
+                    "without download links.",
+                    len(files),
+                )
+            return card
+
+        if isinstance(card, dict):
+            actions = card.setdefault("actions", [])
+            if share_links:
+                for file_path, url in zip(files, share_links):
+                    actions.append({
+                        "type": "Action.OpenUrl",
+                        "title": f"📎 {file_path.name}",
+                        "url": url,
+                    })
+                self.logger.info(
+                    "Teams dict-card with %d Graph-uploaded file action(s)",
+                    len(share_links),
+                )
+            elif a2ui_url:
+                actions.append({
+                    "type": "Action.OpenUrl",
+                    "title": "📄 View Artifact",
+                    "url": a2ui_url,
+                })
+            else:
+                for file_path in files:
+                    actions.append({
+                        "type": "Action.OpenUrl",
+                        "title": f"📎 {file_path.name}",
+                        "url": "#",
+                    })
+            return card
+
+        # JSON string — parse, inject, re-serialize
+        if isinstance(card, str):
+            try:
+                parsed = json.loads(card)
+                actions = parsed.setdefault("actions", [])
+                if share_links:
+                    for file_path, url in zip(files, share_links):
+                        actions.append({
+                            "type": "Action.OpenUrl",
+                            "title": f"📎 {file_path.name}",
+                            "url": url,
+                        })
+                elif a2ui_url:
+                    actions.append({
+                        "type": "Action.OpenUrl",
+                        "title": "📄 View Artifact",
+                        "url": a2ui_url,
+                    })
+                return json.dumps(parsed)
+            except (json.JSONDecodeError, TypeError):
+                return card
+
+        return card
 
     async def _teams_graph_upload_links(
         self, files: List[Path]
@@ -852,6 +1092,61 @@ class NotificationMixin:
         """Convenience method for sending Teams messages."""
         return await self.send_notification(
             message=message,
+            recipients=recipient,
+            provider=NotificationProvider.TEAMS,
+            report=report,
+            **kwargs
+        )
+
+    async def send_teams_card(
+        self,
+        card: Union[TeamsCard, Dict[str, Any]],
+        recipient: Union[Actor, TeamsChannel, TeamsWebhook],
+        report: Optional[Any] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Send an Adaptive Card to Microsoft Teams.
+
+        The ``card`` is passed directly to the async-notify Teams provider,
+        which renders it via ``TeamsCard.to_adaptative()`` (for ``TeamsCard``
+        objects) or forwards the dict/JSON verbatim (for raw Adaptive Card
+        payloads).
+
+        Args:
+            card: A ``TeamsCard`` instance, a dict with Adaptive Card schema,
+                or a JSON string representing an Adaptive Card.
+            recipient: Teams recipient (``Actor``, ``TeamsChannel``, or
+                ``TeamsWebhook``).
+            report: Optional ``AgentResponse``/``AIMessage`` whose attached
+                files will be injected as ``Action.OpenUrl`` actions on the
+                card (via Graph-upload share links when available).
+            **kwargs: Forwarded to :meth:`send_notification`.
+
+        Returns:
+            Notification result dict.
+
+        Example::
+
+            from notify.models import TeamsCard, TeamsChannel
+
+            card = agent.build_teams_card(
+                title="Daily Revenue Report",
+                text="Revenue is up 5% this week.",
+                sections=[
+                    {"activityTitle": "Summary", "text": "$1.2M total"},
+                ],
+                actions=[
+                    {"type": "Action.OpenUrl", "title": "Dashboard",
+                     "url": "https://dashboard.example.com"},
+                ],
+            )
+            await agent.send_teams_card(
+                card,
+                recipient=TeamsChannel(team_id="...", channel_id="..."),
+            )
+        """
+        return await self.send_notification(
+            message=card,
             recipients=recipient,
             provider=NotificationProvider.TEAMS,
             report=report,
