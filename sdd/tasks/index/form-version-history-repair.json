@@ -52,7 +52,7 @@
       "feature_id": "FEAT-433",
       "feature": "form-version-history-repair",
       "spec": "sdd/specs/form-version-history-repair.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "The heart of the feature (spec D1-D3). Touches the test suite's published_version assertions.",
       "assigned_to": null,
       "started_at": "2026-08-19T23:07:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2266-demote-published-version-to-label.md"
+      "completed_at": "2026-08-19T23:38:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2266-demote-published-version-to-label.md"
     },
     {
       "id": "TASK-2267",

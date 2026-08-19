@@ -143,9 +143,47 @@ exactly how the original defect stayed invisible.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: `list_versions()`'s gate (kept as-is by TASK-2265) is now removed
+— every stored row is listed, labelled via the new `_is_published_label()`
+helper placed next to `_parse_major_minor` (one helper, one place, per the
+task). `VersionMeta.is_published` (new) and `.is_frozen` (no longer
+hardcoded `True`) are both now required fields (no default) — every
+construction site (`publish()`, `list_versions()`, `backfill_published()`)
+was updated in the same change, matching the note that `extra="forbid"`
+means every site must be touched. `_published_at_from_row` no longer falls
+back to `datetime.now()`; it returns the row's `created_at` (guaranteed by
+the storage layer). Handler emits `is_published`; `is_current` is
+byte-for-byte unchanged (`form.published_version or form.version`).
+Checked the §8 Q3 test blast radius across the whole test tree (not just
+this task's listed files) — no existing assertion encodes "an unpublished
+row is invisible from list_versions()"; the only `published_version`
+references elsewhere assert the `FormSchema.published_version` field
+itself (unrelated to the visibility gate this task demotes), so no
+additional test rewrites were needed for Q3.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Discovered the real `is_current` formula
+(`form.published_version or form.version`, confirmed unchanged) pins to the
+*last published* tag, not literally "the newest draft" — once anything has
+ever been published, later editor saves keep `published_version` sticky
+(the handler explicitly preserves it), so `is_current` never lands on a
+newer draft until the NEXT publish. Wrote the independence test
+(`test_list_versions_is_current_and_is_published_can_diverge`) against
+this actual, verified behavior (two publishes with an edit between) rather
+than the loosely-worded "newest draft is current" example in spec §1.1
+item 4, which isn't reachable through the real API surface as it exists
+today. No code changed — `is_current` is confirmed byte-for-byte
+unchanged, exactly as the task specifies. Also added a `_tenant_request()`
+test helper (scoped to the two new API-level tests only) in
+`test_api_feat300.py`, patching `request.get("tenant")`: the existing
+`_make_request()` predates FEAT-421's URL-based tenant validation and
+never sets `request["tenant"]`, so every handler call through it resolves
+to a nonsense tenant from an unconfigured `MagicMock` — a pre-existing,
+repo-wide test-infra gap (confirmed via baseline diff: ~9 already-red
+tests in this same file hit the identical root cause) that is out of
+scope to fix broadly. `_FakeFormStorage.save()` (test_api_feat300.py,
+added in TASK-2264) was also extended to stamp `created_at` when absent,
+mirroring what `PostgresFormStorage.load()` does for a live DB row —
+needed once `_published_at_from_row` reads `created_at` for a draft with
+no stamp.
