@@ -216,7 +216,12 @@ class FormVersionService:
 
         new_version = _bump(form.version, bump=bump)
 
-        # Immutability guard
+        # Immutability guard (fast path — not the authoritative guard, see
+        # Module 6 / TASK-2269). FEAT-433 Module 5: get_published() no
+        # longer filters by published_version, so this now honestly
+        # detects ANY existing row at new_version — including a draft the
+        # editor already saved there — instead of silently passing because
+        # the old filter hid unpublished rows from this exact check.
         existing = await self.get_published(form_uid, version=new_version, tenant=tenant)
         if existing is not None:
             raise ValueError(
@@ -278,10 +283,23 @@ class FormVersionService:
         version: str,
         tenant: str,
     ) -> FormSchema | None:
-        """Retrieve an immutable published snapshot.
+        """Retrieve the stored snapshot for a version — draft or published.
 
-        Always returns the untouched snapshot at ``version`` — subsequent
-        publishes do not affect it (RF-06).
+        FEAT-433 Module 5: despite the name (kept for API compatibility —
+        renaming is optional per the spec, and this is public API), this no
+        longer requires ``version`` to be the published tag. Before this
+        change the ``snap.published_version == version`` filter meant
+        ``GET .../versions/{version}`` 404d for every version the editor
+        ever saved directly (i.e. every draft) — the exact rows Module 1-3
+        now lists. Every listed version must resolve here, or the history
+        list is a list of dead links (the anti-regression this task exists
+        for). The returned ``FormSchema`` still carries its own
+        ``published_version``, so a caller can tell draft from published
+        without a second call. Immutability for an actually-published
+        snapshot (RF-06 — untouched by subsequent publishes) is unaffected:
+        dropping the filter changes what is *returned*, not whether a
+        published row can be *overwritten* (that guarantee is Module 6 /
+        TASK-2269's job).
 
         Args:
             form_uid: The form's immutable UUID (FEAT-389).
@@ -289,13 +307,17 @@ class FormVersionService:
             tenant: Tenant slug.
 
         Returns:
-            Frozen ``FormSchema`` snapshot, or ``None`` if not found.
+            The stored ``FormSchema`` snapshot at ``version``, or ``None``
+            if no such version was ever stored.
         """
         if self._storage is not None:
             snap = await self._storage.load(form_uid, version=version, tenant=tenant)
-            if snap is not None and snap.published_version == version:
+            if snap is not None:
                 return snap
-        # In-memory fallback
+        # In-memory fallback. Only ever populated by publish()/
+        # backfill_published() (FEAT-433: those are the only writers to
+        # _snapshots), so every entry here is already a published row —
+        # dropping the filter above doesn't change this branch's behavior.
         return (
             self._snapshots
             .get(tenant, {})

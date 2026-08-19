@@ -518,6 +518,115 @@ async def test_publish_then_edit_isolation(registry):
 
 
 # ---------------------------------------------------------------------------
+# FEAT-433 TASK-2268 — get_published() drops the second filter site
+# ---------------------------------------------------------------------------
+
+
+class _LoadableStorage(FormStorage):
+    """FormStorage double whose load() returns whatever was save()'d and
+    whose list_versions() mirrors the projected-dict shape — proves
+    get_published() no longer filters on published_version (Module 5) and
+    lets list_versions()/get_published() be exercised together (the
+    anti-regression: every listed version must resolve)."""
+
+    def __init__(self) -> None:
+        self._rows: dict[tuple[str | None, str], dict[str, FormSchema]] = {}
+
+    async def save(self, form: FormSchema, style=None, *, tenant=None) -> str:
+        versions = self._rows.setdefault((tenant, str(form.form_uid)), {})
+        versions[form.version] = form.model_copy(deep=True)
+        return form.form_id
+
+    async def load(self, form_uid, version=None, *, tenant=None):
+        versions = self._rows.get((tenant, str(form_uid)), {})
+        if not versions:
+            return None
+        if version is not None:
+            snap = versions.get(version)
+            return snap.model_copy(deep=True) if snap else None
+        return list(versions.values())[-1].model_copy(deep=True)
+
+    async def delete(self, form_uid, *, tenant=None) -> bool:
+        return self._rows.pop((tenant, str(form_uid)), None) is not None
+
+    async def list_forms(self, *, tenant=None):
+        return []
+
+    async def list_versions(self, form_uid, *, tenant=None) -> list[dict]:
+        versions = self._rows.get((tenant, str(form_uid)), {})
+        return [
+            {
+                "version": version,
+                "created_at": snap.created_at or datetime.now(timezone.utc),
+                "updated_at": snap.created_at or datetime.now(timezone.utc),
+                "form_id": snap.form_id,
+                "published_version": snap.published_version,
+                "published_at": (snap.meta or {}).get("published_at"),
+            }
+            for version, snap in versions.items()
+        ]
+
+
+async def test_get_published_returns_draft_version():
+    """get_published() returns a row whose published_version != version
+    instead of None (FEAT-433 Module 5) — the editor-saved draft case."""
+    storage = _LoadableStorage()
+    registry = FormRegistry()
+    form = _minimal_form(version="1.0")
+    await registry.register(form, tenant="t1")
+    await storage.save(form, tenant="t1")  # editor path — NO publish()
+    svc = FormVersionService(registry, storage=storage)
+
+    snap = await svc.get_published(form.form_uid, version="1.0", tenant="t1")
+
+    assert snap is not None
+    assert snap.published_version is None
+
+
+async def test_every_listed_version_is_retrievable():
+    """Anti-regression: every entry list_versions() returns resolves via
+    get_published() — "list works, clicking 404s" no longer happens."""
+    storage = _LoadableStorage()
+    registry = FormRegistry()
+    form = _minimal_form(version="1.0")
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    await storage.save(form, tenant="t1")  # 1.0 draft
+    draft2 = form.model_copy(deep=True, update={"version": "1.1"})
+    await storage.save(draft2, tenant="t1")  # 1.1 draft
+    await registry.register(draft2, overwrite=True, tenant="t1")
+    await svc.publish(form.form_uid, tenant="t1")  # bumps live 1.1 -> 1.2, published
+
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
+    assert len(versions) == 3  # sanity: drafts AND the published row
+
+    for v in versions:
+        snap = await svc.get_published(form.form_uid, version=v.version, tenant="t1")
+        assert snap is not None, f"version {v.version} listed but not retrievable"
+
+
+async def test_publish_pre_check_no_longer_passes_silently_on_existing_draft():
+    """publish()'s fast-path pre-check now sees an existing draft row at the
+    target tag (it used to pass silently — Module 5)."""
+    storage = _LoadableStorage()
+    registry = FormRegistry()
+    form = _minimal_form(version="1.0")
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    # An editor already saved a draft at the tag publish() is about to
+    # compute (_bump("1.0") == "1.1") — simulating a stale-live-version
+    # race no different from the one H4 in test_feat300_review_fixes.py
+    # covers for storage.save()'s own path.
+    draft_at_target = form.model_copy(deep=True, update={"version": "1.1"})
+    await storage.save(draft_at_target, tenant="t1")
+
+    with pytest.raises(ValueError, match="frozen"):
+        await svc.publish(form.form_uid, tenant="t1")
+
+
+# ---------------------------------------------------------------------------
 # Deletion guard
 # ---------------------------------------------------------------------------
 
