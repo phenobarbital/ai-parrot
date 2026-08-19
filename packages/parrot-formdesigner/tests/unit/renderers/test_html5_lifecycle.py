@@ -119,8 +119,8 @@ class TestWithEvents:
         out = await renderer.render(form)
 
         # FEAT-421: the dispatch URL is now tenant-qualified —
-        # '/api/v1/t/' + TENANT + '/forms/' + FORM_UID + '/events/'.
-        assert "'/api/v1/t/' + TENANT + '/forms/' + FORM_UID + '/events/'" in out.content
+        # '/api/v1/' + TENANT + '/forms/' + FORM_UID + '/events/'.
+        assert "'/api/v1/' + TENANT + '/forms/' + FORM_UID + '/events/'" in out.content
         assert f'"{form.form_uid}"' in out.content
         # The dispatch URL template itself must not still say FORM_ID.
         assert "'/api/v1/forms/' + FORM_ID + '/events/'" not in out.content

@@ -11,12 +11,12 @@ def test_routes_mounted():
     app = web.Application()
     setup_form_ui(app, FormRegistry())
     paths = {r.resource.canonical for r in app.router.routes()}
-    assert "/t/{tenant}/" in paths
-    assert "/t/{tenant}/gallery" in paths
-    assert "/t/{tenant}/forms/{form_uid}" in paths
-    assert "/t/{tenant}/forms/{form_uid}/schema" in paths
-    assert "/t/{tenant}/forms/{form_uid}/telegram" in paths
-    assert "/api/v1/t/{tenant}/forms/{form_uid}/telegram-submit" in paths
+    assert "/{tenant}/" in paths
+    assert "/{tenant}/gallery" in paths
+    assert "/{tenant}/forms/{form_uid}" in paths
+    assert "/{tenant}/forms/{form_uid}/schema" in paths
+    assert "/{tenant}/forms/{form_uid}/telegram" in paths
+    assert "/api/v1/{tenant}/forms/{form_uid}/telegram-submit" in paths
 
 
 def test_app_form_registry_set():
@@ -55,7 +55,7 @@ def test_telegram_route_has_no_auth_wrapper():
 
     # Find the telegram route handler
     for route in app.router.routes():
-        if route.resource.canonical == "/t/{tenant}/forms/{form_uid}/telegram":
+        if route.resource.canonical == "/{tenant}/forms/{form_uid}/telegram":
             handler = route.handler
             # The handler should be the raw bound method (no decorator wrapping
             # — `is_authenticated`/`user_session` would replace it with a

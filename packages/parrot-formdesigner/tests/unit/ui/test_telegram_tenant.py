@@ -45,7 +45,7 @@ class TestTelegramTenant:
 
         request = _request(
             "GET",
-            f"/t/flexroc/forms/{form.form_uid}/telegram",
+            f"/flexroc/forms/{form.form_uid}/telegram",
             tenant="flexroc",
             match_info={"form_uid": str(form.form_uid)},
         )
@@ -54,7 +54,7 @@ class TestTelegramTenant:
         registry.get.assert_awaited_once_with(str(form.form_uid), tenant="flexroc")
         assert resp.status == 200
         assert (
-            f"/api/v1/t/flexroc/forms/{form.form_uid}/telegram-submit" in resp.text
+            f"/api/v1/flexroc/forms/{form.form_uid}/telegram-submit" in resp.text
         )
 
     async def test_serve_webapp_other_tenant_is_404(self):
@@ -67,7 +67,7 @@ class TestTelegramTenant:
 
         request = _request(
             "GET",
-            "/t/flexroc/forms/some-uid/telegram",
+            "/flexroc/forms/some-uid/telegram",
             tenant="flexroc",
             match_info={"form_uid": "some-uid"},
         )
@@ -89,7 +89,7 @@ class TestTelegramTenant:
 
         request = _request(
             "POST",
-            f"/api/v1/t/flexroc/forms/{form.form_uid}/telegram-submit",
+            f"/api/v1/flexroc/forms/{form.form_uid}/telegram-submit",
             tenant="flexroc",
             match_info={"form_uid": str(form.form_uid)},
         )
@@ -116,7 +116,7 @@ class TestTelegramTenant:
         wrapped = _page_wrap(telegram.serve_webapp, protect=False, tenant="public")
         request = _request(
             "GET",
-            "/t//forms/uid/telegram",
+            "//forms/uid/telegram",
             match_info={
                 "tenant": "",
                 "form_uid": "00000000-0000-0000-0000-000000000000",
@@ -132,7 +132,7 @@ class TestTelegramTenant:
         telegram = TelegramWebAppHandler(registry=registry)
         request = _request(
             "GET",
-            "/t/x/forms/uid/telegram",
+            "/x/forms/uid/telegram",
             match_info={"form_uid": "00000000-0000-0000-0000-000000000000"},
         )
         with pytest.raises(RuntimeError):

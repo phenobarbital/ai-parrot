@@ -148,11 +148,11 @@ async def _make_ops_and_upload_client(
     app["blob_storage"] = blob_storage
     app["rest_resolver"] = resolver
     app.router.add_patch(
-        "/api/v1/t/{tenant}/forms/{form_uid}/operations",
+        "/api/v1/{tenant}/forms/{form_uid}/operations",
         await _tenant_wrapped(handle_operations),
     )
     app.router.add_post(
-        "/api/v1/t/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
+        "/api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/upload",
         await _tenant_wrapped(handle_rest_upload),
     )
     return await aiohttp_client(app)
@@ -235,7 +235,7 @@ async def test_edit_flow_rename_stability(
         "file", io.BytesIO(b"fake photo bytes"), filename="p.jpg", content_type="image/jpeg"
     )
     upload_resp = await client.post(
-        f"/api/v1/t/navigator/forms/{rename_flow_form.form_uid}/fields/{photo_field.field_uid}/upload",
+        f"/api/v1/navigator/forms/{rename_flow_form.form_uid}/fields/{photo_field.field_uid}/upload",
         data=data,
     )
     assert upload_resp.status == 200
@@ -255,7 +255,7 @@ async def test_edit_flow_rename_stability(
 
     # 3. Rename 'country' -> 'country_code' via the REAL operations handler.
     rename_resp = await client.patch(
-        f"/api/v1/t/navigator/forms/{rename_flow_form.form_uid}/operations",
+        f"/api/v1/navigator/forms/{rename_flow_form.form_uid}/operations",
         json={
             "operations": [
                 {

@@ -87,17 +87,17 @@ class TestRouteTenantCoverage:
     def test_forms_routes_are_tenant_qualified(self, app):
         paths = {_path_of(r) for r in app.router.routes()}
         expected = {
-            "/api/v1/t/{tenant}/forms",
-            "/api/v1/t/{tenant}/forms/from-db",
-            "/api/v1/t/{tenant}/forms/blank",
-            "/api/v1/t/{tenant}/forms/{form_uid}",
-            "/api/v1/t/{tenant}/forms/{form_uid}/schema",
-            "/api/v1/t/{tenant}/forms/{form_uid}/style",
-            "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
-            "/api/v1/t/{tenant}/forms/{form_uid}/validate",
-            "/api/v1/t/{tenant}/forms/{form_uid}/data",
-            "/api/v1/t/{tenant}/forms/{form_uid}/operations",
-            "/api/v1/t/{tenant}/fields",
+            "/api/v1/{tenant}/forms",
+            "/api/v1/{tenant}/forms/from-db",
+            "/api/v1/{tenant}/forms/blank",
+            "/api/v1/{tenant}/forms/{form_uid}",
+            "/api/v1/{tenant}/forms/{form_uid}/schema",
+            "/api/v1/{tenant}/forms/{form_uid}/style",
+            "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+            "/api/v1/{tenant}/forms/{form_uid}/validate",
+            "/api/v1/{tenant}/forms/{form_uid}/data",
+            "/api/v1/{tenant}/forms/{form_uid}/operations",
+            "/api/v1/{tenant}/fields",
         }
         assert expected.issubset(paths)
 
@@ -105,6 +105,6 @@ class TestRouteTenantCoverage:
         """POST /forms/blank must still precede the {form_uid} catch-all
         (belt-and-braces defensive ordering — see api/routes.py comment)."""
         paths = [_path_of(r) for r in app.router.routes()]
-        blank_idx = paths.index("/api/v1/t/{tenant}/forms/blank")
-        uid_idx = paths.index("/api/v1/t/{tenant}/forms/{form_uid}")
+        blank_idx = paths.index("/api/v1/{tenant}/forms/blank")
+        uid_idx = paths.index("/api/v1/{tenant}/forms/{form_uid}")
         assert blank_idx < uid_idx

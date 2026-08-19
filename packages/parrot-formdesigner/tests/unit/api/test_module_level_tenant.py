@@ -50,7 +50,7 @@ class TestOperationsModuleLevel:
         app = {"form_registry": registry}
         request = _request(
             "PATCH",
-            "/api/v1/t/x/forms/uid/operations",
+            "/api/v1/x/forms/uid/operations",
             app=app,
             match_info={"form_uid": "00000000-0000-0000-0000-000000000000"},
         )
@@ -66,7 +66,7 @@ class TestOperationsModuleLevel:
         app = {"form_registry": registry}
         request = _request(
             "PATCH",
-            f"/api/v1/t/navigator/forms/{form.form_uid}/operations",
+            f"/api/v1/navigator/forms/{form.form_uid}/operations",
             app=app,
             tenant="navigator",
             match_info={"form_uid": str(form.form_uid)},
@@ -98,7 +98,7 @@ class TestRenderModuleLevel:
         app = {"form_registry": registry}
         request = _request(
             "GET",
-            "/api/v1/t/x/forms/uid/render/html",
+            "/api/v1/x/forms/uid/render/html",
             app=app,
             match_info={
                 "form_uid": "00000000-0000-0000-0000-000000000000",
@@ -125,7 +125,7 @@ class TestRenderModuleLevel:
         app = {"form_registry": registry}
         request = _request(
             "GET",
-            f"/api/v1/t/navigator/forms/{form.form_uid}/render/html",
+            f"/api/v1/navigator/forms/{form.form_uid}/render/html",
             app=app,
             tenant="navigator",
             match_info={"form_uid": str(form.form_uid), "format": "html"},
@@ -139,7 +139,7 @@ class TestUploadModuleLevel:
         app = {"form_registry": registry}
         request = _request(
             "POST",
-            "/api/v1/t/x/forms/uid/fields/field/upload",
+            "/api/v1/x/forms/uid/fields/field/upload",
             app=app,
             match_info={
                 "form_uid": "00000000-0000-0000-0000-000000000000",

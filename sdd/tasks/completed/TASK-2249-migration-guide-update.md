@@ -147,10 +147,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-18
+**Notes**: Applied a blanket `s#/t/#/#g` substitution across
+`docs/migration/feat-421-forms-tenant-in-url.md` — verified beforehand that
+every one of the file's 28 `/t/` occurrences was in a "New (0.9.0)" URL
+example, an error-contract `expected` field, a POST-body example, or
+descriptive prose (none in an "Old (0.8.x)" column, and none inside the
+`/org/*` section's actual route paths — that section only *mentions* the
+forms namespace shape in prose, which correctly updates alongside it).
+Added the FEAT-429 explanatory note (verbatim from the task's suggested
+text) directly under the document header, and amended the `**Feature**:`
+line to note the FEAT-429 amendment. The note itself intentionally retains
+3 `/t/{tenant}/`-referencing occurrences describing the OLD, removed
+format for context — exactly the carve-out the task's own verification
+command allows ("except the FEAT-429 note if it mentions the old format
+for context").
 
-**Completed by**: *(session or agent ID)*
-**Date**: YYYY-MM-DD
-**Notes**: *(What was implemented, any deviations from scope, issues encountered.)*
+Verified: zero remaining `/t/{tenant}` URL references outside the note;
+all "Old (0.8.x)" table columns byte-identical (diff contains no removed
+"Old" column lines); all ten `/org/*` example paths byte-identical
+(diff contains no removed `/api/v1/org/...` lines).
 
-**Deviations from spec**: none | describe if any
+Did not add documentation for TASK-2250's reserved-segment guard (404 on
+`org`/`form-controls` tenant slugs) — out of this task's explicit scope
+(Module 4 / TASK-2249 predates TASK-2250 in the spec's module numbering
+and this task's own Scope/Files-to-Modify sections don't mention it); left
+for a future doc task if the team wants it surfaced to consumers.
+
+**CORRECTION (filed after adversarial code review)**: the code-reviewer
+agent raised this omission as a 🟠 IMPORTANT finding — new,
+consumer-visible behavior (a tenant named `org`/`form-controls`/`api` now
+404s everywhere, plus a boot WARNING) belonged in the same guide that
+already documents the error contract and deploy checklist, regardless of
+which task's module numbering technically owns it. Added a "Reserved
+tenant segments (FEAT-429)" section plus a checklist item, committed
+separately: `docs: document the reserved-segment guard in the FEAT-421
+migration guide (code review finding)`.
+
+**Deviations from spec**: none.

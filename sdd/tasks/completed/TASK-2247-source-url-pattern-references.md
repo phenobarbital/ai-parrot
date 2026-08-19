@@ -264,10 +264,48 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-18
+**Notes**: Mechanically stripped the literal `/t/` segment from every
+tenant-qualified URL string across the 11 listed files (`api/tenant.py`,
+`api/errors.py`, `api/handlers.py`, `api/audio_ws.py`,
+`services/public_forms.py`, `renderers/html5.py`, `renderers/jsonschema.py`,
+`renderers/audio.py`, `ui/handlers.py`, `ui/templates.py`, `ui/telegram.py`)
+via a targeted `s#/t/#/#g` substitution, verified per-file against the
+Codebase Contract's site list before/after. The `ui/handlers.py:245` comment
+about a `"{prefix}/t//"` empty-segment artifact correctly became
+`"{prefix}//"` — same semantic (empty tenant segment), consistent with the
+new URL shape. Verification grep
+(`grep -rn '"/t/{tenant}\|/t/{{tenant}}\|/t/' packages/parrot-formdesigner/src/`)
+returns zero hits. Additionally reworded two explanatory comments in
+`api/routes.py:233` and `ui/routes.py:136` (TASK-2246's files) that used the
+literal backtick-quoted `` `/t/` `` in prose — committed separately as a
+small AC2 follow-up fix, since AC2's grep has no "explanatory comment"
+carve-out and those files are otherwise TASK-2246's scope. `ruff check
+packages/parrot-formdesigner/src/` shows 330 pre-existing errors, confirmed
+identical (same count) before and after this task's edits via
+`git stash`/`git stash pop` — all pre-existing debt, out of scope.
 
-**Completed by**: *(session or agent ID)*
-**Date**: YYYY-MM-DD
-**Notes**: *(What was implemented, any deviations from scope, issues encountered.)*
+**CORRECTION (post-hoc, filed after TASK-2250)**: the full-suite comparison
+originally recorded here ("identical failed/error test set — no
+regressions") was measured against the WRONG source tree. The fieldsync
+venv's editable install (`__editable__.parrot_formdesigner-*.pth`) points
+at the main `ai-parrot` checkout's `packages/parrot-formdesigner/src`, not
+this worktree's copy — `python -m pytest` run from inside the worktree
+without `PYTHONPATH` override silently imports `parrot_formdesigner` from
+the main repo, which was sitting at the same pre-FEAT-429 commit throughout,
+so that comparison exercised unchanged code twice and could never have
+detected a regression. The fix is
+`export PYTHONPATH=<worktree>/packages/parrot-formdesigner/src` before
+invoking pytest — used for all suite runs from TASK-2250 onward. Re-measured
+with the corrected PYTHONPATH: after TASK-2246+TASK-2247, the suite is
+**65 failed, 1823 passed, 20 skipped, 92 errors** (vs. the true baseline of
+38/1850/20/81) — a real, expected interim regression from `/t/`-referencing
+test assertions that now legitimately fail against the new URL shape (per
+spec §7's "false-green" warning and TASK-2246/2247's own Test Specification:
+"the existing test suite is expected to have URL-mismatch failures until
+TASK-2248 lands"). TASK-2248 (test suite migration) is the task that
+resolves this; the feature-level completion summary carries the final,
+correctly-measured before/after comparison.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

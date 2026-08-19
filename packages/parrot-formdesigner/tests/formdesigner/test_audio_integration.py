@@ -158,12 +158,12 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+            "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
             _tenant_wrapped_render,
         )
 
         client = await aiohttp_client(render_app)
-        resp = await client.get(f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/audio")
+        resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/audio")
         assert resp.status == 200
 
         data = await resp.json()
@@ -189,12 +189,12 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+            "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
             _tenant_wrapped_render,
         )
 
         client = await aiohttp_client(render_app)
-        resp = await client.get(f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/audio")
+        resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/audio")
         data = await resp.json()
         assert data["total_questions"] == 2
 
@@ -215,12 +215,12 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+            "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
             _tenant_wrapped_render,
         )
 
         client = await aiohttp_client(render_app)
-        resp = await client.get(f"/api/v1/t/navigator/forms/{sample_form.form_uid}/render/audio")
+        resp = await client.get(f"/api/v1/navigator/forms/{sample_form.form_uid}/render/audio")
         data = await resp.json()
         assert str(sample_form.form_uid) in data["ws_endpoint"]
         assert "audio/ws" in data["ws_endpoint"]
@@ -241,7 +241,7 @@ class TestRenderEndpoint:
         render_app = web.Application()
         render_app["form_registry"] = registry
         render_app.router.add_get(
-            "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
+            "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
             _tenant_wrapped_render,
         )
 
@@ -249,7 +249,7 @@ class TestRenderEndpoint:
         # FEAT-389: must be a well-formed (but unregistered) UUID —
         # extract_form_uid() validates format before the registry lookup runs.
         resp = await client.get(
-            "/api/v1/t/navigator/forms/00000000-0000-0000-0000-000000000000/render/audio"
+            "/api/v1/navigator/forms/00000000-0000-0000-0000-000000000000/render/audio"
         )
         assert resp.status == 404
 
@@ -273,7 +273,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws"
+            "/api/v1/navigator/forms/integration-test/audio/ws"
         ) as ws:
             msg = await ws.receive_json()
             assert msg["type"] == "error"
@@ -287,7 +287,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws",
+            "/api/v1/navigator/forms/integration-test/audio/ws",
             protocols=["test-jwt-token"],
         ) as ws:
             await ws.send_json({
@@ -307,7 +307,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws",
+            "/api/v1/navigator/forms/integration-test/audio/ws",
             protocols=["test-jwt-token"],
         ) as ws:
             await ws.send_json({
@@ -330,7 +330,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws",
+            "/api/v1/navigator/forms/integration-test/audio/ws",
             protocols=["test-jwt-token"],
         ) as ws:
             await ws.send_json({"type": "start_session", "form_id": "integration-test"})
@@ -356,7 +356,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws",
+            "/api/v1/navigator/forms/integration-test/audio/ws",
             protocols=["test-jwt-token"],
         ) as ws:
             await ws.send_json({"type": "start_session", "form_id": "integration-test"})
@@ -391,7 +391,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws",
+            "/api/v1/navigator/forms/integration-test/audio/ws",
             protocols=["test-jwt-token"],
         ) as ws:
             await ws.send_json({"type": "start_session", "form_id": "integration-test"})
@@ -410,7 +410,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws",
+            "/api/v1/navigator/forms/integration-test/audio/ws",
             protocols=["test-jwt-token"],
         ) as ws:
             await ws.send_json({"type": "start_session", "form_id": "integration-test"})
@@ -429,7 +429,7 @@ class TestWebSocketSession:
         client = await aiohttp_client(app)
 
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/integration-test/audio/ws",
+            "/api/v1/navigator/forms/integration-test/audio/ws",
             protocols=["test-jwt-token"],
         ) as ws:
             await ws.send_json({"type": "start_session", "form_id": "integration-test"})
@@ -518,7 +518,7 @@ class TestHybridVoiceFlows:
         """PROMPT_SELECT question carries options; answer_selection advances."""
         client = await aiohttp_client(mixed_app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             q1 = await _start(ws)
             assert q1["field_id"] == "name"
@@ -566,7 +566,7 @@ class TestHybridVoiceFlows:
         )
         client = await aiohttp_client(app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/multi-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/multi-form/audio/ws", protocols=["t"]
         ) as ws:
             await ws.send_json({"type": "start_session", "form_id": "multi-form"})
             await ws.receive_json()  # session_started
@@ -589,7 +589,7 @@ class TestHybridVoiceFlows:
         """A required REST field is completed via answer_payload → form_complete."""
         client = await aiohttp_client(mixed_app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
             await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Alice"})
@@ -624,7 +624,7 @@ class TestHybridVoiceFlows:
         )
         client = await aiohttp_client(mixed_app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
             await ws.send_bytes(_VALID_AUDIO_FRAME)
@@ -651,7 +651,7 @@ class TestHybridVoiceFlows:
         )
         client = await aiohttp_client(mixed_app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
             await ws.send_bytes(_VALID_AUDIO_FRAME)
@@ -676,7 +676,7 @@ class TestHybridVoiceFlows:
         )
         client = await aiohttp_client(mixed_app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             await _start(ws)  # name
             await ws.send_bytes(_VALID_AUDIO_FRAME)
@@ -707,7 +707,7 @@ class TestHybridVoiceFlows:
         )
         client = await aiohttp_client(app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/pw-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/pw-form/audio/ws", protocols=["t"]
         ) as ws:
             await ws.send_json({"type": "start_session", "form_id": "pw-form"})
             await ws.receive_json()  # session_started
@@ -727,7 +727,7 @@ class TestHybridVoiceFlows:
         )
         client = await aiohttp_client(mixed_app)
         async with client.ws_connect(
-            "/api/v1/t/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
+            "/api/v1/navigator/forms/mixed-mode-form/audio/ws", protocols=["t"]
         ) as ws:
             q1 = await _start(ws)
             # Degraded to text-only: the question is delivered without audio,

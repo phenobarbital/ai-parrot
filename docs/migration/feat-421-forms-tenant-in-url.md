@@ -1,10 +1,18 @@
 # Migration — FEAT-421: Client-declared tenant in the forms URL
 
-**Feature**: FEAT-421
+**Feature**: FEAT-421 (URL shape amended by FEAT-429 before release)
 **Jira**: NAV-9372 (create), NAV-9370 (edit/save)
 **Status**: breaking change, hard cut — `parrot-formdesigner` 0.9.0
 **Affects**: `navigator-svelte`, `fieldsync`, and any other consumer of the
 `parrot-formdesigner` forms REST/UI/Telegram/audio surface.
+
+> **Note (FEAT-429):** The original FEAT-421 design used a `/t/{tenant}/`
+> marker segment for router disambiguation. This was simplified to
+> `/{tenant}/` before 0.9.0 shipped — aiohttp's literal-first route
+> matching makes the marker unnecessary. Neither `navigator-svelte` nor
+> `fieldsync` had shipped the `/t/{tenant}/` shape to production, so this
+> guide describes only the final, `/t/`-free URL shape — one migration,
+> not two.
 
 ## Why this change exists
 
@@ -19,7 +27,7 @@ programme the caller was actually browsing, then 404'd on load/save
 (NAV-9372, NAV-9370).
 
 As of 0.9.0, the client **declares** which tenant a forms request is about,
-as an explicit `/t/{tenant}/` segment in the URL. The backend validates and
+as an explicit `/{tenant}/` segment in the URL. The backend validates and
 authorizes that declaration; it never guesses. This is a **hard cut** — the
 old, unqualified forms URLs are not registered at all, and requests to them
 return a router-level 404. There is no deprecation window, because a
@@ -32,7 +40,7 @@ Because this is a hard cut, `navigator-svelte`, `fieldsync`, and the
 `parrot-formdesigner` wheel **must ship together**:
 
 - [ ] Update every forms URL your client builds (see the table below) to
-      include the `/t/{tenant}/` segment.
+      include the `/{tenant}/` segment.
 - [ ] Ensure the tenant your client declares is one the caller is actually a
       member of (`session["session"]["programs"]`) — a non-member
       declaration is rejected with 403 (superusers are exempt).
@@ -42,6 +50,8 @@ Because this is a hard cut, `navigator-svelte`, `fieldsync`, and the
       it matches the URL tenant exactly, or drop it — a mismatch is a hard
       400.
 - [ ] Confirm you did **not** also prefix any `/org/*` URL — see below.
+- [ ] Confirm no tenant/programme is named `org`, `form-controls`, or
+      `api` (FEAT-429 reserved-segment guard — see below).
 - [ ] Deploy `parrot-formdesigner>=0.9.0`, then the client changes, in the
       same release window (or the client changes first, since the URLs they
       call would 404 against `<0.9.0` too — coordinate the exact order with
@@ -50,7 +60,7 @@ Because this is a hard cut, `navigator-svelte`, `fieldsync`, and the
 ## `/org/*` URLs are UNCHANGED
 
 **This is the single most likely migration error.** The forms namespace
-(`/t/{tenant}/forms/...`) and the `/org/*` namespace sit under the same
+(`/{tenant}/forms/...`) and the `/org/*` namespace sit under the same
 `base_path` (`/api/v1` by default), which invites the assumption that both
 got the tenant prefix. **They did not.** Organizations are the layer that
 *defines* tenants; scoping them *by* a tenant would invert the dependency.
@@ -70,12 +80,25 @@ POST /api/v1/org/sites/{site_id}/locations
 GET  /api/v1/org/locations/{location_id}
 ```
 
-If you prefix one of these with `/t/{tenant}/`, it will 404 — that is the
+If you prefix one of these with `/{tenant}/`, it will 404 — that is the
 router telling you the route does not exist at that path, not a bug in this
 migration.
 
 `/api/v1/form-controls` (the static field-type catalog) is also **unchanged
 and unprefixed** — it carries no per-tenant data.
+
+## Reserved tenant segments (FEAT-429)
+
+Removing the `/t/` marker put the dynamic `{tenant}` segment at the same
+URL tree level as literal segments like `org` and `form-controls` (and
+`api`, on the HTML/Telegram surface's root). A tenant slug that exactly
+matches one of these literals — e.g. a programme actually named `"org"` —
+is rejected by `requires_tenant()` with a plain **404** on every forms
+route, and the server logs a boot-time `WARNING` if a provisioned tenant
+collides with a reserved segment. This set is derived automatically from
+the routes the package registers, not a fixed list, so it grows if a
+future release adds another top-level literal route. **Do not name a
+tenant/programme `org`, `form-controls`, or `api`.**
 
 ## Old → new URL table
 
@@ -87,40 +110,40 @@ Every table below was generated from the **live router** (`setup_form_api` /
 
 | Old (0.8.x) | New (0.9.0) |
 |---|---|
-| `GET/POST /api/v1/forms` | `GET/POST /api/v1/t/{tenant}/forms` |
-| `POST /api/v1/forms/from-db` | `POST /api/v1/t/{tenant}/forms/from-db` |
-| `POST /api/v1/forms/blank` | `POST /api/v1/t/{tenant}/forms/blank` |
-| `GET/PUT/PATCH/DELETE /api/v1/forms/{form_uid}` | `GET/PUT/PATCH/DELETE /api/v1/t/{tenant}/forms/{form_uid}` |
-| `POST /api/v1/forms/{form_uid}/edit` | `POST /api/v1/t/{tenant}/forms/{form_uid}/edit` |
-| `POST /api/v1/forms/{form_uid}/clone` | `POST /api/v1/t/{tenant}/forms/{form_uid}/clone` |
-| `GET /api/v1/forms/{form_uid}/schema` | `GET /api/v1/t/{tenant}/forms/{form_uid}/schema` |
-| `GET /api/v1/forms/{form_uid}/style` | `GET /api/v1/t/{tenant}/forms/{form_uid}/style` |
-| `GET /api/v1/forms/{form_uid}/render/{format}` | `GET /api/v1/t/{tenant}/forms/{form_uid}/render/{format}` |
-| `POST /api/v1/forms/{form_uid}/validate` | `POST /api/v1/t/{tenant}/forms/{form_uid}/validate` |
-| `POST /api/v1/forms/{form_uid}/data` | `POST /api/v1/t/{tenant}/forms/{form_uid}/data` |
-| `PATCH /api/v1/forms/{form_uid}/operations` | `PATCH /api/v1/t/{tenant}/forms/{form_uid}/operations` |
-| `POST /api/v1/forms/{form_uid}/fields/{field_uid}/upload` | `POST /api/v1/t/{tenant}/forms/{form_uid}/fields/{field_uid}/upload` |
-| `POST/GET/DELETE /api/v1/forms/{form_uid}/partial` | `POST/GET/DELETE /api/v1/t/{tenant}/forms/{form_uid}/partial` |
-| `POST /api/v1/forms/{form_uid}/events/{event_name}` | `POST /api/v1/t/{tenant}/forms/{form_uid}/events/{event_name}` |
-| `GET /api/v1/forms/{form_uid}/audio/ws` (WebSocket) | `GET /api/v1/t/{tenant}/forms/{form_uid}/audio/ws` |
-| `POST /api/v1/forms/{form_uid}/publish` | `POST /api/v1/t/{tenant}/forms/{form_uid}/publish` |
-| `GET/POST /api/v1/fields` | `GET/POST /api/v1/t/{tenant}/fields` |
-| `GET /api/v1/forms/{form_uid}/versions` | `GET /api/v1/t/{tenant}/forms/{form_uid}/versions` |
-| `GET /api/v1/forms/{form_uid}/versions/{version}` | `GET /api/v1/t/{tenant}/forms/{form_uid}/versions/{version}` |
-| `GET /api/v1/forms/{form_uid}/import-report` | `GET /api/v1/t/{tenant}/forms/{form_uid}/import-report` |
+| `GET/POST /api/v1/forms` | `GET/POST /api/v1/{tenant}/forms` |
+| `POST /api/v1/forms/from-db` | `POST /api/v1/{tenant}/forms/from-db` |
+| `POST /api/v1/forms/blank` | `POST /api/v1/{tenant}/forms/blank` |
+| `GET/PUT/PATCH/DELETE /api/v1/forms/{form_uid}` | `GET/PUT/PATCH/DELETE /api/v1/{tenant}/forms/{form_uid}` |
+| `POST /api/v1/forms/{form_uid}/edit` | `POST /api/v1/{tenant}/forms/{form_uid}/edit` |
+| `POST /api/v1/forms/{form_uid}/clone` | `POST /api/v1/{tenant}/forms/{form_uid}/clone` |
+| `GET /api/v1/forms/{form_uid}/schema` | `GET /api/v1/{tenant}/forms/{form_uid}/schema` |
+| `GET /api/v1/forms/{form_uid}/style` | `GET /api/v1/{tenant}/forms/{form_uid}/style` |
+| `GET /api/v1/forms/{form_uid}/render/{format}` | `GET /api/v1/{tenant}/forms/{form_uid}/render/{format}` |
+| `POST /api/v1/forms/{form_uid}/validate` | `POST /api/v1/{tenant}/forms/{form_uid}/validate` |
+| `POST /api/v1/forms/{form_uid}/data` | `POST /api/v1/{tenant}/forms/{form_uid}/data` |
+| `PATCH /api/v1/forms/{form_uid}/operations` | `PATCH /api/v1/{tenant}/forms/{form_uid}/operations` |
+| `POST /api/v1/forms/{form_uid}/fields/{field_uid}/upload` | `POST /api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/upload` |
+| `POST/GET/DELETE /api/v1/forms/{form_uid}/partial` | `POST/GET/DELETE /api/v1/{tenant}/forms/{form_uid}/partial` |
+| `POST /api/v1/forms/{form_uid}/events/{event_name}` | `POST /api/v1/{tenant}/forms/{form_uid}/events/{event_name}` |
+| `GET /api/v1/forms/{form_uid}/audio/ws` (WebSocket) | `GET /api/v1/{tenant}/forms/{form_uid}/audio/ws` |
+| `POST /api/v1/forms/{form_uid}/publish` | `POST /api/v1/{tenant}/forms/{form_uid}/publish` |
+| `GET/POST /api/v1/fields` | `GET/POST /api/v1/{tenant}/fields` |
+| `GET /api/v1/forms/{form_uid}/versions` | `GET /api/v1/{tenant}/forms/{form_uid}/versions` |
+| `GET /api/v1/forms/{form_uid}/versions/{version}` | `GET /api/v1/{tenant}/forms/{form_uid}/versions/{version}` |
+| `GET /api/v1/forms/{form_uid}/import-report` | `GET /api/v1/{tenant}/forms/{form_uid}/import-report` |
 | `GET /api/v1/form-controls` | **unchanged** — `GET /api/v1/form-controls` |
 
 ### HTML pages + Telegram (`ui/routes.py`, `base_path` default: `""`)
 
 | Old (0.8.x) | New (0.9.0) |
 |---|---|
-| `GET /` | `GET /t/{tenant}/` |
-| `GET /gallery` | `GET /t/{tenant}/gallery` |
-| `GET /forms/{form_uid}` | `GET /t/{tenant}/forms/{form_uid}` |
-| `POST /forms/{form_uid}` | `POST /t/{tenant}/forms/{form_uid}` |
-| `GET /forms/{form_uid}/schema` | `GET /t/{tenant}/forms/{form_uid}/schema` |
-| `GET /forms/{form_uid}/telegram` | `GET /t/{tenant}/forms/{form_uid}/telegram` |
-| `POST /api/v1/forms/{form_uid}/telegram-submit` | `POST /api/v1/t/{tenant}/forms/{form_uid}/telegram-submit` |
+| `GET /` | `GET /{tenant}/` |
+| `GET /gallery` | `GET /{tenant}/gallery` |
+| `GET /forms/{form_uid}` | `GET /{tenant}/forms/{form_uid}` |
+| `POST /forms/{form_uid}` | `POST /{tenant}/forms/{form_uid}` |
+| `GET /forms/{form_uid}/schema` | `GET /{tenant}/forms/{form_uid}/schema` |
+| `GET /forms/{form_uid}/telegram` | `GET /{tenant}/forms/{form_uid}/telegram` |
+| `POST /api/v1/forms/{form_uid}/telegram-submit` | `POST /api/v1/{tenant}/forms/{form_uid}/telegram-submit` |
 
 ## The new error contract
 
@@ -130,13 +153,13 @@ WebSocket close.
 
 ### 400 — `tenant_not_declared`
 
-The URL carried no tenant segment (or it was empty, e.g. `/t//forms`).
+The URL carried no tenant segment (or it was empty, e.g. `//forms`).
 
 ```json
 {
   "error": "tenant_not_declared",
   "message": "This endpoint requires an explicit tenant.",
-  "expected": "/api/v1/t/{tenant}/forms/{form_uid}"
+  "expected": "/api/v1/{tenant}/forms/{form_uid}"
 }
 ```
 
@@ -149,7 +172,7 @@ The declared tenant is not one the caller is a member of
 {
   "error": "tenant_forbidden",
   "message": "You are not authorized for the declared tenant.",
-  "expected": "/api/v1/t/{tenant}/forms/{form_uid}"
+  "expected": "/api/v1/{tenant}/forms/{form_uid}"
 }
 ```
 
@@ -163,7 +186,7 @@ segment. The URL is authoritative on every verb; a matching or absent body
 {
   "error": "tenant_conflict",
   "message": "The body tenant does not match the URL tenant.",
-  "expected": "/api/v1/t/{tenant}/forms/{form_uid}"
+  "expected": "/api/v1/{tenant}/forms/{form_uid}"
 }
 ```
 
@@ -195,13 +218,13 @@ against the URL segment — matching or absent, it is accepted; a mismatch is
 substitute for the URL.
 
 ```
-POST /api/v1/t/flexroc/forms
+POST /api/v1/flexroc/forms
 {"title": "New Form", "tenant": "flexroc"}   → 200 OK (matches)
 
-POST /api/v1/t/flexroc/forms
+POST /api/v1/flexroc/forms
 {"title": "New Form"}                         → 200 OK (no body tenant — fine)
 
-POST /api/v1/t/flexroc/forms
+POST /api/v1/flexroc/forms
 {"title": "New Form", "tenant": "navigator"}  → 400 tenant_conflict
 ```
 

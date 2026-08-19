@@ -26,16 +26,16 @@ def test_setup_mounts_routes_and_registers_form_registry():
 
     paths = {r.resource.canonical for r in app.router.routes()}
     expected = {
-        "/api/v1/t/{tenant}/forms",
-        "/api/v1/t/{tenant}/forms/from-db",
-        "/api/v1/t/{tenant}/forms/blank",
-        "/api/v1/t/{tenant}/forms/{form_uid}",
-        "/api/v1/t/{tenant}/forms/{form_uid}/schema",
-        "/api/v1/t/{tenant}/forms/{form_uid}/style",
-        "/api/v1/t/{tenant}/forms/{form_uid}/render/{format}",
-        "/api/v1/t/{tenant}/forms/{form_uid}/validate",
-        "/api/v1/t/{tenant}/forms/{form_uid}/data",
-        "/api/v1/t/{tenant}/forms/{form_uid}/operations",
+        "/api/v1/{tenant}/forms",
+        "/api/v1/{tenant}/forms/from-db",
+        "/api/v1/{tenant}/forms/blank",
+        "/api/v1/{tenant}/forms/{form_uid}",
+        "/api/v1/{tenant}/forms/{form_uid}/schema",
+        "/api/v1/{tenant}/forms/{form_uid}/style",
+        "/api/v1/{tenant}/forms/{form_uid}/render/{format}",
+        "/api/v1/{tenant}/forms/{form_uid}/validate",
+        "/api/v1/{tenant}/forms/{form_uid}/data",
+        "/api/v1/{tenant}/forms/{form_uid}/operations",
         "/api/v1/form-controls",
     }
     assert expected.issubset(paths)
@@ -54,5 +54,5 @@ def test_setup_with_custom_base_path():
     registry = FormRegistry()
     setup_form_api(app, registry, base_path="/custom/v2")
     paths = {r.resource.canonical for r in app.router.routes()}
-    assert "/custom/v2/t/{tenant}/forms" in paths
+    assert "/custom/v2/{tenant}/forms" in paths
     assert "/custom/v2/form-controls" in paths
