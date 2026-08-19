@@ -174,7 +174,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -182,8 +182,8 @@
       "parallelism_notes": "Fully independent: touches only ai-parrot-visualizations/pyproject.toml plus a new test file, shares no file or import with any other FEAT-301 task, and has no dependencies. Safe to run in a separate worktree at any time.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2258-declare-viz-dependencies.md"
+      "completed_at": "2026-08-19T12:27:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2258-declare-viz-dependencies.md"
     }
   ]
 }

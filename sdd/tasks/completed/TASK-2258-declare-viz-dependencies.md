@@ -291,10 +291,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Added `markdown-it-py>=3.0`, `markupsafe>=2.1`, `orjson>=3.9`
+(with the explanatory comment) to `[project] dependencies` in
+`packages/ai-parrot-visualizations/pyproject.toml`, preserving
+`ai-parrot>=0.25.36` unchanged. Created
+`packages/ai-parrot-visualizations/tests/outputs/test_declared_dependencies.py`
+with the 6-test guard suite (declared-dependency checks, import-resolves
+check, renderer-imports-cleanly check) — all 6 passing. Verified the
+file is valid TOML via `tomllib.load`. No other `pyproject.toml` in the
+repo was touched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
