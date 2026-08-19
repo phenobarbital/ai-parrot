@@ -9,7 +9,7 @@
 		install-supertonic docker-tool-worker docker-integrations docker-dev
 
 # Python version to use
-PYTHON_VERSION := 3.11
+PYTHON_VERSION := 3.12
 
 # Enforce virtual environment usage
 export PIP_REQUIRE_VIRTUALENV=true

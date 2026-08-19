@@ -51,7 +51,7 @@
 #   or run dev_loop / crew / flow scripts directly.
 # ---------------------------------------------------------------------------
 
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.12
 FROM python:${PYTHON_VERSION}-slim
 
 LABEL org.opencontainers.image.title="parrot-dev" \

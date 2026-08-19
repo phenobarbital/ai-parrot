@@ -233,6 +233,12 @@ leiden = [
     "python-igraph>=0.10",
 ]
 
+# Full wiki stack: graph indexing + accurate tree-sitter language grammars
+# + Leiden community detection. One-shot install for `wikitoolkit build`.
+wiki = [
+    "ai-parrot[graphindex,wiki-languages,leiden]",
+]
+
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203
 # scheduler = ["apscheduler==3.11.2"]  # use ai-parrot-server[scheduler] instead
 

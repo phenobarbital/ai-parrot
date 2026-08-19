@@ -9,7 +9,7 @@ reuse_feature_id: FEAT-301
 **Feature ID**: FEAT-301
 **Date**: 2026-08-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.x
 **Proposal**: `sdd/proposals/infographic-theme-catalog-a2ui.proposal.md` (run 2, high confidence)
 **Research state**: `sdd/state/FEAT-301/`
