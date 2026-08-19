@@ -7,7 +7,10 @@ declarations) via tree-sitter when the optional
 ``ai-parrot[wiki-languages]`` extra is installed, or a bounded,
 line-anchored regex heuristic otherwise. Import extraction
 (``use``/``require``/``use parent``/``use base``) is regex-based in both
-modes. Reference resolution follows Perl's standard convention:
+modes; core-language pragmas (``strict``, ``warnings``, ``feature``,
+version literals like ``v5.38``, ...) are filtered out since they never
+resolve to a repository file. Reference resolution follows Perl's
+standard convention:
 ``Module::Name`` resolves to ``lib/Module/Name.pm`` (or any other
 ``lib/``-rooted directory in the repo tree); ``require "./lib.pl"`` style
 paths resolve relative to the importing file's directory.
@@ -70,6 +73,23 @@ _RE_REQUIRE_PATH = re.compile(r"^\s*require\s+['\"]([^'\"]+)['\"]\s*;", re.MULTI
 
 #: Directory name convention used to identify Perl library roots.
 _LIB_DIR_NAME = "lib"
+
+#: Core-language pragmas that are never repository-relative modules —
+#: filtered out of ``imports`` so they don't add resolve-to-``None`` noise
+#: on essentially every real-world Perl file (they would fail to resolve
+#: anyway; this just keeps ``LanguageOutline.imports`` meaningful).
+_PRAGMA_MODULES = frozenset({
+    "strict", "warnings", "utf8", "feature", "lib", "constant",
+    "overload", "vars", "English", "diagnostics", "integer",
+    "bytes", "if", "mro", "less", "experimental",
+})
+
+
+def _is_pragma_or_version(name: str) -> bool:
+    """Whether ``name`` is a core pragma or a version literal (``use v5.38;``
+    lexes as module name ``"v5"``; ``use 5.038;`` as ``"5"``) rather than a
+    real, potentially repository-resident module."""
+    return name in _PRAGMA_MODULES or bool(re.match(r"^v?\d", name))
 
 
 def _pod_block(source: str, heading_re: re.Pattern[str]) -> str:
@@ -159,9 +179,15 @@ def _extract_perl_imports(source: str) -> list[str]:
     for match in _RE_USE_MODULE.finditer(source):
         if any(start <= match.start() < end for start, end in consumed_spans):
             continue
-        imports.append(match.group(1))
+        name = match.group(1)
+        if _is_pragma_or_version(name):
+            continue
+        imports.append(name)
     for match in _RE_REQUIRE_MODULE.finditer(source):
-        imports.append(match.group(1))
+        name = match.group(1)
+        if _is_pragma_or_version(name):
+            continue
+        imports.append(name)
     for match in _RE_REQUIRE_PATH.finditer(source):
         imports.append(f"require:{match.group(1)}")
     return imports

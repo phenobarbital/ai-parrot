@@ -211,6 +211,22 @@ class TestHeuristic:
         result = scanner.outline(source, "lib/Foo.pm")
         assert any("$self" in line and "$x" in line for line in result.outline)
 
+    def test_pragmas_and_versions_filtered_from_imports(
+        self, scanner: PerlScanner, force_heuristic
+    ):
+        source = (
+            "use strict;\nuse warnings;\nuse v5.38;\nuse feature 'say';\n"
+            "use 5.038;\nuse Moose;\nuse MyApp::Schema;\n"
+        )
+        result = scanner.outline(source, "lib/App.pm")
+        assert "strict" not in result.imports
+        assert "warnings" not in result.imports
+        assert "v5" not in result.imports
+        assert "feature" not in result.imports
+        assert "5" not in result.imports
+        assert "Moose" in result.imports
+        assert "MyApp::Schema" in result.imports
+
 
 # --- tree-sitter mode (skip if not installed) -------------------------------
 
