@@ -72,7 +72,8 @@ def polyglot_repo(tmp_path: Path) -> Path:
 
     ``src/app.py``, ``src/Service.php`` + ``composer.json``,
     ``web/index.ts`` + ``web/util/index.ts``, ``native/src/lib.rs`` +
-    ``native/src/parser.rs``, ``public/index.html``. Includes one
+    ``native/src/parser.rs``, ``lib/MyApp/Schema.pm`` +
+    ``lib/MyApp/User.pm``, ``public/index.html``. Includes one
     resolvable cross-file import per deep-scanned language (Python is
     import-free here — its resolution is already exhaustively covered by
     ``test_repo_scan.py``) so ``references`` edges can be asserted
@@ -114,5 +115,14 @@ def polyglot_repo(tmp_path: Path) -> Path:
     _write(
         tmp_path, "public/index.html",
         "<html><head><title>Public Site</title></head><body></body></html>\n",
+    )
+    _write(
+        tmp_path, "lib/MyApp/Schema.pm",
+        "package MyApp::Schema;\n\nsub connect { }\n1;\n",
+    )
+    _write(
+        tmp_path, "lib/MyApp/User.pm",
+        "package MyApp::User;\nuse MyApp::Schema;\n\n"
+        "sub new {\n    my ($class) = @_;\n    return bless {}, $class;\n}\n1;\n",
     )
     return tmp_path

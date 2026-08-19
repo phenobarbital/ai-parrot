@@ -160,10 +160,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: Added `"perl": "tree_sitter_perl"` / `"perl": ("language",)` to
+`treesitter.py`'s grammar dicts, `tree-sitter-perl>=0.23` to the
+`wiki-languages` extra, and registered `PerlScanner()` in `__init__.py`'s
+`_SCANNERS`. Verified `treesitter.get_parser("perl")` returns a `Parser`
+with `tree-sitter-perl` installed, and `scanner_for(".pm"/".pl"/".t")`
+returns the `PerlScanner` instance. Full existing test suite
+(`tests/knowledge/wiki/languages/`) still passes (146 passed).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `perl.py` (TASK-2260's deliverable) was written
+to disk before this task's `__init__.py` commit so the registration
+import resolves — per the task's own Agent Instructions ("implement
+TASK-2259 and TASK-2260 together" / "commit __init__.py after perl.py
+exists"). `perl.py` itself is committed separately under TASK-2260.
