@@ -4,6 +4,7 @@ Tests for FEAT-102: Multi-Tab Infographic Block Models & Enums.
 TASK-659: Infographic Block Models & Enums
 """
 import pytest
+from pydantic import ValidationError
 from parrot.models.infographic import (
     BlockType,
     BulletListBlock,
@@ -21,6 +22,15 @@ from parrot.models.infographic import (
     InfographicResponse,
     SummaryBlock,
     TitleBlock,
+    ChainBlock,
+    ChainNode,
+    StepsBlock,
+    StepItem,
+    CodeBlock,
+    CardGridBlock,
+    GridCard,
+    DocumentMeta,
+    ChangelogEntry,
 )
 
 
@@ -34,8 +44,8 @@ class TestBlockTypeEnum:
         assert BlockType.TAB_VIEW == "tab_view"
 
     def test_total_count(self):
-        """BlockType should have 15 values (12 original + 3 new)."""
-        assert len(BlockType) == 15
+        """BlockType should have 19 values (15 existing + 4 new — FEAT-301)."""
+        assert len(BlockType) == 19
 
     def test_existing_values_unchanged(self):
         """All original enum values should still exist."""
@@ -365,3 +375,114 @@ class TestInfographicResponseWithNewBlocks:
         )
         assert len(r.blocks) == 5
         assert r.blocks[0].type == "title"
+
+
+# ──────────────────────────────────────────────
+# FEAT-301: New block models, I18nText & DocumentMeta
+# ──────────────────────────────────────────────
+
+class TestBlockType19Members:
+    """Tests for the extended (19-member) BlockType enum — FEAT-301."""
+
+    def test_block_type_enum_19_members(self):
+        assert len(BlockType) == 19
+        for member in ("CHAIN", "STEPS", "CODE", "CARD_GRID"):
+            assert hasattr(BlockType, member)
+
+
+class TestChainBlock:
+    """Tests for ChainBlock and ChainNode."""
+
+    def test_chain_block_model(self):
+        block = ChainBlock(nodes=[ChainNode(label="A"), ChainNode(label="B")])
+        assert block.type == "chain"
+        assert block.direction == "horizontal"
+
+
+class TestStepsBlock:
+    """Tests for StepsBlock and StepItem."""
+
+    def test_steps_block_model(self):
+        block = StepsBlock(steps=[StepItem(label="Step 1", description="Do thing")])
+        assert block.style == "numbered"
+
+
+class TestCodeBlock:
+    """Tests for CodeBlock."""
+
+    def test_code_block_model(self):
+        block = CodeBlock(code="print('hi')", language="python", highlight_lines=[1])
+        assert block.type == "code"
+
+
+class TestCardGridBlock:
+    """Tests for CardGridBlock and GridCard."""
+
+    def test_card_grid_block_model(self):
+        block = CardGridBlock(cards=[GridCard(title="C1", body="x")], columns=2)
+        assert block.columns == 2
+        with pytest.raises(ValidationError):
+            CardGridBlock(cards=[], columns=7)
+
+
+class TestI18nText:
+    """Tests for the I18nText union type."""
+
+    def test_i18n_text_plain_str(self):
+        assert CodeBlock(code="x", title="Plain").title == "Plain"
+
+    def test_i18n_text_dict(self):
+        block = CodeBlock(code="x", title={"en": "Hello", "es": "Hola"})
+        assert block.title["es"] == "Hola"
+
+    def test_i18n_text_rejects_empty_mapping(self):
+        """SECURITY/HARDENING (code review, FEAT-301): an empty locale
+        mapping is malformed, not a valid bilingual value."""
+        with pytest.raises(ValidationError):
+            CodeBlock(code="x", title={})
+
+    def test_i18n_text_rejects_empty_locale_value(self):
+        with pytest.raises(ValidationError):
+            CodeBlock(code="x", title={"en": ""})
+
+    def test_i18n_text_accepts_non_en_es_locales(self):
+        """Locale keys are not restricted to en/es — any non-empty mapping
+        of non-empty strings is valid."""
+        block = CodeBlock(code="x", title={"fr": "Bonjour"})
+        assert block.title["fr"] == "Bonjour"
+
+
+class TestDocumentMeta:
+    """Tests for DocumentMeta / ChangelogEntry and InfographicResponse.document_meta."""
+
+    def test_document_meta_optional(self):
+        resp = InfographicResponse(blocks=[{"type": "divider"}])
+        assert resp.document_meta is None
+
+    def test_document_meta_populated(self):
+        resp = InfographicResponse(
+            blocks=[{"type": "divider"}],
+            document_meta=DocumentMeta(
+                version="1.0", status="approved", author="Jesus",
+                changelog=[ChangelogEntry(version="1.0", date="2026-08-19",
+                                          summary={"en": "First", "es": "Primero"})],
+            ),
+        )
+        assert resp.document_meta.changelog[0].version == "1.0"
+
+
+class TestNewBlocksDiscriminator:
+    """Tests that the 4 new block types resolve through Discriminator("type")."""
+
+    def test_new_blocks_resolve_through_discriminator(self):
+        resp = InfographicResponse(blocks=[{"type": "code", "code": "x"}])
+        assert isinstance(resp.blocks[0], CodeBlock)
+
+    def test_infographic_response_backward_compat(self):
+        """A payload using only the original 15 block types still validates."""
+        resp = InfographicResponse(blocks=[
+            {"type": "title", "title": "T"},
+            {"type": "hero_card", "label": "L", "value": "42"},
+            {"type": "divider"},
+        ])
+        assert len(resp.blocks) == 3

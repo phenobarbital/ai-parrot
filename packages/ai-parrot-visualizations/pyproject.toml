@@ -27,6 +27,11 @@ classifiers = [
 ]
 dependencies = [
     "ai-parrot>=0.25.36",
+    # Imported unconditionally by outputs/formats/infographic_html.py (markdown
+    # rendering, HTML escaping) and infographic.py (JSON serialization).
+    "markdown-it-py>=3.0",
+    "markupsafe>=2.1",
+    "orjson>=3.9",
 ]
 
 [project.optional-dependencies]

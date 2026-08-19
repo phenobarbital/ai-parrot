@@ -354,10 +354,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Added `CHAIN`/`STEPS`/`CODE`/`CARD_GRID` to `BlockType` (19 members
+total). Added `I18nText` union, support models `ChainNode`/`StepItem`/
+`GridCard`, block models `ChainBlock`/`StepsBlock`/`CodeBlock`/
+`CardGridBlock`, and `ChangelogEntry`/`DocumentMeta`. Extended the
+`InfographicBlock` union and added `InfographicResponse.document_meta`.
+Updated `parrot/models/__init__.py` exports (both the `from .infographic
+import (...)` block and `__all__`) with the new models plus the
+previously-missing `AccordionBlock`/`ChecklistBlock`/`TabViewBlock`.
+Updated `tests/test_infographic_models.py:38` assertion to `19` and added
+a full new test suite covering all acceptance criteria (46 tests total,
+all passing). Existing `tests/test_infographic_html.py` (78 tests) still
+passes unchanged. `ruff check --select F` clean on all 3 touched files;
+remaining ruff findings are pre-existing pyupgrade (`UP006`/`UP045`)
+style debt consistent with the rest of the file's `Optional`/`List`/`Dict`
+convention, not introduced by this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

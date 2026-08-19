@@ -9,7 +9,10 @@ Covers:
 - Content negotiation wiring
 - Edge cases (empty, unknown, XSS, special characters)
 """
+import re
+
 import pytest
+from pydantic import ValidationError
 
 from parrot.models.infographic import (
     BlockType,
@@ -35,8 +38,21 @@ from parrot.models.infographic import (
     TitleBlock,
     TrendDirection,
     theme_registry,
+    CodePalette,
+    MethodBadgePalette,
+    derive_soft,
+    ChainBlock,
+    ChainNode,
+    StepsBlock,
+    StepItem,
+    CodeBlock,
+    CardGridBlock,
+    GridCard,
+    DocumentMeta,
+    ChangelogEntry,
 )
-from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
+from parrot.outputs.formats.infographic_html import BASE_CSS, InfographicHTMLRenderer
+from parrot.outputs.formats.infographic import INFOGRAPHIC_SYSTEM_PROMPT
 
 
 # ──────────────────────────────────────────────
@@ -234,6 +250,272 @@ class TestThemeRegistry:
 
 
 # ──────────────────────────────────────────────
+# ThemeConfig v2 Tokens & Petrol Theme (FEAT-301 / TASK-2251)
+# ──────────────────────────────────────────────
+
+class TestThemeConfigV2:
+    """Tests for the v2 ThemeConfig fields (code/badge palettes, soft/surface/callout tokens)."""
+
+    def test_theme_config_v2_backward_compat(self):
+        theme = ThemeConfig(name="v1only")
+        css = theme.to_css_variables()
+        assert "--surface-bg" not in css
+        assert "--code-bg" not in css
+        assert css.count("--") == 12
+
+    def test_theme_config_v2_fields(self):
+        theme = ThemeConfig(
+            name="v2", surface_bg="#ffffff", soft_primary="rgba(99, 102, 241, 0.12)",
+            callout_info_bg="#eff6ff", code_palette=CodePalette(),
+            method_badge_palette=MethodBadgePalette(),
+        )
+        css = theme.to_css_variables()
+        assert "--surface-bg: #ffffff;" in css
+        assert "--callout-info-bg: #eff6ff;" in css
+        assert "--code-bg: #282c34;" in css
+        assert "--badge-get: #10b981;" in css
+
+    def test_invalid_v2_color_rejected(self):
+        with pytest.raises(ValidationError):
+            ThemeConfig(name="bad", surface_bg="#not-a-hex-!!")
+
+
+class TestDeriveSoft:
+    """Tests for the derive_soft() helper."""
+
+    def test_derive_soft(self):
+        value = derive_soft("#6366f1", 0.12)
+        assert value == "rgba(99, 102, 241, 0.12)"
+        from parrot.models.infographic import _CSS_COLOR_RE
+        assert _CSS_COLOR_RE.match(value)
+
+    def test_derive_soft_shorthand_and_errors(self):
+        assert derive_soft("#abc", 0.5).startswith("rgba(170, 187, 204")
+        with pytest.raises(ValueError):
+            derive_soft("not-a-color")
+        with pytest.raises(ValueError):
+            derive_soft("#6366f1", 1.5)
+
+
+class TestPetrolTheme:
+    """Tests for the petrol built-in theme registration."""
+
+    def test_petrol_theme_registered(self):
+        theme = theme_registry.get("petrol")
+        assert theme.name == "petrol"
+        assert theme.code_palette is not None
+
+    def test_petrol_in_theme_listings(self):
+        assert "petrol" in theme_registry.list_themes()
+        assert "petrol" in [t["name"] for t in theme_registry.list_themes_detailed()]
+
+    def test_all_builtin_themes_emit_css(self):
+        for name in ("light", "dark", "corporate", "midnight", "petrol"):
+            css = theme_registry.get(name).to_css_variables()
+            assert css.startswith(":root {") and css.endswith("}")
+
+
+# ──────────────────────────────────────────────
+# CSS Variable Migration (FEAT-301 / TASK-2255)
+# ──────────────────────────────────────────────
+
+def _screen_css() -> str:
+    """BASE_CSS with the @media print block removed."""
+    return re.sub(r"@media print \{.*?\n\}", "", BASE_CSS, flags=re.S)
+
+
+class TestNoLiteralColors:
+    def test_no_literal_colors_in_base_css(self):
+        css = _screen_css()
+        # strip var(--token, fallback) — fallbacks are allowed
+        css = re.sub(r"var\([^)]*\)", "VAR", css)
+        # opacity-only shadows are an accepted exception (see task decisions)
+        css = re.sub(r"rgba\(0,\s*0,\s*0,\s*[\d.]+\)", "SHADOW", css)
+        leftovers = re.findall(r"#[0-9a-fA-F]{3,8}|:\s*(?:white|black)\b", css)
+        assert leftovers == [], f"literal colors remain: {leftovers}"
+
+    def test_callout_colors_use_variables(self):
+        for level in ("info", "success", "warning", "error", "tip"):
+            assert f"var(--callout-{level}-bg" in BASE_CSS
+
+    def test_print_styles_untouched(self):
+        assert "background: white" in BASE_CSS  # inside @media print
+        assert "!important" in BASE_CSS
+
+
+class TestThemeRenderIntegrity:
+    @pytest.mark.parametrize(
+        "theme", ["light", "dark", "corporate", "midnight", "petrol"]
+    )
+    def test_theme_renders(self, theme):
+        renderer = InfographicHTMLRenderer()
+        html = renderer.render_to_html(
+            {"blocks": [
+                {"type": "title", "title": "T"},
+                {"type": "callout", "level": "tip", "content": "Tip"},
+                {"type": "table", "columns": ["A"], "rows": [["1"]]},
+            ]},
+            theme=theme,
+        )
+        assert html.startswith("<!DOCTYPE html>")
+        assert theme_registry.get(theme).to_css_variables() in html
+
+
+class TestThemeConfigNewV2Tokens:
+    """Tests for the on_primary / callout-*-text / accent_teal tokens."""
+
+    def test_new_tokens_optional_and_absent_by_default(self):
+        theme = ThemeConfig(name="v1only")
+        css = theme.to_css_variables()
+        assert "--on-primary" not in css
+        assert "--accent-teal" not in css
+        assert "--callout-success-text" not in css
+
+    def test_new_tokens_emitted_when_set(self):
+        theme = ThemeConfig(
+            name="v2",
+            on_primary="#000000",
+            accent_teal="#14b8a6",
+            callout_success_text="#065f46",
+            callout_warning_text="#92400e",
+            callout_error_text="#991b1b",
+            callout_tip_text="#115e59",
+        )
+        css = theme.to_css_variables()
+        assert "--on-primary: #000000;" in css
+        assert "--accent-teal: #14b8a6;" in css
+        assert "--callout-success-text: #065f46;" in css
+        assert "--callout-warning-text: #92400e;" in css
+        assert "--callout-error-text: #991b1b;" in css
+        assert "--callout-tip-text: #115e59;" in css
+
+
+# ──────────────────────────────────────────────
+# System Prompt — All 19 Block Types (FEAT-301 / TASK-2256)
+# ──────────────────────────────────────────────
+
+class TestSystemPrompt:
+    """Tests for INFOGRAPHIC_SYSTEM_PROMPT coverage of all 19 block types."""
+
+    def test_system_prompt_19_blocks(self):
+        """Every BlockType value is named in the prompt."""
+        missing = [
+            bt.value for bt in BlockType
+            if bt.value not in INFOGRAPHIC_SYSTEM_PROMPT
+        ]
+        assert missing == [], f"undocumented block types: {missing}"
+
+    def test_previously_missing_blocks_documented(self):
+        for name in ("accordion", "checklist", "tab_view"):
+            assert f"- {name}:" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_new_blocks_documented(self):
+        for name in ("chain", "steps", "code", "card_grid"):
+            assert f"- {name}:" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_system_prompt_i18n(self):
+        assert '"es"' in INFOGRAPHIC_SYSTEM_PROMPT
+        assert '"en"' in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_system_prompt_document_meta(self):
+        assert "document_meta" in INFOGRAPHIC_SYSTEM_PROMPT
+        assert "changelog" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_system_prompt_microsyntax(self):
+        for marker in ("[[chip:", "[[m:", "[[comp:"):
+            assert marker in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_existing_hero_card_guidance_preserved(self):
+        assert 'REQUIRE flat "label" and "value"' in INFOGRAPHIC_SYSTEM_PROMPT
+        assert '{"type": "hero_card", "label": "Total Revenue"' in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_prompt_ends_with_json_only_rule(self):
+        assert "Output ONLY valid JSON" in INFOGRAPHIC_SYSTEM_PROMPT
+
+    def test_code_block_no_markdown_fences_rule(self):
+        assert "NO markdown fences" in INFOGRAPHIC_SYSTEM_PROMPT
+
+
+# ──────────────────────────────────────────────
+# I18n Span Emitter, Micro-Syntax Expander & setLang() JS (FEAT-301 / TASK-2252)
+# ──────────────────────────────────────────────
+
+class TestI18nEmitter:
+    """Tests for _render_i18n_span() / _i18n_plain()."""
+
+    def test_plain_str_has_no_span(self, renderer):
+        assert renderer._render_i18n_span("Hello") == "Hello"
+
+    def test_dict_emits_dual_spans(self, renderer):
+        html = renderer._render_i18n_span({"en": "Hello", "es": "Hola"})
+        assert html.index('lang="en"') < html.index('lang="es"')
+        assert "Hello" in html and "Hola" in html
+
+    def test_none_is_empty(self, renderer):
+        assert renderer._render_i18n_span(None) == ""
+
+    def test_dict_values_escaped(self, renderer):
+        html = renderer._render_i18n_span({"en": "<script>x</script>"})
+        assert "<script>" not in html
+
+    def test_i18n_plain_prefers_en(self, renderer):
+        assert renderer._i18n_plain({"es": "Hola", "en": "Hello"}) == "Hello"
+
+    def test_i18n_plain_none_is_empty(self, renderer):
+        assert renderer._i18n_plain(None) == ""
+
+
+class TestMicroSyntax:
+    """Tests for _expand_microsyntax()."""
+
+    def test_chip(self, renderer):
+        assert 'class="chip"' in renderer._expand_microsyntax("[[chip:Active]]")
+
+    def test_method_badge_case_insensitive(self, renderer):
+        for marker in ("[[m:GET]]", "[[m:get]]"):
+            out = renderer._expand_microsyntax(marker)
+            assert "method-badge--get" in out
+            assert ">GET<" in out
+
+    def test_component_ref(self, renderer):
+        out = renderer._expand_microsyntax("[[comp:AgentCrew]]")
+        assert 'class="component-ref"' in out and "AgentCrew" in out
+
+    def test_malformed_left_verbatim(self, renderer):
+        for marker in ("[[chip:]]", "[[bogus:x]]"):
+            assert marker in renderer._expand_microsyntax(marker)
+
+    def test_no_double_escaping(self, renderer):
+        out = renderer._expand_microsyntax("[[chip:A &amp; B]]")
+        assert "&amp;amp;" not in out
+
+
+class TestSetLangInjection:
+    """Tests for _has_i18n() and SETLANG_JS injection via render_to_html()."""
+
+    def test_js_present_when_bilingual(self, renderer):
+        # TitleBlock.title is a plain str (TASK-2263 scope); CodeBlock.title
+        # is the model surface that genuinely supports I18nText, so it is
+        # used here to exercise setLang() injection end-to-end.
+        html = renderer.render_to_html({
+            "blocks": [{"type": "code", "code": "x", "title": {"en": "Hi", "es": "Hola"}}],
+        })
+        assert "setLang" in html
+
+    def test_js_absent_when_monolingual(self, renderer):
+        html = renderer.render_to_html({
+            "blocks": [{"type": "title", "title": "Hi"}],
+        })
+        assert "setLang" not in html
+
+    def test_page_title_plain_for_str_title(self, renderer):
+        html = renderer.render_to_html({
+            "blocks": [{"type": "title", "title": "Hi"}],
+        })
+        assert "<title>Hi</title>" in html
+
+
+# ──────────────────────────────────────────────
 # Block Renderer Tests
 # ──────────────────────────────────────────────
 
@@ -256,6 +538,11 @@ class TestTitleBlock:
         html = renderer._render_title(block)
         assert "<script>" not in html
         assert "&lt;script&gt;" in html
+
+    def test_subtitle_microsyntax_expands(self, renderer):
+        block = TitleBlock(type="title", title="T", subtitle="[[chip:Active]]")
+        html = renderer._render_title(block)
+        assert 'class="chip"' in html
 
 
 class TestHeroCardBlock:
@@ -306,6 +593,19 @@ class TestSummaryBlock:
         html = renderer._render_summary(block)
         assert "Summary" in html
 
+    def test_raw_html_in_markdown_is_escaped_not_executed(self, renderer):
+        """SECURITY (code review, FEAT-301): markdown-it's "commonmark" preset
+        defaults to html=True (raw HTML passes through verbatim); the
+        renderer must construct MarkdownIt with html=False so this doesn't
+        become a live-script injection vector.
+        """
+        block = SummaryBlock(
+            type="summary", content="<script>alert(1)</script>"
+        )
+        html = renderer._render_summary(block)
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
 
 class TestChartBlock:
     def test_render_contains_echarts(self, renderer):
@@ -344,6 +644,18 @@ class TestBulletListBlock:
         )
         html = renderer._render_bullet_list(block)
         assert "My List" in html
+
+    def test_item_microsyntax_expands(self, renderer):
+        block = BulletListBlock(type="bullet_list", items=["[[chip:Active]]"])
+        html = renderer._render_bullet_list(block)
+        assert 'class="chip"' in html
+
+    def test_colored_item_microsyntax_expands(self, renderer):
+        block = BulletListBlock(
+            type="bullet_list", items=["[[m:GET]]"], color="#ff0000",
+        )
+        html = renderer._render_bullet_list(block)
+        assert "method-badge--get" in html
 
 
 class TestTableBlock:
@@ -461,6 +773,88 @@ class TestProgressBlock:
         html = renderer._render_progress(block)
         assert "progress-target" in html
         assert "90" in html  # 90.0% or 90%
+
+
+# ──────────────────────────────────────────────
+# New Block Renderers: chain / steps / code / card_grid (FEAT-301 / TASK-2253)
+# ──────────────────────────────────────────────
+
+class TestChainBlockRenderer:
+    def test_render_chain_block(self, renderer):
+        block = ChainBlock(nodes=[ChainNode(label="A"), ChainNode(label="B")])
+        html = renderer._render_chain(block)
+        assert 'class="chain' in html
+        assert html.count("chain__node") == 2
+        assert html.count("chain__connector") == 1
+
+    def test_render_chain_vertical(self, renderer):
+        block = ChainBlock(nodes=[ChainNode(label="A")], direction="vertical")
+        html = renderer._render_chain(block)
+        assert "chain--vertical" in html
+
+    def test_bilingual_label_uses_i18n_span(self, renderer):
+        block = ChainBlock(nodes=[ChainNode(label={"en": "A", "es": "A-es"})])
+        html = renderer._render_chain(block)
+        assert 'lang="en"' in html and 'lang="es"' in html
+
+
+class TestStepsBlockRenderer:
+    def test_render_steps_numbered(self, renderer):
+        block = StepsBlock(steps=[StepItem(label="One"), StepItem(label="Two")])
+        html = renderer._render_steps(block)
+        assert ">1<" in html and ">2<" in html
+
+    def test_render_steps_icon_style(self, renderer):
+        block = StepsBlock(
+            steps=[StepItem(label="One", icon="&#9733;")], style="icon",
+        )
+        html = renderer._render_steps(block)
+        assert "steps--icon" in html
+
+
+class TestCodeBlockRenderer:
+    def test_render_code_block(self, renderer):
+        block = CodeBlock(code="print('x')", language="python")
+        html = renderer._render_code(block)
+        assert 'class="language-python"' in html
+        assert "<pre" in html
+
+    def test_render_code_escapes_body(self, renderer):
+        block = CodeBlock(code="<script>alert(1)</script>")
+        html = renderer._render_code(block)
+        assert "<script>" not in html
+
+    def test_render_code_language_attribute_is_sanitised(self, renderer):
+        block = CodeBlock(code="x", language='py" onload="boom')
+        html = renderer._render_code(block)
+        assert "onload" not in html
+
+    def test_render_code_ignores_out_of_range_highlights(self, renderer):
+        block = CodeBlock(code="a\nb", highlight_lines=[1, 99])
+        html = renderer._render_code(block)
+        assert html  # no exception
+
+    def test_render_code_does_not_expand_microsyntax(self, renderer):
+        block = CodeBlock(code="[[chip:x]]")
+        html = renderer._render_code(block)
+        assert "[[chip:x]]" in html
+
+    def test_bilingual_title_uses_i18n_span(self, renderer):
+        block = CodeBlock(code="x", title={"en": "T", "es": "T-es"})
+        html = renderer._render_code(block)
+        assert 'lang="en"' in html and 'lang="es"' in html
+
+
+class TestCardGridBlockRenderer:
+    def test_render_card_grid_columns(self, renderer):
+        block = CardGridBlock(cards=[GridCard(title="C")], columns=4)
+        html = renderer._render_card_grid(block)
+        assert "repeat(4" in html
+
+    def test_render_card_grid_body(self, renderer):
+        block = CardGridBlock(cards=[GridCard(title="C1", body="Content")])
+        html = renderer._render_card_grid(block)
+        assert "Content" in html
 
 
 # ──────────────────────────────────────────────
@@ -811,6 +1205,219 @@ class TestFullIntegration:
             # Each theme has different primary
             theme = theme_registry.get(theme_name)
             assert f"--primary: {theme.primary}" in html
+
+
+@pytest.fixture
+def all_blocks_payload():
+    """InfographicResponse dict with all 19 block types (spec §4)."""
+    return {
+        "theme": "petrol",
+        "blocks": [
+            {"type": "title", "title": "Test Infographic"},
+            {"type": "hero_card", "label": "Metric", "value": "42"},
+            {"type": "summary", "content": "Summary text"},
+            {"type": "chart", "chart_type": "bar", "labels": ["A"],
+             "series": [{"name": "s", "values": [1]}]},
+            {"type": "bullet_list", "items": ["item 1"]},
+            {"type": "table", "columns": ["A"], "rows": [["1"]]},
+            {"type": "image", "url": "data:image/png;base64,AA==", "alt": "img"},
+            {"type": "quote", "text": "Quote", "author": "Author"},
+            {"type": "callout", "level": "info", "content": "Info"},
+            {"type": "divider"},
+            {"type": "timeline", "events": [{"date": "2026-01-01", "title": "Event"}]},
+            {"type": "progress", "items": [{"label": "Task", "value": "80"}]},
+            {"type": "accordion", "items": [{"title": "Section", "content_blocks": []}]},
+            {"type": "checklist", "items": [{"text": "Done", "checked": True}]},
+            {"type": "tab_view", "tabs": [
+                {"id": "t1", "label": "Tab1", "blocks": []},
+                {"id": "t2", "label": "Tab2", "blocks": []},
+            ]},
+            {"type": "chain", "nodes": [{"label": "A"}, {"label": "B"}]},
+            {"type": "steps", "steps": [{"label": "Step 1", "description": "Do thing"}]},
+            {"type": "code", "code": "print('hello')", "language": "python"},
+            {"type": "card_grid", "cards": [{"title": "Card 1", "body": "Content"}],
+             "columns": 2},
+        ],
+    }
+
+
+class TestAllBlocksIntegration:
+    """Integration tests with all 19 block types (FEAT-301 / TASK-2253)."""
+
+    def test_render_all_19_block_types(self, renderer, all_blocks_payload):
+        html = renderer.render_to_html(all_blocks_payload)
+        assert html.startswith("<!DOCTYPE html>")
+        for marker in ("chain", "steps", "code-block", "card-grid"):
+            assert marker in html
+
+    def test_render_petrol_theme(self, renderer, all_blocks_payload):
+        html = renderer.render_to_html(all_blocks_payload, theme="petrol")
+        assert "--code-bg" in html
+
+    def test_new_block_nested_in_tab_pane(self, renderer):
+        html = renderer.render_to_html({
+            "blocks": [{
+                "type": "tab_view",
+                "tabs": [
+                    {"id": "t1", "label": "T", "blocks": [
+                        {"type": "code", "code": "x", "language": "python"},
+                    ]},
+                    {"id": "t2", "label": "T2", "blocks": []},
+                ],
+            }],
+        })
+        assert "language-python" in html
+
+    def test_existing_15_blocks_unaffected(self, renderer, full_infographic_response):
+        """Existing 15-block payloads still render identically (regression)."""
+        html = renderer.render_to_html(full_infographic_response)
+        assert "<!DOCTYPE html>" in html
+        assert "Full Test Report" in html
+
+    def test_existing_15_blocks_deterministic_across_renders(self, basic_response):
+        """Same input renders byte-identically across renderer instances
+        (a stronger form of the visual-regression guarantee: if this ever
+        diverges, some renderer state is leaking across the FEAT-301
+        surface, not just "close enough" text markers).
+
+        Uses ``basic_response`` (no chart blocks) rather than
+        ``full_infographic_response`` — chart containers embed a
+        ``uuid.uuid4()``-derived element id, which is intentionally
+        non-deterministic per render and unrelated to this feature.
+        """
+        first = InfographicHTMLRenderer().render_to_html(basic_response)
+        second = InfographicHTMLRenderer().render_to_html(basic_response)
+        assert first == second
+
+    def test_base_css_fallbacks_match_pre_migration_literals(self):
+        """The FEAT-301 CSS variable migration (TASK-2255) must not change
+        any unthemed color — every var(--token, fallback) fallback must be
+        byte-identical to the literal it replaced."""
+        original_literals = {
+            "var(--surface-bg, white)",
+            "var(--on-primary, #fff)",
+            "var(--surface-bg, #fff)",
+            "var(--body-bg)",  # tr:hover — reuses the existing v1 token
+            "var(--callout-info-bg, #eff6ff)",
+            "var(--callout-success-bg, #ecfdf5)",
+            "var(--callout-success-text, #065f46)",
+            "var(--callout-warning-bg, #fffbeb)",
+            "var(--callout-warning-text, #92400e)",
+            "var(--callout-error-bg, #fef2f2)",
+            "var(--callout-error-text, #991b1b)",
+            "var(--callout-tip-bg, #f0fdfa)",
+            "var(--accent-teal, #14b8a6)",
+            "var(--callout-tip-text, #115e59)",
+        }
+        for literal in original_literals:
+            assert literal in BASE_CSS, f"missing/changed fallback: {literal}"
+
+
+# ──────────────────────────────────────────────
+# Document Chrome — Version Bar, Changelog & Footer (FEAT-301 / TASK-2254)
+# ──────────────────────────────────────────────
+
+_CHROME_BASE = {"blocks": [{"type": "title", "title": "T"}]}
+
+
+class TestDocumentChrome:
+    def test_absent_when_no_document_meta(self, renderer):
+        # BASE_CSS unconditionally declares .doc-bar / .doc-footer rules in
+        # <style>, so assert on the actual HTML element usage, not the bare
+        # substring (which would also match the CSS selector text).
+        html = renderer.render_to_html(_CHROME_BASE)
+        assert 'class="doc-bar"' not in html
+        assert 'class="doc-footer"' not in html
+
+    def test_document_meta_none_byte_identical(self, renderer):
+        """render_to_html with no document_meta produces byte-identical output."""
+        without = renderer.render_to_html(_CHROME_BASE)
+        with_none = renderer.render_to_html({**_CHROME_BASE, "document_meta": None})
+        assert without == with_none
+
+    def test_empty_meta_adds_nothing(self, renderer):
+        html = renderer.render_to_html({**_CHROME_BASE, "document_meta": {}})
+        assert 'class="doc-bar"' not in html
+
+    def test_version_and_status_pills(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"version": "1.2", "status": "approved"},
+        })
+        assert "doc-pill--version" in html and "1.2" in html
+        assert "doc-pill--status" in html and "approved" in html
+
+    def test_changelog_entries_in_order(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"changelog": [
+                {"version": "1.1", "date": "2026-08-01", "summary": "First"},
+                {"version": "1.2", "date": "2026-08-19", "summary": "Second"},
+            ]},
+        })
+        assert html.count('class="doc-changelog__entry"') == 2
+        assert html.index("First") < html.index("Second")
+
+    def test_changelog_summary_microsyntax_expands(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"changelog": [
+                {"version": "1.0", "date": "2026-08-19", "summary": "[[chip:New]]"},
+            ]},
+        })
+        assert 'class="chip"' in html
+
+    def test_bilingual_changelog_summary(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"changelog": [
+                {"version": "1.0", "date": "2026-08-19",
+                 "summary": {"en": "Initial", "es": "Inicial"}},
+            ]},
+        })
+        assert 'lang="en"' in html and 'lang="es"' in html
+
+    def test_author_footer(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE, "document_meta": {"author": "Jesus"},
+        })
+        assert 'class="doc-footer"' in html and "Jesus" in html
+
+    def test_hostile_status_is_escaped(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"status": '"><script>alert(1)</script>'},
+        })
+        assert "<script>" not in html
+
+    def test_hostile_author_is_escaped(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"author": '"><script>alert(1)</script>'},
+        })
+        assert "<script>" not in html
+
+    def test_chrome_precedes_blocks(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE, "document_meta": {"version": "1.0", "author": "A"},
+        })
+        assert html.index('class="doc-bar"') < html.index("<h1>")
+        assert html.index("<h1>") < html.index('class="doc-footer"')
+
+    def test_document_meta_model_direct(self, renderer):
+        """_render_document_chrome / _render_document_footer via real models."""
+        meta = DocumentMeta(
+            version="2.0", status="draft", author="A",
+            changelog=[ChangelogEntry(version="2.0", date="2026-08-19", summary="Notes")],
+        )
+        chrome = renderer._render_document_chrome(meta)
+        footer = renderer._render_document_footer(meta)
+        assert "doc-bar" in chrome and "doc-changelog" in chrome
+        assert "doc-footer" in footer and "A" in footer
+
+    def test_document_meta_all_none_direct(self, renderer):
+        assert renderer._render_document_chrome(DocumentMeta()) == ""
+        assert renderer._render_document_footer(DocumentMeta()) == ""
 
 
 # ──────────────────────────────────────────────

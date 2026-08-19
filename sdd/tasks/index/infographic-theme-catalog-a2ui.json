@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-19T11:29:55Z",
-  "completed_at": null,
+  "completed_at": "2026-08-19T13:32:05+00:00",
   "tasks": [
     {
       "id": "TASK-2263",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation module. Modifies parrot/models/infographic.py (enum, block models, union, response field) — shares that file with TASK-2251 and is a hard dependency of 2252/2253/2254/2256/2257. Must run first in the shared worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2263-block-models-i18ntext.md"
+      "completed_at": "2026-08-19T11:39:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2263-block-models-i18ntext.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2251",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Independent of TASK-2263 in content (theme region, ~line 1033+) but edits the SAME file (parrot/models/infographic.py), so a separate worktree would conflict. Sequential in the shared worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2251-themeconfig-v2-petrol-theme.md"
+      "completed_at": "2026-08-19T11:42:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2251-themeconfig-v2-petrol-theme.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2252",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +63,9 @@
       "parallelism_notes": "Needs I18nText (2263) and the --soft-primary/--badge-* tokens (2251). Edits infographic_html.py, shared with 2253/2254/2255. Ordered before the block renderers so they can consume _render_i18n_span() rather than rework escape().",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2252-i18n-microsyntax-setlang.md"
+      "completed_at": "2026-08-19T11:54:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2252-i18n-microsyntax-setlang.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2253",
@@ -71,7 +74,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,8 +86,9 @@
       "parallelism_notes": "Needs the 4 models (2263), the code/surface tokens (2251) and the i18n emitter (2252). Edits infographic_html.py — same file as 2252/2254/2255.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2253-html-block-renderers.md"
+      "completed_at": "2026-08-19T12:01:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2253-html-block-renderers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2254",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +108,9 @@
       "parallelism_notes": "Needs DocumentMeta (2263) and _render_i18n_span for ChangelogEntry.summary (2252). Edits _assemble_document() in infographic_html.py — same file as 2252/2253/2255.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2254-document-chrome.md"
+      "completed_at": "2026-08-19T12:05:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2254-document-chrome.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2255",
@@ -114,7 +119,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,8 +129,9 @@
       "parallelism_notes": "Needs the v2 callout/surface tokens (2251). Refactors BASE_CSS in infographic_html.py and adds a few more ThemeConfig tokens, so it touches both files other tasks edit. Scheduled after 2252/2253/2254 so it migrates a stable BASE_CSS rather than racing new rules.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2255-css-variable-migration.md"
+      "completed_at": "2026-08-19T12:14:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2255-css-variable-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2256",
@@ -134,7 +140,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Prompt text only, in formats/infographic.py — a file no other task touches. Marked non-parallel solely because it must document the field names TASK-2263 settles; once 2263 has landed it could safely run in its own worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2256-system-prompt-19-blocks.md"
+      "completed_at": "2026-08-19T12:17:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2256-system-prompt-19-blocks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2257",
@@ -154,7 +161,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,8 +171,9 @@
       "parallelism_notes": "Edits a2ui/adapters/infographic.py — a file no other task touches. Non-parallel only because it reads the block-model field names from TASK-2263; after 2263 lands it could run in its own worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2257-a2ui-adapter-new-blocks.md"
+      "completed_at": "2026-08-19T12:23:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2257-a2ui-adapter-new-blocks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2258",
@@ -174,7 +182,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -182,8 +190,9 @@
       "parallelism_notes": "Fully independent: touches only ai-parrot-visualizations/pyproject.toml plus a new test file, shares no file or import with any other FEAT-301 task, and has no dependencies. Safe to run in a separate worktree at any time.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2258-declare-viz-dependencies.md"
+      "completed_at": "2026-08-19T12:27:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2258-declare-viz-dependencies.md",
+      "verification": "verified"
     }
   ]
 }
