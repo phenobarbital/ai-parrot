@@ -1,8 +1,10 @@
 {
   "feature_id": "FEAT-301",
-  "title": "Themed Component Catalog — HTML Renderer v2 + A2UI Output",
+  "title": "Themed Component Catalog — HTML Renderer v2",
   "phase": "committed",
   "mode": "enrichment",
+  "run": 2,
+  "run_note": "Re-run: 8 downstream features landed since run-1 (2026-07-10). All findings re-verified. Confidence upgraded to high.",
   "budget": {
     "profile": "default",
     "files_read": 40,
@@ -12,46 +14,55 @@
     "wall_seconds": 300
   },
   "consumed": {
-    "files_read": 28,
-    "grep_calls": 18,
-    "git_calls": 4,
+    "files_read": 12,
+    "grep_calls": 4,
+    "git_calls": 1,
     "depth_reached": 2,
-    "queries_skipped": 0
+    "queries_skipped": 0,
+    "wiki_queries": 8
   },
   "truncated": false,
   "source": {
     "kind": "file",
     "jira_key": null,
     "path": "sdd/proposals/infographic-theme-catalog-a2ui.spec.md",
-    "summary_oneline": "Extend ThemeConfig + HTML renderer with FieldSync blocks, i18n, and document chrome; add A2UI v0.9.1 catalog+renderer"
+    "summary_oneline": "Extend ThemeConfig + HTML renderer with FieldSync blocks, i18n, and document chrome"
   },
   "type": "feature",
   "base_branch": "dev",
-  "started_at": "2026-07-10T12:00:00Z",
+  "started_at": "2026-08-19T12:00:00Z",
+  "prior_run": {
+    "started_at": "2026-07-10T12:00:00Z",
+    "phase": "committed",
+    "findings_count": 13,
+    "overall_confidence": "medium",
+    "proposal_path": "sdd/proposals/infographic-theme-catalog-a2ui.proposal.md"
+  },
   "phases": {
     "source": { "status": "complete" },
     "plan": { "status": "complete", "approved_by_user": true },
     "research": {
       "status": "complete",
-      "findings_count": 13,
-      "files_read": 28,
-      "grep_calls": 18
+      "findings_count": 9,
+      "findings_range": "F100-F108",
+      "files_read": 12,
+      "grep_calls": 4,
+      "wiki_queries": 8
     },
     "synthesis": {
       "status": "complete",
-      "overall_confidence": "medium",
-      "claims_high": 6,
-      "claims_medium": 3,
-      "claims_low": 1
+      "overall_confidence": "high",
+      "claims_high": 12,
+      "claims_medium": 0,
+      "claims_low": 0
     },
     "qa": {
       "status": "complete",
-      "questions_total": 3,
-      "questions_answered": 3,
+      "questions_total": 2,
+      "questions_answered": 2,
       "answers": {
-        "U1": "Defer WS-C to FEAT-273",
-        "U2": "Migrate existing literal colors",
-        "U3": "Document all 19 blocks"
+        "U1": "Include A2UI adapter extension as task in FEAT-301",
+        "U2": "I18nText confirmed — bilingual EN/ES is in scope"
       }
     },
     "output": {

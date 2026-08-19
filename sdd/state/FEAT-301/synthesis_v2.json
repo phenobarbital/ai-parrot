@@ -1,0 +1,133 @@
+{
+  "version": 2,
+  "overall_confidence": "high",
+  "mode": "enrichment",
+  "scope_change_from_run1": "Narrowed: WS-C fully removed (FEAT-273 resolved). WS-A + WS-B confirmed intact. A2UI adapter extension added as optional task.",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/models/infographic.py",
+      "symbols": ["BlockType", "ThemeConfig", "ThemeRegistry", "theme_registry"],
+      "lines": "71-87, 1033-1228",
+      "role": "Extension target — add 4 block types, extend ThemeConfig v2 fields, register petrol theme",
+      "evidence": ["F108", "F001", "F002"]
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/src/parrot/outputs/formats/infographic_html.py",
+      "symbols": ["InfographicHTMLRenderer", "_BLOCK_MODEL_MAP", "_block_renderers", "BASE_CSS"],
+      "lines": "69-85, 675-691, 153-617",
+      "role": "Add 4 block renderers, migrate ~20 literal CSS colors to variables, add chrome + i18n",
+      "evidence": ["F101"]
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/src/parrot/outputs/formats/infographic.py",
+      "symbols": ["INFOGRAPHIC_SYSTEM_PROMPT"],
+      "lines": "16-46",
+      "role": "Document all 19 block types",
+      "evidence": ["F104"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/adapters/infographic.py",
+      "symbols": ["_Converter", "_card_like"],
+      "lines": "entire",
+      "role": "Optional: extend block→component mappings for new block types (Card fallback exists)",
+      "evidence": ["F100", "F105"]
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/pyproject.toml",
+      "role": "Declare markdown-it-py, markupsafe, orjson as explicit dependencies",
+      "evidence": ["F106"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "claim": "No block model uses frozen=True or extra='forbid' — convention is plain BaseModel",
+      "confidence": "high",
+      "evidence": ["F108", "F003"]
+    },
+    {
+      "claim": "4 built-in themes exist (light, dark, corporate, midnight), petrol will be 5th",
+      "confidence": "high",
+      "evidence": ["F108", "F002"]
+    },
+    {
+      "claim": "ThemeConfig v2 fields are backward-compatible (Optional with None defaults)",
+      "confidence": "high",
+      "evidence": ["F108"]
+    },
+    {
+      "claim": "SectionDescriptor, InfographicAuthoringMixin, RecipeRunner are block-type-agnostic — no changes required",
+      "confidence": "high",
+      "evidence": ["F102"]
+    },
+    {
+      "claim": "Thales InfographicNode is block-type-agnostic — no changes required",
+      "confidence": "high",
+      "evidence": ["F103"]
+    },
+    {
+      "claim": "WS-C (A2UI Output) is fully resolved by FEAT-273 — out of scope",
+      "confidence": "high",
+      "evidence": ["F107"]
+    },
+    {
+      "claim": "A2UI adapter degrades new blocks to Card safely — explicit mappings are optional",
+      "confidence": "high",
+      "evidence": ["F100", "F105"]
+    },
+    {
+      "claim": "~20 literal CSS colors remain in BASE_CSS, migration to variables is warranted",
+      "confidence": "high",
+      "evidence": ["F101"]
+    },
+    {
+      "claim": "INFOGRAPHIC_SYSTEM_PROMPT documents 12/15 blocks, gap will grow to 7/19 with new blocks",
+      "confidence": "high",
+      "evidence": ["F104"]
+    },
+    {
+      "claim": "markdown-it-py, markupsafe, orjson are undeclared dependencies",
+      "confidence": "high",
+      "evidence": ["F106"]
+    }
+  ],
+
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "FEAT-301 scoped to WS-A (ThemeConfig v2 + petrol theme) + WS-B (4 new blocks, CSS variable migration, document chrome, i18n, system prompt update) is independently shippable with zero conflicts against any active feature.",
+      "confidence": "high",
+      "supporting": ["F100", "F101", "F102", "F103", "F107", "F108"],
+      "reasoning": "All downstream consumers (FEAT-324/326/327/420/425) are block-agnostic. FEAT-273 resolved the only architectural conflict. The model file is untouched since run-1. Extension surface is clean."
+    }
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the A2UI adapter be extended with explicit mappings for new block types in this feature, or deferred to a follow-up?",
+      "impact": "Scope: 1 additional task if included, Card fallback works if deferred",
+      "plausible_answers": [
+        "Include as a low-priority task in FEAT-301",
+        "Defer to a follow-up feature",
+        "Skip — Card fallback is acceptable"
+      ]
+    },
+    {
+      "id": "U2",
+      "question": "The spec proposes I18nText (bilingual EN/ES). This widens block text fields from str to Union[str, Dict[str, str]]. Confirm this is still wanted — it adds complexity to every consumer that reads text fields.",
+      "impact": "If yes: block models, HTML renderer, system prompt all need dual-mode text handling. If no: simpler scope.",
+      "plausible_answers": [
+        "Yes, include I18nText — bilingual documents are a core requirement",
+        "Defer I18nText to a separate feature",
+        "Drop I18nText entirely — single-language is sufficient"
+      ]
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "/sdd-spec FEAT-301",
+    "rationale": "High-confidence localization, all conflicts resolved, scope narrowed cleanly. Ready for formal spec scoped to WS-A + WS-B."
+  }
+}
