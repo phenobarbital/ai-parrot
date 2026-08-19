@@ -119,9 +119,24 @@ async def test_get_version_endpoint_serves_every_listed_version(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: Removed the `snap.published_version == version` filter from
+`get_published()` — it now returns any stored snapshot at `version`,
+draft or published. This automatically makes `publish()`'s fast-path
+pre-check (which calls `get_published()`) honest: it now sees an existing
+draft row at the target tag instead of silently passing, satisfying that
+acceptance criterion with no separate code change (verified with a
+dedicated test simulating the same stale-live-version race H4 already
+covers for the storage-level path). In-memory `_snapshots` fallback is
+unaffected — it's populated only by `publish()`/`backfill_published()`, so
+every entry there was already "published"; removing the filter changes
+nothing observable on that branch, confirmed by the existing RF-06 test
+(`test_publish_then_edit_isolation`) still passing unmodified. Added the
+anti-regression at both unit (`test_form_version.py`,
+`_LoadableStorage` double) and integration (`test_feat300_integration.py`,
+`_ListFetchStorage` double) level: every entry `list_versions()` returns
+resolves via `get_published()`.
+**Deviations from spec**: none — kept the `get_published` name (renaming
+is explicitly optional/out of scope per the task), only updated its
+docstring to describe the corrected behavior.
