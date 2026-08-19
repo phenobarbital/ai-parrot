@@ -12,6 +12,7 @@ from pathlib import Path
 
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
 from parrot.knowledge.wiki.languages.javascript import JavaScriptScanner
+from parrot.knowledge.wiki.languages.perl import PerlScanner
 from parrot.knowledge.wiki.languages.php import PhpScanner
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.languages.rust import RustScanner
@@ -33,6 +34,7 @@ _SCANNERS: dict[str, LanguageScanner] = {
     "php": PhpScanner(),
     "javascript": JavaScriptScanner(),
     "rust": RustScanner(),
+    "perl": PerlScanner(),
 }
 
 #: suffix -> scanner name, derived from ``_SCANNERS`` for O(1) lookup.

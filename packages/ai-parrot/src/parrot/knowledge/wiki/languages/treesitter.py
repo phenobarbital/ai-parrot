@@ -32,6 +32,7 @@ _GRAMMAR_MODULES: dict[str, str] = {
     "javascript": "tree_sitter_javascript",
     "typescript": "tree_sitter_typescript",
     "rust": "tree_sitter_rust",
+    "perl": "tree_sitter_perl",
 }
 
 #: Grammar-callable names to try, in order, for each language.
@@ -53,6 +54,7 @@ _GRAMMAR_CALLABLES: dict[str, tuple[str, ...]] = {
     "javascript": ("language",),
     "typescript": ("language", "language_typescript"),
     "rust": ("language",),
+    "perl": ("language",),
 }
 
 #: Candidates tried for any language absent from :data:`_GRAMMAR_CALLABLES`.
