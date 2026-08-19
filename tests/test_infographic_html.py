@@ -39,6 +39,13 @@ from parrot.models.infographic import (
     CodePalette,
     MethodBadgePalette,
     derive_soft,
+    ChainBlock,
+    ChainNode,
+    StepsBlock,
+    StepItem,
+    CodeBlock,
+    CardGridBlock,
+    GridCard,
 )
 from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
 
@@ -613,6 +620,88 @@ class TestProgressBlock:
 
 
 # ──────────────────────────────────────────────
+# New Block Renderers: chain / steps / code / card_grid (FEAT-301 / TASK-2253)
+# ──────────────────────────────────────────────
+
+class TestChainBlockRenderer:
+    def test_render_chain_block(self, renderer):
+        block = ChainBlock(nodes=[ChainNode(label="A"), ChainNode(label="B")])
+        html = renderer._render_chain(block)
+        assert 'class="chain' in html
+        assert html.count("chain__node") == 2
+        assert html.count("chain__connector") == 1
+
+    def test_render_chain_vertical(self, renderer):
+        block = ChainBlock(nodes=[ChainNode(label="A")], direction="vertical")
+        html = renderer._render_chain(block)
+        assert "chain--vertical" in html
+
+    def test_bilingual_label_uses_i18n_span(self, renderer):
+        block = ChainBlock(nodes=[ChainNode(label={"en": "A", "es": "A-es"})])
+        html = renderer._render_chain(block)
+        assert 'lang="en"' in html and 'lang="es"' in html
+
+
+class TestStepsBlockRenderer:
+    def test_render_steps_numbered(self, renderer):
+        block = StepsBlock(steps=[StepItem(label="One"), StepItem(label="Two")])
+        html = renderer._render_steps(block)
+        assert ">1<" in html and ">2<" in html
+
+    def test_render_steps_icon_style(self, renderer):
+        block = StepsBlock(
+            steps=[StepItem(label="One", icon="&#9733;")], style="icon",
+        )
+        html = renderer._render_steps(block)
+        assert "steps--icon" in html
+
+
+class TestCodeBlockRenderer:
+    def test_render_code_block(self, renderer):
+        block = CodeBlock(code="print('x')", language="python")
+        html = renderer._render_code(block)
+        assert 'class="language-python"' in html
+        assert "<pre" in html
+
+    def test_render_code_escapes_body(self, renderer):
+        block = CodeBlock(code="<script>alert(1)</script>")
+        html = renderer._render_code(block)
+        assert "<script>" not in html
+
+    def test_render_code_language_attribute_is_sanitised(self, renderer):
+        block = CodeBlock(code="x", language='py" onload="boom')
+        html = renderer._render_code(block)
+        assert "onload" not in html
+
+    def test_render_code_ignores_out_of_range_highlights(self, renderer):
+        block = CodeBlock(code="a\nb", highlight_lines=[1, 99])
+        html = renderer._render_code(block)
+        assert html  # no exception
+
+    def test_render_code_does_not_expand_microsyntax(self, renderer):
+        block = CodeBlock(code="[[chip:x]]")
+        html = renderer._render_code(block)
+        assert "[[chip:x]]" in html
+
+    def test_bilingual_title_uses_i18n_span(self, renderer):
+        block = CodeBlock(code="x", title={"en": "T", "es": "T-es"})
+        html = renderer._render_code(block)
+        assert 'lang="en"' in html and 'lang="es"' in html
+
+
+class TestCardGridBlockRenderer:
+    def test_render_card_grid_columns(self, renderer):
+        block = CardGridBlock(cards=[GridCard(title="C")], columns=4)
+        html = renderer._render_card_grid(block)
+        assert "repeat(4" in html
+
+    def test_render_card_grid_body(self, renderer):
+        block = CardGridBlock(cards=[GridCard(title="C1", body="Content")])
+        html = renderer._render_card_grid(block)
+        assert "Content" in html
+
+
+# ──────────────────────────────────────────────
 # ECharts Mapping Tests
 # ──────────────────────────────────────────────
 
@@ -960,6 +1049,74 @@ class TestFullIntegration:
             # Each theme has different primary
             theme = theme_registry.get(theme_name)
             assert f"--primary: {theme.primary}" in html
+
+
+@pytest.fixture
+def all_blocks_payload():
+    """InfographicResponse dict with all 19 block types (spec §4)."""
+    return {
+        "theme": "petrol",
+        "blocks": [
+            {"type": "title", "title": "Test Infographic"},
+            {"type": "hero_card", "label": "Metric", "value": "42"},
+            {"type": "summary", "content": "Summary text"},
+            {"type": "chart", "chart_type": "bar", "labels": ["A"],
+             "series": [{"name": "s", "values": [1]}]},
+            {"type": "bullet_list", "items": ["item 1"]},
+            {"type": "table", "columns": ["A"], "rows": [["1"]]},
+            {"type": "image", "url": "data:image/png;base64,AA==", "alt": "img"},
+            {"type": "quote", "text": "Quote", "author": "Author"},
+            {"type": "callout", "level": "info", "content": "Info"},
+            {"type": "divider"},
+            {"type": "timeline", "events": [{"date": "2026-01-01", "title": "Event"}]},
+            {"type": "progress", "items": [{"label": "Task", "value": "80"}]},
+            {"type": "accordion", "items": [{"title": "Section", "content_blocks": []}]},
+            {"type": "checklist", "items": [{"text": "Done", "checked": True}]},
+            {"type": "tab_view", "tabs": [
+                {"id": "t1", "label": "Tab1", "blocks": []},
+                {"id": "t2", "label": "Tab2", "blocks": []},
+            ]},
+            {"type": "chain", "nodes": [{"label": "A"}, {"label": "B"}]},
+            {"type": "steps", "steps": [{"label": "Step 1", "description": "Do thing"}]},
+            {"type": "code", "code": "print('hello')", "language": "python"},
+            {"type": "card_grid", "cards": [{"title": "Card 1", "body": "Content"}],
+             "columns": 2},
+        ],
+    }
+
+
+class TestAllBlocksIntegration:
+    """Integration tests with all 19 block types (FEAT-301 / TASK-2253)."""
+
+    def test_render_all_19_block_types(self, renderer, all_blocks_payload):
+        html = renderer.render_to_html(all_blocks_payload)
+        assert html.startswith("<!DOCTYPE html>")
+        for marker in ("chain", "steps", "code-block", "card-grid"):
+            assert marker in html
+
+    def test_render_petrol_theme(self, renderer, all_blocks_payload):
+        html = renderer.render_to_html(all_blocks_payload, theme="petrol")
+        assert "--code-bg" in html
+
+    def test_new_block_nested_in_tab_pane(self, renderer):
+        html = renderer.render_to_html({
+            "blocks": [{
+                "type": "tab_view",
+                "tabs": [
+                    {"id": "t1", "label": "T", "blocks": [
+                        {"type": "code", "code": "x", "language": "python"},
+                    ]},
+                    {"id": "t2", "label": "T2", "blocks": []},
+                ],
+            }],
+        })
+        assert "language-python" in html
+
+    def test_existing_15_blocks_unaffected(self, renderer, full_infographic_response):
+        """Existing 15-block payloads still render identically (regression)."""
+        html = renderer.render_to_html(full_infographic_response)
+        assert "<!DOCTYPE html>" in html
+        assert "Full Test Report" in html
 
 
 # ──────────────────────────────────────────────

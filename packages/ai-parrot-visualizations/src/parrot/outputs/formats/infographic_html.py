@@ -58,6 +58,13 @@ from ...models.infographic import (
     ChecklistItem,
     TabViewBlock,
     TabPane,
+    ChainBlock,
+    ChainNode,
+    StepsBlock,
+    StepItem,
+    CodeBlock,
+    CardGridBlock,
+    GridCard,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,6 +90,10 @@ _BLOCK_MODEL_MAP: Dict[str, Any] = {
     "checklist": ChecklistBlock,
     "accordion": AccordionBlock,
     "tab_view": TabViewBlock,
+    "chain": ChainBlock,
+    "steps": StepsBlock,
+    "code": CodeBlock,
+    "card_grid": CardGridBlock,
 }
 
 # ──────────────────────────────────────────────
@@ -662,6 +673,84 @@ footer.infographic-footer {
 }
 .i18n { display: none; }
 .i18n--default { display: inline; }
+
+/* ── Chain Block (FEAT-301) ─────────────────────── */
+.chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 1rem;
+}
+.chain--vertical { flex-direction: column; align-items: stretch; }
+.chain__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.chain__node {
+    background: var(--surface-bg, var(--neutral-bg));
+    border: 1px solid var(--neutral-border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    color: var(--neutral-text);
+}
+.chain__label { font-weight: 600; }
+.chain__desc { font-size: 0.85em; color: var(--neutral-muted); margin-top: 4px; }
+.chain__connector { color: var(--neutral-muted); font-size: 1.2rem; }
+.chain--vertical .chain__connector { text-align: center; transform: rotate(90deg); }
+
+/* ── Steps Block (FEAT-301) ─────────────────────── */
+.steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 1rem; }
+.steps__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.steps__item { display: flex; gap: 12px; align-items: flex-start; }
+.steps__marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.steps--icon .steps__marker { border-radius: 8px; background: transparent; }
+.steps__label { font-weight: 600; color: var(--neutral-text); }
+.steps__desc { font-size: 0.9em; color: var(--neutral-muted); margin-top: 2px; }
+
+/* ── Code Block (FEAT-301) ──────────────────────── */
+.code-block-wrapper { margin-bottom: 1rem; }
+.code-block__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.code-block {
+    background: var(--code-bg, #282c34);
+    color: var(--code-text, #abb2bf);
+    padding: 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+.code-block__line--highlight {
+    display: inline-block;
+    width: 100%;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.18));
+}
+
+/* ── Card Grid Block (FEAT-301) ─────────────────── */
+.card-grid-wrapper { margin-bottom: 1rem; }
+.card-grid__title { font-size: 1.1rem; color: var(--neutral-text); margin: 0 0 8px; }
+.card-grid { display: grid; gap: 16px; }
+.card-grid__card {
+    background: var(--surface-bg, var(--neutral-bg));
+    border: 1px solid var(--neutral-border);
+    border-radius: 12px;
+    padding: 16px;
+}
+.card-grid__card-title { font-weight: 700; color: var(--neutral-text); }
+.card-grid__body { font-size: 0.9em; color: var(--neutral-muted); margin-top: 6px; }
+
+@media (max-width: 600px) {
+    .card-grid { grid-template-columns: 1fr !important; }
+}
 """
 
 
@@ -749,6 +838,10 @@ class InfographicHTMLRenderer(BaseRenderer):
             "checklist": self._render_checklist,
             "accordion": self._render_accordion,
             "tab_view": self._render_tab_view,
+            "chain": self._render_chain,
+            "steps": self._render_steps,
+            "code": self._render_code,
+            "card_grid": self._render_card_grid,
         }
 
     # ── BaseRenderer interface ──────────────────
@@ -1989,6 +2082,208 @@ class InfographicHTMLRenderer(BaseRenderer):
 
             parts.append("          </div>")
 
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    # ── FEAT-301 new block renderers ────────────
+
+    def _render_chain(self, block: ChainBlock) -> str:
+        """Render ChainBlock as a connected node sequence.
+
+        Args:
+            block: ChainBlock with nodes and a direction.
+
+        Returns:
+            HTML string with one ``.chain__node`` per node and a
+            ``.chain__connector`` between consecutive nodes (not after the
+            last one).
+        """
+        direction_cls = ""
+        if block.direction == "vertical":
+            direction_cls = " chain--vertical"
+
+        parts = [f'        <div class="chain{direction_cls}">']
+        if block.title:
+            parts.append(
+                f'          <h3 class="chain__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+        node_count = len(block.nodes)
+        for index, node in enumerate(block.nodes):
+            color_style = ""
+            if node.color:
+                color_style = f' style="--node-color: {escape(node.color)}"'
+            icon_html = ""
+            if node.icon:
+                icon_html = f'<span class="chain__icon">{escape(node.icon)}</span> '
+            desc_html = ""
+            if node.description:
+                desc_html = (
+                    f'\n              <div class="chain__desc">'
+                    f"{self._expand_microsyntax(self._render_i18n_span(node.description))}"
+                    f"</div>"
+                )
+            parts.append(f'          <div class="chain__node"{color_style}>')
+            parts.append(
+                f"            {icon_html}"
+                f'<span class="chain__label">'
+                f"{self._expand_microsyntax(self._render_i18n_span(node.label))}</span>"
+                f"{desc_html}"
+            )
+            parts.append("          </div>")
+            if index < node_count - 1:
+                parts.append('          <div class="chain__connector">&#8594;</div>')
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    def _render_steps(self, block: StepsBlock) -> str:
+        """Render StepsBlock as a step-by-step guide.
+
+        Args:
+            block: StepsBlock with steps and a marker style.
+
+        Returns:
+            HTML string with one ``.steps__item`` per step, each carrying a
+            ``.steps__marker`` (1-based index for ``numbered``, an icon
+            glyph for ``icon``).
+        """
+        style_cls = ""
+        if block.style == "icon":
+            style_cls = " steps--icon"
+
+        parts = [f'        <div class="steps{style_cls}">']
+        if block.title:
+            parts.append(
+                f'          <h3 class="steps__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+        for index, step in enumerate(block.steps, start=1):
+            if block.style == "icon" and step.icon:
+                marker = escape(step.icon)
+            else:
+                marker = str(index)
+            color_style = ""
+            if step.color:
+                color_style = f' style="--step-color: {escape(step.color)}"'
+            desc_html = ""
+            if step.description:
+                desc_html = (
+                    f'\n              <div class="steps__desc">'
+                    f"{self._expand_microsyntax(self._render_i18n_span(step.description))}"
+                    f"</div>"
+                )
+            parts.append(f'          <div class="steps__item"{color_style}>')
+            parts.append(f'            <div class="steps__marker">{marker}</div>')
+            parts.append('            <div class="steps__body">')
+            parts.append(
+                f'              <div class="steps__label">'
+                f"{self._expand_microsyntax(self._render_i18n_span(step.label))}</div>"
+                f"{desc_html}"
+            )
+            parts.append("            </div>")
+            parts.append("          </div>")
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    def _render_code(self, block: CodeBlock) -> str:
+        """Render CodeBlock as a themed ``<pre><code>`` snippet.
+
+        Args:
+            block: CodeBlock with code, optional language and
+                highlight_lines.
+
+        Returns:
+            HTML string with a ``language-{lang}`` class and highlighted
+            lines. The code body is escaped and never passed through
+            micro-syntax expansion.
+        """
+        title_html = ""
+        if block.title:
+            title_html = (
+                f'\n            <h3 class="code-block__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+
+        # Only the bare "language-{lang}" class lands on <code>, matching
+        # the plain highlight.js-style convention consumers expect. The
+        # WHOLE value must match the safe pattern — a partial strip could
+        # still leave attribute-breakout substrings (e.g. "onload")
+        # embedded in otherwise-word-only remnants, so a language hint
+        # that fails validation is dropped entirely rather than sanitized.
+        code_cls = ""
+        if block.language and re.fullmatch(r"[\w+#.\-]{1,32}", block.language):
+            code_cls = f' class="language-{block.language}"'
+
+        highlight_set = set(block.highlight_lines or [])
+        lines = str(escape(block.code)).split("\n")
+        rendered_lines = []
+        for line_no, line in enumerate(lines, start=1):
+            if line_no in highlight_set:
+                rendered_lines.append(
+                    f'<span class="code-block__line--highlight">{line}</span>'
+                )
+            else:
+                rendered_lines.append(line)
+        code_html = "\n".join(rendered_lines)
+
+        return (
+            f'        <div class="code-block-wrapper">'
+            f"{title_html}\n"
+            f'            <pre class="code-block">'
+            f"<code{code_cls}>{code_html}</code></pre>\n"
+            f"        </div>"
+        )
+
+    def _render_card_grid(self, block: CardGridBlock) -> str:
+        """Render CardGridBlock as a CSS grid of cards.
+
+        Args:
+            block: CardGridBlock with cards and a column count.
+
+        Returns:
+            HTML string with a ``.card-grid`` container using
+            ``grid-template-columns: repeat({columns}, minmax(0, 1fr))``.
+        """
+        # columns is model-constrained (ge=1, le=6), but a raw dict can
+        # still reach this renderer via _BLOCK_MODEL_MAP, so clamp defensively.
+        columns = max(1, min(6, block.columns or 3))
+
+        title_html = ""
+        if block.title:
+            title_html = (
+                f'\n          <h3 class="card-grid__title">'
+                f"{self._render_i18n_span(block.title)}</h3>"
+            )
+
+        parts = [
+            '        <div class="card-grid-wrapper">' + title_html,
+            f'          <div class="card-grid" '
+            f'style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">',
+        ]
+        for card in block.cards:
+            color_style = ""
+            if card.color:
+                color_style = f' style="--card-color: {escape(card.color)}"'
+            icon_html = ""
+            if card.icon:
+                icon_html = f'<span class="card-grid__icon">{escape(card.icon)}</span> '
+            body_html = ""
+            if card.body:
+                body_html = (
+                    f'\n              <div class="card-grid__body">'
+                    f"{self._expand_microsyntax(self._render_i18n_span(card.body))}"
+                    f"</div>"
+                )
+            parts.append(f'            <div class="card-grid__card"{color_style}>')
+            parts.append(
+                f'              <div class="card-grid__card-title">'
+                f"{icon_html}"
+                f"{self._expand_microsyntax(self._render_i18n_span(card.title))}"
+                f"</div>"
+                f"{body_html}"
+            )
+            parts.append("            </div>")
+        parts.append("          </div>")
         parts.append("        </div>")
         return "\n".join(parts)
 
