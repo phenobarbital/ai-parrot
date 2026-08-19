@@ -146,6 +146,37 @@ class FormStorage(ABC):
         """
         ...
 
+    async def list_versions(
+        self, form_uid: uuid.UUID, *, tenant: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Enumerate every stored version of one form (FEAT-433 Module 2).
+
+        Replaces reconstructing history by probing ``load()`` one candidate
+        version at a time. Concrete backends that persist multiple versions
+        per form (e.g. ``PostgresFormStorage``) should override this with a
+        single ordered query; the base (default) implementation returns an
+        empty list, which is correct for backends — real or test doubles —
+        that don't persist per-version history (``FormVersionService``
+        falls back to its in-process ``_meta`` cache in that case).
+
+        Not abstract (unlike ``save``/``load``/``delete``/``list_forms``):
+        existing ``FormStorage`` subclasses that predate this method must
+        keep instantiating without having to implement it.
+
+        Args:
+            form_uid: The form's immutable UUID (FEAT-389).
+            tenant: Optional tenant slug used by Postgres-backed storages to
+                resolve the target schema.
+
+        Returns:
+            Every stored version of the form, oldest first, ordered by the
+            parsed ``(major, minor)`` integers — never by the raw version
+            string. Each row is a dict with keys ``version``, ``created_at``,
+            ``updated_at``, ``form_id``, ``published_version``,
+            ``published_at``. The base implementation always returns ``[]``.
+        """
+        return []
+
     async def close(self) -> None:
         """Release any resources held by this storage backend.
 

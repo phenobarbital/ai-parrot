@@ -25,10 +25,6 @@ from .registry import FormRegistry, FormStorage
 
 logger = logging.getLogger(__name__)
 
-#: Upper bound for storage probing when reconstructing version history
-#: (defensive cap — real forms have far fewer published versions).
-_MAX_VERSION_PROBES = 200
-
 
 # ---------------------------------------------------------------------------
 # Models
@@ -280,11 +276,19 @@ class FormVersionService:
     ) -> list[VersionMeta]:
         """List all published version metadata for a form.
 
-        Merges the in-process ``VersionMeta`` cache with a reconstruction
-        from storage, so history survives a process restart (the snapshots
+        Merges the in-process ``VersionMeta`` cache with a single ordered
+        query against storage (:meth:`FormStorage.list_versions`, FEAT-433
+        Module 2), so history survives a process restart (the snapshots
         live in Postgres under ``UNIQUE(form_uid, version)``; ``published_at``
         is recovered from the stamp written into ``snapshot.meta`` by
-        :meth:`publish`).
+        :meth:`publish`). Replaces the old per-candidate-version probing
+        loop, which cost one round-trip per version and silently truncated
+        history across any two-version gap.
+
+        On conflict between the in-process cache and a storage row for the
+        same version, the storage row wins — a ``_meta`` entry is only an
+        in-process echo of a publish that already wrote a row, so a restart
+        never changes the answer.
 
         Args:
             form_uid: The form's immutable UUID (FEAT-389).
@@ -298,51 +302,21 @@ class FormVersionService:
         }
 
         if self._storage is not None:
-            for version in await self._probe_storage_versions(form_uid, tenant=tenant):
-                if version in by_version:
-                    continue
-                snap = await self._storage.load(form_uid, version=version, tenant=tenant)
-                if snap is None or snap.published_version != version:
+            for row in await self._storage.list_versions(form_uid, tenant=tenant):
+                version = row["version"]
+                # FEAT-433 TASK-2265 keeps today's gate (only rows publish()
+                # stamped are listed) — demoting it to a per-row label
+                # (is_published) is TASK-2266's job, not this one's.
+                if row.get("published_version") != version:
                     continue
                 by_version[version] = VersionMeta(
-                    form_id=snap.form_id,
+                    form_id=row.get("form_id") or "",
                     version=version,
-                    published_at=self._published_at_from_snapshot(snap),
+                    published_at=self._published_at_from_row(row),
                     tenant=tenant,
                 )
 
         return sorted(by_version.values(), key=lambda m: _parse_major_minor(m.version))
-
-    async def _probe_storage_versions(self, form_uid: str, *, tenant: str) -> list[str]:
-        """Enumerate published version tags persisted in storage.
-
-        ``FormStorage`` has no version-listing API, but publish tags form a
-        contiguous semver chain (each publish bumps from the live version),
-        so the history is recoverable by probing minors per major up to the
-        latest stored version. A single leading miss per major is tolerated
-        (the first publish of a form is usually ``X.1``, not ``X.0``).
-        """
-        latest = await self._storage.load(form_uid, tenant=tenant)
-        if latest is None:
-            return []
-        latest_major, _ = _parse_major_minor(latest.version)
-
-        found: list[str] = []
-        probes = 0
-        for major in range(1, latest_major + 1):
-            minor = 0
-            misses = 0
-            while misses < 2 and probes < _MAX_VERSION_PROBES:
-                version = f"{major}.{minor}"
-                snap = await self._storage.load(form_uid, version=version, tenant=tenant)
-                probes += 1
-                if snap is not None and snap.published_version == version:
-                    found.append(version)
-                    misses = 0
-                else:
-                    misses += 1
-                minor += 1
-        return found
 
     @staticmethod
     def _published_at_from_snapshot(snap: FormSchema) -> datetime:
@@ -354,6 +328,27 @@ class FormVersionService:
             except ValueError:
                 pass
         return snap.created_at or datetime.now(timezone.utc)
+
+    @staticmethod
+    def _published_at_from_row(row: dict) -> datetime:
+        """Recover the publish timestamp from a projected storage row.
+
+        Same precedence as :meth:`_published_at_from_snapshot`, adapted to
+        the projected dict shape returned by
+        :meth:`FormStorage.list_versions` (FEAT-433 Module 2) instead of a
+        whole ``FormSchema`` snapshot: the ``meta.published_at`` stamp when
+        present, otherwise the row's ``created_at``, otherwise now.
+        """
+        stamp = row.get("published_at")
+        if isinstance(stamp, str):
+            try:
+                return datetime.fromisoformat(stamp)
+            except ValueError:
+                pass
+        created_at = row.get("created_at")
+        if isinstance(created_at, datetime):
+            return created_at
+        return datetime.now(timezone.utc)
 
     async def can_delete(self, form_uid: str, *, tenant: str) -> bool:
         """Return ``True`` if deletion is safe (no responses associated).

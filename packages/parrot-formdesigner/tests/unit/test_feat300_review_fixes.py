@@ -79,6 +79,24 @@ class InMemoryStorage(FormStorage):
             if t == tenant
         ]
 
+    async def list_versions(self, form_uid, *, tenant=None) -> list[dict[str, Any]]:
+        """FEAT-433 Module 2 — mirrors PostgresFormStorage.list_versions()'s
+        projected-dict shape so FormVersionService.list_versions() (which now
+        calls this instead of probing) can reconstruct history from this
+        double the same way it would from real Postgres."""
+        versions = self._rows.get((tenant, form_uid), {})
+        return [
+            {
+                "version": version,
+                "created_at": snap.created_at,
+                "updated_at": snap.created_at,
+                "form_id": snap.form_id,
+                "published_version": snap.published_version,
+                "published_at": (snap.meta or {}).get("published_at"),
+            }
+            for version, snap in versions.items()
+        ]
+
 
 class FailingStorage(InMemoryStorage):
     """Storage whose save/list always fail — simulates an unreachable DB."""

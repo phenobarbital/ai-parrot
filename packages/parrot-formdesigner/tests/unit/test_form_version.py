@@ -1,5 +1,7 @@
 """Unit tests for FormVersionService (FEAT-300 TASK-004)."""
 
+from datetime import datetime, timezone
+
 import pytest
 
 from parrot_formdesigner.core.schema import FormSchema, FormSection, FormField
@@ -10,7 +12,8 @@ from parrot_formdesigner.services.form_version import (
     _bump,
     _parse_major_minor,
 )
-from parrot_formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.services.registry import FormRegistry, FormStorage
+from parrot_formdesigner.services.storage import PostgresFormStorage
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +192,202 @@ async def test_form_version_list_versions_multiple(svc, form):
     versions = await svc.list_versions(form.form_uid, tenant="t1")
     assert len(versions) == 2
     assert [v.version for v in versions] == ["1.1", "1.2"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-433 TASK-2265 — FormStorage.list_versions(), one ordered query
+# ---------------------------------------------------------------------------
+
+
+class _SpyVersionStorage(FormStorage):
+    """FormStorage double whose ``list_versions()`` returns fixed projected
+    rows and counts how many times it was called — proves
+    ``FormVersionService.list_versions()`` issues exactly one storage call
+    instead of the old per-candidate-version probing loop."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        # Rows deliberately NOT pre-sorted — proves the merge/sort in
+        # FormVersionService.list_versions() orders correctly regardless of
+        # the order storage returns them in.
+        self._rows = rows
+        self.list_versions_calls = 0
+
+    async def save(self, form, style=None, *, tenant=None) -> str:
+        return form.form_id
+
+    async def load(self, form_uid, version=None, *, tenant=None):
+        return None
+
+    async def delete(self, form_uid, *, tenant=None) -> bool:
+        return False
+
+    async def list_forms(self, *, tenant=None):
+        return []
+
+    async def list_versions(self, form_uid, *, tenant=None) -> list[dict]:
+        self.list_versions_calls += 1
+        return list(self._rows)
+
+
+def _published_row(version: str, *, created_at: datetime | None = None) -> dict:
+    """A projected storage row for a version publish() actually stamped."""
+    return {
+        "version": version,
+        "created_at": created_at or datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "updated_at": created_at or datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "form_id": "form1",
+        "published_version": version,
+        "published_at": (created_at or datetime(2026, 1, 1, tzinfo=timezone.utc)).isoformat(),
+    }
+
+
+async def test_list_versions_single_query():
+    """Listing issues exactly one storage call (no per-version probing)."""
+    storage = _SpyVersionStorage([_published_row(f"1.{i}") for i in range(15)])
+    registry = FormRegistry()
+    form = _minimal_form()
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    await svc.list_versions(form.form_uid, tenant="t1")
+
+    assert storage.list_versions_calls == 1
+
+
+async def test_list_versions_orders_past_ten():
+    """1.0..1.14 come back in that order: 1.9 before 1.10, 1.14 last."""
+    # Deliberately scrambled — the merge/sort must not depend on storage
+    # returning rows in order.
+    rows = [_published_row(f"1.{i}") for i in (0, 10, 9, 14, 2, 1, 11, 3, 4, 5, 6, 7, 8, 12, 13)]
+    storage = _SpyVersionStorage(rows)
+    registry = FormRegistry()
+    form = _minimal_form()
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
+
+    assert [v.version for v in versions] == [f"1.{i}" for i in range(15)]
+    assert versions[-1].version == "1.14"
+
+
+async def test_list_versions_survives_gaps():
+    """Deleting 1.2 and 1.3 still lists 1.4+ (the old probe stopped there)."""
+    rows = [_published_row(v) for v in ("1.0", "1.1", "1.4", "1.5")]
+    storage = _SpyVersionStorage(rows)
+    registry = FormRegistry()
+    form = _minimal_form()
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
+
+    assert [v.version for v in versions] == ["1.0", "1.1", "1.4", "1.5"]
+
+
+async def test_probe_storage_versions_removed():
+    """_probe_storage_versions and _MAX_VERSION_PROBES no longer exist."""
+    import parrot_formdesigner.services.form_version as form_version_module
+
+    assert not hasattr(FormVersionService, "_probe_storage_versions")
+    assert not hasattr(form_version_module, "_MAX_VERSION_PROBES")
+
+
+# ---------------------------------------------------------------------------
+# FEAT-433 TASK-2265 — PostgresFormStorage.list_versions() SQL shape
+# ---------------------------------------------------------------------------
+
+
+class _StubVersionRow(dict):
+    """asyncpg.Record duck-type — supports row['key'] indexing."""
+
+
+class _StubVersionConn:
+    """Minimal asyncpg connection stub recording fetch() calls."""
+
+    def __init__(self, rows: list[_StubVersionRow]) -> None:
+        self._rows = rows
+        self.fetch_calls = 0
+        self.last_sql: str | None = None
+        self.last_args: tuple | None = None
+
+    async def fetch(self, sql: str, *args) -> list[_StubVersionRow]:
+        self.fetch_calls += 1
+        self.last_sql = sql
+        self.last_args = args
+        return list(self._rows)
+
+    async def __aenter__(self) -> "_StubVersionConn":
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+
+class _StubVersionAcquireCtx:
+    def __init__(self, conn: _StubVersionConn) -> None:
+        self._conn = conn
+
+    async def __aenter__(self) -> _StubVersionConn:
+        return self._conn
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+
+class _StubVersionPool:
+    def __init__(self, rows: list[_StubVersionRow]) -> None:
+        self.conn = _StubVersionConn(rows)
+
+    def acquire(self) -> _StubVersionAcquireCtx:
+        return _StubVersionAcquireCtx(self.conn)
+
+
+async def test_list_versions_projects_not_hauls():
+    """The SQL selects the projected columns, not schema_json whole."""
+    rows = [_StubVersionRow(
+        version="1.0",
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        form_id="f1",
+        published_version="1.0",
+        published_at="2026-01-01T00:00:00+00:00",
+    )]
+    pool = _StubVersionPool(rows)
+    storage = PostgresFormStorage(pool=pool)
+
+    out = await storage.list_versions("uid-1", tenant="t1")
+
+    assert out == [{
+        "version": "1.0",
+        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "form_id": "f1",
+        "published_version": "1.0",
+        "published_at": "2026-01-01T00:00:00+00:00",
+    }]
+    # Never select schema_json whole — only its projected sub-fields.
+    assert "schema_json," not in pool.conn.last_sql
+    assert "SELECT schema_json" not in pool.conn.last_sql
+
+
+async def test_list_versions_sql_guards_the_cast():
+    """The ORDER BY guards the ::int cast against non-major.minor versions."""
+    storage = PostgresFormStorage(pool=_StubVersionPool([]))
+    sql = storage._list_versions_sql(None)
+    assert "::int" in sql
+    assert "NULLS LAST" in sql
+    assert "CASE WHEN version ~" in sql
+
+
+async def test_list_versions_single_storage_call():
+    """A single fetch() call regardless of row count."""
+    pool = _StubVersionPool([])
+    storage = PostgresFormStorage(pool=pool)
+
+    await storage.list_versions("uid-1", tenant="t1")
+
+    assert pool.conn.fetch_calls == 1
 
 
 # ---------------------------------------------------------------------------

@@ -229,6 +229,38 @@ class PostgresFormStorage(FormStorage):
         ORDER BY form_uid, updated_at DESC
         """
 
+    def _list_versions_sql(self, tenant: str | None) -> str:
+        """SQL for ``list_versions()`` (FEAT-433 Module 2).
+
+        Projects only the columns the service needs (not the whole
+        ``schema_json`` — a 15-version form would otherwise transfer 15
+        complete schemas to compute six scalars) and orders by the parsed
+        ``(major, minor)`` integers, never the raw string (lexicographically
+        ``'1.9' > '1.14'``, and float coercion fails the same way).
+
+        The ``CASE`` guards the ``::int`` cast: ``version`` is a free
+        ``VARCHAR(50)`` with no CHECK constraint, so a bare cast would raise
+        ``22P02`` on any row that doesn't match ``major.minor`` and 500 the
+        endpoint for the whole form. Unparseable rows sort last,
+        deterministically, by the raw string.
+        """
+        qt = self._qualified(tenant)
+        return f"""
+        SELECT version,
+               created_at,
+               updated_at,
+               schema_json ->> 'form_id'                AS form_id,
+               schema_json ->> 'published_version'      AS published_version,
+               schema_json -> 'meta' ->> 'published_at' AS published_at
+        FROM {qt}
+        WHERE form_uid = $1
+        ORDER BY CASE WHEN version ~ '^[0-9]+\\.[0-9]+$'
+                      THEN split_part(version, '.', 1)::int END NULLS LAST,
+                 CASE WHEN version ~ '^[0-9]+\\.[0-9]+$'
+                      THEN split_part(version, '.', 2)::int END NULLS LAST,
+                 version
+        """
+
     def _load_by_slug_sql(self, tenant: str | None) -> str:
         qt = self._qualified(tenant)
         return f"""
@@ -571,3 +603,42 @@ class PostgresFormStorage(FormStorage):
             result.append(entry)
 
         return result
+
+    async def list_versions(
+        self,
+        form_uid: uuid.UUID,
+        *,
+        tenant: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Every stored version of one form, in one ordered query (FEAT-433).
+
+        Replaces reconstructing history by probing ``load()`` per candidate
+        version. Ordered by the parsed ``(major, minor)`` integers via a
+        guarded ``CASE`` cast (see :meth:`_list_versions_sql`) — never by
+        the raw version string or a numeric coercion of it.
+
+        Args:
+            form_uid: The form's immutable UUID (FEAT-389).
+            tenant: Optional tenant override; resolves the schema for this
+                single call.
+
+        Returns:
+            Rows of ``{"version", "created_at", "updated_at", "form_id",
+            "published_version", "published_at"}`` — the projected fields,
+            NOT the whole ``schema_json`` — oldest first.
+        """
+        self._require_pool()
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(self._list_versions_sql(tenant), form_uid)
+
+        return [
+            {
+                "version": row["version"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "form_id": row["form_id"],
+                "published_version": row["published_version"],
+                "published_at": row["published_at"],
+            }
+            for row in rows
+        ]
