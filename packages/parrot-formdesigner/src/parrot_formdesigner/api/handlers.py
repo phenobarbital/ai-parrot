@@ -1801,12 +1801,27 @@ class FormAPIHandler:
     def _get_version_service(self) -> "FormVersionService":
         """Return the shared FormVersionService, initialising it lazily.
 
+        Wires the registry's storage backend (FEAT-433 Module 1) so
+        published snapshots are persisted to the same backend the rest of
+        the handler uses (mirrors ``_make_question_bank``'s
+        ``storage=self.registry.storage`` shape). ``FormRegistry.storage``
+        may legitimately be ``None`` (in-memory deployments and most unit
+        tests) — that is passed straight through and the service falls
+        back to its in-memory store, as before.
+
+        Note: the service is cached on ``self._version_service`` and the
+        storage is read at construction time — a ``set_storage()`` call
+        made after the first version request will not be picked up by
+        this cached instance.
+
         Returns:
             Configured ``FormVersionService`` instance.
         """
         if self._version_service is None:
             from ..services.form_version import FormVersionService
-            self._version_service = FormVersionService(self.registry)
+            self._version_service = FormVersionService(
+                self.registry, storage=self.registry.storage
+            )
         return self._version_service
 
     def _make_question_bank(self, tenant: str) -> "QuestionBankService":

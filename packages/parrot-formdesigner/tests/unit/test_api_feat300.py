@@ -27,11 +27,49 @@ from unittest.mock import AsyncMock, MagicMock
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
-from parrot_formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.services.form_version import FormVersionService
+from parrot_formdesigner.services.registry import FormRegistry, FormStorage
 from parrot_formdesigner.tools.services.networkninja import (
     ImportDiffEntry,
     ImportDiffReport,
 )
+
+
+class _FakeFormStorage(FormStorage):
+    """Minimal dict-backed FormStorage double (FEAT-433 TASK-2264).
+
+    Just enough of the ``FormStorage`` ABC to prove ``_get_version_service``
+    wires a real backend through and that a published snapshot survives
+    discarding and rebuilding the service — not a full storage double
+    (see ``InMemoryStorage`` in ``test_feat300_review_fixes.py`` for that).
+    """
+
+    def __init__(self) -> None:
+        self._rows: dict[tuple[str | None, str], dict[str, FormSchema]] = {}
+
+    async def save(self, form: FormSchema, style=None, *, tenant=None) -> str:
+        versions = self._rows.setdefault((tenant, str(form.form_uid)), {})
+        versions[form.version] = form.model_copy(deep=True)
+        return form.form_id
+
+    async def load(self, form_uid, version=None, *, tenant=None):
+        versions = self._rows.get((tenant, str(form_uid)), {})
+        if not versions:
+            return None
+        if version is not None:
+            snap = versions.get(version)
+            return snap.model_copy(deep=True) if snap else None
+        return list(versions.values())[-1].model_copy(deep=True)
+
+    async def delete(self, form_uid, *, tenant=None) -> bool:
+        return self._rows.pop((tenant, str(form_uid)), None) is not None
+
+    async def list_forms(self, *, tenant=None):
+        return [
+            {"form_uid": fuid, "version": list(v.keys())[-1], "tenant": t}
+            for (t, fuid), v in self._rows.items()
+            if t == tenant
+        ]
 
 # Well-formed UUIDs that are never registered — used for "unknown form"
 # tests, distinct from any auto-generated form.form_uid.
@@ -128,6 +166,49 @@ def _make_handler(
         registry.default_tenant = tenant
         registry.register = AsyncMock()
     return FormAPIHandler(registry=registry)
+
+
+# ---------------------------------------------------------------------------
+# _get_version_service — storage wiring (FEAT-433 Module 1 / TASK-2264)
+# ---------------------------------------------------------------------------
+
+
+class TestVersionServiceStorageWiring:
+    """`_get_version_service()` must pass the registry's storage through."""
+
+    async def test_version_service_receives_storage(self):
+        """A registry with a backend yields a service whose _storage is set."""
+        storage = _FakeFormStorage()
+        registry = FormRegistry(storage=storage)
+        handler = _make_handler(registry)
+
+        svc = handler._get_version_service()
+
+        assert svc._storage is storage
+
+    async def test_version_service_none_storage_still_works(self):
+        """A registry with NO backend still yields a usable (in-memory) service."""
+        registry = FormRegistry()
+        handler = _make_handler(registry)
+
+        svc = handler._get_version_service()
+
+        assert svc._storage is None
+
+    async def test_publish_persists_across_service_instances(self):
+        """A published snapshot survives discarding and rebuilding the service."""
+        storage = _FakeFormStorage()
+        registry = FormRegistry(storage=storage)
+        form = _make_form()
+        await registry.register(form, tenant="t1")
+
+        svc = FormVersionService(registry, storage=storage)
+        tag = await svc.publish(form.form_uid, tenant="t1")
+        del svc
+
+        rebuilt = FormVersionService(registry, storage=storage)
+        loaded = await rebuilt.get_published(form.form_uid, version=tag, tenant="t1")
+        assert loaded is not None
 
 
 # ---------------------------------------------------------------------------
