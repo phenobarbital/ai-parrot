@@ -46,6 +46,8 @@ from parrot.models.infographic import (
     CodeBlock,
     CardGridBlock,
     GridCard,
+    DocumentMeta,
+    ChangelogEntry,
 )
 from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
 
@@ -1117,6 +1119,104 @@ class TestAllBlocksIntegration:
         html = renderer.render_to_html(full_infographic_response)
         assert "<!DOCTYPE html>" in html
         assert "Full Test Report" in html
+
+
+# ──────────────────────────────────────────────
+# Document Chrome — Version Bar, Changelog & Footer (FEAT-301 / TASK-2254)
+# ──────────────────────────────────────────────
+
+_CHROME_BASE = {"blocks": [{"type": "title", "title": "T"}]}
+
+
+class TestDocumentChrome:
+    def test_absent_when_no_document_meta(self, renderer):
+        # BASE_CSS unconditionally declares .doc-bar / .doc-footer rules in
+        # <style>, so assert on the actual HTML element usage, not the bare
+        # substring (which would also match the CSS selector text).
+        html = renderer.render_to_html(_CHROME_BASE)
+        assert 'class="doc-bar"' not in html
+        assert 'class="doc-footer"' not in html
+
+    def test_document_meta_none_byte_identical(self, renderer):
+        """render_to_html with no document_meta produces byte-identical output."""
+        without = renderer.render_to_html(_CHROME_BASE)
+        with_none = renderer.render_to_html({**_CHROME_BASE, "document_meta": None})
+        assert without == with_none
+
+    def test_empty_meta_adds_nothing(self, renderer):
+        html = renderer.render_to_html({**_CHROME_BASE, "document_meta": {}})
+        assert 'class="doc-bar"' not in html
+
+    def test_version_and_status_pills(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"version": "1.2", "status": "approved"},
+        })
+        assert "doc-pill--version" in html and "1.2" in html
+        assert "doc-pill--status" in html and "approved" in html
+
+    def test_changelog_entries_in_order(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"changelog": [
+                {"version": "1.1", "date": "2026-08-01", "summary": "First"},
+                {"version": "1.2", "date": "2026-08-19", "summary": "Second"},
+            ]},
+        })
+        assert html.count('class="doc-changelog__entry"') == 2
+        assert html.index("First") < html.index("Second")
+
+    def test_bilingual_changelog_summary(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"changelog": [
+                {"version": "1.0", "date": "2026-08-19",
+                 "summary": {"en": "Initial", "es": "Inicial"}},
+            ]},
+        })
+        assert 'lang="en"' in html and 'lang="es"' in html
+
+    def test_author_footer(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE, "document_meta": {"author": "Jesus"},
+        })
+        assert 'class="doc-footer"' in html and "Jesus" in html
+
+    def test_hostile_status_is_escaped(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"status": '"><script>alert(1)</script>'},
+        })
+        assert "<script>" not in html
+
+    def test_hostile_author_is_escaped(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE,
+            "document_meta": {"author": '"><script>alert(1)</script>'},
+        })
+        assert "<script>" not in html
+
+    def test_chrome_precedes_blocks(self, renderer):
+        html = renderer.render_to_html({
+            **_CHROME_BASE, "document_meta": {"version": "1.0", "author": "A"},
+        })
+        assert html.index('class="doc-bar"') < html.index("<h1>")
+        assert html.index("<h1>") < html.index('class="doc-footer"')
+
+    def test_document_meta_model_direct(self, renderer):
+        """_render_document_chrome / _render_document_footer via real models."""
+        meta = DocumentMeta(
+            version="2.0", status="draft", author="A",
+            changelog=[ChangelogEntry(version="2.0", date="2026-08-19", summary="Notes")],
+        )
+        chrome = renderer._render_document_chrome(meta)
+        footer = renderer._render_document_footer(meta)
+        assert "doc-bar" in chrome and "doc-changelog" in chrome
+        assert "doc-footer" in footer and "A" in footer
+
+    def test_document_meta_all_none_direct(self, renderer):
+        assert renderer._render_document_chrome(DocumentMeta()) == ""
+        assert renderer._render_document_footer(DocumentMeta()) == ""
 
 
 # ──────────────────────────────────────────────

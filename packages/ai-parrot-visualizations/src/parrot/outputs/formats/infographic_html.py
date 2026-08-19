@@ -65,6 +65,8 @@ from ...models.infographic import (
     CodeBlock,
     CardGridBlock,
     GridCard,
+    DocumentMeta,
+    ChangelogEntry,
 )
 
 logger = logging.getLogger(__name__)
@@ -751,6 +753,52 @@ footer.infographic-footer {
 @media (max-width: 600px) {
     .card-grid { grid-template-columns: 1fr !important; }
 }
+
+/* ── Document Chrome (FEAT-301) ─────────────────── */
+.doc-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+.doc-pill {
+    display: inline-block;
+    background: var(--soft-primary, rgba(99, 102, 241, 0.12));
+    color: var(--primary, #6366f1);
+    padding: 3px 12px;
+    border-radius: 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.doc-pill--status { background: var(--surface-bg, var(--neutral-bg)); border: 1px solid var(--neutral-border); }
+.doc-changelog {
+    background: var(--surface-bg, var(--neutral-bg));
+    border: 1px solid var(--neutral-border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+}
+.doc-changelog__title { margin: 0 0 10px; font-size: 1rem; color: var(--neutral-text); }
+.doc-changelog__entry {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    font-size: 0.9em;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--neutral-border);
+}
+.doc-changelog__entry:last-child { border-bottom: none; }
+.doc-changelog__version { font-weight: 700; color: var(--primary, #6366f1); }
+.doc-changelog__date { color: var(--neutral-muted); font-size: 0.85em; }
+.doc-changelog__summary { color: var(--neutral-text); }
+.doc-footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--neutral-border);
+    color: var(--neutral-muted);
+    font-size: 0.85rem;
+    text-align: center;
+}
 """
 
 
@@ -936,11 +984,22 @@ class InfographicHTMLRenderer(BaseRenderer):
         # Determine which interactive JS to inject
         interaction_js = self._build_interaction_js(data)
 
+        # Document chrome (version/status bar, changelog, authorship footer)
+        # — only rendered when document_meta is populated, so a response
+        # with no document_meta produces byte-identical output.
+        chrome_html = ""
+        footer_html = ""
+        if data.document_meta is not None:
+            chrome_html = self._render_document_chrome(data.document_meta)
+            footer_html = self._render_document_footer(data.document_meta)
+
         return self._assemble_document(
             page_title=page_title,
             theme_css=theme_cfg.to_css_variables(),
             blocks_html=blocks_html,
             echarts_script=echarts_script + interaction_js,
+            chrome_html=chrome_html,
+            footer_html=footer_html,
         )
 
     # ── Document assembly ───────────────────────
@@ -951,6 +1010,8 @@ class InfographicHTMLRenderer(BaseRenderer):
         theme_css: str,
         blocks_html: str,
         echarts_script: str = "",
+        chrome_html: str = "",
+        footer_html: str = "",
     ) -> str:
         """Assemble the full HTML5 document."""
         return f"""<!DOCTYPE html>
@@ -967,10 +1028,73 @@ class InfographicHTMLRenderer(BaseRenderer):
 </head>
 <body>
     <div class="container">
-{blocks_html}
-    </div>
+{chrome_html}{blocks_html}
+{footer_html}    </div>
 </body>
 </html>"""
+
+    def _render_document_chrome(self, meta: DocumentMeta) -> str:
+        """Render the document chrome — version/status bar and changelog.
+
+        Args:
+            meta: DocumentMeta with optional version, status, and changelog.
+
+        Returns:
+            HTML string ending in a newline, or ``""`` if no chrome fields
+            are set — so a ``DocumentMeta`` with nothing set adds no markup
+            and a response with no ``document_meta`` renders unchanged.
+        """
+        parts: list[str] = []
+        if meta.version or meta.status:
+            parts.append('        <div class="doc-bar">')
+            if meta.version:
+                parts.append(
+                    f'          <span class="doc-pill doc-pill--version">'
+                    f"{escape(meta.version)}</span>"
+                )
+            if meta.status:
+                parts.append(
+                    f'          <span class="doc-pill doc-pill--status">'
+                    f"{escape(meta.status)}</span>"
+                )
+            parts.append("        </div>")
+        if meta.changelog:
+            parts.append('        <aside class="doc-changelog">')
+            parts.append('          <h4 class="doc-changelog__title">Changelog</h4>')
+            parts.append("          <ul>")
+            for entry in meta.changelog:
+                parts.append('            <li class="doc-changelog__entry">')
+                parts.append(
+                    f'              <span class="doc-changelog__version">'
+                    f"{escape(entry.version)}</span>"
+                )
+                parts.append(
+                    f'              <span class="doc-changelog__date">'
+                    f"{escape(entry.date)}</span>"
+                )
+                parts.append(
+                    f'              <span class="doc-changelog__summary">'
+                    f"{self._render_i18n_span(entry.summary)}</span>"
+                )
+                parts.append("            </li>")
+            parts.append("          </ul>")
+            parts.append("        </aside>")
+        if not parts:
+            return ""
+        return "\n".join(parts) + "\n"
+
+    def _render_document_footer(self, meta: DocumentMeta) -> str:
+        """Render the authorship footer.
+
+        Args:
+            meta: DocumentMeta with an optional author.
+
+        Returns:
+            HTML string ending in a newline, or ``""`` if no author is set.
+        """
+        if not meta.author:
+            return ""
+        return f'        <footer class="doc-footer">{escape(meta.author)}</footer>\n'
 
     # ── Block rendering ─────────────────────────
 
