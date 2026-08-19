@@ -250,5 +250,41 @@ requests without config_dict (FEAT-429 TASK-2250 follow-up)`. Re-verified:
 true baseline's failed/error sets exactly, plus 11 new passing tests (see
 TASK-2248's completion note for the final numbers).
 
-**Deviations from spec**: none (one contract correction, documented above;
-one post-hoc regression fix, documented above).
+**CORRECTION #2 (filed after adversarial code review)**: the code-reviewer
+agent correctly flagged as 🔴 CRITICAL that the original implementation's
+reserved sets — `frozenset({"org", "form-controls"})` in `api/routes.py`
+and `frozenset({"api"})` in `ui/routes.py` — were **hardcoded literals**,
+directly contradicting the spec's explicit language (Module 5: "Derived
+from what is actually registered, never hardcoded"; §7: "the set is
+derived from the router, never hardcoded"; AC13: "DERIVED from the actual
+route registrations (not hardcoded)"). The task file's own guidance had
+diluted this to "a module-level tuple ... is acceptable if introspection
+is impractical," which is not what the spec/AC13 says — the earlier "no
+deviations" claim was wrong against the top-level spec. Fixed with a real
+router-introspection helper, `_reserved_tenant_segments(app, bp)`
+(duplicated per-module, matching this package's `_TENANT_MODES`
+duplication convention rather than a shared helper), added to both files
+and invoked at the END of each `setup_form_*` function — after every
+route in that function is registered — so it collects the literal
+(non-`{tenant}`) first path segment of every route mounted directly under
+`bp`. Verified independently (manual script, both setup orders) that this
+correctly reproduces `{"org", "form-controls"}` for the API surface and
+`{"api"}` for the UI surface, and that the union-merge is order-independent
+regardless of whether `setup_form_api` or `setup_form_ui` runs first on a
+shared app. Also fixed the 💡 nitpick: a comment in `api/tenant.py`
+literally contained the substring `` `/t/` ``, which made AC2's own grep
+pattern (`grep -rn '"/t/{tenant}\|/t/{{tenant}}\|/t/' src/`) return a
+non-zero hit; reworded to "literal `t` marker." Re-verified AC2's exact
+grep now returns zero hits, and the full suite still matches baseline
+exactly (38 failed / 1861 passed / 20 skipped / 81 errors, same
+failed-test-identity set as the true baseline). Committed separately:
+`fix(formdesigner): derive reserved-segment set from router introspection,
+not hardcoded literals (FEAT-429 AC13, code review finding)`. Also
+addressed the reviewer's 🟠 IMPORTANT finding (migration guide didn't
+document the new 404/WARNING behavior) with a follow-up docs commit
+against TASK-2249's file.
+
+**Deviations from spec**: none, after CORRECTION #2 above — the
+implementation now genuinely satisfies AC13's "not hardcoded" requirement.
+(One contract correction and one regression fix from CORRECTION #1 above
+remain as historical record.)

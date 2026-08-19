@@ -175,4 +175,14 @@ Did not add documentation for TASK-2250's reserved-segment guard (404 on
 and this task's own Scope/Files-to-Modify sections don't mention it); left
 for a future doc task if the team wants it surfaced to consumers.
 
+**CORRECTION (filed after adversarial code review)**: the code-reviewer
+agent raised this omission as a 🟠 IMPORTANT finding — new,
+consumer-visible behavior (a tenant named `org`/`form-controls`/`api` now
+404s everywhere, plus a boot WARNING) belonged in the same guide that
+already documents the error contract and deploy checklist, regardless of
+which task's module numbering technically owns it. Added a "Reserved
+tenant segments (FEAT-429)" section plus a checklist item, committed
+separately: `docs: document the reserved-segment guard in the FEAT-421
+migration guide (code review finding)`.
+
 **Deviations from spec**: none.
