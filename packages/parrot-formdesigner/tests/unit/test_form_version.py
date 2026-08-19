@@ -294,6 +294,104 @@ async def test_probe_storage_versions_removed():
 
 
 # ---------------------------------------------------------------------------
+# FEAT-433 TASK-2266 — draft/published label (D1/D3), demoted from a gate
+# ---------------------------------------------------------------------------
+
+
+def _draft_row(version: str, *, created_at: datetime | None = None) -> dict:
+    """A projected storage row for a version the EDITOR saved directly
+    (``_bump_version`` + ``storage.save()``) — NO ``publish()`` call
+    anywhere, so ``published_version`` is ``None`` (spec §4 fixture rule)."""
+    ts = created_at or datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return {
+        "version": version,
+        "created_at": ts,
+        "updated_at": ts,
+        "form_id": "form1",
+        "published_version": None,
+        "published_at": None,
+    }
+
+
+async def test_editor_saved_rows_are_labelled_draft():
+    """Rows written via the editor path alone (no publish() anywhere in the
+    fixture) appear in the listing, labelled draft."""
+    storage = _SpyVersionStorage([_draft_row("1.0"), _draft_row("1.1")])
+    registry = FormRegistry()
+    form = _minimal_form()
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
+
+    assert [v.version for v in versions] == ["1.0", "1.1"]
+    assert all(v.is_published is False for v in versions)
+    assert all(v.is_frozen is False for v in versions)
+
+
+async def test_published_rows_are_labelled_published():
+    """A row written by publish() comes back is_published is True."""
+    storage = _SpyVersionStorage([_published_row("1.1")])
+    registry = FormRegistry()
+    form = _minimal_form()
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
+
+    assert versions[0].is_published is True
+    assert versions[0].is_frozen is True
+
+
+async def test_draft_and_published_coexist_in_one_history():
+    """publish, save twice, publish again → labels alternate correctly."""
+    storage = _SpyVersionStorage([
+        _published_row("1.0"),
+        _draft_row("1.1"),
+        _published_row("1.2"),
+        _draft_row("1.3"),
+    ])
+    registry = FormRegistry()
+    form = _minimal_form()
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
+
+    assert [(v.version, v.is_published) for v in versions] == [
+        ("1.0", True), ("1.1", False), ("1.2", True), ("1.3", False),
+    ]
+
+
+async def test_draft_published_at_is_not_now():
+    """A draft's published_at equals its stored created_at — never wall-clock
+    now (the previous fallback made every draft report "published just
+    now")."""
+    created = datetime(2020, 5, 4, tzinfo=timezone.utc)
+    storage = _SpyVersionStorage([_draft_row("1.0", created_at=created)])
+    registry = FormRegistry()
+    form = _minimal_form()
+    await registry.register(form, tenant="t1")
+    svc = FormVersionService(registry, storage=storage)
+
+    versions = await svc.list_versions(form.form_uid, tenant="t1")
+
+    assert versions[0].published_at == created
+
+
+def test_version_meta_requires_is_published_and_is_frozen():
+    """VersionMeta is extra='forbid' and no longer hardcodes is_frozen=True
+    — every construction site must supply both fields explicitly."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        VersionMeta(
+            form_id="f1", version="1.0",
+            published_at=datetime.now(timezone.utc), tenant="t1",
+        )
+
+
+# ---------------------------------------------------------------------------
 # FEAT-433 TASK-2265 — PostgresFormStorage.list_versions() SQL shape
 # ---------------------------------------------------------------------------
 

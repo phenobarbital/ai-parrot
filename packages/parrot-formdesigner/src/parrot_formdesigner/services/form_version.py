@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class VersionMeta(BaseModel):
-    """Metadata record for a published form version.
+    """Metadata record for one stored form version (FEAT-433 D1/Module 3).
 
     Attributes:
         form_id: The form's human-readable slug (FEAT-389 — display /
@@ -41,9 +41,18 @@ class VersionMeta(BaseModel):
             lookup key everywhere in this service; ``VersionMeta`` keeps
             ``form_id`` purely as a friendlier label for callers.
         version: The semver-style ``major.minor`` tag (e.g. ``"1.0"``).
-        published_at: UTC timestamp when this version was published.
+        published_at: UTC timestamp. For a published row, when it was
+            published; for a draft row, its own ``created_at`` (never the
+            wall-clock "now" of the request — see :meth:`_published_at_from_row`).
         tenant: Tenant slug.
-        is_frozen: Always ``True`` — published versions are immutable.
+        is_published: Whether this row IS the published snapshot for its own
+            version — derived, never stored (D1/D2):
+            ``published_version == version``. The draft/published
+            distinction is a per-row LABEL (D3), not a visibility gate —
+            every stored row is listed regardless of this value.
+        is_frozen: Equal to ``is_published`` — only a published snapshot is
+            immutable; a draft row is rewritable in place by the next editor
+            save.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -52,7 +61,8 @@ class VersionMeta(BaseModel):
     version: str
     published_at: datetime
     tenant: str
-    is_frozen: bool = True
+    is_published: bool
+    is_frozen: bool
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +86,27 @@ def _parse_major_minor(version: str) -> tuple[int, int]:
         return int(m.group(1)), int(m.group(2))
     logger.warning("Could not parse version %r as major.minor — defaulting to (1, 0)", version)
     return 1, 0
+
+
+def _is_published_label(published_version: str | None, version: str) -> bool:
+    """Whether a stored row is the published snapshot for its own version.
+
+    FEAT-433 D1/D2/D3: this is the one comparison the whole feature turns
+    on. Before Module 3 it *gated* ``list_versions`` — a row was dropped
+    unless this held. It now *labels* the row instead — every stored row is
+    listed, and this decides how it is presented, not whether it appears.
+    Kept next to :func:`_parse_major_minor` since the two derivation rules
+    (ordering, labelling) live together by design.
+
+    Args:
+        published_version: The row's stamped ``published_version`` (``None``
+            for a row no ``publish()`` call has ever touched).
+        version: The row's own ``version``.
+
+    Returns:
+        ``True`` if this row IS the published snapshot for its version.
+    """
+    return published_version == version
 
 
 def _bump(current: str, bump: str = "minor") -> str:
@@ -221,12 +252,16 @@ class FormVersionService:
         })
         await self._registry.register(updated_live, persist=False, overwrite=True, tenant=tenant)
 
-        # Record VersionMeta (form_id kept as the human-readable slug label)
+        # Record VersionMeta (form_id kept as the human-readable slug label).
+        # A _meta entry only ever exists because THIS method just published
+        # it — always the published row, never a draft.
         meta = VersionMeta(
             form_id=form.form_id,
             version=new_version,
             published_at=published_at,
             tenant=tenant,
+            is_published=True,
+            is_frozen=True,
         )
         self._meta.setdefault(tenant, {}).setdefault(form_uid, []).append(meta)
 
@@ -274,7 +309,7 @@ class FormVersionService:
         *,
         tenant: str,
     ) -> list[VersionMeta]:
-        """List all published version metadata for a form.
+        """List every stored version of a form, draft and published (D1/D3).
 
         Merges the in-process ``VersionMeta`` cache with a single ordered
         query against storage (:meth:`FormStorage.list_versions`, FEAT-433
@@ -284,6 +319,13 @@ class FormVersionService:
         :meth:`publish`). Replaces the old per-candidate-version probing
         loop, which cost one round-trip per version and silently truncated
         history across any two-version gap.
+
+        FEAT-433 Module 3 (D1/D3): ``published_version == version`` no
+        longer decides whether a row is *listed* — every stored row is,
+        including rows the editor saved directly via ``storage.save()``
+        (no ``publish()`` call). It decides how the row is *labelled*
+        (:func:`_is_published_label`): ``is_published`` (and ``is_frozen``,
+        which mirrors it).
 
         On conflict between the in-process cache and a storage row for the
         same version, the storage row wins — a ``_meta`` entry is only an
@@ -304,16 +346,14 @@ class FormVersionService:
         if self._storage is not None:
             for row in await self._storage.list_versions(form_uid, tenant=tenant):
                 version = row["version"]
-                # FEAT-433 TASK-2265 keeps today's gate (only rows publish()
-                # stamped are listed) — demoting it to a per-row label
-                # (is_published) is TASK-2266's job, not this one's.
-                if row.get("published_version") != version:
-                    continue
+                published = _is_published_label(row.get("published_version"), version)
                 by_version[version] = VersionMeta(
                     form_id=row.get("form_id") or "",
                     version=version,
                     published_at=self._published_at_from_row(row),
                     tenant=tenant,
+                    is_published=published,
+                    is_frozen=published,
                 )
 
         return sorted(by_version.values(), key=lambda m: _parse_major_minor(m.version))
@@ -331,13 +371,21 @@ class FormVersionService:
 
     @staticmethod
     def _published_at_from_row(row: dict) -> datetime:
-        """Recover the publish timestamp from a projected storage row.
+        """Recover a version's timestamp from a projected storage row.
 
         Same precedence as :meth:`_published_at_from_snapshot`, adapted to
         the projected dict shape returned by
         :meth:`FormStorage.list_versions` (FEAT-433 Module 2) instead of a
         whole ``FormSchema`` snapshot: the ``meta.published_at`` stamp when
-        present, otherwise the row's ``created_at``, otherwise now.
+        present, otherwise the row's own ``created_at``.
+
+        FEAT-433 Module 3 (D1): deliberately does NOT fall back to
+        ``datetime.now()`` — the previous fallback made every draft in a
+        mixed history report "published just now", which the history UI
+        would render as a wall of identical timestamps. ``created_at`` is
+        NOT NULL at the storage layer (``PostgresFormStorage``'s
+        ``schema_json``-backed row always carries it), so this is total in
+        practice.
         """
         stamp = row.get("published_at")
         if isinstance(stamp, str):
@@ -345,10 +393,7 @@ class FormVersionService:
                 return datetime.fromisoformat(stamp)
             except ValueError:
                 pass
-        created_at = row.get("created_at")
-        if isinstance(created_at, datetime):
-            return created_at
-        return datetime.now(timezone.utc)
+        return row["created_at"]
 
     async def can_delete(self, form_uid: str, *, tenant: str) -> bool:
         """Return ``True`` if deletion is safe (no responses associated).
@@ -468,11 +513,16 @@ class FormVersionService:
                 updated = form.model_copy(deep=True, update={"published_version": target_version})
                 await self._registry.register(updated, persist=False, overwrite=True, tenant=tenant)
 
+                # Backfill marks the form as published at its current
+                # version — same "always the published row" reasoning as
+                # publish()'s own _meta entry above.
                 meta = VersionMeta(
                     form_id=form.form_id,
                     version=target_version,
                     published_at=published_at,
                     tenant=tenant,
+                    is_published=True,
+                    is_frozen=True,
                 )
                 self._meta.setdefault(tenant, {}).setdefault(form.form_uid, []).append(meta)
 

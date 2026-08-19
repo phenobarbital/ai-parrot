@@ -1922,11 +1922,16 @@ class FormAPIHandler:
         return web.json_response(entry.model_dump(mode="json"), status=201)
 
     async def list_versions(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_uid}/versions — List published version history.
+        """GET /api/v1/forms/{form_uid}/versions — List a form's version history.
 
         Each entry includes ``version``, ``published_at`` (ISO-8601),
-        ``published_by`` (``null`` when not tracked), and ``is_current``
-        (``True`` for the form's active published version).
+        ``published_by`` (``null`` when not tracked), ``is_current``
+        (``True`` for the form's active published version), and
+        ``is_published`` (FEAT-433 D1/D3) — every stored version is listed,
+        draft or published; ``is_published`` labels which is which.
+        ``is_current`` and ``is_published`` are independent: the newest row
+        is normally a current *draft*, and the newest published row is
+        normally an *older* entry.
 
         Args:
             request: Incoming HTTP request (path param: ``form_uid``).
@@ -1953,6 +1958,7 @@ class FormAPIHandler:
                     "published_at": m.published_at.isoformat(),
                     "published_by": None,
                     "is_current": m.version == current_version,
+                    "is_published": m.is_published,
                 }
                 for m in meta_list
             ],
