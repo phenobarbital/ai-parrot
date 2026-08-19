@@ -19,7 +19,7 @@ related:
   - FEAT-301 (themed component catalog — SUPERSEDED by this proposal)
 created: 2026-08-19
 updated: 2026-08-19
-revision: 2 (F005 — fn/ is an FN mirror; Q4 resolved)
+revision: 3 (F005 fn/ mirror; §3.0 implementation home per FEAT-430 F011)
 ---
 
 # FEAT-431 — Artifact & Canvas Builder (SPEC-B)
@@ -147,6 +147,25 @@ to recreate exactly that risk.
 ---
 
 ## 3. Hypothesis / Scope
+
+### 3.0 Implementation home (added — see FEAT-430 F011)
+
+> **Any parrot implementation is implemented in `navigator-api`.** ai-parrot is the
+> framework, consumed by navigator-api as a *published* dependency
+> (`ai-parrot[...]>=0.16.10`; the editable local path is commented out in its
+> `pyproject.toml`), and navigator-api mounts `BotManager` / `AgentSchedulerManager` and
+> parrot's handlers in `app.py` (L412-425).
+>
+> | Item | Home |
+> |---|---|
+> | Reverse adapter A2UI → canvas blocks | **ai-parrot** — framework, sits beside `outputs/a2ui/adapters/infographic.py` |
+> | Supersede FEAT-301 | **ai-parrot** — catalog governance |
+> | Agent → A2UI generation for a dashboard | **navigator-api** — application logic |
+> | Canvas Builder UI | **navigator-svelte** — own FEAT-ID, not yet allocated |
+>
+> SPEC-B is the one place a genuine ai-parrot code change is expected. That implies a
+> **release cycle**: navigator-api pins a published version, so the adapter must ship in
+> a release before the application can consume it. Sequence the two accordingly.
 
 ### 3.1 Design decisions (resolved with the user)
 
