@@ -52,7 +52,7 @@
       "feature_id": "FEAT-432",
       "feature": "wikitoolkit-perl-scanner",
       "spec": "sdd/specs/wikitoolkit-perl-scanner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Adds tree-sitter path to perl.py created by TASK-2260",
       "assigned_to": null,
       "started_at": "2026-08-19T11:20:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2261-perl-scanner-treesitter.md"
+      "completed_at": "2026-08-19T11:32:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2261-perl-scanner-treesitter.md"
     },
     {
       "id": "TASK-2262",
