@@ -11,10 +11,16 @@ instead of the literal slug string.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
-from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
+from parrot_formdesigner.core.schema import (
+    FormField,
+    FormSchema,
+    FormSection,
+    derive_stable_identities,
+)
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.registry import FormRegistry
 
@@ -353,3 +359,105 @@ async def test_clone_storage_probe_fault_is_fail_soft(
         sample_form.form_uid, "survives-probe-fault", persist=False
     )
     assert clone.form_id == "survives-probe-fault"
+
+
+# ---------------------------------------------------------------------------
+# Stable child identity on clone (field_uid / section_uid / subsection_uid)
+# ---------------------------------------------------------------------------
+
+
+async def test_clone_regenerates_field_uids(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """A clone must not share a single field_uid with its source.
+
+    A deep copy inherits them verbatim; FormSchema's validator only checks
+    uniqueness WITHIN a form, so nothing else catches the collision.
+    """
+    await registry.register(sample_form)
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
+
+    source_uids = {f.field_uid for f in sample_form.iter_fields_recursive()}
+    clone_uids = {f.field_uid for f in clone.iter_fields_recursive()}
+
+    assert source_uids, "fixture must expose at least one field"
+    assert len(clone_uids) == len(source_uids)
+    assert source_uids.isdisjoint(clone_uids)
+
+
+async def test_clone_regenerates_section_uids(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """Section identities are re-derived too, not carried over."""
+    await registry.register(sample_form)
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
+
+    source_uids = {s.section_uid for s in sample_form.sections}
+    clone_uids = {s.section_uid for s in clone.sections}
+
+    assert source_uids
+    assert source_uids.isdisjoint(clone_uids)
+
+
+async def test_clone_field_uids_are_derived_from_the_clone_form_uid(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """Each uid is uuid5(clone.form_uid, "field:<field_id>") — deterministic.
+
+    Pinning the derivation (not merely "it changed") is what makes the
+    identity reproducible: re-deriving must be a no-op.
+    """
+    await registry.register(sample_form)
+    clone = await registry.clone_form(sample_form.form_uid, "cloned-form")
+
+    for field in clone.iter_fields_recursive():
+        assert field.field_uid == uuid.uuid5(
+            clone.form_uid, f"field:{field.field_id}"
+        )
+
+
+async def test_clone_of_a_clone_has_distinct_uids(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """Cloning transitively keeps identities distinct at every generation."""
+    await registry.register(sample_form)
+    first = await registry.clone_form(sample_form.form_uid, "clone-one")
+    second = await registry.clone_form(first.form_uid, "clone-two")
+
+    a = {f.field_uid for f in sample_form.iter_fields_recursive()}
+    b = {f.field_uid for f in first.iter_fields_recursive()}
+    c = {f.field_uid for f in second.iter_fields_recursive()}
+
+    assert a.isdisjoint(b) and b.isdisjoint(c) and a.isdisjoint(c)
+
+
+async def test_clone_with_patch_still_derives_stable_uids(
+    registry: FormRegistry, sample_form: FormSchema
+) -> None:
+    """The invariant holds on the patched path too, not just the plain one."""
+    await registry.register(sample_form)
+    clone = await registry.clone_form(
+        sample_form.form_uid,
+        "patched-clone",
+        patch={"title": "Patched Clone"},
+    )
+
+    assert clone.title == "Patched Clone"
+    source_uids = {f.field_uid for f in sample_form.iter_fields_recursive()}
+    for field in clone.iter_fields_recursive():
+        assert field.field_uid not in source_uids
+        assert field.field_uid == uuid.uuid5(
+            clone.form_uid, f"field:{field.field_id}"
+        )
+
+
+async def test_derive_stable_identities_is_idempotent(
+    sample_form: FormSchema,
+) -> None:
+    """Applying the derivation twice changes nothing the second time."""
+    derive_stable_identities(sample_form, sample_form.form_uid)
+    first = {f.field_id: f.field_uid for f in sample_form.iter_fields_recursive()}
+    derive_stable_identities(sample_form, sample_form.form_uid)
+    second = {f.field_id: f.field_uid for f in sample_form.iter_fields_recursive()}
+
+    assert first == second
