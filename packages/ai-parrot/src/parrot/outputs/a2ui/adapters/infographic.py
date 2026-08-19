@@ -135,6 +135,27 @@ def _lines(items: list[Any], *, ordered: bool = False) -> str:
     return "\n".join(out)
 
 
+def _text(value: Any) -> Optional[str]:
+    """Flatten an ``I18nText`` value to a single string for A2UI properties.
+
+    The A2UI envelope is single-language in v1: prefer the ``"en"`` key,
+    else the first value in insertion order, else ``None``.
+
+    Args:
+        value: A plain ``str``, an ``I18nText`` mapping, or ``None``.
+
+    Returns:
+        A flat string, or ``None`` if ``value`` is ``None``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        if "en" in value:
+            return value["en"]
+        return next(iter(value.values()), "")
+    return str(value)
+
+
 class _SectionAccumulator:
     """Collects sections while walking the flat block list.
 
@@ -352,6 +373,63 @@ class _Converter:
             },
         )
 
+    def _chain(self, block: dict[str, Any]) -> dict[str, Any]:
+        """Map a ``chain`` block to a ``Card`` with an arrow-joined node body."""
+        nodes = [_as_dict(raw) for raw in block.get("nodes") or []]
+        labels = [_text(node.get("label")) or "" for node in nodes]
+        subtitle = "vertical" if block.get("direction") == "vertical" else None
+        return _descriptor(
+            "Card",
+            {
+                "title": _text(block.get("title")),
+                "subtitle": subtitle,
+                "body": " → ".join(labels),
+            },
+        )
+
+    def _steps(self, block: dict[str, Any]) -> dict[str, Any]:
+        """Map a ``steps`` block to a ``Card`` with a numbered step body."""
+        lines = []
+        for raw in block.get("steps") or []:
+            step = _as_dict(raw)
+            label = _text(step.get("label")) or ""
+            description = _text(step.get("description"))
+            lines.append(f"{label} — {description}" if description else label)
+        return _descriptor(
+            "Card",
+            {
+                "title": _text(block.get("title")),
+                "body": _lines(lines, ordered=True),
+            },
+        )
+
+    def _code(self, block: dict[str, Any]) -> dict[str, Any]:
+        """Map a ``code`` block to a ``Card`` with the code as body, badge=language."""
+        return _descriptor(
+            "Card",
+            {
+                "title": _text(block.get("title")),
+                "body": block.get("code") or "",
+                "badge": block.get("language"),
+            },
+        )
+
+    def _card_grid(self, block: dict[str, Any]) -> list[dict[str, Any]]:
+        """Map a ``card_grid`` block to one ``Card`` descriptor per grid card."""
+        descriptors = []
+        for raw in block.get("cards") or []:
+            card = _as_dict(raw)
+            descriptors.append(
+                _descriptor(
+                    "Card",
+                    {
+                        "title": _text(card.get("title")),
+                        "body": _text(card.get("body")),
+                    },
+                )
+            )
+        return descriptors
+
     # -- walk ------------------------------------------------------------
 
     def walk(
@@ -407,6 +485,15 @@ class _Converter:
                 sections.add(self._timeline(block))
             elif block_type == "progress":
                 for descriptor in self._progress(block):
+                    sections.add(descriptor)
+            elif block_type == "chain":
+                sections.add(self._chain(block))
+            elif block_type == "steps":
+                sections.add(self._steps(block))
+            elif block_type == "code":
+                sections.add(self._code(block))
+            elif block_type == "card_grid":
+                for descriptor in self._card_grid(block):
                     sections.add(descriptor)
             else:
                 sections.add(self._card_like(block, block_type))
