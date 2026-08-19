@@ -32,7 +32,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Independent of TASK-2263 in content (theme region, ~line 1033+) but edits the SAME file (parrot/models/infographic.py), so a separate worktree would conflict. Sequential in the shared worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2251-themeconfig-v2-petrol-theme.md"
+      "completed_at": "2026-08-19T11:42:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2251-themeconfig-v2-petrol-theme.md"
     },
     {
       "id": "TASK-2252",

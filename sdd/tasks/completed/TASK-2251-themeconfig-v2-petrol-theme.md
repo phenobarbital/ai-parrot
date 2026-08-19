@@ -424,11 +424,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Added `CodePalette` and `MethodBadgePalette` sub-models (with
+`_CSS_COLOR_RE`-backed validators) before `ThemeConfig`. Added the 9 v2
+`Optional` fields (`code_palette`, `method_badge_palette`, `surface_bg`,
+`soft_primary`, `callout_{info,success,warning,error,tip}_bg`) to
+`ThemeConfig`, extended the scalar-color `_validate_color_fields`
+validator list, added module-level `derive_soft()`, and extended
+`to_css_variables()` to emit v2 tokens conditionally (verified a v1-only
+theme emits exactly 12 properties). Registered `petrol` as the 5th
+built-in theme after `midnight`. Exported `CodePalette`,
+`MethodBadgePalette`, `derive_soft` from `parrot/models/__init__.py`
+(both the import block and `__all__`). Added the full v2/petrol test
+suite to `tests/test_infographic_html.py` (86 tests total, all passing).
+Façade tests (`packages/ai-parrot/tests/helpers/test_infographics_helpers.py`,
+16 tests) still pass unchanged. `ruff check --select F` clean on all 3
+touched files.
+**Petrol palette used**: pinned default (cyan/teal petrol-blue palette
+from the task's Implementation Notes) — no canonical FieldSync hex
+values were found in the repo.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Petrol palette used**: pinned default | substituted (list the hex values)
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
