@@ -50,7 +50,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Needs I18nText (2263) and the --soft-primary/--badge-* tokens (2251). Edits infographic_html.py, shared with 2253/2254/2255. Ordered before the block renderers so they can consume _render_i18n_span() rather than rework escape().",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2252-i18n-microsyntax-setlang.md"
+      "completed_at": "2026-08-19T11:54:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2252-i18n-microsyntax-setlang.md"
     },
     {
       "id": "TASK-2253",

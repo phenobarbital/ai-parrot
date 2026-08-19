@@ -428,10 +428,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Added `_render_i18n_span`, `_i18n_plain`, `_expand_microsyntax`,
+`_has_i18n` to `InfographicHTMLRenderer`, plus module-level `SETLANG_JS`
+and the `_MICRO_CHIP_RE`/`_MICRO_METHOD_RE`/`_MICRO_COMP_RE` regexes.
+`_build_interaction_js()` now injects `SETLANG_JS` when `_has_i18n(data)`
+is true (after `TAB_JS`/`ACCORDION_JS`, preserving existing concatenation
+order). Fixed `render_to_html()`'s page-title extraction to go through
+`_i18n_plain()`. Added `.chip`/`.method-badge*`/`.component-ref`/`.i18n`
+CSS rules to `BASE_CSS`, all colors via `var(--token, fallback)`. Wired
+micro-syntax expansion into `_render_title`, `_render_summary`,
+`_render_quote`, `_render_callout`. Added the full i18n/micro-syntax test
+suite to `tests/test_infographic_html.py` (100 tests total, all
+passing). `ruff check --select F` clean (pre-existing F541/F401 findings
+unchanged, verified against the pre-task baseline). `tests/
+test_infographic_multi_tab.py` passes; `tests/test_infographic_autodetect.py`
+has one PRE-EXISTING unrelated failure (`test_all_templates_listed`
+expects 7 templates, finds 9 — caused by templates added by other,
+unrelated features already merged to `dev`; verified unrelated to this
+task's files and unaffected by these changes).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `TitleBlock.title` remains `str` (TASK-2263
+scope, per its explicit Files-to-Modify list which excludes this task
+from touching `models/infographic.py`). The task's own test spec
+(`test_js_present_when_bilingual`) used a `"title"`-type block with a
+dict `title`, which cannot validate against the current model. Adapted
+that test to use `CodeBlock.title` (a model surface that genuinely
+supports `I18nText` since TASK-2263) to exercise `_has_i18n()` +
+`setLang()` injection end-to-end, while keeping `render_to_html()`'s
+page-title fix (`_i18n_plain()`) forward-compatible and
+backward-compatible for the current `str`-only `TitleBlock.title`.
