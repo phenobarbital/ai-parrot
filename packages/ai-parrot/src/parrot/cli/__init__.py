@@ -44,6 +44,29 @@ class LazyGroup(click.Group):
         """
         return sorted(self._lazy_commands.keys())
 
+    @staticmethod
+    def _is_missing_target(module_path: str, exc: ImportError) -> bool:
+        """Report whether `exc` means the lazy module itself is absent.
+
+        CPython sets ``ImportError.name`` to the module that could not be
+        found. For a genuinely uninstalled subcommand that is the target
+        module or one of its parent packages; for a failure raised from
+        *within* an installed module it is the inner dependency instead
+        (e.g. ``google`` for ``from google import genai``). Only the former
+        justifies pointing the user at an optional extra.
+
+        Args:
+            module_path: Dotted path of the lazily imported module.
+            exc: The raised ``ImportError``.
+
+        Returns:
+            ``True`` if the target module (or a parent package) is missing.
+        """
+        failed = getattr(exc, "name", None)
+        if not failed:
+            return False
+        return failed == module_path or module_path.startswith(f"{failed}.")
+
     def get_command(self, ctx, cmd_name):
         """Lazily import and return a subcommand by name.
 
@@ -61,12 +84,16 @@ class LazyGroup(click.Group):
             mod = importlib.import_module(module_path)
         except ImportError as exc:
             hint = self._lazy_extras.get(cmd_name)
-            message = (
-                f"'parrot {cmd_name}' requires {hint}"
-                if hint
-                else f"'parrot {cmd_name}' is unavailable: could not import "
-                f"{module_path!r} ({exc})"
-            )
+            if hint and self._is_missing_target(module_path, exc):
+                message = f"'parrot {cmd_name}' requires {hint}"
+            else:
+                # The target module IS installed — an ImportError raised
+                # *inside* it (a missing transitive dependency) must report
+                # its own cause instead of blaming an unrelated extra.
+                message = (
+                    f"'parrot {cmd_name}' is unavailable: could not import "
+                    f"{module_path!r} ({type(exc).__name__}: {exc})"
+                )
             raise click.ClickException(message) from exc
         attr_name = cmd_name.replace("-", "_")
         return getattr(mod, attr_name, None) or getattr(mod, cmd_name, None)
@@ -87,7 +114,6 @@ cli._lazy_commands = {
     "mcp": "parrot.mcp.cli",
     "autonomous": "parrot.autonomous.cli",
     "agent": "parrot.cli.agent_repl",
-    "wiki": "parrot.knowledge.wiki.cli",
     "claude": "parrot.knowledge.wiki.claude_code.cli",
     "generate-keys": "parrot.cli.generate_keys",
     "devloop": "parrot.cli.devloop",

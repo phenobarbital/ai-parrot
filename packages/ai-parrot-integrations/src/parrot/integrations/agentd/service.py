@@ -273,10 +273,11 @@ class AgentDaemon:
     async def _start_scheduler(self) -> None:
         """Best-effort headless scheduler bootstrap (spec §2, step 3).
 
-        Skipped entirely when `config.scheduler.enabled` is False. When
-        ai-parrot-server is not installed, logs a warning and continues
-        without a scheduler -- `schedules.*` RPCs then return
-        `SCHEDULER_UNAVAILABLE` (1003) instead of crashing the daemon.
+        Skipped entirely when `config.scheduler.enabled` is False. When the
+        scheduler stack cannot be imported, logs a warning naming the module
+        that actually failed and continues without a scheduler --
+        `schedules.*` RPCs then return `SCHEDULER_UNAVAILABLE` (1003)
+        instead of crashing the daemon.
         """
         if not self.config.scheduler.enabled:
             self.logger.info("Scheduler disabled by config; skipping.")
@@ -286,10 +287,16 @@ class AgentDaemon:
             from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
             from parrot.scheduler.manager import AgentSchedulerManager
         except ImportError as exc:
+            # Name the module that actually failed: this block imports from
+            # two distributions (apscheduler and ai-parrot-server), and an
+            # ImportError raised from *inside* either one is neither of them.
             self.logger.warning(
-                "ai-parrot-server (scheduler support) not installed; "
-                "running without a scheduler (%s)",
+                "Scheduler support unavailable (%s: %s; failing module: %s); "
+                "running without a scheduler. Install with: "
+                "pip install 'ai-parrot-integrations[agentd-scheduler]'",
+                type(exc).__name__,
                 exc,
+                getattr(exc, "name", None) or "unknown",
             )
             return
 

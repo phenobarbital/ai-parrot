@@ -277,3 +277,57 @@ def test_is_rust_available_reflects_extension_presence(monkeypatch):
     monkeypatch.setattr(budget_module, "_rust_absence_logged", False)
     monkeypatch.setattr(budget_module, "lazy_import", lambda *a, **k: object())
     assert is_rust_available() is True
+
+
+class TestRustAvailabilityLogging:
+    """The extension is a separate maturin sub-project that never ships in
+    the `ai-parrot` wheel, so its absence is the DEFAULT state -- logging it
+    at `warning` cried wolf on every single process start (and contradicted
+    both the docstring and docs/tools/compression.md).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        from parrot.tools.compression import budget
+
+        budget._rust_available_cache = None
+        budget._rust_absence_logged = False
+        yield
+        budget._rust_available_cache = None
+        budget._rust_absence_logged = False
+
+    def test_absence_logs_at_debug_not_warning(self, monkeypatch, caplog):
+        import logging
+
+        from parrot.tools.compression import budget
+
+        def _missing(_name):
+            raise ImportError("No module named 'parrot_codec'")
+
+        monkeypatch.setattr(budget, "lazy_import", _missing)
+
+        with caplog.at_level(logging.DEBUG, logger=budget.logger.name):
+            assert budget.is_rust_available() is False
+
+        records = [r for r in caplog.records if "parrot_codec" in r.message]
+        assert records, "absence should still be reported once"
+        assert all(r.levelno == logging.DEBUG for r in records), (
+            f"expected DEBUG, got {[r.levelname for r in records]}"
+        )
+
+    def test_absence_logged_only_once(self, monkeypatch, caplog):
+        import logging
+
+        from parrot.tools.compression import budget
+
+        monkeypatch.setattr(
+            budget, "lazy_import",
+            lambda _name: (_ for _ in ()).throw(ImportError("nope")),
+        )
+
+        with caplog.at_level(logging.DEBUG, logger=budget.logger.name):
+            budget.is_rust_available()
+            budget._rust_available_cache = None  # force re-detection
+            budget.is_rust_available()
+
+        assert len([r for r in caplog.records if "parrot_codec" in r.message]) == 1
