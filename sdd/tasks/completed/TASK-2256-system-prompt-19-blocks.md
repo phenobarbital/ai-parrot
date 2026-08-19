@@ -317,11 +317,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Confirmed via grep there is only one `INFOGRAPHIC_SYSTEM_PROMPT`
+copy and no test pins its exact text (the one hit in
+`packages/ai-parrot/tests/unit/handlers/test_agent_format_infographic.py`
+is `INFOGRAPHIC_SYSTEM_PROMPT_ADDON` from `parrot.bots.prompts` — an
+unrelated constant). Added `accordion`/`checklist`/`tab_view` to the
+block list (previously shipped but undocumented) plus `chain`/`steps`/
+`code`/`card_grid` with their real field names re-verified against
+`parrot/models/infographic.py`. Added the bilingual-text, document_meta,
+and inline-marker convention blocks, plus a `code` block markdown-fence
+rule. `git diff` on the prompt file shows only additions (23 insertions,
+0 deletions) — the existing 12 entries, the `hero_card` warning, and the
+plain (non-f) string with its literal `{`/`}` JSON example are all
+unchanged. Added the full prompt-coverage test suite (160 tests in
+`tests/test_infographic_html.py` + `tests/test_infographic_autodetect.py`
+passing; the 1 remaining failure is the same pre-existing, unrelated
+`test_all_templates_listed` issue documented in TASK-2252's Completion
+Note). `ruff check --select F` clean on both files (the prompt-coverage
+tests' use of `BlockType` also cleared a pre-existing unused-import
+finding in the test file).
+**Prompt token delta**: ~23 lines / ~230 words added (block list entries
++ 3 new convention sections + 1 new rule).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Prompt token delta**: approximate added length
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -134,7 +134,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Prompt text only, in formats/infographic.py — a file no other task touches. Marked non-parallel solely because it must document the field names TASK-2263 settles; once 2263 has landed it could safely run in its own worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2256-system-prompt-19-blocks.md"
+      "completed_at": "2026-08-19T12:17:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2256-system-prompt-19-blocks.md"
     },
     {
       "id": "TASK-2257",
