@@ -1,0 +1,95 @@
+{
+  "feat_id": "FEAT-431",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "scope_hypothesis": "SPEC-B's Canvas Builder is not new construction. Two visual composition surfaces already ship in navigator-svelte (a 17-block agent canvas with InfographicCanvas/InfographicEditor, and the dashboard grid editor over 22 widget classes), and FEAT-273 is verifiably complete with a 9-component A2UI catalog. The gap is that the frontend speaks the legacy InfographicResponse block vocabulary and has zero A2UI references. SPEC-B is therefore a binding problem plus a governance problem (superseding FEAT-301), not a build-a-canvas problem.",
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "FEAT-273 is complete: 22/22 tasks done, 9-component catalog",
+      "confidence": "high",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "id": "C2",
+      "claim": "A visual canvas with 17 blocks plus InfographicCanvas/Editor already ships in navigator-svelte",
+      "confidence": "high",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "id": "C3",
+      "claim": "The frontend has zero A2UI references and is aligned to the legacy block vocabulary",
+      "confidence": "high",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "id": "C4",
+      "claim": "FEAT-301 is un-actioned prior art that warned of parallel A2UI infrastructure and must be superseded",
+      "confidence": "high",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "id": "C5",
+      "claim": "Two-level permissions have an existing tenant-group substrate",
+      "confidence": "medium",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "id": "C6",
+      "claim": "components/agents/canvas/blocks is canonical; fn/ is a sandbox mirror of navigator-frontend-next, not a fork",
+      "confidence": "high",
+      "evidence": [
+        "F005"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which block tree is canonical - components/agents/canvas or fn/components/agents/canvas?",
+      "resolves": [
+        "C6"
+      ],
+      "status": "resolved",
+      "answer": "src/lib/components/agents/canvas/blocks/ (fn/ is an FN mirror per FEAT-446)"
+    },
+    {
+      "id": "U2",
+      "question": "Do timeline/report/form A2UI components need new canvas blocks, or are they out of v2 scope?",
+      "resolves": [
+        "C3"
+      ]
+    },
+    {
+      "id": "U3",
+      "question": "Which agent produces the A2UI surface for a dashboard, and how is it bound to data slugs?",
+      "resolves": []
+    },
+    {
+      "id": "U4",
+      "question": "Does superseding FEAT-301 require reconciling FEAT-094 (infographic-html-output) as well?",
+      "resolves": [
+        "C4"
+      ]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the two design decisions (reverse adapter, supersede FEAT-301) are resolved; remaining unknowns are scoping choices."
+  },
+  "budget": {
+    "profile": "loose",
+    "truncated": false
+  },
+  "revision": 2
+}

@@ -3,7 +3,15 @@ id: FEAT-301
 title: "Themed Component Catalog — HTML Renderer v2 + A2UI Output"
 type: feature
 mode: enrichment
-status: review
+status: superseded
+superseded_by: FEAT-431
+superseded_on: 2026-08-19
+superseded_reason: >
+  Never decomposed into tasks. Its own finding F012 warned that its A2UI approach
+  (v0.9.1, standalone renderer, fresh envelope models, standalone parrot-catalog.json)
+  would create parallel A2UI infrastructure alongside FEAT-273. FEAT-273 shipped
+  complete (22/22 tasks, 2026-07-11), settling the conflict. FEAT-431 absorbs the
+  theming content into the centralized @register_component catalog.
 source:
   kind: file
   path: sdd/proposals/infographic-theme-catalog-a2ui.spec.md
