@@ -109,6 +109,22 @@ def _as_dict(value: Any) -> dict[str, Any]:
     )
 
 
+def _as_dict_or_none(value: Any) -> Optional[dict[str, Any]]:
+    """Like :func:`_as_dict`, but returns ``None`` instead of raising.
+
+    Used when coercing an item nested inside a list (a block in
+    ``InfographicResponse.blocks``, or an entry inside ``steps``/``nodes``/
+    ``cards``/``events``/accordion-items/tab-panes) where a single malformed
+    entry — e.g. a plain string where a mapping was expected, a plausible
+    LLM hallucination — should be skipped rather than aborting the whole
+    envelope build.
+    """
+    try:
+        return _as_dict(value)
+    except TypeError:
+        return None
+
+
 def _clean(props: dict[str, Any]) -> dict[str, Any]:
     """Drop ``None`` values so absent optionals never reach the wire."""
     return {k: v for k, v in props.items() if v is not None}
@@ -237,7 +253,7 @@ class _Converter:
         rows: list[dict[str, Any]] = []
         for i, label in enumerate(labels):
             row: dict[str, Any] = {_X_COLUMN: label}
-            for name, spec in zip(y_names, series):
+            for name, spec in zip(y_names, series, strict=True):
                 values = spec.get("values") or []
                 row[name] = values[i] if i < len(values) else None
             rows.append(row)
@@ -261,7 +277,10 @@ class _Converter:
         taken: dict[str, int] = {}
         names: list[str] = []
         for column in block.get("columns") or []:
-            header = column if isinstance(column, str) else str(_as_dict(column).get("header") or "")
+            if isinstance(column, str):
+                header = column
+            else:
+                header = str((_as_dict_or_none(column) or {}).get("header") or "")
             names.append(_unique(header or "column", taken))
 
         rows: list[dict[str, Any]] = []
@@ -293,7 +312,9 @@ class _Converter:
     def _timeline(self, block: dict[str, Any]) -> dict[str, Any]:
         events = []
         for raw in block.get("events") or []:
-            event = _as_dict(raw)
+            event = _as_dict_or_none(raw)
+            if event is None:
+                continue
             events.append(
                 _clean(
                     {
@@ -308,7 +329,9 @@ class _Converter:
     def _progress(self, block: dict[str, Any]) -> list[dict[str, Any]]:
         descriptors = []
         for raw in block.get("items") or []:
-            item = _as_dict(raw)
+            item = _as_dict_or_none(raw)
+            if item is None:
+                continue
             descriptors.append(
                 _descriptor(
                     "KPICard",
@@ -332,7 +355,9 @@ class _Converter:
         if block_type == "checklist":
             lines = []
             for raw in block.get("items") or []:
-                item = _as_dict(raw)
+                item = _as_dict_or_none(raw)
+                if item is None:
+                    continue
                 mark = "[x]" if item.get("checked") else "[ ]"
                 lines.append(f"{mark} {item.get('text') or ''}".rstrip())
             return _descriptor(
@@ -375,7 +400,11 @@ class _Converter:
 
     def _chain(self, block: dict[str, Any]) -> dict[str, Any]:
         """Map a ``chain`` block to a ``Card`` with an arrow-joined node body."""
-        nodes = [_as_dict(raw) for raw in block.get("nodes") or []]
+        nodes = [
+            node for node in (
+                _as_dict_or_none(raw) for raw in block.get("nodes") or []
+            ) if node is not None
+        ]
         labels = [_text(node.get("label")) or "" for node in nodes]
         subtitle = "vertical" if block.get("direction") == "vertical" else None
         return _descriptor(
@@ -391,7 +420,9 @@ class _Converter:
         """Map a ``steps`` block to a ``Card`` with a numbered step body."""
         lines = []
         for raw in block.get("steps") or []:
-            step = _as_dict(raw)
+            step = _as_dict_or_none(raw)
+            if step is None:
+                continue
             label = _text(step.get("label")) or ""
             description = _text(step.get("description"))
             lines.append(f"{label} — {description}" if description else label)
@@ -418,7 +449,9 @@ class _Converter:
         """Map a ``card_grid`` block to one ``Card`` descriptor per grid card."""
         descriptors = []
         for raw in block.get("cards") or []:
-            card = _as_dict(raw)
+            card = _as_dict_or_none(raw)
+            if card is None:
+                continue
             descriptors.append(
                 _descriptor(
                     "Card",
@@ -449,7 +482,9 @@ class _Converter:
         subtitle: Optional[str] = None
 
         for raw in blocks:
-            block = _as_dict(raw)
+            block = _as_dict_or_none(raw)
+            if block is None:
+                continue
             block_type = str(block.get("type") or "")
 
             if block_type == "title":
@@ -509,15 +544,19 @@ class _Converter:
     ) -> None:
         """Flatten an accordion/tab_view into sibling sections (sections never nest)."""
         if block_type == "accordion":
-            entries = [
-                (_as_dict(item).get("title"), _as_dict(item).get("content_blocks") or [])
-                for item in block.get("items") or []
-            ]
+            entries = []
+            for item in block.get("items") or []:
+                item_dict = _as_dict_or_none(item)
+                if item_dict is None:
+                    continue
+                entries.append((item_dict.get("title"), item_dict.get("content_blocks") or []))
         else:
-            entries = [
-                (_as_dict(pane).get("label"), _as_dict(pane).get("blocks") or [])
-                for pane in block.get("tabs") or []
-            ]
+            entries = []
+            for pane in block.get("tabs") or []:
+                pane_dict = _as_dict_or_none(pane)
+                if pane_dict is None:
+                    continue
+                entries.append((pane_dict.get("label"), pane_dict.get("blocks") or []))
 
         group_title = block.get("title")
         for index, (heading, nested) in enumerate(entries):

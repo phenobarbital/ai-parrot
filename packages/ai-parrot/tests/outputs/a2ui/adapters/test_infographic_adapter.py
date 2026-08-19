@@ -555,6 +555,96 @@ class TestNewBlockConverters:
         assert a.model_dump() == b.model_dump()
 
 
+class TestMalformedNestedItemsDegradeGracefully:
+    """Malformed nested items (raw-dict input path) are skipped, not fatal.
+
+    ``infographic_response_to_envelope`` also accepts a plain mapping (not
+    just a validated ``InfographicResponse``), so a plausible LLM
+    hallucination — a flat string where a mapping was expected inside
+    ``steps``/``nodes``/``cards``/``events``/items/tabs — must degrade by
+    skipping that entry rather than raising ``TypeError`` and aborting the
+    whole envelope build (FEAT-301 / TASK-2257 code-review follow-up).
+    """
+
+    def test_steps_with_flat_string_items_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "steps", "steps": ["Do it", {"label": "Real"}]}],
+        })
+        props = _sections(envelope)[0]["components"][0]["properties"]
+        assert props["body"] == "1. Real"
+
+    def test_chain_with_malformed_node_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "chain", "nodes": ["oops", {"label": "A"}]}],
+        })
+        props = _sections(envelope)[0]["components"][0]["properties"]
+        assert props["body"] == "A"
+
+    def test_card_grid_with_malformed_card_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "card_grid", "cards": [42, {"title": "Real"}]}],
+        })
+        components = _sections(envelope)[0]["components"]
+        assert [c["properties"].get("title") for c in components] == ["Real"]
+
+    def test_timeline_with_malformed_event_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "timeline", "events": [
+                "oops", {"date": "2026-01", "title": "Real"},
+            ]}],
+        })
+        props = _sections(envelope)[0]["components"][0]["properties"]
+        assert props["events"] == [{"timestamp": "2026-01", "title": "Real"}]
+
+    def test_progress_with_malformed_item_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "progress", "items": [
+                "oops", {"label": "Real", "value": 50},
+            ]}],
+        })
+        components = _sections(envelope)[0]["components"]
+        assert [c["properties"]["label"] for c in components] == ["Real"]
+
+    def test_checklist_with_malformed_item_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "checklist", "items": [
+                "oops", {"text": "Real", "checked": True},
+            ]}],
+        })
+        body = _sections(envelope)[0]["components"][0]["properties"]["body"]
+        assert body == "[x] Real"
+
+    def test_malformed_top_level_block_is_skipped(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": ["oops", {"type": "hero_card", "label": "Real", "value": "1"}],
+        })
+        components = _sections(envelope)[0]["components"]
+        assert [c["properties"]["label"] for c in components] == ["Real"]
+
+    def test_accordion_with_malformed_item_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "accordion", "items": [
+                "oops", {"title": "Real", "content_blocks": []},
+            ]}],
+        })
+        assert _sections(envelope)[0]["heading"] == "Real"
+
+    def test_tab_view_with_malformed_pane_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "tab_view", "tabs": [
+                "oops", {"label": "Real", "blocks": []},
+            ]}],
+        })
+        assert _sections(envelope)[0]["heading"] == "Real"
+
+    def test_table_with_malformed_column_does_not_raise(self):
+        envelope = infographic_response_to_envelope({
+            "blocks": [{"type": "table", "columns": [42, "Real"], "rows": [[1, 2]]}],
+        })
+        table = _sections(envelope)[0]["components"][0]
+        assert [c["name"] for c in table["properties"]["columns"]] == ["column", "Real"]
+
+
 class TestAllBlocksEnvelope:
     """Full 19-block-type payload lowers without error (FEAT-301 / TASK-2257)."""
 
