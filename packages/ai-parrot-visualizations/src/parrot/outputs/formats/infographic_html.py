@@ -185,14 +185,14 @@ body {
 .container {
     max-width: 900px;
     margin: 0 auto;
-    background: white;
+    background: var(--surface-bg, white);
     padding: 32px;
     border-radius: 24px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.05);
 }
 .hero {
     background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    color: #fff;
+    color: var(--on-primary, #fff);
     padding: 40px 32px;
     border-radius: 16px;
     margin-bottom: 32px;
@@ -236,7 +236,7 @@ body {
     margin-bottom: 32px;
 }
 .kpi-card {
-    background: #fff;
+    background: var(--surface-bg, #fff);
     border-radius: 12px;
     padding: 20px;
     text-align: center;
@@ -263,7 +263,7 @@ body {
 .kpi-trend.down { color: var(--accent-red); }
 .kpi-trend.flat { color: var(--neutral-muted); }
 .chart-container {
-    background: #fff;
+    background: var(--surface-bg, #fff);
     padding: 24px;
     border-radius: 16px;
     border: 1px solid var(--neutral-border);
@@ -283,7 +283,7 @@ table {
 }
 th {
     background: var(--primary);
-    color: #fff;
+    color: var(--on-primary, #fff);
     padding: 12px 16px;
     text-align: left;
     font-size: 0.9rem;
@@ -294,7 +294,7 @@ td {
     font-size: 0.95rem;
 }
 tr:nth-child(even) { background: var(--neutral-bg); }
-tr:hover { background: #f1f5f9; }
+tr:hover { background: var(--body-bg); }
 .table-container { margin-bottom: 32px; }
 .table-container h3 {
     margin: 0 0 12px;
@@ -366,30 +366,30 @@ blockquote.quote-block .attribution {
 }
 .callout-block h3 { margin-top: 0; }
 .callout-block.info {
-    background: #eff6ff;
+    background: var(--callout-info-bg, #eff6ff);
     border-left: 4px solid var(--primary);
 }
 .callout-block.info h3 { color: var(--primary-dark); }
 .callout-block.success {
-    background: #ecfdf5;
+    background: var(--callout-success-bg, #ecfdf5);
     border-left: 4px solid var(--accent-green);
 }
-.callout-block.success h3 { color: #065f46; }
+.callout-block.success h3 { color: var(--callout-success-text, #065f46); }
 .callout-block.warning {
-    background: #fffbeb;
+    background: var(--callout-warning-bg, #fffbeb);
     border-left: 4px solid var(--accent-amber);
 }
-.callout-block.warning h3 { color: #92400e; }
+.callout-block.warning h3 { color: var(--callout-warning-text, #92400e); }
 .callout-block.error {
-    background: #fef2f2;
+    background: var(--callout-error-bg, #fef2f2);
     border-left: 4px solid var(--accent-red);
 }
-.callout-block.error h3 { color: #991b1b; }
+.callout-block.error h3 { color: var(--callout-error-text, #991b1b); }
 .callout-block.tip {
-    background: #f0fdfa;
-    border-left: 4px solid #14b8a6;
+    background: var(--callout-tip-bg, #f0fdfa);
+    border-left: 4px solid var(--accent-teal, #14b8a6);
 }
-.callout-block.tip h3 { color: #115e59; }
+.callout-block.tip h3 { color: var(--callout-tip-text, #115e59); }
 hr.divider {
     border: none;
     margin: 32px 0;
@@ -573,7 +573,7 @@ footer.infographic-footer {
     flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px;
 }
 .checklist__item--checked .checklist__checkbox {
-    background: var(--accent-green); border-color: var(--accent-green); color: #fff;
+    background: var(--accent-green); border-color: var(--accent-green); color: var(--on-primary, #fff);
 }
 .checklist__desc { font-size: 11px; color: var(--neutral-muted); margin-left: 24px; }
 .checklist--acceptance .checklist__title { color: var(--primary); }
@@ -594,7 +594,7 @@ footer.infographic-footer {
 .accordion__number {
     width: 28px; height: 28px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 600; color: #fff; flex-shrink: 0;
+    font-size: 12px; font-weight: 600; color: var(--on-primary, #fff); flex-shrink: 0;
 }
 .accordion__item-title { font-size: 13px; font-weight: 500; color: var(--neutral-text); flex: 1; }
 .accordion__subtitle { font-size: 11px; color: var(--neutral-muted); }
@@ -654,7 +654,7 @@ footer.infographic-footer {
     border-radius: 4px;
     font-size: 0.8em;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-primary, #fff);
     text-transform: uppercase;
 }
 .method-badge--get { background: var(--badge-get, #10b981); }

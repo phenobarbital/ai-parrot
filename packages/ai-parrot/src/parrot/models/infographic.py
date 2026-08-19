@@ -1290,6 +1290,24 @@ class ThemeConfig(BaseModel):
     callout_warning_bg: Optional[str] = Field(None, description="Warning callout background")
     callout_error_bg: Optional[str] = Field(None, description="Error callout background")
     callout_tip_bg: Optional[str] = Field(None, description="Tip callout background")
+    on_primary: Optional[str] = Field(
+        None, description="Text/ink color on top of a primary/accent background (FEAT-301)"
+    )
+    callout_success_text: Optional[str] = Field(
+        None, description="Success callout heading text color (FEAT-301)"
+    )
+    callout_warning_text: Optional[str] = Field(
+        None, description="Warning callout heading text color (FEAT-301)"
+    )
+    callout_error_text: Optional[str] = Field(
+        None, description="Error callout heading text color (FEAT-301)"
+    )
+    callout_tip_text: Optional[str] = Field(
+        None, description="Tip callout heading text color (FEAT-301)"
+    )
+    accent_teal: Optional[str] = Field(
+        None, description="Teal accent used by the tip callout's border (FEAT-301)"
+    )
 
     @field_validator(
         "primary", "primary_dark", "primary_light",
@@ -1299,6 +1317,8 @@ class ThemeConfig(BaseModel):
         "surface_bg", "soft_primary",
         "callout_info_bg", "callout_success_bg", "callout_warning_bg",
         "callout_error_bg", "callout_tip_bg",
+        "on_primary", "callout_success_text", "callout_warning_text",
+        "callout_error_text", "callout_tip_text", "accent_teal",
         mode="before",
     )
     @classmethod
@@ -1339,6 +1359,14 @@ class ThemeConfig(BaseModel):
             value = getattr(self, f"callout_{level}_bg")
             if value is not None:
                 props.append(f"    --callout-{level}-bg: {value};")
+        if self.on_primary is not None:
+            props.append(f"    --on-primary: {self.on_primary};")
+        for level in ("success", "warning", "error", "tip"):
+            value = getattr(self, f"callout_{level}_text")
+            if value is not None:
+                props.append(f"    --callout-{level}-text: {value};")
+        if self.accent_teal is not None:
+            props.append(f"    --accent-teal: {self.accent_teal};")
         if self.code_palette is not None:
             props.append(f"    --code-bg: {self.code_palette.background};")
             props.append(f"    --code-text: {self.code_palette.text};")

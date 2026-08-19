@@ -9,6 +9,8 @@ Covers:
 - Content negotiation wiring
 - Edge cases (empty, unknown, XSS, special characters)
 """
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -49,7 +51,7 @@ from parrot.models.infographic import (
     DocumentMeta,
     ChangelogEntry,
 )
-from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
+from parrot.outputs.formats.infographic_html import BASE_CSS, InfographicHTMLRenderer
 
 
 # ──────────────────────────────────────────────
@@ -310,6 +312,81 @@ class TestPetrolTheme:
         for name in ("light", "dark", "corporate", "midnight", "petrol"):
             css = theme_registry.get(name).to_css_variables()
             assert css.startswith(":root {") and css.endswith("}")
+
+
+# ──────────────────────────────────────────────
+# CSS Variable Migration (FEAT-301 / TASK-2255)
+# ──────────────────────────────────────────────
+
+def _screen_css() -> str:
+    """BASE_CSS with the @media print block removed."""
+    return re.sub(r"@media print \{.*?\n\}", "", BASE_CSS, flags=re.S)
+
+
+class TestNoLiteralColors:
+    def test_no_literal_colors_in_base_css(self):
+        css = _screen_css()
+        # strip var(--token, fallback) — fallbacks are allowed
+        css = re.sub(r"var\([^)]*\)", "VAR", css)
+        # opacity-only shadows are an accepted exception (see task decisions)
+        css = re.sub(r"rgba\(0,\s*0,\s*0,\s*[\d.]+\)", "SHADOW", css)
+        leftovers = re.findall(r"#[0-9a-fA-F]{3,8}|:\s*(?:white|black)\b", css)
+        assert leftovers == [], f"literal colors remain: {leftovers}"
+
+    def test_callout_colors_use_variables(self):
+        for level in ("info", "success", "warning", "error", "tip"):
+            assert f"var(--callout-{level}-bg" in BASE_CSS
+
+    def test_print_styles_untouched(self):
+        assert "background: white" in BASE_CSS  # inside @media print
+        assert "!important" in BASE_CSS
+
+
+class TestThemeRenderIntegrity:
+    @pytest.mark.parametrize(
+        "theme", ["light", "dark", "corporate", "midnight", "petrol"]
+    )
+    def test_theme_renders(self, theme):
+        renderer = InfographicHTMLRenderer()
+        html = renderer.render_to_html(
+            {"blocks": [
+                {"type": "title", "title": "T"},
+                {"type": "callout", "level": "tip", "content": "Tip"},
+                {"type": "table", "columns": ["A"], "rows": [["1"]]},
+            ]},
+            theme=theme,
+        )
+        assert html.startswith("<!DOCTYPE html>")
+        assert theme_registry.get(theme).to_css_variables() in html
+
+
+class TestThemeConfigNewV2Tokens:
+    """Tests for the on_primary / callout-*-text / accent_teal tokens."""
+
+    def test_new_tokens_optional_and_absent_by_default(self):
+        theme = ThemeConfig(name="v1only")
+        css = theme.to_css_variables()
+        assert "--on-primary" not in css
+        assert "--accent-teal" not in css
+        assert "--callout-success-text" not in css
+
+    def test_new_tokens_emitted_when_set(self):
+        theme = ThemeConfig(
+            name="v2",
+            on_primary="#000000",
+            accent_teal="#14b8a6",
+            callout_success_text="#065f46",
+            callout_warning_text="#92400e",
+            callout_error_text="#991b1b",
+            callout_tip_text="#115e59",
+        )
+        css = theme.to_css_variables()
+        assert "--on-primary: #000000;" in css
+        assert "--accent-teal: #14b8a6;" in css
+        assert "--callout-success-text: #065f46;" in css
+        assert "--callout-warning-text: #92400e;" in css
+        assert "--callout-error-text: #991b1b;" in css
+        assert "--callout-tip-text: #115e59;" in css
 
 
 # ──────────────────────────────────────────────
