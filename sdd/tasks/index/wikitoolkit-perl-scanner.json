@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-19T00:00:00Z",
-  "completed_at": "2026-08-19T11:34:15+00:00",
+  "completed_at": "2026-08-19T13:06:26+00:00",
   "tasks": [
     {
       "id": "TASK-2259",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-19T11:20:08+00:00",
       "completed_at": "2026-08-19T11:29:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2259-perl-registration-and-deps.md"
+      "file": "sdd/tasks/completed/TASK-2259-perl-registration-and-deps.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2260",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-19T11:20:08+00:00",
       "completed_at": "2026-08-19T11:30:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2260-perl-scanner-heuristic.md"
+      "file": "sdd/tasks/completed/TASK-2260-perl-scanner-heuristic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2261",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-19T11:20:08+00:00",
       "completed_at": "2026-08-19T11:32:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2261-perl-scanner-treesitter.md"
+      "file": "sdd/tasks/completed/TASK-2261-perl-scanner-treesitter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2262",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-08-19T11:20:08+00:00",
       "completed_at": "2026-08-19T11:34:15+00:00",
-      "file": "sdd/tasks/completed/TASK-2262-perl-scanner-tests.md"
+      "file": "sdd/tasks/completed/TASK-2262-perl-scanner-tests.md",
+      "verification": "verified"
     }
   ]
 }
