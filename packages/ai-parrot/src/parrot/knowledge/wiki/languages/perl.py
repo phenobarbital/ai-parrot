@@ -258,14 +258,144 @@ class PerlScanner(LanguageScanner):
         return owner
 
     def _outline_treesitter(self, parser: Any, source: str) -> tuple[str, list[str]]:
-        """Tree-sitter outline extraction — implemented in TASK-2261.
-
-        Falls through to the heuristic extractor for now; the outer
-        ``except Exception`` guard in :meth:`outline` is not needed for
-        this delegation since it cannot raise beyond what the heuristic
-        itself already handles.
+        """Best-effort tree-sitter outline using the ``tree_sitter_perl``
+        grammar's node types. Exercised only when the optional
+        ``ai-parrot[wiki-languages]`` extra is installed; any structural
+        mismatch degrades to an empty outline via the caller's
+        ``except Exception`` guard rather than raising.
         """
-        return self._outline_heuristic(source)
+        tree = parser.parse(source.encode("utf-8"))
+        root = tree.root_node
+        source_bytes = source.encode("utf-8")
+        lines: list[str] = []
+
+        def _text(node: Any) -> str:
+            return source_bytes[node.start_byte:node.end_byte].decode(
+                "utf-8", errors="replace"
+            )
+
+        def _name_of(node: Any) -> str:
+            name_node = node.child_by_field_name("name")
+            return _text(name_node) if name_node is not None else ""
+
+        def _child_of_type(node: Any, type_: str) -> Any | None:
+            for child in node.children:
+                if child.type == type_:
+                    return child
+            return None
+
+        def _params_of(node: Any) -> str:
+            sig = _child_of_type(node, "signature") or _child_of_type(node, "prototype")
+            return _text(sig).strip("()") if sig is not None else ""
+
+        def _leading_doc(node: Any) -> str:
+            prev = node.prev_sibling
+            if prev is not None and prev.type == "comment":
+                return _text(prev).lstrip("#").strip()[:_SUMMARY_MAX_CHARS]
+            return ""
+
+        def _has_call(node: Any) -> Any | None:
+            """If ``node`` is an ``expression_statement`` wrapping a
+            ``has(...)`` call (Moose/Moo), return the call node."""
+            if node.type != "expression_statement" or node.named_child_count != 1:
+                return None
+            inner = node.named_children[0]
+            if inner.type not in (
+                "function_call_expression", "ambiguous_function_call_expression",
+            ):
+                return None
+            func = inner.child_by_field_name("function")
+            if func is None or _text(func) != "has":
+                return None
+            return inner
+
+        def _has_attr(call: Any) -> tuple[str, str]:
+            """``(attr_name, isa_type)`` extracted from a ``has(...)`` call."""
+            list_expr = _child_of_type(call, "list_expression")
+            if list_expr is None or not list_expr.named_children:
+                return "", ""
+            first = list_expr.named_children[0]
+            if first.type == "string_literal":
+                content = _child_of_type(first, "string_content")
+                name = _text(content) if content is not None else ""
+            else:
+                name = _text(first)
+            isa_match = _RE_ISA.search(_text(list_expr))
+            return name, isa_match.group(1) if isa_match else ""
+
+        def _is_field_decl(node: Any) -> bool:
+            return (
+                node.type == "variable_declaration"
+                and bool(node.children)
+                and node.children[0].type == "field"
+            )
+
+        def _field_var(node: Any) -> str:
+            for child in node.children:
+                if child.type in ("scalar", "array", "hash"):
+                    return _text(child)
+            return ""
+
+        def _walk(nodes: Any, in_context: str | None) -> None:
+            for child in nodes:
+                if child.type == "package_statement":
+                    pname = _name_of(child)
+                    lines.append(f"package {pname}")
+                    block = _child_of_type(child, "block")
+                    if block is not None:
+                        _walk(block.named_children, pname)
+                    else:
+                        in_context = pname
+                elif child.type == "class_statement":
+                    cname = _name_of(child)
+                    doc = _leading_doc(child)
+                    lines.append(f"class {cname}: {doc}".rstrip(": "))
+                    block = _child_of_type(child, "block")
+                    if block is not None:
+                        _walk(block.named_children, cname)
+                elif child.type == "role_statement":
+                    rname = _name_of(child)
+                    doc = _leading_doc(child)
+                    lines.append(f"role {rname}: {doc}".rstrip(": "))
+                    block = _child_of_type(child, "block")
+                    if block is not None:
+                        _walk(block.named_children, rname)
+                elif child.type == "subroutine_declaration_statement":
+                    sname = _name_of(child)
+                    params = _params_of(child)
+                    doc = _leading_doc(child)
+                    sig = f"sub {sname}({params})"
+                    line = f"{sig}: {doc}".rstrip(": ")
+                    lines.append(f"    {line}" if in_context is not None else line)
+                elif child.type == "method_declaration_statement":
+                    mname = _name_of(child)
+                    params = _params_of(child)
+                    doc = _leading_doc(child)
+                    sig = f"method {mname}({params})"
+                    lines.append(f"    {sig}: {doc}".rstrip(": "))
+                elif _is_field_decl(child):
+                    var_name = _field_var(child)
+                    if var_name:
+                        lines.append(f"    field {var_name}")
+                else:
+                    call = _has_call(child)
+                    if call is not None:
+                        attr_name, isa = _has_attr(call)
+                        line = f"    has {attr_name}"
+                        if isa:
+                            line = f"{line}: {isa}"
+                        lines.append(line)
+                        continue
+                    block = _child_of_type(child, "block")
+                    if block is not None:
+                        _walk(block.named_children, in_context)
+                    elif child.named_children:
+                        _walk(child.named_children, in_context)
+
+        _walk(root.named_children, None)
+
+        summary = _pod_summary(source)
+        return summary, lines
 
     # -- reference resolution -------------------------------------------------
 
@@ -346,5 +476,8 @@ class PerlScanner(LanguageScanner):
 
     @property
     def mode(self) -> str:
-        """``"heuristic"`` for now — tree-sitter check added in TASK-2261."""
+        """``"tree-sitter"`` when the optional grammar loads, else
+        ``"heuristic"``."""
+        if treesitter.get_parser("perl") is not None:
+            return "tree-sitter"
         return "heuristic"
