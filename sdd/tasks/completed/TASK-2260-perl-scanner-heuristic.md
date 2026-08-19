@@ -261,10 +261,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: Created `perl.py` with `PerlScanner(LanguageScanner)` implementing
+all 4 abstract members. Heuristic mode extracts `package`/`class`/`role`
+containers, `sub`/`method` (with signature params or the `my (...) = @_;`
+unpack fallback), Corinna `field`, and Moose/Moo `has` (with `isa` type
+when present). POD summary prefers `=head1 NAME` then `=head1
+DESCRIPTION`; `=head2 <name>` blocks back-fill doc for declarations with
+no preceding `#` comment. `_extract_perl_imports()` handles `use
+Module::Name`, `require Module::Name`, `use parent`/`use base` (both
+quoted-string and `qw(...)` forms), and `require "./path"` (emitted as
+`require:./path`). `build_reference_index()`/`resolve_import()` resolve
+`Module::Name` via any `lib/` directory found in the repo tree, and
+`require:`-prefixed specs relative to the importing file. `outline()`
+verified never to raise on garbage/binary input (manual smoke test
+matching the task's Test Specification, plus the full existing
+`tests/knowledge/wiki/languages/` suite — 146 passed).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) `_outline_treesitter()` is a thin stub
+delegating to `_outline_heuristic()` as instructed — real tree-sitter
+extraction lands in TASK-2261. (2) Two small helper regexes (`_RE_ISA`,
+`_RE_MY_ARGS`) are not literally `^`-line-anchored, but they are only
+ever applied to a small pre-bounded window (up to the next `;` or a
+fixed 400-char slice) rather than the full source, and contain no nested
+quantifiers — the catastrophic-backtracking risk the line-anchoring rule
+guards against does not apply to them.

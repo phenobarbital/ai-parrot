@@ -32,7 +32,7 @@
       "feature_id": "FEAT-432",
       "feature": "wikitoolkit-perl-scanner",
       "spec": "sdd/specs/wikitoolkit-perl-scanner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Core implementation — TASK-2261 and TASK-2262 depend on this",
       "assigned_to": null,
       "started_at": "2026-08-19T11:20:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2260-perl-scanner-heuristic.md"
+      "completed_at": "2026-08-19T11:30:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2260-perl-scanner-heuristic.md"
     },
     {
       "id": "TASK-2261",
