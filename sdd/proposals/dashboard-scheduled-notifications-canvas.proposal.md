@@ -16,6 +16,7 @@ base_branch: dev
 research_state: sdd/state/FEAT-430/
 created: 2026-08-18
 updated: 2026-08-18
+revision: 2 (F010 — frontend repo correction)
 ---
 
 # FEAT-430 — Scheduled Dashboard Delivery & Canvas Builder
@@ -180,7 +181,7 @@ changes is **how much has to be built to get there**.
 | 2 | Secure storage + sharing | S3 + middleware + token | **adopt FEAT-197/103** — config + wiring |
 | 3 | Card-aware callback | "small extension" | **smaller** — call existing `build_teams_card` |
 | 4 | Thin NavAPI wrapper | new | **new** (unchanged) |
-| 5 | Settings panel (Svelte 5) | new | **new** (unchanged) |
+| 5 | Settings panel (Svelte 5) | new | **new** — but belongs to `navigator-svelte`, a separate SDD flow [F010] |
 | 6 | Module-level sharing | optional | **defer** — `module_id` exists, not needed for v1 |
 | 7 | `artifact_type` discriminator | — | **new** (added for coexistence) |
 
@@ -237,6 +238,37 @@ This satisfies HI-6 literally: only the generation branch is disposable.
 
 ---
 
+## 3.5 Repo Ownership (added after F010)
+
+The work spans **three** repositories, only one of which FEAT-430 can carry:
+
+| Repo | Own SDD flow | Deliverables | Carried by |
+|---|---|---|---|
+| `ai-parrot` | yes (this one) | refresh function, card-aware callback, FEAT-197 adoption | **FEAT-430** |
+| `navigator-api` | **no `sdd/`** | `Dashboard.attributes.artifact_type`, thin wrapper endpoint | see Q10 |
+| `navigator-svelte` | yes, independent (FEAT-475+) | settings panel (§4.1.E), share integration | **needs its own FEAT-ID** (Q9) |
+
+`navigator-svelte` lives in `Trocdigital/`, not `trocglobal/`. Cross-repo coordination
+has an existing convention: `sdd/BACKEND-REQUEST-<topic>.md`, addressed to the other
+repo's owner and citing the requesting FEAT/TASK.
+
+### TRAP — two share routes differing by one character
+
+| Route | Backing | Usable by the scheduler? |
+|---|---|---|
+| `/share/dashboard/<dashboard_id>` | server-side (the URL `navigator-api` builds, F005) | **YES** — decision D2's target |
+| `/share/dashboards/<snapshotId>` | `SnapshotService` over **browser storage** | **NO** — no browser in a scheduled send |
+
+The spec MUST pin the singular, server-backed route. [F010]
+
+### Closed by F010
+
+- **Iframe cache after refresh** (§4.1.B open point): `IFrameWidget` already ships
+  `refreshToken` + `refreshFrame()` via an `onRefresh` handler. A **stable S3 key plus a
+  refresh-token bump** is viable; versioned keys are not required for cache reasons.
+
+---
+
 ## 4. Confidence Map
 
 | Claim | Confidence | Basis |
@@ -250,7 +282,8 @@ This satisfies HI-6 literally: only the generation branch is disposable.
 | C7 A2UI ships artifact/delivery/card renderer | high | F007 — direct source |
 | C8 `attributes` is a migration-free flag seam | medium | F009 — inferred fit, not yet exercised |
 | C9 `agent_id`/`agent_name` required | high | F001 — direct source |
-| C10 Widget→artifact resolution unlocated | low | F009 — absence of evidence |
+| C10 Widget→artifact resolution unlocated | medium | F009, F010 — frontend entity found, backend counterpart still missing |
+| C11 Frontend work belongs to a separate SDD flow | high | F010 — direct source |
 
 ---
 
@@ -262,15 +295,23 @@ This satisfies HI-6 literally: only the generation branch is disposable.
   artifact URL.
 - [x] **Q3 — `agent_id`/`agent_name` requirement?** → **Sentinel values**; no schema change.
 - [x] **Q4 — Inline Jinja templates?** → **File-based in `TEMPLATE_DIR` only**; ship 1-2.
-- [ ] **Q5 — Which entity holds the iframe widget and its artifact URL?** Not located;
-  `Dashboard` carries only `allow_widgets` + `widget_location`. Blocks the first step of
-  `refresh_dashboard_artifact`. **Needs the widgets module or Carlos.** [C10]
+- [~] **Q5 — Which entity holds the iframe widget and its artifact URL?** *Partially
+  resolved.* The frontend has a real `IFrameWidget extends UrlManagedWidget` domain
+  entity, so widget→URL resolution exists client-side. Still missing: its **persisted
+  backend counterpart** (which table stores the widget and its URL) — not in
+  `navigator-api/resources/dashboards`. **Needs the widgets module or Carlos.** [F010, C10]
 - [ ] **Q6 — ETL generation extraction:** reuse the Flowtask task, or extract the
   generation function into a callable? Needs alignment with Carlos (brainstorm §6.3).
 - [ ] **Q7 — Which notify entry point for email:** the scheduler callback, or
   navigator-api's existing `NotifyClient`/`NOTIFY_WORKER_STREAM`? [F005]
 - [ ] **Q8 — Signature TTL policy:** what expiry for a scheduled send, and what is the
   re-request flow once a link expires?
+- [ ] **Q9 — Frontend FEAT-ID:** the settings panel needs its own FEAT-ID in
+  `navigator-svelte`, which runs an independent SDD flow. Coordination between it and
+  FEAT-430 should follow the existing `sdd/BACKEND-REQUEST-<topic>.md` convention. [F010]
+- [ ] **Q10 — `navigator-api` has no `sdd/` flow.** The `Dashboard` model change
+  (`attributes.artifact_type`) and the thin wrapper endpoint have no home SDD process.
+  Decide whether they are carried by FEAT-430 or tracked separately. [F009, F010]
 
 ---
 
@@ -298,6 +339,10 @@ better position than the brainstorm assumed, given F007.
 - Synthesis: `sdd/state/FEAT-430/synthesis.json`
 - Budget: `loose` — not truncated
 - Repos examined: `ai-parrot` (wiki-indexed), `navigator-api`, `navigator-auth`,
-  `flowtask`, plus async-notify 1.5.5 as installed
+  `navigator-svelte`, plus async-notify 1.5.5 as installed
+- **Research-scope correction (F010):** the initial plan targeted `navigator-front`
+  (in `trocglobal/`) as the frontend. The real dashboard frontend is `navigator-svelte`
+  (in `Trocdigital/`), which was examined in a follow-up pass. `flowtask` was planned
+  (Q013) but not reached; the ETL question (Q6) remains open regardless.
 - Method: wiki-first for `ai-parrot` (`wikitoolkit query` → `page`), direct grep/read for
   the sibling repos, which are not wiki-indexed
