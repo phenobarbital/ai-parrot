@@ -32,7 +32,7 @@
       "feature_id": "FEAT-433",
       "feature": "form-version-history-repair",
       "spec": "sdd/specs/form-version-history-repair.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Sequential after 2264; 2266 reads its output shape.",
       "assigned_to": null,
       "started_at": "2026-08-19T23:07:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2265-storage-list-versions.md"
+      "completed_at": "2026-08-19T23:22:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2265-storage-list-versions.md"
     },
     {
       "id": "TASK-2266",
