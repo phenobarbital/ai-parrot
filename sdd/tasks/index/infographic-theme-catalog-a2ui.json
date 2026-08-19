@@ -154,7 +154,7 @@
       "feature_id": "FEAT-301",
       "feature": "infographic-theme-catalog-a2ui",
       "spec": "sdd/specs/infographic-theme-catalog-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,8 +164,8 @@
       "parallelism_notes": "Edits a2ui/adapters/infographic.py — a file no other task touches. Non-parallel only because it reads the block-model field names from TASK-2263; after 2263 lands it could run in its own worktree.",
       "assigned_to": null,
       "started_at": "2026-08-19T11:33:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2257-a2ui-adapter-new-blocks.md"
+      "completed_at": "2026-08-19T12:23:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2257-a2ui-adapter-new-blocks.md"
     },
     {
       "id": "TASK-2258",

@@ -393,11 +393,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-19
+**Notes**: Added module-level `_text()` helper beside `_as_dict`/`_clean`.
+Added `_chain()` (Card, body = node labels joined by ` → `, `subtitle`
+set only for `direction="vertical"`), `_steps()` (Card, body via
+`_lines(..., ordered=True)` over `"{label} — {description}"`), `_code()`
+(Card, `body`=code, `badge`=language, `highlight_lines` intentionally
+dropped — no Card property for it), `_card_grid()` (list of Card
+descriptors, one per `GridCard`, `columns` dropped as a layout-only
+hint). Added 4 `elif` branches to `walk()` before the `_card_like()`
+fallback, `card_grid` using the same list-loop shape as `progress`.
+Did not touch the 5 existing converters, `_card_like()`'s existing
+branches, `_flatten_container()`, or `builders.py`/the catalog. Added
+the full converter test suite plus an all-19-block-types envelope test
+to `packages/ai-parrot/tests/outputs/a2ui/adapters/test_infographic_adapter.py`
+(271 tests across `packages/ai-parrot/tests/outputs/a2ui/`, all passing,
+4 pre-existing skips unaffected). `ruff check --select F` clean on both
+files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**I18n flattening**: locale-preference rule actually implemented
+**Note on tooling**: this worktree shares a filesystem-adjacent path
+with the main repo checkout (`packages/ai-parrot/tests/outputs/a2ui/
+adapters/test_infographic_adapter.py` exists at both
+`.claude/worktrees/feat-301-.../packages/...` and
+`ai-parrot/packages/...`). A first edit pass was mistakenly applied to
+the main-repo (`dev`) copy instead of the worktree copy; caught via
+`git status` in both trees before committing, reverted on `dev`
+(`git checkout --`), and reapplied correctly in the worktree. No `dev`
+commit was made with the wrong-tree edit.
 
-**Deviations from spec**: none | describe if any
+**I18n flattening**: `_text()` prefers the `"en"` key when the value is
+a `dict`, else the first value in insertion order, else `""`/`None`;
+plain `str` values pass through unchanged. Applied only to the 4 new
+converters' text fields, per the task's explicit decision not to
+retrofit the 5 existing converters.
+
+**Deviations from spec**: none.
