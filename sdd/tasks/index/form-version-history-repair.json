@@ -14,7 +14,7 @@
       "feature_id": "FEAT-433",
       "feature": "form-version-history-repair",
       "spec": "sdd/specs/form-version-history-repair.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: TASK-2265 and TASK-2269 both need a real backend. Also the task that makes the Module 6 hole reachable.",
       "assigned_to": null,
       "started_at": "2026-08-19T23:07:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2264-wire-version-service-storage.md"
+      "completed_at": "2026-08-19T23:13:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2264-wire-version-service-storage.md"
     },
     {
       "id": "TASK-2265",
