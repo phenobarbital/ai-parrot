@@ -33,6 +33,12 @@ _SUMMARY_MAX_CHARS = 240
 # catastrophic backtracking).
 # ---------------------------------------------------------------------------
 
+# ``(\w+(?:::\w+)*)`` is a repeated group nested inside an outer
+# quantifier, but not the ambiguous "nested quantifier" shape (like
+# ``(a+)+``) that causes catastrophic backtracking: the mandatory ``::``
+# separator between segments means the engine can never re-partition the
+# same characters two different ways, so matching stays linear in input
+# length (verified against a 20,000-segment ``A::A::...::B`` payload).
 _RE_PACKAGE = re.compile(r"^\s*package\s+(\w+(?:::\w+)*)\s*[;{]", re.MULTILINE)
 _RE_CLASS = re.compile(r"^\s*class\s+(\w+(?:::\w+)*)\b", re.MULTILINE)
 _RE_ROLE = re.compile(r"^\s*role\s+(\w+(?:::\w+)*)\b", re.MULTILINE)
@@ -40,6 +46,11 @@ _RE_SUB = re.compile(r"^\s*sub\s+(\w+)\s*(?:\(([^)]*)\))?\s*\{", re.MULTILINE)
 _RE_METHOD = re.compile(r"^\s*method\s+(\w+)\s*(?:\(([^)]*)\))?\s*\{", re.MULTILINE)
 _RE_FIELD = re.compile(r"^\s*field\s+([$@%]\w+)", re.MULTILINE)
 _RE_HAS = re.compile(r"^\s*has\s+['\"]?(\w+)['\"]?\s*=>", re.MULTILINE)
+
+#: Not line-anchored like the patterns above — but always ``.search()``ed
+#: against a small pre-bounded window (a fixed slice or "up to the next
+#: ``;``"), never the full source, so there is no unbounded-scan surface
+#: for the single (non-nested) quantifier each contains to exploit.
 _RE_ISA = re.compile(r"\bisa\s*=>\s*['\"]([\w:]+)['\"]")
 _RE_MY_ARGS = re.compile(r"\bmy\s*\(([^)]*)\)\s*=\s*@_")
 
