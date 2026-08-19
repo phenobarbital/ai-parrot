@@ -22,7 +22,6 @@ from parrot.models.infographic import (
     InfographicResponse,
     SummaryBlock,
     TitleBlock,
-    I18nText,
     ChainBlock,
     ChainNode,
     StepsBlock,
@@ -435,6 +434,22 @@ class TestI18nText:
     def test_i18n_text_dict(self):
         block = CodeBlock(code="x", title={"en": "Hello", "es": "Hola"})
         assert block.title["es"] == "Hola"
+
+    def test_i18n_text_rejects_empty_mapping(self):
+        """SECURITY/HARDENING (code review, FEAT-301): an empty locale
+        mapping is malformed, not a valid bilingual value."""
+        with pytest.raises(ValidationError):
+            CodeBlock(code="x", title={})
+
+    def test_i18n_text_rejects_empty_locale_value(self):
+        with pytest.raises(ValidationError):
+            CodeBlock(code="x", title={"en": ""})
+
+    def test_i18n_text_accepts_non_en_es_locales(self):
+        """Locale keys are not restricted to en/es — any non-empty mapping
+        of non-empty strings is valid."""
+        block = CodeBlock(code="x", title={"fr": "Bonjour"})
+        assert block.title["fr"] == "Bonjour"
 
 
 class TestDocumentMeta:

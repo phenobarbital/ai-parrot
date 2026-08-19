@@ -36,7 +36,14 @@ from typing import (
 import json
 import re
 from enum import Enum
-from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    Discriminator,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 # ──────────────────────────────────────────────
@@ -143,13 +150,43 @@ class BulletListStyle(str, Enum):
 # I18n text
 # ──────────────────────────────────────────────
 
-I18nText = Union[str, Dict[str, str]]
+def _validate_i18n_text(value: Any) -> Any:
+    """Validate an ``I18nText`` value's dict form (code review hardening).
+
+    A locale mapping must be non-empty and every value must be a non-empty
+    string — an empty mapping or a blank locale value is a malformed
+    payload (e.g. from LLM hallucination), not a valid bilingual value.
+
+    Args:
+        value: A plain ``str``, or a ``{locale: text}`` mapping.
+
+    Returns:
+        The value unchanged, if valid.
+
+    Raises:
+        ValueError: If a dict-form value is empty, or any entry is not a
+            non-empty string.
+    """
+    if isinstance(value, dict):
+        if not value:
+            raise ValueError("I18nText mapping must not be empty")
+        for locale, text in value.items():
+            if not isinstance(text, str) or not text:
+                raise ValueError(
+                    f"I18nText mapping value for locale {locale!r} must be "
+                    "a non-empty string"
+                )
+    return value
+
+
+I18nText = Annotated[Union[str, Dict[str, str]], AfterValidator(_validate_i18n_text)]
 """Bilingual text: plain ``str`` for single-language content, or
 ``{"en": "...", "es": "..."}`` for locale-dispatched content.
 
 ``str`` is listed first in the union so Pydantic v2 prefers it for
 plain-string payloads, keeping every existing single-language payload
-valid without changes.
+valid without changes. The dict form must be non-empty with non-empty
+string values (see :func:`_validate_i18n_text`).
 """
 
 
@@ -1244,8 +1281,8 @@ def derive_soft(hex_color: str, alpha: float = 0.12) -> str:
         r = int(digits[0:2], 16)
         g = int(digits[2:4], 16)
         b = int(digits[4:6], 16)
-    except ValueError:
-        raise ValueError(f"Invalid hex color: {hex_color!r}")
+    except ValueError as exc:
+        raise ValueError(f"Invalid hex color: {hex_color!r}") from exc
     return f"rgba({r}, {g}, {b}, {alpha})"
 
 
