@@ -1528,7 +1528,7 @@ class GitToolkit(AbstractToolkit):
         """Best-effort ``owner/name`` for the return payload (never a token)."""
         from urllib.parse import urlparse
         parsed = urlparse(slug_or_url)
-        if parsed.hostname and parsed.hostname.endswith("github.com"):
+        if parsed.hostname and parsed.hostname in ("github.com", "www.github.com"):
             tail = parsed.path.lstrip("/").rstrip("/")
             return tail[:-4] if tail.endswith(".git") else tail
         return slug_or_url
