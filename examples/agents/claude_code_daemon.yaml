@@ -1,0 +1,38 @@
+# Claude Code agent daemon — minimal agentd config.
+#
+#   parrot serve examples/agents/claude_code_daemon.yaml
+#   parrot ask claude-code "What is 2 + 2?"
+#   parrot status claude-code
+#   parrot attach claude-code
+#
+# `llm: claude-agent:<model>` routes every turn through ClaudeAgentClient,
+# which spawns the bundled `claude` CLI and reuses the credentials it
+# already holds.
+#
+# Auth: the target drops ANTHROPIC_API_KEY by default so the claude.ai /
+# Claude Code login is used — the CLI gives an API key precedence, and
+# ai-parrot's settings/ tree usually exports one, which would silently move
+# billing to that key. Verify in the daemon log: `apiKeySource: "none"`
+# means the Claude Code login. To bill an API key instead, set
+# `force_cc_auth: false` under kwargs (or PARROT_CLAUDE_USE_CC_AUTH=0).
+#
+# Requires the optional extra:  uv pip install "ai-parrot[claude-agent]"
+
+name: claude-code
+
+agent:
+  target: "parrot.agents.claude_code:make_agent"
+  kwargs:
+    name: "ClaudeCodeAgent"
+    llm: "claude-agent:claude-sonnet-4-6"
+    use_tools: false
+    system_prompt: |
+      You are a concise assistant running inside an ai-parrot daemon.
+      Answer in at most two sentences.
+
+exposed_methods: []
+
+scheduler:
+  enabled: false
+
+log_level: INFO
