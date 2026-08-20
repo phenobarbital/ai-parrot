@@ -55,7 +55,9 @@ would *ship with*.
 source .venv/bin/activate
 
 # One-off: export the ONNX graphs (~1 GB on disk, under the gitignored models/)
-uv pip install onnx 'optimum[onnxruntime]'
+# The exporter lives in the `dev` extra; the runtime backend it produces
+# graphs for lives in `security` alongside pytector.
+uv pip install -e 'packages/ai-parrot[dev,security]'
 python -m benchmarks.injection_guardrail_latency.export \
     --output-dir models/injection-clf
 
@@ -87,6 +89,13 @@ Useful flags:
 `results/results.json` (machine-readable, includes every per-sample
 score) and `results/report.md` (four tables: cost, quality, per-bucket
 blind spots, tiering).
+
+## Dependencies
+
+| Need | Extra | Why there |
+|---|---|---|
+| Run an ONNX guardrail (load a pre-exported graph) | `ai-parrot[security]` | Runtime backend, next to `pytector` — the classifier it accelerates |
+| Export / quantize a graph (`export.py`) | `ai-parrot[dev]` | Build-time only; a production install should not carry the optimum/onnx toolchain to load a graph someone else produced |
 
 ## Notes on methodology
 

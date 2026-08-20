@@ -514,6 +514,24 @@ security = [
     # load GGUF models via llama.cpp, but we only use the deBERTa detector
     # (torch/transformers). See abstract.py PromptInjectionDetector("deberta").
     "pytector==0.2.0",
+    # ONNX Runtime backend for the model-backed guardrails (prompt-injection
+    # classifier today; the NLI groundedness tier later). Runtime only: it
+    # loads a pre-exported graph, it never produces one (see the `dev` extra
+    # for the exporter). The transformers tokenizer it needs already arrives
+    # with pytector.
+    #
+    # Why: measured 2026-08-20 on `protectai/deberta-v3-base-prompt-injection`
+    # (what pytector's "deberta" alias resolves to), ONNX fp32 runs the SAME
+    # weights at 32.96 ms p50 against torch's 118.99 ms — 3.6x faster with
+    # ZERO flipped verdicts (max|delta| = 0.000). Evidence:
+    # `benchmarks/injection_guardrail_latency/results/report.md`.
+    #
+    # Gotcha for whoever wires this up: ORT sizes its intra-op thread pool to
+    # every physical core PER SESSION. Uncapped, "off-loop" inference still
+    # pegs the machine and starves the event loop — set
+    # `intra_op_num_threads` / `inter_op_num_threads` on the SessionOptions.
+    # Prior art: `voice/tts/supertonic_inference.py:462-472`.
+    "onnxruntime>=1.16",
 ]
 
 xai = [
@@ -604,6 +622,17 @@ dev = [
     # totality, arbitration, expiry). The spec's contract claimed this was
     # "already used in repo tests" — verified absent in-tree; added here.
     "hypothesis>=6.100",
+    # ONNX export + quantization toolchain for
+    # `benchmarks/injection_guardrail_latency/export.py`. Build-time only —
+    # deliberately NOT in `security`, so a production install does not carry
+    # the optimum/onnx toolchain merely to load a graph someone else produced.
+    #
+    # WARNING: dynamic int8 quantization is NOT safe for DeBERTa-v3 — measured
+    # 39/96 verdicts flipped and 0% recall, because its disentangled attention
+    # leaves most attention MatMuls unquantizable. Any quantized graph must
+    # pass the numerical-parity gate in that harness before it ships.
+    "onnx>=1.22",
+    "optimum[onnxruntime]>=2.0",
 ]
 
 # Remote tool executors (parrot.tools.executors). Pulls the optional
