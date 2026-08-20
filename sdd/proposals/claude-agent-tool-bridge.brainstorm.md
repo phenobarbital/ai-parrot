@@ -70,6 +70,24 @@ the bridge is a wiring job, not research (see Code Context → User-Provided Cod
 - **Single tool loop.** Decided in discovery: the Claude Code sub-agent *is* the
   loop. Parrot records the resulting `tool_calls` as telemetry and never
   re-executes them, so double execution is structurally impossible.
+- **Failures are recoverable, never fatal.** A tool error, a per-call timeout, a
+  HITL denial and a HITL timeout all come back as MCP error results the
+  sub-agent can reason about. None of them aborts the turn.
+- **No self-granted confirmation.** The `confirm: boolean` property that
+  `MCPToolAdapter` injects for confirming tools must be stripped from the schema
+  on the in-process path — the sub-agent must not be handed a switch it can flip
+  itself. The stdio proxy keeps it, unchanged.
+- **Identity comes from the environment, not a placeholder.** The
+  `PermissionContext` handed to `execute_tool()` carries the OS user of the UDS
+  peer (`SO_PEERCRED` → uid → `pwd`), falling back to a fixed service identity.
+  `"anonymous"` is not acceptable, because confirmation windows and grants are
+  keyed on `user_id`.
+- **Narrowing is parrot's job.** Claude Code loads every exposed MCP tool
+  eagerly (measured), so the bridge — not the sub-agent — is responsible for
+  bounding how many tools are handed over.
+- **Results are compressed, not truncated.** The existing
+  `parrot.tools.compression` codecs apply to bridged results; no size ceiling
+  silently drops data.
 
 ---
 
@@ -339,9 +357,21 @@ All four surfaces get the treatment — `ask`, `ask_stream`, `resume` and
   `{"type": "object", "properties": {}}`).
 - **Tool raises** → mapped to an MCP error result so the sub-agent can recover;
   the run continues.
-- **Tool blocks the loop** → per-call timeout; blocking work belongs in
-  `asyncio.to_thread`.
-- **HITL denies or times out** → error result describing the denial, not a crash.
+- **Tool blocks the loop** → per-call timeout fires and returns a recoverable
+  error result naming the tool and the elapsed budget; the turn continues.
+  Blocking work belongs in `asyncio.to_thread`. Note there is no timeout field
+  on `ClaudeAgentRunOptions` today — one has to be added.
+- **HITL denies or times out** → recoverable error result describing the denial,
+  not a crash. The sub-agent can explain to the user why it stopped.
+- **Confirming tool exposed in-process** → the adapter's `confirm` property is
+  stripped from the schema before the tool reaches the sub-agent, and the real
+  `ConfirmationGuard` runs inside `execute_tool()` instead.
+- **Peer credentials unavailable** (non-UDS transport, uid with no `pwd` entry)
+  → fall back to the fixed service identity rather than `"anonymous"`, and log
+  which identity was used so an operator can tell confirmations apart.
+- **Many tools registered** → since Claude Code loads them all eagerly, the
+  bridge narrows before exposing; the narrowing signal and budget are open
+  questions.
 - **Name collision** with a native tool (a parrot tool literally named `Read`)
   → the `mcp__ns__` prefix disambiguates for the model; the reconciliation step
   must not append a bare colliding name to `allowed_tools`.
@@ -375,6 +405,9 @@ All four surfaces get the treatment — `ask`, `ask_stream`, `resume` and
 | `parrot/tools/manager.py` | depends on | `execute_tool()` is the dispatch seam; `get_all_tools()` the enumeration seam. **Do not** use `get_tools()` — see Code Context |
 | `parrot/auth/confirmation.py` | depends on | HITL arrives through `ToolManager`'s configured `ConfirmationGuard`; no direct call |
 | `parrot/agents/claude_code.py` | extends | the daemon target becomes the reference integration |
+| `parrot/integrations/agentd/server.py` | modifies | `_handle_connection` must read `SO_PEERCRED` and carry caller identity onto the `Session` — new work, nothing exists today |
+| `parrot/auth/permission.py` | depends on | `PermissionContext` / `UserSession` built from the OS user |
+| `parrot/tools/compression/` | depends on | codecs applied to bridged results |
 | `examples/agents/claude_code_daemon.yaml` | extends | gains a `tools:` example |
 | `tests/clients/test_claude_agent.py` | extends | currently 20 passing; add bridge coverage |
 | `docs/agentd.md`, `docs/tools.md` | modifies | document the new visibility and its HITL behaviour |
@@ -589,6 +622,85 @@ from claude_agent_sdk import create_sdk_mcp_server, tool, SdkMcpTool, McpSdkServ
 - MCP tool naming convention observed live: `mcp__<server_name>__<tool_name>`
 - Installed: `claude-agent-sdk 0.2.140`; `claude` CLI at `~/.local/bin/claude`
 
+#### OS-user identity (resolves Open Question 3)
+
+`SO_PEERCRED` on the agentd Unix-domain socket yields the caller's OS identity.
+Verified live on this machine (Linux 6.11, Python 3.12, asyncio UDS server):
+
+```python
+# Source: user-provided probe, ran successfully 2026-08-20
+sock = writer.get_extra_info("socket")          # asyncio.StreamWriter
+raw = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+pid, uid, gid = struct.unpack("3i", raw)
+user = pwd.getpwuid(uid).pw_name
+# observed: {'pid': 882139, 'uid': 1000, 'gid': 1000, 'user': 'jesuslara'}
+# uid == os.getuid() -> True
+```
+
+Target of that identity — the context `ToolManager.execute_tool()` accepts:
+
+```python
+# From packages/ai-parrot/src/parrot/auth/permission.py:81
+@dataclass
+class PermissionContext:
+    session: UserSession                                  # line 123
+    request_id: Optional[str] = None                      # line 124
+    channel: Optional[str] = None                         # line 125
+    trace_context: "Optional[TraceContext]" = None        # line 126
+    extra: dict[str, Any] = field(default_factory=dict)   # line 127
+    @property
+    def user_id(self) -> str: ...      # -> self.session.user_id   (line 130)
+    @property
+    def tenant_id(self) -> str: ...    # -> self.session.tenant_id (line 135)
+    @property
+    def roles(self) -> frozenset[str]: ...                        # line 140
+    def has_role(self, role: str) -> bool: ...                    # line 144
+
+# From packages/ai-parrot/src/parrot/auth/permission.py:21
+@dataclass
+class UserSession:
+    user_id: str
+    tenant_id: str
+    roles: frozenset[str]      # e.g. frozenset({'jira.manage', 'github.read'})
+```
+
+`ConfirmationGuard.confirm()` keys its window on `permission_context.user_id`
+and falls back to the literal `"anonymous"` when the context is `None`
+(parrot/auth/confirmation.py:417) — which is exactly what the OS-user
+derivation avoids.
+
+#### Claude Code tool-loading behaviour (resolves Open Question 4)
+
+Measured against `claude-agent-sdk 0.2.140` by attaching an SDK-MCP server with
+N probe tools and reading the session `init` message:
+
+| parrot tools exposed | tools listed at `init` | of which `mcp__parrot__*` | `ToolSearch` present |
+|---|---|---|---|
+| 1 | 33 | 1 | yes |
+| 25 | 57 | 25 | yes |
+
+Conclusions, both load-bearing for this feature:
+
+1. **Claude Code loads every exposed MCP tool eagerly.** There is no automatic
+   deferral or narrowing on its side — the available set, and therefore the
+   context and cost footprint, grows one-for-one with what the bridge hands
+   over. Any narrowing must come from parrot.
+2. **`ToolSearch` is always available** and the sub-agent reaches for it
+   unprompted — it appeared in `tool_calls` even in the single-tool PoC
+   (`['ToolSearch', 'mcp__parrot__inventory_level']`). It searches an
+   already-loaded set, so it complements parrot-side narrowing instead of
+   replacing it.
+
+#### Compression codecs (relevant to Open Question 5)
+
+Registered at import time, observed in the daemon logs on every boot:
+
+```
+Registered compression codec 'columnar'     -> parrot.tools.compression.codecs.columnar.ColumnarCodec
+Registered compression codec 'json_compact' -> parrot.tools.compression.codecs.json_compact.JsonCompactCodec
+# registry: packages/ai-parrot/src/parrot/tools/compression/protocol.py:108
+```
+
 ### Does NOT Exist (Anti-Hallucination)
 
 Verified absent by introspection on 2026-08-20 — do not assume any of these:
@@ -615,6 +727,16 @@ Verified absent by introspection on 2026-08-20 — do not assume any of these:
   `translate_text`, `analyze_sentiment`, `analyze_product_review`,
   `extract_key_points` all raise `NotImplementedError` (claude_agent.py:822-882)
   — they are not bridge surfaces.
+- **agentd does not capture caller identity today.** No `SO_PEERCRED`,
+  `getsockopt`, `getpeername` or `ucred` anywhere under
+  `parrot/integrations/agentd/` (grep: 0 hits), and `server.py` has no
+  `user_id` / `permission_context` / `PermissionContext` at all. The OS-user
+  derivation is **new work**, not a wiring change.
+- ~~Claude Code defers or narrows MCP tools automatically~~ — it does **not**.
+  All exposed tools appear in the `init` list; see Code Context.
+- ~~`ClaudeAgentRunOptions.timeout`~~ / ~~`.tool_timeout`~~ — no per-tool
+  timeout field exists; `max_turns` and `max_budget_usd` are the only run
+  ceilings today.
 
 ---
 
@@ -662,20 +784,66 @@ Verified absent by introspection on 2026-08-20 — do not assume any of these:
   are telemetry only.
 - [x] Which client surfaces get the bridge? — *Owner: Jesus*: all four —
   `ask`, `ask_stream`, `resume` and `invoke`.
-- [ ] What is the per-call timeout for a bridged tool, and does a timeout abort
-  the turn or return an error result the sub-agent can retry? — *Owner: Jesus*
-- [ ] `MCPToolAdapter.to_mcp_tool_definition()` injects the `confirm` property
+- [x] What is the per-call timeout for a bridged tool, and does a timeout abort
+  the turn or return an error result the sub-agent can retry? — *Owner: Jesus*:
+  return a **recoverable error result**. A timeout (or any tool failure) is
+  reported to the sub-agent as an MCP error it can reason about and retry or
+  route around; it never aborts the turn. Same treatment for a HITL denial or
+  HITL timeout.
+- [x] `MCPToolAdapter.to_mcp_tool_definition()` injects the `confirm` property
   for confirming tools. In-process that field is redundant (real HITL runs
   instead) and misleading to the model. Do we strip it in the SDK-MCP path,
   refactor the adapter to make it transport-conditional, or leave it? —
-  *Owner: Jesus*
-- [ ] Does the sub-agent need a `PermissionContext` (for `user_id`-keyed
+  *Owner: Jesus*: **strip it in the SDK-MCP path.** The stdio proxy keeps the
+  `confirm` shim unchanged (it has no human channel); the in-process path
+  removes the property from the schema so the model is not offered a switch
+  that does nothing, and the real `ConfirmationGuard` governs instead. The
+  adapter is not refactored — the SDK-MCP path post-processes the schema — so
+  the stdio transport's behaviour is untouched.
+- [x] Does the sub-agent need a `PermissionContext` (for `user_id`-keyed
   confirmation windows and grant checks), and if so where does it come from —
   the daemon's session, the RPC caller, or a fixed service identity? —
-  *Owner: Jesus*
-- [ ] Should exposure honour the agent's existing tool *categories* so a
+  *Owner: Jesus*: **derive the identity from the environment.** For a local RPC
+  service the caller is the **operating-system user** of the connecting peer
+  (Linux): read `SO_PEERCRED` off the Unix-domain socket to get `(pid, uid,
+  gid)` and resolve the uid to a username via `pwd`. When peer credentials are
+  unavailable (non-UDS transport, unresolvable uid), fall back to a **fixed
+  service identity**. That `user_id` populates the `UserSession` inside the
+  `PermissionContext` handed to `ToolManager.execute_tool()`, so confirmation
+  windows and grants are keyed per real human rather than `"anonymous"`.
+  **Verified feasible** — see Code Context → OS-user identity.
+- [x] Should exposure honour the agent's existing tool *categories* so a
   `search_tools`-style narrowing applies to the sub-agent too, or is the flat
-  full set correct? — *Owner: Jesus*
-- [ ] Large tool results cross into the sub-agent's context and are billed
+  full set correct? — *Owner: Jesus*: **respect the narrowing** — but the
+  decision hinged on what Claude Code does on its own, and it was measured:
+  **Claude Code does NOT narrow.** Every exposed MCP tool is listed eagerly in
+  the session `init` message (25 exposed → 25 listed), so the available set
+  grows linearly with what we hand over. Claude Code does ship a native
+  `ToolSearch` tool (always present, and used spontaneously even with a single
+  parrot tool exposed), but that is *search over an already-loaded set*, not a
+  reduction of it. So parrot-side narrowing is real context/cost control, not
+  redundant work, and it composes with `ToolSearch` rather than duplicating it.
+  See Code Context → Claude Code tool-loading behaviour.
+- [x] Large tool results cross into the sub-agent's context and are billed
   there. Do the existing compression codecs apply on this path, and do we need
-  a size ceiling? — *Owner: Jesus*
+  a size ceiling? — *Owner: Jesus*: **no size ceiling; apply the compression
+  codecs.** Results are not truncated — a hard cap would silently lose data the
+  sub-agent needs — but the existing `parrot.tools.compression` codecs
+  (`columnar`, `json_compact`, registered at import time) should run on the
+  bridged result before it crosses into the sub-agent's context.
+
+### Follow-up questions raised by these answers
+- [ ] Which compression codec is selected for a bridged result, and on what
+  signal — result shape (tabular → `columnar`), size threshold, or per-tool
+  declaration? — *Owner: Jesus*
+- [ ] What is the fixed service identity's `user_id` / `tenant_id` / `roles`
+  when `SO_PEERCRED` is unavailable, and should a `ConfirmationGuard` window
+  ever be honoured for it (or must the service identity always re-confirm)? —
+  *Owner: Jesus*
+- [ ] Capturing `SO_PEERCRED` means touching `agentd/server.py`
+  (`_handle_connection`) to carry caller identity onto the `Session` — is that
+  in scope for this feature, or a prerequisite feature of its own? —
+  *Owner: Jesus*
+- [ ] Which narrowing signal drives exposure — the agent's tool categories,
+  an explicit per-agent budget (N tools max), or the same `search_tools`
+  relevance ranking the primary LLM uses? — *Owner: Jesus*
