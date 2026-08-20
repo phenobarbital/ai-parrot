@@ -748,3 +748,62 @@ async def test_form_version_delete_no_hook_allowed():
     svc = FormVersionService(registry)
     # No hook → deletion is always allowed
     await svc.safe_delete(form.form_uid, tenant="t1")
+
+
+# ---------------------------------------------------------------------------
+# Adversarial review fixes (2026-08-19)
+# ---------------------------------------------------------------------------
+
+
+def test_version_sort_key_accounts_for_patch_component():
+    """Ordering must not collapse ``1.2.3`` onto ``1.2``.
+
+    ``_SEMVER_RE`` accepts an optional patch component (TASK-2267 unified the
+    two bumpers around that grammar), so ``_parse_major_minor`` — which
+    ignores it by contract — ties ``1.2.3`` with ``1.2`` and makes the sort
+    non-deterministic. ``_version_sort_key`` is the ordering key and reads
+    all three components.
+    """
+    from parrot_formdesigner.services.form_version import _version_sort_key
+
+    assert _version_sort_key("1.2") == (1, 2, 0)
+    assert _version_sort_key("1.2.3") == (1, 2, 3)
+    assert sorted(
+        ["1.3", "1.2.3", "2.0", "1.2", "1.10", "1.9"], key=_version_sort_key
+    ) == ["1.2", "1.2.3", "1.3", "1.9", "1.10", "2.0"]
+
+
+def test_version_sort_key_unparseable_sorts_last():
+    """Same sentinel contract as ``_parse_major_minor``, three wide."""
+    from parrot_formdesigner.services.form_version import (
+        _UNPARSEABLE_VERSION_KEY,
+        _version_sort_key,
+    )
+
+    assert _version_sort_key("draft-x") == _UNPARSEABLE_VERSION_KEY
+    assert _version_sort_key("") == _UNPARSEABLE_VERSION_KEY
+    assert sorted(["1.0", "draft-x", "2.5"], key=_version_sort_key) == [
+        "1.0",
+        "2.5",
+        "draft-x",
+    ]
+
+
+def test_label_would_regress_blocks_only_a_backwards_stamp():
+    """The guard on publish()'s registry write.
+
+    Two publishes in flight — ``1.0`` and ``1.1`` — used to let whichever
+    finished LAST win the in-memory label, so a slow ``1.0`` could stamp
+    itself over a completed ``1.1``. The persisted rows were always right;
+    the label went stale until a restart.
+    """
+    from parrot_formdesigner.services.form_version import _label_would_regress
+
+    assert _label_would_regress("1.1", "1.0") is True      # backwards — blocked
+    assert _label_would_regress("1.0", "1.1") is False     # forwards — allowed
+    assert _label_would_regress("1.0", "1.0") is False     # idempotent republish
+    assert _label_would_regress("1.9", "1.14") is False    # NOT a string compare
+    assert _label_would_regress(None, "1.0") is False      # first publish
+    # An unparseable stored value cannot be compared, so it must not block
+    # the write forever.
+    assert _label_would_regress("draft-x", "1.0") is False

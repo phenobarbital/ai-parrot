@@ -84,7 +84,17 @@ _SEMVER_RE = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?$")
 #: previous ``(1, 0)`` fallback, which silently misordered an unparseable
 #: row as if it were the OLDEST version in the history — the opposite of
 #: harmless.
-_UNPARSEABLE_SORT_KEY = (2**63 - 1, 2**63 - 1)
+_UNPARSEABLE_SENTINEL = 2**63 - 1
+
+#: Two-wide: the fallback of :func:`_parse_major_minor`, whose contract is a
+#: ``(major, minor)`` pair.
+_UNPARSEABLE_SORT_KEY = (_UNPARSEABLE_SENTINEL, _UNPARSEABLE_SENTINEL)
+
+#: Three-wide: the fallback of :func:`_version_sort_key`. Kept separate from
+#: the pair above rather than widening it — that pair is compared directly in
+#: the test suite, and a silently widened tuple would make an equality check
+#: that reads correct fail for a reason unrelated to what it tests.
+_UNPARSEABLE_VERSION_KEY = (_UNPARSEABLE_SENTINEL,) * 3
 
 
 def _parse_major_minor(version: str) -> tuple[int, int]:
@@ -95,16 +105,76 @@ def _parse_major_minor(version: str) -> tuple[int, int]:
             (a trailing patch component is accepted but ignored here).
 
     Returns:
-        ``(major, minor)`` ints. Falls back to :data:`_UNPARSEABLE_SORT_KEY`
-        — NOT ``(1, 0)`` — when ``version`` doesn't match ``major.minor``
-        at all, so an unparseable row sorts last instead of being mistaken
-        for the oldest version.
+        ``(major, minor)`` ints. Falls back to the first two components of
+        :data:`_UNPARSEABLE_SORT_KEY` — NOT ``(1, 0)`` — when ``version``
+        doesn't match at all, so an unparseable value is never mistaken for
+        the oldest version. For ORDERING use :func:`_version_sort_key`,
+        which also accounts for the patch component.
     """
     m = _SEMVER_RE.match(version or "")
     if m:
         return int(m.group(1)), int(m.group(2))
     logger.warning("Could not parse version %r as major.minor — sorting it last", version)
     return _UNPARSEABLE_SORT_KEY
+
+
+def _version_sort_key(version: str) -> tuple[int, int, int]:
+    """The ordering key for a version string: ``(major, minor, patch)``.
+
+    Separate from :func:`_parse_major_minor`, which exists for the bump
+    arithmetic and deliberately ignores a patch component. Ordering cannot
+    ignore it: ``_SEMVER_RE`` accepts ``1.2.3``, so collapsing it to
+    ``(1, 2)`` ties it with ``1.2`` and makes the sort non-deterministic.
+
+    This MUST accept exactly what the SQL guard in
+    ``PostgresFormStorage._list_versions_sql`` accepts, and produce the same
+    order (adversarial review, 2026-08-19). Postgres previously treated
+    ``1.2.3`` as unparseable and sorted it last while this side sorted it as
+    ``(1, 2)`` — the storage-backed history and the in-memory merge then
+    disagreed about the same form.
+
+    Args:
+        version: Version string, e.g. ``"1.0"``, ``"1.10"``, ``"1.2.3"``.
+
+    Returns:
+        ``(major, minor, patch)`` ints, ``patch`` defaulting to ``0``, or
+        :data:`_UNPARSEABLE_VERSION_KEY` so a non-conforming row sorts last.
+    """
+    m = _SEMVER_RE.match(version or "")
+    if not m:
+        logger.warning("Could not parse version %r for ordering — sorting it last", version)
+        return _UNPARSEABLE_VERSION_KEY
+    return int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+
+
+def _label_would_regress(already_published: str | None, target: str) -> bool:
+    """Whether stamping ``target`` would move ``published_version`` BACKWARDS.
+
+    Guards the registry write at the end of :meth:`FormVersionService.publish`
+    against a lost update (adversarial review, 2026-08-19). The re-read there
+    already stops a concurrent editor save from having its VERSION rolled
+    back, but the LABEL was still written unconditionally: with two publishes
+    in flight — ``1.0`` and ``1.1`` — the one that finishes last wins, so a
+    slow ``1.0`` could stamp ``published_version="1.0"`` over a completed
+    ``1.1``. The persisted rows stay correct either way (each is promoted in
+    its own statement); it is the in-memory label that goes stale, until a
+    restart or the next publish.
+
+    Args:
+        already_published: The live form's current ``published_version``.
+        target: The version this publish just promoted.
+
+    Returns:
+        ``True`` only when both are comparable and the stored one is newer.
+        An unparseable stored value is NOT treated as newer — it cannot be
+        compared, so the write is allowed through rather than blocked
+        forever.
+    """
+    if already_published is None:
+        return False
+    if not _SEMVER_RE.match(already_published):
+        return False
+    return _version_sort_key(already_published) > _version_sort_key(target)
 
 
 def _is_published_label(published_version: str | None, version: str) -> bool:
@@ -325,11 +395,19 @@ class FormVersionService:
         # rolled back by this write overwriting the registry with a stale
         # (older) version.
         current_live = await self._registry.get(form_uid, tenant=tenant)
-        if current_live is not None:
+        if current_live is not None and not _label_would_regress(
+            current_live.published_version, target_version
+        ):
             updated_live = current_live.model_copy(deep=True, update={
                 "published_version": target_version,
             })
             await self._registry.register(updated_live, persist=False, overwrite=True, tenant=tenant)
+        elif current_live is not None:
+            self.logger.info(
+                "publish: not stamping published_version=%r on form %s — the live "
+                "form already reports the newer %r (concurrent publish)",
+                target_version, form_uid, current_live.published_version,
+            )
 
         # Record VersionMeta (form_id kept as the human-readable slug label).
         # A _meta entry only ever exists because THIS method just published
@@ -452,7 +530,7 @@ class FormVersionService:
                     is_frozen=published,
                 )
 
-        return sorted(by_version.values(), key=lambda m: _parse_major_minor(m.version))
+        return sorted(by_version.values(), key=lambda m: _version_sort_key(m.version))
 
     @staticmethod
     def _published_at_from_snapshot(snap: FormSchema) -> datetime:

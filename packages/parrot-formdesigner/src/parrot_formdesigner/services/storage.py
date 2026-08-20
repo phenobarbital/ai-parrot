@@ -293,10 +293,13 @@ class PostgresFormStorage(FormStorage):
                schema_json -> 'meta' ->> 'published_at' AS published_at
         FROM {qt}
         WHERE form_uid = $1
-        ORDER BY CASE WHEN version ~ '^[0-9]{{1,9}}\\.[0-9]{{1,9}}$'
+        ORDER BY CASE WHEN version ~ '^[0-9]{{1,9}}\\.[0-9]{{1,9}}(\\.[0-9]{{1,9}})?$'
                       THEN split_part(version, '.', 1)::int END NULLS LAST,
-                 CASE WHEN version ~ '^[0-9]{{1,9}}\\.[0-9]{{1,9}}$'
+                 CASE WHEN version ~ '^[0-9]{{1,9}}\\.[0-9]{{1,9}}(\\.[0-9]{{1,9}})?$'
                       THEN split_part(version, '.', 2)::int END NULLS LAST,
+                 CASE WHEN version ~ '^[0-9]{{1,9}}\\.[0-9]{{1,9}}(\\.[0-9]{{1,9}})?$'
+                      THEN coalesce(nullif(split_part(version, '.', 3), '')::int, 0)
+                      END NULLS LAST,
                  version
         """
 
