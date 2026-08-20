@@ -92,7 +92,7 @@
       "feature_id": "FEAT-435",
       "feature": "graphindex-retriever",
       "spec": "sdd/specs/graphindex-retriever.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Own module (`pin.py`), but TASK-2275 extends the same file.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:18:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2274-workspacepin-admission.md"
+      "completed_at": "2026-08-20T01:39:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2274-workspacepin-admission.md"
     },
     {
       "id": "TASK-2275",
