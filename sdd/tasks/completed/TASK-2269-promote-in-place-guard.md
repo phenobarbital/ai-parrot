@@ -146,9 +146,57 @@ async def test_publish_twice_same_tag_does_not_overwrite(pg_storage): ...  # int
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: `publish()` now targets `form.version` (the live tag) instead of
+`_bump(form.version)`; it never bumps. `FormStorage.promote()` (new,
+concrete-with-default on the ABC, like `list_versions()`) is the
+guard: `PostgresFormStorage.promote()` implements it as `INSERT ... ON
+CONFLICT (form_uid, version) DO UPDATE ... WHERE (schema_json ->>
+'published_version') IS DISTINCT FROM version RETURNING id` — an upsert
+whose UPDATE half is conditionally skipped, not a plain `UPDATE`.
+`_save_snapshot()` now calls `storage.promote()` exclusively (both its
+callers, `publish()` and `backfill_published()`, always stamp
+`published_version == version` before calling it, so "promote" is always
+the correct write). Fixed the `:209-211`-area docstring (now describes the
+promote guard, not a UNIQUE-violation guarantee that never held).
+`InMemoryStorage` (test_feat300_review_fixes.py): `save()` no longer
+raises on a duplicate key (matches production's UPSERT — overwrites);
+added `promote()` mirroring the same upsert-with-conditional-guard logic.
+`FailingStorage` overrides `promote()` too (publish() no longer touches
+`save()` at all).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's literal SQL (`UPDATE ... WHERE ...
+RETURNING id`, treating "no row affected" as always meaning "already
+published") does not account for a version that has NEVER been persisted
+to storage at all — which turned out to be the DOMINANT case across the
+existing test suite (`_registry_with_form()` and most `FormVersionService`
+fixtures register a form without ever calling `storage.save()` on it
+first, then call `publish()` directly). Implementing the guard literally
+as an `UPDATE` broke essentially every existing publish-path test at
+first pass (10 in `test_form_version.py`, 2 in
+`test_feat300_review_fixes.py`, 1 integration test) with "already exists
+and is frozen" raised for versions that had never been saved. Corrected
+to an upsert whose update half is conditionally skipped
+(`INSERT ... ON CONFLICT DO UPDATE ... WHERE`): a missing row is written
+normally (nothing published yet to protect — same as a first-time
+insert), an existing unpublished row is promoted, and only an
+ALREADY-published row is rejected. This preserves the guard's actual
+intent (a published snapshot can never be silently overwritten) while
+matching how `publish()` is used both in this codebase and in the spec's
+own §1 flow (a form need not have been separately "saved" through the
+editor before its first publish). Rewrote the tests this exposed as
+broken by Q5's semantics (bump removal) across `test_form_version.py`
+(10), `test_feat300_review_fixes.py` (TestH1's 2 restart tests — added an
+editor-save/bump step between publishes; H4's TOCTOU-race test — rebuilt
+as a direct re-publish + a direct storage-level `promote()` guard test,
+since the old race no longer applies once publish() doesn't bump), and
+`test_api_feat300.py`/`test_feat300_integration.py`'s multi-publish
+scenarios (added a `_bump_version` editor-save step between publishes).
+None of these were in this task's own listed files except
+`test_feat300_review_fixes.py`, but they are a direct, foreseeable,
+mechanical consequence of the accepted Q5 decision — the same category of
+blast-radius fix the spec's own §8 Q3 anticipates for other files, just
+triggered by Q5 instead. Also added `test_publish_twice_same_tag_does_not_overwrite`
+to `test_feat300_integration.py` per the Test Specification (not
+previously present).

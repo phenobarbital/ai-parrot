@@ -108,7 +108,7 @@
       "feature_id": "FEAT-433",
       "feature": "form-version-history-repair",
       "spec": "sdd/specs/form-version-history-repair.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -118,8 +118,8 @@
       "parallelism_notes": "Parallel with 2265/2266 but MUST NOT ship without 2264: that task turns an unreachable overwrite into a live one. Reshaped by spec §8 Q5 (closed 2026-08-19, promote in place): the guard is a promote UPDATE, not an insert-only write. Shares storage.py with 2265 — coordinate.",
       "assigned_to": null,
       "started_at": "2026-08-19T23:07:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2269-promote-in-place-guard.md"
+      "completed_at": "2026-08-20T00:08:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2269-promote-in-place-guard.md"
     }
   ]
 }
