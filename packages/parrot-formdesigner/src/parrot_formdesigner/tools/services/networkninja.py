@@ -146,37 +146,6 @@ def _prune_dangling_rule_references(schema: FormSchema) -> int:
     return dropped
 
 
-def _resolve_section_rule_references(schema: FormSchema) -> None:
-    """Stamp ``field_uid`` on the conditions of section-level rules.
-
-    ``core.resolution.resolve_rule_references`` covers field rules only — it
-    walks ``iter_fields_recursive()`` and never looks at
-    ``FormSection.depends_on``. Section rules need the same treatment so a
-    consumer reading ``field_uid`` resolves them like any other rule.
-
-    Unknown references are left alone rather than raised on: a section rule
-    may legitimately point at a column that was filtered out of this import
-    (inactive metadata), and that is not a reason to fail the whole form.
-
-    Mutates ``schema`` in place.
-
-    Args:
-        schema: A schema whose field uids have already been assigned.
-    """
-    by_fid = {f.field_id: f for f in schema.iter_fields_recursive()}
-    for section in schema.sections:
-        if not section.depends_on:
-            continue
-        for condition in section.depends_on.conditions:
-            if condition.field_uid is not None:
-                continue
-            if (condition.source or "field") != "field":
-                continue
-            target = by_fid.get(condition.field_id or "")
-            if target is not None:
-                condition.field_uid = target.field_uid
-
-
 # ---------------------------------------------------------------------------
 # SQL Query
 # ---------------------------------------------------------------------------
@@ -591,7 +560,6 @@ class NetworkninjaFormService(AbstractFormService):
                 "import did not build", dangling, schema.form_id,
             )
         resolve_rule_references(schema)
-        _resolve_section_rule_references(schema)
         return schema
 
     @staticmethod
