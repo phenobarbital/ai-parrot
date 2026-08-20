@@ -1,9 +1,34 @@
-# SPEC — GraphIndex Retrieval Layer
+---
+type: feature
+base_branch: dev
+---
 
+# Feature Specification: GraphIndex Retrieval Layer
+
+**Feature ID:** FEAT-435
 **Package:** `parrot.knowledge.retrieval`
-**Status:** Draft / pending review
-**Depends on:** `parrot.knowledge.graphindex` (L0), `asyncdb`, `rustworkx`, `pgvector`/FAISS
+**Status:** pending review
+**Author:** Jesus Lara (jlara@trocglobal.com)
+**Created:** 2026-08-20
+**Depends on:** `parrot.knowledge.graphindex` (L0), `rustworkx`, FAISS, SQLite FTS5
 **Supersedes:** ad-hoc `GRAPH_REPORT.md` injection via `KNOWLEDGE_LAYER`
+
+> **Numbering note.** This spec predates the `sdd/templates/spec.md` scaffold and
+> keeps its own §1–§11 numbering, because §3.5/§5.0/§9/§11 are cross-referenced
+> throughout the body and by the task table. The template's mandatory sections
+> are present under the numbers below:
+>
+> | Template section | Here |
+> |---|---|
+> | 1. Motivation & Business Requirements | §1 Scope |
+> | 2. Architectural Design | §2 Layer model, §3 Core contracts, §3.5 Derivation layer |
+> | 3. Module Breakdown | §4–§6 (classifier, policies, WikiCache) |
+> | 4. Test Specification | §7 Evaluation harness + **§12** |
+> | 5. Acceptance Criteria | **§13** |
+> | 6. Codebase Contract | **§14** (evidence gathered in §11) |
+> | 7. Implementation Notes & Constraints | §11.1 + **§14.4** |
+> | 8. Open Questions | §9 (resolved) + §9.1 (RQ-1…RQ-4, resolved) |
+> | Worktree Strategy | **§15** |
 
 ---
 
@@ -957,3 +982,265 @@ Consequences, as resolved in §5.0:
 The accepted cost of a parallel layer is two expansion implementations
 coexisting until T13 adjudicates. That is deliberate: it buys zero risk to
 shipped, tested code, and T13 was already a v1 task.
+
+
+---
+
+## 12. Test Specification
+
+Beyond §7's evaluation harness (which measures *quality*), these are the
+correctness tests each v1 task must ship. They are deliberately weighted toward
+the invariants, because every invariant in §2 is now enforced by derived
+machinery (§3.5) rather than by L0 guarantees.
+
+### Unit tests
+
+| Target | Test |
+|---|---|
+| T1 | `NodeRef.parse(uri).uri == uri` round-trip (property test, hypothesis); rejects symbolic `rev` (`HEAD`, `main`, branch names); `symbol_type` preserved |
+| T1b | `WorkspacePin` is hashable and frozen; `pins` rejects mutation; `rev_of()` raises on an unpinned repo |
+| T1c | Unreachable SHA → `StalePinError`; sampled `files`-table mismatch → `IndexPinMismatchError`; same mismatch under `allow_stale=True` → bundle carries `index_pin_mismatch` and does **not** raise |
+| T2 | `ContextBundle` frozen, `extra="forbid"`, `schema_version == 1` survives round-trip through `model_dump_json` |
+| T2b | **Contract test:** no policy emits `L2_DOC`/`L2_NORM`/`L2_EXTERNAL`; parametrised over every member of the `RetrievalPolicy` union so a new policy cannot skip it |
+| T2c | `DigestScope.SPAN` digest changes when one line inside the span changes and does **not** change when a line outside it changes; `RATIONALE` node yields `FILE` scope; `CONCEPT` node yields `SUMMARY` scope |
+| T3 | `MarkerLexicon` matches ES and EN markers symmetrically (`why`/`por qué`, `overview`/`cómo funciona`); `QueryFeatures` is pure — same input twice, identical output, no I/O |
+| T3b | Full qualname built from a `parent_id` chain (module→class→method); trailing-segment lookup `resolve` returns **all** candidates; one-level `domain_tags["qualified_name"]` agrees with the derived name where present, and derivation wins where it does not |
+| T4 | **INV-3 replay:** every rule R1–R7 has a fixture that matches it and `matched_rule` names it; classifying the same `(query, GraphStats, RetrievalBudget)` twice is byte-identical; `policy_override` yields `matched_rule == "OVERRIDE"` |
+| T4b | `RATIONALE` → `(RATIONALE, OVERVIEW)`; `GLOBAL_SUMMARY` → `(OVERVIEW, CONTRACTS, DEPENDENCIES)` |
+| T5 | `DirectSymbolPolicy` performs no vector search and no traversal (assert via spies on the seeder and expander) |
+| T6 | RRF fusion matches the reference formula (mirror `tests/knowledge/pageindex/test_hybrid_search.py::test_rrf_formula_matches_reference`); FTS-only and dense-only degradation paths both return results |
+| T7 | Each `SufficiencyCheck` trigger (`coverage`, `margin`, `dangling`) fires in isolation; escalation stops at `deadline_ms` and sets `truncated=True` |
+| T9 | Editing one method marks that class page's `CONTRACTS` `STALE` while `RATIONALE`/`GOTCHAS` stay `FRESH`; single-flight on `(page_id, section_kind)` lets two different sections of one page regenerate concurrently |
+
+### Integration tests
+
+- **End-to-end on a real index.** Build a GraphIndex over a small fixture repo,
+  then assert one query per `QueryClass` returns a bundle whose every unit
+  attributes to a real `file:line_span` (INV-4), with `RATIONALE`-kind evidence
+  allowed `line_span=None` per §3.5.1.
+- **INV-5 budget honesty.** With `deadline_ms=1`, every policy returns a bundle
+  with `truncated=True` rather than overrunning or raising.
+- **INV-2 closure.** Mutate a source file, re-run retrieval, assert the affected
+  section flips to `STALE` and appears in `stale_sources`; assert an untouched
+  sibling section stays `FRESH`.
+- **Coexistence (OQ-8).** `GraphIndexOrigin` and
+  `GraphExpandedRetriever.search()` keep their current behaviour with this layer
+  installed — run the existing `tests/knowledge/graphindex/test_retriever.py`
+  and `packages/ai-parrot-tools/tests/multistoresearch/test_graphindex_origin.py`
+  unchanged.
+
+### Fixtures
+
+- A committed fixture repo (≥2 modules, ≥1 class hierarchy, ≥3 tagged comments
+  covering `TODO`/`WHY`/`HACK`) with a **pinned rev**, so digest and pin tests
+  are reproducible.
+- A prebuilt SQLite GraphIndex over that fixture, checked in or built in a
+  session-scoped fixture, so tests do not depend on tree-sitter timing.
+- `WorkspacePin` factory pinning that rev, plus a deliberately-drifted pin for
+  T1c.
+
+---
+
+## 13. Acceptance Criteria
+
+- [ ] `parrot.knowledge.retrieval` exists and imports cleanly with no
+      dependency on `parrot.knowledge.graphindex` write paths — L0 is consumed
+      read-only (§1.2), verified by an import-graph assertion.
+- [ ] **INV-1:** every `ContextUnit` in every bundle carries ≥1 `NodeRef`; a
+      free-floating unit is unconstructible (Pydantic-enforced, not checked).
+- [ ] **INV-2:** digest closure is evaluable for every served unit, with an
+      explicit `DigestScope`; a mutated source flips the affected section to
+      `STALE` and it is never served as `FRESH`.
+- [ ] **INV-3:** `QueryClassifier.classify()` performs zero I/O and no LLM call
+      (enforced by a test that patches the network and filesystem to raise), and
+      is byte-identical across repeated runs.
+- [ ] **INV-4:** every unit attributes to `file:line_span` at a concrete rev,
+      except `RATIONALE`-kind evidence, which may carry `line_span=None` until
+      the L0 lineno fix lands (§3.5.1 / RQ-4).
+- [ ] **INV-5:** no policy overruns `deadline_ms`; partial results set
+      `truncated=True`.
+- [ ] Every rule R1–R7 is reachable and named in `matched_rule`; the golden set
+      (§7) exercises all seven.
+- [ ] `RetrievalRoutingDecision` round-trips through JSON and replays offline
+      with no retrieval re-execution (§8).
+- [ ] No policy emits a RESERVED `L2_*` origin (T2b).
+- [ ] Speculation is refused when `max_llm_calls > 0` or `len(pins) > 1`
+      (§4.4, RQ-3).
+- [ ] `RetrievalTrace` is emitted once per request to navigator-eventbus with
+      the §8 field set.
+- [ ] **No regression:** `tests/knowledge/graphindex/` and
+      `packages/ai-parrot-tools/tests/multistoresearch/` pass unchanged (OQ-8).
+- [ ] `pytest packages/ai-parrot/tests/knowledge/retrieval/ -v` green;
+      `ruff check` and `mypy` clean on the new package.
+
+**Explicitly NOT an acceptance criterion:** the §5.1/§5.2 latency targets
+(p50 < 15 ms / < 120 ms). Per OQ-9 they are provisional and measured by T13;
+gating v1 on an unbudgeted number derived from an exhaustive `FlatL2` scan would
+be exactly the kind of unmeasured claim §7 exists to prevent.
+
+---
+
+## 14. Codebase Contract (anti-hallucination)
+
+Verified on `dev` @ `bfa056bc7`, 2026-08-20. §11 carries the narrative audit; this
+section is the machine-checkable surface an implementing agent must not deviate
+from.
+
+### 14.1 Verified imports
+
+```python
+# L0 — consume read-only
+from parrot.knowledge.graphindex.schema import (          # schema.py
+    NodeKind, EdgeKind, Provenance, UniversalNode, UniversalEdge, stable_edge_id,
+)
+from parrot.knowledge.graphindex.assemble import GraphAssembler        # assemble.py:25
+from parrot.knowledge.graphindex.sqlite_reader import SQLiteGraphReader  # sqlite_reader.py:47
+from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+from parrot.knowledge.graphindex.embed import GraphIndexEmbedder      # embed.py:25
+from parrot.knowledge.graphindex.signals import (
+    relevance_neighborhood, SignalRelevanceConfig,                    # signals.py:92
+)
+# reuse — do not reimplement
+from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch  # _rrf_fuse:277
+```
+
+### 14.2 Existing signatures (exact, verified)
+
+```python
+# parrot/knowledge/graphindex/schema.py
+class NodeKind(str, Enum):
+    DOCUMENT SECTION SYMBOL CONCEPT RATIONALE SKILL WIKI_PAGE RUN CLAIM
+class EdgeKind(str, Enum):
+    CONTAINS REFERENCES DEFINES MENTIONS EXPLAINS EXTENDS PRODUCED ABOUT \
+    SUPPORTED_BY CONTRADICTS
+class UniversalNode(BaseModel):
+    node_id: str; kind: NodeKind; title: str; source_uri: str
+    content_ref: Optional[str]; summary: Optional[str]; embedding_ref: Optional[str]
+    domain_tags: dict; parent_id: Optional[str]
+    provenance: Provenance = Provenance.EXTRACTED
+    assertion: Optional[AssertionMeta] = None
+    # NOTE: no repo, no rev, no digest, no line_span, no qualname fields.
+
+# parrot/knowledge/graphindex/sqlite_reader.py
+class SQLiteGraphReader:
+    def get_node(self, node_id: str) -> Optional[dict]              # :180
+    def children(self, ...)                                         # :203
+    def who_extends(self, ...)                                      # :239
+    def find_model(self, model_name: str) -> Optional[dict]         # :276
+    #   Odoo-specific exact lookup — NOT a general symbol table
+    #   search_symbols(...) -> FTS5/BM25 over title + summary ONLY  # :323
+    @staticmethod
+    def _read_span(path: Path, lineno: int, end: int) -> Optional[str]  # :404
+
+# parrot/knowledge/graphindex/embed.py
+class GraphIndexEmbedder:
+    self.index: faiss.IndexFlatL2 = faiss.IndexFlatL2(dimension)    # :51
+    async def search_similar(self, query_text: str, top_k: int = 10) # :122
+    async def _persist_to_pgvector(self, node_id, embedding) -> None # :193 — STUB, no-op
+
+# parrot/knowledge/graphindex/signals.py
+class SignalRelevanceConfig(BaseModel):
+    edge_kind_weights: dict[EdgeKind, float]                        # :104
+    #   validator ENFORCES weights sum to 1.0                       # :123-133
+```
+
+**Node metadata contract — read from `domain_tags`, never invent fields:**
+
+| Key | On | Emitted at |
+|---|---|---|
+| `symbol_type` (`"module"`/`"class"`/`"function"`) | SYMBOL nodes | `extractors/code.py:155, 297, 366` |
+| `lineno`, `end_lineno` | class + function nodes only | `code.py:296-299, 365-369` |
+| `qualified_name` (one level: `{parent.title}.{name}`) | **function nodes only**, `code.py` only | `code.py:351, 367` |
+| `tag` (`NOTE\|WHY\|HACK\|TODO\|FIXME\|XXX`) | RATIONALE nodes | `code.py:29, 500` |
+
+### 14.3 Does NOT exist (do NOT reference)
+
+The most important subsection. Every line was searched for and confirmed absent:
+
+- `parrot.knowledge.retrieval` — the entire package. Nothing to extend.
+- `NodeRef`, `Evidence`, `ContextUnit`, `ContextBundle`, `RetrievalBudget`,
+  `WorkspacePin`, `QueryClassifier`, `QueryFeatures`, `MarkerLexicon`,
+  `SectionSelector`, `SpeculationGroup`, `SufficiencyCheck`, `EdgeWeightTable`,
+  `PackageRepoMap`, `WikiSection`, `SectionKind`, `RetrievalTrace`,
+  `StalePinError`, and all six `*Policy` classes — **0 occurrences** under
+  `packages/`.
+- **`RoutingDecision` — EXISTS, but is not ours.** It belongs to
+  `parrot/bots/mixins/intent_router.py:378`. Use
+  `RetrievalRoutingDecision` (§5.0).
+- **No symbol trie / symbol table.** `graphindex/resolve.py` is a cross-domain
+  embedding-similarity stage (`ResolutionConfig`, `_get_extractor_domain`) that
+  emits `mentions` edges — it is **not** a resolver of names. Build T3b.
+- **No `qualname` field** anywhere in `parrot/knowledge/` — only the one-level
+  `domain_tags["qualified_name"]` above.
+- **No node-level digest.** Digests exist only per file, in the SQLite `files`
+  table via `SQLitePersistence.is_stale(ctx, source_uri, mtime, sha1)`.
+- **No `repo` / `rev` / git-SHA capture** in any node, edge, or table.
+  Persistence partitions by **tenant** (`_db_path(ctx)`), not repo.
+- **No pgvector read path and no HNSW.** `_persist_to_pgvector` is a logging
+  stub.
+- **No PCST.** `rustworkx` 0.18.1 exposes only
+  `steiner_tree(graph, terminal_nodes, weight_fn)` (metric minimum Steiner).
+  `rustworkx.pagerank(..., personalization=...)` **does** exist — PPR is fine.
+- **No Redis single-flight lock** in `knowledge/` or the eventbus integration.
+  Precedent to copy: `parrot/auth/oauth2_base.py:519`, `auth/jira_oauth.py:523`.
+  Unrelated: `wiki_write_lock()` (`knowledge/wiki/project.py:47`) is a
+  file-based store lock.
+- **No VCS-history extractor.** `extractors/` = `code`, `llm`, `loader`,
+  `odoo_code`, `skill`. Commit messages are unindexed (RQ-4).
+- **No `WikiPage`/`WikiSection` model.** `knowledge/wiki/models.py` has
+  `WikiPageCategory` (SUMMARY/ENTITY/CONCEPT/COMPARISON/OVERVIEW/SYNTHESIS/
+  ANSWER/ARCHIVE) and `SourceManifestEntry` (file-level `file_hash` + `mtime`).
+  These are a **different taxonomy** from `SectionKind` — the two coexist; do
+  not conflate or "unify" them.
+
+### 14.4 Patterns to follow
+
+- Frozen Pydantic v2 throughout: `model_config = ConfigDict(frozen=True,
+  extra="forbid")`, as every model in §3 already declares.
+- `async`/`await` end to end; `aiosqlite` for SQLite (never blocking `sqlite3`),
+  matching `persist_sqlite.py`.
+- `self.logger = logging.getLogger(__name__)`; never `print`.
+- Discriminated unions via `Field(discriminator="kind")` for the policy union —
+  the same shape `dev_loop/session_state.py:397+` uses for its action union.
+- New concrete tools/toolkits belong in **`parrot_tools`**, not core
+  `parrot/tools/` — so a future `GraphRetrieverToolkit` (§1.2, out of scope
+  here) lands there alongside `parrot_tools/multistoresearch/`.
+
+---
+
+## 15. Worktree Strategy
+
+**Isolation unit: per-spec.** One worktree, tasks sequential.
+
+```bash
+git worktree add -b feat-435-graphindex-retriever \
+  .claude/worktrees/feat-435-graphindex-retriever HEAD
+```
+
+Rationale: the v1 cut is a contract-first chain, not a fan-out. T1→T2→T2c and
+T1b→T1c are strictly serial, and **T3b is on the critical path for both T4 and
+T5** (§10), so the dependency graph has a narrow waist rather than independent
+lanes. Parallel worktrees would spend their isolation budget on tasks that
+cannot start.
+
+Genuinely parallelizable once the contracts land (T1, T1b, T2, T2c exist):
+**T3 ∥ T3b**, then **T5 ∥ T6** (different policies, no shared state), and **T14**
+at any point after T2. All are small enough that sequential execution in one
+worktree is cheaper than the coordination.
+
+**Cross-feature dependencies:** none must merge first. FEAT-217 and FEAT-379 are
+untouched by design (§5.0) — this feature adds a package and does not modify
+theirs. The one soft coupling is the L0 lineno fix for `RATIONALE` nodes
+(RQ-4 / §3.5.1): it is a separate one-line change to
+`extractors/code.py`, is **not** a blocker, and when it lands those nodes
+upgrade from `FILE` to `SPAN` digest scope with no contract change here.
+
+---
+
+## Revision History
+
+| Date | Change |
+|---|---|
+| 2026-08-20 | Verified the entire spec against `dev` @ `575e00245`; corrected §3.1/§4.2/§5.2/§5.3.1/§5.4/§6.3; added §11 audit. Resolved RQ-1…RQ-4 (§9.1). |
+| 2026-08-20 | Resolved OQ-7 (derive-don't-store, §3.5), OQ-8 (parallel layer, §5.0), OQ-9 (T6/T6b dense split, §5.2). Added T1c/T2c/T3b/T6b; revised v1 cut (§10). |
+| 2026-08-20 | Reserved **FEAT-435**; added frontmatter, §12 tests, §13 acceptance criteria, §14 codebase contract, §15 worktree strategy. |
