@@ -131,9 +131,15 @@ async def test_publish_persists_across_service_instances(registry, pg_storage, f
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: `_get_version_service()` now passes `storage=self.registry.storage`,
+mirroring `_make_question_bank`'s shape. Added
+`TestVersionServiceStorageWiring` in `test_api_feat300.py` (3 tests: storage
+wired through, `None` storage still works, publish survives a rebuilt
+service) using a minimal `_FakeFormStorage` double. Pre-existing test/lint
+baseline captured before this change (31 failed / 18 errors in
+`tests/unit/`, 47 ruff findings in `handlers.py`) is unchanged after this
+task — no regressions, no fixes to unrelated pre-existing failures (out of
+scope, environment-related per the worktree's PYTHONPATH-shadowing note).
+**Deviations from spec**: none

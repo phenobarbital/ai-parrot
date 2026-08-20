@@ -136,9 +136,33 @@ async def test_list_versions_projects_not_hauls(pg_storage): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-19
+**Notes**: Added `FormStorage.list_versions()` (registry.py) as a concrete
+(non-abstract) method returning `[]` by default — NOT abstract, deliberately:
+making it abstract would break every existing `FormStorage` subclass that
+predates this task (`DummyStorage`/`StorageWithoutInit` in
+`test_registry_lifecycle.py`, `_FakeFormStorage` added by TASK-2264) at
+construction time, which is out of scope for this task and would violate
+file-fidelity. `PostgresFormStorage.list_versions()` + `_list_versions_sql()`
+implement the SQL verbatim from spec §2 (projected columns, guarded `CASE`
+cast, `NULLS LAST`). `FormVersionService.list_versions()` now calls
+`storage.list_versions()` once instead of probing; `_probe_storage_versions`
+and `_MAX_VERSION_PROBES` are deleted. Kept "today's" `published_version ==
+version` gate in the merge (demoting it to a label is TASK-2266's job, not
+this one's — confirmed by the task's own "NOT in scope" note). Added
+`_published_at_from_row()` as a dict-shaped sibling of
+`_published_at_from_snapshot()` (same precedence, still falls back to
+`datetime.now()` — TASK-2266 removes that fallback).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Added `list_versions()` to the `InMemoryStorage`
+test double in `test_feat300_review_fixes.py` (not in this task's listed
+files) — required to keep `TestH1HistorySurvivesRestart` passing, since
+`FormVersionService.list_versions()` now calls `storage.list_versions()`
+instead of probing via `.load()`; without it that double would silently
+return `[]` for every version. This is the same kind of mechanical,
+spec-mandated blast-radius fix the spec's own §8 Q3 describes for other
+files, just for a file not explicitly enumerated by this task (it IS
+already listed as a TASK-2269 file, so the coupling was expected, just
+sequenced earlier here). No other file was touched beyond this task's list
+plus that one addition.
