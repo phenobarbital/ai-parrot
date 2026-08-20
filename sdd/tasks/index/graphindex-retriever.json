@@ -276,7 +276,7 @@
       "feature_id": "FEAT-435",
       "feature": "graphindex-retriever",
       "spec": "sdd/specs/graphindex-retriever.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -287,8 +287,8 @@
       "parallelism_notes": "Own module; no overlap with the policy or classifier tasks. Can run concurrently with TASK-2276..2281 once TASK-2273 lands.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:18:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2283-wiki-sections-invalidation.md"
+      "completed_at": "2026-08-20T02:38:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2283-wiki-sections-invalidation.md"
     },
     {
       "id": "TASK-2284",
