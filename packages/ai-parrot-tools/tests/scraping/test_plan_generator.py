@@ -96,7 +96,7 @@ class TestPlanGenerator:
         await gen.generate("https://example.com", "test")
         prompt = mock_client.complete.call_args[0][0]
         assert "properties" in prompt  # JSON schema present
-        assert "https://example.com" in prompt
+        assert "https://example.com" in prompt  # lgtm[py/incomplete-url-substring-sanitization]
         assert "test" in prompt
 
     @pytest.mark.asyncio
@@ -182,14 +182,14 @@ class TestPlanGenerator:
             PageSnapshot(title="Example"),
             None,
         )
-        assert "https://example.com" in prompt
+        assert "https://example.com" in prompt  # lgtm[py/incomplete-url-substring-sanitization]
         assert "Extract data" in prompt
         assert "Example" in prompt
 
     def test_build_prompt_with_no_snapshot(self, mock_client):
         gen = PlanGenerator(mock_client)
         prompt = gen._build_prompt("https://example.com", "test", None, None)
-        assert "https://example.com" in prompt
+        assert "https://example.com" in prompt  # lgtm[py/incomplete-url-substring-sanitization]
         # Empty snapshot fields are present but empty
         assert "Title:" in prompt
 

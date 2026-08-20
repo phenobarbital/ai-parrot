@@ -42,10 +42,13 @@ def _resolve_env_value(value: Optional[str]) -> Optional[str]:
         resolved = nav_config.get(value) or os.getenv(value)
         if resolved:
             return str(resolved)
+        # Log only the env-var name pattern, not the raw value
+        # (CodeQL py/clear-text-logging-sensitive-data)
+        safe_name = value if _ENV_VAR_RE.match(value) else "<redacted>"
         _logger.warning(
             "Config value %r looks like an env-var name but could not be resolved "
             "from navconfig or os.environ. The literal string will be used as-is.",
-            value,
+            safe_name,
         )
     return value
 

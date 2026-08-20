@@ -25,6 +25,7 @@ async def mock_oauth2_server(aiohttp_server):
     async def authorize(request: web.Request) -> web.Response:
         redirect_uri = request.query.get("redirect_uri", "")
         state = request.query.get("state", "")
+        # CodeQL[py/url-redirection]: mock OAuth server in test — redirect_uri is test-controlled
         raise web.HTTPFound(f"{redirect_uri}?code=mock-auth-code&state={state}")
 
     async def token(request: web.Request) -> web.Response:

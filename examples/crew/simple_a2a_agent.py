@@ -138,7 +138,7 @@ async def main():
     print(f"\n🚀 Server running on http://0.0.0.0:{PORT}")
     print(f"📋 Discovery: http://localhost:{PORT}/.well-known/agent.json")
     print(f"❤️  Health:    http://localhost:{PORT}/health")
-    print(f"\n🔑 API Key: {api_key}")
+    print(f"\n🔑 API Key: {api_key[:8]}...")  # Truncated for security
     print("\nPress Ctrl+C to stop.")
     print("=" * 60)
 

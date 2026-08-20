@@ -148,7 +148,12 @@ class PostgresFormStorage(FormStorage):
         return qualified_table(self._resolve_schema(tenant), self._table)
 
     # ------------------------------------------------------------------
-    # SQL builders (identifiers are validated, values are parameterised)
+    # SQL builders
+    #
+    # Identifiers (schema, table) are validated by validate_identifier()
+    # against ^[A-Za-z_][A-Za-z0-9_]{0,62}$ and double-quoted by
+    # qualified_table(), so f-string interpolation is safe — NOT
+    # user-controlled SQL injection.  All *values* use $N placeholders.
     # ------------------------------------------------------------------
 
     def _create_table_sql(self, tenant: str | None) -> str:

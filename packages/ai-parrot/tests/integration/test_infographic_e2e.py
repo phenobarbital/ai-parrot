@@ -240,7 +240,7 @@ def test_e2e_csp_headers_from_js_bundles():
     )
     hdrs = build_csp_headers(js_bundles=[bundle], frame_ancestors="'self'")
     csp = hdrs["Content-Security-Policy"]
-    assert "https://cdn.jsdelivr.net" in csp
+    assert "https://cdn.jsdelivr.net" in csp  # lgtm[py/incomplete-url-substring-sanitization]
     assert "frame-ancestors 'self'" in csp
     assert hdrs["X-Content-Type-Options"] == "nosniff"
 

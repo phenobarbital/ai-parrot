@@ -102,13 +102,17 @@ def _resolve(value: LocalizedString | None, locale: str = "en") -> str:
 def _form_hash(form_id: str) -> str:
     """Produce a short hash of a form_id for callback data.
 
+    Uses SHA-256 (truncated) instead of MD5 for CodeQL compliance.
+    This is a non-security use — just a compact, deterministic identifier
+    for Telegram callback data which has a 64-byte limit.
+
     Args:
         form_id: The form identifier.
 
     Returns:
         8-character hex hash.
     """
-    return hashlib.md5(form_id.encode()).hexdigest()[:8]
+    return hashlib.sha256(form_id.encode()).hexdigest()[:8]
 
 
 def _flatten_fields(form: FormSchema) -> list[FormField]:

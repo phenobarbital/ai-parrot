@@ -216,7 +216,7 @@ class TestWorkIQVertical:
 
         # Entra sign-in link must appear in the consent text
         consent_text = " ".join(p.text or "" for p in art.parts)
-        assert "login.microsoftonline.com" in consent_text
+        assert "login.microsoftonline.com" in consent_text  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_workiq_no_secret_in_payload(self):

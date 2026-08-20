@@ -318,10 +318,10 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     try:
         spec = _get_rest_spec_adapter().validate_python(rest_meta)
     except Exception as exc:
-        detail = " ".join(str(exc).split())
+        logger.warning("Invalid REST field spec for %r: %s", field_id, exc)
         raise web.HTTPBadRequest(
             reason="Invalid REST field spec",
-            text=f"Invalid REST field spec for {field_id!r}: {detail}",
+            text=f"Invalid REST field spec for field {field_id!r}. Check server logs for details.",
         ) from exc
 
     # --- 6. Write blob --------------------------------------------------------
@@ -352,10 +352,9 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         )
     except Exception as exc:
         logger.exception("blob_storage.put failed for %s/%s", form_uid, field_id)
-        detail = " ".join(str(exc).split())
         raise web.HTTPInternalServerError(
             reason="Blob storage error",
-            text=f"Blob storage error: {detail}",
+            text="Blob storage error. Check server logs for details.",
         ) from exc
 
     # --- 7. Delete prior blob -------------------------------------------------
@@ -376,9 +375,10 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as exc:
+        logger.warning("Invalid additional_args for %r: %s", field_id, exc)
         raise web.HTTPBadRequest(
             reason="Invalid additional_args",
-            text=f"Invalid additional_args for {field_id!r}: {exc}",
+            text=f"Invalid additional_args for field {field_id!r}. Check server logs for details.",
         ) from exc
 
     # --- 8. Resolve -----------------------------------------------------------

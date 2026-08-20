@@ -261,7 +261,11 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
     try:
         token_set, state_payload = await manager.handle_callback(code, state)
     except ValueError as exc:
-        return _error_response(str(exc), status=400)
+        logger.warning("OAuth callback validation error: %s", exc)
+        return _error_response(
+            "Invalid or expired authorization request. Please try again.",
+            status=400,
+        )
     except Exception:  # noqa: BLE001
         logger.exception("OAuth callback error")
         return _error_response(

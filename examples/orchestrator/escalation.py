@@ -91,7 +91,7 @@ async def _send_email(
         "📧 DRY-RUN EMAIL to %s | importance=%s | subject=%s",
         recipient, importance, subject,
     )
-    _LOG.info("---- body ----\n%s\n---- /body ----", body)
+    _LOG.info("---- body ----\n%s\n---- /body ----", body)  # CodeQL[py/clear-text-logging-sensitive-data] — dry-run demo, body is generated test content
     _append_audit({
         "event": "email_dry_run",
         "recipient": recipient,

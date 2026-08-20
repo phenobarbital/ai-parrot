@@ -932,8 +932,9 @@ class GoogleClient(CredentialsInterface, ABC):
             except Exception as auth_error:  # pragma: no cover - defensive
                 error_container['error'] = str(auth_error)
                 login_event.set()
+                logging.getLogger(__name__).exception("Google OAuth authentication failed")
                 return web.Response(
-                    text=f"Authentication failed: {auth_error}",
+                    text="Authentication failed. Please check server logs for details.",
                     status=500
                 )
 

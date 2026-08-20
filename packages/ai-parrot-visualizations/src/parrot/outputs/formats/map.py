@@ -658,7 +658,7 @@ class FoliumRenderer(BaseChart):
 
             # 3. Extract Inline Scripts
             inline_scripts = []
-            for script_match in re.finditer(r'<script[^>]*>(.*?)</script>', full_html, re.DOTALL):
+            for script_match in re.finditer(r'<script[^>]*>(.*?)</script[^>]*>', full_html, re.DOTALL | re.IGNORECASE):
                 opening_tag = script_match.group(0)
                 script_content = script_match.group(1)
 

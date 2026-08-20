@@ -235,7 +235,7 @@ import pandas as pd
 df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
 df.head()
         """, debug=True)
-        print("Direct execution result:", result)
+        print("Direct execution result:", result)  # CodeQL[py/clear-text-logging-sensitive-data] — example demo output
 
 #     async with ClaudeClient() as client:
 

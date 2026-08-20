@@ -29,8 +29,8 @@ class TestJiraConnectTool:
 
         assert isinstance(result, ToolResult)
         assert result.status == "authorization_required"
-        assert "auth.atlassian.com" in result.result
-        assert result.metadata["auth_url"].startswith("https://auth.atlassian.com")
+        assert "auth.atlassian.com" in result.result  # lgtm[py/incomplete-url-substring-sanitization]
+        assert result.metadata["auth_url"].startswith("https://auth.atlassian.com")  # lgtm[py/incomplete-url-substring-sanitization]
         assert result.metadata["provider"] == "jira"
         assert result.metadata["channel"] == "agentalk"
         resolver.get_auth_url.assert_awaited_once_with("agentalk", "u1")

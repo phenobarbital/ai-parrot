@@ -662,7 +662,7 @@ async def run_all_servers(
         roles=["user"],
     )
     print("\n📋 Registered client 'DemoClient'")
-    print(f"   API Key: {client_creds['api_key'][:20]}...")
+    print(f"   API Key: {client_creds['api_key'][:8]}...")  # CodeQL[py/clear-text-logging-sensitive-data] — demo server, truncated
 
     # Create JWT auth for generating demo tokens
     jwt_auth = JWTAuthenticator(
@@ -783,7 +783,7 @@ Examples:
     print("=" * 60)
     print("       A2A Secure Server Demo")
     print("=" * 60)
-    print(f"JWT Secret: {args.jwt_secret[:20]}...")
+    print(f"JWT Secret: {args.jwt_secret[:8]}...")  # CodeQL[py/clear-text-logging-sensitive-data] — demo server, truncated
     print()
 
     try:

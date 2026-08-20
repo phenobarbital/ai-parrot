@@ -215,7 +215,7 @@ class TestExportURIRewriting:
         export_dir = tmp_path / "bundle"
         export_okf_bundle(enriched_tree, "test-kb", content_store, export_dir)
         content = (export_dir / "policies" / "access-control-policy.md").read_text()
-        assert "https://example.com" in content
+        assert "https://example.com" in content  # lgtm[py/incomplete-url-substring-sanitization]
 
 
 class TestExportIndexMd:

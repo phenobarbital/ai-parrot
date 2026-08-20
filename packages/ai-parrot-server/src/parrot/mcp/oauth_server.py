@@ -481,19 +481,22 @@ class OAuthAuthorizationServer:
         if redirect_uri not in client.redirect_uris:
             return web.Response(status=400, text="Invalid Redirect URI")
 
+        # redirect_uri is validated against client.redirect_uris allowlist above
+        validated_redirect_uri = redirect_uri  # CodeQL[py/url-redirection]: allowlisted
+
         scopes = params.get("scope", "").split()
         if not scopes:
             scopes = client.scopes or self.default_scopes
 
         code = self._issue_code(
             client_id=client_id,
-            redirect_uri=redirect_uri,
+            redirect_uri=validated_redirect_uri,
             scope=scopes,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
         )
 
-        target = f"{redirect_uri}?code={code}"
+        target = f"{validated_redirect_uri}?code={code}"
         if state:
             target += f"&state={state}"
         return web.HTTPFound(target)
@@ -648,17 +651,20 @@ class OAuthRoutesMixin:
         if redirect_uri not in client.redirect_uris:
             return web.Response(text="Invalid Redirect URI", status=400)
 
+        # redirect_uri is validated against client.redirect_uris allowlist above
+        validated_redirect_uri = redirect_uri  # CodeQL[py/url-redirection]: allowlisted
+
         auth_code = f"auth_code_{secrets.token_urlsafe(16)}"
         self._auth_codes[auth_code] = {
             "client_id": client_id,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": validated_redirect_uri,
             "scopes": client.scopes,
             "issued_at": time.time(),
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
         }
 
-        target = f"{redirect_uri}?code={auth_code}"
+        target = f"{validated_redirect_uri}?code={auth_code}"
         if state:
             target += f"&state={state}"
 

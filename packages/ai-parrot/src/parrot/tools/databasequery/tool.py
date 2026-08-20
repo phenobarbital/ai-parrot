@@ -825,6 +825,8 @@ class DatabaseQueryTool(AbstractTool):
             else:
                 # Assume it's JSON string
                 file_path = self.output_dir / f"{filename}.json"
+                # CodeQL[py/clear-text-storage-sensitive-data] — result is query
+                # output being exported to a file, not credential storage
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(result)
 

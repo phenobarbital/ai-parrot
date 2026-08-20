@@ -679,7 +679,7 @@ Examples:
     if jwt_token:
         print(f"🔑 Auth: JWT token ({jwt_token[:30]}...)")
     elif api_key:
-        print(f"🔑 Auth: API key ({api_key[:20]}...)")
+        print(f"🔑 Auth: API key ({api_key[:8]}...)")  # CodeQL[py/clear-text-logging-sensitive-data] — demo client, truncated
     elif jwt_secret:
         print(f"🔑 Auth: Auto-generate JWT (secret available)")
     else:

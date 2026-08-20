@@ -1253,7 +1253,11 @@ async def handle_bundle(request: web.Request) -> web.Response:
         )
 
     suffix = "report.md" if fmt == "md" else "bundle.json"
-    path = RUN_ARTIFACT_DIR / f"{run_id}.{suffix}"
+    path = (RUN_ARTIFACT_DIR / f"{run_id}.{suffix}").resolve()
+    # Security: verify resolved path stays within RUN_ARTIFACT_DIR
+    _artifact_base = RUN_ARTIFACT_DIR.resolve()
+    if not str(path).startswith(str(_artifact_base) + os.sep):
+        return web.json_response({"error": "invalid run_id"}, status=400)
     if not path.is_file():
         return web.json_response(
             {

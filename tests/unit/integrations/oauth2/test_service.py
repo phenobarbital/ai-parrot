@@ -199,7 +199,7 @@ class TestStartConnect:
                 "u1", "agent1", "jira", "https://app.example.com"
             )
 
-        assert resp.auth_url.startswith("https://auth.atlassian.com")
+        assert resp.auth_url.startswith("https://auth.atlassian.com")  # lgtm[py/incomplete-url-substring-sanitization]
         assert resp.state == "nonce123"
         assert resp.expires_in == 600
         assert "read:jira-work" in resp.scopes

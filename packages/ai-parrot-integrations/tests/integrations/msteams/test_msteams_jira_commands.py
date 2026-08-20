@@ -215,7 +215,7 @@ class TestJiraStatusTeams:
         ctx.send_activity.assert_called_once()
         activity = ctx.send_activity.call_args[0][0]
         assert "Jane Doe" in activity.text
-        assert "myco.atlassian.net" in activity.text
+        assert "myco.atlassian.net" in activity.text  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_not_connected_status(self, mock_oauth_manager):
