@@ -34,11 +34,13 @@ from parrot.knowledge.retrieval.pin import (
     read_at_rev,
     resolve_workspace,
 )
+from parrot.knowledge.retrieval.symbols import DerivedSymbolIndex
 
 __all__ = [
     "CoherenceReport",
     "ContextBundle",
     "ContextUnit",
+    "DerivedSymbolIndex",
     "DigestScope",
     "EdgeRef",
     "Evidence",
