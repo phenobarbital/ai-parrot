@@ -187,6 +187,13 @@ override-dependencies = [
     # flowtask in one split, so they collide. Patch-level diff; force a single
     # version (4.3.3, matching agents) so both extras resolve.
     "zeep[async]==4.3.3",
+    # xai-sdk caps packaging<26 in *every* published version (1.12 - 1.19),
+    # but the research extra's sdmx1>=2.25.1 requires packaging>=26. The cap is
+    # a preemptive major-version bound, not a real incompatibility: xai-sdk
+    # touches packaging in exactly one place (xai_sdk/proto/__init__.py,
+    # `version.parse(protobuf.__version__).major`), an API unchanged in 26.
+    # Override the ceiling open so xai-sdk and sdmx1 share one packaging.
+    "packaging>=26.2",
 ]
 constraint-dependencies = [
     # Narrow the otel instrumentation search space. openlit pulls 15+ otel
