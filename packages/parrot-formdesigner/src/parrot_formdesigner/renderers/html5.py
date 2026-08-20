@@ -589,7 +589,7 @@ class HTML5Renderer(AbstractFormRenderer):
         # depends_on data attribute
         depends_attr = ""
         if field.depends_on:
-            safe_json = html.escape(json.dumps(field.depends_on.model_dump()), quote=True)
+            safe_json = html.escape(json.dumps(field.depends_on.model_dump(mode="json")), quote=True)
             depends_attr = f' data-depends-on="{safe_json}"'
 
         # Required asterisk
@@ -1274,7 +1274,7 @@ class HTML5Renderer(AbstractFormRenderer):
         depends_attr = ""
         if subsection.depends_on:
             import html as _html
-            safe_json = _html.escape(json.dumps(subsection.depends_on.model_dump()), quote=True)
+            safe_json = _html.escape(json.dumps(subsection.depends_on.model_dump(mode="json")), quote=True)
             depends_attr = f' data-depends-on="{safe_json}"'
 
         parts: list[str] = [
