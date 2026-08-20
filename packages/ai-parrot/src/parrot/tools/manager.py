@@ -555,15 +555,23 @@ class ToolManager(MCPToolManagerMixin):
 
         Returns:
             A non-negative relevance score; 0.0 means no lexical overlap at
-            all with either the name or the description.
+            all with either the name or the description. An empty/blank
+            `query` scores every tool equally (a positive constant) rather
+            than 0 — mirroring `search_tools()`'s legacy substring-match
+            behaviour, where `"" in name.lower()` is always `True` and a
+            blank query browses the full registry rather than matching
+            nothing.
         """
+        if not query:
+            return 1.0
+
         name_l = name.lower()
         desc_l = description.lower()
         score = 0.0
 
-        if query and query in name_l:
+        if query in name_l:
             score += 10.0
-        if query and query in desc_l:
+        if query in desc_l:
             score += 5.0
 
         for token in (t for t in query.split() if t):

@@ -424,6 +424,13 @@ class AgentDaemon:
         respondent = params.get("respondent")
         if not respondent and session.permission_context is not None:
             respondent = session.permission_context.user_id
+        # The "anonymous" fallback below is unreachable in normal operation
+        # — `_handle_connection` always resolves `session.permission_context`
+        # (peercred or service identity, never None) before any RPC handler
+        # runs — kept only as a last-resort label for `HumanResponse.
+        # respondent` (a different field than the AC's
+        # `PermissionContext.user_id` guarantee, which this path never
+        # touches) should a caller ever construct a `Session` by hand.
         response = HumanResponse(
             interaction_id=params["interaction_id"],
             respondent=respondent or "anonymous",

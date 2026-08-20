@@ -517,12 +517,17 @@ against the turn's prompt via `ToolManager.rank_tools()` and logs what
 was dropped (count + names) rather than silently truncating.
 
 **Behavior change: `search_tools()` is now relevance-ordered, not
-alphabetical.** `ToolManager.rank_tools()` (a genuine lexical relevance
-ranker) is the new source of truth; `search_tools()` is a thin
-JSON-formatting wrapper over it. The return type (a JSON string), the
-`name`/`description` keys, and the no-match message are unchanged — only
-the ordering of results changed, for every existing caller (including
-LLM-visible calls, since `search_tools` is itself a registered tool).
+alphabetical — and the match set can differ too.** `ToolManager.
+rank_tools()` (a genuine lexical relevance ranker) is the new source of
+truth; `search_tools()` is a thin JSON-formatting wrapper over it. The
+return type (a JSON string), the `name`/`description` keys, and the
+no-match message are unchanged. The old substring check required the
+*whole query* to appear literally; the new scorer also gives credit for
+individual tokens found separately, so a multi-word query can now match
+more tools than before. A blank/whitespace query still matches the full
+registry (preserved deliberately, matching the old `"" in name.lower()`
+behavior). This affects every existing caller, including LLM-visible
+calls, since `search_tools` is itself a registered tool.
 
 See [`docs/agentd.md`](agentd.md) "Claude Code sub-agent tool bridge" for
 the daemon-level configuration (`use_tools`, `tools:`, the auth caveat).

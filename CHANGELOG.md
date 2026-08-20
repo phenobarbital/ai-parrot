@@ -20,12 +20,20 @@ and [`docs/hitl-confirmation.md`](docs/hitl-confirmation.md#bridged-tools-claude
 ### Behavior Change
 
 - **`ToolManager.search_tools()` results are now relevance-ordered, not
-  alphabetical.** A new lexical ranker, `ToolManager.rank_tools()`, is
-  the source of truth; `search_tools()` is now a thin JSON-formatting
-  wrapper over it. The return type, JSON shape, and no-match message are
-  byte-identical — only the ordering changed. This affects every
-  existing caller, including LLM-visible calls (`search_tools` is itself
-  a registered tool).
+  alphabetical — and the match set can differ too, not just the order.**
+  A new lexical ranker, `ToolManager.rank_tools()`, is the source of
+  truth; `search_tools()` is now a thin JSON-formatting wrapper over it.
+  The return type, JSON shape, and no-match message are byte-identical.
+  The legacy substring check required the *whole query string* to appear
+  literally in a tool's name/description; the new scorer additionally
+  awards partial credit per individual token, so a multi-word query like
+  `"weather current"` can now match a tool whose text contains those
+  words separately (not just contiguously) where it previously would
+  not have. A blank/whitespace-only query still matches the full
+  registry (preserved deliberately — `"" in name.lower()` was always
+  `True` under the old substring check). This affects every existing
+  caller, including LLM-visible calls (`search_tools` is itself a
+  registered tool).
 
 ### Added
 

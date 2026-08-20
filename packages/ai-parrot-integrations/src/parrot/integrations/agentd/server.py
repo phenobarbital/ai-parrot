@@ -59,6 +59,36 @@ __all__ = [
 _PEERCRED_FORMAT = "3i"
 
 
+def _read_peercred(sock: socket.socket) -> tuple[int, int, int]:
+    """Blocking `SO_PEERCRED` read — always run via `asyncio.to_thread()`.
+
+    Args:
+        sock: The connection's underlying socket.
+
+    Returns:
+        The peer's `(pid, uid, gid)`.
+    """
+    raw = sock.getsockopt(
+        socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize(_PEERCRED_FORMAT)
+    )
+    return struct.unpack(_PEERCRED_FORMAT, raw)
+
+
+def _uid_to_username(uid: int) -> str:
+    """Blocking NSS uid -> username lookup — always run via `asyncio.to_thread()`.
+
+    Args:
+        uid: The OS user id to resolve.
+
+    Returns:
+        The resolved username.
+
+    Raises:
+        KeyError: If `uid` has no `pwd` entry.
+    """
+    return pwd.getpwuid(uid).pw_name
+
+
 class DaemonAlreadyRunning(Exception):
     """Raised when a live daemon is already listening on the socket path."""
 
@@ -284,7 +314,7 @@ class JsonRpcUnixServer:
             await writer.wait_closed()
         return True
 
-    def _resolve_identity(
+    async def _resolve_identity(
         self, writer: asyncio.StreamWriter
     ) -> tuple[PermissionContext, str]:
         """Resolve the connecting peer's identity (FEAT-434).
@@ -297,6 +327,12 @@ class JsonRpcUnixServer:
         `socket.SO_PEERCRED`), or an unresolvable uid (`KeyError`). The
         literal `"anonymous"` never appears on this path.
 
+        Both syscalls are dispatched via `asyncio.to_thread()` — `pwd`
+        lookups are typically instant against local NSS, but a deployment
+        resolving `passwd` through a remote backend (LDAP/SSSD) must not
+        stall the accept loop for every other connecting session while
+        one lookup is in flight.
+
         Args:
             writer: The connection's `asyncio.StreamWriter`.
 
@@ -308,11 +344,8 @@ class JsonRpcUnixServer:
             sock = writer.get_extra_info("socket")
             if sock is None:
                 raise OSError("no underlying socket available on this transport")
-            raw = sock.getsockopt(
-                socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize(_PEERCRED_FORMAT)
-            )
-            _pid, uid, _gid = struct.unpack(_PEERCRED_FORMAT, raw)
-            username = pwd.getpwuid(uid).pw_name
+            _pid, uid, _gid = await asyncio.to_thread(_read_peercred, sock)
+            username = await asyncio.to_thread(_uid_to_username, uid)
             return build_principal_context(username, channel="agentd"), "peercred"
         except (AttributeError, OSError, KeyError) as exc:
             self.logger.debug(
@@ -326,8 +359,8 @@ class JsonRpcUnixServer:
     ) -> None:
         """Per-connection accept-loop callback for `start_unix_server`."""
         session = Session(session_id=str(uuid.uuid4()), writer=writer)
-        session.permission_context, session.identity_source = self._resolve_identity(
-            writer
+        session.permission_context, session.identity_source = (
+            await self._resolve_identity(writer)
         )
         self._sessions[session.session_id] = session
         self.logger.info(

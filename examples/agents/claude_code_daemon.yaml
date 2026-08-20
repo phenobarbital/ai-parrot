@@ -24,8 +24,13 @@
 # then exposes it to the delegated Claude Code sub-agent automatically,
 # as an in-process `mcp__parrot__math_tool` MCP tool (see docs/tools.md
 # "Claude Agent Tool Bridge"). `use_tools: true` (the default — shown
-# here for clarity) keeps that automatic exposure on; set it to `false`
-# on a per-daemon basis to opt this agent out of bridging entirely.
+# here for clarity) is this AGENT's own tool-loop switch, not the
+# bridge's dedicated toggle (that's `ClaudeAgentRunOptions.
+# expose_parrot_tools`, set programmatically) — but setting `use_tools:
+# false` here also suppresses bridging as a side effect, since the
+# agent's per-question use_tools decision is threaded into the client's
+# ask(), whose use_tools=False disables the bridge for that call. See
+# docs/agentd.md "Claude Code sub-agent tool bridge" for the full caveat.
 
 name: claude-code
 

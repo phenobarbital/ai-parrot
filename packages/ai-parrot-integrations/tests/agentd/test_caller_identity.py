@@ -62,7 +62,7 @@ class TestPeerCredentials:
         fake_writer.get_extra_info.return_value = fake_socket
 
         with patch("parrot.integrations.agentd.server.pwd.getpwuid", side_effect=KeyError):
-            ctx, source = server._resolve_identity(fake_writer)
+            ctx, source = await server._resolve_identity(fake_writer)
 
         assert source == "service_identity"
         assert ctx.user_id == server.service_identity.user_id
@@ -71,7 +71,7 @@ class TestPeerCredentials:
         fake_writer = MagicMock()
         fake_writer.get_extra_info.return_value = None  # no socket available
 
-        ctx, source = server._resolve_identity(fake_writer)
+        ctx, source = await server._resolve_identity(fake_writer)
 
         assert source == "service_identity"
         assert ctx.user_id == server.service_identity.user_id
@@ -159,5 +159,5 @@ class TestPermissionContextPropagation:
         # Service-identity fallback path must also never be "anonymous".
         fake_writer = MagicMock()
         fake_writer.get_extra_info.return_value = None
-        ctx, _source = server._resolve_identity(fake_writer)
+        ctx, _source = await server._resolve_identity(fake_writer)
         assert ctx.user_id != "anonymous"

@@ -178,3 +178,20 @@ class TestSearchToolsCompat:
         monkeypatch.setattr(manager, "rank_tools", _spy)
         manager.search_tools("weather", limit=5)
         assert calls == [("weather", 5)]
+
+    def test_blank_query_matches_every_registered_tool(self, manager: ToolManager):
+        # Regression (code review, FEAT-434): the legacy substring check
+        # (`"" in name.lower()`) always matched, so search_tools("") browsed
+        # the full registry. The lexical scorer must preserve that — an
+        # empty query must not score every tool 0 and collapse to the
+        # no-match message.
+        out = manager.search_tools("")
+        parsed = json.loads(out)
+        names = {entry["name"] for entry in parsed}
+        assert names == {"get_weather", "file_jira_ticket", "run_database_query"}
+
+    def test_whitespace_only_query_matches_every_registered_tool(self, manager: ToolManager):
+        out = manager.search_tools("   ")
+        parsed = json.loads(out)
+        names = {entry["name"] for entry in parsed}
+        assert names == {"get_weather", "file_jira_ticket", "run_database_query"}
