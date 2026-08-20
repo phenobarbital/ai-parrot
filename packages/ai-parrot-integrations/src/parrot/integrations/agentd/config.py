@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ __all__ = [
     "AgentTargetError",
     "SchedulerConfig",
     "default_socket_path",
+    "expand_env_vars",
     "resolve_agent",
 ]
 
@@ -33,6 +35,72 @@ _DEFAULT_MAX_LINE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 #: Characters not allowed in a service `name` (it becomes a filename).
 _NAME_INVALID_CHARS = frozenset("/\\")
+
+#: Regex for ``${VAR}`` and ``${VAR:-default}`` interpolation.
+_ENV_VAR_PATTERN = re.compile(
+    r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?::[-](?P<default>[^}]*))?\}"
+)
+
+#: Bare env-var name: uppercase letters, digits, underscores, 2+ chars.
+_BARE_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,}$")
+
+
+def _expand_env_string(value: str) -> str:
+    """Expand environment variables inside a single string value.
+
+    Supports two syntaxes (applied in order):
+
+    1. **Interpolation** — ``${VAR}`` or ``${VAR:-default}``.  Works for
+       full-value *and* partial substitution
+       (``"https://${HOST}:${PORT}/api"``).  When no default is given and
+       the variable is unset, the ``${VAR}`` token is left as-is so
+       Pydantic validation surfaces a readable error.
+    2. **Bare-name fallback** — when the *entire* string (after step 1)
+       matches ``^[A-Z][A-Z0-9_]+$`` and that name exists in
+       ``os.environ``, the value is replaced wholesale.  This lets users
+       write ``vault_path: OBSIDIAN_VAULT_PATH`` as a shorthand.
+    """
+    def _replacer(match: re.Match) -> str:
+        name = match.group("name")
+        default = match.group("default")
+        env_val = os.environ.get(name)
+        if env_val is not None:
+            return env_val
+        if default is not None:
+            return default
+        # Leave the token as-is so the caller gets a clear error.
+        return match.group(0)
+
+    expanded = _ENV_VAR_PATTERN.sub(_replacer, value)
+
+    # Bare-name fallback: only when the whole string is an env-var name.
+    if _BARE_ENV_NAME.match(expanded):
+        env_val = os.environ.get(expanded)
+        if env_val is not None:
+            return env_val
+
+    return expanded
+
+
+def expand_env_vars(obj: Any) -> Any:
+    """Recursively expand environment variables in a parsed YAML tree.
+
+    Walks dicts, lists, and string leaves.  Non-string scalars (int, float,
+    bool, None) are returned unchanged.
+
+    Args:
+        obj: The parsed YAML data (typically a ``dict``).
+
+    Returns:
+        A new structure with environment variables expanded.
+    """
+    if isinstance(obj, dict):
+        return {k: expand_env_vars(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [expand_env_vars(item) for item in obj]
+    if isinstance(obj, str):
+        return _expand_env_string(obj)
+    return obj
 
 
 class SchedulerConfig(BaseModel):
@@ -110,6 +178,17 @@ class AgentServiceConfig(BaseModel):
     def from_yaml(cls, path: str | Path) -> AgentServiceConfig:
         """Load an `AgentServiceConfig` from a YAML file.
 
+        String values support environment-variable expansion:
+
+        - ``${VAR}`` — replaced by ``os.environ["VAR"]``; left as-is
+          when unset (Pydantic validation will surface the error).
+        - ``${VAR:-default}`` — replaced by the env value, falling back
+          to *default* when unset.
+        - Partial interpolation: ``"https://${HOST}:${PORT}/api"``
+        - Bare-name shorthand: a value like ``OBSIDIAN_VAULT_PATH``
+          (all-caps, no ``${}``) is replaced when a matching env var
+          exists.
+
         Args:
             path: Path to the YAML config file.
 
@@ -117,7 +196,8 @@ class AgentServiceConfig(BaseModel):
             The parsed and validated config.
         """
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        return cls.model_validate(raw)
+        expanded = expand_env_vars(raw)
+        return cls.model_validate(expanded)
 
     @classmethod
     def from_target(

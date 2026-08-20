@@ -456,7 +456,7 @@ class ClaudeAgentClient(AbstractClient):
         Raises:
             ImportError: When ``claude_agent_sdk`` is not installed.
         """
-        del max_tokens, temperature, files, tools, use_tools  # not used by SDK
+        del max_tokens, files, tools, use_tools  # not used by SDK
         del deep_research, background, lazy_loading
         resolved_model = self._resolve_model(model, self._default_model)
         turn_id = str(uuid.uuid4())

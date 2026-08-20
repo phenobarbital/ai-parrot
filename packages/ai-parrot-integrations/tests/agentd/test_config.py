@@ -11,6 +11,7 @@ from parrot.integrations.agentd.config import (
     AgentTargetError,
     SchedulerConfig,
     default_socket_path,
+    expand_env_vars,
     resolve_agent,
 )
 
@@ -87,6 +88,98 @@ shutdown_grace: 5.0
                 name="",
                 agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent"),
             )
+
+
+class TestExpandEnvVars:
+    """Tests for environment-variable expansion in YAML configs."""
+
+    def test_interpolation_syntax(self, monkeypatch):
+        """``${VAR}`` is replaced by the env value."""
+        monkeypatch.setenv("MY_VAULT", "/home/user/vault")
+        result = expand_env_vars({"path": "${MY_VAULT}"})
+        assert result == {"path": "/home/user/vault"}
+
+    def test_interpolation_with_default(self, monkeypatch):
+        """``${VAR:-default}`` falls back when VAR is unset."""
+        monkeypatch.delenv("UNSET_VAR", raising=False)
+        result = expand_env_vars({"path": "${UNSET_VAR:-/fallback/path}"})
+        assert result == {"path": "/fallback/path"}
+
+    def test_interpolation_default_ignored_when_set(self, monkeypatch):
+        """``${VAR:-default}`` uses env value when VAR IS set."""
+        monkeypatch.setenv("SET_VAR", "/real/path")
+        result = expand_env_vars({"path": "${SET_VAR:-/fallback}"})
+        assert result == {"path": "/real/path"}
+
+    def test_partial_interpolation(self, monkeypatch):
+        """Multiple ``${VAR}`` tokens inside a single string."""
+        monkeypatch.setenv("HOST", "localhost")
+        monkeypatch.setenv("PORT", "8080")
+        result = expand_env_vars({"url": "https://${HOST}:${PORT}/api"})
+        assert result == {"url": "https://localhost:8080/api"}
+
+    def test_bare_name_fallback(self, monkeypatch):
+        """All-caps bare name resolves to env var when it exists."""
+        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", "/my/vault")
+        result = expand_env_vars({"vault_path": "OBSIDIAN_VAULT_PATH"})
+        assert result == {"vault_path": "/my/vault"}
+
+    def test_bare_name_no_match(self, monkeypatch):
+        """Bare name left as-is when no matching env var exists."""
+        monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
+        result = expand_env_vars({"val": "NONEXISTENT_VAR"})
+        assert result == {"val": "NONEXISTENT_VAR"}
+
+    def test_bare_name_requires_uppercase(self):
+        """Lowercase strings are NOT treated as bare env-var names."""
+        result = expand_env_vars({"path": "~/vaults/notes"})
+        assert result == {"path": "~/vaults/notes"}
+
+    def test_non_string_scalars_untouched(self):
+        """Ints, floats, bools, None pass through unchanged."""
+        data = {"port": 8080, "debug": True, "ratio": 0.5, "extra": None}
+        assert expand_env_vars(data) == data
+
+    def test_nested_dicts_and_lists(self, monkeypatch):
+        """Expansion recurses into nested dicts and lists."""
+        monkeypatch.setenv("TOKEN", "secret123")
+        data = {
+            "agent": {
+                "kwargs": {
+                    "tokens": ["${TOKEN}", "literal"],
+                }
+            }
+        }
+        result = expand_env_vars(data)
+        assert result["agent"]["kwargs"]["tokens"] == ["secret123", "literal"]
+
+    def test_unset_interpolation_preserved(self, monkeypatch):
+        """``${UNSET}`` (no default) is left as-is for downstream errors."""
+        monkeypatch.delenv("UNSET_VAR", raising=False)
+        result = expand_env_vars({"key": "${UNSET_VAR}"})
+        assert result == {"key": "${UNSET_VAR}"}
+
+    def test_from_yaml_expands_env(self, tmp_path, monkeypatch):
+        """End-to-end: ``from_yaml`` expands env vars before validation."""
+        monkeypatch.setenv("MY_LOG_LEVEL", "WARNING")
+        yaml_path = tmp_path / "cfg.yaml"
+        yaml_path.write_text(
+            'name: test\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            'log_level: "${MY_LOG_LEVEL:-INFO}"\n'
+        )
+        cfg = AgentServiceConfig.from_yaml(yaml_path)
+        assert cfg.log_level == "WARNING"
+
+    def test_from_yaml_bare_name_in_kwargs(self, tmp_path, monkeypatch):
+        """End-to-end: bare-name expansion works inside agent.kwargs."""
+        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", "/home/test/vault")
+        yaml_path = tmp_path / "cfg.yaml"
+        yaml_path.write_text(
+            'name: test\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            "  kwargs:\n    vault_path: OBSIDIAN_VAULT_PATH\n"
+        )
+        cfg = AgentServiceConfig.from_yaml(yaml_path)
+        assert cfg.agent.kwargs["vault_path"] == "/home/test/vault"
 
 
 class TestDefaultSocketPath:

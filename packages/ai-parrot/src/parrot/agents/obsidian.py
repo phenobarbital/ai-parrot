@@ -68,7 +68,12 @@ class FirefliesObsidianAgent(BasicAgent):
         """
         super().__init__(name=name, **kwargs)
 
-        self.vault_path = Path(vault_path) if vault_path else Path.home() / "vaults" / "notes"
+        if vault_path:
+            self.vault_path = Path(vault_path)
+        else:
+            # Fall back to OBSIDIAN_VAULT_PATH from navconfig/env, then ~/vaults/notes
+            env_vault = config.get("OBSIDIAN_VAULT_PATH") or os.getenv("OBSIDIAN_VAULT_PATH")
+            self.vault_path = Path(env_vault) if env_vault else Path.home() / "vaults" / "notes"
         self.fireflies_token = fireflies_token
         self.meetings_folder = meetings_folder
 

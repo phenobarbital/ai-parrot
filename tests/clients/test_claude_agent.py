@@ -117,12 +117,13 @@ class TestClaudeAgentAsk:
 
 
 class TestClaudeAgentAskStream:
-    """``ask_stream`` yields TextBlock text in order."""
+    """``ask_stream`` yields TextBlock text in order, then the AIMessage."""
 
     @pytest.mark.asyncio
     async def test_yields_text_in_order(self, fake_claude_agent_messages):
         from parrot.clients.claude_agent import ClaudeAgentClient
         from parrot.clients import claude_agent as ca_module
+        from parrot.models import AIMessage
 
         fake_query = _fake_query_factory(fake_claude_agent_messages)
 
@@ -132,11 +133,15 @@ class TestClaudeAgentAskStream:
             return_value=(fake_query, object, lambda **_: SimpleNamespace()),
         ):
             client = ClaudeAgentClient()
-            chunks: List[str] = []
+            pieces: List[Any] = []
             async for piece in client.ask_stream("hi"):
-                chunks.append(piece)
+                pieces.append(piece)
 
-        assert chunks == ["hello ", "world"]
+        # TASK-1180: the text chunks stream first, then a final AIMessage
+        # carrying the assembled turn (usage, tool_calls, session_id).
+        assert [p for p in pieces if isinstance(p, str)] == ["hello ", "world"]
+        assert isinstance(pieces[-1], AIMessage)
+        assert pieces[-1].output == "hello world"
 
 
 class TestClaudeAgentToolUseRecorded:
