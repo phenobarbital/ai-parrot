@@ -87,6 +87,75 @@ class ClaudeAgentToolBridge:
         self.logger = logging.getLogger(__name__)
         self._exposed_names: list[str] = []
 
+    def select(self, query: str, limit: int) -> list[AbstractTool]:
+        """Rank and bound the tools to expose for this turn.
+
+        Claude Code loads every exposed MCP tool eagerly (spec §6 —
+        measured: 25 exposed -> 25 listed at `init`), so bounding what the
+        bridge hands over is parrot's job. Delegates ranking entirely to
+        `ToolManager.rank_tools()` (TASK-2285) — this method never
+        reimplements scoring.
+
+        Nothing is silently truncated: whenever the registry exceeds
+        `limit`, the dropped count AND the dropped tool names are logged
+        at WARNING.
+
+        Args:
+            query: Relevance query — normally the turn's prompt. An empty
+                or whitespace-only query falls back to a stable order
+                (registration order) instead of an empty selection.
+            limit: Maximum number of tools to return. `0` (or negative)
+                returns none.
+
+        Returns:
+            At most `limit` tools, best-ranked first (or in registration
+            order when `query` is blank).
+        """
+        # rank_tools()/search_tools() always exclude the tool literally
+        # named "search_tools" as a structural rule, not a narrowing
+        # decision — mirror that here so it never shows up as "dropped".
+        all_tools = [
+            tool
+            for tool in self.tool_manager.get_all_tools()
+            if getattr(tool, "name", None) != "search_tools"
+        ]
+        total = len(all_tools)
+
+        if limit <= 0:
+            if all_tools:
+                self.logger.warning(
+                    "Narrowing budget is %d — dropping all %d registered "
+                    "tool(s): %s",
+                    limit,
+                    total,
+                    [getattr(tool, "name", "?") for tool in all_tools],
+                )
+            return []
+
+        if not query or not query.strip():
+            selected = all_tools[:limit]
+        else:
+            ranked = self.tool_manager.rank_tools(query, limit)
+            selected = [tool for _score, tool in ranked]
+
+        if total > limit:
+            selected_names = {getattr(tool, "name", None) for tool in selected}
+            dropped = [
+                tool
+                for tool in all_tools
+                if getattr(tool, "name", None) not in selected_names
+            ]
+            self.logger.warning(
+                "Narrowing budget (%d) exceeded by %d registered tool(s); "
+                "dropping %d: %s",
+                limit,
+                total,
+                len(dropped),
+                [getattr(tool, "name", "?") for tool in dropped],
+            )
+
+        return selected
+
     def build_server(
         self,
         tools: list[AbstractTool],

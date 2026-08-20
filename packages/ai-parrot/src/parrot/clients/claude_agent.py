@@ -421,25 +421,28 @@ class ClaudeAgentClient(AbstractClient):
         # sub-agent as an in-process SDK-MCP server, unless disabled via
         # expose_parrot_tools or the caller has no tools registered. A
         # caller-supplied mcp_servers mapping is merged with, not replaced
-        # by, the generated 'parrot' server.
+        # by, the generated 'parrot' server. The tool set is ranked against
+        # `prompt` and bounded by `max_exposed_tools` (TASK-2289's
+        # narrowing budget) — Claude Code loads every exposed MCP tool
+        # eagerly, so bounding what is handed over is parrot's job.
         server_map: dict[str, Any] = (
             dict(merged.mcp_servers) if merged.mcp_servers else {}
         )
         if merged.expose_parrot_tools:
-            registered_tools = list(self.tool_manager.get_all_tools())
-            if registered_tools:
-                from .claude_agent_bridge import ClaudeAgentToolBridge
+            from .claude_agent_bridge import ClaudeAgentToolBridge
 
+            bridge = ClaudeAgentToolBridge(
+                self.tool_manager, tool_timeout=merged.tool_timeout
+            )
+            selected_tools = bridge.select(prompt or "", merged.max_exposed_tools)
+            if selected_tools:
                 self.logger.debug(
-                    "Bridging %d registered tool(s) to the Claude Code "
-                    "sub-agent (prompt-length=%d)",
-                    len(registered_tools),
+                    "Bridging %d tool(s) to the Claude Code sub-agent "
+                    "(prompt-length=%d)",
+                    len(selected_tools),
                     len(prompt or ""),
                 )
-                bridge = ClaudeAgentToolBridge(
-                    self.tool_manager, tool_timeout=merged.tool_timeout
-                )
-                server_map["parrot"] = bridge.build_server(registered_tools)
+                server_map["parrot"] = bridge.build_server(selected_tools)
                 exposed_names = bridge.exposed_names()
                 if "allowed_tools" in kwargs:
                     existing = kwargs["allowed_tools"]

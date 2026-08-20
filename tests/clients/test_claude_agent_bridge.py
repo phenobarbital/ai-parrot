@@ -32,6 +32,7 @@ import pytest
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.mcp.adapter import MCPToolAdapter
 from parrot.tools.abstract import AbstractTool, ToolResult
+from parrot.tools.manager import ToolManager
 
 # ---------------------------------------------------------------------------
 # Fixtures / stubs
@@ -343,3 +344,111 @@ class TestLazyImport:
         with pytest.raises(ImportError) as exc_info:
             bridge.build_server([_EchoTool()])
         assert "pip install ai-parrot[claude-agent]" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# TestSelection (TASK-2289 — narrowing budget)
+# ---------------------------------------------------------------------------
+
+
+def _make_named_tool(tool_name: str, description: str) -> AbstractTool:
+    """Build a minimal AbstractTool subclass instance with a given name."""
+
+    cls = type(
+        f"_Tool_{tool_name}",
+        (AbstractTool,),
+        {"name": tool_name, "_execute": lambda self, **kw: None},
+    )
+    return cls(description=description)
+
+
+@pytest.fixture
+def wide_manager() -> ToolManager:
+    """A ToolManager with more tools than a small narrowing budget."""
+    tm = ToolManager()
+    tm.register_tool(_make_named_tool("jira_ticket", "File a Jira ticket."))
+    tm.register_tool(_make_named_tool("weather_lookup", "Get the current weather."))
+    tm.register_tool(_make_named_tool("db_query", "Run a SQL query."))
+    tm.register_tool(_make_named_tool("send_email", "Send an email."))
+    return tm
+
+
+class TestSelection:
+    def test_returns_at_most_limit(self, wide_manager):
+        bridge = _make_bridge(wide_manager)
+        selected = bridge.select("jira ticket", limit=2)
+        assert len(selected) <= 2
+
+    def test_uses_rank_tools_order(self, wide_manager, monkeypatch):
+        bridge = _make_bridge(wide_manager)
+        calls = []
+        original = wide_manager.rank_tools
+
+        def _spy(query, limit=15):
+            calls.append((query, limit))
+            return original(query, limit)
+
+        monkeypatch.setattr(wide_manager, "rank_tools", _spy)
+        selected = bridge.select("jira ticket", limit=2)
+
+        assert calls == [("jira ticket", 2)]
+        names = [tool.name for tool in selected]
+        assert names[0] == "jira_ticket"
+
+    def test_registry_smaller_than_budget_exposes_all_without_warning(self, caplog):
+        tm = ToolManager()
+        tm.register_tool(_make_named_tool("only_tool", "The only tool."))
+        bridge = _make_bridge(tm)
+
+        with caplog.at_level("WARNING"):
+            selected = bridge.select("anything", limit=15)
+
+        assert len(selected) == 1
+        assert not any(
+            record.levelname == "WARNING" for record in caplog.records
+        )
+
+    def test_dropped_names_are_logged(self, wide_manager, caplog):
+        bridge = _make_bridge(wide_manager)
+
+        with caplog.at_level("WARNING"):
+            selected = bridge.select("jira ticket", limit=2)
+
+        assert len(selected) == 2
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "2" in message  # dropped count
+        # Every tool not selected must be named explicitly.
+        selected_names = {tool.name for tool in selected}
+        all_names = {"jira_ticket", "weather_lookup", "db_query", "send_email"}
+        for dropped_name in all_names - selected_names:
+            assert dropped_name in message
+
+    def test_limit_zero_injects_no_server(self, wide_manager):
+        bridge = _make_bridge(wide_manager)
+        selected = bridge.select("jira ticket", limit=0)
+        assert selected == []
+
+    def test_blank_prompt_falls_back_to_stable_order(self, wide_manager, caplog):
+        bridge = _make_bridge(wide_manager)
+
+        selected_1 = bridge.select("", limit=2)
+        selected_2 = bridge.select("   ", limit=2)
+
+        assert len(selected_1) == 2
+        assert [t.name for t in selected_1] == [t.name for t in selected_2]
+
+    def test_search_tools_never_counted_as_dropped(self, caplog):
+        tm = ToolManager()
+        tm.register_tool(_make_named_tool("only_tool", "The only tool."))
+        # search_tools is auto-registered by default_tools() flows in real
+        # usage; simulate it directly here.
+        tm.register_tool(_make_named_tool("search_tools", "Search tools."))
+        bridge = _make_bridge(tm)
+
+        with caplog.at_level("WARNING"):
+            selected = bridge.select("anything", limit=15)
+
+        assert len(selected) == 1
+        assert not any(r.levelname == "WARNING" for r in caplog.records)
