@@ -116,21 +116,60 @@ Use the discovered conventions as your review checklist — do NOT assume conven
 5. **Testability**: Can I unit test this without mocking the entire framework?
 6. **Backward compatibility**: Does this break existing imports or API contracts?
 
-## Adversarial Codex Cross-Check
+## Adversarial Cross-Check
 
-The OpenAI `codex` CLI is installed and authenticated in this environment. Use it as an **independent second-opinion reviewer** to catch blind spots that a single-model review may miss.
+Use an external CLI agent as an **independent second-opinion reviewer** to
+catch blind spots that a single-model review may miss. **Prefer `agy`
+(Google Gemini)** when available; fall back to `codex` (OpenAI) otherwise.
 
 ### Key Rules
 
-- **Never feed Codex your reasoning or draft review.** Give it only the diff/commit, the requirement/acceptance criteria, and a neutral review question. Supplying your conclusions produces ratification, not review.
-- **Run Codex as a background agent session** — each call takes 30 seconds to 2 minutes. Do not call it per-edit or from hooks.
-- **Treat Codex output as advisory.** For every substantive finding, explicitly mark it as:
+- **Never feed the reviewer your reasoning or draft review.** Give it only
+  the diff/commit, the requirement/acceptance criteria, and a neutral review
+  question. Supplying your conclusions produces ratification, not review.
+- **Run the reviewer as a background agent session** — each call takes 30
+  seconds to 2 minutes. Do not call it per-edit or from hooks.
+- **Treat reviewer output as advisory.** For every substantive finding,
+  explicitly mark it as:
   - `CONFIRM` — adopt the finding into your review
   - `REJECT` — record why you disagree
   - `ESCALATE` — flag for the user to decide
-- **Never silently concede** to Codex and **never silently drop** a finding.
+- **Never silently concede** to the reviewer and **never silently drop** a
+  finding.
 
-### Commands
+### Detection
+
+```bash
+if command -v agy &>/dev/null; then REVIEWER="agy"
+elif command -v codex &>/dev/null; then REVIEWER="codex"
+fi
+```
+
+### agy commands (preferred)
+
+```bash
+# Review uncommitted work
+agy --sandbox --print "Review the uncommitted changes (run git diff). \
+  Focus on correctness, security, async patterns, and project conventions. \
+  Output findings with file:line references."
+
+# Review a task branch against the integration branch
+agy --sandbox --print "Review changes between current branch and dev \
+  (run git diff dev...HEAD). List findings with file:line references."
+
+# Review a specific commit
+agy --sandbox --print "Review commit <sha> (run git show <sha>). \
+  List findings with file:line references."
+
+# Design opinion or cross-check with output file
+agy --sandbox --print "<neutral brief: task context, acceptance criteria, \
+  changed files, question>" > artifacts/reviews/<task>-review.txt
+
+# Follow-up in the same agy session
+agy --continue --print "<neutral follow-up question>"
+```
+
+### codex commands (fallback)
 
 ```bash
 # Review uncommitted work
@@ -152,7 +191,9 @@ codex exec resume --last "<neutral follow-up question>"
 
 ### Parallel Perspective Pattern
 
-For the strongest review, run one Claude review subagent and one background `codex exec` with the **same neutral brief**, then synthesize agreements and disagreements in the final report.
+For the strongest review, run one Claude review subagent and one background
+reviewer session (agy or codex) with the **same neutral brief**, then
+synthesize agreements and disagreements in the final report.
 
 ### Reporting Cross-Check Results
 
@@ -162,7 +203,7 @@ Include a dedicated section in your review report:
 ## Adversarial Cross-Check
 | Finding | Disposition | Reason |
 |---------|-------------|--------|
-| <Codex finding> | CONFIRM / REJECT / ESCALATE | <why> |
+| <Reviewer finding> | CONFIRM / REJECT / ESCALATE | <why> |
 ```
 
 ## Response Format
