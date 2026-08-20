@@ -198,10 +198,20 @@ class TestSearchToolsCompat:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-20
+**Notes**: Added `rank_tools()` with lexical scoring (substring bonus +
+token overlap over name/description), deterministic tie-break by name.
+Refactored `search_tools()` into a thin JSON-formatting wrapper over
+`rank_tools()`, filtering to `score > 0` entries to preserve the exact
+JSON shape and verbatim no-match message. 10 new unit tests in
+`packages/ai-parrot/tests/test_toolmanager_ranker.py`, all passing.
+Verified zero new `ruff check` findings on `manager.py` (138 pre-existing
+findings before and after this change — confirmed via `git stash`).
+Two `.so` build artifacts (`parrot/utils/types.*.so`,
+`parrot/utils/parsers/toml.*.so`) had to be copied from the main repo
+into this worktree to unblock the local pytest run — not new source
+files, just ungitignored compiled Cython artifacts missing from this
+fresh worktree checkout.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

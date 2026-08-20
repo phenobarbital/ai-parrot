@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-20T01:19:08.727687+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-20T08:40:17+00:00",
   "tasks": [
     {
       "id": "TASK-2285",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Touches only parrot/tools/manager.py + a new test file. Shares no files with any other task in this spec, so it CAN run in its own worktree. The spec still recommends per-spec isolation (all tasks sequential in one worktree) because TASK-2289 consumes this task's output.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2285-tool-relevance-ranker.md"
+      "completed_at": "2026-08-20T01:30:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2285-tool-relevance-ranker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2286",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Lives entirely in the ai-parrot-integrations package (agentd server.py + config.py). Disjoint from every other task's files, so it CAN run in its own worktree; TASK-2290 consumes its PermissionContext.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2286-agentd-caller-identity.md"
+      "completed_at": "2026-08-20T01:39:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2286-agentd-caller-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2287",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -58,8 +60,9 @@
       "parallelism_notes": "Creates a new module (claude_agent_bridge.py) plus its test file; modifies nothing existing. Disjoint on files, so it CAN run in parallel, but it is the trunk that TASK-2288/2289/2290 all build on.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2287-bridge-core.md"
+      "completed_at": "2026-08-20T01:48:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2287-bridge-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2288",
@@ -68,7 +71,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +81,9 @@
       "parallelism_notes": "Modifies parrot/clients/claude_agent.py, which TASK-2289 also edits, and imports the bridge from TASK-2287. Must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2288-client-options-plumbing.md"
+      "completed_at": "2026-08-20T02:03:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2288-client-options-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2289",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "Edits both claude_agent_bridge.py (TASK-2287) and claude_agent.py (TASK-2288), and calls rank_tools() from TASK-2285. Sequential by construction.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2289-narrowing-budget.md"
+      "completed_at": "2026-08-20T02:07:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2289-narrowing-budget.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2290",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Spans parrot/agents/claude_code.py, the bridge module and agentd/service.py; needs the PermissionContext from TASK-2286 and the handler seam from TASK-2287.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2290-bridged-hitl-wiring.md"
+      "completed_at": "2026-08-20T02:23:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2290-bridged-hitl-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2291",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Closing task: exercises the assembled feature against a real Claude Code sub-agent and documents it. Requires every implementation task done.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2291-integration-tests-and-docs.md"
+      "completed_at": "2026-08-20T02:52:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2291-integration-tests-and-docs.md",
+      "verification": "verified"
     }
   ]
 }

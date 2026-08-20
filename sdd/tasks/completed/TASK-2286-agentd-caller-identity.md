@@ -240,10 +240,46 @@ class TestPermissionContextPropagation:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-20
+**Notes**: Added `Session.permission_context` / `identity_source` fields
+(populated in `_handle_connection` via the new `_resolve_identity()`
+method) and `JsonRpcUnixServer.service_identity` (defaults to
+`ServiceIdentityConfig.from_env()`). `_resolve_identity()` reads
+`SO_PEERCRED` off the connection's socket, resolves the uid via `pwd`,
+and builds a `PermissionContext` with `parrot.auth.permission.
+build_principal_context()` (an existing, verified helper already used
+by `parrot/auth/system_account.py` for the same non-interactive-identity
+pattern — reused here for consistency rather than hand-rolling a new
+one). Falls back to the service identity on `AttributeError`/`OSError`/
+`KeyError`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Added `ServiceIdentityConfig` to `config.py` (Pydantic, `extra="forbid"`,
+mirrors `SystemAccount`'s `from_env()`/env-var-provisioning shape) with
+`display_name`/`user_id`/`tenant_id`/`roles` fields plus a `window_seconds`
+*property* — deliberately not a settable field — that always returns `0`,
+independent of any `ConfirmationConfig.window_seconds` deployment default.
+`to_permission_context()` carries `window_seconds=0` in
+`PermissionContext.extra` as the anchor for TASK-2290's HITL wiring to
+consume (this task does not touch `ConfirmationGuard` — FEAT-235 stays
+read-only per scope).
 
-**Deviations from spec**: none | describe if any
+11 new unit tests in
+`packages/ai-parrot-integrations/tests/agentd/test_caller_identity.py`,
+covering real UDS peer resolution, the two fallback paths (mocked
+unresolvable uid / non-UDS transport), env provisioning + defaults, the
+window-seconds pin (including the "not settable via constructor" and
+"decoupled from a raised deployment default" cases), and that
+`"anonymous"` never appears on either path. Full `tests/agentd/` suite:
+104 passed, 1 pre-existing failure (`test_yaml_roundtrip`, an
+env-pollution flake unrelated to this change — reproduced identically on
+the pre-TASK-2286 baseline via `git stash`). Zero new `ruff check`
+findings (3 auto-fixable import-order/quote nits fixed, 1 `B017`
+broad-exception-assert nit narrowed to `pydantic.ValidationError`).
+
+Also fixed a bookkeeping gap from the TASK-2285 completion commit
+(`8ec35ed97`), which added the `completed/` copy but never actually
+committed the `active/` deletion — landed as a small follow-up commit
+before this task's work.
+
+**Deviations from spec**: none

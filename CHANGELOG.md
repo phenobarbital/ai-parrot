@@ -5,6 +5,58 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased] — FEAT-434: Claude Agent Tool Bridge
+
+`ClaudeAgentClient` (`llm="claude-agent:*"` / `"claude-code:*"`) no longer
+discards the agent's registered tools when delegating a turn to a local
+Claude Code sub-agent — they are now bridged automatically as an
+in-process `mcp__parrot__<tool>` SDK-MCP server, dispatched through
+`ToolManager.execute_tool()` so guardrails, grants, HITL confirmation and
+tool-result compression all apply unchanged. See
+[`docs/tools.md`](docs/tools.md#claude-agent-tool-bridge-feat-434),
+[`docs/agentd.md`](docs/agentd.md#claude-code-sub-agent-tool-bridge-feat-434)
+and [`docs/hitl-confirmation.md`](docs/hitl-confirmation.md#bridged-tools-claude-code-sub-agents-feat-434).
+
+### Behavior Change
+
+- **`ToolManager.search_tools()` results are now relevance-ordered, not
+  alphabetical — and the match set can differ too, not just the order.**
+  A new lexical ranker, `ToolManager.rank_tools()`, is the source of
+  truth; `search_tools()` is now a thin JSON-formatting wrapper over it.
+  The return type, JSON shape, and no-match message are byte-identical.
+  The legacy substring check required the *whole query string* to appear
+  literally in a tool's name/description; the new scorer additionally
+  awards partial credit per individual token, so a multi-word query like
+  `"weather current"` can now match a tool whose text contains those
+  words separately (not just contiguously) where it previously would
+  not have. A blank/whitespace-only query still matches the full
+  registry (preserved deliberately — `"" in name.lower()` was always
+  `True` under the old substring check). This affects every existing
+  caller, including LLM-visible calls (`search_tools` is itself a
+  registered tool).
+
+### Added
+
+- `parrot.clients.claude_agent_bridge.ClaudeAgentToolBridge` — converts
+  registered tools into `claude_agent_sdk.SdkMcpTool` objects, strips the
+  self-granted `confirm` schema property on this path only, bounds/ranks
+  the exposed set (`select()`), and maps every failure mode (tool error,
+  timeout, HITL denial/timeout) to a recoverable MCP error result.
+  `claude_agent_sdk` stays a strictly-lazy, optional import.
+- `ToolManager.rank_tools(query, limit)` — lexical relevance ranking
+  (token overlap over name + description), deterministic tie-break.
+- `ClaudeAgentRunOptions.mcp_servers` / `.expose_parrot_tools` (default
+  `True`) / `.max_exposed_tools` (default `15`) / `.tool_timeout`.
+- agentd caller identity: `SO_PEERCRED` -> OS user, with an
+  env-configured (`AGENTD_SERVICE_IDENTITY_*`) service-identity fallback
+  whose confirmation window is pinned to `0`.
+- agentd bridged-HITL wiring: `AgentDaemon._configure_hitl()` attaches a
+  `ConfirmationGuard` (channel `"agentd"`, `window_seconds=0`) to the
+  served agent's `ToolManager`; the `"hitl.respond"` RPC lets an attached
+  `parrot attach` console answer a pending confirmation.
+
+---
+
 ## [Unreleased] — FEAT-380: Tool-Result Compression Pipeline
 
 A client-agnostic compression stage now runs inside

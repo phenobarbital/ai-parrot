@@ -236,10 +236,99 @@ class TestOutcomes:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-20
+**Notes**: Built the daemon-side HITL wiring from scratch, since agentd
+had zero prior `HumanInteractionManager`/`ConfirmationGuard` wiring
+(verified — "Does NOT Exist" note confirmed accurate).
 
-**Completed by**:
-**Date**:
-**Notes**:
+`agentd/service.py`:
+- New `_AgentdHumanChannel(HumanChannel)` — `send_interaction()`/
+  `send_notification()`/`cancel_interaction()` publish over the
+  daemon's existing `EventBroker.publish()` fan-out (reaches every
+  `parrot attach` session) using plain string notification names
+  (`"hitl.request"`/`"hitl.notify"`/`"hitl.cancel"`) — deliberately NOT
+  new `protocol.py` constants, since `RpcNotification.method` and the
+  dispatch table both already accept arbitrary strings and protocol.py
+  is outside this task's file list.
+- `AgentDaemon._configure_hitl()` (called from `run()` right after
+  `resolve_agent()`): best-effort — skips agent targets with no
+  `tool_manager` attribute, or one whose guard is already externally
+  configured. Otherwise builds `HumanInteractionManager(channels=
+  {"agentd": ...})`, `InMemoryConfirmationWindowStore()`, and a
+  `ConfirmationGuard` with `ConfirmationConfig(window_seconds=0,
+  default_channel="agentd")` — pinned for the WHOLE daemon-scoped
+  guard, not just the service identity, since `ConfirmationGuard.
+  confirm()` has no per-caller window override to hook (verified —
+  window resolution is `tool.routing_meta` OR `self.config.
+  window_seconds`, never `permission_context`; FEAT-235 stays
+  read-only). This trivially satisfies "service identity's effective
+  window_seconds is 0" (0 applies to every caller through this guard)
+  without needing a change to `parrot/auth/confirmation.py`.
+- New `"hitl.respond"` dispatch entry / `_handle_hitl_respond()`
+  builds a `HumanResponse` from RPC params and invokes the channel's
+  stored `receive_response` callback.
+- `_handle_chat_send()` now threads `session.permission_context` (from
+  TASK-2286) into `agent.ask()`/`ask_stream()` via `metadata.
+  setdefault("permission_context", ...)`.
 
-**Deviations from spec**: none | describe if any
+**Key discovery — the channel-resolution mechanism already exists**:
+`ConfirmationGuard._request_confirmation()` resolves the HITL channel as
+`permission_context.channel if (permission_context and permission_context.
+channel) else self.config.default_channel` — and TASK-2286's
+`build_principal_context(..., channel="agentd")` /
+`ServiceIdentityConfig.to_permission_context(channel="agentd")` ALREADY
+set `channel="agentd"` on every resolved `PermissionContext`. So as long
+as the context reaches `execute_tool()`, the channel is `"agentd"`
+automatically — `ConfirmationConfig(default_channel="agentd")` is a
+defensive fallback (belt-and-braces), not the primary mechanism.
+
+**Deviation (flagged, not silent) — `claude_agent.py` needed a small
+edit not in this task's file list**: nothing called
+`bridge.build_server(tools, permission_context=...)` with a real
+identity anywhere — TASK-2288/2289 always passed `None`. Without
+threading *something* real in, "the PermissionContext from TASK-2286 is
+forwarded to execute_tool()" (this task's own acceptance criterion) is
+unsatisfiable. Found the existing, already-established mechanism instead
+of inventing one: `AbstractBot.ask()`/`ask_stream()` (bots/base.py)
+already set `client._permission_context = permission_context` on the
+LLM client whenever the caller passes one — the exact same attribute
+`AbstractClient._execute_tool()` already reads for the PRIMARY tool
+loop. `_build_options()` now reads `getattr(self, "_permission_context",
+None)` and forwards it to `bridge.build_server()`. No signature changed;
+no new parameter added to any of the four public surfaces.
+
+`claude_agent_bridge.py`: confirming tools are now exempt from
+`self.tool_timeout` (`asyncio.wait_for` is skipped when `tool.
+routing_meta.get("requires_confirmation")` is set) — `approval_timeout`
+governs the HITL wait instead, so a human actively answering is never
+cut off by a shorter per-call tool timeout.
+
+`claude_code.py`: documented the daemon-generic wiring (nothing
+target-specific needed there — `_configure_hitl()` applies to whatever
+agent `resolve_agent()` returns) and added a debug log reporting the
+confirming-tool count for operator visibility when served under agentd.
+
+16 new tests in `tests/clients/test_bridged_hitl.py` (`TestBridgedConfirmation`
+×5, `TestOutcomes` ×5, `TestAgentdWiring` ×6), reusing the `_FakeManager`
+pattern already established in `packages/ai-parrot/tests/
+test_toolmanager_confirmation.py` (`ConfirmationGuard` exercised
+for-real; only its `human_manager` is stubbed — Redis-backed
+`HumanInteractionManager` itself is not constructed in tests, matching
+that same existing convention). Full regression: `tests/clients/`
+(claude_agent + bridge + bridged_hitl) 73/73 passed; `packages/
+ai-parrot-integrations/tests/agentd/` 104/105 (1 pre-existing
+env-pollution flake, unrelated, reproduced identically pre-change via
+`git stash`); older `packages/ai-parrot/tests/clients/test_claude_agent.py`
+8/8 unchanged. Zero new `ruff check` findings (`claude_agent.py` stays
+at its 89-finding baseline; `service.py` + the new test file each had one
+batch of auto-fixable import-order/quote/`RET501` nits, now clean).
+
+**Deviations from spec**: `claude_agent.py` modified though not in this
+task's `Files to Create/Modify` list — flagged above with full
+justification (necessary, minimal, reuses an existing established
+attribute-based mechanism rather than inventing a new one). No behavior
+change to `parrot/auth/confirmation.py` (FEAT-235 stays read-only, as
+required); its stale `confirm_window_seconds` docstring reference was
+left as-is (the "welcome edit" the task permitted but did not require) —
+noted here in case a future task wants to pick it up.

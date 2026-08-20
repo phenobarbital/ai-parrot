@@ -2,6 +2,7 @@
 #
 #   parrot serve examples/agents/claude_code_daemon.yaml
 #   parrot ask claude-code "What is 2 + 2?"
+#   parrot ask claude-code "What is sqrt(144)?"   # exercises the bridged MathTool
 #   parrot status claude-code
 #   parrot attach claude-code
 #
@@ -17,6 +18,19 @@
 # `force_cc_auth: false` under kwargs (or PARROT_CLAUDE_USE_CC_AUTH=0).
 #
 # Requires the optional extra:  uv pip install "ai-parrot[claude-agent]"
+#
+# FEAT-434 (Claude Agent Tool Bridge): `tools:` below is registered on
+# this agent's ToolManager exactly as with any other LLM — the bridge
+# then exposes it to the delegated Claude Code sub-agent automatically,
+# as an in-process `mcp__parrot__math_tool` MCP tool (see docs/tools.md
+# "Claude Agent Tool Bridge"). `use_tools: true` (the default — shown
+# here for clarity) is this AGENT's own tool-loop switch, not the
+# bridge's dedicated toggle (that's `ClaudeAgentRunOptions.
+# expose_parrot_tools`, set programmatically) — but setting `use_tools:
+# false` here also suppresses bridging as a side effect, since the
+# agent's per-question use_tools decision is threaded into the client's
+# ask(), whose use_tools=False disables the bridge for that call. See
+# docs/agentd.md "Claude Code sub-agent tool bridge" for the full caveat.
 
 name: claude-code
 
@@ -25,7 +39,9 @@ agent:
   kwargs:
     name: "ClaudeCodeAgent"
     llm: "claude-agent:claude-sonnet-4-6"
-    use_tools: false
+    use_tools: true
+    tools:
+      - "MathTool"
     system_prompt: |
       You are a concise assistant running inside an ai-parrot daemon.
       Answer in at most two sentences.

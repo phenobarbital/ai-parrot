@@ -18,17 +18,26 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from parrot.auth.permission import PermissionContext, build_principal_context
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
     "AgentServiceConfig",
     "AgentTargetConfig",
     "AgentTargetError",
     "SchedulerConfig",
+    "ServiceIdentityConfig",
     "default_socket_path",
     "expand_env_vars",
     "resolve_agent",
 ]
+
+#: Environment variables provisioning the fallback service identity
+#: (FEAT-434 — used when a UDS peer's credentials cannot be resolved).
+_ENV_SERVICE_IDENTITY_DISPLAY_NAME = "AGENTD_SERVICE_IDENTITY_DISPLAY_NAME"
+_ENV_SERVICE_IDENTITY_USER_ID = "AGENTD_SERVICE_IDENTITY_USER_ID"
+_ENV_SERVICE_IDENTITY_TENANT_ID = "AGENTD_SERVICE_IDENTITY_TENANT_ID"
+_ENV_SERVICE_IDENTITY_ROLES = "AGENTD_SERVICE_IDENTITY_ROLES"
 
 #: Default NDJSON line-size limit (bytes) for the UDS server (spec §2).
 _DEFAULT_MAX_LINE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -116,6 +125,98 @@ class SchedulerConfig(BaseModel):
     enabled: bool = True
     dsn: str | None = None
     redis: bool = False
+
+
+class ServiceIdentityConfig(BaseModel):
+    """Fallback caller identity for UDS connections whose peer credentials
+    cannot be resolved (FEAT-434 — Claude Agent Tool Bridge, spec §3 Module 4).
+
+    Provisioning (environment variables):
+        ``AGENTD_SERVICE_IDENTITY_DISPLAY_NAME`` — human-readable label
+            (default ``"parrot agent server"``).
+        ``AGENTD_SERVICE_IDENTITY_USER_ID``      — principal id used for
+            confirmation-window keying and PBAC (default ``"1001"``).
+        ``AGENTD_SERVICE_IDENTITY_TENANT_ID``    — tenant/org id (default
+            ``"default"``).
+        ``AGENTD_SERVICE_IDENTITY_ROLES``        — optional comma-separated
+            role claims (default: none).
+
+    Attributes:
+        display_name: Human-readable label for logs/audit trails.
+        user_id: Principal identifier for the resolved `PermissionContext`.
+        tenant_id: Tenant/org identifier.
+        roles: Role claims for policy evaluation.
+
+    Note:
+        ``window_seconds`` is intentionally NOT a field here — it is a fixed
+        `0` (see the `window_seconds` property below) and is never
+        configurable via environment, YAML, or constructor kwargs. This
+        identity's `owner_id` is shared by construction (every unresolvable
+        peer collapses onto it), so a non-zero confirmation window would let
+        one human's approval clear a later destructive call made for
+        somebody else.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = "parrot agent server"
+    user_id: str = "1001"
+    tenant_id: str = "default"
+    roles: frozenset[str] = Field(default_factory=frozenset)
+
+    @property
+    def window_seconds(self) -> int:
+        """Always `0` — this identity never holds a confirmation window.
+
+        Decoupled from `ConfirmationConfig.window_seconds` on purpose: a
+        deployment may raise the guard's *default* window for regular
+        callers, but that must never apply to the shared service identity.
+        """
+        return 0
+
+    @classmethod
+    def from_env(cls) -> ServiceIdentityConfig:
+        """Build the service identity from environment config, with defaults.
+
+        Returns:
+            A :class:`ServiceIdentityConfig`. Always succeeds — every field
+            has a default, so a deployment need not provision anything to
+            get a usable (if generic) fallback identity.
+        """
+        roles_raw = os.environ.get(_ENV_SERVICE_IDENTITY_ROLES, "")
+        roles = frozenset(r.strip() for r in roles_raw.split(",") if r.strip())
+        kwargs: dict[str, Any] = {"roles": roles}
+        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_DISPLAY_NAME)):
+            kwargs["display_name"] = value
+        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_USER_ID)):
+            kwargs["user_id"] = value
+        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_TENANT_ID)):
+            kwargs["tenant_id"] = value
+        return cls(**kwargs)
+
+    def to_permission_context(self, channel: str = "agentd") -> PermissionContext:
+        """Resolve this identity into a `PermissionContext`.
+
+        The returned context's `extra["window_seconds"]` is always `0`,
+        regardless of any deployment-configured `ConfirmationConfig`
+        default — the anchor downstream HITL wiring (bridged confirming
+        tools) must consult to pin this identity's confirmation window.
+
+        Args:
+            channel: Originating channel propagated to the context.
+
+        Returns:
+            A `PermissionContext` wrapping a `UserSession` for this identity.
+        """
+        ctx = build_principal_context(
+            self.user_id,
+            channel=channel,
+            tenant_id=self.tenant_id,
+            roles=self.roles or None,
+        )
+        ctx.extra["window_seconds"] = self.window_seconds
+        ctx.extra["display_name"] = self.display_name
+        return ctx
 
 
 class AgentTargetConfig(BaseModel):
