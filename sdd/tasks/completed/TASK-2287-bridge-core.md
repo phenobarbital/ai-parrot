@@ -276,10 +276,64 @@ class TestLazyImport:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-20
+**Notes**: Created `ClaudeAgentToolBridge` in the new
+`packages/ai-parrot/src/parrot/clients/claude_agent_bridge.py` module,
+matching the spec's exact constructor signature
+(`__init__(tool_manager, *, namespace="parrot", tool_timeout=None)`).
+`build_server(tools, permission_context=None)` reuses
+`MCPToolAdapter.to_mcp_tool_definition()` verbatim for every schema, then
+strips the `confirm` property from a **deep copy** (never mutating the
+adapter/tool) before constructing an `SdkMcpTool`. Added
+`permission_context` as a `build_server()` parameter (not on `__init__`)
+per the task's own guidance ("accept a PermissionContext parameter and
+let the caller supply it") since identity is resolved per-turn/session
+(TASK-2286), while the bridge itself is constructed once per client.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Per-tool conversion is wrapped in a try/except inside `build_server()`
+so a schema-conversion failure skips only that tool (logged as a
+warning) — verified by monkeypatching `MCPToolAdapter.
+to_mcp_tool_definition` to raise for one tool among several.
+`exposed_names()` reflects the post-skip set from the most recent
+`build_server()` call.
 
-**Deviations from spec**: none | describe if any
+The handler closure dispatches exclusively through
+`tool_manager.execute_tool()` (asserted by test — patching `tool.execute`/
+`tool._execute` to raise `AssertionError` and confirming the handler
+still succeeds). Discovered and handled a load-bearing `execute_tool()`
+contract subtlety not spelled out in the task's contract snippet: on
+success it returns the **unwrapped** result (not a `ToolResult`), on
+several guard-denial statuses (`not_found`/`forbidden`/HITL
+`cancelled`/`timeout`/`authorization_required`) it returns a `ToolResult`
+directly without raising, but on a genuine tool-execution error it
+**raises** (typically `ValueError`) rather than returning a `ToolResult`
+with `status="error"`. The handler normalizes all three shapes by always
+routing through `MCPToolAdapter._toolresult_to_mcp()`: wrapping a raw
+success payload in a fresh `ToolResult(status="success", ...)`, passing
+guard-denial `ToolResult`s straight through, and catching
+`asyncio.TimeoutError`/any other exception to build an error
+`ToolResult` — so every failure mode (tool exception, timeout, HITL
+denial) becomes a recoverable MCP error result and the handler never
+raises.
+
+15 new unit tests in `tests/clients/test_claude_agent_bridge.py`
+(`TestServerAssembly`, `TestHandlerDispatch`, `TestRecoverableFailures`,
+`TestLazyImport`). Tests patch `claude_agent_sdk.create_sdk_mcp_server`
+to a recorder rather than exercising the SDK's internal
+`mcp.server.Server`/wire-protocol layer (out of scope for this bridge
+module; also its `run_tool()` reads a snake_case `is_error` key, not the
+adapter's camelCase `isError` — a pre-existing SDK/adapter naming
+mismatch this task does not touch or need to touch, since handlers are
+tested directly). `tests/clients/test_claude_agent.py` still 20/20
+passing (no regression). Zero new `ruff check` findings (14
+auto-fixable import-order/quote/`TimeoutError`-alias nits fixed).
+
+**Deviations from spec**: `permission_context` added as a `build_server()`
+parameter rather than appearing in the class's published interface sketch
+(which lists no such parameter anywhere) — the task's own Scope note
+explicitly directs this ("caller identity ... accept a PermissionContext
+parameter and let the caller supply it"), and `build_server()` is the
+natural per-turn seam since narrowing/build happens fresh each turn in
+`_build_options()` (TASK-2288/2289). Flagging for TASK-2288/2289/2290 to
+confirm this is the intended call shape when they wire the bridge in.

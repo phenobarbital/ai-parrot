@@ -50,7 +50,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Creates a new module (claude_agent_bridge.py) plus its test file; modifies nothing existing. Disjoint on files, so it CAN run in parallel, but it is the trunk that TASK-2288/2289/2290 all build on.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2287-bridge-core.md"
+      "completed_at": "2026-08-20T01:48:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2287-bridge-core.md"
     },
     {
       "id": "TASK-2288",
