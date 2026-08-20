@@ -219,7 +219,69 @@ def test_does_not_import_pgvector(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `VectorSeedPolicy` in `policies/vector_seed.py`: BM25 (via
+`SQLiteGraphReader.search_symbols`) and dense (via a duck-typed
+`GraphIndexEmbedder`-shaped `search_similar`) legs run concurrently via
+`asyncio.gather`, fused with `HybridPageIndexSearch._rrf_fuse` reused
+verbatim (imported, not reimplemented) with the matching `_RRF_K = 60`.
 
-**Completed by**:
-**Date**:
+**Design decisions (documented, not silently invented):**
+
+1. **`reader`/`embedder` typed `Any | None`, not `SQLiteGraphReader |
+   None`.** Pydantic validates arbitrary types via `isinstance`, so a
+   strict `SQLiteGraphReader` annotation would reject any lightweight
+   test double — discovered when `test_legs_run_concurrently`'s spy
+   reader hit a `ValidationError` (see "bugs found" below). Both fields
+   are duck-typed against the methods actually called
+   (`search_symbols`/`get_node`/`children` for the reader,
+   `search_similar` for the embedder), matching how the task's own
+   acceptance criteria ask for a "timing spy" — which requires a fake,
+   not a real `SQLiteGraphReader` subclass.
+2. **`_sanitize_fts_query()` — not in the task's literal scope, but
+   required.** `req.query` may carry markdown-style code quoting
+   (`` `Foo.bar()` ``) or dotted qualified names; passed raw to FTS5
+   `MATCH`, both raise `fts5: syntax error`. Tokens are extracted
+   (`\w+`) and joined with `OR` (not implicit `AND` — title/summary are
+   separate indexed rows, so an `AND` query naming two different symbols
+   would incorrectly return zero rows). Added after two real
+   `sqlite3.OperationalError`s surfaced during testing (`syntax error
+   near "`"`, then `syntax error near "."`) — not guessed at up front.
+3. **`rev: str` added as an explicit field** (not in the task's literal
+   scope). Search results (`search_symbols`/`get_node`/`search_similar`)
+   carry no rev of their own — unlike `DirectSymbolPolicy`, which gets
+   `rev` for free via `DerivedSymbolIndex`-produced seed `NodeRef`s.
+
+**Bugs found and fixed during testing (not just "tests pass on first
+try"):**
+- `ValidationError` on `SQLiteGraphReader | None` rejecting a spy double
+  → relaxed to `Any | None` (see above).
+- `fts5: syntax error near "`"` — backticks passed raw to `MATCH` →
+  `_sanitize_fts_query()` added.
+- `fts5: syntax error near "."` — same sanitizer's first version kept
+  dots and used implicit `AND`; fixed to token-extraction + `OR`.
+- A background hang unrelated to correctness: exploratory standalone
+  `python -c` scripts (used to isolate the above) hung past an unhandled
+  exception's traceback, apparently due to a lingering thread/executor
+  from the real `navconfig`/aiosqlite stack — confirmed harmless to the
+  actual test suite (which runs and exits cleanly under `pytest`) and not
+  investigated further, since it only affected ad hoc debugging scripts.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================= 139 passed, 6 warnings in 6.62s ========================
+```
+(9 new tests in `test_vector_seed_policy.py`, using a real
+`SQLitePersistence`/`SQLiteGraphReader` round-trip, a real temp git repo,
+and a duck-typed `_FakeEmbedder` — no mocking framework needed.)
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

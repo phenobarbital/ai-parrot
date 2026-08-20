@@ -218,7 +218,52 @@ async def test_mode_off_runs_single_policy(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `SufficiencyTrigger`, `EscalationMode`, `SufficiencyCheck`,
+`check_speculation_admission`, and `run_escalation_ladder` in
+`escalation.py`.
 
-**Completed by**:
-**Date**:
+**Extended `classifier.py`'s `EscalationStep` (deliberate, disclosed).**
+This task's file list is `escalation.py` only, but the acceptance
+criteria explicitly require every escalation to be "recorded... with
+trigger, cost, and whether it was used" and "unimplemented rung
+escalations record the attempt, not success" — impossible without a
+`used: bool` field, since `EscalationStep` only had
+`from_class`/`to_class`/`trigger`/`elapsed_ms`. TASK-2278's own docstring
+already named TASK-2282 as "the actual producer of these", anticipating
+this. Added `policy_attempted: str = ""` and `used: bool = False` — both
+defaulted, so no existing construction of `EscalationStep` (TASK-2278's
+own tests) breaks.
+
+**Trigger semantics (documented — spec doesn't give exact numbers):**
+- `margin`: ratio = top-1 seed score / lowest-ranked returned seed score;
+  ratio `< margin_threshold` (default `1.2`) fires. Fewer than 2 seeds
+  can't be "flat" — never fires.
+- `dangling`: regex-extracts call-like tokens (`name(`) from each unit's
+  served text, resolves each via `DerivedSymbolIndex.resolve()`, and
+  fires if any resolved candidate's qualname is absent from the bundle's
+  own units.
+
+**Budget decrementing:** each rung's `RetrievalBudget` gets only
+`deadline_ms` remaining after prior rungs' wall-clock cost; the driver
+stops and flags `truncated=True` rather than let escalations collectively
+exceed the original deadline (INV-5) — verified by
+`test_escalation_stops_at_deadline_and_flags_truncated` and
+`test_budget_decrements_across_steps`.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================= 153 passed, 6 warnings in 6.97s ========================
+```
+(14 new tests in `test_escalation.py`.)
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

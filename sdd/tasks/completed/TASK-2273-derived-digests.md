@@ -209,7 +209,30 @@ def test_derive_digest_does_no_io(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `DigestScope` + `derive_digest()` in
+`packages/ai-parrot/src/parrot/knowledge/retrieval/digest.py`, tightened
+`Evidence.digest_scope` from plain `str` to `DigestScope` in `models.py`,
+and re-exported both from the package `__init__.py`.
 
-**Completed by**:
-**Date**:
+`_read_span_bytes` mirrors `SQLiteGraphReader._read_span`'s 1-indexed
+inclusive slicing convention (`lines[lineno - 1 : end]`) exactly, but
+operates on bytes already supplied by the caller — no file I/O.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================== 31 passed, 6 warnings in 1.16s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval` (grep for that
+path in the full-repo `mypy` run returns nothing new; pre-existing
+unrelated errors as noted in prior tasks).
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

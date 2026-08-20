@@ -196,7 +196,57 @@ def test_frozen_and_extra_forbid(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `NodeRef` and `EdgeRef` exactly as specified in
+`packages/ai-parrot/src/parrot/knowledge/retrieval/models.py`, plus the
+`parrot.knowledge.retrieval` package `__init__.py`.
 
-**Completed by**:
-**Date**:
+**Design decision (documented, not silently invented):** the spec's literal
+`{kind}:{qualname}` URI fragment template does not have room to encode
+`symbol_type`, but the acceptance criterion requires
+`NodeRef.parse(ref.uri) == ref` for every constructible `NodeRef`, including
+ones with a non-`None` `symbol_type`. Resolved by encoding the fragment as
+`{kind}[{symbol_type}]:{qualname}` when `symbol_type` is set, and plain
+`{kind}:{qualname}` when it is `None`. This keeps the URI format visually
+close to the spec's template while making the round-trip lossless.
+
+Split order for `parse()`: (1) fragment on the LAST `#`, (2) path on the
+FIRST `/` after the authority (rev is hex-only, never contains `/`), (3)
+repo/rev on the LAST `@` (rev never contains `@`, so a repo containing `@`
+still survives) — this correctly handles paths containing embedded `#`
+and/or `@`, per the acceptance criteria.
+
+Rev validation: `^[0-9a-fA-F]{7,40}$`, which naturally rejects all of
+`HEAD`, `head`, `main`, `dev`, `staging`, `v1.0` (each contains at least one
+non-hex character or fails the length bound).
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/test_models.py -v
+======================== 11 passed, 6 warnings in 1.29s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** `mypy packages/ai-parrot/src/parrot/knowledge/retrieval/` reports
+zero errors attributable to the new files (grep for `knowledge/retrieval` in
+its output returns nothing). The full run surfaces ~2400 pre-existing errors
+across ~172 unrelated files elsewhere in the repo (`bots/agent.py`,
+`a2a/mixin.py`, `knowledge/pageindex/*`, etc.) — out of scope for this task,
+not touched.
+
+**Environment note:** the shared `.venv` is an editable install pointing at
+this worktree's `packages/ai-parrot/src/parrot`, but two Cython extensions
+(`utils/types.pyx`, `utils/parsers/toml.pyx`) ship only as compiled `.so`
+files that are not copied into a fresh worktree by `git worktree add`. Had
+to copy `utils/types.cpython-312-x86_64-linux-gnu.so` and
+`utils/parsers/toml.cpython-312-x86_64-linux-gnu.so` from the main checkout
+before `import parrot.knowledge.graphindex.schema` (a dependency chain away
+from the code this task touches) would resolve. No source files were
+modified to work around this — it's a build-artifact gap, not a code issue.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

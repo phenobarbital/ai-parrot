@@ -207,7 +207,49 @@ async def test_git_call_count_bounded_by_sample(...): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `read_at_rev()`, `CoherenceReport`, and `check_pin_coherence()`
+in `pin.py` (extended), plus `IndexPinMismatchError` in `exceptions.py`
+(extended). Confirmed the sha1 hashing trap named in the task's Codebase
+Contract by reading the actual builder call site
+(`extractors/code.py:124`: `hashlib.sha1(source_bytes).hexdigest()` — a
+plain content hash) and wrote `test_blob_sha_vs_content_sha_not_confused`,
+which asserts `git rev-parse <rev>:<path>` (git's blob SHA, which hashes
+`"blob <len>\0" + content`) differs from the plain content sha1, then
+verifies the coherence check passes using the correct one.
 
-**Completed by**:
-**Date**:
+**Signature extension (documented, not silently invented):** the task's
+literal pseudocode signature is
+`check_pin_coherence(pin, persistence, *, sample: int = 16) -> CoherenceReport`.
+Implemented as
+`check_pin_coherence(pin, persistence, ctx, repo, repo_path, *, sample=16, allow_stale=True)`
+— `ctx: TenantContext` and `repo_path: Path` are required to actually
+resolve the tenant's SQLite db file (`persistence._db_path(ctx)`, per this
+task's own Codebase Contract) and to run `git cat-file` in the right
+repository; `repo` disambiguates which `WorkspacePin` entry to corroborate
+in a multi-repo workspace. Added `allow_stale: bool = True` directly on
+the function (rather than threading a `RetrievalBudget` through, which
+doesn't exist as a dependency here) so the raise-vs-report-marker behavior
+described in Scope is enforced at a single call site instead of split
+across caller and callee.
+
+Deterministic sampling: `_select_deterministic_sample()` takes a stable
+stride over the `files` table sorted by `source_uri` — no `random`, same
+pin always samples the same paths (verified by
+`test_sampling_is_deterministic`).
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================== 51 passed, 6 warnings in 2.41s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

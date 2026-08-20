@@ -178,7 +178,47 @@ async def test_policy_never_emits_reserved_origin(policy_cls, fixture_graph):
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+**Execution order deviation (disclosed):** this task was deferred to LAST
+in the execution order, after TASK-2280/2281 (rather than run right after
+TASK-2271 per its formal `depends_on`). Reason: the task requires
+`typing.get_args` over a real `RetrievalPolicy` discriminated union, which
+does not exist until concrete policy classes do — the task's own
+Codebase Contract explicitly warns "the union may not be complete yet."
+No other task lists `TASK-2272` in its `depends_on`, so this reordering
+does not violate the dependency graph (verified against the per-spec
+index before deferring).
 
-**Completed by**:
-**Date**:
+**`RESERVED_ORIGINS`** added to `models.py` as scoped. **`RetrievalPolicy`
+discriminated union added to `policies/__init__.py`, NOT `models.py`**
+(deviation, disclosed): `models.py` is imported BY every policy module
+(`policies/direct_symbol.py`, `policies/vector_seed.py` both import
+`NodeRef`/`Evidence`/etc. from it), so a `RetrievalPolicy` union in
+`models.py` referencing `DirectSymbolPolicy`/`VectorSeedPolicy` would be a
+circular import. `policies/__init__.py` already imports both concrete
+classes and its own docstring (written during TASK-2280) already
+anticipated assembling the union there once enough members existed.
+
+The parametrised test **actually runs** each policy's full
+seed→expand→prune→assemble pipeline against a real fixture graph (not just
+static introspection) and inspects the resulting bundle's
+`Evidence.origin`s — a policy could only pass this by genuinely never
+constructing a reserved origin, not by coincidence of an unexercised code
+path.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================= 187 passed, 6 warnings in 6.75s ========================
+```
+(4 new tests in `test_reserved_origins.py`.)
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

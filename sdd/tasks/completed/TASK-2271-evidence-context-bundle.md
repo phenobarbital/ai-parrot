@@ -183,7 +183,37 @@ def test_all_models_frozen_and_forbid_extra(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `EvidenceOrigin`, `Evidence`, `ContextUnit`, `ContextBundle`,
+`RetrievalBudget`, `RetrievalRequest` in
+`packages/ai-parrot/src/parrot/knowledge/retrieval/models.py`, extending
+TASK-2270's file, and re-exported all from the package `__init__.py`.
 
-**Completed by**:
-**Date**:
+**Forward refs, as instructed:** `Evidence.digest_scope: str` (plain, per
+task — tightens to `DigestScope` when TASK-2273 lands);
+`ContextBundle.decision: Any` (tightens to `RetrievalRoutingDecision` when
+TASK-2278 lands); `RetrievalRequest.workspace: Any` (tightens to
+`WorkspacePin` when TASK-2274 lands); `RetrievalRequest.policy_override:
+Any | None` (tightens to the `RetrievalPolicy` discriminated union once
+T5-T8 land). Used `Any` rather than `TYPE_CHECKING`-guarded imports of
+not-yet-existing modules, since a static `TYPE_CHECKING` import of a
+nonexistent module would itself fail mypy today.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================== 25 passed, 6 warnings in 1.20s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval` (grep for that
+path in `mypy packages/ai-parrot/src/parrot/knowledge/retrieval/` output
+returns nothing; the ~2400 errors in the full run are pre-existing, in
+unrelated files, per TASK-2270's note).
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

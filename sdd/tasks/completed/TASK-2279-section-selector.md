@@ -186,7 +186,34 @@ def test_tag_partition_covers_l0_default_tags():
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `SectionKind`, `SectionSelector`, `selector_for`,
+`GOTCHA_TAGS`/`RATIONALE_TAGS` in `sections.py`. The two spec-stated
+mappings (`RATIONALE`→`(RATIONALE, OVERVIEW)`,
+`GLOBAL_SUMMARY`→`(OVERVIEW, CONTRACTS, DEPENDENCIES)`) are exact; the
+remaining five `QueryClass` members get a documented, sensible default
+each (e.g. `DIRECT_SYMBOL`/`LOCAL_FACT` favor `CONTRACTS`/`USAGE` since
+they're served from L0 source in v1, `UNKNOWN` gets the cheapest
+`OVERVIEW`-only fallback consistent with §4.4's escalation-armed default).
 
-**Completed by**:
-**Date**:
+Verified the tag partition against the real L0 constant directly (not
+copied by hand): `test_tag_partition_covers_l0_default_tags` imports
+`_DEFAULT_TAGS` from `extractors/code.py` and asserts
+`GOTCHA_TAGS | RATIONALE_TAGS == _DEFAULT_TAGS`, so any future drift in
+L0's tag set is caught here rather than silently diverging.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================= 121 passed, 6 warnings in 2.45s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

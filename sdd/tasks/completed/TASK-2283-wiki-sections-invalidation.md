@@ -235,7 +235,50 @@ async def test_falls_back_to_in_process_lock_without_redis(caplog): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `SourceDigest`, `GeneratorInfo`, `WikiSection`, `WikiPage`,
+`compute_coherence_group`, `compute_page_id`, `invalidate_section`,
+`invalidate_page`, `invalidate_ancestors`, `compute_mixed_freshness`,
+`ServingDecision`/`resolve_serving_decision` in `wiki_cache.py`, and
+`SingleFlight` in `single_flight.py`.
 
-**Completed by**:
-**Date**:
+**Single-flight design (true dedup, not just mutual exclusion):**
+`SingleFlight.run_once()` tracks in-flight `asyncio.Future`s keyed on
+`(page_id, section_kind)`; concurrent callers for the SAME key join the
+SAME future (share the result/exception) rather than each acquiring a
+lock and redundantly re-running the factory. An optional Redis lock layer
+(copied pattern from `auth/oauth2_base.py:519`, not imported) adds
+cross-process coordination when a redis client is configured; with none,
+it degrades to in-process-only dedup and logs once at construction.
+Verified `test_same_section_serializes_to_one_regeneration` asserts the
+factory call count is exactly 1 across 3 concurrent callers (not just
+that they don't overlap).
+
+**`invalidate_ancestors` walk:** ancestor invalidation only ever follows
+`parent_id` upward (never sideways to siblings), capped at
+`max_ancestor_depth`, with a `visited` set that breaks a cyclic
+`parent_id` chain rather than hanging — verified with a deliberate 2-node
+cycle fixture (`test_cyclic_parent_chain_terminates`).
+
+**RQ-2 (`mixed_freshness`):** `coherence_group` is a digest of a section's
+own `(node_id, digest)` multiset, stamped at construction; two sections
+sharing sources (even across different `SectionKind`s) share a group.
+`compute_mixed_freshness` is a pure set-cardinality check over selected
+sections' groups — no all-fresh-or-none gate anywhere.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================= 171 passed, 6 warnings in 6.37s ========================
+```
+(18 new tests across `test_wiki_cache.py` and `test_single_flight.py`.)
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

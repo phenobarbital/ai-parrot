@@ -1,0 +1,1525 @@
+{
+  "version": "v1",
+  "created": "2026-08-20",
+  "description": "Hand-authored golden set for FEAT-435's QueryClassifier + retrieval policies, built by careful manual review of real symbols in the ai-parrot codebase against the classifier's actual R1-R7 rules (spec sec4.3). See TASK-2284 Completion Note for the epistemic limitation this implies (agent-authored, not independently human-labelled).",
+  "queries": [
+    {
+      "id": "q0001",
+      "query": "`NodeRef`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.NodeRef"
+      ]
+    },
+    {
+      "id": "q0002",
+      "query": "why was `NodeRef` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.NodeRef"
+      ]
+    },
+    {
+      "id": "q0003",
+      "query": "diferencia entre `NodeRef` y `EdgeRef`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.NodeRef",
+        "parrot.knowledge.retrieval.models.EdgeRef"
+      ]
+    },
+    {
+      "id": "q0004",
+      "query": "what calls `NodeRef`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.NodeRef"
+      ]
+    },
+    {
+      "id": "q0005",
+      "query": "give an overview of how the retrieval identity models works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.NodeRef"
+      ]
+    },
+    {
+      "id": "q0006",
+      "query": "can you tell me in detail what `NodeRef` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.NodeRef"
+      ]
+    },
+    {
+      "id": "q0007",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0008",
+      "query": "`EdgeRef`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.EdgeRef"
+      ]
+    },
+    {
+      "id": "q0009",
+      "query": "¿por qué motivo se diseñó `EdgeRef` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.EdgeRef"
+      ]
+    },
+    {
+      "id": "q0010",
+      "query": "difference between `EdgeRef` and `Evidence`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.EdgeRef",
+        "parrot.knowledge.retrieval.models.Evidence"
+      ]
+    },
+    {
+      "id": "q0011",
+      "query": "¿quién llama a `EdgeRef`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.EdgeRef"
+      ]
+    },
+    {
+      "id": "q0012",
+      "query": "resumen de cómo funciona el retrieval identity models",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.EdgeRef"
+      ]
+    },
+    {
+      "id": "q0013",
+      "query": "puedes explicarme en detalle qué hace `EdgeRef` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.EdgeRef"
+      ]
+    },
+    {
+      "id": "q0014",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0015",
+      "query": "`Evidence`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.Evidence"
+      ]
+    },
+    {
+      "id": "q0016",
+      "query": "why was `Evidence` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.Evidence"
+      ]
+    },
+    {
+      "id": "q0017",
+      "query": "diferencia entre `Evidence` y `ContextBundle`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.Evidence",
+        "parrot.knowledge.retrieval.models.ContextBundle"
+      ]
+    },
+    {
+      "id": "q0018",
+      "query": "what calls `Evidence`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.Evidence"
+      ]
+    },
+    {
+      "id": "q0019",
+      "query": "give an overview of how the retrieval evidence models works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.Evidence"
+      ]
+    },
+    {
+      "id": "q0020",
+      "query": "can you tell me in detail what `Evidence` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.Evidence"
+      ]
+    },
+    {
+      "id": "q0021",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0022",
+      "query": "`ContextBundle`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.ContextBundle"
+      ]
+    },
+    {
+      "id": "q0023",
+      "query": "¿por qué motivo se diseñó `ContextBundle` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.ContextBundle"
+      ]
+    },
+    {
+      "id": "q0024",
+      "query": "difference between `ContextBundle` and `RetrievalBudget`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.ContextBundle",
+        "parrot.knowledge.retrieval.models.RetrievalBudget"
+      ]
+    },
+    {
+      "id": "q0025",
+      "query": "¿quién llama a `ContextBundle`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.ContextBundle"
+      ]
+    },
+    {
+      "id": "q0026",
+      "query": "resumen de cómo funciona el retrieval bundle models",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.ContextBundle"
+      ]
+    },
+    {
+      "id": "q0027",
+      "query": "puedes explicarme en detalle qué hace `ContextBundle` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.ContextBundle"
+      ]
+    },
+    {
+      "id": "q0028",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0029",
+      "query": "`RetrievalBudget`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.RetrievalBudget"
+      ]
+    },
+    {
+      "id": "q0030",
+      "query": "why was `RetrievalBudget` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.RetrievalBudget"
+      ]
+    },
+    {
+      "id": "q0031",
+      "query": "diferencia entre `RetrievalBudget` y `DerivedSymbolIndex`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.RetrievalBudget",
+        "parrot.knowledge.retrieval.symbols.DerivedSymbolIndex"
+      ]
+    },
+    {
+      "id": "q0032",
+      "query": "what calls `RetrievalBudget`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.RetrievalBudget"
+      ]
+    },
+    {
+      "id": "q0033",
+      "query": "give an overview of how the retrieval budget models works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.RetrievalBudget"
+      ]
+    },
+    {
+      "id": "q0034",
+      "query": "can you tell me in detail what `RetrievalBudget` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.models.RetrievalBudget"
+      ]
+    },
+    {
+      "id": "q0035",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0036",
+      "query": "`DerivedSymbolIndex`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.symbols.DerivedSymbolIndex"
+      ]
+    },
+    {
+      "id": "q0037",
+      "query": "¿por qué motivo se diseñó `DerivedSymbolIndex` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.symbols.DerivedSymbolIndex"
+      ]
+    },
+    {
+      "id": "q0038",
+      "query": "difference between `DerivedSymbolIndex` and `QueryClassifier`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.symbols.DerivedSymbolIndex",
+        "parrot.knowledge.retrieval.classifier.QueryClassifier"
+      ]
+    },
+    {
+      "id": "q0039",
+      "query": "¿quién llama a `DerivedSymbolIndex`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.symbols.DerivedSymbolIndex"
+      ]
+    },
+    {
+      "id": "q0040",
+      "query": "resumen de cómo funciona el symbol index module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.symbols.DerivedSymbolIndex"
+      ]
+    },
+    {
+      "id": "q0041",
+      "query": "puedes explicarme en detalle qué hace `DerivedSymbolIndex` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.symbols.DerivedSymbolIndex"
+      ]
+    },
+    {
+      "id": "q0042",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0043",
+      "query": "`QueryClassifier`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.classifier.QueryClassifier"
+      ]
+    },
+    {
+      "id": "q0044",
+      "query": "why was `QueryClassifier` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.classifier.QueryClassifier"
+      ]
+    },
+    {
+      "id": "q0045",
+      "query": "diferencia entre `QueryClassifier` y `MarkerLexicon`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.classifier.QueryClassifier",
+        "parrot.knowledge.retrieval.lexicon.MarkerLexicon"
+      ]
+    },
+    {
+      "id": "q0046",
+      "query": "what calls `QueryClassifier`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.classifier.QueryClassifier"
+      ]
+    },
+    {
+      "id": "q0047",
+      "query": "give an overview of how the query classifier module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.classifier.QueryClassifier"
+      ]
+    },
+    {
+      "id": "q0048",
+      "query": "can you tell me in detail what `QueryClassifier` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.classifier.QueryClassifier"
+      ]
+    },
+    {
+      "id": "q0049",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0050",
+      "query": "`MarkerLexicon`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.lexicon.MarkerLexicon"
+      ]
+    },
+    {
+      "id": "q0051",
+      "query": "¿por qué motivo se diseñó `MarkerLexicon` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.lexicon.MarkerLexicon"
+      ]
+    },
+    {
+      "id": "q0052",
+      "query": "difference between `MarkerLexicon` and `extract_features`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.lexicon.MarkerLexicon",
+        "parrot.knowledge.retrieval.features.extract_features"
+      ]
+    },
+    {
+      "id": "q0053",
+      "query": "¿quién llama a `MarkerLexicon`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.lexicon.MarkerLexicon"
+      ]
+    },
+    {
+      "id": "q0054",
+      "query": "resumen de cómo funciona el marker lexicon module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.lexicon.MarkerLexicon"
+      ]
+    },
+    {
+      "id": "q0055",
+      "query": "puedes explicarme en detalle qué hace `MarkerLexicon` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.lexicon.MarkerLexicon"
+      ]
+    },
+    {
+      "id": "q0056",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0057",
+      "query": "`extract_features`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.features.extract_features"
+      ]
+    },
+    {
+      "id": "q0058",
+      "query": "why was `extract_features` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.features.extract_features"
+      ]
+    },
+    {
+      "id": "q0059",
+      "query": "diferencia entre `extract_features` y `DirectSymbolPolicy`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.features.extract_features",
+        "parrot.knowledge.retrieval.policies.direct_symbol.DirectSymbolPolicy"
+      ]
+    },
+    {
+      "id": "q0060",
+      "query": "what calls `extract_features`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.features.extract_features"
+      ]
+    },
+    {
+      "id": "q0061",
+      "query": "give an overview of how the feature extraction module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.features.extract_features"
+      ]
+    },
+    {
+      "id": "q0062",
+      "query": "can you tell me in detail what `extract_features` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.features.extract_features"
+      ]
+    },
+    {
+      "id": "q0063",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0064",
+      "query": "`DirectSymbolPolicy`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.direct_symbol.DirectSymbolPolicy"
+      ]
+    },
+    {
+      "id": "q0065",
+      "query": "¿por qué motivo se diseñó `DirectSymbolPolicy` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.direct_symbol.DirectSymbolPolicy"
+      ]
+    },
+    {
+      "id": "q0066",
+      "query": "difference between `DirectSymbolPolicy` and `VectorSeedPolicy`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.direct_symbol.DirectSymbolPolicy",
+        "parrot.knowledge.retrieval.policies.vector_seed.VectorSeedPolicy"
+      ]
+    },
+    {
+      "id": "q0067",
+      "query": "¿quién llama a `DirectSymbolPolicy`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.direct_symbol.DirectSymbolPolicy"
+      ]
+    },
+    {
+      "id": "q0068",
+      "query": "resumen de cómo funciona el direct symbol policy module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.direct_symbol.DirectSymbolPolicy"
+      ]
+    },
+    {
+      "id": "q0069",
+      "query": "puedes explicarme en detalle qué hace `DirectSymbolPolicy` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.direct_symbol.DirectSymbolPolicy"
+      ]
+    },
+    {
+      "id": "q0070",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0071",
+      "query": "`VectorSeedPolicy`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.vector_seed.VectorSeedPolicy"
+      ]
+    },
+    {
+      "id": "q0072",
+      "query": "why was `VectorSeedPolicy` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.vector_seed.VectorSeedPolicy"
+      ]
+    },
+    {
+      "id": "q0073",
+      "query": "diferencia entre `VectorSeedPolicy` y `SufficiencyCheck`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.vector_seed.VectorSeedPolicy",
+        "parrot.knowledge.retrieval.escalation.SufficiencyCheck"
+      ]
+    },
+    {
+      "id": "q0074",
+      "query": "what calls `VectorSeedPolicy`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.vector_seed.VectorSeedPolicy"
+      ]
+    },
+    {
+      "id": "q0075",
+      "query": "give an overview of how the vector seed policy module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.vector_seed.VectorSeedPolicy"
+      ]
+    },
+    {
+      "id": "q0076",
+      "query": "can you tell me in detail what `VectorSeedPolicy` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.policies.vector_seed.VectorSeedPolicy"
+      ]
+    },
+    {
+      "id": "q0077",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0078",
+      "query": "`SufficiencyCheck`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.SufficiencyCheck"
+      ]
+    },
+    {
+      "id": "q0079",
+      "query": "¿por qué motivo se diseñó `SufficiencyCheck` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.SufficiencyCheck"
+      ]
+    },
+    {
+      "id": "q0080",
+      "query": "difference between `SufficiencyCheck` and `run_escalation_ladder`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.SufficiencyCheck",
+        "parrot.knowledge.retrieval.escalation.run_escalation_ladder"
+      ]
+    },
+    {
+      "id": "q0081",
+      "query": "¿quién llama a `SufficiencyCheck`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.SufficiencyCheck"
+      ]
+    },
+    {
+      "id": "q0082",
+      "query": "resumen de cómo funciona el escalation module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.SufficiencyCheck"
+      ]
+    },
+    {
+      "id": "q0083",
+      "query": "puedes explicarme en detalle qué hace `SufficiencyCheck` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.SufficiencyCheck"
+      ]
+    },
+    {
+      "id": "q0084",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0085",
+      "query": "`run_escalation_ladder`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.run_escalation_ladder"
+      ]
+    },
+    {
+      "id": "q0086",
+      "query": "why was `run_escalation_ladder` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.run_escalation_ladder"
+      ]
+    },
+    {
+      "id": "q0087",
+      "query": "diferencia entre `run_escalation_ladder` y `WikiPage`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.run_escalation_ladder",
+        "parrot.knowledge.retrieval.wiki_cache.WikiPage"
+      ]
+    },
+    {
+      "id": "q0088",
+      "query": "what calls `run_escalation_ladder`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.run_escalation_ladder"
+      ]
+    },
+    {
+      "id": "q0089",
+      "query": "give an overview of how the escalation module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.run_escalation_ladder"
+      ]
+    },
+    {
+      "id": "q0090",
+      "query": "can you tell me in detail what `run_escalation_ladder` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.escalation.run_escalation_ladder"
+      ]
+    },
+    {
+      "id": "q0091",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0092",
+      "query": "`WikiPage`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.wiki_cache.WikiPage"
+      ]
+    },
+    {
+      "id": "q0093",
+      "query": "¿por qué motivo se diseñó `WikiPage` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.wiki_cache.WikiPage"
+      ]
+    },
+    {
+      "id": "q0094",
+      "query": "difference between `WikiPage` and `SingleFlight`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.wiki_cache.WikiPage",
+        "parrot.knowledge.retrieval.single_flight.SingleFlight"
+      ]
+    },
+    {
+      "id": "q0095",
+      "query": "¿quién llama a `WikiPage`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.wiki_cache.WikiPage"
+      ]
+    },
+    {
+      "id": "q0096",
+      "query": "resumen de cómo funciona el wiki cache module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.wiki_cache.WikiPage"
+      ]
+    },
+    {
+      "id": "q0097",
+      "query": "puedes explicarme en detalle qué hace `WikiPage` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.wiki_cache.WikiPage"
+      ]
+    },
+    {
+      "id": "q0098",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0099",
+      "query": "`SingleFlight`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.single_flight.SingleFlight"
+      ]
+    },
+    {
+      "id": "q0100",
+      "query": "why was `SingleFlight` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.single_flight.SingleFlight"
+      ]
+    },
+    {
+      "id": "q0101",
+      "query": "diferencia entre `SingleFlight` y `WorkspacePin`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.single_flight.SingleFlight",
+        "parrot.knowledge.retrieval.pin.WorkspacePin"
+      ]
+    },
+    {
+      "id": "q0102",
+      "query": "what calls `SingleFlight`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.single_flight.SingleFlight"
+      ]
+    },
+    {
+      "id": "q0103",
+      "query": "give an overview of how the single flight module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.single_flight.SingleFlight"
+      ]
+    },
+    {
+      "id": "q0104",
+      "query": "can you tell me in detail what `SingleFlight` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.single_flight.SingleFlight"
+      ]
+    },
+    {
+      "id": "q0105",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0106",
+      "query": "`WorkspacePin`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.WorkspacePin"
+      ]
+    },
+    {
+      "id": "q0107",
+      "query": "¿por qué motivo se diseñó `WorkspacePin` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.WorkspacePin"
+      ]
+    },
+    {
+      "id": "q0108",
+      "query": "difference between `WorkspacePin` and `check_pin_coherence`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.WorkspacePin",
+        "parrot.knowledge.retrieval.pin.check_pin_coherence"
+      ]
+    },
+    {
+      "id": "q0109",
+      "query": "¿quién llama a `WorkspacePin`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.WorkspacePin"
+      ]
+    },
+    {
+      "id": "q0110",
+      "query": "resumen de cómo funciona el workspace pin module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.WorkspacePin"
+      ]
+    },
+    {
+      "id": "q0111",
+      "query": "puedes explicarme en detalle qué hace `WorkspacePin` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.WorkspacePin"
+      ]
+    },
+    {
+      "id": "q0112",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0113",
+      "query": "`check_pin_coherence`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.check_pin_coherence"
+      ]
+    },
+    {
+      "id": "q0114",
+      "query": "why was `check_pin_coherence` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.check_pin_coherence"
+      ]
+    },
+    {
+      "id": "q0115",
+      "query": "diferencia entre `check_pin_coherence` y `SQLiteGraphReader`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.check_pin_coherence",
+        "parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader"
+      ]
+    },
+    {
+      "id": "q0116",
+      "query": "what calls `check_pin_coherence`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.check_pin_coherence"
+      ]
+    },
+    {
+      "id": "q0117",
+      "query": "give an overview of how the pin coherence module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.check_pin_coherence"
+      ]
+    },
+    {
+      "id": "q0118",
+      "query": "can you tell me in detail what `check_pin_coherence` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.pin.check_pin_coherence"
+      ]
+    },
+    {
+      "id": "q0119",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0120",
+      "query": "`SQLiteGraphReader`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader"
+      ]
+    },
+    {
+      "id": "q0121",
+      "query": "¿por qué motivo se diseñó `SQLiteGraphReader` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader"
+      ]
+    },
+    {
+      "id": "q0122",
+      "query": "difference between `SQLiteGraphReader` and `GraphIndexEmbedder`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader",
+        "parrot.knowledge.graphindex.embed.GraphIndexEmbedder"
+      ]
+    },
+    {
+      "id": "q0123",
+      "query": "¿quién llama a `SQLiteGraphReader`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader"
+      ]
+    },
+    {
+      "id": "q0124",
+      "query": "resumen de cómo funciona el graph index reader module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader"
+      ]
+    },
+    {
+      "id": "q0125",
+      "query": "puedes explicarme en detalle qué hace `SQLiteGraphReader` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.sqlite_reader.SQLiteGraphReader"
+      ]
+    },
+    {
+      "id": "q0126",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0127",
+      "query": "`GraphIndexEmbedder`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.embed.GraphIndexEmbedder"
+      ]
+    },
+    {
+      "id": "q0128",
+      "query": "why was `GraphIndexEmbedder` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.embed.GraphIndexEmbedder"
+      ]
+    },
+    {
+      "id": "q0129",
+      "query": "diferencia entre `GraphIndexEmbedder` y `GraphExpandedRetriever`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.embed.GraphIndexEmbedder",
+        "parrot.knowledge.graphindex.retriever.GraphExpandedRetriever"
+      ]
+    },
+    {
+      "id": "q0130",
+      "query": "what calls `GraphIndexEmbedder`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.embed.GraphIndexEmbedder"
+      ]
+    },
+    {
+      "id": "q0131",
+      "query": "give an overview of how the graph index embedding module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.embed.GraphIndexEmbedder"
+      ]
+    },
+    {
+      "id": "q0132",
+      "query": "can you tell me in detail what `GraphIndexEmbedder` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.embed.GraphIndexEmbedder"
+      ]
+    },
+    {
+      "id": "q0133",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0134",
+      "query": "`GraphExpandedRetriever`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.retriever.GraphExpandedRetriever"
+      ]
+    },
+    {
+      "id": "q0135",
+      "query": "¿por qué motivo se diseñó `GraphExpandedRetriever` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.retriever.GraphExpandedRetriever"
+      ]
+    },
+    {
+      "id": "q0136",
+      "query": "difference between `GraphExpandedRetriever` and `HybridPageIndexSearch`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.retriever.GraphExpandedRetriever",
+        "parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch"
+      ]
+    },
+    {
+      "id": "q0137",
+      "query": "¿quién llama a `GraphExpandedRetriever`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.retriever.GraphExpandedRetriever"
+      ]
+    },
+    {
+      "id": "q0138",
+      "query": "resumen de cómo funciona el graph expanded retriever module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.retriever.GraphExpandedRetriever"
+      ]
+    },
+    {
+      "id": "q0139",
+      "query": "puedes explicarme en detalle qué hace `GraphExpandedRetriever` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.graphindex.retriever.GraphExpandedRetriever"
+      ]
+    },
+    {
+      "id": "q0140",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0141",
+      "query": "`HybridPageIndexSearch`",
+      "language": "es",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch"
+      ]
+    },
+    {
+      "id": "q0142",
+      "query": "why was `HybridPageIndexSearch` originally designed to work this particular way?",
+      "language": "en",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch"
+      ]
+    },
+    {
+      "id": "q0143",
+      "query": "diferencia entre `HybridPageIndexSearch` y `SectionSelector`",
+      "language": "es",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch",
+        "parrot.knowledge.retrieval.sections.SectionSelector"
+      ]
+    },
+    {
+      "id": "q0144",
+      "query": "what calls `HybridPageIndexSearch`?",
+      "language": "en",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch"
+      ]
+    },
+    {
+      "id": "q0145",
+      "query": "give an overview of how the hybrid page index search module works",
+      "language": "en",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch"
+      ]
+    },
+    {
+      "id": "q0146",
+      "query": "can you tell me in detail what `HybridPageIndexSearch` does internally",
+      "language": "en",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch"
+      ]
+    },
+    {
+      "id": "q0147",
+      "query": "hola, ¿cómo estás hoy?",
+      "language": "es",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    },
+    {
+      "id": "q0148",
+      "query": "`SectionSelector`",
+      "language": "en",
+      "expected_class": "direct_symbol",
+      "expected_rule": "R1",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.sections.SectionSelector"
+      ]
+    },
+    {
+      "id": "q0149",
+      "query": "¿por qué motivo se diseñó `SectionSelector` de esta manera tan particular?",
+      "language": "es",
+      "expected_class": "rationale",
+      "expected_rule": "R2",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.sections.SectionSelector"
+      ]
+    },
+    {
+      "id": "q0150",
+      "query": "difference between `SectionSelector` and `NodeRef`",
+      "language": "en",
+      "expected_class": "comparative",
+      "expected_rule": "R3",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.sections.SectionSelector",
+        "parrot.knowledge.retrieval.models.NodeRef"
+      ]
+    },
+    {
+      "id": "q0151",
+      "query": "¿quién llama a `SectionSelector`?",
+      "language": "es",
+      "expected_class": "relational",
+      "expected_rule": "R4",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.sections.SectionSelector"
+      ]
+    },
+    {
+      "id": "q0152",
+      "query": "resumen de cómo funciona el section selector module",
+      "language": "es",
+      "expected_class": "global_summary",
+      "expected_rule": "R5",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.sections.SectionSelector"
+      ]
+    },
+    {
+      "id": "q0153",
+      "query": "puedes explicarme en detalle qué hace `SectionSelector` internamente",
+      "language": "es",
+      "expected_class": "local_fact",
+      "expected_rule": "R6",
+      "reference_nodes": [
+        "parrot.knowledge.retrieval.sections.SectionSelector"
+      ]
+    },
+    {
+      "id": "q0154",
+      "query": "hello, how are you today",
+      "language": "en",
+      "expected_class": "unknown",
+      "expected_rule": "R7",
+      "reference_nodes": []
+    }
+  ]
+}

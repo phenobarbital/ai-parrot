@@ -207,7 +207,55 @@ async def test_respects_deadline_sets_truncated(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `RetrievalPolicyProtocol`/`Seed`/`Subgraph` in
+`policies/base.py`, and `DirectSymbolPolicy` (+ `build_node_id_index`,
+`_rationale_children`) in `policies/direct_symbol.py`.
 
-**Completed by**:
-**Date**:
+**Design gap found and resolved (documented, not silently invented):**
+`DerivedSymbolIndex.resolve()` (TASK-2276) returns `NodeRef`s carrying
+only `qualname` (no `node_id`), but `DirectSymbolPolicy` needs the L0
+`node_id` back to fetch `domain_tags` via `reader.get_node()` (for
+lineno/end_lineno/tag/sha1). Resolved by adding
+`build_node_id_index(nodes, symbols) -> dict[(path, qualname), node_id]`
+and a `node_id_by_qualname` field on the policy, using the SAME
+qualname-derivation rule (`symbols.qualname_of(node_id) or node.title`)
+everywhere so seeds AND fabricated rationale-child `NodeRef`s both
+resolve back to their `node_id` consistently. Keyed by `(path, qualname)`
+rather than bare `qualname` to avoid cross-file qualname collisions.
+
+**Private-internals reuse (documented):** `SQLiteGraphReader` exposes no
+public, edge-kind-generic inbound-neighbour method — `children()` is
+CONTAINS-only, `who_extends()` is EXTENDS/DEFINES-only (Odoo). Since
+`EXPLAINS` points `rationale --explains--> symbol`
+(`extractors/code.py:506-512`), finding a symbol's rationale children
+requires an inbound-by-kind traversal that doesn't exist publicly.
+`_rationale_children()` mirrors `who_extends`'s exact
+`self._g.in_edges(idx)` pattern against the reader's already-loaded
+in-memory graph (`reader._g`/`_idx_by_id`/`_payload_by_id`, `# noqa:
+SLF001`) rather than modifying `sqlite_reader.py` (out of scope, spec
+§1.2 — L0 consumed read-only).
+
+Verified against real code, not assumed: read `extractors/code.py:506-512`
+directly to confirm the `EXPLAINS` edge direction before writing the
+traversal, per the task's own warning that getting it backwards yields an
+empty result with no error.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================= 130 passed, 6 warnings in 3.82s ========================
+```
+(9 new tests in `test_direct_symbol_policy.py`, using a real
+`SQLitePersistence`/`SQLiteGraphReader` round-trip and a real temp git
+repo for `read_at_rev` — not mocked.)
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

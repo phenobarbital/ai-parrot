@@ -184,7 +184,49 @@ async def test_uses_async_subprocess_not_blocking(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `WorkspacePin`, `resolve_workspace()` in
+`packages/ai-parrot/src/parrot/knowledge/retrieval/pin.py`, and
+`StalePinError` in the new
+`packages/ai-parrot/src/parrot/knowledge/retrieval/exceptions.py`.
 
-**Completed by**:
-**Date**:
+**Implementation detail worth flagging:** to make `pins` genuinely
+immutable AND `WorkspacePin` genuinely hashable, the field is typed
+`MappingProxyType[str, str]` (not a bare `Mapping[str, str]`) — a bare
+`Mapping` annotation caused Pydantic to coerce the validator's
+`MappingProxyType` output back into a plain `dict` on model construction
+(verified empirically: `type(pin.pins)` was `dict`, and mutation did not
+raise). With the field typed as the concrete `MappingProxyType`, Pydantic
+treats it as an arbitrary type and preserves the validator's output
+untouched — mutation now raises `TypeError`. Because `MappingProxyType`
+itself is not hashable (it wraps a mutable `dict`), `__hash__` is
+overridden explicitly to hash a sorted-items tuple of `pins` instead of
+relying on Pydantic's auto-generated frozen-model hash.
+
+`rev_of()` raises a plain `KeyError` with a clear message (not a new
+exception class) — "a clear, typed error" per the acceptance criterion,
+and `KeyError` is the idiomatic type for a missing-mapping-key lookup.
+
+Left `IndexPinMismatchError` and the index-coherence check strictly to
+TASK-2275, per this task's explicit "NOT in scope" — did not create it
+here even though `exceptions.py` would be a natural home, to avoid
+scope creep into the next task's file.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================== 43 passed, 6 warnings in 1.43s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval` (one arg-type
+error surfaced during development — `resolve_workspace` passing a plain
+`dict` where `MappingProxyType` was expected — fixed by wrapping with
+`MappingProxyType(resolved)` before constructing `WorkspacePin`).
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

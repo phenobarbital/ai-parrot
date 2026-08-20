@@ -223,7 +223,45 @@ def test_deferred_policy_substitution_is_recorded(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `QueryClass`, `GraphStats`, `EscalationStep`,
+`RetrievalRoutingDecision`, and `QueryClassifier` in `classifier.py`. Rule
+table `_RULES` is an ordered tuple of `(rule_id, predicate, QueryClass)`,
+iterated first-match-wins, implementing R1-R7 verbatim from spec §4.3.
 
-**Completed by**:
-**Date**:
+**Field extension (documented):** added `intended_policy: str | None =
+None` to `RetrievalRoutingDecision` beyond the task's literal listed
+fields (`query_class, policy, matched_rule, features, escalations`) —
+required to satisfy the explicit scope requirement "record the
+substitution... do not silently pretend the intended policy ran" for
+classes whose spec-table default policy (RELATIONAL→PPR,
+COMPARATIVE→Steiner, GLOBAL_SUMMARY→Ancestry, RATIONALE→Rationale) is
+deferred past the v1 cut. `None` when no substitution occurred.
+
+`GraphStats`/`RetrievalBudget` are accepted by `classify()` for INV-3
+signature completeness but unused by any v1 rule (all seven rules are
+pure functions of `QueryFeatures`) — explicitly noted in both the
+docstring and via `del stats, budget` to make the non-use visible rather
+than silently unused parameters.
+
+`shadow_mode`: `classify()` always returns the same decision regardless of
+`shadow_mode` — "acting" on a decision (dispatching to a policy) is a
+separate, later concern this task doesn't own; shadow mode only changes
+whether an additional `shadow_mode` log record is emitted, for offline
+calibration per spec §4.5.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================= 106 passed, 6 warnings in 2.42s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

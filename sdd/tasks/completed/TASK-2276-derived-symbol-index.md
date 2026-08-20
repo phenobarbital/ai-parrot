@@ -216,7 +216,43 @@ def test_build_does_no_io(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `DerivedSymbolIndex` in
+`packages/ai-parrot/src/parrot/knowledge/retrieval/symbols.py`. Single
+suffix-indexed dict (`qualname_suffix -> tuple[NodeRef, ...]`) built in one
+pass, registering every dotted suffix of each `SYMBOL` node's derived
+qualname — so both exact full-qualname lookup and trailing-segment lookup
+share one lookup path, and ambiguity (multiple candidates for one suffix)
+is always surfaced as a tuple, never collapsed to one winner.
 
-**Completed by**:
-**Date**:
+**Signature extension (documented):** `build()`'s literal scope signature
+is `build(nodes: Iterable[UniversalNode]) -> DerivedSymbolIndex`, but
+`NodeRef` (TASK-2270) requires `repo`/`rev` fields that no `UniversalNode`
+carries. Added `repo: str` and `rev: str` as required keyword-only
+parameters — the caller (later, `DirectSymbolPolicy`/TASK-2280) supplies
+these from the request's `WorkspacePin`.
+
+Cycle guard: `compute_qualname` tracks the current walk path in a
+`frozenset` and breaks the recursion (falling back to the node's own
+title) if a node reappears on its own ancestor chain — verified by
+`test_cyclic_parent_id_terminates` with a 2-node A↔B cycle.
+
+Cross-check (not override) against L0's one-level
+`domain_tags["qualified_name"]`: logged at `DEBUG` on disagreement,
+derivation always wins, per scope.
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================== 61 passed, 6 warnings in 2.59s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20

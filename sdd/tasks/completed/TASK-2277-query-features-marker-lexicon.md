@@ -195,7 +195,52 @@ def test_deterministic_across_runs(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done — include real command output, not claims.)*
+Implemented `MarkerLexicon`/`CompiledMarkerLexicon`/`Interrogative` in
+`lexicon.py`, and `QueryFeatures`/`extract_features` in `features.py`.
 
-**Completed by**:
-**Date**:
+**Stale contract corrected:** this task's Codebase Contract listed
+`DerivedSymbolIndex.lookup(name, symbol_type=None) -> list[NodeRef]`, but
+TASK-2276 actually implemented `resolve(name, *, symbol_type=None) ->
+tuple[NodeRef, ...]`. Used the real method name/signature (verified by
+reading `symbols.py` directly) rather than the stale contract.
+
+Precompilation: `CompiledMarkerLexicon` compiles every marker group into
+one `re.Pattern` at construction; `DEFAULT_COMPILED_LEXICON` is a
+module-level singleton built once at import — `extract_features` never
+compiles a pattern per call.
+
+`"how does ... work"` (spec §4.2) is a discontinuous template, not a
+literal marker — handled as a separate regex
+(`r"\bhow does\b.*\bwork\b"`), not squeezed into the literal-marker
+alternation.
+
+`has_code_literal` runs against the **raw, case-preserved** query text
+(not the accent-normalized/lowercased form used for markers), since
+CamelCase detection depends on case.
+
+`resolved_symbols`/`anchor_count`: extracted candidate code-literal tokens
+(backtick content, dotted paths, CamelCase, snake_case) are looked up via
+`symbols.resolve()`; results are deduplicated via a dict-as-ordered-set
+keyed on `NodeRef` (frozen + hashable), so `anchor_count` counts *distinct*
+resolved anchors, matching spec §3.5.2's "ambiguity naturally routes... "
+language. Not explicitly in the task's Test Specification stub, but
+required to populate the field — added tests for it
+(`test_resolves_backtick_symbol_to_anchor`,
+`test_no_anchors_when_nothing_resolves`).
+
+**Test output:**
+```
+$ pytest packages/ai-parrot/tests/knowledge/retrieval/ -v
+======================== 87 passed, 6 warnings in 2.49s ========================
+```
+
+**Lint:**
+```
+$ ruff check packages/ai-parrot/src/parrot/knowledge/retrieval/ packages/ai-parrot/tests/knowledge/retrieval/
+All checks passed!
+```
+
+**Mypy:** zero errors attributable to `knowledge/retrieval`.
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-20
