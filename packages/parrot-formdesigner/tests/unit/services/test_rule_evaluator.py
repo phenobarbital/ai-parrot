@@ -769,3 +769,90 @@ class TestSafeOnMissingValues:
         result = await evaluator.resolve(form, {"f1": "not-a-number"})
         assert isinstance(result, RuleResolution)
         assert result.visible["f2"] is False
+
+
+# ---------------------------------------------------------------------------
+# Section-level visibility
+# ---------------------------------------------------------------------------
+
+
+def _gated_form(section_rule: DependencyRule, *fields: FormField) -> FormSchema:
+    """Driver field in an open section, `fields` in a section behind a rule."""
+    form = FormSchema(
+        form_id="test",
+        title="Test",
+        sections=[
+            FormSection(section_id="open", fields=[_field("driver")]),
+            FormSection(section_id="gated", fields=list(fields),
+                        depends_on=section_rule),
+        ],
+    )
+    return resolve_rule_references(form)
+
+
+class TestSectionVisibility:
+    """`FormSection.depends_on` was populated by the designer and the
+    networkninja importer but evaluated by nothing on the server."""
+
+    async def test_unfired_section_hides_its_fields(self) -> None:
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            _field("inside", required=True),
+        )
+
+        res = await RuleEvaluator().resolve(form, {})
+
+        assert res.visible["inside"] is False
+
+    async def test_unfired_section_also_clears_required(self) -> None:
+        """The pairing is the point: FormValidator reads `required`."""
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            _field("inside", required=True),
+        )
+
+        res = await RuleEvaluator().resolve(form, {})
+
+        assert res.required["inside"] is False
+
+    async def test_fired_section_leaves_its_fields_alone(self) -> None:
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            _field("inside", required=True),
+        )
+
+        res = await RuleEvaluator().resolve(form, {"driver": "yes"})
+
+        assert res.visible["inside"] is True
+        assert res.required["inside"] is True
+
+    async def test_section_gate_does_not_unhide_what_a_field_rule_hid(self) -> None:
+        """Section gating only ever hides."""
+        inside = _field("inside", required=True, depends_on=DependencyRule(
+            conditions=[_cond("driver", value="never")], logic="and", effect="show",
+        ))
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            inside,
+        )
+
+        res = await RuleEvaluator().resolve(form, {"driver": "yes"})
+
+        assert res.visible["inside"] is False
+
+    async def test_hide_effect_on_a_section_is_honoured(self) -> None:
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="hide"),
+            _field("inside", required=True),
+        )
+
+        assert (await RuleEvaluator().resolve(form, {"driver": "yes"})).visible["inside"] is False
+        assert (await RuleEvaluator().resolve(form, {})).visible["inside"] is True
+
+    async def test_section_without_a_rule_is_untouched(self) -> None:
+        form = _form(_field("plain", required=True))
+
+        res = await RuleEvaluator().resolve(form, {})
+
+        assert res.visible["plain"] is True
+        assert res.required["plain"] is True

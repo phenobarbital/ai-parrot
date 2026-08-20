@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import uuid
 from typing import Any, Literal, cast
@@ -16,8 +17,14 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict
 
-from ...core.constraints import ConditionOperator, DependencyRule, FieldCondition
+from ...core.constraints import (
+    ConditionOperator,
+    DependencyRule,
+    FieldCondition,
+    FieldConstraints,
+)
 from ...core.options import FieldOption
+from ...core.resolution import resolve_rule_references
 from ...core.schema import (
     FormField,
     FormSchema,
@@ -84,6 +91,59 @@ def _apply_stable_identity(schema: FormSchema, form_uid: uuid.UUID) -> None:
                 )
     for field in schema.iter_fields_recursive():
         field.field_uid = uuid.uuid5(form_uid, f"field:{field.field_id}")
+
+
+def _prune_dangling_rule_references(schema: FormSchema) -> int:
+    """Drop rule conditions that point at a field this import did not build.
+
+    ``question_id_index`` resolves a condition's target through the ACTIVE
+    METADATA, which is a superset of the fields actually built: a question
+    whose ``data_type`` is missing from ``_FIELD_TYPE_MAP`` is skipped, and a
+    column repeated across blocks is imported once. Either way a rule can end
+    up naming a ``field_id`` that does not exist.
+
+    ``resolve_rule_references`` RAISES on such a reference, which would turn a
+    form that merely loses one question into a form that fails to import at
+    all. The importer's own convention is the opposite — ``_map_logic_groups``
+    already skips conditions it cannot resolve — so unresolvable conditions
+    are dropped here to match, and a rule left with nothing is dropped whole
+    (an empty condition list reads as "unconditional" to ``_eval_logic``,
+    which would be a lie).
+
+    No source form triggers this today: all 91 forms in the corpus use only
+    mapped data_types. It is a guard against the next new ``data_type`` at
+    the source turning a partial import into a total failure.
+
+    Mutates ``schema`` in place.
+
+    Args:
+        schema: The freshly built schema.
+
+    Returns:
+        The number of conditions dropped.
+    """
+    known = {f.field_id for f in schema.iter_fields_recursive()}
+    dropped = 0
+
+    def _prune(rule: DependencyRule | None) -> DependencyRule | None:
+        nonlocal dropped
+        if rule is None:
+            return None
+        kept = [
+            c for c in rule.conditions
+            if (c.source or "field") != "field" or (c.field_id or "") in known
+        ]
+        dropped += len(rule.conditions) - len(kept)
+        if not kept:
+            return None
+        rule.conditions = kept
+        return rule
+
+    for section in schema.sections:
+        section.depends_on = _prune(section.depends_on)
+    for field in schema.iter_fields_recursive():
+        field.depends_on = _prune(field.depends_on)
+    return dropped
 
 
 # ---------------------------------------------------------------------------
@@ -451,13 +511,23 @@ class NetworkninjaFormService(AbstractFormService):
                 form_type = FormType.SURVEY
                 break
 
-        # Build sections — each question_block → one FormSection
+        # Build sections — each question_block → one FormSection.
+        #
+        # `seen_columns` is shared across blocks on purpose. The source lets
+        # one column appear in several blocks (on db-form-10-69, columns
+        # 8984/8985/8986 are help notes repeated as a header in blocks 27 and
+        # 28), but field_id is derived from the column and FormSchema rejects
+        # duplicates — so without this the whole import dies with
+        # "Duplicate field_id", which the API surfaces as an opaque HTTP 500.
+        # First occurrence wins; the rest are recorded in the diff report.
+        seen_columns: set[str] = set()
         sections: list[FormSection] = []
         for block in question_blocks:
             section = self._map_block_to_section(
                 block, meta_index, question_id_index, select_options,
                 options_provenance, option_id_catalog,
                 report_entries=report_entries,
+                seen_columns=seen_columns,
             )
             if section is not None:
                 sections.append(section)
@@ -475,6 +545,21 @@ class NetworkninjaFormService(AbstractFormService):
         _apply_stable_identity(
             schema, stable_form_uid(row["formid"], row["orgid"])
         )
+
+        # Rules are authored here against field_id, but FEAT-393 made
+        # field_uid the authoritative reference: `_eval_condition` reads
+        # `resolve_answer(form, condition.field_uid, answers)` and returns
+        # None outright when field_uid is unset, so an unresolved rule is a
+        # rule that can never fire server-side. Resolution has to run AFTER
+        # _apply_stable_identity, because that is what gives the fields the
+        # uids being pointed at.
+        dangling = _prune_dangling_rule_references(schema)
+        if dangling:
+            self.logger.warning(
+                "Dropped %d rule condition(s) in %s pointing at fields this "
+                "import did not build", dangling, schema.form_id,
+            )
+        resolve_rule_references(schema)
         return schema
 
     @staticmethod
@@ -736,12 +821,7 @@ class NetworkninjaFormService(AbstractFormService):
 
         for block in question_blocks:
             # Scan block-level logic groups (question_block_logic_groups)
-            block_logic = (
-                block.get("question_block_logic_groups")
-                or block.get("block_logic_groups")
-                or []
-            )
-            for group in block_logic:
+            for group in self._block_logic_groups(block):
                 _scan_conditions(group.get("conditions") or [])
 
             for question in block.get("questions") or []:
@@ -799,6 +879,27 @@ class NetworkninjaFormService(AbstractFormService):
     # Section and field mapping
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _block_logic_groups(block: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return a block's logic groups under either spelling of the key.
+
+        ``_normalise_question_blocks`` migrates the legacy
+        ``question_block_logic_groups`` key to ``block_logic_groups``, but
+        both readers here also run on blocks that never passed through it
+        (direct unit-test input), so both spellings are accepted.
+
+        Args:
+            block: A single question block dict.
+
+        Returns:
+            The block's logic groups, or an empty list.
+        """
+        return (
+            block.get("block_logic_groups")
+            or block.get("question_block_logic_groups")
+            or []
+        )
+
     def _map_block_to_section(
         self,
         block: dict[str, Any],
@@ -808,6 +909,7 @@ class NetworkninjaFormService(AbstractFormService):
         options_provenance: dict[str, str],
         option_id_catalog: dict[str, dict[str, str]],
         report_entries: list[ImportDiffEntry] | None = None,
+        seen_columns: set[str] | None = None,
     ) -> FormSection | None:
         """Map a question_block dict to a FormSection.
 
@@ -823,6 +925,10 @@ class NetworkninjaFormService(AbstractFormService):
                 ``_build_option_id_catalog``, used to re-index EQUALS
                 conditions.
             report_entries: Optional accumulator for ``ImportDiffEntry`` objects.
+            seen_columns: Columns already imported by an earlier block, mutated
+                in place as this block claims new ones. A column that reappears
+                is skipped, because ``field_id`` is derived from it and
+                ``FormSchema`` rejects duplicates. ``None`` disables the check.
 
         Returns:
             FormSection if the block has at least one mappable field, else None.
@@ -835,6 +941,28 @@ class NetworkninjaFormService(AbstractFormService):
 
         fields: list[FormField] = []
         for question in block.get("questions") or []:
+            col_name = str(question.get("question_column_name", ""))
+            if seen_columns is not None and col_name in seen_columns:
+                self.logger.debug(
+                    "Skipping duplicate column '%s' in block '%s'",
+                    col_name, block_id,
+                )
+                if report_entries is not None:
+                    report_entries.append(ImportDiffEntry(
+                        column_name=col_name,
+                        source_data_type=(
+                            meta_index.get(col_name, {}).get("data_type") or ""
+                        ),
+                        mapped_field_type=None,
+                        status="requiere_intervencion",
+                        note=(
+                            f"column repeated in block '{block_id}' — already "
+                            "imported from an earlier block; this occurrence "
+                            "was dropped to keep field_id unique"
+                        ),
+                    ))
+                continue
+
             field = self._map_question_to_field(
                 question, meta_index, question_id_index, select_options,
                 options_provenance, option_id_catalog,
@@ -842,14 +970,30 @@ class NetworkninjaFormService(AbstractFormService):
             )
             if field is not None:
                 fields.append(field)
+                if seen_columns is not None:
+                    seen_columns.add(col_name)
 
         if not fields:
             return None
+
+        # Section-level conditional visibility. The source keeps it on the
+        # block, in the same shape a question uses, under a different key —
+        # so it goes through the very same translator, via a shim that
+        # renames the key. Dropping it silently is not a cosmetic loss: on
+        # `db-form-10-69` 15 of 17 blocks gate on one "type of visit"
+        # question, and without the rule 277 of 292 fields (234 of them
+        # required) render unconditionally and the form cannot be submitted.
+        section_depends_on = self._map_logic_groups(
+            {"logic_groups": self._block_logic_groups(block)},
+            question_id_index,
+            option_id_catalog,
+        )
 
         return FormSection(
             section_id=section_id,
             title=block_title,
             fields=fields,
+            depends_on=section_depends_on,
         )
 
     def _map_question_to_field(
@@ -940,10 +1084,13 @@ class NetworkninjaFormService(AbstractFormService):
         field_id = f"field_{col_name}"
         label: str = question.get("question_description") or col_name
 
-        # Validations → required flag
+        # Validations → required flag + numeric bounds
         validations: list[dict[str, Any]] = question.get("validations") or []
         required = any(
             v.get("validation_type") == "responseRequired" for v in validations
+        )
+        constraints, unmapped_validations = self._map_validations(
+            validations, field_type
         )
 
         # Conditional logic → DependencyRule
@@ -981,6 +1128,23 @@ class NetworkninjaFormService(AbstractFormService):
                     ),
                     options_source=field_options_source,
                 ))
+            elif unmapped_validations:
+                # A validation the model cannot express is a real loss of
+                # fidelity — reporting it as "mapeado" tells a reviewer the
+                # field came across whole when it did not. Outranks the
+                # "aproximado" render_as hint below: a missing bound changes
+                # what the form accepts, a render hint does not.
+                report_entries.append(ImportDiffEntry(
+                    column_name=col_name,
+                    source_data_type=data_type,
+                    mapped_field_type=field_type.value,
+                    status="requiere_intervencion",
+                    note=(
+                        "validation(s) not representable as FieldConstraints: "
+                        + ", ".join(unmapped_validations)
+                    ),
+                    options_source=field_options_source,
+                ))
             elif is_approximate:
                 report_entries.append(ImportDiffEntry(
                     column_name=col_name,
@@ -1010,8 +1174,77 @@ class NetworkninjaFormService(AbstractFormService):
             required=required,
             depends_on=depends_on,
             options=options,
+            constraints=constraints,
             **extra_kwargs,
         )
+
+    # ------------------------------------------------------------------
+    # Validations
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _map_validations(
+        validations: list[dict[str, Any]],
+        field_type: FieldType,
+    ) -> tuple[FieldConstraints | None, list[str]]:
+        """Translate a question's validations into ``FieldConstraints``.
+
+        ``responseRequired`` is handled by the caller (it maps to the field's
+        own ``required`` flag, not to a constraint). Numeric bounds map here:
+
+        - ``lteValue`` → ``max_value`` directly (inclusive at both ends).
+        - ``ltValue`` on an INTEGER field → ``max_value = value - 1``, which
+          is the exact inclusive equivalent over the integers.
+        - ``ltValue`` on any other numeric field is an EXCLUSIVE bound, and
+          ``FieldConstraints`` has no exclusive maximum. Rather than silently
+          widen the range by treating it as inclusive, it is reported back to
+          the caller as unmapped.
+
+        When several bounds apply to one field the tightest one wins.
+
+        Args:
+            validations: Raw ``validations`` list from the question.
+            field_type: The already-resolved target field type.
+
+        Returns:
+            ``(constraints, unmapped)`` — ``constraints`` is ``None`` when no
+            bound could be derived; ``unmapped`` names the validation types
+            that were understood but could not be represented.
+        """
+        max_value: float | None = None
+        unmapped: list[str] = []
+
+        for validation in validations:
+            vtype = validation.get("validation_type")
+            if vtype == "responseRequired":
+                continue
+
+            raw_value = validation.get("validation_comparison_value")
+            if vtype not in ("ltValue", "lteValue") or raw_value is None:
+                unmapped.append(str(vtype))
+                continue
+
+            try:
+                bound = float(raw_value)
+            except (TypeError, ValueError):
+                unmapped.append(f"{vtype}({raw_value!r})")
+                continue
+
+            if vtype == "ltValue":
+                if field_type is not FieldType.INTEGER:
+                    unmapped.append(f"{vtype} (exclusive bound on {field_type.value})")
+                    continue
+                # Largest integer strictly below `bound`. Plain `bound - 1`
+                # is only right when the threshold is whole: "< 10.5" would
+                # store 9.5 and wrongly reject 10. ceil() handles fractional
+                # and negative thresholds alike ("< -3.5" → -4).
+                bound = math.ceil(bound) - 1
+
+            max_value = bound if max_value is None else min(max_value, bound)
+
+        if max_value is None:
+            return None, unmapped
+        return FieldConstraints(max_value=max_value), unmapped
 
     # ------------------------------------------------------------------
     # Conditional logic
@@ -1057,7 +1290,6 @@ class NetworkninjaFormService(AbstractFormService):
             return None
 
         all_conditions: list[FieldCondition] = []
-        multi_group = len(logic_groups) > 1
 
         for group in logic_groups:
             group_conditions: list[FieldCondition] = []
@@ -1108,12 +1340,33 @@ class NetworkninjaFormService(AbstractFormService):
         if not all_conditions:
             return None
 
-        # Multiple logic_groups → AND between groups (each group acts as OR internally)
-        # Single group with multiple conditions → OR
-        if multi_group:
+        # Multiple groups mean AND — EXCEPT when every group tests the same
+        # field, which makes them alternatives on one answer rather than
+        # independent prerequisites.
+        #
+        # The exception is not a preference, it is satisfiability. A rule
+        # like "visit type == Brand Ambassador AND visit type == Assisted
+        # Sales" can never hold: `_eval_logic` resolves "and" to
+        # all(results), and one select carries one answer, so the element
+        # stays hidden forever. Every multi-group rule on db-form-10-69 (12
+        # blocks, 13 questions) has exactly that shape.
+        #
+        # Sweeping all 91 source forms: 34 multi-group rules test a single
+        # field (alternatives) and 3 span several fields (genuine
+        # prerequisites, e.g. formid 102 orgid 74 gating on four different
+        # questions). Deciding per rule keeps both readings correct.
+        #
+        # Known approximation, pre-existing: groups are flattened into one
+        # flat condition list, so a rule that is multi-group AND multi-
+        # condition-per-group loses the intra-group OR. No source form has
+        # that shape today.
+        referenced_fields = {c.field_id for c in all_conditions}
+        if len(logic_groups) > 1 and len(referenced_fields) > 1:
             top_logic = cast(Literal["and", "or"], "and")
         else:
-            top_logic = cast(Literal["and", "or"], "or" if len(all_conditions) > 1 else "and")
+            top_logic = cast(
+                Literal["and", "or"], "or" if len(all_conditions) > 1 else "and"
+            )
 
         return DependencyRule(
             conditions=all_conditions,
