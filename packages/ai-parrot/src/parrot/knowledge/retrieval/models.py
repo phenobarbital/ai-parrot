@@ -209,6 +209,17 @@ class EvidenceOrigin(StrEnum):
     L2_EXTERNAL = "l2_external"
 
 
+#: The RESERVED subset of `EvidenceOrigin` (spec §3.2, OQ-6): no retrieval
+#: policy may emit any of these until the cross-corpus bridge spec lands.
+#: Imported by the TASK-2272 contract test AND available for any future
+#: runtime admission check — this is the single source of truth for which
+#: origins are reserved, so the reservation can't silently drift out of
+#: sync with `EvidenceOrigin`'s own docstring.
+RESERVED_ORIGINS: frozenset[EvidenceOrigin] = frozenset(
+    {EvidenceOrigin.L2_DOC, EvidenceOrigin.L2_NORM, EvidenceOrigin.L2_EXTERNAL}
+)
+
+
 class Evidence(BaseModel):
     """Provenance for a single retrieved unit, sufficient to attribute it.
 

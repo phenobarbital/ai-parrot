@@ -39,6 +39,7 @@ from parrot.knowledge.retrieval.lexicon import (
     MarkerLexicon,
 )
 from parrot.knowledge.retrieval.models import (
+    RESERVED_ORIGINS,
     ContextBundle,
     ContextUnit,
     EdgeRef,
@@ -57,6 +58,7 @@ from parrot.knowledge.retrieval.pin import (
 )
 from parrot.knowledge.retrieval.policies import (
     DirectSymbolPolicy,
+    RetrievalPolicy,
     RetrievalPolicyProtocol,
     Seed,
     Subgraph,
@@ -90,6 +92,7 @@ __all__ = [
     "DEFAULT_LEXICON",
     "GOTCHA_TAGS",
     "RATIONALE_TAGS",
+    "RESERVED_ORIGINS",
     "CoherenceReport",
     "CompiledMarkerLexicon",
     "ContextBundle",
@@ -112,6 +115,7 @@ __all__ = [
     "QueryClassifier",
     "QueryFeatures",
     "RetrievalBudget",
+    "RetrievalPolicy",
     "RetrievalPolicyProtocol",
     "RetrievalRequest",
     "RetrievalRoutingDecision",
