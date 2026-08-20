@@ -569,25 +569,92 @@ Emit one `RetrievalTrace` per request onto `navigator-eventbus`:
 | OQ-5 | Wiki page granularity | **Retrieval-time section selection**, not generation-time splitting. `SectionSelector` supplied by the classifier | §6.1 |
 | OQ-6 | Ontology bridge forward-compat | **Widened pre-emptively.** `EvidenceOrigin` declares `L2_*` as RESERVED; `schema_version` added to `ContextBundle` | §3.2 |
 
-## 9.1 Remaining open questions
+## 9.1 Remaining open questions — RESOLVED (verified against code 2026-08-20)
 
-1. **`PackageRepoMap` authority.** Derived from `pyproject.toml`, but the
-   ecosystem repos are edited concurrently and declarations drift. Is the map
-   built per-index-run from the pinned revs, or maintained as a separate
-   versioned artifact? Per-run is more correct; separate is more debuggable.
-2. **Section regeneration coherence.** If `CONTRACTS` is `STALE` and
-   `OVERVIEW` is `FRESH`, regenerating only `CONTRACTS` can produce a page whose
-   sections describe different code states. Acceptable, or does a bundle need
-   all-fresh-or-none per page?
-3. **Speculation under cross-repo.** `SpeculationGroup` assumes a shared seed
-   stage, but cross-repo seeding may hit multiple vector stores with different
-   latencies. Does the shared-seed guarantee still hold, or does speculation
-   need disabling for multi-pin workspaces in v1?
-4. **`GOTCHAS` provenance.** Sourced partly from TODO-tagged comments, which are
-   `Rationale` nodes in L0 — but also plausibly from commit messages and
-   reverted diffs, which L0 does not index at all. Scope for v1: comments only?
+| # | Question | Resolution |
+|---|---|---|
+| RQ-1 | `PackageRepoMap` authority | **Built per-index-run from the pinned revs, materialized as a versioned artifact.** The dichotomy is false. |
+| RQ-2 | Section regeneration coherence | **Mixed freshness is acceptable.** Bundle carries `mixed_freshness`; all-fresh-or-none is rejected. |
+| RQ-3 | Speculation under cross-repo | **Disable speculation when `len(pins) > 1` in v1.** |
+| RQ-4 | `GOTCHAS` provenance | **Comments only for v1.** Commit messages need a new L0 extractor (out of scope, §1.2). |
 
----
+### RQ-1 — `PackageRepoMap` authority
+
+Per-index-run **and** debuggable: build the map from the pinned revs during
+the index run, then persist it as an addressable artifact stamped with
+`package_map_version`, mirroring how `weight_table_version` is stamped into
+`WorkspacePin` (§3.4). Per-run gives correctness; the persisted artifact gives
+diffability, so nothing is traded away.
+
+Evidence: no component reads `pyproject.toml` dependency declarations today
+(`parrot/observability/setup.py` is the only file that touches the filename),
+so both options are equally new code — cost is not a tiebreaker. The L0 index
+is *already* a per-run snapshot: `SQLitePersistence` keys the `files` table by
+`(source_uri, mtime, sha1)` and `is_stale()` compares against it
+(`persist_sqlite.py:463`), so per-run derivation is the grain the index already
+uses. Deferred with T8b to v1.1; does not block the v1 cut.
+
+### RQ-2 — Section regeneration coherence
+
+Mixed freshness within a page is **acceptable and must be surfaced**, not
+prevented. Requiring all-fresh-or-none re-imposes exactly the whole-page
+invalidation that §6.1 removed, and would serialise regeneration of the hottest
+pages behind one lock — the failure §6.2's per-`(page_id, section_kind)`
+single-flight exists to avoid.
+
+Rule to implement: each `WikiSection` already declares its own `sources`
+(INV-2). Add a `coherence_group: str` = digest of that section's
+`(node_id, digest)` multiset, and set `ContextBundle.mixed_freshness: bool`
+when the selected sections do not share one. This is consistent with INV-5
+("partial results are flagged, never disguised") and with §6.4 (L1 is not
+authoritative; origin is visible so the consuming agent can weight
+`l1_wiki` below `l0_source`). A bundle whose sections describe different code
+states is therefore honest, not silently wrong.
+
+### RQ-3 — Speculation under cross-repo
+
+`SpeculationGroup` admission gains a third rule: **`len(workspace.pins) == 1`**.
+
+Evidence: the shared-seed guarantee is per-store, and the stores are not
+shared across pins. The dense leg is a single in-process
+`faiss.IndexFlatL2` (`graphindex/embed.py:51`); the lexical leg is a
+**per-tenant** SQLite file (`SQLitePersistence._db_path(ctx)`,
+`persist_sqlite.py:161`) whose FTS5 `nodes_fts` table is local to that file. A
+multi-pin workspace therefore fans the seed stage across N files with N
+independent latency profiles — the same divergence that forced a per-adapter
+`timeout` onto `SearchOrigin` in MultiStoreSearch. Under fan-out the seed stage
+stops being the single cheap thing that speculation amortises, so the §4.4
+cost argument ("one seed plus one extra expansion") no longer holds.
+
+Cost of the rule is zero in v1: T7b (speculation) and T8b (cross-repo) are
+both deferred to v1.1, so the intersection is empty. The rule is written now so
+the contract is decided before either lands.
+
+### RQ-4 — `GOTCHAS` provenance
+
+**Comments only in v1**, sourced entirely from existing L0.
+
+Evidence: `CodeExtractor._DEFAULT_TAGS = {"NOTE", "WHY", "HACK", "TODO",
+"FIXME", "XXX"}` (`extractors/code.py:29`) already emits one
+`NodeKind.RATIONALE` node per tagged comment, carrying `domain_tags["tag"]`
+and an `EdgeKind.EXPLAINS` edge to the nearest enclosing symbol
+(`code.py:494-512`). `GOTCHAS` is therefore a **filter** over material L0
+already produces — `tag in {HACK, TODO, FIXME, XXX}` — with `NOTE`/`WHY`
+routing to `RATIONALE` instead. No new extraction.
+
+Commit messages and reverted diffs are out of reach: `extractors/` contains
+only `code`, `llm`, `loader`, `odoo_code`, `skill` — there is no VCS-history
+extractor, and adding one is an L0 change that §1.2 puts out of scope.
+
+**One L0 defect this exposes.** Rationale nodes are constructed with
+`domain_tags={"tag": tag}` and **no** `lineno`/`end_lineno`
+(`code.py:500`), unlike class and function nodes which carry both
+(`code.py:296-299`, `365-369`). So `Evidence.line_span` is unavoidably `None`
+for precisely the nodes `GOTCHAS` and `RationalePolicy` are built from,
+weakening INV-4 where rationale matters most. Resolution: request the
+two-field L0 fix (it is a one-line change at the emission site) and, until it
+lands, accept `line_span=None` for `RATIONALE`-kind evidence rather than
+degrade the invariant silently — the bundle already distinguishes origins.
 
 ## 10. Task decomposition (input to `/sdd-task`)
 
@@ -627,3 +694,55 @@ Deferred to v1.1 with rationale:
 Note that T9 moved *into* v1 while T10 stayed out. The section model is now a
 core contract (`SectionSelector` is on the retrieval path), so it cannot be
 deferred even though the policy that consumes it can.
+
+---
+
+## 11. Verification against the current codebase (2026-08-20)
+
+Audited on `dev` @ `575e00245`. **Implementation status: none.** The package
+`parrot.knowledge.retrieval` does not exist and 0 of the 25 contract symbols
+named in this spec are present under `packages/`. This spec is also an
+untracked draft: no frontmatter, no reserved `FEAT-` id, no
+`sdd/tasks/index/*.json`, and no predecessor brainstorm/proposal. Run it
+through `/sdd-spec` before `/sdd-task`.
+
+### 11.1 L0 claims that do not hold
+
+These are load-bearing and must be corrected before task decomposition.
+
+| § | Claim as written | Actual code | Impact |
+|---|---|---|---|
+| §4.2 | "Symbol resolution uses the L0 symbol trie already built for `Resolve` — no new index." | `graphindex/resolve.py` is a **cross-domain embedding-similarity** stage that emits `mentions` edges with `Provenance.INFERRED`. There is no trie and no symbol table anywhere in `parrot/`; `qualname` appears zero times in `knowledge/`. | `QueryFeatures.resolved_symbols` and rules R1/R3/R4/R6 have no substrate. T3/T4 must build a symbol index — add it as a task, or restate exact-anchor resolution on top of `SQLiteGraphReader.search_symbols` (FTS5) and accept fuzzier anchoring. |
+| §3.1 | `kind: NodeKind  # reuse L0 enum: Module\|Class\|Function\|Rationale` | `NodeKind` = `DOCUMENT, SECTION, SYMBOL, CONCEPT, RATIONALE, SKILL, WIKI_PAGE, RUN, CLAIM`. Module/class/function granularity lives in `domain_tags["symbol_type"]`, not in the enum. | `NodeRef.kind` cannot round-trip through `NodeKind`. Either widen `NodeRef` to `(kind, symbol_type)` or key it off `domain_tags`. |
+| §3.1 | `repo` and `rev` (mandatory, concrete SHA) | Neither exists on `UniversalNode`, in `UniversalEdge`, in the SQLite schema, or anywhere in the pipeline. No stage captures a git rev. Persistence is partitioned by **tenant**, not repo (`_db_path(ctx)`). | `WorkspacePin.rev_of()` and the whole point-in-time story are unimplementable against today's L0 — yet §1.2 declares L0 out of scope and read-only. **This contradiction must be resolved:** either add a prerequisite L0 spec (capture `repo` + indexed rev) or drop `rev` to advisory. |
+| INV-2 | per-node `(node_id, digest)` closure | Digests exist only at **file** granularity: `files(source_uri, mtime, sha1)` + `is_stale()` (`persist_sqlite.py:463`). `UniversalNode` has no digest field. The existing L1 wiki is the same — `SourceManifestEntry.file_hash` is a per-file SHA-1. | INV-2 as stated cannot be evaluated. Either add node digests to L0, or restate INV-2 at file granularity (coarser invalidation, no section-level win — which undercuts §6.1's "unplanned upside"). |
+| §5.2 | "dense (pgvector HNSW)" | `GraphIndexEmbedder` uses `faiss.IndexFlatL2` in-process (`embed.py:51`). `_persist_to_pgvector()` is a logging stub — *"not yet implemented"* (`embed.py:193-206`). There is no pgvector read path. | No durable or ANN dense index exists. `FlatL2` is exhaustive, so the **p50 < 120 ms** target is unbudgeted at repo scale. Add the pgvector work as an explicit T6 dependency. |
+| §5.4 | "Approximation via GW primal-dual" | `rustworkx` 0.18.1 provides `steiner_tree(graph, terminal_nodes, weight_fn)` — a metric **minimum** Steiner approximation with no node prizes. Prize-collecting is not available. | PCST needs a hand-written GW implementation. T12 is deferred to v1.1, so this is a v1.1 sizing correction, not a blocker. |
+| §6.3 | "Redis lock via the existing eventbus infra" | No Redis lock exists in `knowledge/` or in the eventbus integration. The available primitives are redis-py `.lock()` as used in `auth/oauth2_base.py:519` / `auth/jira_oauth.py:523`, and the file-based `wiki_write_lock()` (`knowledge/wiki/project.py:47`). | Single-flight is feasible but is new code with a different citation. Reword. |
+| §5.3.1 | "**Precondition, currently unmet:** ai-parrot … does not declare `navigator-eventbus` as a dependency." | **Stale — in the spec's favour.** `packages/ai-parrot/pyproject.toml:133` declares `navigator-eventbus>=0.2.1`, plus a `navigator-eventbus[grpc]` extra (line 492), and it is imported across `parrot/core/events/` and `parrot/core/hooks/`. No vendored bus remains under `parrot/`. | T8b's stated blocker no longer exists. Re-evaluate whether cross-repo edges still need to wait for v1.1. |
+
+### 11.2 L0 claims that hold
+
+- **FTS5/BM25** — real: `nodes_fts` virtual table (`persist_sqlite.py:78`), queried by `SQLiteGraphReader.search_symbols()` via `bm25(nodes_fts)` (`sqlite_reader.py:323-344`). Two caveats: it indexes **title + summary only, not bodies**, and it exists only on the SQLite backend, not ArangoDB.
+- **RRF** — real and reusable: `knowledge/pageindex/hybrid_search.py::_rrf_fuse` (line 277) and `interfaces/vector.py:211-223`.
+- **PPR on rustworkx** — viable: the graph is a `rustworkx.PyDiGraph` (`assemble.py:37`) and `rustworkx.pagerank()` accepts `personalization=`.
+- **Line spans** — present for symbol nodes as `domain_tags["lineno"/"end_lineno"]` (`code.py:296-299`, `365-369`), readable via `SQLiteGraphReader._read_span()`. Absent for `RATIONALE` nodes — see RQ-4.
+- **Odoo `EXTENDS`** — real: `odoo_code.py:339` emits `EdgeKind.EXTENDS` per `_inherit`/`_inherits`. §5.3's per-repo weighting justification is factually correct.
+- **Session pinning precedent** — real: `parrot-session:/<run_id>` (`dev_loop/session_state.py:97`) over a reducer with a discriminated union of action classes (`session_state.py:397+`). `RefreshWorkspace` itself is new but fits the existing model.
+- **Eventbus for §8** — real and already imported for lifecycle events.
+- **Supersedes** — accurate: `GRAPH_REPORT.md` is produced by `graphindex/builder.py` + `projection.py` and injected through `KNOWLEDGE_LAYER` (`bots/prompts/layers.py:181`).
+
+### 11.3 Undeclared overlap with shipped work
+
+The spec reads as greenfield, but a four-phase graph retriever already shipped
+and this spec neither cites nor supersedes it.
+
+- **FEAT-217 `graph-expanded-retrieval`** — complete (TASK-1565…1569 all `done`, `completed_at` 2026-06-16). `GraphExpandedRetriever.search()` in `knowledge/graphindex/retriever.py` runs seed → expand → community-annotate → assemble, with `ExpansionConfig` (`max_hops`, `decay_base`, `min_signal_threshold`, `max_expanded_nodes`, `allowed_edge_kinds`), `BudgetConfig` (`max_tokens`, `tokens_per_node_estimate`), `ScoredNode`, `GraphRetrievalResult`. Tests: `tests/knowledge/graphindex/test_retriever.py`.
+- **FEAT-379 `GraphIndexOrigin`** — already exposes that pipeline as a MultiStoreSearch origin with an optional FTS leg and per-adapter timeout, i.e. part of the "`GraphRetrieverToolkit`" §1.2 defers.
+- **`SignalRelevanceConfig.edge_kind_weights: dict[EdgeKind, float]`** (`signals.py:104`) is already an edge-weight table — global and unversioned, and its validator **enforces that weights sum to 1.0** (`signals.py:123-133`). `EdgeWeightTable` (§5.3) imposes no such constraint, so it cannot be dropped into the existing signal scorer unchanged.
+
+Consequences for §5 and §10:
+
+1. Frame the policies as a **refactor of `GraphExpandedRetriever`** into the four-stage protocol, not as new implementations. §5's protocol maps onto the existing phases; what is genuinely missing is `prune`, the classifier, deadline-aware budgeting, and `Evidence`/attribution.
+2. State the relationship between `PersonalizedPageRankPolicy` (§5.3) and the shipped signal-relevance decay expansion — PPR replaces or wraps it, and the spec must say which.
+3. **Name collision:** `RoutingDecision` is already taken by `parrot/bots/mixins/intent_router.py` (LLM intent routing). Rename to `RetrievalRoutingDecision`.
