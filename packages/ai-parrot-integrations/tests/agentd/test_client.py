@@ -98,6 +98,31 @@ class TestClient:
 
         assert result == {"pong": True}
 
+    async def test_call_large_response(self, scripted_server):
+        """Regression: responses larger than asyncio's 64 KiB StreamReader
+        default must not kill the reader task (ConnectionClosed). The client
+        must honor its 10 MB application-level line limit end to end."""
+        big_payload = "x" * (128 * 1024)  # > 64 KiB StreamReader default
+
+        def big_handler(request):
+            return [
+                {
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {"artifact": big_payload},
+                }
+            ]
+
+        scripted_server.script["big"] = big_handler
+
+        client = await AgentDaemonClient.connect(scripted_server.socket_path)
+        try:
+            result = await client.call("big")
+        finally:
+            await client.close()
+
+        assert result == {"artifact": big_payload}
+
     async def test_error_mapping(self, scripted_server):
         def bad_handler(request):
             return [

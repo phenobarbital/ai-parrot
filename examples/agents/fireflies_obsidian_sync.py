@@ -85,14 +85,10 @@ async def main():
             # Get the first synced note to analyze
             existing_notes = await agent._get_existing_meeting_titles()
             # Sort descending so the most recent meeting comes first
-            if sorted_notes := sorted(existing_notes, reverse=True):
-                recent_note = sorted_notes[0]
-            else:
-                # Pick the first one
-                recent_note = list(existing_notes)[0]
+            sorted_notes = sorted(existing_notes, reverse=True)
+            recent_note = sorted_notes[0] if sorted_notes else None
 
             if recent_note:
-
                 analysis = await agent.summarize_transcript(
                     note_title=recent_note,
                     granularity="standard",  # minimal | standard | detailed

@@ -74,6 +74,25 @@ class TestServer:
         assert response["result"] == {"pong": True, "echo": {"x": 1}}
         assert response.get("error") is None
 
+    async def test_large_request_roundtrip(self, server):
+        """Regression: requests larger than asyncio's 64 KiB StreamReader
+        default must reach the handler — the server must size its reader to
+        `max_line_bytes` (10 MB), not the asyncio default."""
+        big_payload = "x" * (128 * 1024)  # > 64 KiB StreamReader default
+        reader, writer = await asyncio.open_unix_connection(
+            path=str(server.socket_path), limit=server.max_line_bytes
+        )
+        try:
+            await _send_request(
+                writer, id_=10, method="ping", params={"blob": big_payload}
+            )
+            response = await _recv_line(reader)
+        finally:
+            writer.close()
+
+        assert response["id"] == 10
+        assert response["result"] == {"pong": True, "echo": {"blob": big_payload}}
+
     async def test_unknown_method_32601(self, server):
         reader, writer = await asyncio.open_unix_connection(
             path=str(server.socket_path)

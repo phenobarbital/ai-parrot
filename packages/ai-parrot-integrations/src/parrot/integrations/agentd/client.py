@@ -149,6 +149,7 @@ class AgentDaemonClient:
         *,
         retries: int = 3,
         backoff: float = 0.5,
+        max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
         on_event: Callable[[str, dict[str, Any]], Any] | None = None,
     ) -> AgentDaemonClient:
         """Connect to a daemon's UDS socket, retrying with a fixed backoff.
@@ -158,6 +159,9 @@ class AgentDaemonClient:
             retries: Number of connection attempts before giving up.
             backoff: Seconds to sleep between attempts (survives a
                 `systemctl restart` window).
+            max_line_bytes: NDJSON line-size limit; also sizes the
+                `StreamReader` buffer, which otherwise defaults to 64 KiB
+                and kills the reader task on any response larger than that.
             on_event: Optional `event.*` notification callback.
 
         Returns:
@@ -179,9 +183,14 @@ class AgentDaemonClient:
                 # correctly. Agent replies carrying a structured artifact,
                 # or a bridged tool result (FEAT-434), routinely exceed it.
                 reader, writer = await asyncio.open_unix_connection(
-                    path=str(socket_path), limit=DEFAULT_MAX_LINE_BYTES
+                    path=str(socket_path), limit=max_line_bytes
                 )
-                return cls(reader, writer, on_event=on_event)
+                return cls(
+                    reader,
+                    writer,
+                    max_line_bytes=max_line_bytes,
+                    on_event=on_event,
+                )
             except OSError as exc:
                 last_exc = exc
                 if attempt < retries:
