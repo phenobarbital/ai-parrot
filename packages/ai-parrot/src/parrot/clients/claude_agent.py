@@ -311,11 +311,50 @@ class ClaudeAgentClient(AbstractClient):
         self.default_run_options: ClaudeAgentRunOptions = (
             run_options or ClaudeAgentRunOptions()
         )
+        # Maps an ai-parrot session id to the CLI's OWN session id, so a
+        # second turn on the same conversation resumes instead of trying to
+        # re-create a session the CLI already has. See _cli_session_for().
+        self._cli_sessions: Dict[str, str] = {}
         super().__init__(**kwargs)
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _cli_session_for(self, session_id: Optional[str]) -> Optional[str]:
+        """Return the CLI session to resume for an ai-parrot session id.
+
+        Args:
+            session_id: The ai-parrot conversation id, if any.
+
+        Returns:
+            The CLI's session id when this conversation already has one, else
+            ``None`` (meaning: create a new CLI session).
+        """
+        if not session_id:
+            return None
+        return self._cli_sessions.get(session_id)
+
+    def _remember_cli_session(
+        self, session_id: Optional[str], messages: List[Any]
+    ) -> None:
+        """Record the CLI session id the SDK reported for this conversation.
+
+        The CLI assigns its own session id, which is NOT the one passed in
+        via ``session_id`` — resuming with the wrong one fails — so the id is
+        read back off the message stream.
+
+        Args:
+            session_id: The ai-parrot conversation id, if any.
+            messages: The SDK message stream just collected.
+        """
+        if not session_id:
+            return
+        for message in reversed(messages):
+            cli_session = getattr(message, "session_id", None)
+            if isinstance(cli_session, str) and cli_session:
+                self._cli_sessions[session_id] = cli_session
+                return
 
     def _build_options(
         self,
@@ -412,10 +451,13 @@ class ClaudeAgentClient(AbstractClient):
             kwargs["strict_mcp_config"] = merged.strict_mcp_config
         if merged.extra_args is not None:
             kwargs["extra_args"] = dict(merged.extra_args)
-        if session_id is not None:
-            kwargs["session_id"] = session_id
+        # `resume` and `session_id` are mutually exclusive on the CLI, and
+        # `resume` is what continues a conversation, so it wins. Passing both
+        # (as resume() used to) makes the CLI exit 1 on every resume.
         if resume_id is not None:
             kwargs["resume"] = resume_id
+        elif session_id is not None:
+            kwargs["session_id"] = session_id
 
         # FEAT-434: bridge the agent's registered ToolManager tools to the
         # sub-agent as an in-process SDK-MCP server, unless disabled via
@@ -580,11 +622,18 @@ class ClaudeAgentClient(AbstractClient):
             )
             effective_run_options.expose_parrot_tools = False
 
+        # A conversation's SECOND turn must resume: the CLI's --session-id
+        # only ever CREATES a session, and handing it one it already knows
+        # makes it exit 1. Without this, any caller holding one conversation
+        # open — `parrot attach`, an agentd `chat.send` connection — died on
+        # its second message.
+        resume_id = self._cli_session_for(session_id)
         options = self._build_options(
             run_options=effective_run_options,
             model=resolved_model,
             system_prompt=system_prompt,
-            session_id=session_id,
+            session_id=None if resume_id else session_id,
+            resume_id=resume_id,
             prompt=prompt,
         )
 
@@ -601,6 +650,7 @@ class ClaudeAgentClient(AbstractClient):
         _lc_t0_ca = _lc_time_ca.perf_counter()
 
         messages = await self._collect_messages(prompt, options=options)
+        self._remember_cli_session(session_id, messages)
 
         ai_message = AIMessageFactory.from_claude_agent(
             messages=messages,
@@ -661,11 +711,18 @@ class ClaudeAgentClient(AbstractClient):
         """
         query, _, _ = _import_sdk()
         resolved_model = self._resolve_model(model, self._default_model)
+        # A conversation's SECOND turn must resume: the CLI's --session-id
+        # only ever CREATES a session, and passing an id it already knows
+        # makes it exit 1 ("Invalid session ID" / already exists). Without
+        # this, any client holding one conversation open — `parrot attach`,
+        # an agentd `chat.send` connection — died on the second message.
+        resume_id = self._cli_session_for(session_id)
         options = self._build_options(
             run_options=run_options,
             model=resolved_model,
             system_prompt=system_prompt,
-            session_id=session_id,
+            session_id=None if resume_id else session_id,
+            resume_id=resume_id,
         )
         async for msg in query(prompt=prompt, options=options):
             yield msg
@@ -823,7 +880,7 @@ class ClaudeAgentClient(AbstractClient):
         del state  # accepted for AbstractClient parity
         turn_id = str(uuid.uuid4())
         options = self._build_options(
-            resume_id=session_id, session_id=session_id, prompt=user_input
+            resume_id=session_id, prompt=user_input
         )
         messages = await self._collect_messages(user_input, options=options)
         return AIMessageFactory.from_claude_agent(
