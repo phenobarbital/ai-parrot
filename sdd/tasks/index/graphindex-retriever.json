@@ -297,7 +297,7 @@
       "feature_id": "FEAT-435",
       "feature": "graphindex-retriever",
       "spec": "sdd/specs/graphindex-retriever.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -308,8 +308,8 @@
       "parallelism_notes": "Consumes the classifier and at least one seeding policy; must follow both. It is also the gate that unblocks the deferred T6b/T7b/T8 decisions.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:18:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2284-eval-harness-golden-set.md"
+      "completed_at": "2026-08-20T02:47:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2284-eval-harness-golden-set.md"
     }
   ]
 }
