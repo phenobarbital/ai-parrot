@@ -16,7 +16,7 @@ land so downstream code can do ``from parrot.knowledge.retrieval import X``.
 """
 
 from parrot.knowledge.retrieval.digest import DigestScope, derive_digest
-from parrot.knowledge.retrieval.exceptions import StalePinError
+from parrot.knowledge.retrieval.exceptions import IndexPinMismatchError, StalePinError
 from parrot.knowledge.retrieval.models import (
     ContextBundle,
     ContextUnit,
@@ -27,20 +27,30 @@ from parrot.knowledge.retrieval.models import (
     RetrievalBudget,
     RetrievalRequest,
 )
-from parrot.knowledge.retrieval.pin import WorkspacePin, resolve_workspace
+from parrot.knowledge.retrieval.pin import (
+    CoherenceReport,
+    WorkspacePin,
+    check_pin_coherence,
+    read_at_rev,
+    resolve_workspace,
+)
 
 __all__ = [
+    "CoherenceReport",
     "ContextBundle",
     "ContextUnit",
     "DigestScope",
     "EdgeRef",
     "Evidence",
     "EvidenceOrigin",
+    "IndexPinMismatchError",
     "NodeRef",
     "RetrievalBudget",
     "RetrievalRequest",
     "StalePinError",
     "WorkspacePin",
+    "check_pin_coherence",
     "derive_digest",
+    "read_at_rev",
     "resolve_workspace",
 ]
