@@ -701,6 +701,76 @@ Registered compression codec 'json_compact' -> parrot.tools.compression.codecs.j
 # registry: packages/ai-parrot/src/parrot/tools/compression/protocol.py:108
 ```
 
+#### Compression is already inside execute_tool() (resolves follow-up 1)
+
+```python
+# From packages/ai-parrot/src/parrot/tools/manager.py:11-14
+from .compression import CompressionStage, CompressorRegistry
+from .compression import codecs as _compression_codecs  # import side effect: registers built-ins
+from .compression.budget import BudgetRouter
+from .compression.tee import CompressionTee
+# line 303-313: FEAT-380 pipeline, loaded once per manager;
+#   self._compression_registry: CompressorRegistry = CompressorRegistry.load()
+#   _compression_tee starts unbound and is (re)bound lazily inside execute_tool()
+#   via _bind_compression_tee()
+# CompressorRegistry.resolve(tool_name) -> CompressorEntry | None   (registry.py:174)
+#   match precedence: exact tool_name key > glob pattern (longest wins)
+# Manifest source precedence (registry.py:36):
+#   1. project .parrot/compressors.toml  2. package manifest  3. core default
+```
+
+```toml
+# From packages/ai-parrot/src/parrot/tools/compression/compressors.toml
+[compressor."dq_execute_database_query"]
+codec = "columnar"
+level = "normal"
+tee = true
+[compressor."dq_execute_database_query".params]
+min_rows = 20              # <- the "shape of the data" sensitivity lives here
+
+[compressor."*"]
+codec = "json_compact"
+level = "minimal"
+```
+
+Consequence for this feature: **nothing to build.** Dispatching through
+`execute_tool()` means bridged results inherit the pipeline; the only rule is
+not to shortcut it.
+
+#### Narrowing signal reality check (blocks follow-up 5)
+
+```python
+# From packages/ai-parrot/src/parrot/tools/manager.py:524
+def search_tools(self, query: str, limit: int = 15) -> str:
+    """Search for tools by name or description.
+    Returns: JSON string list of matching tools with descriptions"""
+    query = query.lower().strip()
+    matches = []
+    for name, tool in self._tools.items():
+        if name == "search_tools":
+            continue
+        desc = tool.description if hasattr(tool, "description") else ...
+        if query in name.lower() or query in desc.lower():      # substring, not relevance
+            matches.append({"name": name, "description": desc})
+    matches.sort(key=lambda x: x["name"])                        # ALPHABETICAL, not ranked
+    matches = matches[:limit]
+    if not matches:
+        return f"No tools found matching '{query}'. Try a different search term."
+    return json.dumps(matches, indent=2)                         # a STRING, for an LLM to read
+```
+
+Three properties make it unusable as a programmatic selector as-is:
+
+1. **No ranking.** It is a case-insensitive substring test, then an
+   alphabetical sort. Nothing scores relevance.
+2. **Wrong return type.** A JSON string intended for an LLM's eyes, not a list
+   of `AbstractTool` objects the bridge could hand to `create_sdk_mcp_server()`.
+3. **No caller.** With `ClaudeAgentClient` as the bot's LLM there is no second
+   "primary" model to invoke it. The bridge assembles the tool list in
+   `_build_options()`, before the turn begins, holding only the raw prompt —
+   and passing a whole prompt as `query` to a substring matcher matches
+   essentially nothing.
+
 ### Does NOT Exist (Anti-Hallucination)
 
 Verified absent by introspection on 2026-08-20 — do not assume any of these:
@@ -737,6 +807,12 @@ Verified absent by introspection on 2026-08-20 — do not assume any of these:
 - ~~`ClaudeAgentRunOptions.timeout`~~ / ~~`.tool_timeout`~~ — no per-tool
   timeout field exists; `max_turns` and `max_budget_usd` are the only run
   ceilings today.
+- ~~`ToolManager.search_tools()` returns ranked tools~~ — it returns a **JSON
+  string**, matched by substring and sorted **alphabetically**
+  (manager.py:524). There is no relevance ranking anywhere in `ToolManager`.
+- ~~A shape-detecting codec selector~~ — codec choice is declarative per tool
+  name in `compressors.toml`; shape sensitivity lives in codec *params*
+  (`min_rows`), not in a runtime dispatcher.
 
 ---
 
@@ -833,17 +909,49 @@ Verified absent by introspection on 2026-08-20 — do not assume any of these:
   bridged result before it crosses into the sub-agent's context.
 
 ### Follow-up questions raised by these answers
-- [ ] Which compression codec is selected for a bridged result, and on what
+
+- [x] Which compression codec is selected for a bridged result, and on what
   signal — result shape (tabular → `columnar`), size threshold, or per-tool
-  declaration? — *Owner: Jesus*
-- [ ] What is the fixed service identity's `user_id` / `tenant_id` / `roles`
+  declaration? — *Owner: Jesus*: **keep exactly what exists today, driven by
+  the shape of the data.** This turns out to need *no bridge-side work at all*:
+  the compression pipeline (FEAT-380) already runs **inside**
+  `ToolManager.execute_tool()`, and the bridge dispatches through that method,
+  so bridged results are compressed by the same machinery as every other tool
+  call. The selection is declarative per tool name via `compressors.toml`
+  (precedence: project `.parrot/compressors.toml` > package manifest > core
+  default), with shape sensitivity expressed in codec *params* — e.g.
+  `columnar` is bound to `dq_execute_database_query` with `min_rows = 20`, so
+  it engages only when the payload really is a wide row set; everything else
+  falls to the `"*"` wildcard (`json_compact`, level `minimal`). The single
+  requirement is therefore negative: **do not bypass `execute_tool()`**, which
+  is already a hard constraint of the recommended option.
+- [x] What is the fixed service identity's `user_id` / `tenant_id` / `roles`
   when `SO_PEERCRED` is unavailable, and should a `ConfirmationGuard` window
   ever be honoured for it (or must the service identity always re-confirm)? —
-  *Owner: Jesus*
-- [ ] Capturing `SO_PEERCRED` means touching `agentd/server.py`
+  *Owner: Jesus*: **build it from environment variables with defaults.** The
+  fallback identity is configured (display name along the lines of
+  `"parrot agent server"`, `user_id` defaulting to `1001`) rather than
+  hard-coded at the call site, so a deployment can distinguish its service
+  identities. Whether that identity may hold a confirmation window is left to
+  the spec to state explicitly — see the remaining open question below.
+- [x] Capturing `SO_PEERCRED` means touching `agentd/server.py`
   (`_handle_connection`) to carry caller identity onto the `Session` — is that
   in scope for this feature, or a prerequisite feature of its own? —
-  *Owner: Jesus*
-- [ ] Which narrowing signal drives exposure — the agent's tool categories,
-  an explicit per-agent budget (N tools max), or the same `search_tools`
-  relevance ranking the primary LLM uses? — *Owner: Jesus*
+  *Owner: Jesus*: **in scope for this feature.** `agentd/server.py` is part of
+  the change set: `_handle_connection` reads the peer credentials and the
+  identity travels on the `Session` so `execute_tool()` receives a real
+  `PermissionContext`.
+- [ ] Does the fixed service identity get a `ConfirmationGuard` window, or must
+  it re-confirm every destructive call? A shared window keyed on a shared
+  `user_id` means one human's approval can unlock a later call made on behalf
+  of somebody else. — *Owner: Jesus*
+- [ ] **Narrowing signal — needs a re-decision.** The answer given was "the
+  primary LLM's `search_tools` ranking", but that mechanism does not exist in
+  the form implied. Two findings block it, see Code Context → Narrowing signal
+  reality check:
+  (a) `ToolManager.search_tools()` is not a ranking — plain substring match,
+      alphabetical sort, returns a JSON *string* built for an LLM to read;
+  (b) with `ClaudeAgentClient` as the bot's LLM there is no separate "primary
+      LLM" to do the searching, and the tool list must be built *before* the
+      turn starts, when only the raw prompt is available.
+  — *Owner: Jesus*
