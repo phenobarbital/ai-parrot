@@ -331,7 +331,7 @@ that its HITL channel targets the agentd console rather than the
 
 ### Unit Tests
 
-`packages/ai-parrot/tests/clients/test_claude_agent_bridge.py`
+`tests/clients/test_claude_agent_bridge.py`
 
 ```python
 def test_no_tool_manager_injects_no_server(): ...
@@ -348,7 +348,7 @@ def test_sdk_missing_does_not_break_module_import(): ...
 def test_exposed_names_use_mcp_ns_prefix(): ...
 ```
 
-`packages/ai-parrot/tests/clients/test_claude_agent.py` (extend the existing 20)
+`tests/clients/test_claude_agent.py` (extend the existing 20)
 
 ```python
 def test_allowed_tools_gains_exposed_parrot_names(): ...
@@ -358,7 +358,7 @@ def test_prompt_threaded_into_build_options_from_all_four_surfaces(): ...
 def test_expose_parrot_tools_false_disables_bridge(): ...
 ```
 
-`packages/ai-parrot/tests/tools/test_tool_ranker.py`
+`packages/ai-parrot/tests/test_toolmanager_ranker.py`
 
 ```python
 def test_rank_tools_orders_by_relevance_not_alphabetically(): ...
@@ -380,7 +380,7 @@ def test_permission_context_reaches_execute_tool(): ...
 
 ### Integration Tests
 
-`packages/ai-parrot/tests/integration/test_claude_agent_tool_bridge.py`
+`tests/integration/test_claude_agent_tool_bridge.py`
 (marked `@pytest.mark.live`, skipped without the `[claude-agent]` extra and an
 authenticated CLI — mirrors the existing `test_claude_agent_live_smoke` guard)
 
@@ -452,7 +452,7 @@ async def uds_peer(): ...
       `claude_agent_sdk` installed; the failure surfaces only on use.
 - [ ] Parrot never re-executes the sub-agent's `tool_calls` — they are telemetry
       only.
-- [ ] `pytest packages/ai-parrot/tests/clients/ packages/ai-parrot/tests/tools/
+- [ ] `pytest tests/clients/ packages/ai-parrot/tests/tools/
       packages/ai-parrot-integrations/tests/agentd/ -v` passes; the pre-existing
       `dev` failure count in the wider suite is not increased.
 - [ ] `ruff check` introduces no new findings in the touched files.
@@ -780,6 +780,18 @@ Verified absent by introspection on 2026-08-20 — do not assume any of these:
   `packages/ai-parrot/tests/bots` + `tests/clients` run has a pre-existing
   baseline of 101 failed / 1381 passed / 9 skipped / 3 errors on `dev`; the bar
   is not increasing that count.
+- **Two test trees — migration residue.** `ai-parrot` was a single package with
+  its tests at the repo root before the uv monorepo split; many tests were copied
+  or moved into `packages/*/tests/` and the originals stayed. A module can exist
+  in both trees and **the monorepo path is not automatically the current one**.
+  For this feature: `tests/clients/test_claude_agent.py` (root) is canonical (20
+  cases, live smoke at :378, touched 2026-08-20), while
+  `packages/ai-parrot/tests/clients/test_claude_agent.py` is a separate older
+  module (2026-04-27, 8 tests) whose `TestBuildOptionsForwardsExtensions`
+  guards the very `_build_options` merge block this feature edits. `ToolManager`
+  tests live flat at `packages/ai-parrot/tests/test_toolmanager_*.py`. Check both
+  trees before creating or editing a test file — editing the stale copy leaves
+  the real suite untouched.
 - **`dev` is shared between sessions.** Stage explicit paths, never
   `git add -A`; a concurrent `commit -a` elsewhere has already swept
   uncommitted work once during this initiative.
