@@ -521,9 +521,102 @@ class ToolManager(MCPToolManagerMixin):
 
     # ── Tool Search ────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _tool_description(tool: Any) -> str:
+        """Extract a tool's description, mirroring legacy search_tools() semantics.
+
+        Args:
+            tool: Registered tool instance (``ToolDefinition`` or
+                ``AbstractTool``); a plain ``dict`` is handled defensively
+                even though ``register_tool()`` always converts dicts into
+                ``ToolDefinition`` before storage.
+
+        Returns:
+            The tool's description, or an empty string when unavailable.
+        """
+        if hasattr(tool, 'description'):
+            return tool.description or ""
+        elif isinstance(tool, dict):
+            return tool.get('description', '') or ""
+        return ""
+
+    @staticmethod
+    def _lexical_relevance_score(query: str, name: str, description: str) -> float:
+        """Score a tool's relevance to `query` via lexical (token) overlap.
+
+        Deliberately dependency-free: no embeddings, so this stays usable at
+        the core layer (spec §8 — embeddings would pull in
+        ``ai-parrot-embeddings``, which package boundaries discourage).
+
+        Args:
+            query: Lowercased, stripped search/relevance query.
+            name: Tool name (compared lowercased).
+            description: Tool description (compared lowercased).
+
+        Returns:
+            A non-negative relevance score; 0.0 means no lexical overlap at
+            all with either the name or the description.
+        """
+        name_l = name.lower()
+        desc_l = description.lower()
+        score = 0.0
+
+        if query and query in name_l:
+            score += 10.0
+        if query and query in desc_l:
+            score += 5.0
+
+        for token in (t for t in query.split() if t):
+            if token in name_l:
+                score += 2.0
+            if token in desc_l:
+                score += 1.0
+
+        return score
+
+    def rank_tools(self, query: str, limit: int = 15) -> list[tuple[float, Any]]:
+        """Rank registered tools by relevance to `query`, best first.
+
+        Replaces the substring-match + alphabetical-sort behaviour that
+        `search_tools()` implemented inline; `search_tools()` now formats
+        this method's output as JSON for LLM consumption. Scoring is purely
+        lexical (token overlap over tool name + description); ties are
+        broken deterministically by name so results are stable across calls
+        and safe to cache.
+
+        Args:
+            query: Relevance query (e.g. the turn's prompt).
+            limit: Maximum number of ranked tools to return.
+
+        Returns:
+            List of `(score, tool)` tuples, best score first. `tool` is the
+            raw registered object (`ToolDefinition` or `AbstractTool`), the
+            tool literally named `search_tools` is always excluded.
+        """
+        query_norm = query.lower().strip()
+
+        scored: list[tuple[float, str, Any]] = []
+        for name, tool in self._tools.items():
+            if name == "search_tools":
+                continue
+
+            description = self._tool_description(tool)
+            score = self._lexical_relevance_score(query_norm, name, description)
+            scored.append((score, name, tool))
+
+        # Best score first; deterministic tie-break by name.
+        scored.sort(key=lambda item: (-item[0], item[1]))
+
+        return [(score, tool) for score, _name, tool in scored[:limit]]
+
     def search_tools(self, query: str, limit: int = 15) -> str:
         """
         Search for tools by name or description.
+
+        Thin JSON-formatting wrapper over `rank_tools()` (FEAT-434): results
+        are now relevance-ordered instead of alphabetically ordered — flagged
+        in the changelog — but the return type, JSON shape, and no-match
+        message are unchanged.
 
         Args:
             query: Search query
@@ -532,33 +625,20 @@ class ToolManager(MCPToolManagerMixin):
         Returns:
             JSON string list of matching tools with descriptions
         """
-        query = query.lower().strip()
-        matches = []
+        query_norm = query.lower().strip()
+        ranked = self.rank_tools(query_norm, limit)
 
-        for name, tool in self._tools.items():
-            if name == "search_tools":
-                continue
-
-            # Get description
-            desc = ""
-            if hasattr(tool, 'description'):
-                desc = tool.description
-            elif isinstance(tool, dict):
-                desc = tool.get('description', '')
-
-            # Check match
-            if query in name.lower() or query in desc.lower():
-                matches.append({
-                    "name": name,
-                    "description": desc
-                })
-
-        # Sort by name and limit
-        matches.sort(key=lambda x: x['name'])
-        matches = matches[:limit]
+        matches = [
+            {
+                "name": getattr(tool, "name", ""),
+                "description": self._tool_description(tool),
+            }
+            for score, tool in ranked
+            if score > 0
+        ]
 
         if not matches:
-            return f"No tools found matching '{query}'. Try a different search term."
+            return f"No tools found matching '{query_norm}'. Try a different search term."
 
         import json
         return json.dumps(matches, indent=2)
