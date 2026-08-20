@@ -56,6 +56,20 @@ def test_rejects_naive_datetime() -> None:
         )
 
 
+def test_rejects_symbolic_pin_revs() -> None:
+    """Regression (code review): direct `WorkspacePin` construction (not
+    going through `resolve_workspace`) had no rev-format guard, unlike
+    `NodeRef.rev`'s own validator for the identical invariant."""
+    for bad_rev in ("HEAD", "head", "main", "dev", "staging", "v1.0"):
+        with pytest.raises(ValidationError):
+            WorkspacePin(
+                primary="ai-parrot",
+                pins={"ai-parrot": bad_rev},
+                pinned_at=datetime.now(UTC),
+                weight_table_version="v1",
+            )
+
+
 def test_rev_of_returns_pinned_sha() -> None:
     pin = _sample_pin()
     assert pin.rev_of("ai-parrot") == "a1b2c3d"

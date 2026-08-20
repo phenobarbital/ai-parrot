@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +26,14 @@ from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.retrieval.exceptions import IndexPinMismatchError, StalePinError
 
 logger = logging.getLogger(__name__)
+
+#: A concrete git SHA: 7-40 hex characters — same shape `NodeRef.rev`
+#: validates (spec §3.1/§3.4: "rev is a concrete SHA, never a symbolic
+#: ref"). Defense in depth (code review): `resolve_workspace()` already
+#: only ever produces concrete SHAs via `git rev-parse --verify`, but a
+#: `WorkspacePin` constructed directly (bypassing `resolve_workspace`)
+#: had no equivalent guard.
+_PIN_REV_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 
 #: Default threshold (days) past which a pin's age is flagged on the trace
 #: (spec §3.4: "pin drift vs L1" — a stale-but-valid pin is expensive, not
@@ -74,6 +83,12 @@ class WorkspacePin(BaseModel):
         passing (and later mutating) a plain ``dict``; this validator makes
         the immutability real.
         """
+        for repo, rev in value.items():
+            if not _PIN_REV_RE.match(rev):
+                raise ValueError(
+                    f"WorkspacePin.pins[{repo!r}] must be a concrete git SHA "
+                    f"(7-40 hex chars); got symbolic or malformed ref: {rev!r}"
+                )
         return MappingProxyType(dict(value))
 
     @field_validator("pinned_at")

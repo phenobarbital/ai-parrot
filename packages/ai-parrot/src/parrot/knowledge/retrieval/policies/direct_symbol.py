@@ -14,6 +14,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
+import aiosqlite
 from pydantic import BaseModel, ConfigDict
 
 from parrot.knowledge.graphindex.schema import EdgeKind, NodeKind, UniversalNode
@@ -102,6 +103,49 @@ def _rationale_children(reader: SQLiteGraphReader, node_id: str) -> list[dict]:
         if payload is not None:
             out.append(payload)
     return out
+
+
+async def read_file_sha1(reader: Any, source_uri: str) -> str | None:
+    """Read the per-file ``sha1`` for `source_uri` from the ``files`` table.
+
+    Correctness fix (found in code review): ``domain_tags["sha1"]`` is
+    populated ONLY on module nodes (`extractors/code.py:155-157`).
+    Falling back to it for a `DigestScope.FILE`-eligible node that isn't a
+    module (chiefly `RATIONALE` nodes, per spec §3.5.1) silently starves
+    `derive_digest` of a `file_sha1`, which then falls through to
+    `DigestScope.SUMMARY` instead — a real-but-hidden weakening of INV-2
+    for exactly the node kind the spec calls out as the load-bearing case.
+    This reads the `files` table directly so `FILE` scope is actually
+    reachable for non-module nodes.
+
+    `SQLiteGraphReader` exposes no public accessor for the ``files``
+    table — this reads its already-open connection directly (``_conn``,
+    private), the same precedent as `_rationale_children`'s ``_g`` access,
+    rather than modifying `sqlite_reader.py` (out of scope, spec §1.2).
+
+    Args:
+        reader: The `SQLiteGraphReader` (or reader-shaped test double —
+            duck-typed callers that lack ``_conn`` degrade to ``None``
+            rather than raising).
+        source_uri: The node's ``source_uri``.
+
+    Returns:
+        The stored ``sha1``, or ``None`` if unavailable — callers then
+        fall back to `DigestScope.SUMMARY`, same as before this fix, never
+        worse.
+    """
+    conn = getattr(reader, "_conn", None)
+    if conn is None:
+        return None
+    try:
+        async with conn.execute(
+            "SELECT sha1 FROM files WHERE source_uri = ?", (source_uri,)
+        ) as cur:
+            row = await cur.fetchone()
+    except aiosqlite.Error:
+        logger.debug("read_file_sha1: could not query files table for %r", source_uri)
+        return None
+    return row["sha1"] if row is not None else None
 
 
 class DirectSymbolPolicy(BaseModel):
@@ -288,10 +332,17 @@ class DirectSymbolPolicy(BaseModel):
             summary=payload.get("summary"),
             domain_tags=domain_tags,
         )
+        file_sha1 = domain_tags.get("sha1")
+        if file_sha1 is None:
+            # domain_tags["sha1"] only exists on module nodes; for other
+            # kinds (chiefly RATIONALE), read the real per-file sha1 so
+            # FILE scope is reachable rather than silently degrading to
+            # SUMMARY (correctness fix, code review).
+            file_sha1 = await read_file_sha1(self.reader, payload["source_uri"])
         digest, digest_scope = derive_digest(
             universal_node,
             source_bytes=source_bytes,
-            file_sha1=domain_tags.get("sha1"),
+            file_sha1=file_sha1,
         )
 
         line_span: tuple[int, int] | None = None

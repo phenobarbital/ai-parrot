@@ -198,13 +198,19 @@ class _FakePolicy:
         seeds: tuple[Seed, ...],
         bundle: ContextBundle,
         delay_ms: float = 0.0,
+        seed_delay_ms: float = 0.0,
     ) -> None:
         self._seeds = seeds
         self._bundle = bundle
         self._delay_ms = delay_ms
+        self._seed_delay_ms = seed_delay_ms
         self.call_count = 0
+        self.seed_completed = False
 
     async def seed(self, req, graph):
+        if self._seed_delay_ms:
+            await asyncio.sleep(self._seed_delay_ms / 1000)
+        self.seed_completed = True
         return self._seeds
 
     async def expand(self, seeds, graph, budget):
@@ -247,6 +253,34 @@ async def test_escalation_stops_at_deadline_and_flags_truncated() -> None:
     )
     assert bundle is not None
     assert bundle.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_deadline_cancels_slow_seed_stage_not_just_assemble() -> None:
+    """Regression (code review): the deadline must be enforced as a hard
+    ceiling over the WHOLE seed->expand->prune->assemble pipeline, not
+    just checked between stages — a slow `seed()` must be interruptible
+    too, not only a slow `assemble()`."""
+    symbols = _symbols_with("foo")
+    insufficient_bundle = _bundle(())
+    slow_seed_policy = _FakePolicy(
+        seeds=(Seed(node=_node_ref("foo"), score=1.0),),
+        bundle=insufficient_bundle,
+        seed_delay_ms=50,
+    )
+    bundle, _decision_result = await run_escalation_ladder(
+        start_class=QueryClass.DIRECT_SYMBOL,
+        decision=_decision(QueryClass.DIRECT_SYMBOL, "DirectSymbolPolicy"),
+        policies={QueryClass.DIRECT_SYMBOL: slow_seed_policy},
+        req=RetrievalRequest(query="foo", workspace=None),
+        budget=RetrievalBudget(deadline_ms=1),
+        symbols=symbols,
+    )
+    assert bundle is not None
+    assert bundle.truncated is True
+    # The seed stage itself must have been cancelled mid-flight — it must
+    # NOT have been allowed to run to completion despite the 50ms delay.
+    assert slow_seed_policy.seed_completed is False
 
 
 @pytest.mark.asyncio

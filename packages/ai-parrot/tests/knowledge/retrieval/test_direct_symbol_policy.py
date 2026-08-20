@@ -18,6 +18,7 @@ from parrot.knowledge.graphindex.schema import (
 )
 from parrot.knowledge.graphindex.sqlite_reader import SQLiteGraphReader
 from parrot.knowledge.ontology.schema import MergedOntology, TenantContext
+from parrot.knowledge.retrieval.digest import DigestScope
 from parrot.knowledge.retrieval.models import (
     EvidenceOrigin,
     RetrievalBudget,
@@ -92,7 +93,11 @@ def fixture() -> dict:
             kind=NodeKind.SYMBOL,
             title="payrate",
             source_uri="payrate.py",
-            domain_tags={"symbol_type": "module", "sha1": hashlib.sha1(_SOURCE).hexdigest()},
+            domain_tags={
+                "symbol_type": "module",
+                "sha1": hashlib.sha1(_SOURCE).hexdigest(),
+                "mtime": 0.0,
+            },
         )
         cls = UniversalNode(
             node_id="mod::PayRateEngine",
@@ -201,6 +206,11 @@ async def test_rationale_units_have_none_line_span(fixture: dict) -> None:
     for unit in rationale_units:
         assert unit.evidence.line_span is None
         assert unit.evidence.origin == EvidenceOrigin.L1_RATIONALE
+        # Regression (code review): domain_tags["sha1"] only exists on
+        # module nodes, so a RATIONALE node's file_sha1 must come from the
+        # `files` table lookup (read_file_sha1), not domain_tags — proving
+        # it lands on FILE scope, not a silent SUMMARY degradation.
+        assert unit.evidence.digest_scope == DigestScope.FILE
 
 
 @pytest.mark.asyncio

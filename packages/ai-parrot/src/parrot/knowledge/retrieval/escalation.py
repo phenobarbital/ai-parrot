@@ -14,6 +14,7 @@ unimplemented policy is never reported as having run.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -216,6 +217,36 @@ def check_speculation_admission(*, max_llm_calls: int, pin_count: int) -> None:
         )
 
 
+async def _run_policy_stages(
+    policy: RetrievalPolicyProtocol,
+    req: RetrievalRequest,
+    graph: Any,
+    budget: RetrievalBudget,
+) -> tuple[tuple[Seed, ...], ContextBundle]:
+    """Run one rung's full seed→expand→prune→assemble pipeline.
+
+    Factored out so `run_escalation_ladder` can wrap the WHOLE pipeline in
+    a single `asyncio.wait_for` — enforcing `budget.deadline_ms` as a hard
+    ceiling at the orchestration level (INV-5), rather than trusting each
+    stage's own self-reported `truncated` flag, which only tracks elapsed
+    time within that one stage.
+
+    Args:
+        policy: The policy to run.
+        req: The retrieval request.
+        graph: Passed through to `seed`/`expand`.
+        budget: This rung's `RetrievalBudget`.
+
+    Returns:
+        ``(seeds, bundle)`` from the completed pipeline.
+    """
+    seeds = await policy.seed(req, graph)
+    subgraph = await policy.expand(seeds, graph, budget)
+    pruned = await policy.prune(subgraph, budget)
+    bundle = await policy.assemble(pruned, budget)
+    return seeds, bundle
+
+
 async def run_escalation_ladder(
     *,
     start_class: QueryClass,
@@ -290,10 +321,40 @@ async def run_escalation_ladder(
             break
 
         step_start = time.monotonic()
-        seeds = await policy.seed(req, graph)
-        subgraph = await policy.expand(seeds, graph, step_budget)
-        pruned = await policy.prune(subgraph, step_budget)
-        bundle = await policy.assemble(pruned, step_budget)
+        try:
+            # Hard-enforce INV-5 at the orchestration level rather than
+            # trusting each stage's self-reported `truncated` (code
+            # review: a stage's own elapsed-time check resets per stage,
+            # so a slow stage could otherwise overrun the rung's actual
+            # remaining budget with no way to be interrupted).
+            seeds, bundle = await asyncio.wait_for(
+                _run_policy_stages(policy, req, graph, step_budget),
+                timeout=step_budget.deadline_ms / 1000,
+            )
+        except TimeoutError:
+            elapsed_ms = (time.monotonic() - step_start) * 1000
+            remaining_ms -= elapsed_ms
+            logger.warning(
+                "run_escalation_ladder: %s exceeded its %d ms budget — truncating",
+                current_class,
+                step_budget.deadline_ms,
+            )
+            if bundle is not None:
+                bundle = bundle.model_copy(update={"truncated": True})
+            else:
+                # Not even the first rung completed — INV-5 still requires
+                # a (flagged) result rather than None, per this function's
+                # own contract ("bundle is None only if start_class itself
+                # has no implemented policy").
+                bundle = ContextBundle(
+                    units=(),
+                    decision=None,
+                    truncated=True,
+                    token_total=0,
+                    elapsed_ms=elapsed_ms,
+                )
+            break
+        assert bundle is not None  # narrows for mypy: the `except` branch above always `break`s
         elapsed_ms = (time.monotonic() - step_start) * 1000
         remaining_ms -= elapsed_ms
 

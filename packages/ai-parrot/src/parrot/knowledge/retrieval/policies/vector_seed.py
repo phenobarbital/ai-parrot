@@ -48,6 +48,7 @@ from parrot.knowledge.retrieval.models import (
 )
 from parrot.knowledge.retrieval.pin import read_at_rev
 from parrot.knowledge.retrieval.policies.base import Seed, Subgraph
+from parrot.knowledge.retrieval.policies.direct_symbol import read_file_sha1
 from parrot.knowledge.retrieval.symbols import DerivedSymbolIndex
 
 logger = logging.getLogger(__name__)
@@ -365,10 +366,17 @@ class VectorSeedPolicy(BaseModel):
             summary=payload.get("summary"),
             domain_tags=domain_tags,
         )
+        file_sha1 = domain_tags.get("sha1")
+        if file_sha1 is None:
+            # domain_tags["sha1"] only exists on module nodes; for other
+            # kinds, read the real per-file sha1 so FILE scope is
+            # reachable rather than silently degrading to SUMMARY
+            # (correctness fix, code review).
+            file_sha1 = await read_file_sha1(self.reader, payload["source_uri"])
         digest, digest_scope = derive_digest(
             universal_node,
             source_bytes=source_bytes,
-            file_sha1=domain_tags.get("sha1"),
+            file_sha1=file_sha1,
         )
 
         line_span: tuple[int, int] | None = None
