@@ -37,6 +37,15 @@ Note:
     imported (and therefore after navconfig has populated
     ``os.environ``), which is why it runs inside :func:`make_agent` rather
     than at module import time.
+
+FEAT-434 (Claude Agent Tool Bridge): this factory is the reference
+integration `parrot serve` exercises for the bridged-HITL wiring
+(TASK-2290). The daemon (``AgentDaemon._configure_hitl``,
+``parrot.integrations.agentd.service``) attaches a ``ConfirmationGuard``
+to whatever agent ``make_agent()`` returns — nothing here has to build
+one itself. Any confirming tool the agent registers is therefore already
+bridged through the real HITL channel (never Telegram, never
+self-granted) once served this way.
 """
 from __future__ import annotations
 
@@ -116,6 +125,24 @@ def make_agent(force_cc_auth: bool | None = None, **kwargs: Any) -> Agent:
         len(dropped["invalid"]),
         dropped["auth"] or "none",
     )
+
+    # FEAT-434: surface whether this target carries any confirming tools,
+    # so an operator serving it under agentd knows up front whether the
+    # bridged-HITL wiring (TASK-2290) will ever actually be exercised for
+    # this agent — the guard itself is attached generically by
+    # `AgentDaemon._configure_hitl`, not here.
+    tool_manager = getattr(agent, "tool_manager", None)
+    if tool_manager is not None:
+        confirming = [
+            tool
+            for tool in tool_manager.get_all_tools()
+            if (getattr(tool, "routing_meta", None) or {}).get("requires_confirmation")
+        ]
+        agent.logger.debug(
+            "claude-code agent target: %d confirming tool(s) registered "
+            "(bridged-HITL wiring applies once served under agentd).",
+            len(confirming),
+        )
 
     # A surviving API key silently outranks the claude.ai login inside the
     # spawned CLI, so say so loudly rather than let billing move quietly.

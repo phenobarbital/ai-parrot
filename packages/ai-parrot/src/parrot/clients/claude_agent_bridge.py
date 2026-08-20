@@ -295,12 +295,19 @@ class ClaudeAgentToolBridge:
         """
         tool_name = tool.name
 
+        # FEAT-434 (TASK-2290): a confirming tool's HITL wait is bounded by
+        # ConfirmationGuard's own `approval_timeout` (default 120s), not
+        # this handler's `tool_timeout` — a human actively answering must
+        # never be cut off by a shorter per-call tool timeout meant for
+        # ordinary (non-parked) execution.
+        requires_confirmation = bool((tool.routing_meta or {}).get("requires_confirmation"))
+
         async def handler(args: dict[str, Any]) -> dict[str, Any]:
             call = self.tool_manager.execute_tool(
                 tool_name, args, permission_context
             )
             try:
-                if self.tool_timeout is not None:
+                if self.tool_timeout is not None and not requires_confirmation:
                     raw = await asyncio.wait_for(call, timeout=self.tool_timeout)
                 else:
                     raw = await call

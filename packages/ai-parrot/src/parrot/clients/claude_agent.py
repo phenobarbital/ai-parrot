@@ -442,7 +442,17 @@ class ClaudeAgentClient(AbstractClient):
                     len(selected_tools),
                     len(prompt or ""),
                 )
-                server_map["parrot"] = bridge.build_server(selected_tools)
+                # FEAT-434 (TASK-2290): forward the caller's resolved
+                # identity so bridged confirming tools key their
+                # confirmation window on the real caller, never
+                # "anonymous". `AbstractBot.ask()` sets `_permission_context`
+                # on this client instance (bots/base.py) — the same
+                # existing mechanism `_execute_tool()` already reads for
+                # the primary tool loop; the bridge just reuses it.
+                caller_context = getattr(self, "_permission_context", None)
+                server_map["parrot"] = bridge.build_server(
+                    selected_tools, caller_context
+                )
                 exposed_names = bridge.exposed_names()
                 if "allowed_tools" in kwargs:
                     existing = kwargs["allowed_tools"]
