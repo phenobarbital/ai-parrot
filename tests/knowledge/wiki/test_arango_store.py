@@ -227,7 +227,10 @@ class TestArangoDBWikiStore:
     async def test_replace_source_slice(self, store, mock_db):
         mock_db.query = AsyncMock(
             side_effect=[
-                (["old1"], None),  # old_ids for source
+                # Existing pages for the source: both the raw concept_id (to
+                # match the edge collection's src/dst fields) and the _key (to
+                # address documents in REMOVE, since keys are encoded).
+                ([{"cid": "old1", "key": "old1"}], None),
                 (
                     [{"src": "other", "dst": "old1", "rel": "references"}],
                     None,
@@ -321,7 +324,10 @@ class TestArangoDBWikiStore:
         assert "BM25" in aql
         bind_vars = mock_db.query.call_args.kwargs["bind_vars"]
         assert bind_vars["query"] == "neural networks"
-        assert bind_vars["analyzer"] == "text_en"
+        # One numbered bind var per configured analyzer: analyzer names cannot
+        # be bind variables *inside* ANALYZER()/TOKENS(), so search_fts emits
+        # one clause per analyzer rather than a single `@analyzer`.
+        assert bind_vars["analyzer0"] == "text_en"
 
     @pytest.mark.asyncio
     async def test_search_fts_category_filter(self, store, mock_db):
