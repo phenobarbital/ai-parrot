@@ -198,7 +198,11 @@ class FlowLoader:
 
         Raises:
             LookupError: If an agent_ref cannot be resolved.
-            ValueError: If an invalid CEL predicate is provided.
+            ValueError: If an invalid CEL predicate is provided, if a node
+                type is unknown, or if the definition contains a ``tool``
+                node (which needs live dependencies this loader cannot
+                inject — use ``AgentsFlow.from_definition`` with a
+                ``node_factories`` entry instead).
         """
         # Lazy import to avoid circular:
         #   loader → flows.flow → loader
@@ -261,7 +265,7 @@ class FlowLoader:
                     successors=succs,
                     metadata=node_def.metadata or {},
                 )
-            elif node_type in ("agent", "human", "decision"):
+            elif node_type == "agent":
                 agent = cls._resolve_agent(
                     node_def.agent_ref, extra_agents, agent_registry
                 )
@@ -270,6 +274,31 @@ class FlowLoader:
                     node_id=nid,
                     dependencies=deps,
                     successors=succs,
+                )
+            elif node_type == "decision":
+                # A decision node is NOT an agent node: it has no agent_ref
+                # (several agents vote, not one), so routing it through
+                # _resolve_agent raised LookupError for every definition this
+                # loader was handed. Build the real DecisionNode from the
+                # declared config, exactly as AgentsFlow._build_node_from_config
+                # does, resolving the voters named in ``agent_refs``.
+                from .flow import DecisionNode  # noqa: PLC0415
+                from .node_configs import DecisionConfigDef  # noqa: PLC0415
+
+                parsed = DecisionConfigDef.model_validate(node_def.config or {})
+                kwargs = parsed.to_node_kwargs()
+                kwargs["agents"] = {
+                    **kwargs["agents"],
+                    **{
+                        ref: cls._resolve_agent(ref, extra_agents, agent_registry)
+                        for ref in parsed.agent_refs
+                    },
+                }
+                flow_node = DecisionNode(
+                    node_id=nid,
+                    dependencies=deps,
+                    successors=succs,
+                    **kwargs,
                 )
             elif node_type == "interactive_decision":
                 from .flow import InteractiveDecisionNode  # noqa: PLC0415
@@ -283,6 +312,27 @@ class FlowLoader:
                     options=options,
                     dependencies=deps,
                     successors=succs,
+                )
+            elif node_type == "synthesis":
+                from .flow import SynthesisNode  # noqa: PLC0415
+
+                flow_node = SynthesisNode(
+                    node_id=nid,
+                    dependencies=deps,
+                    successors=succs,
+                )
+            elif node_type == "tool":
+                # A flow tool node is a PlanToolNode, which needs a live
+                # ToolManager and WorkingMemoryToolkit. Those cannot travel in
+                # a JSON definition and this loader has no seam to inject
+                # them, so say so instead of failing later with a Pydantic
+                # error about missing fields.
+                raise ValueError(
+                    f"Node {nid!r} has type 'tool', which FlowLoader cannot "
+                    "materialize: a tool node needs a live ToolManager and "
+                    "working memory. Build this flow with "
+                    "AgentsFlow.from_definition(..., node_factories={'tool': "
+                    "make_tool_node_factory(tool_manager, working_memory)})."
                 )
             else:
                 raise ValueError(f"Unknown node type: {node_type!r}")

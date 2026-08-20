@@ -191,10 +191,23 @@ async def example_flow_mode_crew():
             )
         ],
         flow_relations=[
+            # NOTE: relations reference an agent's *effective display name* —
+            # `name` when set, otherwise `agent_id`. AgentCrew.from_definition
+            # keys crew.agents that way. An `agent_id` such as "coordinator"
+            # is accepted too and normalised to the display name by
+            # CrewDefinition.validate_flow_relations (it used to resolve to
+            # nothing and drop the edge); prefer the display name here so the
+            # relation reads the same as the mapping it resolves against.
             # Coordinator must complete first
-            FlowRelation(source="coordinator", target=["tech_researcher", "market_researcher"]),
+            FlowRelation(
+                source="Research Coordinator",
+                target=["Tech Researcher", "Market Researcher"],
+            ),
             # Both researchers must complete before synthesizer
-            FlowRelation(source=["tech_researcher", "market_researcher"], target="synthesizer")
+            FlowRelation(
+                source=["Tech Researcher", "Market Researcher"],
+                target="Synthesizer",
+            ),
         ],
         shared_tools=["calculator", "citation_formatter"],
         metadata={

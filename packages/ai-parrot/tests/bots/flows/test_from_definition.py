@@ -141,29 +141,24 @@ class TestFromDefinitionErrors:
             AgentsFlow.from_definition(_make_linear_def(), agent_registry=partial_reg)
 
     def test_raises_value_error_for_unknown_node_type(self) -> None:
-        """A node with node_type not in NODE_REGISTRY raises ValueError."""
+        """A node type outside NODE_REGISTRY is rejected at build time.
+
+        Parsing deliberately does not check registry membership (types are
+        registered by import side effects, so a definition is routinely loaded
+        before its types exist). ``from_definition`` is where the guarantee is
+        enforced. ``"human"`` was advertised in ``NodeDefinition.type``'s
+        description for a long time without ever being registered, which makes
+        it the type a generator is most likely to emit by mistake.
+        """
+        assert "human" not in NODE_REGISTRY
         defn = FlowDefinition(
-            flow="bad-type",
-            nodes=[
-                NodeDefinition(id="n1", type="start"),
-            ],
-            edges=[],
-        )
-        # Patch NODE_REGISTRY to have a node type that the FlowDefinition doesn't accept.
-        # NodeDefinition's type field is a Literal — so use a valid literal with no registry entry.
-        # Actually "human" is valid in NodeDefinition.type but not registered in NODE_REGISTRY.
-        defn2 = FlowDefinition(
             flow="human-type",
-            nodes=[
-                NodeDefinition(id="h1", type="human"),
-            ],
+            nodes=[NodeDefinition(id="h1", type="human")],
             edges=[],
         )
         reg = _make_stub_registry()
-        # "human" is in NodeDefinition.type Literal but NOT in NODE_REGISTRY.
-        assert "human" not in NODE_REGISTRY
         with pytest.raises(ValueError, match="human"):
-            AgentsFlow.from_definition(defn2, agent_registry=reg)
+            AgentsFlow.from_definition(defn, agent_registry=reg)
 
 
 # ---------------------------------------------------------------------------

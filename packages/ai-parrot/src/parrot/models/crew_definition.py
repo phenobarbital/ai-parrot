@@ -10,12 +10,13 @@ including ``parrot/bots/`` — without creating circular dependencies.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime, timezone
 from enum import Enum
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ExecutionMode(str, Enum):
@@ -43,6 +44,8 @@ class AgentDefinition(BaseModel):
         system_prompt: Optional system prompt to set on the agent after
             construction.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     agent_id: str = Field(description="Unique identifier for the agent")
     agent_class: str = Field(
@@ -93,12 +96,42 @@ class ToolNodeDefinition(BaseModel):
         kwargs: Keyword arguments passed through to the tool.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     node_id: str = Field(
         description="Unique identifier for the tool node within the crew"
     )
     tool: str = Field(
         description="Tool name/slug resolved via the tool resolver"
     )
+
+    @field_validator("node_id")
+    @classmethod
+    def validate_node_id(cls, value: str) -> str:
+        """Reject a ``node_id`` containing a dot.
+
+        ``{nodes.<node_name>.output}`` is parsed by splitting on dots, so a
+        dotted id makes the placeholder ambiguous. This was documented as
+        "avoid" but never enforced, which meant the ambiguity only surfaced
+        as a silently unresolved template at execution time.
+
+        Args:
+            value: The declared node id.
+
+        Returns:
+            ``value`` unchanged.
+
+        Raises:
+            ValueError: If ``value`` contains a dot or is blank.
+        """
+        if not value.strip():
+            raise ValueError("node_id must not be empty")
+        if "." in value:
+            raise ValueError(
+                f"node_id {value!r} must not contain '.': it would be "
+                "ambiguous inside the {nodes.<node_name>.output} placeholder."
+            )
+        return value
     name: Optional[str] = Field(
         default=None,
         description="Human-readable display name (defaults to node_id)"
@@ -131,6 +164,8 @@ class FlowRelation(BaseModel):
             on ``source`` completion before they can execute.  Same naming
             convention as ``source``.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     source: Union[str, List[str]] = Field(
         description="Source agent(s) that must complete first"
@@ -256,8 +291,166 @@ class CrewDefinition(BaseModel):
     )
 
     model_config = ConfigDict(
+        extra="forbid",
         json_encoders={datetime: lambda v: v.isoformat()},
     )
+
+    def member_names(self) -> List[str]:
+        """Return the names ``flow_relations`` may reference.
+
+        ``AgentCrew.from_definition`` keys ``crew.agents`` by
+        ``AgentDefinition.name or agent_id`` for agents, and by ``node_id``
+        for tool nodes. Relations are resolved against that same mapping, so
+        this is the authoritative set of referenceable members.
+
+        Returns:
+            Every effective member name, in declaration order.
+        """
+        names = [a.name or a.agent_id for a in self.agents]
+        names.extend(node.node_id for node in self.tool_nodes)
+        return names
+
+    def member_aliases(self) -> Dict[str, str]:
+        """Map every accepted member reference to its effective display name.
+
+        ``AgentCrew.from_definition`` keys ``crew.agents`` by ``name or
+        agent_id``, but an agent that sets both is perfectly legitimately
+        referred to by its ``agent_id`` — and definitions written that way
+        have been stored for a long time. Rather than reject them (which
+        makes historical rows unloadable) or accept them blindly (which
+        re-opens the silent edge-drop this validator exists to close), the
+        alias is normalised to the canonical name before the crew is built.
+
+        Canonical display names always win: if one agent's ``agent_id``
+        happens to equal another agent's ``name``, the reference resolves to
+        the agent that owns the ``name``.
+
+        Returns:
+            ``{reference: canonical_display_name}`` for every accepted form.
+        """
+        aliases: Dict[str, str] = {}
+        for agent in self.agents:
+            canonical = agent.name or agent.agent_id
+            aliases.setdefault(agent.agent_id, canonical)
+        for node in self.tool_nodes:
+            aliases.setdefault(node.node_id, node.node_id)
+        # Canonical names last so they overwrite any colliding agent_id alias.
+        for name in self.member_names():
+            aliases[name] = name
+        return aliases
+
+    @model_validator(mode="after")
+    def validate_flow_relations(self) -> "CrewDefinition":
+        """Reject relations that reference an unknown crew member.
+
+        ``AgentCrew._resolve_agents_by_ids`` skips ids it cannot find, and
+        ``from_definition`` only calls ``task_flow`` when *both* sides
+        resolve — so a typo did not fail, it silently deleted an edge and
+        produced a crew that quietly skipped a step. Checking here makes the
+        typo loud while it is still cheap to fix.
+
+        Note the naming trap this closes: ``crew.agents`` is keyed by the
+        **effective display name** (``name`` when set, otherwise
+        ``agent_id``). A relation written against ``agent_id`` on an agent
+        that also has a ``name`` used to resolve to nothing and lose the
+        edge; it is now accepted and rewritten to the canonical name, so the
+        edge is actually wired instead of silently disappearing. Only genuine
+        typos — references matching neither form — still raise.
+
+        Returns:
+            ``self``, with every relation reference normalised to its
+            canonical display name.
+
+        Raises:
+            ValueError: If any relation names a non-member.
+        """
+        aliases = self.member_aliases()
+        unknown: List[str] = []
+
+        def _resolve(side: Union[str, List[str]]) -> Union[str, List[str]]:
+            refs = [side] if isinstance(side, str) else list(side)
+            unknown.extend(ref for ref in refs if ref not in aliases)
+            resolved = [aliases.get(ref, ref) for ref in refs]
+            return resolved[0] if isinstance(side, str) else resolved
+
+        normalised = [
+            relation.model_copy(
+                update={
+                    "source": _resolve(relation.source),
+                    "target": _resolve(relation.target),
+                }
+            )
+            for relation in self.flow_relations
+        ]
+
+        if unknown:
+            raise ValueError(
+                f"flow_relations reference unknown crew members: "
+                f"{sorted(set(unknown))}. Known members (agent 'name' or "
+                f"'agent_id' when name is unset, plus tool-node ids): "
+                f"{sorted(set(self.member_names()))}. Agent ids are also "
+                f"accepted and normalised: {sorted(set(aliases))}."
+            )
+
+        if normalised != self.flow_relations:
+            self.flow_relations = normalised
+        return self
+
+    @model_validator(mode="after")
+    def validate_acyclic(self) -> "CrewDefinition":
+        """Reject cyclic ``flow_relations`` via Kahn's algorithm.
+
+        Mirrors ``FlowDefinition._validate_acyclic``. A crew has no
+        conditional edges, so — unlike a flow — there is no ``on_condition``
+        exemption: every cycle here is a deadlock, since ``run_flow`` waits
+        for dependencies that can never complete.
+
+        Runs after ``validate_flow_relations`` (Pydantic executes ``after``
+        validators in declaration order) so dangling references surface
+        first; cycle detection assumes referential integrity.
+
+        Returns:
+            ``self`` unchanged.
+
+        Raises:
+            ValueError: If the relation graph contains a cycle.
+        """
+        in_degree: Dict[str, int] = {name: 0 for name in self.member_names()}
+        adjacency: Dict[str, List[str]] = defaultdict(list)
+
+        for relation in self.flow_relations:
+            sources = (
+                [relation.source]
+                if isinstance(relation.source, str)
+                else relation.source
+            )
+            targets = (
+                [relation.target]
+                if isinstance(relation.target, str)
+                else relation.target
+            )
+            for source in sources:
+                for target in targets:
+                    adjacency[source].append(target)
+                    in_degree[target] += 1
+
+        queue = [name for name, degree in in_degree.items() if degree == 0]
+        visited = 0
+        while queue:
+            current = queue.pop()
+            visited += 1
+            for successor in adjacency[current]:
+                in_degree[successor] -= 1
+                if in_degree[successor] == 0:
+                    queue.append(successor)
+
+        if visited < len(in_degree):
+            cyclic = [name for name, degree in in_degree.items() if degree > 0]
+            raise ValueError(
+                f"Cycle detected in flow_relations. Members involved: "
+                f"{sorted(cyclic)}."
+            )
+        return self
 
 
 __all__ = [
