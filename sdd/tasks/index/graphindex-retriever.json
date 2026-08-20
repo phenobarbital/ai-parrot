@@ -52,7 +52,7 @@
       "feature_id": "FEAT-435",
       "feature": "graphindex-retriever",
       "spec": "sdd/specs/graphindex-retriever.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Test-only, touches no source module. Can run in parallel with any implementation task once TASK-2271 has landed.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:18:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2272-reserved-origin-contract-test.md"
+      "completed_at": "2026-08-20T02:51:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2272-reserved-origin-contract-test.md"
     },
     {
       "id": "TASK-2273",
