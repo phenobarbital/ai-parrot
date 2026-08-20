@@ -102,9 +102,19 @@ class BasicAgent(Chatbot, NotificationMixin):
         ##  Logging:
         self.logger = logging.getLogger(f"{self.name}.Agent")
         ## Google GenAI Client (for multi-modal responses and TTS generation):
-        self.client = GoogleGenAIClient()
-        # Initialize the underlying AbstractBot LLM with the same client
-        if not self._llm:
+        default_client = GoogleGenAIClient()
+        if self._llm_raw is None:
+            self.client = default_client
+            # Initialize the underlying AbstractBot LLM with the same client.
+            if not self._llm:
+                self._llm = self.client
+        else:
+            model_arg = self._llm_model if self._llm_model_explicit else None
+            self.client = self.configure_llm(
+                llm=self._llm_raw,
+                model=model_arg,
+                **self._llm_kwargs,
+            )
             self._llm = self.client
         # install agent-specific tools:
         extra_tools = self.agent_tools()
@@ -140,6 +150,8 @@ class BasicAgent(Chatbot, NotificationMixin):
         the base configuration completes.
         """
         await super().configure(app)
+        if self._llm is not None:
+            self.client = self._llm
         await self._wire_tool_namespaces_into_working_memory()
 
     def _inject_answer_memory_into_toolkits(self) -> None:

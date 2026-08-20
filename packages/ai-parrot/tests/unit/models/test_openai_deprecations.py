@@ -37,9 +37,9 @@ class TestCatalog:
         """The enum values must exactly equal the upstream catalog snapshot."""
         assert {m.value for m in OpenAIModel} == upstream_current_models
 
-    def test_enum_has_28_members(self):
-        """Catalog snapshot has exactly 28 models."""
-        assert len(list(OpenAIModel)) == 28
+    def test_enum_has_36_members(self):
+        """Catalog snapshot has exactly 36 models."""
+        assert len(list(OpenAIModel)) == 36
 
 
 class TestDeprecationsDict:
@@ -84,6 +84,9 @@ class TestHelpers:
             "o3",
             "gpt-4o-mini",
             "gpt-5.5-pro",
+            "gpt-5.6",
+            "gpt-realtime-2.1",
+            "gpt-transcribe",
         ],
     )
     def test_is_deprecated_false(self, model):

@@ -315,6 +315,7 @@ class AgentDaemon:
         await self._install_signal_handlers()
 
         self.agent = await resolve_agent(self.config.agent)
+        self._register_method_tools()
         await self._configure_hitl()
 
         await self._start_scheduler()
@@ -439,6 +440,56 @@ class AgentDaemon:
         )
         await self._hitl_channel._response_callback(response)
         return {"ok": True}
+
+    def _register_method_tools(self) -> None:
+        """Give the LLM tools for the allowlisted agent methods.
+
+        `exposed_methods` governs `agent.invoke`; the model's toolbox comes
+        from the agent's own `agent_tools()`. Without this step the two
+        never meet, and an agent asked to do the very thing one of its
+        exposed methods does has no way to call it -- it apologises instead
+        of acting (see `parrot.integrations.agentd.tools`).
+
+        The derived tools go into the agent's `ToolManager`, so FEAT-434's
+        bridge picks them up for a `claude-agent` LLM as
+        `mcp__parrot__<method>` with no extra wiring.
+
+        Best-effort by design: an agent that cannot register tools (no
+        `register_tools`, no tool manager) still serves RPC perfectly well,
+        so a failure here is logged, never raised.
+        """
+        names = (
+            self.config.exposed_methods
+            if self.config.expose_as_tools is None
+            else self.config.expose_as_tools
+        )
+        if not names:
+            return
+        register = getattr(self.agent, "register_tools", None)
+        if not callable(register):
+            self.logger.warning(
+                "Agent %s has no register_tools(); exposed methods stay "
+                "RPC-only and the LLM cannot call them",
+                type(self.agent).__name__,
+            )
+            return
+        try:
+            from parrot.integrations.agentd.tools import build_method_tools
+
+            existing = self.agent.get_available_tools()
+            tools = build_method_tools(self.agent, names, skip_existing=existing)
+            if not tools:
+                return
+            register(tools)
+            self.logger.info(
+                "Registered %d LLM tool(s) from exposed_methods: %s",
+                len(tools),
+                ", ".join(t.name for t in tools),
+            )
+        except Exception as exc:  # noqa: BLE001 - see docstring
+            self.logger.warning(
+                "Could not register LLM tools from exposed_methods: %s", exc
+            )
 
     async def _start_scheduler(self) -> None:
         """Best-effort headless scheduler bootstrap (spec §2, step 3).

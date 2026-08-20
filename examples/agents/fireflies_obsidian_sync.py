@@ -17,6 +17,9 @@ Requirements:
 
 import asyncio
 import logging
+import os
+
+from parrot.clients.codex_agent import CodexAgentRunOptions
 from parrot.agents.obsidian import FirefliesObsidianAgent
 
 logging.basicConfig(level=logging.INFO)
@@ -26,12 +29,31 @@ logger = logging.getLogger(__name__)
 async def main():
     """Run the sync agent."""
 
-    # Initialize agent
-    agent = FirefliesObsidianAgent(
-        name="FirefliesObsidianSync",
-        vault_path="~/vaults/notes",  # Change to your vault path
+    llm = os.getenv("PARROT_FIREFLIES_LLM")
+    agent_kwargs = {
+        "name": "FirefliesObsidianSync",
+        "vault_path": os.getenv("OBSIDIAN_VAULT_PATH", "~/vaults/notes"),
         # fireflies_token="your-token" or set FIREFLIES_API_KEY env var
-    )
+    }
+    if llm:
+        agent_kwargs["llm"] = llm
+        llm_provider, _, llm_model = llm.partition(":")
+        if llm_provider in {"openai-codex", "codex-agent", "codex-code"}:
+            backend = os.getenv("PARROT_CODEX_BACKEND", "cli")
+            agent_kwargs["llm_kwargs"] = {
+                "backend": backend,
+                "run_options": CodexAgentRunOptions(
+                    backend=backend,
+                    model=llm_model or "",
+                    sandbox="read-only",
+                    approval_policy="never",
+                    expose_parrot_tools=False,
+                    ephemeral=True,
+                ),
+            }
+
+    # Initialize agent
+    agent = FirefliesObsidianAgent(**agent_kwargs)
 
     try:
         # PHASE 1: Deterministic sync (no LLM)
@@ -53,36 +75,29 @@ async def main():
             for error in sync_report["errors"]:
                 print(f"     - {error}")
 
-        # PHASE 2: Optional LLM-powered summarization
-        # Auto-detect and analyze the first synced meeting
+        # PHASE 2: LLM-powered summarization
+        # Summarize EVERY meeting note that has no Analysis section yet —
+        # both the ones just synced and any backlog from previous runs.
         logger.info("\n" + "=" * 60)
         logger.info("PHASE 2: Analyzing meetings with LLM...")
         logger.info("=" * 60)
 
-        if sync_report["synced"] > 0:
-            # Get the first synced note to analyze
-            existing_notes = await agent._get_existing_meeting_titles()
-            # Sort descending so the most recent meeting comes first
-            if sorted_notes := sorted(existing_notes, reverse=True):
-                recent_note = sorted_notes[0]
-            else:
-                # Pick the first one
-                recent_note = list(existing_notes)[0]
+        max_notes = os.getenv("PARROT_FIREFLIES_MAX_ANALYSIS")
+        report = await agent.summarize_pending_transcripts(
+            granularity="standard",  # minimal | standard | detailed
+            limit=int(max_notes) if max_notes else None,
+        )
 
-            if recent_note:
-
-                analysis = await agent.summarize_transcript(
-                    note_title=recent_note,
-                    granularity="standard",  # minimal | standard | detailed
-                )
-
-                print("\n✅ Analysis Report:")
-                print(f"   Note: {recent_note}")
-                print(f"   Status: {analysis['status']}")
-                if analysis["status"] == "ok":
-                    print(f"   Summary: {analysis['summary'][:100]}...")
-                    print(f"   Follow-ups: {len(analysis['follow_ups'])}")
-                    print(f"   Insights: {len(analysis['insights'])}")
+        print("\n✅ Analysis Report:")
+        print(f"   Status: {report['status']}")
+        print(f"   Analyzed: {len(report['analyzed'])}")
+        for note_title in report["analyzed"]:
+            print(f"     + {note_title}")
+        print(f"   Already analyzed: {len(report['skipped'])}")
+        if report["errors"]:
+            print(f"   Errors: {len(report['errors'])}")
+            for failure in report["errors"]:
+                print(f"     - {failure['note']}: {failure['error']}")
 
     except Exception as e:
         logger.error(
