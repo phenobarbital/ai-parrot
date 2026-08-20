@@ -173,8 +173,9 @@ def to_crew_definition(blueprint: WorkflowBlueprint, *, tenant: str = "global") 
         A ``CrewDefinition``.
 
     Raises:
-        AssemblyError: If the blueprint targets a different engine or holds a
-            node kind a crew cannot express.
+        AssemblyError: If the blueprint targets a different engine, holds a
+            node kind a crew cannot express, or carries a transition
+            ``instruction`` a crew relation has nowhere to put.
     """
     from parrot.models.crew_definition import (  # noqa: PLC0415
         AgentDefinition,
@@ -224,6 +225,16 @@ def to_crew_definition(blueprint: WorkflowBlueprint, *, tenant: str = "global") 
             raise AssemblyError(
                 f"Node {node.id!r} of kind {node.kind!r} cannot be expressed "
                 "in a crew; compile this blueprint with engine='flow'."
+            )
+
+    for transition in blueprint.transitions:
+        if transition.instruction:
+            raise AssemblyError(
+                f"Transition {transition.source!r} -> {transition.target!r} "
+                "carries an 'instruction', but a crew relation is a bare "
+                "dependency edge with nowhere to put a prompt override. "
+                "Compiling it away would silently drop the instruction; use "
+                "engine='flow', whose EdgeDefinition carries it."
             )
 
     relations = [
@@ -306,15 +317,23 @@ def to_flow_definition(blueprint: WorkflowBlueprint) -> Any:
                 )
             )
 
-    targets = {
-        target
+    # A CEL-gated back-edge (``on_condition``) is a bounded repair loop, not a
+    # structural dependency — the validator's acyclicity check exempts it for
+    # exactly that reason. Counting it here would make the loop head look like
+    # it already has an inbound edge (no root, so ``__start__`` wires to
+    # nothing) and the loop tail look like it already has an outbound one (no
+    # leaf, so nothing reaches ``__end__``) — a flow that can neither start nor
+    # finish. Sentinels attach to the forward skeleton only.
+    forward = [
+        transition
         for transition in blueprint.transitions
-        for target in transition.target_ids()
+        if transition.condition != "on_condition"
+    ]
+    targets = {
+        target for transition in forward for target in transition.target_ids()
     }
     sources = {
-        source
-        for transition in blueprint.transitions
-        for source in transition.source_ids()
+        source for transition in forward for source in transition.source_ids()
     }
     node_ids = blueprint.node_ids()
     roots = [node_id for node_id in node_ids if node_id not in targets]
@@ -340,14 +359,38 @@ def to_flow_definition(blueprint: WorkflowBlueprint) -> Any:
 def _flow_node_config(node: BlueprintNode) -> Dict[str, Any]:
     """Build a flow node's ``config`` block from the blueprint node.
 
+    For ``kind="tool"`` the payload must satisfy
+    :class:`parrot.bots.flows.plan.models.PlanNode`, because the flow-side
+    ``"tool"`` type is ``PlanToolNode`` and its factory
+    (``make_tool_node_factory``) does ``PlanNode.model_validate(config)``.
+    ``PlanNode`` is ``extra="forbid"``, requires ``id`` and ``store_as``, and
+    types ``args`` as a mapping — so the crew-side ``args``/``kwargs`` split
+    does not carry over: named arguments become ``args`` and ``store_as``
+    defaults to the node id, which is what ``ctx.artifacts.<node_id>`` reads.
+
     Args:
         node: The blueprint node.
 
     Returns:
         The ``NodeDefinition.config`` payload for this node's type.
+
+    Raises:
+        AssemblyError: If a tool node declares positional ``args``, which a
+            ``PlanNode`` cannot express.
     """
     if node.kind == "tool":
-        # Mirrors the crew ToolNode contract; the flow-side "tool" node type
-        # reads its tool and arguments from config.
-        return {"tool": node.tool, "args": list(node.args), "kwargs": dict(node.kwargs)}
+        if node.args:
+            raise AssemblyError(
+                f"Tool node {node.id!r} declares positional args {node.args!r}, "
+                "but a flow tool node dispatches through PlanNode, whose 'args' "
+                "is a name → value mapping. Move them into 'kwargs', or compile "
+                "this blueprint with engine='crew'."
+            )
+        return {
+            "id": node.id,
+            "tool": node.tool,
+            "args": dict(node.kwargs),
+            "store_as": node.id,
+            "description": node.purpose or None,
+        }
     return dict(node.config)

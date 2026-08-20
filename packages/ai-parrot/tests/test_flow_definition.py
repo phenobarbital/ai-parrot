@@ -153,7 +153,10 @@ class TestNodeDefinition:
 
     def test_defaults(self):
         node = NodeDefinition(id="a", type="start")
-        assert node.max_retries == 3
+        # 0, matching Node.max_retries: the field predates the machinery that
+        # reads it, so defaulting to 3 now that it IS read would hand three
+        # silent re-executions to every already-stored definition.
+        assert node.max_retries == 0
         assert node.config == {}
         assert node.pre_actions == []
         assert node.post_actions == []

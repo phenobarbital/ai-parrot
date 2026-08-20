@@ -300,13 +300,21 @@ def _build_node_types() -> List[NodeTypeEntry]:
         )
 
     if not any(entry.type == "tool" for entry in entries):
-        # Deterministic tool nodes are supported by both engines, but neither
-        # path goes through a NODE_REGISTRY entry that exists at catalog-build
-        # time: a crew compiles them to ToolNodeDefinition (never a registered
-        # node type at all), and a flow's "tool" type is registered lazily by
-        # ensure_tool_node_registered(). Advertising the kind here — rather
-        # than importing the plan package for its registration side effect —
-        # keeps the catalog read-only.
+        # A crew compiles a tool node to ToolNodeDefinition, which is not a
+        # NODE_REGISTRY type at all — so the kind is always available for
+        # engine='crew' even with an empty registry, and must be advertised
+        # here or a crew could never declare one.
+        #
+        # engine='flow' is a different story. Its "tool" type is PlanToolNode,
+        # registered lazily by ensure_tool_node_registered() (the execution-plan
+        # toolkit does it) and buildable only from a node_factories['tool']
+        # closure holding a live ToolManager. When the type is absent from
+        # NODE_REGISTRY, this process cannot run such a node: from_definition
+        # rejects the type outright and FlowLoader has no way to build it. The
+        # catalog is what a model is allowed to reference, so offering the kind
+        # anyway would author workflows that cannot be materialized. Advertise
+        # what this process can actually execute — and stay read-only rather
+        # than importing the plan package for its registration side effect.
         entries.append(
             NodeTypeEntry(
                 type="tool",
@@ -318,7 +326,7 @@ def _build_node_types() -> List[NodeTypeEntry]:
                 ),
                 config_schema=None,
                 requires_agent_ref=False,
-                engines=["crew", "flow"],
+                engines=["crew"],
             )
         )
 
@@ -430,25 +438,53 @@ def _build_tools(
 #:
 #: Building one walks three registries and generates a JSON Schema per node
 #: type, which is wasted work on an endpoint that answers "what components
-#: exist?" on every request. The key is the registry sizes: they change only
-#: when something registers, which is exactly when the catalog is stale.
+#: exist?" on every request. The key is the registries' *contents*, so the
+#: cache is invalidated by any change that alters what a model may reference.
 #: Variants (an allowlist, or a live ``ToolManager``) are request-specific
 #: and deliberately not cached.
 _CATALOG_CACHE: Dict[Any, ComponentCatalog] = {}
 
 
 def _cache_key() -> tuple:
-    """Return a key that changes whenever a registry gains an entry."""
+    """Return a key that changes whenever a registry's contents change.
+
+    Sizes alone are not enough. ``register_agent(..., replace=True)`` and
+    swapping one YAML agent for another both leave every count identical
+    while changing exactly what the catalog is allowed to name — and the
+    catalog is the authoring layer's naming and security boundary, so
+    serving a stale one for the life of the process is the wrong failure.
+    Hashing the identities costs one extra registry walk on a path that
+    already does three.
+
+    Returns:
+        A hashable snapshot of the registered node types, agents and tools.
+    """
     from parrot.bots.flows.flow.flow import NODE_REGISTRY  # noqa: PLC0415
     from parrot.registry import agent_registry  # noqa: PLC0415
 
+    node_types = tuple(
+        sorted(
+            (name, f"{cls.__module__}.{cls.__qualname__}")
+            for name, cls in NODE_REGISTRY.items()
+        )
+    )
+    agents = tuple(
+        sorted(
+            (
+                meta.name,
+                getattr(meta.bot_config, "class_name", None) or "",
+                getattr(meta, "module_path", None) or "",
+            )
+            for meta in agent_registry.list_agents()
+        )
+    )
     try:
         from parrot.tools.discovery import discover_from_registry  # noqa: PLC0415
 
-        tool_count = len(discover_from_registry())
+        tools = tuple(sorted(discover_from_registry().items()))
     except Exception:  # pragma: no cover - defensive
-        tool_count = -1
-    return (len(NODE_REGISTRY), len(agent_registry.list_agents()), tool_count)
+        tools = ("<discovery-failed>",)
+    return (node_types, agents, tools)
 
 
 def build_catalog(

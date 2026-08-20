@@ -40,10 +40,23 @@ def test_catalog_reflects_the_declarative_tool_registry(live_catalog):
     assert len(declared) > 50, "the registry should be substantial, not a stub"
 
 
-def test_tool_kind_is_available_to_both_engines(live_catalog):
-    """A crew compiles it to ToolNodeDefinition; a flow to a 'tool' node."""
+def test_tool_kind_is_always_available_to_a_crew(live_catalog):
+    """A crew compiles it to ToolNodeDefinition — never a NODE_REGISTRY type."""
     assert "tool" in live_catalog.kinds_for("crew")
-    assert "tool" in live_catalog.kinds_for("flow")
+
+
+def test_tool_kind_for_flow_tracks_the_node_registry(live_catalog):
+    """A flow may only declare 'tool' when this process can build one.
+
+    The flow-side type is ``PlanToolNode``, registered lazily by
+    ``ensure_tool_node_registered()``. Advertising the kind when it is absent
+    from ``NODE_REGISTRY`` authors workflows that ``from_definition`` rejects
+    outright, so the catalog must follow the registry rather than assume.
+    """
+    from parrot.bots.flows.flow.flow import NODE_REGISTRY
+
+    registered = "tool" in NODE_REGISTRY
+    assert ("tool" in live_catalog.kinds_for("flow")) is registered
 
 
 def test_decision_kinds_are_flow_only(live_catalog):
@@ -150,3 +163,56 @@ def test_node_config_schema_matches_the_registered_model():
     assert node_config_json_schema("decision") is not None
     assert node_config_json_schema("agent") is None
     assert node_config_json_schema("not_a_type") is None
+
+
+# ── code-review fixes (PR #1186) ─────────────────────────────────────────────
+
+def test_cache_key_sees_an_in_place_registry_swap():
+    """Counting entries misses a replacement, and the catalog is the boundary.
+
+    ``register_agent(..., replace=True)`` and swapping one YAML agent for
+    another both leave every registry count identical while changing exactly
+    what a model is allowed to name.
+    """
+    from parrot.bots.flows.authoring.catalog import _cache_key
+    from parrot.bots.flows.core.node import Node
+    from parrot.bots.flows.flow.flow import NODE_REGISTRY
+
+    class _Swapped(Node):
+        @property
+        def name(self) -> str:
+            return self.node_id
+
+    original = NODE_REGISTRY["synthesis"]
+    before = _cache_key()
+    size_before = len(NODE_REGISTRY)
+    NODE_REGISTRY["synthesis"] = _Swapped
+    try:
+        # The old key was (len(NODE_REGISTRY), agent count, tool count) — all
+        # three are identical here, so it could never notice this.
+        assert len(NODE_REGISTRY) == size_before
+        assert _cache_key() != before
+    finally:
+        NODE_REGISTRY["synthesis"] = original
+    assert _cache_key() == before
+
+
+def test_build_catalog_rebuilds_after_a_registry_swap():
+    from parrot.bots.flows.authoring.catalog import build_catalog
+    from parrot.bots.flows.core.node import Node
+    from parrot.bots.flows.flow.flow import NODE_REGISTRY
+
+    class _Swapped(Node):
+        @property
+        def name(self) -> str:
+            return self.node_id
+
+    first = build_catalog()
+    original = NODE_REGISTRY["synthesis"]
+    NODE_REGISTRY["synthesis"] = _Swapped
+    try:
+        second = build_catalog()
+        assert second.node_type("synthesis").class_name == "_Swapped"
+        assert first.node_type("synthesis").class_name != "_Swapped"
+    finally:
+        NODE_REGISTRY["synthesis"] = original

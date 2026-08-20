@@ -189,9 +189,32 @@ def test_relations_resolve_against_the_effective_display_name():
 
 
 def test_relation_to_an_unknown_member_is_rejected():
-    """It used to be skipped silently, deleting the edge."""
+    """A genuine typo used to be skipped silently, deleting the edge."""
     with pytest.raises(ValidationError, match="unknown crew members"):
-        _crew(flow_relations=[FlowRelation(source="a", target="b")])
+        _crew(flow_relations=[FlowRelation(source="Researchr", target="b")])
+
+
+def test_relation_by_agent_id_is_accepted_and_normalised():
+    """An agent_id reference is a legitimate, long-stored spelling.
+
+    ``crew.agents`` is keyed by ``name or agent_id``, so a relation written
+    against the ``agent_id`` of an agent that also has a ``name`` used to
+    resolve to nothing and lose the edge. Rejecting it instead would make
+    every crew stored that way unloadable; normalising it to the canonical
+    display name wires the edge the author meant.
+    """
+    crew = _crew(flow_relations=[FlowRelation(source="a", target="b")])
+    assert crew.flow_relations[0].source == "Researcher"
+    assert crew.flow_relations[0].target == "b"
+
+
+def test_normalisation_handles_list_endpoints():
+    crew = _crew(
+        tool_nodes=[ToolNodeDefinition(node_id="publish", tool="rest_api")],
+        flow_relations=[FlowRelation(source=["a", "b"], target=["publish"])],
+    )
+    assert crew.flow_relations[0].source == ["Researcher", "b"]
+    assert crew.flow_relations[0].target == ["publish"]
 
 
 def test_relation_cycle_is_rejected():
@@ -228,3 +251,130 @@ def test_fan_out_relations_are_accepted():
         flow_relations=[FlowRelation(source="a", target=["b", "c"])],
     )
     assert len(crew.flow_relations) == 1
+
+
+# ── code-review fixes (PR #1186) ─────────────────────────────────────────────
+
+class _StubAgent:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _PopulatedRegistry:
+    """A registry that actually resolves the names a definition declares."""
+
+    def __init__(self, *names: str) -> None:
+        self._agents = {name: _StubAgent(name) for name in names}
+
+    def get_bot_instance(self, name):
+        return self._agents.get(name)
+
+    def get(self, name):
+        return self._agents.get(name)
+
+
+def test_max_retries_defaults_to_no_retries():
+    """0, matching Node.max_retries.
+
+    The field predates the machinery that reads it. Defaulting to 3 now that
+    it IS read would hand three silent re-executions — extra LLM spend and
+    repeated tool side effects — to every already-stored definition that
+    never asked for them.
+    """
+    assert NodeDefinition(id="n", type="synthesis").max_retries == 0
+
+    definition = _definition(NodeDefinition(id="s", type="synthesis"))
+    flow = AgentsFlow.from_definition(definition, agent_registry=_StubRegistry())
+    assert flow._materialize_nodes()["s"].max_retries == 0
+
+
+def test_decision_node_receives_its_resolved_voters():
+    """A vote with no voters decides nothing; agents cannot travel in JSON."""
+    definition = _definition(
+        NodeDefinition(
+            id="vote",
+            type="decision",
+            config={
+                "mode": "ballot",
+                "decision_type": "binary",
+                "agent_refs": ["writer_agent", "researcher_agent"],
+            },
+        )
+    )
+    registry = _PopulatedRegistry("writer_agent", "researcher_agent")
+    flow = AgentsFlow.from_definition(definition, agent_registry=registry)
+    node = flow._materialize_nodes()["vote"]
+    assert set(node.agents) == {"writer_agent", "researcher_agent"}
+    assert node.agents["writer_agent"].name == "writer_agent"
+
+
+def test_unresolvable_decision_voter_fails_loudly():
+    from parrot.bots.flows.core.context import AgentNotFoundError
+
+    definition = _definition(
+        NodeDefinition(
+            id="vote",
+            type="decision",
+            config={
+                "mode": "ballot",
+                "decision_type": "binary",
+                "agent_refs": ["ghost_agent"],
+            },
+        )
+    )
+    with pytest.raises(AgentNotFoundError, match="ghost_agent"):
+        AgentsFlow.from_definition(
+            definition, agent_registry=_PopulatedRegistry("writer_agent")
+        )
+
+
+# ── FlowLoader materialization ───────────────────────────────────────────────
+
+def test_loader_builds_a_real_decision_node():
+    """It used to route 'decision' through _resolve_agent and raise LookupError.
+
+    A decision node carries no agent_ref (several agents vote, not one), and
+    BlueprintNode forbids setting one — so every authored decision node was
+    unloadable through FlowLoader.
+    """
+    from parrot.bots.flows.flow.flow import DecisionNode
+    from parrot.bots.flows.flow.loader import FlowLoader
+
+    definition = _definition(
+        NodeDefinition(
+            id="vote",
+            type="decision",
+            config={
+                "mode": "ballot",
+                "decision_type": "binary",
+                "agent_refs": ["writer_agent"],
+            },
+        )
+    )
+    flow = FlowLoader.to_agents_flow(
+        definition, agent_registry=_PopulatedRegistry("writer_agent")
+    )
+    node = flow._nodes["vote"]
+    assert isinstance(node, DecisionNode)
+    assert node.decision_config.mode.value == "ballot"
+    assert set(node.agents) == {"writer_agent"}
+
+
+def test_loader_builds_a_synthesis_node():
+    from parrot.bots.flows.flow.flow import SynthesisNode
+    from parrot.bots.flows.flow.loader import FlowLoader
+
+    definition = _definition(NodeDefinition(id="sum", type="synthesis"))
+    flow = FlowLoader.to_agents_flow(definition, agent_registry=_PopulatedRegistry())
+    assert isinstance(flow._nodes["sum"], SynthesisNode)
+
+
+def test_loader_explains_why_it_cannot_build_a_tool_node():
+    """PlanToolNode needs a live ToolManager the loader has no seam to inject."""
+    from parrot.bots.flows.flow.loader import FlowLoader
+
+    definition = _definition(
+        NodeDefinition(id="fetch", type="tool", config={"tool": "rest_api"})
+    )
+    with pytest.raises(ValueError, match="node_factories"):
+        FlowLoader.to_agents_flow(definition, agent_registry=_PopulatedRegistry())

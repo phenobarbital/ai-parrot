@@ -8,12 +8,15 @@ threading more context into the per-node call.
 """
 from __future__ import annotations
 
+import asyncio
+import json
+
 import pytest
 
 from parrot.bots.flows.authoring.author import FlowAuthor, FlowAuthoringError
 from parrot.bots.flows.authoring.blueprint import BlueprintSkeleton, NodeStub
 
-from .conftest import FakePlannerClient
+from .conftest import FakePlannerClient, _Response
 
 
 def _skeleton_payload(engine: str = "crew"):
@@ -237,3 +240,97 @@ async def test_repair_prompt_embeds_the_validation_report(crew_catalog):
     issue = ValidationIssue("researcher", "tool_not_found", "tool 'nope' is unknown")
     await author.repair_node(skeleton.nodes[0], skeleton, [issue])
     assert "tool 'nope' is unknown" in author.client.prompts[0]
+
+
+# ── code-review fixes (PR #1186) ─────────────────────────────────────────────
+
+class _SessionClient:
+    """Mimics ``AbstractClient``'s session lifecycle.
+
+    ``__aenter__`` assigns a fresh session and ``__aexit__`` closes it — so
+    the context manager is not reentrant on one shared instance. Entering it
+    per concurrent call would leave the first caller to finish closing the
+    session the others are still using.
+    """
+
+    def __init__(self, node_count: int) -> None:
+        self.model = "fake:model"
+        self.session: object | None = None
+        self.closed = False
+        self.enter_count = 0
+        self.exit_count = 0
+        self._node_payloads = [
+            json.dumps({"id": f"n{i}", "kind": "agent", "system_prompt": "x"})
+            for i in range(node_count)
+        ]
+
+    async def __aenter__(self) -> "_SessionClient":
+        self.enter_count += 1
+        self.session = object()
+        self.closed = False
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        self.exit_count += 1
+        self.session = None
+        self.closed = True
+
+    async def ask(self, prompt: str, **kwargs):
+        if self.closed or self.session is None:
+            raise RuntimeError("Session is closed")
+        mine = self.session
+        # Yield repeatedly so every concurrent caller is genuinely in flight
+        # while the others enter and leave the client — which is when a
+        # per-call `async with` replaces and then closes the shared session.
+        for _ in range(4):
+            await asyncio.sleep(0)
+        if self.closed or self.session is None:
+            raise RuntimeError("Session is closed")
+        if self.session is not mine:
+            raise RuntimeError("Session was replaced mid-call")
+        return _Response(self._node_payloads.pop(0))
+
+
+@pytest.mark.asyncio
+async def test_concurrent_node_authoring_shares_one_client_session(crew_catalog):
+    """Entering the shared client per node closed it under the others."""
+    skeleton = BlueprintSkeleton(
+        name="wf",
+        engine="crew",
+        nodes=[
+            NodeStub(id=f"n{i}", kind="agent", purpose="p") for i in range(4)
+        ],
+    )
+    client = _SessionClient(node_count=4)
+    author = FlowAuthor(None, crew_catalog, client=client, concurrency=4)
+
+    nodes, failed = await author.author_nodes(skeleton)
+
+    assert failed == [], "a closed session would have failed the later nodes"
+    assert len(nodes) == 4
+    # One enter for the first concurrent caller, one exit for the last.
+    assert client.enter_count == 1
+    assert client.exit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_the_client_is_reopened_for_a_later_stage(crew_catalog):
+    """Refcounting must not leave the client permanently entered."""
+    client = _SessionClient(node_count=2)
+    author = FlowAuthor(None, crew_catalog, client=client, concurrency=2)
+
+    skeleton = BlueprintSkeleton(
+        name="wf",
+        engine="crew",
+        nodes=[NodeStub(id="n0", kind="agent", purpose="p")],
+    )
+    await author.author_nodes(skeleton)
+    assert client.enter_count == 1 and client.exit_count == 1
+
+    skeleton2 = BlueprintSkeleton(
+        name="wf",
+        engine="crew",
+        nodes=[NodeStub(id="n1", kind="agent", purpose="p")],
+    )
+    await author.author_nodes(skeleton2)
+    assert client.enter_count == 2 and client.exit_count == 2

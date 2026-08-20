@@ -194,7 +194,20 @@ class NodeDefinition(BaseModel):
         default=None,
         description="Optional prompt override for this node"
     )
-    max_retries: int = Field(default=3, ge=0)
+    max_retries: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "How many times a failed node is re-executed. Defaults to 0 — no "
+            "retries. The field predates the machinery that reads it: until "
+            "``Node.max_retries`` existed, nothing consumed this value and "
+            "every definition-driven node ran exactly once regardless of what "
+            "it said. Defaulting to 3 now that it IS read would hand three "
+            "silent re-executions (extra LLM spend, repeated tool side "
+            "effects) to every already-stored flow that never asked for them. "
+            "Retries are opt-in: set it explicitly."
+        ),
+    )
     config: Dict[str, Any] = Field(
         default_factory=dict,
         description="Type-specific configuration (e.g., decision mode, question/options)"

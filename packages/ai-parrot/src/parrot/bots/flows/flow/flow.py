@@ -297,6 +297,11 @@ class AgentsFlow(PersistenceMixin):
         self._node_factories: dict[
             str, Callable[["NodeDefinition", set[str], set[str]], Node]
         ] = {}
+        # node_id → single resolved agent (agent nodes), and node_id →
+        # {agent_name: instance} for multi-agent types (decision). Both are
+        # populated by ``from_definition``; empty in programmatic mode.
+        self._resolved_agents: dict[str, Any] = {}
+        self._resolved_agent_groups: dict[str, dict[str, Any]] = {}
         self._nodes: dict[str, Node] = {}
         self._edges: list[FlowEdge] = []
         self._node_event_listeners: list[
@@ -565,7 +570,13 @@ class AgentsFlow(PersistenceMixin):
             # Keyed by node_id so _materialize_nodes can look up by node_def.id.
             resolved_agents[node_def.id] = agent
 
-        # Also validate non-agent node types are registered.
+        # Also validate non-agent node types are registered, and resolve the
+        # agent *groups* a decision node votes with. A decision node has no
+        # agent_ref (it has several agents, not one), so its participants are
+        # named declaratively in ``config.agent_refs``; without resolving them
+        # here the node would be built with an empty ``agents`` mapping and
+        # run a vote with no voters.
+        resolved_groups: dict[str, dict[str, Any]] = {}
         for node_def in definition.nodes:
             if node_def.type == "agent":
                 continue  # already checked above
@@ -574,6 +585,19 @@ class AgentsFlow(PersistenceMixin):
                     f"NodeDefinition {node_def.id!r}: node_type {node_def.type!r} "
                     f"not in NODE_REGISTRY. Registered types: {sorted(NODE_REGISTRY)}"
                 )
+            refs = (node_def.config or {}).get("agent_refs") or []
+            if not refs:
+                continue
+            group: dict[str, Any] = {}
+            for ref in refs:
+                agent = agent_registry.get_bot_instance(ref)
+                if agent is None:
+                    raise AgentNotFoundError(
+                        f"Cannot resolve agent_refs entry {ref!r} for node "
+                        f"{node_def.id!r}"
+                    )
+                group[ref] = agent
+            resolved_groups[node_def.id] = group
 
         # Construct the flow with the definition bound.
         # FlowDefinition uses .flow for the name.
@@ -606,6 +630,8 @@ class AgentsFlow(PersistenceMixin):
         )
         # Attach pre-resolved agent map (keyed by node_id).
         flow._resolved_agents = resolved_agents
+        # Agent *groups* for multi-agent node types (decision), keyed by node_id.
+        flow._resolved_agent_groups = resolved_groups
         # Attach custom-node factories (keyed by NodeDefinition.type).
         flow._node_factories = dict(node_factories or {})
         return flow
@@ -808,7 +834,12 @@ class AgentsFlow(PersistenceMixin):
                     fresh[nid] = factory(node_def, deps, succs)
                 else:
                     fresh[nid] = self._build_node_from_config(
-                        cls, node_type, node_def, deps, succs
+                        cls,
+                        node_type,
+                        node_def,
+                        deps,
+                        succs,
+                        resolved_agents=self._resolved_agent_groups.get(nid),
                     )
 
         return fresh
@@ -820,6 +851,7 @@ class AgentsFlow(PersistenceMixin):
         node_def: NodeDefinition,
         deps: set[str],
         succs: set[str],
+        resolved_agents: Optional[Dict[str, Any]] = None,
     ) -> Node:
         """Construct a node from ``node_def.config`` alone.
 
@@ -841,6 +873,10 @@ class AgentsFlow(PersistenceMixin):
             node_def: The definition entry for this node.
             deps: Node ids this node depends on.
             succs: Node ids that depend on this node.
+            resolved_agents: Live instances for the agents this node's config
+                named in ``agent_refs`` (a ``decision`` node's voters), keyed
+                by agent name. ``from_definition`` resolves them; a config
+                model that declares an ``agents`` kwarg receives them here.
 
         Returns:
             A freshly constructed node.
@@ -862,6 +898,13 @@ class AgentsFlow(PersistenceMixin):
                 ) from exc
             to_kwargs = getattr(parsed, "to_node_kwargs", None)
             extra = to_kwargs() if callable(to_kwargs) else parsed.model_dump()
+
+        # Merge the resolved live agents into whatever the config model
+        # produced. A JSON document can only name agents, never carry them, so
+        # without this a decision node is built with agents={} and its vote has
+        # no voters.
+        if resolved_agents and "agents" in extra:
+            extra["agents"] = {**extra["agents"], **resolved_agents}
 
         node = cls(
             node_id=node_def.id,

@@ -216,10 +216,109 @@ def test_flow_tool_node_carries_its_tool_in_config():
     definition = to_flow_definition(blueprint)
     node = next(n for n in definition.nodes if n.id == "pub")
     assert node.config["tool"] == "rest_api"
-    assert node.config["kwargs"] == {"url": "u"}
+    # The flow-side "tool" node is PlanToolNode, whose factory validates the
+    # config as a PlanNode: named arguments live in 'args' (a mapping), and
+    # 'id'/'store_as' are required. A crew-shaped {"args": [], "kwargs": {}}
+    # payload is rejected by PlanNode's extra="forbid".
+    assert node.config["args"] == {"url": "u"}
+    assert node.config["id"] == "pub"
+    assert node.config["store_as"] == "pub"
+    assert "kwargs" not in node.config
+
+
+def test_flow_tool_node_config_validates_as_a_plan_node():
+    """The compiled config must satisfy the model the runtime parses it with."""
+    from parrot.bots.flows.plan.models import PlanNode
+
+    skeleton = _skeleton(
+        engine="flow", nodes=[NodeStub(id="pub", kind="tool", purpose="publish")]
+    )
+    blueprint = assemble(
+        skeleton,
+        [BlueprintNode(id="pub", kind="tool", tool="rest_api", kwargs={"url": "u"})],
+        [],
+    )
+    definition = to_flow_definition(blueprint)
+    node = next(n for n in definition.nodes if n.id == "pub")
+
+    plan_node = PlanNode.model_validate(node.config)
+    assert plan_node.id == "pub"
+    assert plan_node.tool == "rest_api"
+    assert plan_node.args == {"url": "u"}
+
+
+def test_flow_tool_node_rejects_positional_args():
+    """PlanNode has no positional args; dropping them silently would lose them."""
+    skeleton = _skeleton(
+        engine="flow", nodes=[NodeStub(id="pub", kind="tool", purpose="publish")]
+    )
+    blueprint = assemble(
+        skeleton,
+        [BlueprintNode(id="pub", kind="tool", tool="rest_api", args=["u"])],
+        [],
+    )
+    with pytest.raises(AssemblyError, match="positional args"):
+        to_flow_definition(blueprint)
 
 
 def test_to_flow_definition_rejects_a_crew_blueprint():
     blueprint = assemble(_skeleton(), _nodes(), _chain())
     with pytest.raises(AssemblyError, match="requires engine='flow'"):
         to_flow_definition(blueprint)
+
+
+# ── code-review fixes (PR #1186) ─────────────────────────────────────────────
+
+def test_sentinels_ignore_cel_gated_back_edges():
+    """A repair loop must still get a __start__ and reach __end__.
+
+    ``development -> qa`` on success and ``qa -> development`` on condition
+    leaves every node both a target and a source. Counting the back-edge
+    would give the flow no root to wire __start__ to and no leaf to wire
+    __end__ from — a flow that can neither start nor finish.
+    """
+    skeleton = _skeleton(
+        engine="flow",
+        nodes=[
+            NodeStub(id="development", kind="agent", purpose="write"),
+            NodeStub(id="qa", kind="agent", purpose="check"),
+        ],
+    )
+    blueprint = assemble(
+        skeleton,
+        [
+            BlueprintNode(id="development", kind="agent", agent_ref="w"),
+            BlueprintNode(id="qa", kind="agent", agent_ref="r"),
+        ],
+        [
+            BlueprintTransition(source="development", target="qa"),
+            BlueprintTransition(
+                source="qa",
+                target="development",
+                condition="on_condition",
+                predicate="result.passed == false",
+            ),
+        ],
+    )
+    definition = to_flow_definition(blueprint)
+
+    starts = [e for e in definition.edges if e.from_ == "__start__"]
+    ends = [e for e in definition.edges if e.to == "__end__"]
+    assert [e.to for e in starts] == ["development"]
+    assert [e.from_ for e in ends] == ["qa"]
+
+
+def test_crew_compilation_refuses_to_drop_a_transition_instruction():
+    """A FlowRelation has nowhere to put it; compiling it away loses a step."""
+    skeleton = _skeleton()
+    blueprint = assemble(
+        skeleton,
+        _nodes(),
+        [
+            BlueprintTransition(
+                source="researcher", target="writer", instruction="Be terse."
+            )
+        ],
+    )
+    with pytest.raises(AssemblyError, match="instruction"):
+        to_crew_definition(blueprint)

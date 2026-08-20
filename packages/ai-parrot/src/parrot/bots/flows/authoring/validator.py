@@ -52,12 +52,26 @@ _CEL_ROOTS = frozenset({"result", "error", "ctx"})
 #: *root*: an identifier preceded by a dot is a field of something else and
 #: must not be mistaken for a variable of its own. Quoted strings are
 #: stripped first so words inside literals are not matched either.
-_CEL_ROOT_RE = re.compile(r"(?<![.\w])([A-Za-z_][A-Za-z0-9_]*)")
+#:
+#: The trailing lookahead drops identifiers in *call* position. CEL has no
+#: first-class function values, so a name followed by ``(`` is always a
+#: builtin — ``timestamp("…")``, ``matches(s, r)``, ``dyn(x)`` — never a
+#: variable. Enumerating the builtins instead would leave the list one CEL
+#: release behind and reject correct predicates as unknown variables.
+#: The ``\b`` matters: without it the engine backtracks a character so the
+#: call-position lookahead succeeds, and ``size(`` yields the root ``siz``.
+_CEL_ROOT_RE = re.compile(r"(?<![.\w])([A-Za-z_][A-Za-z0-9_]*)\b(?!\s*\()")
 _CEL_STRING_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
 
-#: CEL keywords and literals that are not variable references.
+#: CEL keywords and literals that are not variable references. Call-position
+#: builtins are handled structurally by ``_CEL_ROOT_RE``; these are the names
+#: that can appear bare.
 _CEL_RESERVED = frozenset(
-    {"true", "false", "null", "in", "has", "size", "int", "double", "string", "bool"}
+    {
+        "true", "false", "null", "in", "has", "size",
+        "int", "uint", "double", "string", "bool", "bytes",
+        "type", "dyn", "timestamp", "duration", "matches",
+    }
 )
 
 #: CEL comprehension macros bind their first argument as a loop variable, e.g.
@@ -347,7 +361,51 @@ def _validate_node(
                 severity="warning",
             )
 
+    if node.kind == "decision":
+        _validate_decision_voters(report, node, known_agents)
+
     _validate_node_config(report, node, catalog)
+
+
+def _validate_decision_voters(
+    report: ValidationReport, node, known_agents: set
+) -> None:
+    """Check that a decision node names real agents to vote with.
+
+    A ``DecisionNode`` runs a vote among ``config.agent_refs``; with none
+    declared it is built with an empty agent mapping and decides nothing,
+    which fails silently at run time rather than loudly here.
+    """
+    refs = (node.config or {}).get("agent_refs") or []
+    if not refs:
+        report.add(
+            node.id,
+            "decision_voters_missing",
+            "A 'decision' node holds a vote, so its config must list the "
+            "agents that vote in 'agent_refs'. With none declared the node "
+            "runs a vote with no voters and returns nothing.",
+        )
+        return
+
+    for ref in refs:
+        if ref in known_agents:
+            continue
+        suggestions = _closest(ref, sorted(known_agents))
+        report.add(
+            node.id,
+            "decision_voter_not_found",
+            f"agent_refs entry {ref!r} is not a registered agent."
+            + (f" Closest available: {suggestions}." if suggestions else ""),
+        )
+        report.capability_gaps.append(
+            CapabilityGap(
+                kind="agent",
+                requested=ref,
+                reason="Not present in the AgentRegistry.",
+                suggestion=suggestions[0] if suggestions else None,
+                node_id=node.id,
+            )
+        )
 
 
 def _validate_node_config(report: ValidationReport, node, catalog: ComponentCatalog) -> None:
@@ -440,6 +498,26 @@ def _validate_transitions(
                 "engine='flow' for conditional routing.",
             )
 
+        if engine == "crew" and transition.instruction:
+            report.add(
+                None,
+                "instruction_unsupported",
+                f"Transition {where} carries an 'instruction', but a crew "
+                "relation is a bare dependency edge with nowhere to put a "
+                "prompt override — it would be silently dropped at compile "
+                "time. Fold the instruction into the target agent's "
+                "'system_prompt', or use engine='flow', whose EdgeDefinition "
+                "carries it.",
+            )
+            report.capability_gaps.append(
+                CapabilityGap(
+                    kind="capability",
+                    requested=f"transition instruction ({where})",
+                    reason="AgentCrew's FlowRelation carries no prompt override.",
+                    suggestion="Use engine='flow'",
+                )
+            )
+
         if transition.predicate:
             _validate_predicate(report, transition.predicate, where)
 
@@ -452,6 +530,30 @@ def _validate_transitions(
 
     _validate_acyclic(report, blueprint, node_ids, edges)
     _validate_reachability(report, blueprint, node_ids, edges)
+
+
+def _conditional_edges(blueprint: WorkflowBlueprint) -> set:
+    """Return the ``(source, target)`` pairs carried by ``on_condition`` edges.
+
+    A CEL-gated edge is the one kind of edge that may point backwards: it is a
+    bounded repair loop the explicit-edge executor supports, not a structural
+    dependency. Both the acyclicity check and the entry-point check have to
+    agree on that, so the set is computed once here rather than derived twice.
+
+    Args:
+        blueprint: The assembled blueprint.
+
+    Returns:
+        Every ``(source, target)`` pair belonging to an ``on_condition``
+        transition.
+    """
+    return {
+        (source, target)
+        for transition in blueprint.transitions
+        if transition.condition == "on_condition"
+        for source in transition.source_ids()
+        for target in transition.target_ids()
+    }
 
 
 def _validate_acyclic(
@@ -467,14 +569,9 @@ def _validate_acyclic(
     dev-loop's ``qa -> development`` edge is exactly this). A crew has no
     conditional edges at all, so every cycle there is a deadlock.
     """
-    conditional: set = {
-        (source, target)
-        for transition in blueprint.transitions
-        if transition.condition == "on_condition"
-        for source in transition.source_ids()
-        for target in transition.target_ids()
-    }
-    considered = [edge for edge in edges if edge not in conditional]
+    considered = [
+        edge for edge in edges if edge not in _conditional_edges(blueprint)
+    ]
 
     in_degree: Dict[str, int] = {node_id: 0 for node_id in node_ids}
     adjacency: Dict[str, List[str]] = defaultdict(list)
@@ -514,11 +611,22 @@ def _validate_reachability(
     A node with no inbound edge in a multi-node workflow is either a second
     entry point (legitimate for a parallel fan-out) or an orphan the model
     forgot to wire — worth surfacing, not worth blocking on.
+
+    ``on_condition`` back-edges are excluded, for the same reason
+    ``_validate_acyclic`` exempts them: in a CEL-gated repair loop
+    (``development -> qa`` on success, ``qa -> development`` on condition)
+    every node carries an inbound edge, and counting the back-edge would
+    report the loop's own entry point as missing.
     """
     if len(node_ids) < 2 or not blueprint.transitions:
         return
 
-    has_inbound = {target for _, target in edges}
+    conditional = _conditional_edges(blueprint)
+    has_inbound = {
+        target
+        for source, target in edges
+        if (source, target) not in conditional
+    }
     roots = sorted(node_ids - has_inbound)
     if not roots:
         report.add(

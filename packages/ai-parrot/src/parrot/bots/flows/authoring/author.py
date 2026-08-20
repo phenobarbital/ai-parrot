@@ -33,7 +33,8 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Sequence, Type, Union
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Type, Union
 
 from pydantic import BaseModel, ValidationError
 
@@ -179,6 +180,15 @@ class FlowAuthor:
         self.catalog = catalog
         self.max_nodes = max_nodes
         self._semaphore = asyncio.Semaphore(max(1, concurrency))
+        # Entering an AbstractClient assigns it a fresh aiohttp session and
+        # exiting closes it, so the context manager is NOT reentrant on one
+        # shared instance: with N nodes authored concurrently, the first to
+        # finish would close the session the other N-1 are still using. Refcount
+        # instead — one enter for the first concurrent caller, one exit for the
+        # last. See _client_session().
+        self._client_lock = asyncio.Lock()
+        self._client_depth = 0
+        self._entered_client: Any = None
         self.logger = logging.getLogger(f"{__name__}.FlowAuthor")
 
     # ── stage 1: skeleton ────────────────────────────────────────────────
@@ -503,9 +513,40 @@ class FlowAuthor:
                 f"Response failed {model.__name__} validation: {exc}"
             ) from exc
 
+    @asynccontextmanager
+    async def _client_session(self) -> AsyncIterator[Any]:
+        """Yield the entered client, entering it once for all concurrent users.
+
+        ``AbstractClient.__aenter__`` creates a new ``aiohttp.ClientSession``
+        and ``__aexit__`` closes it, so nesting ``async with self.client`` on
+        one instance is unsafe: concurrent authoring calls would each replace
+        the session (leaking the previous one) and the first to exit would
+        close the session still in use by the rest, failing them with "Session
+        is closed".
+
+        The lock guards only the depth transitions, never the model call, so
+        node authoring stays as concurrent as ``concurrency`` allows.
+
+        Yields:
+            The entered client.
+        """
+        async with self._client_lock:
+            if self._client_depth == 0:
+                self._entered_client = await self.client.__aenter__()
+            self._client_depth += 1
+            entered = self._entered_client
+        try:
+            yield entered
+        finally:
+            async with self._client_lock:
+                self._client_depth -= 1
+                if self._client_depth == 0:
+                    self._entered_client = None
+                    await self.client.__aexit__(None, None, None)
+
     async def _call(self, prompt: str) -> str:
         """Make exactly one call to the resolved client and return its text."""
-        async with self.client as entered:
+        async with self._client_session() as entered:
             response = await entered.ask(
                 prompt=prompt,
                 model=getattr(entered, "model", None),

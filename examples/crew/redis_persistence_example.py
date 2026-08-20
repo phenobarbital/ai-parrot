@@ -193,9 +193,11 @@ async def example_flow_mode_crew():
         flow_relations=[
             # NOTE: relations reference an agent's *effective display name* —
             # `name` when set, otherwise `agent_id`. AgentCrew.from_definition
-            # keys crew.agents that way, so referencing "coordinator" here
-            # (the agent_id) would resolve to nothing and the edge would
-            # silently disappear.
+            # keys crew.agents that way. An `agent_id` such as "coordinator"
+            # is accepted too and normalised to the display name by
+            # CrewDefinition.validate_flow_relations (it used to resolve to
+            # nothing and drop the edge); prefer the display name here so the
+            # relation reads the same as the mapping it resolves against.
             # Coordinator must complete first
             FlowRelation(
                 source="Research Coordinator",

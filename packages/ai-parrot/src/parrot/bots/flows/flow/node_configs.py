@@ -115,17 +115,35 @@ class DecisionConfigDef(BaseModel):
     options: Optional[List[Dict[str, Any]]] = Field(
         default=None, description="Available options (multi_choice)"
     )
+    agent_refs: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Names of registered agents that vote in this decision. This is "
+            "the declarative half of 'agents': a JSON document names them, "
+            "and AgentsFlow.from_definition resolves each one through the "
+            "AgentRegistry before the node is built."
+        ),
+    )
     agents: Dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Participating agents. Left empty in a JSON definition — the "
-            "executor injects live agent instances."
+            "Participating agents as live instances. Not expressible in JSON "
+            "— a definition names them in 'agent_refs' instead, and the "
+            "executor injects the resolved instances here."
         ),
     )
 
     def to_node_kwargs(self) -> Dict[str, Any]:
-        """Expand into ``DecisionNode`` constructor keyword arguments."""
-        payload = self.model_dump(exclude={"agents", "escalation_policy"})
+        """Expand into ``DecisionNode`` constructor keyword arguments.
+
+        ``agent_refs`` is a resolution instruction, not a
+        ``DecisionNodeConfig`` field, so it is excluded from the runtime
+        config; ``AgentsFlow._build_node_from_config`` merges the agents it
+        resolved from those refs into the ``agents`` mapping returned here.
+        """
+        payload = self.model_dump(
+            exclude={"agents", "agent_refs", "escalation_policy"}
+        )
         if self.escalation_policy is not None:
             payload["escalation_policy"] = self.escalation_policy.to_runtime()
         return {

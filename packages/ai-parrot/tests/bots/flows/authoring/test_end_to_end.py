@@ -309,3 +309,85 @@ async def test_the_result_is_json_round_trippable(crew_catalog):
 
     payload = json.loads(json.dumps(result.model_dump(mode="json")))
     assert FlowAuthoringResult.model_validate(payload).status is result.status
+
+
+# ── code-review fixes (PR #1186) ─────────────────────────────────────────────
+
+class _StubAgent:
+    """Satisfies the ``AgentLike`` protocol ``AgentNode.agent`` is typed with."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def invoke(self, prompt: str, **kwargs):  # pragma: no cover - unused
+        return ""
+
+    async def ask(self, question: str = "", **kwargs):  # pragma: no cover
+        return ""
+
+
+class _Registry:
+    def __init__(self, *names: str) -> None:
+        self._agents = {name: _StubAgent(name) for name in names}
+
+    def get_bot_instance(self, name):
+        return self._agents.get(name)
+
+
+def test_an_authored_decision_flow_materializes_end_to_end(catalog):
+    """blueprint → FlowDefinition → AgentsFlow, with real voters attached.
+
+    Every hop used to break: the compiled config named no voters, so the
+    DecisionNode was built with agents={} and held a vote nobody could win.
+    """
+    from parrot.bots.flows.authoring.assembler import assemble, to_flow_definition
+    from parrot.bots.flows.authoring.blueprint import (
+        BlueprintNode,
+        BlueprintSkeleton,
+        BlueprintTransition,
+        NodeStub,
+    )
+    from parrot.bots.flows.authoring.validator import validate_blueprint
+    from parrot.bots.flows.flow.flow import AgentsFlow
+
+    skeleton = BlueprintSkeleton(
+        name="Review Gate",
+        engine="flow",
+        nodes=[
+            NodeStub(id="draft", kind="agent", purpose="Draft the answer"),
+            NodeStub(id="vote", kind="decision", purpose="Approve or reject"),
+        ],
+    )
+    blueprint = assemble(
+        skeleton,
+        [
+            BlueprintNode(id="draft", kind="agent", agent_ref="writer_agent"),
+            BlueprintNode(
+                id="vote",
+                kind="decision",
+                config={
+                    "mode": "ballot",
+                    "decision_type": "approval",
+                    "agent_refs": ["writer_agent", "researcher_agent"],
+                },
+            ),
+        ],
+        [BlueprintTransition(source="draft", target="vote")],
+    )
+
+    report = validate_blueprint(blueprint, catalog)
+    assert report.ok, str(report)
+
+    definition = to_flow_definition(blueprint)
+    flow = AgentsFlow.from_definition(
+        definition, agent_registry=_Registry("writer_agent", "researcher_agent")
+    )
+    node = flow._materialize_nodes()["vote"]
+    assert node.decision_config.mode.value == "ballot"
+    assert set(node.agents) == {"writer_agent", "researcher_agent"}
+    # Retries stay opt-in: the authored definition never asked for any.
+    assert node.max_retries == 0

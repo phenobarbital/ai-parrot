@@ -319,3 +319,161 @@ def test_agent_node_may_not_set_tool():
 def test_unknown_field_is_rejected():
     with pytest.raises(ValidationError):
         BlueprintNode(id="a", kind="agent", hallucinated_field="x")
+
+
+# ── code-review fixes (PR #1186) ─────────────────────────────────────────────
+
+def _repair_loop_blueprint():
+    """The dev-loop shape: forward edge plus a CEL-gated back-edge."""
+    return WorkflowBlueprint(
+        name="wf",
+        engine="flow",
+        nodes=[
+            BlueprintNode(id="development", kind="agent", agent_ref="writer_agent"),
+            BlueprintNode(id="qa", kind="agent", agent_ref="researcher_agent"),
+        ],
+        transitions=[
+            BlueprintTransition(source="development", target="qa"),
+            BlueprintTransition(
+                source="qa",
+                target="development",
+                condition="on_condition",
+                predicate="result.passed == false",
+            ),
+        ],
+    )
+
+
+def test_cel_gated_repair_loop_is_not_a_missing_entry_point(catalog):
+    """The loop _validate_acyclic explicitly permits must not then be rejected.
+
+    Every node in a two-node repair loop carries an inbound edge, so counting
+    the back-edge leaves no root and fires a blocking ``no_entry_point``.
+    """
+    report = validate_blueprint(_repair_loop_blueprint(), catalog)
+    assert "no_entry_point" not in _codes(report)
+    assert "cycle_detected" not in _codes(report)
+    assert report.ok, str(report)
+
+
+def test_crew_transition_instruction_is_reported(crew_catalog):
+    """A crew relation has nowhere to put a prompt override."""
+    blueprint = _blueprint(
+        transitions=[
+            BlueprintTransition(source="a", target="b", instruction="Be terse.")
+        ]
+    )
+    report = validate_blueprint(blueprint, crew_catalog)
+    assert not report.ok
+    assert "instruction_unsupported" in _codes(report)
+    assert any(gap.kind == "capability" for gap in report.capability_gaps)
+
+
+def test_flow_transition_instruction_is_fine(catalog):
+    """EdgeDefinition carries it, so a flow may use it."""
+    blueprint = WorkflowBlueprint(
+        name="wf",
+        engine="flow",
+        nodes=[
+            BlueprintNode(id="a", kind="agent", agent_ref="writer_agent"),
+            BlueprintNode(id="b", kind="agent", agent_ref="researcher_agent"),
+        ],
+        transitions=[
+            BlueprintTransition(source="a", target="b", instruction="Be terse.")
+        ],
+    )
+    report = validate_blueprint(blueprint, catalog)
+    assert "instruction_unsupported" not in _codes(report)
+
+
+def test_decision_node_without_voters_is_rejected(catalog):
+    """A decision with no agent_refs holds a vote with no voters."""
+    blueprint = WorkflowBlueprint(
+        name="wf",
+        engine="flow",
+        nodes=[
+            BlueprintNode(id="a", kind="agent", agent_ref="writer_agent"),
+            BlueprintNode(
+                id="d",
+                kind="decision",
+                config={"mode": "ballot", "decision_type": "binary"},
+            ),
+        ],
+        transitions=[BlueprintTransition(source="a", target="d")],
+    )
+    report = validate_blueprint(blueprint, catalog)
+    assert not report.ok
+    assert "decision_voters_missing" in _codes(report)
+
+
+def test_decision_voter_must_be_a_registered_agent(catalog):
+    blueprint = WorkflowBlueprint(
+        name="wf",
+        engine="flow",
+        nodes=[
+            BlueprintNode(id="a", kind="agent", agent_ref="writer_agent"),
+            BlueprintNode(
+                id="d",
+                kind="decision",
+                config={
+                    "mode": "ballot",
+                    "decision_type": "binary",
+                    "agent_refs": ["writer_agnt"],
+                },
+            ),
+        ],
+        transitions=[BlueprintTransition(source="a", target="d")],
+    )
+    report = validate_blueprint(blueprint, catalog)
+    assert not report.ok
+    assert "decision_voter_not_found" in _codes(report)
+    assert "writer_agent" in str(report)
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        'ctx.deadline > timestamp("2026-01-01T00:00:00Z")',
+        'duration("1h") > ctx.elapsed',
+        'matches(result.name, "^a")',
+        "uint(result.count) > uint(0)",
+    ],
+)
+def test_cel_builtins_in_call_position_are_not_unknown_variables(catalog, predicate):
+    """A builtin call is not a free variable; rejecting it blocks a valid flow."""
+    blueprint = WorkflowBlueprint(
+        name="wf",
+        engine="flow",
+        nodes=[
+            BlueprintNode(id="a", kind="agent", agent_ref="writer_agent"),
+            BlueprintNode(id="b", kind="agent", agent_ref="researcher_agent"),
+        ],
+        transitions=[
+            BlueprintTransition(
+                source="a", target="b", condition="on_condition", predicate=predicate
+            )
+        ],
+    )
+    report = validate_blueprint(blueprint, catalog)
+    assert "predicate_unknown_variable" not in _codes(report), str(report)
+
+
+def test_a_real_typo_is_still_an_unknown_variable(catalog):
+    blueprint = WorkflowBlueprint(
+        name="wf",
+        engine="flow",
+        nodes=[
+            BlueprintNode(id="a", kind="agent", agent_ref="writer_agent"),
+            BlueprintNode(id="b", kind="agent", agent_ref="researcher_agent"),
+        ],
+        transitions=[
+            BlueprintTransition(
+                source="a",
+                target="b",
+                condition="on_condition",
+                predicate="reslt.ok == true",
+            )
+        ],
+    )
+    report = validate_blueprint(blueprint, catalog)
+    assert "predicate_unknown_variable" in _codes(report)

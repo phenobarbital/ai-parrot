@@ -122,6 +122,61 @@ class CrewRedis:
             self.logger.error("Serialization error: %s", e)
             raise
 
+    def _strip_unknown_keys(self, crew_dict: dict, crew_id: str) -> dict:
+        """Drop keys no ``CrewDefinition`` model declares, root and nested.
+
+        ``CrewDefinition``, ``AgentDefinition``, ``ToolNodeDefinition`` and
+        ``FlowRelation`` are all ``extra="forbid"``, so a single obsolete key
+        anywhere in a stored document makes the whole crew unloadable. Every
+        dropped key is logged with its path so the drift stays visible instead
+        of being silently absorbed.
+
+        Args:
+            crew_dict: The decoded stored document.
+            crew_id: Crew identifier, for the log message.
+
+        Returns:
+            A copy carrying only declared fields.
+        """
+        from .models import (  # noqa: PLC0415
+            AgentDefinition,
+            FlowRelation,
+            ToolNodeDefinition,
+        )
+
+        dropped: List[str] = []
+
+        def _prune(payload: Any, model: Any, path: str) -> Any:
+            if not isinstance(payload, dict):
+                return payload
+            known = set(model.model_fields)
+            dropped.extend(f"{path}{key}" for key in sorted(set(payload) - known))
+            return {
+                key: value for key, value in payload.items() if key in known
+            }
+
+        cleaned = _prune(crew_dict, CrewDefinition, "")
+        for field, model in (
+            ("agents", AgentDefinition),
+            ("tool_nodes", ToolNodeDefinition),
+            ("flow_relations", FlowRelation),
+        ):
+            entries = cleaned.get(field)
+            if isinstance(entries, list):
+                cleaned[field] = [
+                    _prune(entry, model, f"{field}[{index}].")
+                    for index, entry in enumerate(entries)
+                ]
+
+        if dropped:
+            self.logger.warning(
+                "Ignoring unknown key(s) %s in stored crew %r; the field(s) "
+                "are not part of the crew definition models and were never "
+                "applied.",
+                dropped, crew_id,
+            )
+        return cleaned
+
     def _deserialize_crew(self, data: str) -> CrewDefinition:
         """
         Deserialize JSON string to CrewDefinition.
@@ -147,18 +202,14 @@ class CrewRedis:
             # not the job of strictness — its job is to stop *new* definitions
             # from silently dropping a field. Drop and log instead, so an
             # already-stored crew stays loadable and the drift stays visible.
-            unknown = set(crew_dict) - set(CrewDefinition.model_fields)
-            if unknown:
-                self.logger.warning(
-                    "Ignoring unknown key(s) %s in stored crew %r; the field(s) "
-                    "are not part of CrewDefinition and were never applied.",
-                    sorted(unknown), crew_dict.get('crew_id', '<unknown>'),
-                )
-                crew_dict = {
-                    key: value
-                    for key, value in crew_dict.items()
-                    if key not in unknown
-                }
+            #
+            # The nested models are strict too, so stripping only the root
+            # would still fail on an obsolete key inside an agent entry —
+            # which is exactly where drift accumulates, since agents carry the
+            # most fields.
+            crew_dict = self._strip_unknown_keys(
+                crew_dict, crew_dict.get('crew_id', '<unknown>')
+            )
 
             return CrewDefinition(**crew_dict)
         except Exception as e:
