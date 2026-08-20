@@ -61,7 +61,7 @@ class TestJiraOAuthCallback:
         assert resp.status == 200
         text = await resp.text()
         assert "Test User" in text
-        assert "test.atlassian.net" in text
+        assert "test.atlassian.net" in text  # lgtm[py/incomplete-url-substring-sanitization]
         manager.handle_callback.assert_awaited_once_with("x", "y")
 
     async def test_invalid_state_returns_400(self, aiohttp_client) -> None:

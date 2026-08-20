@@ -90,7 +90,7 @@ _SVELTE_SUFFIX = ".svelte"
 #: tag boundary and the lazy body is anchored by the required ``</script>``
 #: literal, so there is no nested quantifier to backtrack on.
 _RE_SVELTE_SCRIPT = re.compile(
-    r"<script([^>]*)>(.*?)</script\s*>", re.DOTALL | re.IGNORECASE
+    r"<script([^>]*)>(.*?)</script[^>]*>", re.DOTALL | re.IGNORECASE
 )
 
 #: The ``lang`` attribute within a ``<script>`` open tag, either quoting

@@ -130,7 +130,7 @@ def generate_keys(
             existing += f"{separator}{line}\n"
             written.append(var_name)
 
-    path.write_text(existing, encoding="utf-8")
+    path.write_text(existing, encoding="utf-8")  # CodeQL[py/clear-text-storage-sensitive-data] — intentional: this CLI writes secrets to a local .env file by design
 
     if written:
         click.secho(f"Wrote to {env_file}:", fg="green", bold=True)

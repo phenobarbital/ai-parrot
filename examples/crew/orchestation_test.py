@@ -200,7 +200,7 @@ async def test_direct_tool_call():
     print("\nCalling tool directly...")
     result = await tool.execute("What is 2+2?")
 
-    print(f"\nDirect call result: {result}")
+    print(f"\nDirect call result: {result}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo output
     print("\n✅ Direct tool call works!")
 
 

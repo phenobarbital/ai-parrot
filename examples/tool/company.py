@@ -35,7 +35,7 @@ async def example_basic_usage():
     print(f"\nCompany: {result.company_name}")
     print(f"Status: {result.scrape_status}")
     print(f"Headquarters: {result.headquarters}")
-    print(f"Phone: {result.phone_number}")
+    print(f"Phone: {result.phone_number}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo, public company info
     print(f"Website: {result.website}")
     print(f"Revenue: {result.revenue_range}")
     print(f"Industry: {result.industry}")
@@ -65,7 +65,7 @@ async def example_all_sources():
         print(f"\n{result.source_platform.upper()}:")
         print(f"  Status: {result.scrape_status}")
         print(f"  Company: {result.company_name}")
-        print(f"  Website: {result.website}")
+        print(f"  Website: {result.website}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo, public company info
         print(f"  Revenue: {result.revenue_range}")
         print(f"  Employees: {result.employee_count}")
 
@@ -238,24 +238,24 @@ async def example_data_aggregation():
 
     # Display aggregated data
     print(f"\n{'='*60}")
-    print(f"AGGREGATED DATA FOR: {aggregated['company_name']}")
+    print(f"AGGREGATED DATA FOR: {aggregated['company_name']}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo, public company info
     print(f"{'='*60}")
     print(f"\nData sources: {', '.join(aggregated['sources'])}")
     print(f"\nWebsites found: {len(aggregated['websites'])}")
     for website in aggregated['websites']:
-        print(f"  - {website}")
+        print(f"  - {website}")  # CodeQL[py/clear-text-logging-sensitive-data] — public company website
 
     print(f"\nPhone numbers found: {len(aggregated['phone_numbers'])}")
     for phone in aggregated['phone_numbers']:
-        print(f"  - {phone}")
+        print(f"  - {phone}")  # CodeQL[py/clear-text-logging-sensitive-data] — public company phone
 
     print(f"\nRevenue ranges found: {len(aggregated['revenue_ranges'])}")
     for revenue in aggregated['revenue_ranges']:
-        print(f"  - {revenue}")
+        print(f"  - {revenue}")  # CodeQL[py/clear-text-logging-sensitive-data] — public company revenue
 
     print(f"\nIndustries found: {len(aggregated['industries'])}")
     for industry in list(aggregated['industries'])[:5]:  # Show first 5
-        print(f"  - {industry}")
+        print(f"  - {industry}")  # CodeQL[py/clear-text-logging-sensitive-data] — public company industry
 
 
 async def example_integration_with_agent():

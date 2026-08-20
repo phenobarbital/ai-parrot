@@ -250,7 +250,7 @@ async def test_video_links_extracted():
 
     video_docs = [d for d in docs if d.metadata.get("content_kind") == "video_link"]
     assert len(video_docs) >= 1
-    assert "youtube.com" in video_docs[0].page_content
+    assert "youtube.com" in video_docs[0].page_content  # lgtm[py/incomplete-url-substring-sanitization]
 
 
 @pytest.mark.asyncio
@@ -379,7 +379,7 @@ async def test_crawl_mode():
     assert len(docs) > 0
     # Should have docs from both pages
     urls = {d.metadata["url"] for d in docs}
-    assert "https://example.com" in urls
+    assert "https://example.com" in urls  # lgtm[py/incomplete-url-substring-sanitization]
     assert "https://example.com/about" in urls
 
     # Verify crawl params

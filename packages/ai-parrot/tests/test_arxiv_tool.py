@@ -233,7 +233,7 @@ class TestArxivTool:
         datetime.strptime(paper["published"], "%Y-%m-%d")
 
         # Verify PDF URL format
-        assert "arxiv.org" in paper["pdf_url"]
+        assert "arxiv.org" in paper["pdf_url"]  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_complex_query(self, arxiv_tool):

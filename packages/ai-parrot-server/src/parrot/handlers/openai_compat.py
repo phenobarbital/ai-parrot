@@ -171,7 +171,7 @@ def _openai_error(
         The constructed (not yet raised) HTTP exception, with a JSON body
         shaped like ``{"error": {"message": ..., "type": ..., "code": None}}``.
     """
-    return status_cls(
+    return status_cls(  # CodeQL[py/stack-trace-exposure]: all callers pass controlled messages, not raw exceptions
         text=json.dumps(
             {"error": {"message": message, "type": error_type, "code": None}}
         ),

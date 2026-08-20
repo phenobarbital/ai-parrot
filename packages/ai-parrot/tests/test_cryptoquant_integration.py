@@ -16,7 +16,7 @@ async def test_real_discovery_endpoints():
 
     toolkit = CryptoQuantToolkit(api_key=api_key)
     
-    print(f"Testing with API Key: {api_key[:4]}...")
+    print(f"Testing with API Key: {'*' * 4}...")  # CodeQL[py/clear-text-logging-sensitive-data] — redact even prefix in test output
 
     try:
         result = await toolkit.cq_discovery_endpoints()

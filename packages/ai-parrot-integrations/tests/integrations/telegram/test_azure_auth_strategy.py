@@ -108,7 +108,7 @@ class TestBuildLoginKeyboard:
         config = type("Cfg", (), {"login_page_url": "https://fallback.com/azure_login.html"})()
         kb = await s.build_login_keyboard(config, "state")
         button = kb.keyboard[0][0]
-        assert "fallback.com" in button.web_app.url
+        assert "fallback.com" in button.web_app.url  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_keyboard_no_page_url_raises_value_error(self):

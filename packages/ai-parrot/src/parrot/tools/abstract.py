@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from datetime import datetime
 import asyncio
+import os
 import re
 import time
 import traceback
@@ -369,11 +370,28 @@ class AbstractTool(EventEmitterMixin, ABC):
         # Set up directories
         self.static_dir = Path(static_dir or STATIC_DIR).resolve()
 
-        self.output_dir = Path(output_dir).resolve() if output_dir else self._default_output_dir()
+        # Security: resolve output_dir and verify it stays under an allowed
+        # base (STATIC_DIR or OUTPUT_DIR) to prevent path-traversal attacks.
+        if output_dir:
+            resolved_output = Path(output_dir).resolve()
+            allowed_bases = (
+                Path(STATIC_DIR).resolve(),
+                Path(OUTPUT_DIR).resolve() if OUTPUT_DIR else None,
+            )
+            if not any(
+                base and (resolved_output == base or str(resolved_output).startswith(str(base) + os.sep))
+                for base in allowed_bases
+            ):
+                raise ValueError(
+                    f"output_dir escapes allowed directories: {output_dir}"
+                )
+            self.output_dir = resolved_output
+        else:
+            self.output_dir = self._default_output_dir()
 
         # Ensure output directory exists if specified
         if self.output_dir and not self.output_dir.exists():
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self.output_dir.mkdir(parents=True, exist_ok=True)  # nosec
 
         # FEAT-176: initialise per-instance event registry
         self._init_events()
@@ -633,10 +651,11 @@ class AbstractTool(EventEmitterMixin, ABC):
             kwargs = self._coerce_json_strings(kwargs)
             result = self.args_schema(**kwargs)
             if not result:
+                redacted = self._redact_keys(kwargs)  # noqa: S106
                 self.logger.warning(
                     "Validation failed for %s with args: %s",
                     self.name,
-                    self._redact_keys(kwargs),
+                    redacted,  # CodeQL[py/clear-text-logging-sensitive-data] — values are already redacted by _redact_keys
                 )
             return result
         except Exception as e:

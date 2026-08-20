@@ -269,9 +269,28 @@ def add_row_limit(query: str, max_rows: int, driver: str) -> str:
         # Check if LIMIT is already present (case-insensitive word boundary)
         if re.search(r'\bLIMIT\b', query, re.IGNORECASE):
             return query
-        # Strip trailing semicolons, whitespace, and comments before appending
-        tail_pattern = r'(?:\s+|;|--[^\n]*|/\*[\s\S]*?\*/)*$'
-        clean_query = re.sub(tail_pattern, '', query)
+        # Strip trailing semicolons, whitespace, and comments before
+        # appending LIMIT.  Uses iterative rstrip instead of a single
+        # regex to avoid ReDoS from nested quantifiers.
+        clean_query = query
+        changed = True
+        while changed:
+            prev = clean_query
+            clean_query = clean_query.rstrip().rstrip(";")
+            # Strip trailing line comments (-- ...)
+            if "\n" in clean_query:
+                last_nl = clean_query.rfind("\n")
+                tail = clean_query[last_nl + 1 :].lstrip()
+                if tail.startswith("--"):
+                    clean_query = clean_query[: last_nl]
+            elif clean_query.lstrip().startswith("--"):
+                clean_query = ""
+            # Strip trailing block comments (/* ... */)
+            if clean_query.endswith("*/"):
+                bc_start = clean_query.rfind("/*")
+                if bc_start >= 0:
+                    clean_query = clean_query[:bc_start]
+            changed = clean_query != prev
         if not clean_query:
             return query
         return f"{clean_query} LIMIT {max_rows}"

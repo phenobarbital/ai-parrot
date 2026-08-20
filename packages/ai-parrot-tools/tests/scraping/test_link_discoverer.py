@@ -33,7 +33,7 @@ class TestLinkDiscoverer:
         """Blocks external.com links when allow_external=False."""
         ld = LinkDiscoverer(base_domain="example.com", allow_external=False)
         urls = ld.discover(SAMPLE_HTML, BASE_URL, current_depth=0, max_depth=2)
-        external = [u for u in urls if "external.com" in u]
+        external = [u for u in urls if "external.com" in u]  # lgtm[py/incomplete-url-substring-sanitization]
         assert external == []
 
     def test_allow_external(self) -> None:

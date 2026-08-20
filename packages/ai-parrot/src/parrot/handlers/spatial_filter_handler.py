@@ -382,14 +382,16 @@ class SpatialFilterHandler:
                 datasets=req.datasets,
             )
         except Exception as exc:
+            self.logger.warning("SpatialFilterHandler: invalid spatial spec: %s", exc)
             return await self._json_response(
-                {"error": f"Invalid spatial spec: {exc}"}, status=422
+                {"error": "Invalid spatial specification"}, status=422
             )
 
         try:
             dm = await self._get_dataset_manager()
         except (KeyError, NotImplementedError) as exc:
-            return await self._json_response({"error": str(exc)}, status=404)
+            self.logger.warning("SpatialFilterHandler: manager not found: %s", exc)
+            return await self._json_response({"error": "Dataset manager not found for agent"}, status=404)
 
         # FEAT-221: detect optional version=2 toggle
         version = self.request.rel_url.query.get("version", "1")
@@ -397,7 +399,8 @@ class SpatialFilterHandler:
         try:
             spatial_result = await dm.spatial_filter(spec, cap_per_dataset=req.cap_per_dataset)
         except ValueError as exc:
-            return await self._json_response({"error": str(exc)}, status=422)
+            self.logger.warning("SpatialFilterHandler: spatial filter invalid: %s", exc)
+            return await self._json_response({"error": "Invalid spatial filter parameters"}, status=422)
         except Exception as exc:
             self.logger.error("SpatialFilterHandler: direct path failed: %s", exc)
             return await self._json_response({"error": "Internal server error"}, status=500)
@@ -438,12 +441,14 @@ class SpatialFilterHandler:
         try:
             req = NLSpatialRequest(**body)
         except Exception as exc:
-            return await self._json_response({"error": f"Invalid request: {exc}"}, status=422)
+            self.logger.warning("SpatialFilterHandler: invalid NL request: %s", exc)
+            return await self._json_response({"error": "Invalid request parameters"}, status=422)
 
         try:
             dm = await self._get_dataset_manager()
         except (KeyError, NotImplementedError) as exc:
-            return await self._json_response({"error": str(exc)}, status=404)
+            self.logger.warning("SpatialFilterHandler: manager not found: %s", exc)
+            return await self._json_response({"error": "Dataset manager not found for agent"}, status=404)
 
         # Get available spatial datasets from manifest
         manifest = dm.get_manifest()
@@ -461,7 +466,8 @@ class SpatialFilterHandler:
                 default_datasets=datasets_hint,
             )
         except ValueError as exc:
-            return await self._json_response({"error": str(exc)}, status=422)
+            self.logger.warning("SpatialFilterHandler: NL synthesis validation error: %s", exc)
+            return await self._json_response({"error": "Could not synthesize spatial query"}, status=422)
         except Exception as exc:
             self.logger.error("SpatialFilterHandler: NL synthesis failed: %s", exc)
             return await self._json_response({"error": "Synthesis failed"}, status=500)
@@ -472,7 +478,8 @@ class SpatialFilterHandler:
         try:
             spatial_result = await dm.spatial_filter(spec, cap_per_dataset=req.cap_per_dataset)
         except ValueError as exc:
-            return await self._json_response({"error": str(exc)}, status=422)
+            self.logger.warning("SpatialFilterHandler: NL spatial filter invalid: %s", exc)
+            return await self._json_response({"error": "Invalid spatial filter parameters"}, status=422)
         except Exception as exc:
             self.logger.error("SpatialFilterHandler: NL path execution failed: %s", exc)
             return await self._json_response({"error": "Internal server error"}, status=500)
@@ -505,7 +512,8 @@ class SpatialFilterHandler:
         try:
             dm = await self._get_dataset_manager()
         except (KeyError, NotImplementedError) as exc:
-            return await self._json_response({"error": str(exc)}, status=404)
+            self.logger.warning("SpatialFilterHandler: manager not found for manifest: %s", exc)
+            return await self._json_response({"error": "Dataset manager not found for agent"}, status=404)
 
         manifest = dm.get_manifest()
         return await self._json_response({"datasets": manifest})

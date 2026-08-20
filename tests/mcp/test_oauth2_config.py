@@ -89,8 +89,8 @@ class TestPresets:
     def test_netsuite_preset_fields(self):
         """NetSuite preset has expected URLs and required params."""
         preset = get_mcp_oauth2_preset("netsuite")
-        assert "netsuite.com" in preset.auth_url
-        assert "netsuite.com" in preset.token_url
+        assert "netsuite.com" in preset.auth_url  # lgtm[py/incomplete-url-substring-sanitization]
+        assert "netsuite.com" in preset.token_url  # lgtm[py/incomplete-url-substring-sanitization]
         assert "account_id" in preset.required_params
         assert "client_id" in preset.required_params
 

@@ -207,7 +207,7 @@ class TestJiraStatusHandler:
 
         assert result["response_type"] == "ephemeral"
         assert "Jane Doe" in result["text"]
-        assert "myco.atlassian.net" in result["text"]
+        assert "myco.atlassian.net" in result["text"]  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_returns_not_connected_status(self, mock_oauth_manager, slack_payload):

@@ -43,13 +43,13 @@ def build_cache_key(query: str, store_fingerprint: tuple[str, ...]) -> str:
             configuration.
 
     Returns:
-        A 40-character hex string (SHA-1).
+        A 64-character hex string (SHA-256).
     """
     normalised = _WHITESPACE_RE.sub(" ", query.lower()).strip()
     # Sort the fingerprint to make key order-independent.
     fp = "|".join(sorted(store_fingerprint))
     raw = f"{normalised}\x00{fp}"
-    return hashlib.sha1(raw.encode("utf-8", errors="replace")).hexdigest()
+    return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
 
 
 class DecisionCache:

@@ -90,7 +90,7 @@ class TestBasicAuthStrategy:
         assert "Sign in to Navigator" in button.text
         assert button.web_app is not None
         assert "auth_url=" in button.web_app.url
-        assert "nav.example.com" in button.web_app.url
+        assert "nav.example.com" in button.web_app.url  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_build_login_keyboard_includes_login_page_url(

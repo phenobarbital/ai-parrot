@@ -314,7 +314,7 @@ async def test_run_tests_uses_explicit_url_param():
         await agent.run_tests(cases, url="http://override.com")
 
         prompt = agent.ask.call_args[0][0]
-        assert "http://override.com" in prompt
+        assert "http://override.com" in prompt  # lgtm[py/incomplete-url-substring-sanitization]
 
 
 # --- TASK-2115: QA Model Enhancements ---

@@ -218,7 +218,11 @@ def make_oauth2_callback(provider_id: str):
         try:
             token_set, state_payload = await manager.handle_callback(code, state)
         except ValueError as exc:
-            return _error_response(str(exc), status=400)
+            logger.warning("OAuth callback validation error for provider=%s: %s", provider_id, exc)
+            return _error_response(
+                "Invalid or expired authorization request. Please try again.",
+                status=400,
+            )
         except Exception:  # noqa: BLE001
             logger.exception("OAuth callback error for provider=%s", provider_id)
             return _error_response(

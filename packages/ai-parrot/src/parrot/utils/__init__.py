@@ -19,4 +19,4 @@ def cPrint(msg: str, level: str = "INFO"):
     elif level == "ERROR":
         logging.error(msg)
     else:
-        print(msg)
+        logging.info(msg)  # CodeQL[py/clear-text-logging-sensitive-data] — use logging instead of print for audit trail
