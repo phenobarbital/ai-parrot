@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-20T01:19:08.727687+00:00",
-  "completed_at": "2026-08-20T02:52:31+00:00",
+  "completed_at": "2026-08-20T08:40:17+00:00",
   "tasks": [
     {
       "id": "TASK-2285",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
       "completed_at": "2026-08-20T01:30:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2285-tool-relevance-ranker.md"
+      "file": "sdd/tasks/completed/TASK-2285-tool-relevance-ranker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2286",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
       "completed_at": "2026-08-20T01:39:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2286-agentd-caller-identity.md"
+      "file": "sdd/tasks/completed/TASK-2286-agentd-caller-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2287",
@@ -59,7 +61,8 @@
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
       "completed_at": "2026-08-20T01:48:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2287-bridge-core.md"
+      "file": "sdd/tasks/completed/TASK-2287-bridge-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2288",
@@ -79,7 +82,8 @@
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
       "completed_at": "2026-08-20T02:03:31+00:00",
-      "file": "sdd/tasks/completed/TASK-2288-client-options-plumbing.md"
+      "file": "sdd/tasks/completed/TASK-2288-client-options-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2289",
@@ -101,7 +105,8 @@
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
       "completed_at": "2026-08-20T02:07:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2289-narrowing-budget.md"
+      "file": "sdd/tasks/completed/TASK-2289-narrowing-budget.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2290",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
       "completed_at": "2026-08-20T02:23:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2290-bridged-hitl-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2290-bridged-hitl-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2291",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
       "completed_at": "2026-08-20T02:52:31+00:00",
-      "file": "sdd/tasks/completed/TASK-2291-integration-tests-and-docs.md"
+      "file": "sdd/tasks/completed/TASK-2291-integration-tests-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
