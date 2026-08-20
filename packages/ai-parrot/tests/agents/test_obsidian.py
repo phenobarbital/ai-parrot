@@ -6,13 +6,57 @@ Covers:
 - Note title generation and deduplication
 """
 
-import pytest
+import asyncio
 import json
+import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from parrot.agents.obsidian import FirefliesObsidianAgent
+from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
+
+
+class _FakeCodexClient(OpenAICodexClient):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.commands: list[list[str]] = []
+        self.inputs: list[str | None] = []
+        self.output = """## Summary
+The team reviewed the launch plan, confirmed the release owner, and agreed to publish the checklist.
+
+## Follow-ups
+1. Confirm the launch checklist owner
+2. Share the final release notes
+
+## Insights
+- Release ownership is clear
+- The checklist is the main next step
+"""
+        self.stdout = json.dumps(
+            {
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 12,
+                    "output_tokens": 24,
+                    "total_tokens": 36,
+                },
+            }
+        )
+
+    async def _run_cli_command(
+        self,
+        command: list[str],
+        input_text: str | None = None,
+    ) -> tuple[str, str, int]:
+        self.commands.append(command)
+        self.inputs.append(input_text)
+        output_index = command.index("-o") + 1
+        Path(command[output_index]).write_text(self.output, encoding="utf-8")
+        return self.stdout, "", 0
 
 
 @pytest.fixture
@@ -31,6 +75,7 @@ def agent(vault_path):
         name="TestFirefliesAgent",
         vault_path=str(vault_path),
         fireflies_token="test-token-12345",
+        injection_detection=False,
     )
     return agent
 
@@ -244,6 +289,21 @@ class TestSyncMethod:
 class TestSummarizeMethod:
     """Test summarize_transcript method."""
 
+    def test_explicit_codex_llm_is_active_client(self, vault_path):
+        """FirefliesObsidianAgent keeps an explicit Codex LLM on self.client."""
+        agent = FirefliesObsidianAgent(
+            name="CodexFirefliesAgent",
+            vault_path=str(vault_path),
+            llm="openai-codex:gpt-codex-test",
+            llm_kwargs={"backend": "cli"},
+            injection_detection=False,
+            use_tools=False,
+        )
+
+        assert isinstance(agent.client, OpenAICodexClient)
+        assert agent.client is agent.llm
+        assert agent.client.model == "gpt-codex-test"
+
     @pytest.mark.asyncio
     async def test_summarize_reads_note(self, agent):
         """Summarize reads note from vault."""
@@ -252,7 +312,7 @@ class TestSummarizeMethod:
             return_value={"content": "Meeting transcript"}
         )
         agent.client = AsyncMock()
-        agent.client.completion = AsyncMock(
+        agent.client.complete = AsyncMock(
             return_value=MagicMock(message="## Summary\nTest\n\n## Follow-ups\n1. Item")
         )
 
@@ -268,13 +328,13 @@ class TestSummarizeMethod:
             return_value={"content": "Meeting transcript"}
         )
         agent.client = AsyncMock()
-        agent.client.completion = AsyncMock(
+        agent.client.complete = AsyncMock(
             return_value=MagicMock(message="## Summary\nTest")
         )
 
         await agent.summarize_transcript("test-meeting")
 
-        agent.client.completion.assert_called_once()
+        agent.client.complete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_summarize_updates_note(self, agent):
@@ -285,7 +345,7 @@ class TestSummarizeMethod:
         )
         agent.obsidian_toolkit.update_note = AsyncMock()
         agent.client = AsyncMock()
-        agent.client.completion = AsyncMock(
+        agent.client.complete = AsyncMock(
             return_value=MagicMock(message="## Summary\nTest\n\n## Follow-ups\n1. Item\n\n## Insights\n- Point")
         )
 
@@ -293,6 +353,87 @@ class TestSummarizeMethod:
 
         agent.obsidian_toolkit.update_note.assert_called_once()
         assert result["updated"] is True
+
+    @pytest.mark.asyncio
+    async def test_summarize_with_codex_client(self, vault_path):
+        """Summarize a real vault note through a CLI-backed Codex client."""
+        codex = _FakeCodexClient(backend="cli")
+        agent = FirefliesObsidianAgent(
+            name="CodexFirefliesAgent",
+            vault_path=str(vault_path),
+            llm=codex,
+            injection_detection=False,
+            use_tools=False,
+        )
+        await agent.obsidian_toolkit.create_note(
+            path="meetings/2026-08-20-launch-sync.md",
+            content=(
+                "Speaker A: We need a launch checklist owner.\n"
+                "Speaker B: I will own it and share release notes tomorrow."
+            ),
+        )
+
+        result = await agent.summarize_transcript(
+            "2026-08-20-launch-sync",
+            granularity="minimal",
+        )
+
+        assert result["status"] == "ok"
+        assert result["updated"] is True
+        assert "launch plan" in result["summary"]
+        assert len(result["follow_ups"]) == 2
+        assert len(result["insights"]) == 2
+        assert codex.commands
+        assert "launch checklist owner" in (codex.inputs[0] or "")
+
+    @pytest.mark.real_llm
+    @pytest.mark.asyncio
+    async def test_real_codex_client_summarizes_temp_obsidian_note(self, vault_path):
+        """Opt-in smoke: real OpenAICodexClient + FirefliesObsidianAgent."""
+        if not shutil.which("codex"):
+            pytest.skip("codex CLI is not installed")
+
+        model = os.getenv("PARROT_CODEX_TEST_MODEL")
+        backend = os.getenv("PARROT_CODEX_BACKEND", "cli")
+        agent = FirefliesObsidianAgent(
+            name="RealCodexFirefliesAgent",
+            vault_path=str(vault_path),
+            llm=f"openai-codex:{model}" if model else "openai-codex",
+            llm_kwargs={
+                "backend": backend,
+                "run_options": CodexAgentRunOptions(
+                    backend=backend,
+                    model=model or "",
+                    sandbox="read-only",
+                    approval_policy="never",
+                    expose_parrot_tools=False,
+                    ephemeral=True,
+                    ignore_rules=True,
+                ),
+            },
+            injection_detection=False,
+            use_tools=False,
+        )
+        await agent.obsidian_toolkit.create_note(
+            path="meetings/2026-08-20-real-codex-smoke.md",
+            content=(
+                "Alex: We agreed to ship the Fireflies Obsidian sync next week.\n"
+                "Mira: I will validate Codex as the summarization client and "
+                "write down any integration risks."
+            ),
+        )
+
+        result = await asyncio.wait_for(
+            agent.summarize_transcript(
+                "2026-08-20-real-codex-smoke",
+                granularity="minimal",
+            ),
+            timeout=180,
+        )
+
+        assert result["status"] == "ok"
+        assert result["updated"] is True
+        assert result["summary"]
 
     @pytest.mark.asyncio
     async def test_summarize_handles_missing_note(self, agent):

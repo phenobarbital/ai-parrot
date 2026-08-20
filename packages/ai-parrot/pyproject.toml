@@ -359,7 +359,7 @@ agents-lite = [
 
 mcp = [
     "google-genai>=2.18.1",
-    "openai==2.41.0",
+    "openai==3.3.1",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",
@@ -454,7 +454,7 @@ codex-agent = [
 ]
 
 openai = [
-    "openai==2.41.0",
+    "openai==3.3.1",
     "tiktoken==0.9.0"
 ]
 
@@ -475,7 +475,7 @@ zai = [
 
 llms = [
     "google-genai>=2.18.1",
-    "openai==2.41.0",
+    "openai==3.3.1",
     "groq==0.33.0",
     # FIX-2: include both direct-API and Bedrock SDK so that `llms` covers all
     # Anthropic transports; bedrock pulls anthropic[aiohttp,aws] (boto3 stack).
@@ -736,6 +736,9 @@ features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "real_llm: mark a test as requiring a live LLM provider",
+]
 
 [tool.cibuildwheel]
 build = "cp3{11,12,13,14}-manylinux_x86_64"

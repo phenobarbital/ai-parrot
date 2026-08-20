@@ -71,7 +71,7 @@ dev = [
     "maturin==1.9.6",
     "pyrefly",
     "pytest-aiohttp>=1.1.0",
-    "openai>=1.0.0",
+    "openai>=3.3.1",
 ]
 
 [tool.uv]
@@ -110,6 +110,28 @@ conflicts = [
     [
         { package = "ai-parrot", extra = "gemma4" },
         { package = "ai-parrot-loaders", extra = "all" },
+    ],
+    # openlit 1.40-1.45 caps openai<3.0.0, while the OpenAI-facing extras
+    # intentionally require SDK 3.3.1+ for newer model/API support.
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot", extra = "openai" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot", extra = "llms" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot", extra = "mcp" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot", extra = "all" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot", extra = "all-fast" },
     ],
     # flowtask/psutil vs liveavatar-voice — RESOLVED (flowtask 5.12.1).
     # openlit vs liveavatar-voice otel — RESOLVED via override-dependencies:
@@ -232,6 +254,7 @@ filterwarnings = [
 ]
 markers = [
     "asyncio: mark a test as a coroutine that should be run by pytest-asyncio",
+    "real_llm: mark a test as requiring a live LLM provider",
 ]
 
 [tool.black]

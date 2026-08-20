@@ -17,6 +17,9 @@ Requirements:
 
 import asyncio
 import logging
+import os
+
+from parrot.clients.codex_agent import CodexAgentRunOptions
 from parrot.agents.obsidian import FirefliesObsidianAgent
 
 logging.basicConfig(level=logging.INFO)
@@ -26,12 +29,31 @@ logger = logging.getLogger(__name__)
 async def main():
     """Run the sync agent."""
 
-    # Initialize agent
-    agent = FirefliesObsidianAgent(
-        name="FirefliesObsidianSync",
-        vault_path="~/vaults/notes",  # Change to your vault path
+    llm = os.getenv("PARROT_FIREFLIES_LLM")
+    agent_kwargs = {
+        "name": "FirefliesObsidianSync",
+        "vault_path": os.getenv("OBSIDIAN_VAULT_PATH", "~/vaults/notes"),
         # fireflies_token="your-token" or set FIREFLIES_API_KEY env var
-    )
+    }
+    if llm:
+        agent_kwargs["llm"] = llm
+        llm_provider, _, llm_model = llm.partition(":")
+        if llm_provider in {"openai-codex", "codex-agent", "codex-code"}:
+            backend = os.getenv("PARROT_CODEX_BACKEND", "cli")
+            agent_kwargs["llm_kwargs"] = {
+                "backend": backend,
+                "run_options": CodexAgentRunOptions(
+                    backend=backend,
+                    model=llm_model or "",
+                    sandbox="read-only",
+                    approval_policy="never",
+                    expose_parrot_tools=False,
+                    ephemeral=True,
+                ),
+            }
+
+    # Initialize agent
+    agent = FirefliesObsidianAgent(**agent_kwargs)
 
     try:
         # PHASE 1: Deterministic sync (no LLM)

@@ -5,6 +5,7 @@ code blocks, tool call panels, usage stats, and streaming live display.
 """
 import json
 import logging
+import sys
 import traceback
 from typing import Any, List, Optional
 
@@ -28,9 +29,17 @@ class ResponseRenderer:
     """
 
     def __init__(self) -> None:
-        """Initialise the renderer with a Rich Console."""
+        """Initialise the renderer with a Rich Console.
+
+        The Console writes to ``sys.__stdout__`` (the original file
+        descriptor) instead of ``sys.stdout``.  Inside the REPL,
+        ``prompt_toolkit.patch_stdout()`` replaces ``sys.stdout``
+        with a proxy that corrupts ANSI escape sequences — the ESC
+        byte (``\\x1b``) is rendered as a literal ``?``.  Bypassing
+        the proxy lets Rich emit ANSI codes straight to the terminal.
+        """
         self.logger = logging.getLogger(__name__)
-        self.console = Console()
+        self.console = Console(file=sys.__stdout__, force_terminal=True)
         self._stream_buffer: str = ""
 
     # ------------------------------------------------------------------
