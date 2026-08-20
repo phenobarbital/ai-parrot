@@ -61,11 +61,14 @@ class GraphStats(BaseModel):
 
 
 class EscalationStep(BaseModel):
-    """One step of the escalation ladder (spec §4.4) — placeholder shape.
+    """One step of the escalation ladder (spec §4.4).
 
-    TASK-2282 (`SufficiencyCheck` + escalation driver) is the actual
-    producer of these; this task only defines the field's type so
-    `RetrievalRoutingDecision.escalations` has somewhere to live.
+    Populated by TASK-2282's sequential escalation driver
+    (`parrot.knowledge.retrieval.escalation`) and appended to
+    `RetrievalRoutingDecision.escalations` so wasted-work ratio (spec §7)
+    stays measurable — every attempted escalation is recorded, including
+    ones that could not run because the next rung's policy is not yet
+    implemented in the v1 cut.
 
     Attributes:
         from_class: The `QueryClass` escalated away from.
@@ -73,6 +76,14 @@ class EscalationStep(BaseModel):
         trigger: Which `SufficiencyCheck` fired (``"coverage"``,
             ``"margin"``, ``"dangling"``).
         elapsed_ms: Cost of the step that was escalated away from.
+        policy_attempted: Kind identifier of the policy the ladder tried
+            to escalate to (e.g. ``"PersonalizedPageRankPolicy"``) —
+            recorded even when that policy is not in the v1 cut and could
+            not actually run.
+        used: Whether `policy_attempted` actually ran and its result was
+            used. ``False`` when the rung's policy is unimplemented, or
+            when the escalation was attempted but the deadline was hit
+            first — the attempt is still recorded, never silently dropped.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -81,6 +92,8 @@ class EscalationStep(BaseModel):
     to_class: QueryClass
     trigger: str
     elapsed_ms: float
+    policy_attempted: str = ""
+    used: bool = False
 
 
 class RetrievalRoutingDecision(BaseModel):

@@ -23,6 +23,13 @@ from parrot.knowledge.retrieval.classifier import (
     RetrievalRoutingDecision,
 )
 from parrot.knowledge.retrieval.digest import DigestScope, derive_digest
+from parrot.knowledge.retrieval.escalation import (
+    EscalationMode,
+    SufficiencyCheck,
+    SufficiencyTrigger,
+    check_speculation_admission,
+    run_escalation_ladder,
+)
 from parrot.knowledge.retrieval.exceptions import IndexPinMismatchError, StalePinError
 from parrot.knowledge.retrieval.features import QueryFeatures, extract_features
 from parrot.knowledge.retrieval.lexicon import (
@@ -76,6 +83,7 @@ __all__ = [
     "DigestScope",
     "DirectSymbolPolicy",
     "EdgeRef",
+    "EscalationMode",
     "EscalationStep",
     "Evidence",
     "EvidenceOrigin",
@@ -96,12 +104,16 @@ __all__ = [
     "Seed",
     "StalePinError",
     "Subgraph",
+    "SufficiencyCheck",
+    "SufficiencyTrigger",
     "VectorSeedPolicy",
     "WorkspacePin",
     "check_pin_coherence",
+    "check_speculation_admission",
     "derive_digest",
     "extract_features",
     "read_at_rev",
     "resolve_workspace",
+    "run_escalation_ladder",
     "selector_for",
 ]
