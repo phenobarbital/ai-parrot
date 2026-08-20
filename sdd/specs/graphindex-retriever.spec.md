@@ -38,11 +38,21 @@ L2  Retrieval             pure routing + traversal + assembly
 
 **INV-1 (Anchoring).** Every `WikiPage` and every retrieved unit references at least one L0 `NodeRef`. Free-floating chunks are not representable in this layer.
 
-**INV-2 (Digest closure).** A `WikiPage` is valid iff the multiset of `(node_id, digest)` pairs it declares as sources matches L0 exactly. Any mismatch marks the page `STALE`; it is never silently served as fresh.
+**INV-2 (Digest closure).** A `WikiPage` is valid iff the multiset of
+`(node_id, digest)` pairs it declares as sources matches the digests **derived**
+from the pinned source at request time (§3.5). Any mismatch marks the page
+`STALE`; it is never silently served as fresh. Digests are computed, not stored
+in L0 — every digest carries the `DigestScope` it was computed at, so closure is
+always evaluated at a declared granularity rather than an assumed one.
 
 **INV-3 (Determinism of routing).** `QueryClassifier.classify()` is a pure function of `(query_text, GraphStats, RetrievalBudget)`. No I/O, no LLM, no clock. Same inputs → same `RoutingDecision`, always replayable offline.
 
-**INV-4 (Attribution).** Every unit in a `ContextBundle` carries `Evidence` sufficient to reconstruct provenance to `file:line_span` at a specific `git_rev`. A bundle that cannot be attributed is a bug, not a degraded result.
+**INV-4 (Attribution).** Every unit in a `ContextBundle` carries `Evidence`
+sufficient to reconstruct provenance to `file:line_span` at a specific
+`git_rev`. A bundle that cannot be attributed is a bug, not a degraded result.
+Two L0 realities bound this (§11.1): `line_span` is `None` for `RATIONALE`-kind
+evidence until the extractor emits linenos for tagged comments, and `git_rev`
+comes from admission-time resolution (§3.5.3), not from the index.
 
 **INV-5 (Budget honesty).** Policies are interruptible and must return the best partial result within `RetrievalBudget.deadline_ms` rather than overrun. Partial results are flagged, never disguised.
 
@@ -73,8 +83,10 @@ class NodeRef(BaseModel):
     repo: str
     rev: str                      # concrete SHA, never a symbolic ref
     path: str
-    kind: NodeKind                # reuse L0 enum: Module|Class|Function|Rationale|...
-    qualname: str
+    kind: NodeKind                # real L0 enum: SYMBOL|RATIONALE|SECTION|CONCEPT|...
+    symbol_type: str | None       # 'module'|'class'|'function' — L0 keeps this in
+                                  #   domain_tags, NOT in NodeKind (§11.1)
+    qualname: str                 # DERIVED (§3.5.2), not read from L0
 
     @property
     def uri(self) -> str: ...
@@ -183,12 +195,97 @@ Two failure modes the implementation must handle, because pinning creates them:
 - **Unreachable pin.** A pinned SHA can be garbage-collected (force-push,
   branch delete). Admission verifies reachability; on failure the request fails
   loudly with `StalePinError` rather than silently resolving to HEAD.
+- **Index/pin incoherence.** L0 does not record the rev it was built from, so
+  admission corroborates the pin against a bounded sample of the `files` table
+  rather than verifying it. Mismatch raises `IndexPinMismatchError`, or serves
+  with an `index_pin_mismatch` marker under `allow_stale`. See §3.5.3.
 - **Pin drift vs L1.** The wiki cache is indexed by `(node, digest)`, not by
   rev, so a pinned-old session still gets correct staleness answers. But a
   long-lived session pinned far behind HEAD will see most pages `STALE` and
   regenerate them against old source. That is correct behaviour, and it is also
   expensive — `WorkspacePin.pinned_at` older than `stale_pin_warning_days`
   emits a warning on the trace.
+
+---
+
+## 3.5 Derivation layer — satisfying INV-2/INV-4 without writing to L0
+
+**Decision (2026-08-20): derive, don't store.** L0 records neither `repo`/`rev`
+nor per-node digests, and `§1.2` keeps L0 read-only. Rather than weaken the
+invariants or block on an L0 spec, everything the invariants need is *computed*
+at request time from material L0 already has. This preserves §1.2 exactly and
+costs one hash per retrieved node plus a bounded number of git calls per
+request.
+
+### 3.5.1 Derived digests — `DigestScope`
+
+`Evidence.digest` is computed over the **bytes actually served**, so INV-2
+closure holds by construction over the returned unit rather than trusting an
+index field. Not every node has a span, so the granularity is declared:
+
+```python
+class DigestScope(StrEnum):
+    SPAN = "span"        # sha256 of the node's source bytes — the strong case
+    FILE = "file"        # the files-table sha1; node has no line span
+    SUMMARY = "summary"  # sha256 of title+summary; synthetic node, no file
+```
+
+- `SPAN` applies to `symbol_type in {class, function}`: `domain_tags["lineno"]`
+  / `["end_lineno"]` exist (`extractors/code.py:296-299, 365-369`) and
+  `SQLiteGraphReader._read_span()` already reads exactly that range.
+- `FILE` is the fallback for `RATIONALE` nodes (no linenos, `code.py:500`) and
+  module nodes, reusing the per-file sha1 already in the `files` table
+  (`persist_sqlite.py`).
+- `SUMMARY` covers `CONCEPT`/`WIKI_PAGE` nodes with no source file at all.
+
+A `FILE`-scoped digest invalidates more coarsely than a `SPAN` one. That is a
+real weakening of §6.1's section-level invalidation for rationale-heavy pages,
+it is visible in the evidence rather than hidden, and it is fixed by the
+one-line L0 change requested in RQ-4 — at which point those nodes silently
+upgrade to `SPAN` with no contract change.
+
+### 3.5.2 `DerivedSymbolIndex` — replacing the trie that does not exist
+
+§4.2's premise was false (`graphindex/resolve.py` is an embedding-similarity
+stage, not a symbol table). The index is instead built in-process at load time,
+from nodes that are already resident in the `rustworkx.PyDiGraph`:
+
+- **qualname** = the `parent_id` chain's `title`s joined with `.`, walked to the
+  module root. L0's own `domain_tags["qualified_name"]` (`code.py:351`) is only
+  one level deep (`{parent.title}.{name}`) and is emitted by `code.py` but not
+  `odoo_code.py`, so it seeds the index but is not authoritative.
+- **lookup** = exact match on qualname and on trailing segments (`resolve`,
+  `PayRateEngine.resolve`), plus the `symbol_type` filter.
+- Ambiguous trailing-segment hits return **all** candidates; `anchor_count`
+  in §4.2 counts distinct resolved anchors, so ambiguity naturally pushes a
+  query toward `COMPARATIVE`/`RELATIONAL` instead of guessing.
+
+This is a new index (task T3b), but a derived, in-memory one — no L0 write, no
+new persistence.
+
+### 3.5.3 Pin coherence — `rev` without a stored rev
+
+L0 does not record the rev it was built from, so a pin cannot be *verified*
+against the index, only *corroborated*:
+
+1. At admission, per repo: `rev = git rev-parse <ref>`; reachability failure
+   raises `StalePinError` (§3.4).
+2. **Content is read at the pinned rev**, not from the working tree, so served
+   bytes and `Evidence.digest` always agree with the pin.
+3. **Coherence check.** For a bounded sample (`pin_verification_sample`, default
+   16) of the `files` table, hash the path's content at the pinned rev with the
+   builder's own hash function and compare to the stored `sha1`. Exhaustive
+   checking would cost O(files) git calls per request and is not done.
+4. On mismatch, the index does not correspond to the pin: raise
+   `IndexPinMismatchError`, or — when `budget.allow_stale` — serve with an
+   `index_pin_mismatch` marker on the bundle.
+
+**Stated honestly:** stored line spans were computed at index time, so a pin far
+from the index's build rev can point a span at the wrong code. The sampled check
+makes that likely to be caught, not guaranteed — a false pass is possible. This
+is strictly weaker than storing the build rev in L0, and it is the price of
+keeping L0 read-only. If T13 shows the sample missing real drift, the fix is one
+column in the `files` table, and §3.5.3 collapses to a direct comparison.
 
 ---
 
@@ -224,7 +321,8 @@ class QueryFeatures(BaseModel):
     interrogative: Interrogative            # WHAT|WHERE|WHO|WHY|HOW|NONE
 ```
 
-Symbol resolution uses the L0 symbol trie already built for `Resolve` — no new index. Markers are locale-aware (ES/EN), sourced from a frozen `MarkerLexicon` so the classifier stays declarative and testable.
+Symbol resolution uses the `DerivedSymbolIndex` (§3.5.2), built in-process from
+resident L0 nodes — L0 has no symbol trie and `resolve.py` is not one. Markers are locale-aware (ES/EN), sourced from a frozen `MarkerLexicon` so the classifier stays declarative and testable.
 
 ### 4.3 Decision rules
 
@@ -325,6 +423,28 @@ only if the harness shows a p95 win that justifies the extra expansion cost.
 
 ## 5. Retrieval policies
 
+### 5.0 Relationship to the shipped `GraphExpandedRetriever`
+
+**Decision (2026-08-20): parallel layer, deprecation gated on measurement.**
+FEAT-217's `GraphExpandedRetriever` (seed → expand → community → assemble) and
+FEAT-379's `GraphIndexOrigin` remain in place, untouched and supported. This
+layer is built independently under `parrot.knowledge.retrieval` and does **not**
+refactor them.
+
+- Nothing that ships today changes behaviour or loses tests. `GraphIndexOrigin`
+  keeps its current dependency.
+- Two expansion implementations coexist deliberately: FEAT-217's
+  signal-relevance exponential decay (`signals.relevance_neighborhood`) and this
+  layer's `PersonalizedPageRankPolicy` (§5.3). They are **competing
+  strategies**, not layers.
+- **T13 benchmarks both on the same golden set.** Deprecating FEAT-217 is a
+  separate, later decision gated on that comparison — not assumed here. If PPR
+  does not beat decay expansion, the honest outcome is that this layer keeps the
+  classifier and the attribution model and adopts FEAT-217's expander.
+- **Naming:** `RoutingDecision` is already taken by
+  `parrot/bots/mixins/intent_router.py`. This layer's model is
+  `RetrievalRoutingDecision`; §4.3 is to be read with that name.
+
 Discriminated union, closed set. Adding a policy is a spec change, not a config change.
 
 ```python
@@ -353,7 +473,27 @@ class RetrievalPolicyProtocol(Protocol):
 Symbol-table lookup → node body + immediate `Rationale` children. No vector search, no traversal, no LLM. Target p50 **< 15 ms**.
 
 ### 5.2 `VectorSeedPolicy`
-Hybrid seeding: BM25 (SQLite FTS5, already present) ∥ dense (pgvector HNSW), fused with Reciprocal Rank Fusion. `expand` limited to depth 1 (containment edges only). Target p50 **< 120 ms**.
+Hybrid seeding: BM25 ∥ dense, fused with Reciprocal Rank Fusion (reuse
+`pageindex/hybrid_search.py::_rrf_fuse`). `expand` limited to depth 1
+(containment edges only).
+
+**Decision (2026-08-20): T6 seeds over what exists; T6b earns the index.**
+
+- **Lexical leg** — SQLite FTS5 `nodes_fts` via
+  `SQLiteGraphReader.search_symbols()`, real today. Caveat: it indexes
+  **title + summary only, not bodies**, and exists only on the SQLite backend,
+  not ArangoDB.
+- **Dense leg (T6)** — the in-process `faiss.IndexFlatL2`
+  (`graphindex/embed.py:51`). `_persist_to_pgvector()` is a stub
+  (`embed.py:193-206`); there is no pgvector read path and no HNSW anywhere, so
+  the earlier "pgvector HNSW" wording is struck.
+- **T6b (v1.1, conditional)** — durable pgvector + HNSW, replacing the stub.
+  Gated on T13 showing `FlatL2` misses the latency target.
+
+`FlatL2` is exhaustive, so **p50 < 120 ms is provisional, not committed** — it
+is a target T13 measures, in keeping with §4.4's own "hypothesis to measure, not
+an assumption" stance. Recording it as achieved-by-design would be exactly the
+error this spec warns about elsewhere.
 
 ### 5.3 `PersonalizedPageRankPolicy`
 Seeds from §5.2 become the restart distribution; PPR runs in-memory on rustworkx over the workspace-pinned subgraph. This is the HippoRAG-family single-pass multi-hop approach, but over parser-exact edges rather than LLM-extracted ones — the noise term that degrades multi-hop propagation in text graphs does not apply here.
@@ -391,6 +531,14 @@ learning it online, or letting the classifier read it. Neither is permitted.
 `weight_table_version` is stamped into `WorkspacePin` so a replayed trace
 reproduces exactly.
 
+**Do not reuse `SignalRelevanceConfig.edge_kind_weights`.** That field
+(`signals.py:104`) is already a global edge-kind weight table, but its validator
+enforces that the weights **sum to 1.0** (`signals.py:123-133`) because it feeds
+a normalised signal scorer. `EdgeWeightTable` imposes no such constraint and is
+consumed as PPR edge weights. They are different quantities with the same shape;
+`EdgeWeightTable` is a new model, and §5.3.1's "strictly below any intra-repo
+edge kind" rule is unrepresentable under a sum-to-one constraint anyway.
+
 ### 5.3.1 Cross-repo edges (resolves OQ-2)
 
 Intra-repo edges come from the AST. Cross-repo edges cannot — an `import
@@ -415,13 +563,25 @@ Consequences that must be honoured:
 - A repo absent from `WorkspacePin.pins` terminates traversal at the boundary.
   The bundle records a `boundary_truncation` marker rather than pretending the
   subgraph was complete.
-- **Precondition, currently unmet:** ai-parrot's main branch still vendors the
-  old internal bus and does not declare `navigator-eventbus` as a dependency.
-  Until that lands, `PackageRepoMap` cannot resolve that edge from metadata and
-  would need a hardcoded override. Prefer fixing the dependency declaration.
+- **Precondition — now MET (verified 2026-08-20).**
+  `packages/ai-parrot/pyproject.toml:133` declares `navigator-eventbus>=0.2.1`
+  (plus a `navigator-eventbus[grpc]` extra at line 492), it is imported across
+  `parrot/core/events/` and `parrot/core/hooks/`, and no vendored bus remains
+  under `parrot/`. `PackageRepoMap` can resolve that edge from metadata with no
+  hardcoded override, so T8b's stated blocker no longer exists — its v1.1
+  placement is now a sequencing choice, not a dependency.
 
 ### 5.4 `SteinerTreePolicy`
-Prize-Collecting Steiner Tree over the union neighbourhood of ≥2 anchors: maximise node prize (relevance) minus edge cost (hops) subject to `max_tokens`. Approximation via GW primal-dual; exact solve is not required and must not be attempted.
+Prize-Collecting Steiner Tree over the union neighbourhood of ≥2 anchors:
+maximise node prize (relevance) minus edge cost (hops) subject to `max_tokens`.
+Approximation via GW primal-dual; exact solve is not required and must not be
+attempted.
+
+**Sizing correction.** `rustworkx` 0.18.1 offers only
+`steiner_tree(graph, terminal_nodes, weight_fn)` — a *metric minimum* Steiner
+approximation with no node prizes. PCST is not available off the shelf and GW
+must be written by hand. T12 is v1.1, so this is a sizing correction rather than
+a blocker, but it is not the one-liner the original wording implied.
 
 ### 5.5 `AncestrySummaryPolicy`
 Walks *up* the containment hierarchy from seeds and serves `WikiPage` bodies instead of source. This is the cheap substitute for Leiden community summaries: the code graph already has ground-truth communities (package → module → class), so we do not run community detection at all.
@@ -529,7 +689,13 @@ two requests needing different sections of the same hot page do not serialise.
 | `False` | `0` | Skip L1 entirely; fall back to L0 source excerpts |
 | `False` | `>0` | Block on regeneration up to deadline; then fall back to L0 |
 
-Regeneration is guarded by single-flight keyed on `page_id` (Redis lock via the existing eventbus infra) to prevent thundering herd on a hot module after a large merge.
+Regeneration is guarded by single-flight keyed on `(page_id, section_kind)`
+(§6.2) to prevent thundering herd on a hot module after a large merge.
+**No such lock exists to reuse** — the eventbus integration has none. The
+available primitives are redis-py's `.lock()` as used in
+`auth/oauth2_base.py:519` and `auth/jira_oauth.py:523`, and the file-based
+`wiki_write_lock()` (`knowledge/wiki/project.py:47`). Building the Redis
+single-flight is in-scope new code for T9, not an integration.
 
 ### 6.4 Anti-requirement
 
@@ -568,6 +734,9 @@ Emit one `RetrievalTrace` per request onto `navigator-eventbus`:
 | OQ-4 | Escalation vs speculation | **Both, gated.** `SEQUENTIAL` default; `SPECULATIVE` permitted only within a shared-seed `SpeculationGroup` and only when `max_llm_calls == 0` | §4.4 |
 | OQ-5 | Wiki page granularity | **Retrieval-time section selection**, not generation-time splitting. `SectionSelector` supplied by the classifier | §6.1 |
 | OQ-6 | Ontology bridge forward-compat | **Widened pre-emptively.** `EvidenceOrigin` declares `L2_*` as RESERVED; `schema_version` added to `ContextBundle` | §3.2 |
+| OQ-7 | L0 lacks `repo`/`rev` and per-node digests, but L0 is read-only (§1.2) | **Derive, don't store.** Digests computed over served bytes with a declared `DigestScope`; qualnames from a `DerivedSymbolIndex`; `rev` resolved at admission and corroborated by a sampled index-coherence check | §3.5 |
+| OQ-8 | Relationship to shipped FEAT-217 / FEAT-379 | **Parallel layer.** Build independently; FEAT-217 untouched; PPR and decay expansion compete on T13's golden set; deprecation is a later, measured decision. Rename to `RetrievalRoutingDecision` | §5.0 |
+| OQ-9 | Dense seeding leg — no pgvector, no HNSW exists | **T6 over FAISS `FlatL2`; T6b adds durable pgvector/HNSW, gated on T13.** p50 < 120 ms is provisional, not committed | §5.2 |
 
 ## 9.1 Remaining open questions — RESOLVED (verified against code 2026-08-20)
 
@@ -660,36 +829,56 @@ degrade the invariant silently — the bundle already distinguishes origins.
 
 | # | Task | Depends on |
 |---|---|---|
-| T1 | `NodeRef` + URI parse/serialize + property tests | — |
+| T1 | `NodeRef` (incl. `symbol_type`) + URI parse/serialize + property tests | — |
 | T1b | `WorkspacePin` + admission-time pin resolution + `StalePinError` | T1 |
+| **T1c** | **Pin coherence check + `IndexPinMismatchError` + `index_pin_mismatch` marker (§3.5.3)** | **T1b** |
 | T2 | `Evidence`, `EvidenceOrigin`, `ContextUnit`, `ContextBundle`, `RetrievalBudget` | T1 |
 | T2b | Reserved-origin contract test (no policy may emit `L2_*`) | T2 |
+| **T2c** | **`DigestScope` + derived-digest computation over served bytes (§3.5.1)** | **T2** |
 | T3 | `QueryFeatures` extractor + `MarkerLexicon` (ES/EN) | T1 |
-| T4 | `QueryClassifier` decision list + `RoutingDecision` + replay tests | T3 |
+| **T3b** | **`DerivedSymbolIndex` — in-process qualname index over resident L0 nodes (§3.5.2)** | **T1** |
+| T4 | `RetrievalRoutingDecision` decision list + replay tests | T3, T3b |
 | T4b | `SectionSelector` derivation from `QueryClass` | T4 |
-| T5 | `DirectSymbolPolicy` | T2 |
-| T6 | `VectorSeedPolicy` (FTS5 ∥ pgvector, RRF) | T2 |
+| T5 | `DirectSymbolPolicy` | T2, T3b |
+| T6 | `VectorSeedPolicy` — FTS5 ∥ FAISS `FlatL2`, RRF | T2, T2c |
+| **T6b** | **Durable pgvector + HNSW dense leg, replacing `_persist_to_pgvector` stub** | **T6, T13** |
 | T7 | `SufficiencyCheck` + sequential escalation driver | T5, T6 |
-| T7b | `SpeculationGroup` + speculative mode behind flag | T7 |
-| T8 | `PersonalizedPageRankPolicy` + layered `EdgeWeightTable` | T6 |
+| T7b | `SpeculationGroup` + speculative mode behind flag (single-pin only, RQ-3) | T7 |
+| T8 | `PersonalizedPageRankPolicy` + layered `EdgeWeightTable` (new model, §5.3) | T6 |
 | T8b | `PackageRepoMap` + cross-repo boundary edges + `boundary_truncation` | T1b, T8 |
-| T9 | `WikiSection`/`WikiPage` + per-section invalidation + single-flight | T1 |
+| T9 | `WikiSection`/`WikiPage` + per-section invalidation + Redis single-flight (new code) | T1, T2c |
 | T10 | `AncestrySummaryPolicy` (section-selective) | T9, T4b |
 | T11 | `RationalePolicy` | T6, T9 |
-| T12 | `SteinerTreePolicy` (PCST approximation) | T8 |
-| T13 | Golden set + eval harness + routing regression gate | T4, T6 |
+| T12 | `SteinerTreePolicy` — hand-written PCST/GW, not `rustworkx.steiner_tree` | T8 |
+| T13 | Golden set + eval harness + routing regression gate + **head-to-head vs `GraphExpandedRetriever`** | T4, T6 |
 | T14 | `RetrievalTrace` emission to navigator-eventbus | T2 |
 
-**Revised v1 cut:** T1, T1b, T2, T2b, T3, T4, T4b, T5, T6, T7, T8, T9, T13.
+**Revised v1 cut:** T1, T1b, **T1c**, T2, T2b, **T2c**, T3, **T3b**, T4, T4b,
+T5, T6, T7, T9, T13.
+
+Four tasks were added by the 2026-08-20 code verification, all consequences of
+"derive, don't store" (OQ-7) — none of them touch L0:
+
+- **T1c / T2c** make INV-2 and INV-4 evaluable at all. Without them the
+  invariants are aspirational, since L0 supplies neither digests nor a rev.
+- **T3b** replaces the symbol trie §4.2 assumed already existed. It is
+  load-bearing for R1/R3/R4/R6 and for `DirectSymbolPolicy`, so it cannot be
+  deferred — T4 and T5 now depend on it.
+- **T6b** is the pgvector/HNSW work, split out of T6 and gated on T13 rather
+  than assumed.
 
 Deferred to v1.1 with rationale:
 - **T7b (speculation)** — an optimisation with no baseline to justify it yet.
-  Needs T13 data first.
-- **T8b (cross-repo)** — blocked on ai-parrot declaring `navigator-eventbus` as
-  a real dependency. Building it against a hardcoded override would bake in the
-  very inconsistency the eventbus extraction was meant to remove. `WorkspacePin`
-  ships in v1 so the contract is stable; the edges arrive later.
+  Needs T13 data first. Restricted to single-pin workspaces when it lands (RQ-3).
+- **T8b (cross-repo)** — its stated blocker is gone (`navigator-eventbus` is a
+  declared dependency, §5.3.1), so this is now a sequencing choice: it depends
+  on `PackageRepoMap`, which RQ-1 resolves as per-index-run derivation, and
+  neither is on the v1 critical path. `WorkspacePin` ships in v1 so the contract
+  is stable.
+- **T6b (pgvector/HNSW)** — conditional on T13 showing `FlatL2` misses the
+  latency target. Building it first would be optimising an unmeasured path.
 - **T10/T11/T12** — land once the golden set shows where they actually pay.
+  T12 additionally needs a hand-written PCST (§5.4).
 
 Note that T9 moved *into* v1 while T10 stayed out. The section model is now a
 core contract (`SectionSelector` is on the retrieval path), so it cannot be
@@ -706,20 +895,26 @@ untracked draft: no frontmatter, no reserved `FEAT-` id, no
 `sdd/tasks/index/*.json`, and no predecessor brainstorm/proposal. Run it
 through `/sdd-spec` before `/sdd-task`.
 
-### 11.1 L0 claims that do not hold
+**All findings below are now dispositioned.** §11.1's corrections are folded
+into the spec body by OQ-7 (§3.5), OQ-8 (§5.0) and OQ-9 (§5.2); §11.3's overlap
+is dispositioned by OQ-8. This section is kept as the audit record — the
+evidence for why those decisions were taken — not as an outstanding list.
 
-These are load-bearing and must be corrected before task decomposition.
+### 11.1 L0 claims that did not hold — corrected
 
-| § | Claim as written | Actual code | Impact |
+These were load-bearing. Each row's **Disposition** names where the spec now
+says something true instead.
+
+| § | Claim as written | Actual code | Disposition |
 |---|---|---|---|
-| §4.2 | "Symbol resolution uses the L0 symbol trie already built for `Resolve` — no new index." | `graphindex/resolve.py` is a **cross-domain embedding-similarity** stage that emits `mentions` edges with `Provenance.INFERRED`. There is no trie and no symbol table anywhere in `parrot/`; `qualname` appears zero times in `knowledge/`. | `QueryFeatures.resolved_symbols` and rules R1/R3/R4/R6 have no substrate. T3/T4 must build a symbol index — add it as a task, or restate exact-anchor resolution on top of `SQLiteGraphReader.search_symbols` (FTS5) and accept fuzzier anchoring. |
-| §3.1 | `kind: NodeKind  # reuse L0 enum: Module\|Class\|Function\|Rationale` | `NodeKind` = `DOCUMENT, SECTION, SYMBOL, CONCEPT, RATIONALE, SKILL, WIKI_PAGE, RUN, CLAIM`. Module/class/function granularity lives in `domain_tags["symbol_type"]`, not in the enum. | `NodeRef.kind` cannot round-trip through `NodeKind`. Either widen `NodeRef` to `(kind, symbol_type)` or key it off `domain_tags`. |
-| §3.1 | `repo` and `rev` (mandatory, concrete SHA) | Neither exists on `UniversalNode`, in `UniversalEdge`, in the SQLite schema, or anywhere in the pipeline. No stage captures a git rev. Persistence is partitioned by **tenant**, not repo (`_db_path(ctx)`). | `WorkspacePin.rev_of()` and the whole point-in-time story are unimplementable against today's L0 — yet §1.2 declares L0 out of scope and read-only. **This contradiction must be resolved:** either add a prerequisite L0 spec (capture `repo` + indexed rev) or drop `rev` to advisory. |
-| INV-2 | per-node `(node_id, digest)` closure | Digests exist only at **file** granularity: `files(source_uri, mtime, sha1)` + `is_stale()` (`persist_sqlite.py:463`). `UniversalNode` has no digest field. The existing L1 wiki is the same — `SourceManifestEntry.file_hash` is a per-file SHA-1. | INV-2 as stated cannot be evaluated. Either add node digests to L0, or restate INV-2 at file granularity (coarser invalidation, no section-level win — which undercuts §6.1's "unplanned upside"). |
-| §5.2 | "dense (pgvector HNSW)" | `GraphIndexEmbedder` uses `faiss.IndexFlatL2` in-process (`embed.py:51`). `_persist_to_pgvector()` is a logging stub — *"not yet implemented"* (`embed.py:193-206`). There is no pgvector read path. | No durable or ANN dense index exists. `FlatL2` is exhaustive, so the **p50 < 120 ms** target is unbudgeted at repo scale. Add the pgvector work as an explicit T6 dependency. |
-| §5.4 | "Approximation via GW primal-dual" | `rustworkx` 0.18.1 provides `steiner_tree(graph, terminal_nodes, weight_fn)` — a metric **minimum** Steiner approximation with no node prizes. Prize-collecting is not available. | PCST needs a hand-written GW implementation. T12 is deferred to v1.1, so this is a v1.1 sizing correction, not a blocker. |
-| §6.3 | "Redis lock via the existing eventbus infra" | No Redis lock exists in `knowledge/` or in the eventbus integration. The available primitives are redis-py `.lock()` as used in `auth/oauth2_base.py:519` / `auth/jira_oauth.py:523`, and the file-based `wiki_write_lock()` (`knowledge/wiki/project.py:47`). | Single-flight is feasible but is new code with a different citation. Reword. |
-| §5.3.1 | "**Precondition, currently unmet:** ai-parrot … does not declare `navigator-eventbus` as a dependency." | **Stale — in the spec's favour.** `packages/ai-parrot/pyproject.toml:133` declares `navigator-eventbus>=0.2.1`, plus a `navigator-eventbus[grpc]` extra (line 492), and it is imported across `parrot/core/events/` and `parrot/core/hooks/`. No vendored bus remains under `parrot/`. | T8b's stated blocker no longer exists. Re-evaluate whether cross-repo edges still need to wait for v1.1. |
+| §4.2 | "Symbol resolution uses the L0 symbol trie already built for `Resolve` — no new index." | `graphindex/resolve.py` is a **cross-domain embedding-similarity** stage that emits `mentions` edges with `Provenance.INFERRED`. There is no trie and no symbol table anywhere in `parrot/`; `qualname` appears zero times in `knowledge/`. | **Fixed.** §4.2 now cites the `DerivedSymbolIndex` (§3.5.2), built in-process from resident nodes; new task **T3b**, and T4/T5 depend on it. Correction: function nodes *do* carry `domain_tags["qualified_name"]` (`code.py:351`), but only one level deep and only in `code.py`, so it seeds the index without being authoritative. |
+| §3.1 | `kind: NodeKind  # reuse L0 enum: Module\|Class\|Function\|Rationale` | `NodeKind` = `DOCUMENT, SECTION, SYMBOL, CONCEPT, RATIONALE, SKILL, WIKI_PAGE, RUN, CLAIM`. Module/class/function granularity lives in `domain_tags["symbol_type"]`, not in the enum. | **Fixed.** `NodeRef` now carries `kind: NodeKind` plus `symbol_type: str \| None` (§3.1). |
+| §3.1 | `repo` and `rev` (mandatory, concrete SHA) | Neither exists on `UniversalNode`, in `UniversalEdge`, in the SQLite schema, or anywhere in the pipeline. No stage captures a git rev. Persistence is partitioned by **tenant**, not repo (`_db_path(ctx)`). | **Resolved by OQ-7 — derive, don't store.** `rev` is resolved at admission via `git rev-parse` and corroborated by a sampled coherence check against the `files` table (§3.5.3); content is read *at* the pinned rev. §1.2 stands unchanged. New task **T1c**. The residual weakness — a sampled check can false-pass — is stated in §3.5.3 rather than hidden. |
+| INV-2 | per-node `(node_id, digest)` closure | Digests exist only at **file** granularity: `files(source_uri, mtime, sha1)` + `is_stale()` (`persist_sqlite.py:463`). `UniversalNode` has no digest field. The existing L1 wiki is the same — `SourceManifestEntry.file_hash` is a per-file SHA-1. | **Resolved by OQ-7.** Digests are computed over the bytes actually served, tagged with a `DigestScope` of `SPAN`/`FILE`/`SUMMARY` (§3.5.1). Symbol nodes get full `SPAN` strength; `RATIONALE` nodes fall back to `FILE` until the extractor emits linenos (RQ-4), so §6.1's section-level win holds everywhere except rationale-sourced sections — visibly, not silently. New task **T2c**. |
+| §5.2 | "dense (pgvector HNSW)" | `GraphIndexEmbedder` uses `faiss.IndexFlatL2` in-process (`embed.py:51`). `_persist_to_pgvector()` is a logging stub — *"not yet implemented"* (`embed.py:193-206`). There is no pgvector read path. | **Resolved by OQ-9 — T6/T6b split.** §5.2 now names FAISS `FlatL2` as the v1 dense leg, marks p50 < 120 ms **provisional**, and defers durable pgvector/HNSW to **T6b**, gated on T13 measuring the miss. |
+| §5.4 | "Approximation via GW primal-dual" | `rustworkx` 0.18.1 provides `steiner_tree(graph, terminal_nodes, weight_fn)` — a metric **minimum** Steiner approximation with no node prizes. Prize-collecting is not available. | **Recorded in §5.4.** T12 stays v1.1 with the hand-written-GW cost stated. |
+| §6.3 | "Redis lock via the existing eventbus infra" | No Redis lock exists in `knowledge/` or in the eventbus integration. The available primitives are redis-py `.lock()` as used in `auth/oauth2_base.py:519` / `auth/jira_oauth.py:523`, and the file-based `wiki_write_lock()` (`knowledge/wiki/project.py:47`). | **Fixed.** §6.3 now names redis-py `.lock()` (`auth/oauth2_base.py:519`) and `wiki_write_lock()` as the available primitives and marks the Redis single-flight as in-scope new code for T9. |
+| §5.3.1 | "**Precondition, currently unmet:** ai-parrot … does not declare `navigator-eventbus` as a dependency." | **Stale — in the spec's favour.** `packages/ai-parrot/pyproject.toml:133` declares `navigator-eventbus>=0.2.1`, plus a `navigator-eventbus[grpc]` extra (line 492), and it is imported across `parrot/core/events/` and `parrot/core/hooks/`. No vendored bus remains under `parrot/`. | **Re-evaluated.** §5.3.1 now records the precondition as met. T8b stays v1.1, but as a sequencing choice off the critical path — not a dependency. |
 
 ### 11.2 L0 claims that hold
 
@@ -732,17 +927,33 @@ These are load-bearing and must be corrected before task decomposition.
 - **Eventbus for §8** — real and already imported for lifecycle events.
 - **Supersedes** — accurate: `GRAPH_REPORT.md` is produced by `graphindex/builder.py` + `projection.py` and injected through `KNOWLEDGE_LAYER` (`bots/prompts/layers.py:181`).
 
-### 11.3 Undeclared overlap with shipped work
+### 11.3 Overlap with shipped work — dispositioned by OQ-8
 
-The spec reads as greenfield, but a four-phase graph retriever already shipped
-and this spec neither cites nor supersedes it.
+A four-phase graph retriever already shipped. §5.0 now declares the
+relationship explicitly: **parallel layer, deprecation gated on T13.**
 
 - **FEAT-217 `graph-expanded-retrieval`** — complete (TASK-1565…1569 all `done`, `completed_at` 2026-06-16). `GraphExpandedRetriever.search()` in `knowledge/graphindex/retriever.py` runs seed → expand → community-annotate → assemble, with `ExpansionConfig` (`max_hops`, `decay_base`, `min_signal_threshold`, `max_expanded_nodes`, `allowed_edge_kinds`), `BudgetConfig` (`max_tokens`, `tokens_per_node_estimate`), `ScoredNode`, `GraphRetrievalResult`. Tests: `tests/knowledge/graphindex/test_retriever.py`.
 - **FEAT-379 `GraphIndexOrigin`** — already exposes that pipeline as a MultiStoreSearch origin with an optional FTS leg and per-adapter timeout, i.e. part of the "`GraphRetrieverToolkit`" §1.2 defers.
 - **`SignalRelevanceConfig.edge_kind_weights: dict[EdgeKind, float]`** (`signals.py:104`) is already an edge-weight table — global and unversioned, and its validator **enforces that weights sum to 1.0** (`signals.py:123-133`). `EdgeWeightTable` (§5.3) imposes no such constraint, so it cannot be dropped into the existing signal scorer unchanged.
 
-Consequences for §5 and §10:
+Consequences, as resolved in §5.0:
 
-1. Frame the policies as a **refactor of `GraphExpandedRetriever`** into the four-stage protocol, not as new implementations. §5's protocol maps onto the existing phases; what is genuinely missing is `prune`, the classifier, deadline-aware budgeting, and `Evidence`/attribution.
-2. State the relationship between `PersonalizedPageRankPolicy` (§5.3) and the shipped signal-relevance decay expansion — PPR replaces or wraps it, and the spec must say which.
-3. **Name collision:** `RoutingDecision` is already taken by `parrot/bots/mixins/intent_router.py` (LLM intent routing). Rename to `RetrievalRoutingDecision`.
+1. FEAT-217 and FEAT-379 are **untouched**; this layer is built independently
+   under `parrot.knowledge.retrieval`. Nothing that ships today changes
+   behaviour or loses tests.
+2. `PersonalizedPageRankPolicy` (§5.3) and the shipped signal-relevance decay
+   expansion are **competing strategies**, benchmarked head-to-head in T13.
+   Deprecating either is a later, measured decision. If PPR does not win, this
+   layer keeps the classifier and the attribution model and adopts FEAT-217's
+   expander.
+3. `EdgeWeightTable` is a **new model**, not a reuse of
+   `SignalRelevanceConfig.edge_kind_weights` — the latter's sum-to-1.0
+   validator (`signals.py:123-133`) is incompatible with §5.3.1's
+   "strictly below any intra-repo edge kind" rule (§5.3).
+4. **Name collision resolved:** this layer's model is
+   `RetrievalRoutingDecision`; `RoutingDecision` stays with
+   `parrot/bots/mixins/intent_router.py`.
+
+The accepted cost of a parallel layer is two expansion implementations
+coexisting until T13 adjudicates. That is deliberate: it buys zero risk to
+shipped, tested code, and T13 was already a v1 task.
