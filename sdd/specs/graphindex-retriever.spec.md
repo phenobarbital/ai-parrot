@@ -1,0 +1,629 @@
+# SPEC — GraphIndex Retrieval Layer
+
+**Package:** `parrot.knowledge.retrieval`
+**Status:** Draft / pending review
+**Depends on:** `parrot.knowledge.graphindex` (L0), `asyncdb`, `rustworkx`, `pgvector`/FAISS
+**Supersedes:** ad-hoc `GRAPH_REPORT.md` injection via `KNOWLEDGE_LAYER`
+
+---
+
+## 1. Scope
+
+### 1.1 In scope
+
+- A retrieval layer (**L2**) that turns a natural-language question into a bounded, attributable `ContextBundle` over the existing structural code graph.
+- A synthesis cache (**L1**, "wiki") of LLM-generated pages anchored to L0 node identities, with deterministic invalidation.
+- A `QueryClassifier` that routes each request to the cheapest sufficient retrieval policy, with an escalation ladder instead of pessimistic routing.
+
+### 1.2 Out of scope (this spec)
+
+- Changes to L0 extraction (tree-sitter pipeline, `OdooCodeExtractor`, persistence backends). L0 is consumed read-only.
+- The cross-corpus bridge (code ↔ docs/legal/ADR ontology). Reserved for a follow-up spec; contracts here must not preclude it — see §9.
+- Agent-facing tool surface (`@tool_schema` wrappers). A separate `GraphRetrieverToolkit` consumes this layer.
+
+### 1.3 Non-goals
+
+- **No LLM-induced edges.** L0 edges remain parser-derived and exact. The LLM never proposes graph structure, only prose anchored to existing structure.
+- **No global re-index on write.** Every artifact in L1 must be independently invalidatable.
+
+---
+
+## 2. Layer model and invariants
+
+```
+L0  Structural graph      deterministic, exact, cheap        tree-sitter → rustworkx → ArangoDB/SQLite
+L1  Synthesis cache       LLM-written, lazy, invalidatable   WikiPage keyed by NodeRef + digest
+L2  Retrieval             pure routing + traversal + assembly
+```
+
+**INV-1 (Anchoring).** Every `WikiPage` and every retrieved unit references at least one L0 `NodeRef`. Free-floating chunks are not representable in this layer.
+
+**INV-2 (Digest closure).** A `WikiPage` is valid iff the multiset of `(node_id, digest)` pairs it declares as sources matches L0 exactly. Any mismatch marks the page `STALE`; it is never silently served as fresh.
+
+**INV-3 (Determinism of routing).** `QueryClassifier.classify()` is a pure function of `(query_text, GraphStats, RetrievalBudget)`. No I/O, no LLM, no clock. Same inputs → same `RoutingDecision`, always replayable offline.
+
+**INV-4 (Attribution).** Every unit in a `ContextBundle` carries `Evidence` sufficient to reconstruct provenance to `file:line_span` at a specific `git_rev`. A bundle that cannot be attributed is a bug, not a degraded result.
+
+**INV-5 (Budget honesty).** Policies are interruptible and must return the best partial result within `RetrievalBudget.deadline_ms` rather than overrun. Partial results are flagged, never disguised.
+
+---
+
+## 3. Core contracts
+
+### 3.1 Node identity — `parrot-graph://` URI scheme
+
+Consistent with the `parrot-session:/` scheme already established in `dev_loop`.
+
+```
+parrot-graph://{repo}@{rev}/{path}#{kind}:{qualname}
+
+parrot-graph://ai-parrot@a1b2c3d/parrot/outputs/a2ui.py#Function:EnvelopeProducer.emit
+parrot-graph://fieldsync@9f8e7d6/domain/payrate.py#Class:PayRateEngine
+```
+
+`rev` is mandatory. Retrieval is always point-in-time; `HEAD` is resolved to a concrete SHA at request admission and pinned for the whole request — and, for cross-repo requests, for every repo in the workspace (§3.4).
+
+```python
+from typing import Annotated, Literal
+from pydantic import BaseModel, ConfigDict, Field
+
+class NodeRef(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    repo: str
+    rev: str                      # concrete SHA, never a symbolic ref
+    path: str
+    kind: NodeKind                # reuse L0 enum: Module|Class|Function|Rationale|...
+    qualname: str
+
+    @property
+    def uri(self) -> str: ...
+
+    @classmethod
+    def parse(cls, uri: str) -> "NodeRef": ...
+```
+
+### 3.2 Evidence and bundle
+
+```python
+class Evidence(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    node: NodeRef
+    digest: str                        # content hash of the L0 node at `rev`
+    line_span: tuple[int, int] | None
+    edge_path: tuple[EdgeRef, ...] = ()   # how we reached it from the seed set
+    origin: EvidenceOrigin
+    score: float                       # policy-local relevance, NOT comparable across policies
+
+
+class EvidenceOrigin(StrEnum):
+    """Closed set, widened pre-emptively for the cross-corpus bridge.
+
+    L2_* members are RESERVED: declared now so the union is stable, but no
+    policy may emit them until the bridge spec lands. Emitting a reserved
+    origin is a contract violation, caught in tests.
+    """
+    L0_SOURCE = "l0_source"
+    L1_WIKI = "l1_wiki"
+    L1_RATIONALE = "l1_rationale"
+    L2_DOC = "l2_doc"        # RESERVED — ADRs, SDD specs, tickets
+    L2_NORM = "l2_norm"      # RESERVED — legal/regulatory clauses (Fieldsync)
+    L2_EXTERNAL = "l2_external"  # RESERVED — third-party dependency docs
+
+class ContextUnit(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    text: str                          # source excerpt or wiki prose
+    evidence: Evidence
+    token_estimate: int
+
+class ContextBundle(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1     # persisted + traced; do not repeat the
+                                       # EventEnvelope omission
+    units: tuple[ContextUnit, ...]
+    decision: RoutingDecision          # the full routing trace, for replay
+    truncated: bool                    # INV-5: budget exhausted before completion
+    stale_sources: tuple[NodeRef, ...] = ()   # INV-2: pages served with staleness marker
+    token_total: int
+    elapsed_ms: float
+```
+
+### 3.3 Request and budget
+
+```python
+class RetrievalBudget(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    deadline_ms: int = 800
+    max_tokens: int = 12_000
+    max_llm_calls: int = 0             # 0 = synthesis-free path; >0 permits L1 lazy fill
+    max_expansion_nodes: int = 400
+    allow_stale: bool = True           # serve stale wiki with marker vs fall back to L0
+
+class RetrievalRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    query: str
+    workspace: WorkspacePin            # replaces scalar repo/rev — see §3.4
+    budget: RetrievalBudget = RetrievalBudget()
+    policy_override: RetrievalPolicy | None = None   # escape hatch, logged
+```
+
+### 3.4 `WorkspacePin` — the cross-repo unit of coherence
+
+Cross-repo anchors mean a request is no longer scoped to one `(repo, rev)`. The
+retrieval universe is a **frozen set of pins**, resolved once at admission.
+
+```python
+class WorkspacePin(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    primary: str                            # repo name; anchors relative resolution
+    pins: Mapping[str, str]                 # repo -> concrete SHA, never symbolic
+    pinned_at: datetime
+    weight_table_version: str               # §5.3 — stamped for replay
+
+    def rev_of(self, repo: str) -> str: ...
+```
+
+`pins` is a `Mapping`, not `dict` — validated to `frozen` semantics so the whole
+request stays hashable and cacheable.
+
+**Pin lifecycle (resolves OQ-1).** A `dev_loop` session resolves its
+`WorkspacePin` at session open and holds it for the session's lifetime. HEAD
+moving underneath does **not** change retrieval results. Advancing is an
+explicit `RefreshWorkspace` action in the session reducer, producing a new
+frozen state — consistent with the existing discriminated-union action model.
+
+Two failure modes the implementation must handle, because pinning creates them:
+
+- **Unreachable pin.** A pinned SHA can be garbage-collected (force-push,
+  branch delete). Admission verifies reachability; on failure the request fails
+  loudly with `StalePinError` rather than silently resolving to HEAD.
+- **Pin drift vs L1.** The wiki cache is indexed by `(node, digest)`, not by
+  rev, so a pinned-old session still gets correct staleness answers. But a
+  long-lived session pinned far behind HEAD will see most pages `STALE` and
+  regenerate them against old source. That is correct behaviour, and it is also
+  expensive — `WorkspacePin.pinned_at` older than `stale_pin_warning_days`
+  emits a warning on the trace.
+
+---
+
+## 4. QueryClassifier
+
+This is the latency lever. Design principle: **the classifier must never be the thing that costs latency.** It is a pure, non-LLM function over cheap lexical + symbol-table features.
+
+### 4.1 Query taxonomy
+
+| Class | Shape | Example | Default policy |
+|---|---|---|---|
+| `DIRECT_SYMBOL` | names a resolvable symbol, wants its definition | "muéstrame `PayRateEngine.resolve`" | `DirectSymbolPolicy` |
+| `LOCAL_FACT` | single-hop, one place answers it | "¿qué devuelve `resolve()`?" | `VectorSeedPolicy` |
+| `RELATIONAL` | multi-hop over real edges | "¿quién llama a `NoApplicableRule`?" | `PersonalizedPageRankPolicy` |
+| `RATIONALE` | intent/design/why | "¿por qué el rate se congela en clock-out?" | `RationalePolicy` (L1 + `Rationale` nodes) |
+| `GLOBAL_SUMMARY` | aggregation over a subtree | "¿cómo funciona el módulo de outputs?" | `AncestrySummaryPolicy` (L1 wiki) |
+| `COMPARATIVE` | two anchors, needs both neighbourhoods | "diferencia entre el bus viejo y `navigator-eventbus`" | `SteinerTreePolicy` |
+| `UNKNOWN` | no confident signal | — | `VectorSeedPolicy` + escalation armed |
+
+### 4.2 Feature extraction (pure, ~sub-millisecond)
+
+```python
+class QueryFeatures(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    resolved_symbols: tuple[NodeRef, ...]   # exact hits in the L0 symbol table (trie lookup)
+    anchor_count: int                       # distinct resolved anchors
+    has_relational_verb: bool               # calls|uses|imports|depends|extends|quién llama...
+    has_causal_marker: bool                 # why|por qué|rationale|razón|decisión
+    has_aggregation_marker: bool            # overview|cómo funciona|arquitectura|resumen|todos los
+    has_code_literal: bool                  # backticks, snake_case, CamelCase, dotted paths
+    token_count: int
+    interrogative: Interrogative            # WHAT|WHERE|WHO|WHY|HOW|NONE
+```
+
+Symbol resolution uses the L0 symbol trie already built for `Resolve` — no new index. Markers are locale-aware (ES/EN), sourced from a frozen `MarkerLexicon` so the classifier stays declarative and testable.
+
+### 4.3 Decision rules
+
+Ordered, first-match-wins. Deliberately a decision list, not a model — auditable, zero warm-up, zero drift.
+
+```
+R1  anchor_count == 1 and token_count <= 6 and not has_relational_verb
+      → DIRECT_SYMBOL
+R2  has_causal_marker
+      → RATIONALE
+R3  anchor_count >= 2
+      → COMPARATIVE
+R4  has_relational_verb and anchor_count >= 1
+      → RELATIONAL
+R5  has_aggregation_marker and not has_code_literal
+      → GLOBAL_SUMMARY
+R6  anchor_count >= 1 or has_code_literal
+      → LOCAL_FACT
+R7  otherwise
+      → UNKNOWN
+```
+
+```python
+class RoutingDecision(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    query_class: QueryClass
+    policy: RetrievalPolicy
+    matched_rule: str                       # "R4" — replayable
+    features: QueryFeatures
+    escalations: tuple[EscalationStep, ...] = ()
+```
+
+### 4.4 Escalation ladder (where the latency actually gets saved)
+
+Pessimistic routing — sending everything through traversal because *some* queries need it — is the failure mode we are avoiding. Instead: **route optimistically, escalate on measured insufficiency.**
+
+```
+DIRECT_SYMBOL   ──insufficient──▶ LOCAL_FACT ──insufficient──▶ RELATIONAL ──▶ GLOBAL_SUMMARY
+```
+
+A result is `insufficient` when, deterministically:
+
+- `SufficiencyCheck.coverage`: fewer than `min_units` units survived pruning, **or**
+- `SufficiencyCheck.margin`: the seed score distribution is flat (top-1 / top-k ratio below `margin_threshold`) — the retriever found nothing that stands out, **or**
+- `SufficiencyCheck.dangling`: a returned unit references symbols not present in the bundle (call target missing) — a structural signal only a code graph can give us, and the strongest escalation trigger.
+
+Each escalation step is recorded in `RoutingDecision.escalations` with its trigger and elapsed cost. Budget is decremented across steps; escalation stops at `deadline_ms`.
+
+**Escalation mode (resolves OQ-4).**
+
+```python
+class EscalationMode(StrEnum):
+    SEQUENTIAL = "sequential"     # default
+    SPECULATIVE = "speculative"   # budget-gated
+    OFF = "off"                   # single policy, no escalation — for benchmarking
+```
+
+Speculation is **not** "run everything in parallel". It exploits a structural
+fact: `PersonalizedPageRankPolicy.seed()` is exactly `VectorSeedPolicy.seed()`.
+The seed stage is the expensive one (BM25 ∥ dense ∥ RRF); expansion over an
+in-memory rustworkx subgraph is comparatively cheap. So running LOCAL_FACT and
+RELATIONAL speculatively costs **one seed plus one extra expansion**, not two
+full retrievals.
+
+This is enforced structurally, not by convention:
+
+```python
+class SpeculationGroup(BaseModel):
+    """Policies that MAY be speculated together — must share a seed stage."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    seed_signature: str                       # policies must agree on this
+    members: tuple[RetrievalPolicy, ...]
+```
+
+Admission rules:
+
+- Speculation is permitted only within a `SpeculationGroup` (shared seed).
+- Speculation requires `budget.max_llm_calls == 0`. Never speculate on a path
+  that may hit the LLM — that turns a latency optimisation into a cost
+  multiplier.
+- The loser is cancelled on `SufficiencyCheck` resolution, not awaited.
+- `RoutingDecision.escalations` records the speculative branch and whether it
+  was used, so wasted-work ratio (§7) stays measurable.
+
+Default stays `SEQUENTIAL`. `SPECULATIVE` ships behind a flag and is promoted
+only if the harness shows a p95 win that justifies the extra expansion cost.
+
+**Expected effect.** Under the GraphRAG-Bench distribution, simple fact retrieval is roughly a tie between chunk and graph retrieval, so the graph traversal is pure overhead on that segment; the graph's advantage concentrates in multi-hop reasoning and contextual summarization. If the fact/relational split in real traffic resembles that benchmark, R1/R6 short-circuiting removes traversal from the majority of requests. **This is a hypothesis to measure, not an assumption** — see §7.
+
+### 4.5 Escape hatches
+
+- `policy_override` on the request bypasses classification but is logged with `matched_rule="OVERRIDE"`.
+- A `shadow_mode` flag runs the classifier and logs the decision without acting on it, for offline calibration against a golden set before enabling routing in production.
+
+---
+
+## 5. Retrieval policies
+
+Discriminated union, closed set. Adding a policy is a spec change, not a config change.
+
+```python
+RetrievalPolicy = Annotated[
+    DirectSymbolPolicy
+    | VectorSeedPolicy
+    | PersonalizedPageRankPolicy
+    | SteinerTreePolicy
+    | AncestrySummaryPolicy
+    | RationalePolicy,
+    Field(discriminator="kind"),
+]
+```
+
+All policies implement the same four-stage protocol; stages are individually skippable but never reordered.
+
+```python
+class RetrievalPolicyProtocol(Protocol):
+    async def seed(self, req, graph) -> tuple[Seed, ...]: ...
+    async def expand(self, seeds, graph, budget) -> Subgraph: ...
+    async def prune(self, subgraph, budget) -> Subgraph: ...
+    async def assemble(self, subgraph, budget) -> ContextBundle: ...
+```
+
+### 5.1 `DirectSymbolPolicy`
+Symbol-table lookup → node body + immediate `Rationale` children. No vector search, no traversal, no LLM. Target p50 **< 15 ms**.
+
+### 5.2 `VectorSeedPolicy`
+Hybrid seeding: BM25 (SQLite FTS5, already present) ∥ dense (pgvector HNSW), fused with Reciprocal Rank Fusion. `expand` limited to depth 1 (containment edges only). Target p50 **< 120 ms**.
+
+### 5.3 `PersonalizedPageRankPolicy`
+Seeds from §5.2 become the restart distribution; PPR runs in-memory on rustworkx over the workspace-pinned subgraph. This is the HippoRAG-family single-pass multi-hop approach, but over parser-exact edges rather than LLM-extracted ones — the noise term that degrades multi-hop propagation in text graphs does not apply here.
+
+**`EdgeWeightTable` is per-repo, layered (resolves OQ-3).**
+
+```python
+class EdgeWeightTable(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: str                              # stamped into WorkspacePin
+    default: Mapping[EdgeKind, float]         # global fallback
+    per_repo: Mapping[str, Mapping[EdgeKind, float]] = {}
+
+    def weight(self, repo: str, kind: EdgeKind) -> float:
+        """per_repo[repo][kind] -> default[kind] -> 1.0"""
+```
+
+Per-repo is justified: `EXTENDS` in an Odoo codebase carries far more signal
+than in ai-parrot, because `_inherit` is the primary composition mechanism
+there and `OdooCodeExtractor` already emits it as a first-class edge kind.
+A single global table would either under-weight Odoo inheritance or
+over-weight ordinary Python subclassing.
+
+**Boundary-edge resolution rule.** A cross-repo edge belongs to two repos with
+possibly different tables. Rule: **the weight is taken from the table of the
+repo owning the edge's *source* node**, since the dependency direction is the
+one that carries intent. Deterministic, no averaging, no ambiguity.
+
+**Does tuning violate INV-3?** No — and the distinction matters. INV-3
+constrains the *classifier* to be a pure function. The weight table is **data**,
+not routing logic: a frozen, versioned artifact loaded at startup. Fitting it
+offline against the golden set is legitimate. What would violate INV-3 is
+learning it online, or letting the classifier read it. Neither is permitted.
+`weight_table_version` is stamped into `WorkspacePin` so a replayed trace
+reproduces exactly.
+
+### 5.3.1 Cross-repo edges (resolves OQ-2)
+
+Intra-repo edges come from the AST. Cross-repo edges cannot — an `import
+navigator_eventbus` statement names a *distribution*, not a repo. Resolution is
+a separate, lower-confidence derivation:
+
+```
+import statement → distribution name → PackageRepoMap → (repo, rev in workspace)
+```
+
+`PackageRepoMap` is built from `pyproject.toml` dependency declarations plus an
+explicit override table for the ecosystem repos (ai-parrot, navigator-eventbus,
+navigator-auth, asyncdb, navconfig, Flowtask).
+
+Consequences that must be honoured:
+
+- Cross-repo edges carry `derivation="package_metadata"`, distinguishing them
+  from `derivation="ast"`. This is visible in `Evidence.edge_path`.
+- They are weighted **strictly below** any intra-repo edge kind. A boundary
+  crossing is a real relationship but a weak retrieval signal; without this,
+  PPR floods into dependency internals on every query.
+- A repo absent from `WorkspacePin.pins` terminates traversal at the boundary.
+  The bundle records a `boundary_truncation` marker rather than pretending the
+  subgraph was complete.
+- **Precondition, currently unmet:** ai-parrot's main branch still vendors the
+  old internal bus and does not declare `navigator-eventbus` as a dependency.
+  Until that lands, `PackageRepoMap` cannot resolve that edge from metadata and
+  would need a hardcoded override. Prefer fixing the dependency declaration.
+
+### 5.4 `SteinerTreePolicy`
+Prize-Collecting Steiner Tree over the union neighbourhood of ≥2 anchors: maximise node prize (relevance) minus edge cost (hops) subject to `max_tokens`. Approximation via GW primal-dual; exact solve is not required and must not be attempted.
+
+### 5.5 `AncestrySummaryPolicy`
+Walks *up* the containment hierarchy from seeds and serves `WikiPage` bodies instead of source. This is the cheap substitute for Leiden community summaries: the code graph already has ground-truth communities (package → module → class), so we do not run community detection at all.
+
+### 5.6 `RationalePolicy`
+Restricts seeding to `Rationale` nodes and wiki `## Rationale` sections, then expands to the code nodes they annotate. Falls back to `VectorSeedPolicy` when the rationale corpus is sparse — a signal worth surfacing to the user ("no documented rationale found; showing implementation").
+
+---
+
+## 6. WikiCache (L1)
+
+### 6.1 Page model
+
+Splitting is a **retrieval-time selection over addressable sections**, not a
+generation-time page-splitting heuristic (resolves OQ-5). A page is a structured
+document; sections are the addressable unit.
+
+```python
+class SectionKind(StrEnum):
+    OVERVIEW = "overview"       # what this scope is, one paragraph
+    CONTRACTS = "contracts"     # public surface: signatures, models, invariants
+    RATIONALE = "rationale"     # why it is this way — sourced from Rationale nodes
+    USAGE = "usage"             # call patterns observed in-repo
+    GOTCHAS = "gotchas"         # known sharp edges, deviations, TODO-tagged debt
+    DEPENDENCIES = "dependencies"   # cross-repo boundary summary (§5.3.1)
+
+
+class WikiSection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: SectionKind
+    body: str                           # markdown
+    sources: tuple[SourceDigest, ...]   # INV-2, scoped to THIS section
+    token_estimate: int
+    generated_at: datetime
+    generator: GeneratorInfo
+    state: Literal["FRESH", "STALE", "REGENERATING"]
+
+
+class WikiPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    page_id: str                        # stable: hash of (repo, scope_uri)
+    scope: NodeRef                      # the subtree this page summarizes
+    sections: Mapping[SectionKind, WikiSection]
+```
+
+**Retrieval args.** `AncestrySummaryPolicy` and `RationalePolicy` take a
+selector rather than pulling whole pages:
+
+```python
+class SectionSelector(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    include: tuple[SectionKind, ...]
+    max_tokens_per_section: int = 1_200
+    fill_order: tuple[SectionKind, ...]   # greedy fill when budget is tight
+```
+
+The `QueryClassifier` supplies the selector — this is where §4's class taxonomy
+pays off a second time. `RATIONALE` queries request
+`(RATIONALE, OVERVIEW)`; `GLOBAL_SUMMARY` requests
+`(OVERVIEW, CONTRACTS, DEPENDENCIES)`. A hot module no longer produces an
+unusable 8k-token page, because nobody ever asks for the whole page.
+
+**Unplanned upside: invalidation gets finer.** Because each section declares its
+own `sources`, a change to one method invalidates the `CONTRACTS` section of its
+class page while `RATIONALE` and `GOTCHAS` stay `FRESH`. Under the original
+whole-page model, any edit anywhere invalidated everything. This materially
+reduces regeneration cost on active repos, and it was not the reason for the
+change — it fell out of it. Worth noting because it strengthens the case for
+this design over the generation-time split I originally proposed.
+
+**Cost, stated honestly.** Section-level generation means more, smaller LLM
+calls instead of one large one, so per-page cold-start cost goes up. The bet is
+that steady-state regeneration cost dominates cold-start on a repo under active
+development. If a repo is mostly static, the original model would have been
+cheaper. T13 should measure this rather than assume it.
+
+### 6.2 Invalidation
+
+On each L0 re-index, compute the digest delta. For each **section**, if any
+`SourceDigest.digest` no longer matches L0 → transition `FRESH → STALE`.
+**Never eager-regenerate.** A section is regenerated only when a request
+actually selects it and `budget.max_llm_calls > 0`.
+
+Staleness is scoped on two axes now:
+
+- **Vertical:** a change to one method invalidates the corresponding section of
+  its class page and of every ancestor page, but not siblings. Ancestor
+  invalidation is the expensive direction — cap with `max_ancestor_depth` and
+  mark deeper ancestors `STALE` without cascading further.
+- **Horizontal:** only sections whose declared sources actually moved. Most
+  edits touch `CONTRACTS` and `USAGE` while leaving `RATIONALE` intact.
+
+Single-flight (§6.3) is keyed on `(page_id, section_kind)`, not `page_id`, so
+two requests needing different sections of the same hot page do not serialise.
+
+### 6.3 Serving stale pages
+
+| `allow_stale` | `max_llm_calls` | Behaviour |
+|---|---|---|
+| `True` | `0` | Serve stale body; record in `stale_sources`; **caller must surface the marker** |
+| `True` | `>0` | Single-flight regenerate; on deadline miss, serve stale + marker |
+| `False` | `0` | Skip L1 entirely; fall back to L0 source excerpts |
+| `False` | `>0` | Block on regeneration up to deadline; then fall back to L0 |
+
+Regeneration is guarded by single-flight keyed on `page_id` (Redis lock via the existing eventbus infra) to prevent thundering herd on a hot module after a large merge.
+
+### 6.4 Anti-requirement
+
+Wiki pages are **not** authoritative. Where a wiki page and L0 source disagree, source wins and the page is a bug. The bundle must make origin (`l1_wiki` vs `l0_source`) visible to the consuming agent so it can weight accordingly.
+
+---
+
+## 7. Evaluation harness
+
+Routing decisions are worthless without measurement. Ship the harness with the feature, not after.
+
+- **Golden set**: ≥150 queries over ai-parrot + Fieldsync, hand-labelled with `QueryClass` and a reference answer node set.
+- **Routing metrics**: per-class precision/recall of the decision list; escalation rate; wasted-work ratio (cost of escalated path ÷ cost of correct-first-time path).
+- **Retrieval metrics**: node-set recall@k against the reference, **reference-based, not LLM-judged**. LLM-as-judge evaluation in this literature suffers documented position, length, and trial biases severe enough to flip reported win rates; narrow margins from such judging are not evidence.
+- **Latency**: p50/p95/p99 per `QueryClass`, and the headline number — **fraction of traffic answered without any traversal or LLM call**.
+- **Regression gate**: a routing rule change that improves one class must not degrade another beyond a set tolerance.
+
+---
+
+## 8. Observability
+
+Emit one `RetrievalTrace` per request onto `navigator-eventbus`:
+`query_class`, `matched_rule`, `policy.kind`, escalation chain, per-stage timings, `token_total`, `truncated`, `stale_sources` count, cache hit/miss.
+
+`RoutingDecision` is fully serializable — offline replay of production traffic against a modified decision list requires no re-execution of retrieval.
+
+---
+
+## 9. Resolved decisions
+
+| # | Question | Resolution | Where |
+|---|---|---|---|
+| OQ-1 | `rev` pinning across a session | **Pinned.** `WorkspacePin` frozen at session open; advancing is an explicit `RefreshWorkspace` reducer action | §3.4 |
+| OQ-2 | Cross-repo anchors | **Yes.** Resolved via `PackageRepoMap`, marked `derivation="package_metadata"`, weighted below all intra-repo edges | §5.3.1 |
+| OQ-3 | `EdgeWeightTable` scope | **Per-repo, layered** over a global default. Boundary edges take the source repo's table. Offline fitting does not violate INV-3 | §5.3 |
+| OQ-4 | Escalation vs speculation | **Both, gated.** `SEQUENTIAL` default; `SPECULATIVE` permitted only within a shared-seed `SpeculationGroup` and only when `max_llm_calls == 0` | §4.4 |
+| OQ-5 | Wiki page granularity | **Retrieval-time section selection**, not generation-time splitting. `SectionSelector` supplied by the classifier | §6.1 |
+| OQ-6 | Ontology bridge forward-compat | **Widened pre-emptively.** `EvidenceOrigin` declares `L2_*` as RESERVED; `schema_version` added to `ContextBundle` | §3.2 |
+
+## 9.1 Remaining open questions
+
+1. **`PackageRepoMap` authority.** Derived from `pyproject.toml`, but the
+   ecosystem repos are edited concurrently and declarations drift. Is the map
+   built per-index-run from the pinned revs, or maintained as a separate
+   versioned artifact? Per-run is more correct; separate is more debuggable.
+2. **Section regeneration coherence.** If `CONTRACTS` is `STALE` and
+   `OVERVIEW` is `FRESH`, regenerating only `CONTRACTS` can produce a page whose
+   sections describe different code states. Acceptable, or does a bundle need
+   all-fresh-or-none per page?
+3. **Speculation under cross-repo.** `SpeculationGroup` assumes a shared seed
+   stage, but cross-repo seeding may hit multiple vector stores with different
+   latencies. Does the shared-seed guarantee still hold, or does speculation
+   need disabling for multi-pin workspaces in v1?
+4. **`GOTCHAS` provenance.** Sourced partly from TODO-tagged comments, which are
+   `Rationale` nodes in L0 — but also plausibly from commit messages and
+   reverted diffs, which L0 does not index at all. Scope for v1: comments only?
+
+---
+
+## 10. Task decomposition (input to `/sdd-task`)
+
+| # | Task | Depends on |
+|---|---|---|
+| T1 | `NodeRef` + URI parse/serialize + property tests | — |
+| T1b | `WorkspacePin` + admission-time pin resolution + `StalePinError` | T1 |
+| T2 | `Evidence`, `EvidenceOrigin`, `ContextUnit`, `ContextBundle`, `RetrievalBudget` | T1 |
+| T2b | Reserved-origin contract test (no policy may emit `L2_*`) | T2 |
+| T3 | `QueryFeatures` extractor + `MarkerLexicon` (ES/EN) | T1 |
+| T4 | `QueryClassifier` decision list + `RoutingDecision` + replay tests | T3 |
+| T4b | `SectionSelector` derivation from `QueryClass` | T4 |
+| T5 | `DirectSymbolPolicy` | T2 |
+| T6 | `VectorSeedPolicy` (FTS5 ∥ pgvector, RRF) | T2 |
+| T7 | `SufficiencyCheck` + sequential escalation driver | T5, T6 |
+| T7b | `SpeculationGroup` + speculative mode behind flag | T7 |
+| T8 | `PersonalizedPageRankPolicy` + layered `EdgeWeightTable` | T6 |
+| T8b | `PackageRepoMap` + cross-repo boundary edges + `boundary_truncation` | T1b, T8 |
+| T9 | `WikiSection`/`WikiPage` + per-section invalidation + single-flight | T1 |
+| T10 | `AncestrySummaryPolicy` (section-selective) | T9, T4b |
+| T11 | `RationalePolicy` | T6, T9 |
+| T12 | `SteinerTreePolicy` (PCST approximation) | T8 |
+| T13 | Golden set + eval harness + routing regression gate | T4, T6 |
+| T14 | `RetrievalTrace` emission to navigator-eventbus | T2 |
+
+**Revised v1 cut:** T1, T1b, T2, T2b, T3, T4, T4b, T5, T6, T7, T8, T9, T13.
+
+Deferred to v1.1 with rationale:
+- **T7b (speculation)** — an optimisation with no baseline to justify it yet.
+  Needs T13 data first.
+- **T8b (cross-repo)** — blocked on ai-parrot declaring `navigator-eventbus` as
+  a real dependency. Building it against a hardcoded override would bake in the
+  very inconsistency the eventbus extraction was meant to remove. `WorkspacePin`
+  ships in v1 so the contract is stable; the edges arrive later.
+- **T10/T11/T12** — land once the golden set shows where they actually pay.
+
+Note that T9 moved *into* v1 while T10 stayed out. The section model is now a
+core contract (`SectionSelector` is on the retrieval path), so it cannot be
+deferred even though the policy that consumes it can.
