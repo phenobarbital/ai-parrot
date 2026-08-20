@@ -318,11 +318,18 @@ class FormVersionService:
             raise
 
         # Update the live form's published_version in the registry.
-        # version itself is unchanged — promote in place.
-        updated_live = form.model_copy(deep=True, update={
-            "published_version": target_version,
-        })
-        await self._registry.register(updated_live, persist=False, overwrite=True, tenant=tenant)
+        # version itself is unchanged — promote in place. Re-read the live
+        # form immediately before this write (code review finding) — NOT
+        # the `form` snapshot taken at the top of this method — so a
+        # concurrent editor save that bumped the version in between is not
+        # rolled back by this write overwriting the registry with a stale
+        # (older) version.
+        current_live = await self._registry.get(form_uid, tenant=tenant)
+        if current_live is not None:
+            updated_live = current_live.model_copy(deep=True, update={
+                "published_version": target_version,
+            })
+            await self._registry.register(updated_live, persist=False, overwrite=True, tenant=tenant)
 
         # Record VersionMeta (form_id kept as the human-readable slug label).
         # A _meta entry only ever exists because THIS method just published

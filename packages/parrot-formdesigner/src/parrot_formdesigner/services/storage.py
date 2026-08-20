@@ -274,7 +274,14 @@ class PostgresFormStorage(FormStorage):
         ``VARCHAR(50)`` with no CHECK constraint, so a bare cast would raise
         ``22P02`` on any row that doesn't match ``major.minor`` and 500 the
         endpoint for the whole form. Unparseable rows sort last,
-        deterministically, by the raw string.
+        deterministically, by the raw string. The guard regex also bounds
+        each component to 9 digits (code review finding): ``int4``'s range
+        tops out at 10 digits but not every 10-digit string fits
+        (``2147483647`` max), so an unbounded ``[0-9]+`` would still let a
+        component like ``"99999999999"`` match the shape guard and then
+        overflow the cast (``22003``, not ``22P02``, but the same
+        "500s the whole form" failure the guard exists to prevent). 9
+        digits (max ``999999999``) is always within ``int4`` range.
         """
         qt = self._qualified(tenant)
         return f"""
@@ -286,9 +293,9 @@ class PostgresFormStorage(FormStorage):
                schema_json -> 'meta' ->> 'published_at' AS published_at
         FROM {qt}
         WHERE form_uid = $1
-        ORDER BY CASE WHEN version ~ '^[0-9]+\\.[0-9]+$'
+        ORDER BY CASE WHEN version ~ '^[0-9]{{1,9}}\\.[0-9]{{1,9}}$'
                       THEN split_part(version, '.', 1)::int END NULLS LAST,
-                 CASE WHEN version ~ '^[0-9]+\\.[0-9]+$'
+                 CASE WHEN version ~ '^[0-9]{{1,9}}\\.[0-9]{{1,9}}$'
                       THEN split_part(version, '.', 2)::int END NULLS LAST,
                  version
         """

@@ -1853,9 +1853,10 @@ class FormAPIHandler:
     async def publish_form(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_uid}/publish — Publish current form as immutable snapshot.
 
-        Bumps the form's semver minor tag and freezes the current state as a
-        published snapshot. Returns ``409`` when the computed tag already
-        exists (immutability guard). Returns ``404`` when the form is not found.
+        FEAT-433 §8 Q5: promotes the CURRENT live version in place — it no
+        longer bumps to a new tag. Returns ``409`` when the live version is
+        ALREADY published (immutability guard). Returns ``404`` when the
+        form is not found.
 
         Args:
             request: Incoming HTTP request (path param: ``form_uid``).
@@ -1926,12 +1927,17 @@ class FormAPIHandler:
 
         Each entry includes ``version``, ``published_at`` (ISO-8601),
         ``published_by`` (``null`` when not tracked), ``is_current``
-        (``True`` for the form's active published version), and
+        (``True`` for the form's active published version — unchanged
+        formula, ``form.published_version or form.version``), and
         ``is_published`` (FEAT-433 D1/D3) — every stored version is listed,
         draft or published; ``is_published`` labels which is which.
-        ``is_current`` and ``is_published`` are independent: the newest row
-        is normally a current *draft*, and the newest published row is
-        normally an *older* entry.
+        ``is_current`` and ``is_published`` are independent — they need not
+        move together. In practice, because the editor's save handler
+        carries ``published_version`` forward unchanged (it never clears
+        it), ``is_current`` stays pinned to whichever tag the LAST
+        ``publish()`` call promoted until the NEXT ``publish()`` call moves
+        it — not to the newest draft. A newer, not-yet-published draft
+        reports ``is_current: false`` until it is itself published.
 
         Args:
             request: Incoming HTTP request (path param: ``form_uid``).
@@ -1965,10 +1971,13 @@ class FormAPIHandler:
         })
 
     async def get_version(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_uid}/versions/{version} — Retrieve a frozen snapshot.
+        """GET /api/v1/forms/{form_uid}/versions/{version} — Retrieve a stored snapshot.
 
-        Returns the immutable ``FormSchema`` snapshot for the requested semver
-        tag. Returns ``404`` when the form or version is not found.
+        FEAT-433 Module 5: returns the stored ``FormSchema`` snapshot for
+        the requested version — draft OR published, no longer only frozen
+        (published) rows. The returned schema still carries its own
+        ``published_version``, so a caller can tell the two apart. Returns
+        ``404`` when the form or version is not found.
 
         Args:
             request: Incoming HTTP request (path params: ``form_uid``, ``version``).
