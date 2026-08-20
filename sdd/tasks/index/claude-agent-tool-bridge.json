@@ -14,7 +14,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only parrot/tools/manager.py + a new test file. Shares no files with any other task in this spec, so it CAN run in its own worktree. The spec still recommends per-spec isolation (all tasks sequential in one worktree) because TASK-2289 consumes this task's output.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2285-tool-relevance-ranker.md"
+      "completed_at": "2026-08-20T01:30:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2285-tool-relevance-ranker.md"
     },
     {
       "id": "TASK-2286",
