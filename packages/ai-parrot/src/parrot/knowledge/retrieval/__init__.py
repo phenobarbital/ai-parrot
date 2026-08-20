@@ -15,6 +15,13 @@ The public surface here grows task by task; re-export new symbols as they
 land so downstream code can do ``from parrot.knowledge.retrieval import X``.
 """
 
+from parrot.knowledge.retrieval.classifier import (
+    EscalationStep,
+    GraphStats,
+    QueryClass,
+    QueryClassifier,
+    RetrievalRoutingDecision,
+)
 from parrot.knowledge.retrieval.digest import DigestScope, derive_digest
 from parrot.knowledge.retrieval.exceptions import IndexPinMismatchError, StalePinError
 from parrot.knowledge.retrieval.features import QueryFeatures, extract_features
@@ -52,15 +59,20 @@ __all__ = [
     "DerivedSymbolIndex",
     "DigestScope",
     "EdgeRef",
+    "EscalationStep",
     "Evidence",
     "EvidenceOrigin",
+    "GraphStats",
     "IndexPinMismatchError",
     "Interrogative",
     "MarkerLexicon",
     "NodeRef",
+    "QueryClass",
+    "QueryClassifier",
     "QueryFeatures",
     "RetrievalBudget",
     "RetrievalRequest",
+    "RetrievalRoutingDecision",
     "StalePinError",
     "WorkspacePin",
     "check_pin_coherence",
