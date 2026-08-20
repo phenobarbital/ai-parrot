@@ -479,6 +479,54 @@ full configuration format, the kill switch
 (`PARROT_COMPRESSION_DISABLED=1`), the tee recovery flow, and the
 optional Rust acceleration path.
 
+### Claude Agent Tool Bridge (FEAT-434)
+
+When an agent's LLM is `claude-agent:*` (`ClaudeAgentClient`), its whole
+`ToolManager` is exposed to the delegated Claude Code sub-agent as an
+in-process **SDK-MCP server** — `ClaudeAgentToolBridge`
+(`parrot.clients.claude_agent_bridge`). Exposure is automatic: whatever
+tools the agent has registered is what the sub-agent sees (subject to
+the narrowing budget below), no separate opt-in list.
+
+```python
+from parrot.clients.claude_agent_bridge import ClaudeAgentToolBridge
+
+bridge = ClaudeAgentToolBridge(tool_manager, namespace="parrot", tool_timeout=30.0)
+tools = bridge.select(query=prompt, limit=15)   # ranked + bounded (TASK-2289)
+server = bridge.build_server(tools, permission_context)
+# ClaudeAgentOptions.mcp_servers = {"parrot": server, **caller_supplied}
+```
+
+Every exposed tool is reachable to the sub-agent as
+**`mcp__parrot__<tool_name>`** (the `mcp__<namespace>__` prefix disambiguates
+a parrot tool from a same-named native Claude Code tool, e.g. a parrot
+tool literally called `Read`). Each call still dispatches through
+`ToolManager.execute_tool()` — never `tool.execute()` directly — so the
+TOOL_CALL guardrail pipeline, `GrantGuard`, `ConfirmationGuard`
+(see [`docs/hitl-confirmation.md`](hitl-confirmation.md)) and the
+tool-result compression pipeline above all apply unchanged. A tool
+requiring confirmation has its `confirm: boolean` schema property
+stripped on this path only — the sub-agent is never handed a switch it
+can flip itself; the stdio MCP proxy (`parrot mcp-serve`) keeps the
+`confirm` property unchanged, since it has no HITL channel of its own.
+
+**Narrowing budget.** Claude Code loads every exposed MCP tool eagerly —
+no deferral. `ClaudeAgentRunOptions.max_exposed_tools` (default `15`)
+bounds the exposed set each turn; `ClaudeAgentToolBridge.select()` ranks
+against the turn's prompt via `ToolManager.rank_tools()` and logs what
+was dropped (count + names) rather than silently truncating.
+
+**Behavior change: `search_tools()` is now relevance-ordered, not
+alphabetical.** `ToolManager.rank_tools()` (a genuine lexical relevance
+ranker) is the new source of truth; `search_tools()` is a thin
+JSON-formatting wrapper over it. The return type (a JSON string), the
+`name`/`description` keys, and the no-match message are unchanged — only
+the ordering of results changed, for every existing caller (including
+LLM-visible calls, since `search_tools` is itself a registered tool).
+
+See [`docs/agentd.md`](agentd.md) "Claude Code sub-agent tool bridge" for
+the daemon-level configuration (`use_tools`, `tools:`, the auth caveat).
+
 ---
 
 ## Integration & Communication

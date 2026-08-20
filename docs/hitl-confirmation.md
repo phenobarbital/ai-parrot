@@ -213,6 +213,54 @@ descriptive error. This mirrors `GrantGuard`'s fail-closed stance.
 
 ---
 
+## Bridged tools (Claude Code sub-agents, FEAT-434)
+
+A confirming tool called by a delegated Claude Code sub-agent
+(`ClaudeAgentToolBridge`, see [`docs/tools.md`](tools.md) "Claude Agent
+Tool Bridge") goes through this exact same `ConfirmationGuard` — never a
+self-granted switch:
+
+- **The `confirm: boolean` schema property is absent** on this path. The
+  stdio MCP proxy (`parrot mcp-serve`) still injects it (no HITL channel
+  of its own there), but `ClaudeAgentToolBridge.build_server()` strips it
+  before the sub-agent ever sees the schema — a self-granted "trust me"
+  argument is security theatre in-process, since the sub-agent would be
+  setting it itself.
+- **The channel is the agentd console, never `"telegram"`.** `agentd`
+  (`AgentDaemon._configure_hitl`) wires a `ConfirmationGuard` with
+  `ConfirmationConfig(default_channel="agentd")` onto the served agent's
+  `ToolManager`. In practice the channel used is `PermissionContext.
+  channel` (set to `"agentd"` by the daemon's identity resolution — see
+  below) — `_request_confirmation()` prefers it over `default_channel`
+  whenever it is set, so this is belt-and-braces, not the primary
+  mechanism.
+- **The caller's identity is real, never `"anonymous"`.** `agentd`
+  resolves the UDS peer's OS user via `SO_PEERCRED` -> `pwd` (falling
+  back to an env-configured service identity —
+  `AGENTD_SERVICE_IDENTITY_*`) and forwards the resulting
+  `PermissionContext` all the way to `execute_tool()`, so the
+  confirmation window is keyed on the real human, not a shared bucket.
+- **The service identity always re-confirms.** The daemon's guard pins
+  `ConfirmationConfig(window_seconds=0)` for every caller through this
+  `ToolManager` — belt-and-braces with the service identity's own fixed
+  `window_seconds=0` (`ServiceIdentityConfig`, `parrot.integrations.
+  agentd.config`), since `ConfirmationGuard.confirm()` has no per-caller
+  window override to hook (window resolution is `tool.routing_meta` OR
+  the guard's own config, never `permission_context` — verified against
+  FEAT-235, unmodified here).
+- **A bridged confirming tool is exempt from the bridge's own
+  `tool_timeout`.** The HITL wait is bounded by `approval_timeout`
+  (default 120s) instead — a human actively answering must never be cut
+  off by a shorter per-call tool timeout meant for ordinary execution.
+- Denial, timeout, and a missing `human_manager` (fail-closed) all map to
+  a **recoverable MCP error result** — the sub-agent's turn continues,
+  it never aborts.
+
+See `docs/agentd.md` "Claude Code sub-agent tool bridge" for the daemon
+config surface.
+
+---
+
 ## Relationship to GrantGuard (FEAT-211)
 
 `ConfirmationGuard` is a **sibling** of `GrantGuard`, not a replacement:
