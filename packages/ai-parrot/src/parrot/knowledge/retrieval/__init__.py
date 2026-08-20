@@ -48,6 +48,12 @@ from parrot.knowledge.retrieval.pin import (
     read_at_rev,
     resolve_workspace,
 )
+from parrot.knowledge.retrieval.policies import (
+    DirectSymbolPolicy,
+    RetrievalPolicyProtocol,
+    Seed,
+    Subgraph,
+)
 from parrot.knowledge.retrieval.sections import (
     GOTCHA_TAGS,
     RATIONALE_TAGS,
@@ -67,6 +73,7 @@ __all__ = [
     "ContextUnit",
     "DerivedSymbolIndex",
     "DigestScope",
+    "DirectSymbolPolicy",
     "EdgeRef",
     "EscalationStep",
     "Evidence",
@@ -80,11 +87,14 @@ __all__ = [
     "QueryClassifier",
     "QueryFeatures",
     "RetrievalBudget",
+    "RetrievalPolicyProtocol",
     "RetrievalRequest",
     "RetrievalRoutingDecision",
     "SectionKind",
     "SectionSelector",
+    "Seed",
     "StalePinError",
+    "Subgraph",
     "WorkspacePin",
     "check_pin_coherence",
     "derive_digest",
