@@ -72,7 +72,7 @@
       "feature_id": "FEAT-435",
       "feature": "graphindex-retriever",
       "spec": "sdd/specs/graphindex-retriever.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Shares the new `digest.py` with nothing, but TASK-2281 and TASK-2283 both consume it, so it gates them.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:18:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2273-derived-digests.md"
+      "completed_at": "2026-08-20T01:34:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2273-derived-digests.md"
     },
     {
       "id": "TASK-2274",
