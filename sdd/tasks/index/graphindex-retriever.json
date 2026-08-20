@@ -1,0 +1,315 @@
+{
+  "feature": "graphindex-retriever",
+  "feature_id": "FEAT-435",
+  "spec": "sdd/specs/graphindex-retriever.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-20T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2270",
+      "slug": "noderef-graph-uri",
+      "title": "`NodeRef` + `parrot-graph://` URI parse/serialize",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation contract \u2014 every other task imports it. No shared files with any other task, but everything depends on it, so it must land first.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2270-noderef-graph-uri.md"
+    },
+    {
+      "id": "TASK-2271",
+      "slug": "evidence-context-bundle",
+      "title": "`Evidence`, `EvidenceOrigin`, `ContextUnit`, `ContextBundle`, `RetrievalBudget`",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2270"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares `models.py` with TASK-2270, so it cannot run in parallel with it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2271-evidence-context-bundle.md"
+    },
+    {
+      "id": "TASK-2272",
+      "slug": "reserved-origin-contract-test",
+      "title": "Reserved-origin contract test \u2014 no policy may emit `L2_*`",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2271"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Test-only, touches no source module. Can run in parallel with any implementation task once TASK-2271 has landed.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2272-reserved-origin-contract-test.md"
+    },
+    {
+      "id": "TASK-2273",
+      "slug": "derived-digests",
+      "title": "`DigestScope` + derived digest computation (OQ-7)",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2271"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares the new `digest.py` with nothing, but TASK-2281 and TASK-2283 both consume it, so it gates them.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2273-derived-digests.md"
+    },
+    {
+      "id": "TASK-2274",
+      "slug": "workspacepin-admission",
+      "title": "`WorkspacePin` + admission-time pin resolution + `StalePinError`",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2270"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Own module (`pin.py`), but TASK-2275 extends the same file.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2274-workspacepin-admission.md"
+    },
+    {
+      "id": "TASK-2275",
+      "slug": "pin-coherence-check",
+      "title": "Pin coherence check + `IndexPinMismatchError` (OQ-7)",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2274"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends `pin.py` from TASK-2274.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2275-pin-coherence-check.md"
+    },
+    {
+      "id": "TASK-2276",
+      "slug": "derived-symbol-index",
+      "title": "`DerivedSymbolIndex` \u2014 in-process qualname index over L0 nodes (OQ-7)",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2270"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Own module; no file overlap with TASK-2277 (`features.py`). The two can run concurrently, and both gate TASK-2278.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2276-derived-symbol-index.md"
+    },
+    {
+      "id": "TASK-2277",
+      "slug": "query-features-marker-lexicon",
+      "title": "`QueryFeatures` extractor + `MarkerLexicon` (ES/EN)",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2270"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Own module (`features.py`); no overlap with TASK-2276 (`symbols.py`). Both gate TASK-2278.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2277-query-features-marker-lexicon.md"
+    },
+    {
+      "id": "TASK-2278",
+      "slug": "query-classifier-decision-list",
+      "title": "`QueryClassifier` decision list + `RetrievalRoutingDecision` + replay tests",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2277",
+        "TASK-2276"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes both TASK-2276 and TASK-2277; must follow both.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2278-query-classifier-decision-list.md"
+    },
+    {
+      "id": "TASK-2279",
+      "slug": "section-selector",
+      "title": "`SectionSelector` derivation from `QueryClass`",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2278"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes the classifier's `QueryClass`.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2279-section-selector.md"
+    },
+    {
+      "id": "TASK-2280",
+      "slug": "direct-symbol-policy",
+      "title": "`DirectSymbolPolicy` \u2014 the no-traversal, no-LLM fast path",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2271",
+        "TASK-2276"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Own policy module; no file overlap with TASK-2281. Both can run concurrently once their deps land, and both gate TASK-2282.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2280-direct-symbol-policy.md"
+    },
+    {
+      "id": "TASK-2281",
+      "slug": "vector-seed-policy",
+      "title": "`VectorSeedPolicy` \u2014 FTS5 \u2225 FAISS `FlatL2`, fused with RRF",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2271",
+        "TASK-2273"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Own policy module; parallel with TASK-2280.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2281-vector-seed-policy.md"
+    },
+    {
+      "id": "TASK-2282",
+      "slug": "sufficiency-escalation-driver",
+      "title": "`SufficiencyCheck` + sequential escalation driver",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2280",
+        "TASK-2281"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Orchestrates both policies; must follow both.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2282-sufficiency-escalation-driver.md"
+    },
+    {
+      "id": "TASK-2283",
+      "slug": "wiki-sections-invalidation",
+      "title": "`WikiSection`/`WikiPage` + per-section invalidation + single-flight",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-2270",
+        "TASK-2273"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Own module; no overlap with the policy or classifier tasks. Can run concurrently with TASK-2276..2281 once TASK-2273 lands.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2283-wiki-sections-invalidation.md"
+    },
+    {
+      "id": "TASK-2284",
+      "slug": "eval-harness-golden-set",
+      "title": "Golden set + eval harness + routing regression gate + head-to-head vs FEAT-217",
+      "feature_id": "FEAT-435",
+      "feature": "graphindex-retriever",
+      "spec": "sdd/specs/graphindex-retriever.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-2278",
+        "TASK-2281"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes the classifier and at least one seeding policy; must follow both. It is also the gate that unblocks the deferred T6b/T7b/T8 decisions.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2284-eval-harness-golden-set.md"
+    }
+  ]
+}
