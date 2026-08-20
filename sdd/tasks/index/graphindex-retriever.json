@@ -172,7 +172,7 @@
       "feature_id": "FEAT-435",
       "feature": "graphindex-retriever",
       "spec": "sdd/specs/graphindex-retriever.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Consumes both TASK-2276 and TASK-2277; must follow both.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:18:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2278-query-classifier-decision-list.md"
+      "completed_at": "2026-08-20T01:54:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2278-query-classifier-decision-list.md"
     },
     {
       "id": "TASK-2279",
