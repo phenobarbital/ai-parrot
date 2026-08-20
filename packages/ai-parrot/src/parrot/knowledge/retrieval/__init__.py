@@ -48,10 +48,19 @@ from parrot.knowledge.retrieval.pin import (
     read_at_rev,
     resolve_workspace,
 )
+from parrot.knowledge.retrieval.sections import (
+    GOTCHA_TAGS,
+    RATIONALE_TAGS,
+    SectionKind,
+    SectionSelector,
+    selector_for,
+)
 from parrot.knowledge.retrieval.symbols import DerivedSymbolIndex
 
 __all__ = [
     "DEFAULT_LEXICON",
+    "GOTCHA_TAGS",
+    "RATIONALE_TAGS",
     "CoherenceReport",
     "CompiledMarkerLexicon",
     "ContextBundle",
@@ -73,6 +82,8 @@ __all__ = [
     "RetrievalBudget",
     "RetrievalRequest",
     "RetrievalRoutingDecision",
+    "SectionKind",
+    "SectionSelector",
     "StalePinError",
     "WorkspacePin",
     "check_pin_coherence",
@@ -80,4 +91,5 @@ __all__ = [
     "extract_features",
     "read_at_rev",
     "resolve_workspace",
+    "selector_for",
 ]
