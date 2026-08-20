@@ -97,6 +97,13 @@ def _build_crew(blueprint, tool: Optional[DummyTool] = None) -> AgentCrew:
         # The wiki is a real platform default, but it writes a SQLite plane
         # under the cwd; these tests are about the graph, not about storage.
         enable_execution_wiki=False,
+        # Result persistence is the other storage default, and it is the one
+        # that blocks: every `run_*` call writes through ExecutionMemory to a
+        # document store, and with no server reachable pymongo hangs in
+        # server selection rather than failing — so the four execution tests
+        # never terminate, in CI or on a laptop. These tests assert on the
+        # graph the blueprint compiled to, not on where its results land.
+        persist_results=False,
     )
 
 
@@ -209,6 +216,7 @@ async def test_a_failing_agent_does_not_abort_the_whole_crew():
         class_resolver=_resolver,
         tool_resolver=lambda name: DummyTool(name="rest_api"),
         enable_execution_wiki=False,
+        persist_results=False,
     )
     result = await crew.run_flow("topic", generate_summary=False)
 
