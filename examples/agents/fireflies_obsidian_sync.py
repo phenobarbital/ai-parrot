@@ -75,32 +75,29 @@ async def main():
             for error in sync_report["errors"]:
                 print(f"     - {error}")
 
-        # PHASE 2: Optional LLM-powered summarization
-        # Auto-detect and analyze the first synced meeting
+        # PHASE 2: LLM-powered summarization
+        # Summarize EVERY meeting note that has no Analysis section yet —
+        # both the ones just synced and any backlog from previous runs.
         logger.info("\n" + "=" * 60)
         logger.info("PHASE 2: Analyzing meetings with LLM...")
         logger.info("=" * 60)
 
-        if sync_report["synced"] > 0:
-            # Get the first synced note to analyze
-            existing_notes = await agent._get_existing_meeting_titles()
-            # Sort descending so the most recent meeting comes first
-            sorted_notes = sorted(existing_notes, reverse=True)
-            recent_note = sorted_notes[0] if sorted_notes else None
+        max_notes = os.getenv("PARROT_FIREFLIES_MAX_ANALYSIS")
+        report = await agent.summarize_pending_transcripts(
+            granularity="standard",  # minimal | standard | detailed
+            limit=int(max_notes) if max_notes else None,
+        )
 
-            if recent_note:
-                analysis = await agent.summarize_transcript(
-                    note_title=recent_note,
-                    granularity="standard",  # minimal | standard | detailed
-                )
-
-                print("\n✅ Analysis Report:")
-                print(f"   Note: {recent_note}")
-                print(f"   Status: {analysis['status']}")
-                if analysis["status"] == "ok":
-                    print(f"   Summary: {analysis['summary'][:100]}...")
-                    print(f"   Follow-ups: {len(analysis['follow_ups'])}")
-                    print(f"   Insights: {len(analysis['insights'])}")
+        print("\n✅ Analysis Report:")
+        print(f"   Status: {report['status']}")
+        print(f"   Analyzed: {len(report['analyzed'])}")
+        for note_title in report["analyzed"]:
+            print(f"     + {note_title}")
+        print(f"   Already analyzed: {len(report['skipped'])}")
+        if report["errors"]:
+            print(f"   Errors: {len(report['errors'])}")
+            for failure in report["errors"]:
+                print(f"     - {failure['note']}: {failure['error']}")
 
     except Exception as e:
         logger.error(
