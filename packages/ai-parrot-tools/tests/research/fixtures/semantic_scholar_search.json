@@ -1,0 +1,21 @@
+{
+  "total": 1,
+  "offset": 0,
+  "data": [
+    {
+      "paperId": "abc123def456",
+      "title": "Graph Neural Networks for Molecular Property Prediction",
+      "abstract": "We propose a graph neural network architecture for molecular property prediction.",
+      "year": 2022,
+      "venue": "NeurIPS",
+      "citationCount": 87,
+      "openAccessPdf": {"url": "https://arxiv.org/pdf/2201.00001"},
+      "externalIds": {"DOI": "10.1000/gnn-molecular", "ArXiv": "2201.00001"},
+      "fieldsOfStudy": ["Computer Science", "Chemistry"],
+      "authors": [
+        {"authorId": "1", "name": "Jane Doe"},
+        {"authorId": "2", "name": "John Smith"}
+      ]
+    }
+  ]
+}

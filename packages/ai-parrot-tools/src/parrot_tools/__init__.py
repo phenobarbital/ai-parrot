@@ -10,6 +10,33 @@ Manual additions are also supported — the script preserves manual entries.
 from .version import __version__, __title__, __description__
 
 TOOL_REGISTRY: dict[str, str] = {
+    # --- FEAT-426: Research Tools for Agents ---
+    # These entries mirror exactly what
+    # `scripts/generate_tool_registry.py` computes for the new
+    # `parrot_tools/research/` modules (verified via `--dry-run
+    # --tools-only`). Added by hand because the generator's *write* path
+    # is broken for `dict[str, str]`-annotated registries (see
+    # TASK-2243 completion note / follow-up) — it only ever matches
+    # `ast.Assign`, never `ast.AnnAssign`, so `--check` correctly detects
+    # staleness but running the script without `--dry-run` silently
+    # no-ops instead of writing. `research_router` additionally doesn't
+    # match the Tool/Toolkit naming-suffix convention `scan_classes()`
+    # uses, so it would never be auto-discovered even with a working
+    # writer — it is a legitimate "manual addition" per this file's own
+    # docstring contract.
+    #
+    # NOTE: `BaseResearchToolkit` (the generator would key it as
+    # "base_research") is deliberately EXCLUDED here even though the
+    # generator's naming-suffix scan would pick it up (it ends in
+    # "Toolkit"). It is a bare cooperative mixin, not a usable standalone
+    # toolkit — registering it makes `ToolManager.load_tool("base_research")`
+    # falsely report success while registering zero tools (verified via
+    # code review; the class fails `issubclass(cls, AbstractToolkit)` in
+    # `manager.py`'s registry loader, which swallows the resulting failure
+    # into a silent no-op plus a spurious ERROR log entry).
+    "open_data": "parrot_tools.research.open_data.OpenDataToolkit",
+    "academic_research": "parrot_tools.research.academic.AcademicResearchToolkit",
+    "research_router": "parrot_tools.research.router.ResearchRouter",
     # --- Toolkits (Batch 1 — simple tools) ---
     "zipcode": "parrot_tools.zipcode.ZipcodeAPIToolkit",
     "ddgo": "parrot_tools.ddgo.DuckDuckGoToolkit",

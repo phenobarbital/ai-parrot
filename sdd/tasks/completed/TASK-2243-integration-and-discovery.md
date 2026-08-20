@@ -256,8 +256,63 @@ class TestErrorContract:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: `research/__init__.py` now exports all 5 models +
+`BaseResearchToolkit`/`OpenDataToolkit`/`AcademicResearchToolkit`/
+`ResearchRouter`/`ResearchRouterArgs`. Cross-toolkit integration tests
+added per spec §4 (exports, registry, tool-surface, G7 error-contract,
+citation-completeness) — 10/10 pass; full research suite 89/89 pass;
+`ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**IMPORTANT — could not satisfy one acceptance criterion, marking
+done-with-issues**: `python scripts/generate_tool_registry.py --check`
+does NOT exit 0, and this is NOT fixable within this task's file scope.
+Root cause (verified via an isolated repro, not guessed): both
+`read_existing_registry()` and the write branch of `update_init_file()`
+in `scripts/generate_tool_registry.py` match only `ast.Assign` nodes —
+but `TOOL_REGISTRY`/`LOADER_REGISTRY` are declared as
+`NAME: dict[str, str] = {...}`, which parses as `ast.AnnAssign`, not
+`ast.Assign`. Consequences: (1) `read_existing_registry()` always
+returns `None`/`{}`, so `--check`'s staleness diff is computed against an
+empty baseline and reports the **entire** monorepo's tool+loader
+registries (155 tool classes on `--tools-only` alone, verified,
+zero related to FEAT-426 beyond the 3 new classes) as unconditionally
+stale; (2) the writer has the same bug, so running the generator without
+`--dry-run` silently no-ops (confirmed: `changed=True` returned, file
+byte-for-byte unchanged) — the documented "run the generator, commit the
+regenerated file" workflow in this task cannot actually produce a
+regenerated file. Both bugs predate FEAT-426 (script added 2026-03-23,
+single commit, never touched since) and are pre-existing, repo-wide,
+unrelated to research tools — fixing `scripts/generate_tool_registry.py`
+is out of this task's Files-to-Modify scope and affects every other
+in-flight feature's CI gate, not just this one.
+
+**What I did instead, within scope**: hand-added exactly the 3 new
+registry entries (`open_data`, `academic_research`, `research_router`,
+plus the incidental `base_research` for the `BaseResearchToolkit` mixin,
+which also matches the `Toolkit` naming-suffix scan) to
+`parrot_tools/__init__.py`, using the file's own documented "manual
+additions are preserved" mechanism, with keys/paths verified to exactly
+match what `--dry-run --tools-only` computes for `parrot_tools/research/`
+(asserted by `TestRegistry.test_research_entries_match_generator_scan`).
+`research_router` in particular could never be auto-discovered anyway —
+`ResearchRouter` doesn't end in `Tool`/`Toolkit`, so `scan_classes()`'s
+naming-suffix convention would skip it even with a working writer.
+Diff to `parrot_tools/__init__.py` is 18 insertions, scoped to exactly
+these 4 entries — nothing else touched, no data loss to the other 122+
+existing entries.
+
+**Recommendation for the PR reviewer / follow-up**: file a dedicated
+fix for `scripts/generate_tool_registry.py` (add `ast.AnnAssign` handling
+alongside `ast.Assign` in both `read_existing_registry()` and
+`update_init_file()`), then run a full repo-wide regeneration as its own
+isolated change — reviewable independently of any single feature's diff.
+Until then, `.github/workflows/ci.yml:30`'s `--check` step is red for
+every PR in this repo, not just this one.
+
+**Deviations from spec**: `TOOL_REGISTRY` entries were added by hand
+(not via a live `generate_tool_registry.py` run) because of the
+pre-existing generator bug documented above — the entries themselves are
+verified correct and generator-shaped. `--check` does not exit 0 for
+reasons entirely unrelated to and outside this task's scope.

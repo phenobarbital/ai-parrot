@@ -241,8 +241,18 @@ class TestPubMed:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: Added `search_pubmed` to `AcademicResearchToolkit`: mandatory
+two-step `Entrez.esearch` -> `Entrez.efetch` workflow (both via
+`_run_sync_in_executor`), short-circuiting to `no_data` on an empty
+`IdList` without calling `efetch`. `_configure_entrez()` sets
+`Entrez.email` (required by NCBI) and optional `Entrez.api_key`/`.tool`.
+A small `asyncio.sleep` (1/3s unkeyed, 1/10s keyed) spaces the two calls
+per NCBI's documented rate limits. Multi-part `Abstract.AbstractText` is
+joined into one string; DOI resolved from `ArticleIdList` entries whose
+`attributes["IdType"] == "doi"` (modeled with a `str` subclass carrying
+`.attributes`, mirroring Biopython's real `StringElement`). 6/6 new tests
+pass offline against a fake `Bio.Entrez` module; full research suite
+(49 tests) green; `ruff check` clean.
+**Deviations from spec**: none

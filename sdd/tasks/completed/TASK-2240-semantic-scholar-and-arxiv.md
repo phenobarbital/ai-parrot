@@ -264,8 +264,16 @@ class TestArxiv:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: Added `search_semantic_scholar` (explicit `fields=`, hyphens
+rewritten to spaces, `x-api-key` header from `SEMANTIC_SCHOLAR_API_KEY`
+— never `Authorization`, `limit` clamped to 100) and `search_arxiv`
+(ported `ArxivTool._format_paper` mapping logic into a `PaperResult`
+producer, `cat:<category> AND <query>` prefixing, `arxiv` called only via
+`_run_sync_in_executor`). `arxiv_tool.py` is untouched — verified with
+`git diff --exit-code` in a dedicated test and by hand. 10/10 new tests
+pass offline (fake `arxiv` module, `_make_api_request` capture fixtures
+for S2 params/headers); full research suite (59 tests) green; `ruff
+check` clean.
+**Deviations from spec**: none

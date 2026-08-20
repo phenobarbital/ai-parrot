@@ -227,8 +227,15 @@ class TestWorldBank:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: `OpenDataToolkit(BaseResearchToolkit, AbstractToolkit)` with
+`search_world_bank` (resolves free text via `wb.series.info(q=...)` then
+fetches observations; falls back to `no_data`) and
+`get_world_bank_indicator` (direct indicator+country time series). Both
+wrap `wbgapi` calls in `_run_sync_in_executor`, cache via `ToolCache`
+(1h TTL), and attach a `Citation` (CC BY-4.0) on success. Missing
+observations keep `value=None` rather than being dropped. 7/7 new tests
+pass offline against a fixture-driven fake `wb` module; full research
+suite (26 tests) green; `ruff check` clean.
+**Deviations from spec**: none

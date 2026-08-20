@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Illustrative excerpt of an SDMX-ML 3.0 structure message for OECD's
+  dataflow catalog (https://sdmx.oecd.org/public/rest/v2/dataflow), kept
+  here as a reference fixture for FEAT-426 TASK-2237. The offline unit
+  tests exercise `OpenDataToolkit` against a fake `sdmx.Client` (see
+  `test_open_data_oecd.py`) rather than parsing this file directly, since
+  `sdmx1` is an optional dependency not installed in the base test
+  environment (spec goal G6 — fixtures only, no live network in CI).
+-->
+<mes:Structure xmlns:mes="http://www.sdmx.org/resources/sdmxml/schemas/v3_0/message"
+                xmlns:str="http://www.sdmx.org/resources/sdmxml/schemas/v3_0/structure">
+  <mes:Structures>
+    <str:Dataflows>
+      <str:Dataflow id="DSD_FUA_CLIM@DF_TEMPERATURES" agencyID="OECD.SDD.NAD" version="1.0">
+        <com:Name xml:lang="en" xmlns:com="http://www.sdmx.org/resources/sdmxml/schemas/v3_0/common">
+          Urban Areas Climate Temperatures
+        </com:Name>
+      </str:Dataflow>
+      <str:Dataflow id="DSD_X@DF_Y" agencyID="OECD" version="1.0">
+        <com:Name xml:lang="en" xmlns:com="http://www.sdmx.org/resources/sdmxml/schemas/v3_0/common">
+          Some Other Dataflow
+        </com:Name>
+      </str:Dataflow>
+    </str:Dataflows>
+  </mes:Structures>
+</mes:Structure>

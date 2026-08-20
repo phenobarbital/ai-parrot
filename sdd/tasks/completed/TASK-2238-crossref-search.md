@@ -233,8 +233,16 @@ class TestCrossref:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-17
+**Notes**: `AcademicResearchToolkit(BaseResearchToolkit, AbstractToolkit)`
+with `search_crossref`, using `query_bibliographic` (not the generic
+`query` param), always passing `mailto` (polite pool, from
+`CROSSREF_MAILTO` via `navconfig.config.get(..., fallback=...)` — note
+`config.get`'s 2nd positional arg is `section`, not a default; caught this
+via a failing test and fixed to the `fallback=` keyword). List-valued
+`title`/`container-title` and nested `issued.date-parts` handled
+defensively (no IndexError on empty lists). Cached 24h (papers are
+slow-changing). 5/5 new tests pass offline against a fake `Crossref`
+class; full research suite (43 tests) green; `ruff check` clean.
+**Deviations from spec**: none
