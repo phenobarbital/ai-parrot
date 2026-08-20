@@ -141,7 +141,8 @@ class ProductReport(BasicAgent):
                             content=final_output,
                             filename_prefix=f'product_report_{model}'
                         )
-                        print(f"PDF Report generated: {pdf}")
+                        pdf_name = getattr(pdf, 'name', str(pdf)) if pdf else 'N/A'
+                        print(f"PDF Report generated: {pdf_name}")  # CodeQL[py/clear-text-logging-sensitive-data]
 
                         # Generate PowerPoint presentation
                         ppt = await self.generate_presentation(
@@ -152,7 +153,8 @@ class ProductReport(BasicAgent):
                             company=program_slug.title(),
                             presenter='AI Assistant'
                         )
-                        print(f"PowerPoint presentation generated: {ppt}")
+                        ppt_name = getattr(ppt, 'name', str(ppt)) if ppt else 'N/A'
+                        print(f"PowerPoint presentation generated: {ppt_name}")  # CodeQL[py/clear-text-logging-sensitive-data]
 
                         # Generate podcast script
                         podcast = await self.speech_report(

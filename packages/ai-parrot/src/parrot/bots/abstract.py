@@ -161,6 +161,29 @@ _LLM_PATTERN = re.compile(
 )
 
 
+def _resolve_supported_client(entry):
+    """Resolve a ``SUPPORTED_CLIENTS`` entry into a client class.
+
+    Optional backends (``claude-agent``, ``gemma4``, ``bedrock-converse``,
+    ``nova``, ``bedrock-mantle``) are registered as zero-argument lazy
+    loader *functions* so importing :mod:`parrot.clients.factory` does not
+    pull in their optional SDKs. ``LLMFactory.create()`` already resolves
+    them; :meth:`AbstractBot._create_llm_client` instantiates
+    ``config.client_class`` directly, so without this the loader would be
+    called with client kwargs and raise ``TypeError``.
+
+    Args:
+        entry: A client class or a zero-arg lazy loader returning one.
+
+    Returns:
+        The resolved :class:`AbstractClient` subclass (or ``entry``
+        unchanged when it is already a class / ``None``).
+    """
+    if entry is not None and callable(entry) and not isinstance(entry, type):
+        return entry()
+    return entry
+
+
 class AbstractBot(
     MCPEnabledMixin,
     DBInterface,
@@ -859,7 +882,9 @@ class AbstractBot(
                     f"Unsupported LLM: '{config.provider}'. "
                     f"Valid: {list(SUPPORTED_CLIENTS.keys())}"
                 )
-            config.client_class = SUPPORTED_CLIENTS[config.provider]
+            config.client_class = _resolve_supported_client(
+                SUPPORTED_CLIENTS[config.provider]
+            )
 
         # 6. Callable factory
         elif callable(llm):
@@ -870,7 +895,9 @@ class AbstractBot(
             from ..clients.factory import SUPPORTED_CLIENTS
 
             config.provider = getattr(self, '_default_llm', 'google')
-            config.client_class = SUPPORTED_CLIENTS.get(config.provider)
+            config.client_class = _resolve_supported_client(
+                SUPPORTED_CLIENTS.get(config.provider)
+            )
 
         # Model: explicit arg > parsed > config > class default
         config.model = model or config.model or getattr(self, 'default_model', None)
@@ -953,7 +980,7 @@ class AbstractBot(
 
         return LLMConfig(
             provider=provider,
-            client_class=SUPPORTED_CLIENTS[provider],
+            client_class=_resolve_supported_client(SUPPORTED_CLIENTS[provider]),
             model=cfg.pop('model', None),
             temperature=cfg.pop('temperature', 0.1),
             top_k=cfg.pop('top_k', 41),

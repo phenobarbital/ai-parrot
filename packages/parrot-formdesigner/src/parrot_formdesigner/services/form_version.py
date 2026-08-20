@@ -1,13 +1,14 @@
 """FormVersionService — immutable semver publishing for FormSchema objects.
 
 Implements the form publishing lifecycle described in FEAT-300 §2 (RF-06):
-- Publishing freezes the current form as a semver-tagged snapshot.
-- Published snapshots are immutable — overwriting raises ``ValueError``.
+- Publishing promotes the current live version to published, IN PLACE
+  (FEAT-433 §8 Q5, closed 2026-08-19) — it does not bump to a new tag.
+- Published snapshots are immutable — re-promoting raises ``ValueError``.
 - In-flight responses resolve against the version they started with.
 - Deletion of a form/version with associated responses is blocked (caller
   provides a ``has_responses`` hook).
 
-FEAT-300 — Module 4.
+FEAT-300 — Module 4. FEAT-433 — Modules 3, 5, 6.
 """
 
 from __future__ import annotations
@@ -25,10 +26,6 @@ from .registry import FormRegistry, FormStorage
 
 logger = logging.getLogger(__name__)
 
-#: Upper bound for storage probing when reconstructing version history
-#: (defensive cap — real forms have far fewer published versions).
-_MAX_VERSION_PROBES = 200
-
 
 # ---------------------------------------------------------------------------
 # Models
@@ -36,7 +33,7 @@ _MAX_VERSION_PROBES = 200
 
 
 class VersionMeta(BaseModel):
-    """Metadata record for a published form version.
+    """Metadata record for one stored form version (FEAT-433 D1/Module 3).
 
     Attributes:
         form_id: The form's human-readable slug (FEAT-389 — display /
@@ -45,9 +42,18 @@ class VersionMeta(BaseModel):
             lookup key everywhere in this service; ``VersionMeta`` keeps
             ``form_id`` purely as a friendlier label for callers.
         version: The semver-style ``major.minor`` tag (e.g. ``"1.0"``).
-        published_at: UTC timestamp when this version was published.
+        published_at: UTC timestamp. For a published row, when it was
+            published; for a draft row, its own ``created_at`` (never the
+            wall-clock "now" of the request — see :meth:`_published_at_from_row`).
         tenant: Tenant slug.
-        is_frozen: Always ``True`` — published versions are immutable.
+        is_published: Whether this row IS the published snapshot for its own
+            version — derived, never stored (D1/D2):
+            ``published_version == version``. The draft/published
+            distinction is a per-row LABEL (D3), not a visibility gate —
+            every stored row is listed regardless of this value.
+        is_frozen: Equal to ``is_published`` — only a published snapshot is
+            immutable; a draft row is rewritable in place by the next editor
+            save.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -56,46 +62,185 @@ class VersionMeta(BaseModel):
     version: str
     published_at: datetime
     tenant: str
-    is_frozen: bool = True
+    is_published: bool
+    is_frozen: bool
 
 
 # ---------------------------------------------------------------------------
 # Semver helpers
 # ---------------------------------------------------------------------------
 
-_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)$")
+#: FEAT-433 TASK-2267 — the one grammar both former bumpers now share.
+#: ``major.minor`` (spec S1's canonical, unchanged format) is required; an
+#: optional third ``.patch`` component is accepted (matching the pre-merge
+#: ``api/_utils._bump_version`` behavior) but never participates in
+#: ordering — the stored format is ``major.minor`` (D2/S1), so a
+#: patch-shaped input shares its parent's ``(major, minor)`` bucket.
+_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?$")
+
+#: Sentinel returned by :func:`_parse_major_minor` for a version string that
+#: does not even match ``major.minor`` — sorts LAST, deterministically,
+#: matching the SQL ordering guard's ``NULLS LAST`` (Module 2). Replaces the
+#: previous ``(1, 0)`` fallback, which silently misordered an unparseable
+#: row as if it were the OLDEST version in the history — the opposite of
+#: harmless.
+_UNPARSEABLE_SENTINEL = 2**63 - 1
+
+#: Two-wide: the fallback of :func:`_parse_major_minor`, whose contract is a
+#: ``(major, minor)`` pair.
+_UNPARSEABLE_SORT_KEY = (_UNPARSEABLE_SENTINEL, _UNPARSEABLE_SENTINEL)
+
+#: Three-wide: the fallback of :func:`_version_sort_key`. Kept separate from
+#: the pair above rather than widening it — that pair is compared directly in
+#: the test suite, and a silently widened tuple would make an equality check
+#: that reads correct fail for a reason unrelated to what it tests.
+_UNPARSEABLE_VERSION_KEY = (_UNPARSEABLE_SENTINEL,) * 3
 
 
 def _parse_major_minor(version: str) -> tuple[int, int]:
-    """Parse a ``major.minor`` version string.
+    """Parse a version string's ``(major, minor)`` for ordering purposes.
 
     Args:
-        version: Version string, e.g. ``"1.0"`` or ``"2.3"``.
+        version: Version string, e.g. ``"1.0"``, ``"2.3"``, or ``"1.2.3"``
+            (a trailing patch component is accepted but ignored here).
 
     Returns:
-        ``(major, minor)`` ints. Falls back to ``(1, 0)`` on parse failure.
+        ``(major, minor)`` ints. Falls back to the first two components of
+        :data:`_UNPARSEABLE_SORT_KEY` — NOT ``(1, 0)`` — when ``version``
+        doesn't match at all, so an unparseable value is never mistaken for
+        the oldest version. For ORDERING use :func:`_version_sort_key`,
+        which also accounts for the patch component.
     """
     m = _SEMVER_RE.match(version or "")
     if m:
         return int(m.group(1)), int(m.group(2))
-    logger.warning("Could not parse version %r as major.minor — defaulting to (1, 0)", version)
-    return 1, 0
+    logger.warning("Could not parse version %r as major.minor — sorting it last", version)
+    return _UNPARSEABLE_SORT_KEY
+
+
+def _version_sort_key(version: str) -> tuple[int, int, int]:
+    """The ordering key for a version string: ``(major, minor, patch)``.
+
+    Separate from :func:`_parse_major_minor`, which exists for the bump
+    arithmetic and deliberately ignores a patch component. Ordering cannot
+    ignore it: ``_SEMVER_RE`` accepts ``1.2.3``, so collapsing it to
+    ``(1, 2)`` ties it with ``1.2`` and makes the sort non-deterministic.
+
+    This MUST accept exactly what the SQL guard in
+    ``PostgresFormStorage._list_versions_sql`` accepts, and produce the same
+    order (adversarial review, 2026-08-19). Postgres previously treated
+    ``1.2.3`` as unparseable and sorted it last while this side sorted it as
+    ``(1, 2)`` — the storage-backed history and the in-memory merge then
+    disagreed about the same form.
+
+    Args:
+        version: Version string, e.g. ``"1.0"``, ``"1.10"``, ``"1.2.3"``.
+
+    Returns:
+        ``(major, minor, patch)`` ints, ``patch`` defaulting to ``0``, or
+        :data:`_UNPARSEABLE_VERSION_KEY` so a non-conforming row sorts last.
+    """
+    m = _SEMVER_RE.match(version or "")
+    if not m:
+        logger.warning("Could not parse version %r for ordering — sorting it last", version)
+        return _UNPARSEABLE_VERSION_KEY
+    return int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+
+
+def _label_would_regress(already_published: str | None, target: str) -> bool:
+    """Whether stamping ``target`` would move ``published_version`` BACKWARDS.
+
+    Guards the registry write at the end of :meth:`FormVersionService.publish`
+    against a lost update (adversarial review, 2026-08-19). The re-read there
+    already stops a concurrent editor save from having its VERSION rolled
+    back, but the LABEL was still written unconditionally: with two publishes
+    in flight — ``1.0`` and ``1.1`` — the one that finishes last wins, so a
+    slow ``1.0`` could stamp ``published_version="1.0"`` over a completed
+    ``1.1``. The persisted rows stay correct either way (each is promoted in
+    its own statement); it is the in-memory label that goes stale, until a
+    restart or the next publish.
+
+    Args:
+        already_published: The live form's current ``published_version``.
+        target: The version this publish just promoted.
+
+    Returns:
+        ``True`` only when both are comparable and the stored one is newer.
+        An unparseable stored value is NOT treated as newer — it cannot be
+        compared, so the write is allowed through rather than blocked
+        forever.
+    """
+    if already_published is None:
+        return False
+    if not _SEMVER_RE.match(already_published):
+        return False
+    return _version_sort_key(already_published) > _version_sort_key(target)
+
+
+def _is_published_label(published_version: str | None, version: str) -> bool:
+    """Whether a stored row is the published snapshot for its own version.
+
+    FEAT-433 D1/D2/D3: this is the one comparison the whole feature turns
+    on. Before Module 3 it *gated* ``list_versions`` — a row was dropped
+    unless this held. It now *labels* the row instead — every stored row is
+    listed, and this decides how it is presented, not whether it appears.
+    Kept next to :func:`_parse_major_minor` since the two derivation rules
+    (ordering, labelling) live together by design.
+
+    Args:
+        published_version: The row's stamped ``published_version`` (``None``
+            for a row no ``publish()`` call has ever touched).
+        version: The row's own ``version``.
+
+    Returns:
+        ``True`` if this row IS the published snapshot for its version.
+    """
+    return published_version == version
 
 
 def _bump(current: str, bump: str = "minor") -> str:
-    """Bump a ``major.minor`` version string.
+    """Bump a version string — the single grammar for both former bumpers.
+
+    FEAT-433 TASK-2267: collapses the pre-existing ``api/_utils._bump_version``
+    (incremented the last component, accepted a three-part version) and this
+    module's own ``_bump`` (matched only ``major.minor``, silently degraded
+    anything else) into one implementation. ``api/_utils._bump_version`` now
+    delegates here.
+
+    Grammar:
+        - ``"major.minor"`` (the canonical, documented format — spec S1,
+          unchanged) or ``"major.minor.patch"``: ``bump="minor"`` (default)
+          increments the LAST present component, preserving a three-part
+          shape (``"1.2.3"`` → ``"1.2.4"``); ``bump="major"`` increments the
+          major component and resets the rest, dropping any patch
+          (``"1.2.3"`` → ``"2.0"``, same rule as the two-part case).
+        - Anything that doesn't even parse as a leading ``N.N`` is NOT
+          rejected: this runs on the editor's hot path (every save, via
+          ``api/_utils._bump_version``) and must be cheap and total — a
+          bump that raises on a legacy/malformed value already in storage
+          would break saving. It is passed through as ``"<current>.1"``,
+          the same total fallback the pre-merge ``_bump_version`` used for
+          a bare major-only input (e.g. ``"1"`` → ``"1.1"``).
 
     Args:
-        current: Current version (e.g. ``"1.0"``).
+        current: Current version string, e.g. ``"1.0"`` or ``"1.2.3"``.
         bump: ``"minor"`` (default) or ``"major"``.
 
     Returns:
-        New version string. ``"1.0"`` + minor → ``"1.1"``; + major → ``"2.0"``.
+        The bumped version string.
     """
-    major, minor = _parse_major_minor(current)
-    if bump == "major":
-        return f"{major + 1}.0"
-    return f"{major}.{minor + 1}"
+    parts = (current or "").split(".")
+    if len(parts) >= 2 and all(p.isdigit() for p in parts[:2]) and all(
+        p.isdigit() for p in parts[2:]
+    ):
+        if bump == "major":
+            return f"{int(parts[0]) + 1}.0"
+        parts[-1] = str(int(parts[-1]) + 1)
+        return ".".join(parts)
+    logger.warning(
+        "Could not parse version %r as major.minor[.patch] — appending '.1'", current
+    )
+    return f"{current}.1"
 
 
 # ---------------------------------------------------------------------------
@@ -106,10 +251,12 @@ def _bump(current: str, bump: str = "minor") -> str:
 class FormVersionService:
     """Immutable semver publishing service for ``FormSchema`` objects.
 
-    Each call to :meth:`publish` creates a frozen snapshot identified by a
-    bumped semver tag.  The snapshot is stored via ``storage.save()`` when
-    available; an in-memory fallback (dict) is used otherwise (suitable for
-    tests and development).
+    Each call to :meth:`publish` promotes the CURRENT live version to
+    published, IN PLACE (FEAT-433 §8 Q5, closed 2026-08-19) — it no longer
+    bumps to a new tag. The next editor SAVE is what bumps to a new draft
+    (``_bump`` / ``api/_utils._bump_version``). The snapshot is stored via
+    ``storage.promote()`` when available; an in-memory fallback (dict) is
+    used otherwise (suitable for tests and development).
 
     Deletion is guarded by the optional ``has_responses`` async hook: if
     supplied, the service calls it before any delete to confirm no response
@@ -119,8 +266,9 @@ class FormVersionService:
     Example::
 
         svc = FormVersionService(registry, storage)
-        tag = await svc.publish(form.form_uid, tenant="navigator")  # → "1.1"
-        snap = await svc.get_published(form.form_uid, version="1.1", tenant="navigator")
+        # form.version == "1.5" (the editor's current draft)
+        tag = await svc.publish(form.form_uid, tenant="navigator")  # → "1.5"
+        snap = await svc.get_published(form.form_uid, version="1.5", tenant="navigator")
 
     Args:
         registry: ``FormRegistry`` used to look up the live form state and
@@ -162,83 +310,123 @@ class FormVersionService:
         tenant: str,
         bump: str = "minor",
     ) -> str:
-        """Publish the current form as an immutable semver snapshot.
+        """Promote the current live version to published, in place.
+
+        FEAT-433 Module 6 (spec §8 Q5, closed 2026-08-19): no longer bumps
+        to a new tag. Publishing draft ``"1.5"`` produces published
+        ``"1.5"`` (not ``"1.6"``) — the version the user is looking at is
+        the version that gets published. The next editor SAVE is what
+        bumps to a new draft. This produces one row per actual change,
+        instead of a content-identical draft/published twin pair for every
+        publish.
 
         Steps:
         1. Load the live form from the registry.
-        2. Compute the next semver tag.
-        3. Raise ``ValueError`` if that tag already exists (immutability).
-        4. Set ``published_version`` on a deep copy.
-        5. Persist the snapshot (storage or in-memory).
+        2. Raise ``ValueError`` if the live version is already published
+           (immutability).
+        3. Set ``published_version`` (= the unchanged ``version``) on a
+           deep copy.
+        4. Promote the existing row in place (storage) or record it
+           (in-memory).
 
         Args:
             form_uid: The form's immutable UUID (FEAT-389).
             tenant: Tenant slug.
-            bump: ``"minor"`` (default) or ``"major"``.
+            bump: Accepted for backward API compatibility. UNUSED —
+                ``publish()`` no longer bumps (see above); version bumping
+                now happens only on the editor's save path (``_bump`` /
+                ``api/_utils._bump_version``).
 
         Returns:
-            The new version string (e.g. ``"1.1"``).
+            The published version string — the SAME tag the live form was
+            already at.
 
         Raises:
             KeyError: If the form is not found in the registry.
-            ValueError: If the computed version tag already exists (immutable).
+            ValueError: If the live version is already published (immutable).
         """
         form = await self._registry.get(form_uid, tenant=tenant)
         if form is None:
             raise KeyError(f"Form '{form_uid}' not found under tenant '{tenant}'")
 
-        new_version = _bump(form.version, bump=bump)
+        target_version = form.version
 
-        # Immutability guard
-        existing = await self.get_published(form_uid, version=new_version, tenant=tenant)
-        if existing is not None:
+        # Immutability guard (fast path — not the authoritative guard, see
+        # the promote() call below). FEAT-433 Module 5: get_published() no
+        # longer filters by published_version, so it returns the row at
+        # target_version regardless of its label — check its OWN
+        # published_version against target_version to ask the Q5 question
+        # ("is the version I am looking at already published?"), not
+        # "does a row exist here" (a live draft row almost always does).
+        existing = await self.get_published(form_uid, version=target_version, tenant=tenant)
+        if existing is not None and existing.published_version == target_version:
             raise ValueError(
-                f"Version '{new_version}' of form '{form.form_id}' already exists and is frozen."
+                f"Version '{target_version}' of form '{form.form_id}' already exists and is frozen."
             )
 
         published_at = datetime.now(timezone.utc)
 
-        # Build frozen snapshot. ``published_at`` is stamped into ``meta`` so
-        # version history can be reconstructed from storage after a restart.
+        # Build the promoted snapshot — SAME version, now stamped
+        # published. ``published_at`` is stamped into ``meta`` so version
+        # history can be reconstructed from storage after a restart.
         snapshot = form.model_copy(deep=True, update={
-            "version": new_version,
-            "published_version": new_version,
+            "published_version": target_version,
             "meta": {**(form.meta or {}), "published_at": published_at.isoformat()},
         })
 
-        # Persist. The database UNIQUE(form_uid, version) constraint is the
-        # authoritative immutability guard — two concurrent publishes cannot
-        # both succeed (the pre-check above is a fast path, not the guard).
+        # Persist via the promote path (Module 6): an UPDATE guarded by
+        # `published_version IS DISTINCT FROM version`, which IS the
+        # authoritative immutability guard (the pre-check above is a fast
+        # path, not the guard).
         try:
             await self._save_snapshot(snapshot, tenant=tenant)
         except Exception as exc:
             if is_unique_violation(exc):
                 raise ValueError(
-                    f"Version '{new_version}' of form '{form.form_id}' already exists and is frozen."
+                    f"Version '{target_version}' of form '{form.form_id}' already exists and is frozen."
                 ) from exc
             raise
 
-        # Update the live form's published_version in the registry
-        updated_live = form.model_copy(deep=True, update={
-            "version": new_version,
-            "published_version": new_version,
-        })
-        await self._registry.register(updated_live, persist=False, overwrite=True, tenant=tenant)
+        # Update the live form's published_version in the registry.
+        # version itself is unchanged — promote in place. Re-read the live
+        # form immediately before this write (code review finding) — NOT
+        # the `form` snapshot taken at the top of this method — so a
+        # concurrent editor save that bumped the version in between is not
+        # rolled back by this write overwriting the registry with a stale
+        # (older) version.
+        current_live = await self._registry.get(form_uid, tenant=tenant)
+        if current_live is not None and not _label_would_regress(
+            current_live.published_version, target_version
+        ):
+            updated_live = current_live.model_copy(deep=True, update={
+                "published_version": target_version,
+            })
+            await self._registry.register(updated_live, persist=False, overwrite=True, tenant=tenant)
+        elif current_live is not None:
+            self.logger.info(
+                "publish: not stamping published_version=%r on form %s — the live "
+                "form already reports the newer %r (concurrent publish)",
+                target_version, form_uid, current_live.published_version,
+            )
 
-        # Record VersionMeta (form_id kept as the human-readable slug label)
+        # Record VersionMeta (form_id kept as the human-readable slug label).
+        # A _meta entry only ever exists because THIS method just published
+        # it — always the published row, never a draft.
         meta = VersionMeta(
             form_id=form.form_id,
-            version=new_version,
+            version=target_version,
             published_at=published_at,
             tenant=tenant,
+            is_published=True,
+            is_frozen=True,
         )
         self._meta.setdefault(tenant, {}).setdefault(form_uid, []).append(meta)
 
         self.logger.info(
             "Published form '%s' as version '%s' for tenant '%s'",
-            form.form_id, new_version, tenant,
+            form.form_id, target_version, tenant,
         )
-        return new_version
+        return target_version
 
     async def get_published(
         self,
@@ -247,10 +435,23 @@ class FormVersionService:
         version: str,
         tenant: str,
     ) -> FormSchema | None:
-        """Retrieve an immutable published snapshot.
+        """Retrieve the stored snapshot for a version — draft or published.
 
-        Always returns the untouched snapshot at ``version`` — subsequent
-        publishes do not affect it (RF-06).
+        FEAT-433 Module 5: despite the name (kept for API compatibility —
+        renaming is optional per the spec, and this is public API), this no
+        longer requires ``version`` to be the published tag. Before this
+        change the ``snap.published_version == version`` filter meant
+        ``GET .../versions/{version}`` 404d for every version the editor
+        ever saved directly (i.e. every draft) — the exact rows Module 1-3
+        now lists. Every listed version must resolve here, or the history
+        list is a list of dead links (the anti-regression this task exists
+        for). The returned ``FormSchema`` still carries its own
+        ``published_version``, so a caller can tell draft from published
+        without a second call. Immutability for an actually-published
+        snapshot (RF-06 — untouched by subsequent publishes) is unaffected:
+        dropping the filter changes what is *returned*, not whether a
+        published row can be *overwritten* (that guarantee is Module 6 /
+        TASK-2269's job).
 
         Args:
             form_uid: The form's immutable UUID (FEAT-389).
@@ -258,13 +459,17 @@ class FormVersionService:
             tenant: Tenant slug.
 
         Returns:
-            Frozen ``FormSchema`` snapshot, or ``None`` if not found.
+            The stored ``FormSchema`` snapshot at ``version``, or ``None``
+            if no such version was ever stored.
         """
         if self._storage is not None:
             snap = await self._storage.load(form_uid, version=version, tenant=tenant)
-            if snap is not None and snap.published_version == version:
+            if snap is not None:
                 return snap
-        # In-memory fallback
+        # In-memory fallback. Only ever populated by publish()/
+        # backfill_published() (FEAT-433: those are the only writers to
+        # _snapshots), so every entry here is already a published row —
+        # dropping the filter above doesn't change this branch's behavior.
         return (
             self._snapshots
             .get(tenant, {})
@@ -278,13 +483,28 @@ class FormVersionService:
         *,
         tenant: str,
     ) -> list[VersionMeta]:
-        """List all published version metadata for a form.
+        """List every stored version of a form, draft and published (D1/D3).
 
-        Merges the in-process ``VersionMeta`` cache with a reconstruction
-        from storage, so history survives a process restart (the snapshots
+        Merges the in-process ``VersionMeta`` cache with a single ordered
+        query against storage (:meth:`FormStorage.list_versions`, FEAT-433
+        Module 2), so history survives a process restart (the snapshots
         live in Postgres under ``UNIQUE(form_uid, version)``; ``published_at``
         is recovered from the stamp written into ``snapshot.meta`` by
-        :meth:`publish`).
+        :meth:`publish`). Replaces the old per-candidate-version probing
+        loop, which cost one round-trip per version and silently truncated
+        history across any two-version gap.
+
+        FEAT-433 Module 3 (D1/D3): ``published_version == version`` no
+        longer decides whether a row is *listed* — every stored row is,
+        including rows the editor saved directly via ``storage.save()``
+        (no ``publish()`` call). It decides how the row is *labelled*
+        (:func:`_is_published_label`): ``is_published`` (and ``is_frozen``,
+        which mirrors it).
+
+        On conflict between the in-process cache and a storage row for the
+        same version, the storage row wins — a ``_meta`` entry is only an
+        in-process echo of a publish that already wrote a row, so a restart
+        never changes the answer.
 
         Args:
             form_uid: The form's immutable UUID (FEAT-389).
@@ -298,51 +518,19 @@ class FormVersionService:
         }
 
         if self._storage is not None:
-            for version in await self._probe_storage_versions(form_uid, tenant=tenant):
-                if version in by_version:
-                    continue
-                snap = await self._storage.load(form_uid, version=version, tenant=tenant)
-                if snap is None or snap.published_version != version:
-                    continue
+            for row in await self._storage.list_versions(form_uid, tenant=tenant):
+                version = row["version"]
+                published = _is_published_label(row.get("published_version"), version)
                 by_version[version] = VersionMeta(
-                    form_id=snap.form_id,
+                    form_id=row.get("form_id") or "",
                     version=version,
-                    published_at=self._published_at_from_snapshot(snap),
+                    published_at=self._published_at_from_row(row),
                     tenant=tenant,
+                    is_published=published,
+                    is_frozen=published,
                 )
 
-        return sorted(by_version.values(), key=lambda m: _parse_major_minor(m.version))
-
-    async def _probe_storage_versions(self, form_uid: str, *, tenant: str) -> list[str]:
-        """Enumerate published version tags persisted in storage.
-
-        ``FormStorage`` has no version-listing API, but publish tags form a
-        contiguous semver chain (each publish bumps from the live version),
-        so the history is recoverable by probing minors per major up to the
-        latest stored version. A single leading miss per major is tolerated
-        (the first publish of a form is usually ``X.1``, not ``X.0``).
-        """
-        latest = await self._storage.load(form_uid, tenant=tenant)
-        if latest is None:
-            return []
-        latest_major, _ = _parse_major_minor(latest.version)
-
-        found: list[str] = []
-        probes = 0
-        for major in range(1, latest_major + 1):
-            minor = 0
-            misses = 0
-            while misses < 2 and probes < _MAX_VERSION_PROBES:
-                version = f"{major}.{minor}"
-                snap = await self._storage.load(form_uid, version=version, tenant=tenant)
-                probes += 1
-                if snap is not None and snap.published_version == version:
-                    found.append(version)
-                    misses = 0
-                else:
-                    misses += 1
-                minor += 1
-        return found
+        return sorted(by_version.values(), key=lambda m: _version_sort_key(m.version))
 
     @staticmethod
     def _published_at_from_snapshot(snap: FormSchema) -> datetime:
@@ -354,6 +542,32 @@ class FormVersionService:
             except ValueError:
                 pass
         return snap.created_at or datetime.now(timezone.utc)
+
+    @staticmethod
+    def _published_at_from_row(row: dict) -> datetime:
+        """Recover a version's timestamp from a projected storage row.
+
+        Same precedence as :meth:`_published_at_from_snapshot`, adapted to
+        the projected dict shape returned by
+        :meth:`FormStorage.list_versions` (FEAT-433 Module 2) instead of a
+        whole ``FormSchema`` snapshot: the ``meta.published_at`` stamp when
+        present, otherwise the row's own ``created_at``.
+
+        FEAT-433 Module 3 (D1): deliberately does NOT fall back to
+        ``datetime.now()`` — the previous fallback made every draft in a
+        mixed history report "published just now", which the history UI
+        would render as a wall of identical timestamps. ``created_at`` is
+        NOT NULL at the storage layer (``PostgresFormStorage``'s
+        ``schema_json``-backed row always carries it), so this is total in
+        practice.
+        """
+        stamp = row.get("published_at")
+        if isinstance(stamp, str):
+            try:
+                return datetime.fromisoformat(stamp)
+            except ValueError:
+                pass
+        return row["created_at"]
 
     async def can_delete(self, form_uid: str, *, tenant: str) -> bool:
         """Return ``True`` if deletion is safe (no responses associated).
@@ -473,11 +687,16 @@ class FormVersionService:
                 updated = form.model_copy(deep=True, update={"published_version": target_version})
                 await self._registry.register(updated, persist=False, overwrite=True, tenant=tenant)
 
+                # Backfill marks the form as published at its current
+                # version — same "always the published row" reasoning as
+                # publish()'s own _meta entry above.
                 meta = VersionMeta(
                     form_id=form.form_id,
                     version=target_version,
                     published_at=published_at,
                     tenant=tenant,
+                    is_published=True,
+                    is_frozen=True,
                 )
                 self._meta.setdefault(tenant, {}).setdefault(form.form_uid, []).append(meta)
 
@@ -495,31 +714,52 @@ class FormVersionService:
     # ------------------------------------------------------------------
 
     async def _save_snapshot(self, snapshot: FormSchema, *, tenant: str) -> None:
-        """Persist a frozen snapshot.
+        """Persist a snapshot that :meth:`publish`/:meth:`backfill_published`
+        just stamped as published.
 
-        Uses ``storage.save()`` when a backend is available; the in-memory
-        ``_snapshots`` dict is used ONLY when no backend is configured.
-        Storage failures propagate to the caller — silently falling back to
-        memory would return success for a publish that vanishes on restart
-        (review H3).
+        FEAT-433 Module 6: routes through the storage's PROMOTE path
+        (``FormStorage.promote()``) — a guarded ``UPDATE``, never the
+        editor's UPSERT. Every snapshot this method ever receives already
+        has ``published_version == version`` stamped by its caller (the
+        editor's own save path never calls this method — it writes directly
+        via ``storage.save()``), so "promote" is always the correct write.
+        No row affected means the version is ALREADY published — the
+        authoritative immutability guard (the fast-path pre-check in
+        :meth:`publish` is not the guard). The in-memory fallback (no
+        backend configured) has no separate guard of its own; that same
+        fast-path pre-check already catches a re-publish of the same
+        version before this is ever reached.
 
         Args:
-            snapshot: Frozen ``FormSchema`` (``published_version`` must be set).
+            snapshot: Snapshot to persist. ``published_version`` MUST
+                already equal ``version`` — the promote path relies on
+                that invariant.
             tenant: Tenant slug.
 
         Raises:
-            Exception: Whatever ``storage.save()`` raised (including unique
-                violations, surfaced by :meth:`publish` as ``ValueError``).
+            ValueError: The version is already published (the storage-level
+                promote guard tripped).
+            Exception: Whatever the storage call raised otherwise.
         """
         if self._storage is not None:
             try:
-                await self._storage.save(snapshot, tenant=tenant)
+                promoted = await self._storage.promote(
+                    snapshot.form_uid,
+                    snapshot.version,
+                    snapshot.model_dump_json(),
+                    tenant=tenant,
+                )
             except Exception as exc:
                 self.logger.error(
-                    "storage.save() failed for snapshot %s (form_id=%s) v%s: %s",
+                    "storage.promote() failed for snapshot %s (form_id=%s) v%s: %s",
                     snapshot.form_uid, snapshot.form_id, snapshot.version, exc,
                 )
                 raise
+            if not promoted:
+                raise ValueError(
+                    f"Version '{snapshot.version}' of form '{snapshot.form_id}' "
+                    "already exists and is frozen."
+                )
             return
         # In-memory store (no backend configured — tests/development).
         # Keyed by form_uid (FEAT-389) — must match get_published()'s lookup

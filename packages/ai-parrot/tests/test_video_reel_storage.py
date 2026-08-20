@@ -313,7 +313,9 @@ class TestAssemblyHybridStorage:
             ("reels/abc/scenes/scene_0_video.mp4", None),
         ]
 
-        fake_output = Path(tempfile.mktemp(suffix=".mp4"))
+        fd, tmp_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
+        fake_output = Path(tmp_path)
         fake_output.write_bytes(b"\x00" * 100)
 
         with patch("parrot.clients.google.generation.asyncio") as mock_aio:

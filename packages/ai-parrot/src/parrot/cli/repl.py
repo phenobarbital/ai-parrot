@@ -135,6 +135,11 @@ class AgentREPL:
                 if not text:
                     continue
 
+                # Intercept bare quit/exit (common UX trap)
+                if text.lower() in ("quit", "exit"):
+                    self.console.print("[dim]Goodbye.[/dim]")
+                    break
+
                 # Try slash command first
                 is_command = await self.dispatcher.dispatch_async(text, self)
                 if is_command:

@@ -23,8 +23,11 @@ import time
 import uuid
 from typing import Any
 
+from parrot.human import HumanChannel
+
 from .config import AgentServiceConfig, default_socket_path, resolve_agent
 from .protocol import (
+    INTERNAL_ERROR,
     METHOD_AGENT_INFO,
     METHOD_AGENT_INVOKE,
     METHOD_CHAT_COMPLETE,
@@ -55,6 +58,80 @@ __all__ = [
     "SingleAgentManager",
     "sd_notify",
 ]
+
+#: Plain-string RPC/notification names for the bridged-HITL wiring
+#: (FEAT-434). Deliberately NOT protocol.py constants — `RpcNotification`
+#: and the dispatch table both accept arbitrary strings, and this keeps
+#: the wire-protocol surface (Module 2, TASK-2208) untouched by this task.
+_HITL_REQUEST_NOTIFICATION = "hitl.request"
+_HITL_NOTIFY_NOTIFICATION = "hitl.notify"
+_HITL_CANCEL_NOTIFICATION = "hitl.cancel"
+_HITL_RESPOND_METHOD = "hitl.respond"
+
+
+class _AgentdHumanChannel(HumanChannel):
+    """Delivers bridged confirming-tool HITL requests to the agentd console.
+
+    FEAT-434 (spec §3 Module 5): confirming tools called by a bridged
+    Claude Code sub-agent must ask a real human via the daemon's own
+    channel — never the `ConfirmationConfig.default_channel="telegram"`
+    default. Outbound interactions are published through the daemon's
+    existing `EventBroker` fan-out (reaching every `parrot attach`
+    session); the human's answer arrives via the `"hitl.respond"` RPC
+    (`AgentDaemon._handle_hitl_respond`), which invokes the
+    `HumanInteractionManager.receive_response` callback registered here
+    at `startup()`.
+    """
+
+    channel_type = "agentd"
+
+    def __init__(self, daemon: AgentDaemon) -> None:
+        self._daemon = daemon
+        self.logger = logging.getLogger(__name__)
+        self._response_callback = None
+
+    async def register_response_handler(self, callback) -> None:
+        """Store the manager's `receive_response` callback."""
+        self._response_callback = callback
+
+    async def send_interaction(self, interaction: Any, recipient: str) -> bool:
+        """Publish the interaction to every attached `parrot attach` console."""
+        server = self._daemon.server
+        if server is None:
+            self.logger.warning(
+                "Cannot deliver HITL interaction %s: daemon server not ready",
+                interaction.interaction_id,
+            )
+            return False
+        await server.event_broker.publish(
+            _HITL_REQUEST_NOTIFICATION,
+            {
+                "interaction_id": interaction.interaction_id,
+                "question": interaction.question,
+                "interaction_type": interaction.interaction_type.value,
+                "recipient": recipient,
+            },
+        )
+        return True
+
+    async def send_notification(self, recipient: str, message: str) -> None:
+        """Publish a one-way notification (no response expected)."""
+        server = self._daemon.server
+        if server is not None:
+            await server.event_broker.publish(
+                _HITL_NOTIFY_NOTIFICATION, {"recipient": recipient, "message": message}
+            )
+
+    async def cancel_interaction(self, interaction_id: str, recipient: str) -> bool:
+        """Publish a cancellation notice for a pending interaction."""
+        server = self._daemon.server
+        if server is None:
+            return False
+        await server.event_broker.publish(
+            _HITL_CANCEL_NOTIFICATION,
+            {"interaction_id": interaction_id, "recipient": recipient},
+        )
+        return True
 
 
 def sd_notify(state: str) -> None:
@@ -218,6 +295,10 @@ class AgentDaemon:
         self._shutdown_event = asyncio.Event()
         self._start_time = time.monotonic()
         self.logger = logging.getLogger(__name__)
+        # FEAT-434: bridged-HITL wiring, populated by `_configure_hitl()`.
+        self._hitl_channel: _AgentdHumanChannel | None = None
+        self._human_manager: Any = None
+        self._confirmation_guard: Any = None
 
     async def run(self) -> None:
         """Run the daemon's full lifecycle (spec §2, steps 1-6).
@@ -234,6 +315,7 @@ class AgentDaemon:
         await self._install_signal_handlers()
 
         self.agent = await resolve_agent(self.config.agent)
+        await self._configure_hitl()
 
         await self._start_scheduler()
 
@@ -269,6 +351,94 @@ class AgentDaemon:
         for sig in (signal.SIGTERM, signal.SIGINT):
             with contextlib.suppress(NotImplementedError):
                 loop.add_signal_handler(sig, self._shutdown_event.set)
+
+    async def _configure_hitl(self) -> None:
+        """Wire a `ConfirmationGuard` onto the agent's `ToolManager` (FEAT-434).
+
+        Makes bridged confirming tools (`ClaudeAgentToolBridge`, TASK-2287)
+        park until a real human answers via the agentd console, instead of
+        the `ConfirmationConfig.default_channel="telegram"` default or
+        (with no guard at all) letting the sub-agent grant itself
+        permission. Best-effort: an agent target with no `tool_manager`
+        attribute, or one whose guard is already externally configured, is
+        left untouched.
+
+        The daemon's guard pins `window_seconds=0` regardless of any other
+        deployment default — belt-and-braces with the service identity's
+        own fixed `window_seconds=0` (`agentd/config.py`,
+        `ServiceIdentityConfig`, TASK-2286): this daemon's `ToolManager`
+        always re-asks, for every caller.
+        """
+        tool_manager = getattr(self.agent, "tool_manager", None)
+        if tool_manager is None:
+            self.logger.debug(
+                "Agent target has no tool_manager; skipping bridged-HITL wiring."
+            )
+            return
+        if getattr(tool_manager, "confirmation_guard", None) is not None:
+            self.logger.debug(
+                "ToolManager already has a ConfirmationGuard; leaving it as-is."
+            )
+            return
+
+        from parrot.auth import (
+            ConfirmationConfig,
+            ConfirmationGuard,
+            InMemoryConfirmationWindowStore,
+        )
+        from parrot.human import HumanInteractionManager
+
+        self._hitl_channel = _AgentdHumanChannel(self)
+        self._human_manager = HumanInteractionManager(
+            channels={"agentd": self._hitl_channel}
+        )
+        await self._human_manager.startup()
+        self._confirmation_guard = ConfirmationGuard(
+            store=InMemoryConfirmationWindowStore(),
+            human_manager=self._human_manager,
+            config=ConfirmationConfig(window_seconds=0, default_channel="agentd"),
+        )
+        tool_manager.set_confirmation_guard(self._confirmation_guard)
+        self.logger.info(
+            "Bridged HITL wiring configured: channel=agentd window_seconds=0"
+        )
+
+    async def _handle_hitl_respond(
+        self, session: Session, params: dict[str, Any]
+    ) -> Any:
+        """Handle `hitl.respond`: a human's answer to a bridged confirmation.
+
+        Raises:
+            RpcHandlerError: `INTERNAL_ERROR` when no HITL channel is
+                configured (no confirming tools were ever wired, or
+                `_configure_hitl` skipped because the agent has no
+                `tool_manager`).
+        """
+        if self._hitl_channel is None or self._hitl_channel._response_callback is None:
+            raise RpcHandlerError(
+                INTERNAL_ERROR, "No bridged HITL channel is configured."
+            )
+
+        from parrot.human.models import HumanResponse, InteractionType
+
+        respondent = params.get("respondent")
+        if not respondent and session.permission_context is not None:
+            respondent = session.permission_context.user_id
+        # The "anonymous" fallback below is unreachable in normal operation
+        # — `_handle_connection` always resolves `session.permission_context`
+        # (peercred or service identity, never None) before any RPC handler
+        # runs — kept only as a last-resort label for `HumanResponse.
+        # respondent` (a different field than the AC's
+        # `PermissionContext.user_id` guarantee, which this path never
+        # touches) should a caller ever construct a `Session` by hand.
+        response = HumanResponse(
+            interaction_id=params["interaction_id"],
+            respondent=respondent or "anonymous",
+            response_type=InteractionType(params["response_type"]),
+            value=params["value"],
+        )
+        await self._hitl_channel._response_callback(response)
+        return {"ok": True}
 
     async def _start_scheduler(self) -> None:
         """Best-effort headless scheduler bootstrap (spec §2, step 3).
@@ -376,6 +546,9 @@ class AgentDaemon:
             METHOD_EVENTS_UNSUBSCRIBE: self._handle_events_unsubscribe,
             METHOD_DAEMON_STATUS: self._handle_daemon_status,
             METHOD_DAEMON_SHUTDOWN: self._handle_daemon_shutdown,
+            # FEAT-434: bridged-HITL response channel (plain string — see
+            # `_HITL_RESPOND_METHOD`, deliberately not a protocol.py constant).
+            _HITL_RESPOND_METHOD: self._handle_hitl_respond,
         }
 
     async def _handle_chat_send(self, session: Session, params: dict[str, Any]) -> Any:
@@ -391,6 +564,13 @@ class AgentDaemon:
         prompt = params.get("prompt", "")
         stream = bool(params.get("stream", False))
         metadata = params.get("metadata") or {}
+        # FEAT-434: forward the caller's resolved identity (SO_PEERCRED ->
+        # OS user, or the service-identity fallback; TASK-2286) so bridged
+        # confirming tools key their confirmation window on the real
+        # caller, not "anonymous". `AbstractBot.ask()`/`ask_stream()`
+        # already forward this onto the LLM client as `_permission_context`
+        # when set — this is the existing mechanism, not a new one.
+        metadata.setdefault("permission_context", session.permission_context)
 
         if not stream:
             response = await self.agent.ask(

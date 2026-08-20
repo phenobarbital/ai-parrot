@@ -173,7 +173,7 @@ class TestAudioFormManifest:
             title="Test Form",
             total_questions=1,
             questions=[q],
-            ws_endpoint="/api/v1/t/navigator/forms/f1/audio/ws",
+            ws_endpoint="/api/v1/navigator/forms/f1/audio/ws",
         )
         assert manifest.total_questions == 1
         assert manifest.locale == "en"
@@ -189,7 +189,7 @@ class TestAudioFormManifest:
             title="Test Form",
             total_questions=3,
             questions=questions,
-            ws_endpoint="/api/v1/t/navigator/forms/f1/audio/ws",
+            ws_endpoint="/api/v1/navigator/forms/f1/audio/ws",
         )
         assert len(manifest.questions) == 3
 

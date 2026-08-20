@@ -38,7 +38,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-from ..core.schema import FormSchema
+from ..core.schema import FormSchema, derive_stable_identities
 from ..core.style import StyleSchema
 from .validators import FormValidator
 
@@ -145,6 +145,87 @@ class FormStorage(ABC):
             Optional keys: ``title``, ``description``, ``created_at``.
         """
         ...
+
+    async def list_versions(
+        self, form_uid: uuid.UUID, *, tenant: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Enumerate every stored version of one form (FEAT-433 Module 2).
+
+        Replaces reconstructing history by probing ``load()`` one candidate
+        version at a time. Concrete backends that persist multiple versions
+        per form (e.g. ``PostgresFormStorage``) should override this with a
+        single ordered query; the base (default) implementation returns an
+        empty list, which is correct for backends — real or test doubles —
+        that don't persist per-version history (``FormVersionService``
+        falls back to its in-process ``_meta`` cache in that case).
+
+        Not abstract (unlike ``save``/``load``/``delete``/``list_forms``):
+        existing ``FormStorage`` subclasses that predate this method must
+        keep instantiating without having to implement it.
+
+        Args:
+            form_uid: The form's immutable UUID (FEAT-389).
+            tenant: Optional tenant slug used by Postgres-backed storages to
+                resolve the target schema.
+
+        Returns:
+            Every stored version of the form, oldest first, ordered by the
+            parsed ``(major, minor)`` integers — never by the raw version
+            string. Each row is a dict with keys ``version``, ``created_at``,
+            ``updated_at``, ``form_id``, ``published_version``,
+            ``published_at``. The base implementation always returns ``[]``.
+        """
+        return []
+
+    async def promote(
+        self,
+        form_uid: uuid.UUID,
+        version: str,
+        schema_json: str,
+        *,
+        tenant: str | None = None,
+    ) -> bool:
+        """Promote a version to published, in place (FEAT-433 Module 6).
+
+        FEAT-433 §8 Q5 (closed 2026-08-19): ``publish()`` no longer creates
+        a new row at a bumped tag — it stamps the CURRENT live version
+        (draft or never-before-persisted) as published. This is the
+        guarded write behind that. It is effectively an upsert with one
+        extra rule: it refuses to touch a row that is ALREADY published, so
+        a published snapshot can never be silently re-promoted or
+        overwritten. A version with no existing row at all (the form's very
+        first publish, or a form never separately saved by the editor) is
+        NOT rejected — there is nothing published yet to protect, so this
+        writes it, same as an insert would.
+
+        Not abstract, like :meth:`list_versions`: this default
+        implementation is built from :meth:`load`/:meth:`save` (correct,
+        but NOT atomic under concurrent writers). ``PostgresFormStorage``
+        overrides this with a single guarded ``INSERT ... ON CONFLICT DO
+        UPDATE ... WHERE`` (an upsert whose update half is skipped when the
+        existing row is already published), which IS atomic — a real
+        backend serving concurrent publishes SHOULD override this the same
+        way.
+
+        Args:
+            form_uid: The form's immutable UUID (FEAT-389).
+            version: The version tag being promoted.
+            schema_json: The new (already ``published_version``-stamped)
+                schema, serialized (``FormSchema.model_dump_json()``).
+            tenant: Optional tenant slug used by Postgres-backed storages to
+                resolve the target schema.
+
+        Returns:
+            ``True`` if the row was written (promoted, or written for the
+            first time); ``False`` if no row was affected — the version is
+            ALREADY published (the guard).
+        """
+        existing = await self.load(form_uid, version=version, tenant=tenant)
+        if existing is not None and existing.published_version == version:
+            return False
+        updated = FormSchema.model_validate_json(schema_json)
+        await self.save(updated, tenant=tenant)
+        return True
 
     async def close(self) -> None:
         """Release any resources held by this storage backend.
@@ -849,6 +930,17 @@ class FormRegistry:
             clone = FormSchema.model_validate(merged)
             clone.created_at = None
             clone.tenant = resolved
+
+        # A deep copy inherits the SOURCE's section/subsection/field uids, so
+        # without this the clone and its original would claim the same
+        # `field_uid` — the identity FEAT-393 documents as "stable, immutable
+        # ... the primary key for edit operations, rule references, blob
+        # storage keys". `FormSchema`'s own validator only enforces uniqueness
+        # WITHIN a form, so it cannot catch the collision across two.
+        # Derived AFTER the patch so a patch that adds fields gets stable uids
+        # too, and so the invariant holds on both code paths: every child uid
+        # of a clone comes from the clone's own form_uid.
+        derive_stable_identities(clone, clone.form_uid)
 
         errors = FormValidator().check_schema(clone)
         if errors:

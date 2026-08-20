@@ -221,6 +221,7 @@ wiki-languages = [
     "tree-sitter-typescript>=0.23",
     "tree-sitter-javascript>=0.23",
     "tree-sitter-rust>=0.23",
+    "tree-sitter-perl>=0.23",
 ]
 
 # Leiden community detection for GraphIndex (FEAT-401) — guarantees
@@ -615,13 +616,20 @@ visualizations = [
     "ai-parrot-visualizations[all]",
 ]
 
+# Optional Rust acceleration (columnar codec for tool-result compression).
+# Pre-built wheels published to PyPI; building from source requires Rust toolchain.
+# Use: pip install ai-parrot[rust]
+rust = [
+    "parrot_codec>=0.1.0",
+]
+
 # Convenience groups
 # Note: embeddings/milvus/chroma/arango extras moved to ai-parrot-embeddings in FEAT-201.
 # ai-parrot-embeddings[all] covers all moved backends.
 # Note: chart/infographic/visualization renderers moved to ai-parrot-visualizations in FEAT-200.
 # Note: scheduler extra and server layer moved to ai-parrot-server in FEAT-203.
 all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations]",
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations,rust]",
     "ai-parrot-embeddings[all]",
     "ai-parrot-integrations[all]",
     "ai-parrot-server[all]",

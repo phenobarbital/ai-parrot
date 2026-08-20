@@ -130,7 +130,7 @@ class TestJiraVertical:
 
         # Consent link should contain the Atlassian auth URL
         assert any(
-            "atlassian.com" in (p.text or "")
+            "atlassian.com" in (p.text or "")  # lgtm[py/incomplete-url-substring-sanitization]
             for p in art.parts
         )
 

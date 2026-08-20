@@ -477,7 +477,7 @@ class TestOrganizationExtractor:
     def test_includes_url(self) -> None:
         node = {"@type": "Organization", "name": "Corp", "url": "https://corp.com"}
         item = organization_extractor(node)[0]
-        assert "https://corp.com" in item.page_content
+        assert "https://corp.com" in item.page_content  # lgtm[py/incomplete-url-substring-sanitization]
 
     def test_includes_contact(self) -> None:
         node = {

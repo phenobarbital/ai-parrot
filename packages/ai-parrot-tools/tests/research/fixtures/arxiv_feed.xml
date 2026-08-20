@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Illustrative excerpt of an arXiv Atom search feed (see FEAT-426
+  TASK-2240). Kept here as a reference fixture; the offline unit tests
+  exercise `AcademicResearchToolkit` against a fake `arxiv` module (see
+  `test_academic_arxiv.py`) rather than parsing this file directly, since
+  the tests must not perform live network I/O (spec goal G6).
+-->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2301.00001v1</id>
+    <title>Attention Is All You Need Revisited</title>
+    <summary>
+      We revisit the transformer architecture and propose several
+      improvements for long-sequence modeling.
+    </summary>
+    <published>2023-05-01T00:00:00Z</published>
+    <updated>2023-05-01T00:00:00Z</updated>
+    <author><name>Jane Doe</name></author>
+    <author><name>John Smith</name></author>
+    <link title="pdf" href="https://arxiv.org/pdf/2301.00001" rel="related"/>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.LG"/>
+    <category term="cs.LG"/>
+    <category term="cs.AI"/>
+  </entry>
+</feed>

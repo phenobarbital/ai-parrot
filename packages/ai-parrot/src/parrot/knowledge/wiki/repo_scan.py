@@ -63,6 +63,7 @@ CODE_SUFFIXES: frozenset[str] = frozenset({
     ".rs", ".go", ".java", ".kt", ".c", ".h", ".cpp", ".hpp",
     ".js", ".jsx", ".ts", ".tsx", ".mjs", ".svelte",
     ".php",
+    ".pl", ".pm", ".t",
     ".sql", ".sh", ".bash",
 })
 

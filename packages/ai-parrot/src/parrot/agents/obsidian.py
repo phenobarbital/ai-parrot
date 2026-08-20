@@ -68,7 +68,12 @@ class FirefliesObsidianAgent(BasicAgent):
         """
         super().__init__(name=name, **kwargs)
 
-        self.vault_path = Path(vault_path) if vault_path else Path.home() / "vaults" / "notes"
+        if vault_path:
+            self.vault_path = Path(vault_path)
+        else:
+            # Fall back to OBSIDIAN_VAULT_PATH from navconfig/env, then ~/vaults/notes
+            env_vault = config.get("OBSIDIAN_VAULT_PATH") or os.getenv("OBSIDIAN_VAULT_PATH")
+            self.vault_path = Path(env_vault) if env_vault else Path.home() / "vaults" / "notes"
         self.fireflies_token = fireflies_token
         self.meetings_folder = meetings_folder
 
@@ -87,6 +92,34 @@ class FirefliesObsidianAgent(BasicAgent):
 
         self._mcp_fireflies_initialized = False
         self.logger = logging.getLogger(f"{self.name}.Agent")
+
+    async def configure(self, app=None) -> None:
+        """Async setup: register Obsidian toolkit and Fireflies MCP tools.
+
+        The ObsidianToolkit is instantiated in ``__init__`` but must be
+        registered with the ``ToolManager`` so the LLM can discover and
+        invoke its tools.  Fireflies MCP is also initialized eagerly here
+        (instead of lazily in ``sync_fireflies_transcripts``) so the LLM
+        can answer free-text questions about meetings.
+        """
+        await super().configure(app)
+
+        # --- Register Obsidian toolkit tools with ToolManager ---
+        self._initialize_tools([self.obsidian_toolkit])
+        self.logger.info(
+            "Registered ObsidianToolkit tools: %s",
+            [t.name for t in self.obsidian_toolkit.get_tools()],
+        )
+
+        # --- Eagerly init Fireflies MCP so tools are available to the LLM ---
+        try:
+            await self._ensure_fireflies_mcp()
+        except Exception as exc:
+            # Warning-only: agent should still boot without Fireflies
+            self.logger.warning(
+                "Fireflies MCP not available (agent will work without "
+                "Fireflies tools): %s", exc,
+            )
 
     async def _ensure_fireflies_mcp(self) -> None:
         """Lazy-init Fireflies MCP server on first use."""
@@ -508,7 +541,11 @@ class FirefliesObsidianAgent(BasicAgent):
             )
             # result is a dict with 'notes' key containing list of note dicts
             notes = result.get("notes", []) if isinstance(result, dict) else result or []
-            return {note.get("title", "") for note in notes}
+            return {
+                title
+                for note in notes
+                if (title := note.get("title", ""))
+            }
         except Exception as e:
             self.logger.warning(f"Failed to list existing notes: {e}")
             return set()

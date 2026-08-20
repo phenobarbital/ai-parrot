@@ -509,7 +509,8 @@ Provide your response as a structured plan following the ScrapingPlanSchema.
             return for_match.group(1).strip()
 
         # Look for product-like terms (words with numbers, proper nouns)
-        product_match = re.search(r'\b([A-Z][a-z]*(?:\s+[A-Z0-9][a-z0-9]*)*(?:\s+\d+\w*)*)\b', objective)
+        # Merged nested groups into a single alternation to avoid ReDoS
+        product_match = re.search(r'\b([A-Z][a-z]*(?:\s+(?:[A-Z0-9][a-z0-9]*|\d+\w*))*)\b', objective)
         if product_match:
             return product_match.group(1)
 

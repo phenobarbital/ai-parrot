@@ -148,7 +148,7 @@ class TestHandleMSTeamsJiraCallback:
             mock_request, mock_token_set, msteams_state_payload
         )
         assert "Jane Doe" in response.text
-        assert "myco.atlassian.net" in response.text
+        assert "myco.atlassian.net" in response.text  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_html_instructs_user_to_return_to_teams(

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Illustrative excerpt of an SDMX-ML 3.0 data message for an OECD data
+  query bounded by REF_AREA + startPeriod (see FEAT-426 TASK-2237). Kept
+  here as a reference fixture; the offline unit tests exercise
+  `OpenDataToolkit` against a fake `sdmx.Client` (see
+  `test_open_data_oecd.py`) rather than parsing this file directly, since
+  `sdmx1` is an optional dependency not installed in the base test
+  environment (spec goal G6 — fixtures only, no live network in CI).
+-->
+<mes:GenericData xmlns:mes="http://www.sdmx.org/resources/sdmxml/schemas/v3_0/message"
+                  xmlns:gen="http://www.sdmx.org/resources/sdmxml/schemas/v3_0/data/generic">
+  <mes:DataSet>
+    <gen:Series>
+      <gen:SeriesKey>
+        <gen:Value id="REF_AREA" value="FRA"/>
+        <gen:Value id="FREQ" value="A"/>
+      </gen:SeriesKey>
+      <gen:Obs>
+        <gen:ObsDimension id="TIME_PERIOD" value="2020"/>
+        <gen:ObsValue value="14.2"/>
+      </gen:Obs>
+      <gen:Obs>
+        <gen:ObsDimension id="TIME_PERIOD" value="2021"/>
+        <gen:ObsValue value="14.6"/>
+      </gen:Obs>
+    </gen:Series>
+  </mes:DataSet>
+</mes:GenericData>

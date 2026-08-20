@@ -262,7 +262,7 @@ class FormAPIHandler:
         """Return the tenant declared in the URL and validated by the decorator.
 
         FEAT-421: the client declares which tenant a forms request is
-        about, in the URL (``/t/{tenant}/...``); ``requires_tenant``
+        about, in the URL (``/{tenant}/...``); ``requires_tenant``
         (``api/tenant.py``) validates and authorizes that declaration
         before the handler ever runs. This method's signature is
         preserved exactly so the 21 forms call sites are untouched — only
@@ -1048,7 +1048,7 @@ class FormAPIHandler:
                 "form_uid": form.form_uid,
                 "form_id": form.form_id,
                 "title": _loc_to_str(title),
-                "url": f"{prefix}/t/{tenant}/forms/{form.form_uid}",
+                "url": f"{prefix}/{tenant}/forms/{form.form_uid}",
             },
             status=201,
         )
@@ -1102,7 +1102,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
+            "url": f"{prefix}/{tenant}/forms/{form_uid}",
         })
 
     async def edit_form(self, request: web.Request) -> web.Response:
@@ -1172,11 +1172,11 @@ class FormAPIHandler:
             "form_uid": updated_form_uid,
             "form_id": form_data.get("form_id"),
             "title": title,
-            "url": f"{prefix}/t/{tenant}/forms/{updated_form_uid}",
+            "url": f"{prefix}/{tenant}/forms/{updated_form_uid}",
         })
 
     async def clone_form(self, request: web.Request) -> web.Response:
-        """POST /api/v1/t/{tenant}/forms/{form_uid}/clone — Clone a form under a new slug.
+        """POST /api/v1/{tenant}/forms/{form_uid}/clone — Clone a form under a new slug.
 
         Creates a deep copy of the source form identified by ``form_uid``,
         assigns ``new_form_id`` (slug) from the request body and a freshly
@@ -1791,7 +1791,7 @@ class FormAPIHandler:
             "form_uid": form_uid,
             "form_id": form_id,
             "title": title,
-            "url": f"{prefix}/t/{tenant}/forms/{form_uid}",
+            "url": f"{prefix}/{tenant}/forms/{form_uid}",
         })
 
     # ------------------------------------------------------------------
@@ -1801,12 +1801,27 @@ class FormAPIHandler:
     def _get_version_service(self) -> "FormVersionService":
         """Return the shared FormVersionService, initialising it lazily.
 
+        Wires the registry's storage backend (FEAT-433 Module 1) so
+        published snapshots are persisted to the same backend the rest of
+        the handler uses (mirrors ``_make_question_bank``'s
+        ``storage=self.registry.storage`` shape). ``FormRegistry.storage``
+        may legitimately be ``None`` (in-memory deployments and most unit
+        tests) — that is passed straight through and the service falls
+        back to its in-memory store, as before.
+
+        Note: the service is cached on ``self._version_service`` and the
+        storage is read at construction time — a ``set_storage()`` call
+        made after the first version request will not be picked up by
+        this cached instance.
+
         Returns:
             Configured ``FormVersionService`` instance.
         """
         if self._version_service is None:
             from ..services.form_version import FormVersionService
-            self._version_service = FormVersionService(self.registry)
+            self._version_service = FormVersionService(
+                self.registry, storage=self.registry.storage
+            )
         return self._version_service
 
     def _make_question_bank(self, tenant: str) -> "QuestionBankService":
@@ -1838,9 +1853,10 @@ class FormAPIHandler:
     async def publish_form(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_uid}/publish — Publish current form as immutable snapshot.
 
-        Bumps the form's semver minor tag and freezes the current state as a
-        published snapshot. Returns ``409`` when the computed tag already
-        exists (immutability guard). Returns ``404`` when the form is not found.
+        FEAT-433 §8 Q5: promotes the CURRENT live version in place — it no
+        longer bumps to a new tag. Returns ``409`` when the live version is
+        ALREADY published (immutability guard). Returns ``404`` when the
+        form is not found.
 
         Args:
             request: Incoming HTTP request (path param: ``form_uid``).
@@ -1907,11 +1923,21 @@ class FormAPIHandler:
         return web.json_response(entry.model_dump(mode="json"), status=201)
 
     async def list_versions(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_uid}/versions — List published version history.
+        """GET /api/v1/forms/{form_uid}/versions — List a form's version history.
 
         Each entry includes ``version``, ``published_at`` (ISO-8601),
-        ``published_by`` (``null`` when not tracked), and ``is_current``
-        (``True`` for the form's active published version).
+        ``published_by`` (``null`` when not tracked), ``is_current``
+        (``True`` for the form's active published version — unchanged
+        formula, ``form.published_version or form.version``), and
+        ``is_published`` (FEAT-433 D1/D3) — every stored version is listed,
+        draft or published; ``is_published`` labels which is which.
+        ``is_current`` and ``is_published`` are independent — they need not
+        move together. In practice, because the editor's save handler
+        carries ``published_version`` forward unchanged (it never clears
+        it), ``is_current`` stays pinned to whichever tag the LAST
+        ``publish()`` call promoted until the NEXT ``publish()`` call moves
+        it — not to the newest draft. A newer, not-yet-published draft
+        reports ``is_current: false`` until it is itself published.
 
         Args:
             request: Incoming HTTP request (path param: ``form_uid``).
@@ -1938,16 +1964,20 @@ class FormAPIHandler:
                     "published_at": m.published_at.isoformat(),
                     "published_by": None,
                     "is_current": m.version == current_version,
+                    "is_published": m.is_published,
                 }
                 for m in meta_list
             ],
         })
 
     async def get_version(self, request: web.Request) -> web.Response:
-        """GET /api/v1/forms/{form_uid}/versions/{version} — Retrieve a frozen snapshot.
+        """GET /api/v1/forms/{form_uid}/versions/{version} — Retrieve a stored snapshot.
 
-        Returns the immutable ``FormSchema`` snapshot for the requested semver
-        tag. Returns ``404`` when the form or version is not found.
+        FEAT-433 Module 5: returns the stored ``FormSchema`` snapshot for
+        the requested version — draft OR published, no longer only frozen
+        (published) rows. The returned schema still carries its own
+        ``published_version``, so a caller can tell the two apart. Returns
+        ``404`` when the form or version is not found.
 
         Args:
             request: Incoming HTTP request (path params: ``form_uid``, ``version``).

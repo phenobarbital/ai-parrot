@@ -47,7 +47,7 @@ class TelegramWebAppHandler:
         )
 
     async def serve_webapp(self, request: web.Request) -> web.Response:
-        """GET /t/{tenant}/forms/{form_uid}/telegram — Serve the form as a Telegram WebApp.
+        """GET /{tenant}/forms/{form_uid}/telegram — Serve the form as a Telegram WebApp.
 
         Args:
             request: Incoming HTTP request.
@@ -74,7 +74,7 @@ class TelegramWebAppHandler:
         # Build fallback URL — tenant-qualified to match the route table
         # re-prefixed by TASK-2201 (ui/routes.py).
         prefix = request.app.get("_form_prefix", "")
-        fallback_url = f"{prefix}/api/v1/t/{tenant}/forms/{form_uid}/telegram-submit"
+        fallback_url = f"{prefix}/api/v1/{tenant}/forms/{form_uid}/telegram-submit"
 
         template = self._env.get_template("telegram_webapp.html.j2")
         html = template.render(
@@ -88,7 +88,7 @@ class TelegramWebAppHandler:
         return web.Response(text=html, content_type="text/html")
 
     async def rest_fallback(self, request: web.Request) -> web.Response:
-        """POST /api/v1/t/{tenant}/forms/{form_uid}/telegram-submit — REST fallback.
+        """POST /api/v1/{tenant}/forms/{form_uid}/telegram-submit — REST fallback.
 
         Validates a form submission for payloads too large for sendData().
 

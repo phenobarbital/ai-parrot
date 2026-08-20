@@ -198,6 +198,40 @@ class ClaudeAgentRunOptions(BaseModel):
             "valued flags (e.g. {'output-format': 'json'})."
         ),
     )
+    mcp_servers: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "FEAT-434: Explicit MCP server configs forwarded as "
+            "ClaudeAgentOptions.mcp_servers. The bridge merges its "
+            "generated 'parrot' server into this mapping rather than "
+            "replacing it, so a caller-supplied server survives."
+        ),
+    )
+    expose_parrot_tools: bool = Field(
+        default=True,
+        description=(
+            "FEAT-434: Whether to bridge the agent's ToolManager tools to "
+            "the sub-agent as an in-process SDK-MCP server."
+        ),
+    )
+    max_exposed_tools: int = Field(
+        default=15,
+        description=(
+            "FEAT-434: Narrowing budget — at most this many ranked tools "
+            "are handed over. Default matches ToolManager.search_tools()'s "
+            "existing `limit` default. Not yet consumed (TASK-2289 adds "
+            "the ranking/narrowing call); this task always exposes the "
+            "full registered tool set."
+        ),
+    )
+    tool_timeout: float | None = Field(
+        default=None,
+        description=(
+            "FEAT-434: Per-bridged-call timeout in seconds, forwarded to "
+            "ClaudeAgentToolBridge. On expiry a recoverable error result "
+            "is returned; the turn is never aborted. None = no per-call cap."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -292,11 +326,25 @@ class ClaudeAgentClient(AbstractClient):
         session_id: Optional[str] = None,
         resume_id: Optional[str] = None,
         permission_mode: Optional[str] = None,
+        prompt: str | None = None,
     ) -> Any:
         """Translate ai-parrot options into a ``ClaudeAgentOptions`` instance.
 
         Per-call ``run_options`` override the instance defaults, which in
         turn override the class-level fallbacks (e.g. ``self.cli_path``).
+
+        FEAT-434: also the single funnel that bridges the agent's
+        registered ``ToolManager`` tools to the sub-agent as an in-process
+        SDK-MCP server (unless disabled via ``expose_parrot_tools`` or the
+        caller has no tools registered), and reconciles ``allowed_tools``
+        with the exposed ``mcp__parrot__*`` names.
+
+        Args:
+            prompt: The turn's text (``ask``/``ask_stream``/``invoke``'s
+                ``prompt``, or ``resume``'s ``user_input``). Accepted for
+                the narrowing ranker TASK-2289 adds; this task always
+                exposes the full registered tool set regardless of its
+                value.
         """
         _, _, ClaudeAgentOptions = _import_sdk()
 
@@ -368,7 +416,55 @@ class ClaudeAgentClient(AbstractClient):
             kwargs["session_id"] = session_id
         if resume_id is not None:
             kwargs["resume"] = resume_id
-        # Forward arbitrary extras last so they win.
+
+        # FEAT-434: bridge the agent's registered ToolManager tools to the
+        # sub-agent as an in-process SDK-MCP server, unless disabled via
+        # expose_parrot_tools or the caller has no tools registered. A
+        # caller-supplied mcp_servers mapping is merged with, not replaced
+        # by, the generated 'parrot' server. The tool set is ranked against
+        # `prompt` and bounded by `max_exposed_tools` (TASK-2289's
+        # narrowing budget) — Claude Code loads every exposed MCP tool
+        # eagerly, so bounding what is handed over is parrot's job.
+        server_map: dict[str, Any] = (
+            dict(merged.mcp_servers) if merged.mcp_servers else {}
+        )
+        if merged.expose_parrot_tools:
+            from .claude_agent_bridge import ClaudeAgentToolBridge
+
+            bridge = ClaudeAgentToolBridge(
+                self.tool_manager, tool_timeout=merged.tool_timeout
+            )
+            selected_tools = bridge.select(prompt or "", merged.max_exposed_tools)
+            if selected_tools:
+                self.logger.debug(
+                    "Bridging %d tool(s) to the Claude Code sub-agent "
+                    "(prompt-length=%d)",
+                    len(selected_tools),
+                    len(prompt or ""),
+                )
+                # FEAT-434 (TASK-2290): forward the caller's resolved
+                # identity so bridged confirming tools key their
+                # confirmation window on the real caller, never
+                # "anonymous". `AbstractBot.ask()` sets `_permission_context`
+                # on this client instance (bots/base.py) — the same
+                # existing mechanism `_execute_tool()` already reads for
+                # the primary tool loop; the bridge just reuses it.
+                caller_context = getattr(self, "_permission_context", None)
+                server_map["parrot"] = bridge.build_server(
+                    selected_tools, caller_context
+                )
+                exposed_names = bridge.exposed_names()
+                if "allowed_tools" in kwargs:
+                    existing = kwargs["allowed_tools"]
+                    kwargs["allowed_tools"] = existing + [
+                        name for name in exposed_names if name not in existing
+                    ]
+        if server_map:
+            kwargs["mcp_servers"] = server_map
+
+        # Forward arbitrary extras last so they win (including a caller's
+        # own extra_options={"mcp_servers": ...}, which must still take
+        # precedence over the bridge injection above).
         for key, value in (merged.extra_options or {}).items():
             kwargs[key] = value
 
@@ -439,7 +535,10 @@ class ClaudeAgentClient(AbstractClient):
         :py:meth:`AIMessageFactory.from_claude_agent`. ``max_tokens`` and
         ``temperature`` are accepted for ``AbstractClient`` compatibility but
         are not propagated to the agent SDK (which has no equivalent on the
-        ``ClaudeAgentOptions`` surface).
+        ``ClaudeAgentOptions`` surface). ``tools`` (the inline per-call tool
+        list) is likewise not consumed — FEAT-434's bridge exposes the
+        agent's registered ``ToolManager`` tools instead, governed by
+        ``run_options.expose_parrot_tools``, not this argument.
 
         Args:
             prompt: User prompt to send to the agent.
@@ -448,6 +547,10 @@ class ClaudeAgentClient(AbstractClient):
             session_id: Optional session id to attach to the run.
             structured_output: Optional pre-parsed structured payload to
                 replace the assistant text in the returned ``AIMessage``.
+            use_tools: FEAT-434 — ``False`` disables bridging the agent's
+                registered tools to the sub-agent for this call only. ``None``
+                (default) or ``True`` leave ``run_options.expose_parrot_tools``
+                in charge (default ``True`` — automatic exposure).
             (other args): Accepted for ``AbstractClient`` compatibility.
 
         Returns:
@@ -456,7 +559,7 @@ class ClaudeAgentClient(AbstractClient):
         Raises:
             ImportError: When ``claude_agent_sdk`` is not installed.
         """
-        del max_tokens, temperature, files, tools, use_tools  # not used by SDK
+        del max_tokens, files, tools  # not used by SDK; see docstring
         del deep_research, background, lazy_loading
         resolved_model = self._resolve_model(model, self._default_model)
         turn_id = str(uuid.uuid4())
@@ -468,11 +571,21 @@ class ClaudeAgentClient(AbstractClient):
             len(prompt or ""),
         )
 
+        effective_run_options = run_options
+        if use_tools is False:
+            effective_run_options = (
+                run_options.model_copy(deep=True)
+                if run_options is not None
+                else ClaudeAgentRunOptions()
+            )
+            effective_run_options.expose_parrot_tools = False
+
         options = self._build_options(
-            run_options=run_options,
+            run_options=effective_run_options,
             model=resolved_model,
             system_prompt=system_prompt,
             session_id=session_id,
+            prompt=prompt,
         )
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent
@@ -588,6 +701,10 @@ class ClaudeAgentClient(AbstractClient):
         Tool-use blocks are not yielded (they have no user-facing text); the
         full tool-call list is recoverable via ``ask`` if needed.
 
+        ``tools`` (the inline per-call tool list) is not consumed —
+        FEAT-434's bridge exposes the agent's registered ``ToolManager``
+        tools instead, governed by ``run_options.expose_parrot_tools``.
+
         Args:
             prompt: User prompt to send to the agent.
             model: Optional model override.
@@ -602,7 +719,8 @@ class ClaudeAgentClient(AbstractClient):
         """
         # Save user_id before del (needed for final AIMessage)
         saved_user_id = user_id
-        del max_tokens, temperature, files, user_id, tools, deep_research
+        del tools  # not consumed; see docstring (FEAT-434 bridge instead)
+        del max_tokens, temperature, files, user_id, deep_research
         del agent_config, lazy_loading
         query, _, _ = _import_sdk()
 
@@ -612,6 +730,7 @@ class ClaudeAgentClient(AbstractClient):
             model=resolved_model,
             system_prompt=system_prompt,
             session_id=session_id,
+            prompt=prompt,
         )
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
@@ -703,7 +822,9 @@ class ClaudeAgentClient(AbstractClient):
         """
         del state  # accepted for AbstractClient parity
         turn_id = str(uuid.uuid4())
-        options = self._build_options(resume_id=session_id, session_id=session_id)
+        options = self._build_options(
+            resume_id=session_id, session_id=session_id, prompt=user_input
+        )
         messages = await self._collect_messages(user_input, options=options)
         return AIMessageFactory.from_claude_agent(
             messages=messages,
@@ -748,8 +869,14 @@ class ClaudeAgentClient(AbstractClient):
             system_prompt: Override the agent's system prompt.
             max_tokens: Accepted for parity; not propagated.
             temperature: Accepted for parity; not propagated.
-            use_tools: Accepted for parity; ignored.
-            tools: Accepted for parity; ignored.
+            use_tools: FEAT-434 — mirrors its existing default (``False``):
+                bridging the agent's registered tools to the sub-agent for
+                this stateless extraction call is opt-in. Pass ``True`` to
+                bridge them; ``run_options.expose_parrot_tools`` is honoured
+                either way.
+            tools: Accepted for parity; ignored — FEAT-434's bridge exposes
+                the agent's registered ``ToolManager`` tools instead, not
+                this inline list.
             run_options: Optional :class:`ClaudeAgentRunOptions` for this call.
 
         Returns:
@@ -760,7 +887,7 @@ class ClaudeAgentClient(AbstractClient):
             InvokeError: If the agent fails or its output cannot be parsed
                 into ``output_type``.
         """
-        del max_tokens, temperature, use_tools, tools  # parity-only
+        del max_tokens, temperature, tools  # parity-only; see docstring
         resolved_model = self._resolve_model(
             model, self._lightweight_model or self._default_model
         )
@@ -774,6 +901,11 @@ class ClaudeAgentClient(AbstractClient):
         )
         if effective_run_options.permission_mode is None:
             effective_run_options.permission_mode = "plan"
+        # FEAT-434: use_tools defaults to False for this stateless surface
+        # (unchanged) — bridging is opt-in here unless the caller passes
+        # use_tools=True.
+        if use_tools is not True:
+            effective_run_options.expose_parrot_tools = False
 
         # Build a schema-in-prompt extension when output_type is provided.
         schema_clause = ""
@@ -791,6 +923,7 @@ class ClaudeAgentClient(AbstractClient):
                 run_options=effective_run_options,
                 model=resolved_model,
                 system_prompt=system_prompt,
+                prompt=prompt,
             )
             messages = await self._collect_messages(full_prompt, options=options)
         except ImportError:

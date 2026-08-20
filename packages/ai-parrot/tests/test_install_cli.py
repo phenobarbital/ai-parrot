@@ -73,7 +73,7 @@ class TestPulumiInstall:
         # First call should be the curl command
         first_call = mock_run.call_args_list[0]
         assert "curl" in first_call[0][0]
-        assert "get.pulumi.com" in first_call[0][0]
+        assert "get.pulumi.com" in first_call[0][0]  # lgtm[py/incomplete-url-substring-sanitization]
 
     @patch("parrot.install.cli.subprocess.run")
     def test_pulumi_install_with_docker(self, mock_run, runner):

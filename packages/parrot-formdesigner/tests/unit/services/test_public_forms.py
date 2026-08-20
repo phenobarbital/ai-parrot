@@ -8,7 +8,7 @@ Tests cover:
 - Render path is a glob ending with /render/*
 - Exact path content check
 - Different form IDs produce non-overlapping path sets
-- All paths are tenant-qualified (/t/{tenant}/)
+- All paths are tenant-qualified (/{tenant}/)
 """
 import fnmatch
 
@@ -23,21 +23,21 @@ class TestPublicFormPaths:
     def test_paths_are_tenant_qualified(self):
         paths = public_form_paths("abc-uid", "flexroc")
         assert len(paths) == 5
-        assert all("/t/flexroc/forms/abc-uid" in p for p in paths)
+        assert all("/flexroc/forms/abc-uid" in p for p in paths)
         assert paths[0].endswith("/forms/abc-uid")
         assert any(p.endswith("/render/*") for p in paths)
 
     def test_default_base_path(self):
         paths = public_form_paths("contact", "flexroc")
-        assert all("/api/v1/t/flexroc/forms/contact" in p for p in paths)
+        assert all("/api/v1/flexroc/forms/contact" in p for p in paths)
 
     def test_custom_base_path(self):
         paths = public_form_paths("survey", "flexroc", base_path="/api/v2")
-        assert all("/api/v2/t/flexroc/forms/survey" in p for p in paths)
+        assert all("/api/v2/flexroc/forms/survey" in p for p in paths)
 
     def test_trailing_slash_stripped(self):
         paths = public_form_paths("x", "flexroc", base_path="/api/v1/")
-        assert paths[0] == "/api/v1/t/flexroc/forms/x"
+        assert paths[0] == "/api/v1/flexroc/forms/x"
 
     def test_render_is_glob(self):
         paths = public_form_paths("contact", "flexroc")
@@ -45,15 +45,15 @@ class TestPublicFormPaths:
         assert render.endswith("/render/*")
         # Glob should match any format suffix:
         assert fnmatch.fnmatch(
-            "/api/v1/t/flexroc/forms/contact/render/html", render
+            "/api/v1/flexroc/forms/contact/render/html", render
         )
         assert fnmatch.fnmatch(
-            "/api/v1/t/flexroc/forms/contact/render/pdf", render
+            "/api/v1/flexroc/forms/contact/render/pdf", render
         )
 
     def test_exact_paths_content(self):
         paths = public_form_paths("my-form", "flexroc")
-        bp = "/api/v1/t/flexroc/forms/my-form"
+        bp = "/api/v1/flexroc/forms/my-form"
         assert paths[0] == bp
         assert paths[1] == f"{bp}/schema"
         assert paths[2] == f"{bp}/render/*"
@@ -75,17 +75,17 @@ class TestPublicFormPaths:
     def test_schema_path(self):
         paths = public_form_paths("test", "flexroc")
         schema_path = paths[1]
-        assert schema_path == "/api/v1/t/flexroc/forms/test/schema"
+        assert schema_path == "/api/v1/flexroc/forms/test/schema"
 
     def test_data_path(self):
         paths = public_form_paths("test", "flexroc")
         data_path = paths[3]
-        assert data_path == "/api/v1/t/flexroc/forms/test/data"
+        assert data_path == "/api/v1/flexroc/forms/test/data"
 
     def test_validate_path(self):
         paths = public_form_paths("test", "flexroc")
         validate_path = paths[4]
-        assert validate_path == "/api/v1/t/flexroc/forms/test/validate"
+        assert validate_path == "/api/v1/flexroc/forms/test/validate"
 
     def test_returns_list(self):
         result = public_form_paths("test", "flexroc")

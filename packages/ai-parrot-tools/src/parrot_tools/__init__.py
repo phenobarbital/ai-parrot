@@ -10,6 +10,33 @@ Manual additions are also supported — the script preserves manual entries.
 from .version import __version__, __title__, __description__
 
 TOOL_REGISTRY: dict[str, str] = {
+    # --- FEAT-426: Research Tools for Agents ---
+    # These entries mirror exactly what
+    # `scripts/generate_tool_registry.py` computes for the new
+    # `parrot_tools/research/` modules (verified via `--dry-run
+    # --tools-only`). Added by hand because the generator's *write* path
+    # is broken for `dict[str, str]`-annotated registries (see
+    # TASK-2243 completion note / follow-up) — it only ever matches
+    # `ast.Assign`, never `ast.AnnAssign`, so `--check` correctly detects
+    # staleness but running the script without `--dry-run` silently
+    # no-ops instead of writing. `research_router` additionally doesn't
+    # match the Tool/Toolkit naming-suffix convention `scan_classes()`
+    # uses, so it would never be auto-discovered even with a working
+    # writer — it is a legitimate "manual addition" per this file's own
+    # docstring contract.
+    #
+    # NOTE: `BaseResearchToolkit` (the generator would key it as
+    # "base_research") is deliberately EXCLUDED here even though the
+    # generator's naming-suffix scan would pick it up (it ends in
+    # "Toolkit"). It is a bare cooperative mixin, not a usable standalone
+    # toolkit — registering it makes `ToolManager.load_tool("base_research")`
+    # falsely report success while registering zero tools (verified via
+    # code review; the class fails `issubclass(cls, AbstractToolkit)` in
+    # `manager.py`'s registry loader, which swallows the resulting failure
+    # into a silent no-op plus a spurious ERROR log entry).
+    "open_data": "parrot_tools.research.open_data.OpenDataToolkit",
+    "academic_research": "parrot_tools.research.academic.AcademicResearchToolkit",
+    "research_router": "parrot_tools.research.router.ResearchRouter",
     # --- Toolkits (Batch 1 — simple tools) ---
     "zipcode": "parrot_tools.zipcode.ZipcodeAPIToolkit",
     "ddgo": "parrot_tools.ddgo.DuckDuckGoToolkit",
@@ -23,7 +50,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "bestbuy": "parrot_tools.retail.bby.BestBuyToolkit",
     "massive": "parrot_tools.massive.toolkit.MassiveToolkit",
     "workday": "parrot_tools.workday.tool.WorkdayToolkit",
-    "odoo": "parrot_tools.odoo.OdooToolkit",
+    "odoo": "parrot_tools.odoo.toolkit.OdooToolkit",
     "zammad": "parrot_tools.zammad.ZammadToolkit",
 
     # --- Individual Tools (Batch 1 — simple tools) ---
@@ -147,6 +174,56 @@ TOOL_REGISTRY: dict[str, str] = {
     "statistical_tests": "parrot_tools.statistical_tests.StatisticalTestsTool",
     "regression_analysis": "parrot_tools.regression_analysis.RegressionAnalysisTool",
     "breakeven": "parrot_tools.breakeven.BreakEvenAnalysisTool",
+
+    # --- Synced from drift audit (FEAT-436) ---
+    "abstract_document": "parrot_tools.document.AbstractDocumentTool",
+    "abstract_schema_manager": "parrot_tools.database.abstract.AbstractSchemaManagerTool",
+    "create_draft_message": "parrot_tools.o365.mail.CreateDraftMessageTool",
+    "create_event": "parrot_tools.o365.events.CreateEventTool",
+    "data_analysis_think": "parrot_tools.think.DataAnalysisThinkTool",
+    "data_frame_to_csv": "parrot_tools.csv_export.DataFrameToCSVTool",
+    "data_frame_to_excel": "parrot_tools.excel.DataFrameToExcelTool",
+    "download_attachment": "parrot_tools.o365.mail.DownloadAttachmentTool",
+    "download_one_drive_file": "parrot_tools.o365.onedrive.DownloadOneDriveFileTool",
+    "download_share_point_file": "parrot_tools.o365.sharepoint.DownloadSharePointFileTool",
+    "dynamic_rest": "parrot_tools.resttool.DynamicRESTTool",
+    "file_operations": "parrot_tools.codeinterpreter.internals.FileOperationsTool",
+    "get_event": "parrot_tools.o365.events.GetEventTool",
+    "get_message": "parrot_tools.o365.mail.GetMessageTool",
+    "gig_smart": "parrot_tools.gigsmart.toolkit.GigSmartToolkit",
+    "google_base": "parrot_tools.google.base.GoogleBaseTool",
+    "google_business": "parrot_tools.google.places.GoogleBusinessTool",
+    "google_places_base": "parrot_tools.google.tools.GooglePlacesBaseTool",
+    "google_reviews": "parrot_tools.google.tools.GoogleReviewsTool",
+    "google_traffic": "parrot_tools.google.tools.GoogleTrafficTool",
+    "graph_index": "parrot_tools.graphindex.toolkit.GraphIndexToolkit",
+    "inspector": "parrot_tools.aws.inspector.InspectorToolkit",
+    "list_events": "parrot_tools.o365.events.ListEventsTool",
+    "list_messages": "parrot_tools.o365.mail.ListMessagesTool",
+    "list_one_drive_files": "parrot_tools.o365.onedrive.ListOneDriveFilesTool",
+    "list_share_point_files": "parrot_tools.o365.sharepoint.ListSharePointFilesTool",
+    "o365": "parrot_tools.o365.base.O365Tool",
+    "office365": "parrot_tools.o365.oauth_toolkit.Office365Toolkit",
+    "office365_file_management": "parrot_tools.o365.bundle.Office365FileManagementToolkit",
+    "one_drive": "parrot_tools.o365.bundle.OneDriveToolkit",
+    "prices": "parrot_tools.pricestool.PricesTool",
+    "python_execution": "parrot_tools.codeinterpreter.internals.PythonExecutionTool",
+    "query_plan": "parrot_tools.think.QueryPlanTool",
+    "rag_retrieval_think": "parrot_tools.think.RAGRetrievalThinkTool",
+    "sandbox_pandas": "parrot_tools.sandboxtool.SandboxPandasTool",
+    "scraping_plan": "parrot_tools.think.ScrapingPlanTool",
+    "search_email": "parrot_tools.o365.mail.SearchEmailTool",
+    "search_one_drive_files": "parrot_tools.o365.onedrive.SearchOneDriveFilesTool",
+    "search_share_point_files": "parrot_tools.o365.sharepoint.SearchSharePointFilesTool",
+    "security_report": "parrot_tools.security.report_toolkit.SecurityReportToolkit",
+    "send_email": "parrot_tools.o365.mail.SendEmailTool",
+    "share_point": "parrot_tools.o365.bundle.SharePointToolkit",
+    "simple_rest": "parrot_tools.resttool.SimpleRESTTool",
+    "soc2_advisory": "parrot_tools.security.soc2_advisory.SOC2AdvisoryToolkit",
+    "static_analysis": "parrot_tools.codeinterpreter.internals.StaticAnalysisTool",
+    "update_event": "parrot_tools.o365.events.UpdateEventTool",
+    "upload_one_drive_file": "parrot_tools.o365.onedrive.UploadOneDriveFileTool",
+    "upload_share_point_file": "parrot_tools.o365.sharepoint.UploadSharePointFileTool",
 }
 
 __all__ = ["__version__", "TOOL_REGISTRY"]

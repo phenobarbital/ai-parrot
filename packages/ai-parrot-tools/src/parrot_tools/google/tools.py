@@ -1296,6 +1296,8 @@ class GoogleRoutesTool(AbstractTool):
                 filename = self.generate_filename("route_map", "html", include_timestamp=True)
                 html_file_path = self.output_dir / filename
 
+                # CodeQL[py/clear-text-storage-sensitive-data] — html_map is
+                # generated interactive map HTML, not credential material
                 with open(html_file_path, 'w', encoding='utf-8') as f:
                     f.write(html_map)
 
