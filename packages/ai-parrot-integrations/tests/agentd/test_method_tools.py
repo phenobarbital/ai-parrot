@@ -104,3 +104,40 @@ async def test_method_failure_becomes_a_failed_tool_result():
     result = await tool._execute()
     assert result.success is False
     assert "kaboom" in result.error
+
+
+class _LazyAnnotations:
+    """Agent whose annotations are strings, as `from __future__ import
+    annotations` leaves them — the common case in modern modules."""
+
+    async def query(self, question, repos=None, limit=5):
+        """Search with lazily-annotated parameters."""
+        return {"question": question, "repos": repos, "limit": limit}
+
+    # Set after the fact so the module itself needs no __future__ import.
+    query.__annotations__ = {
+        "question": "str",
+        "repos": "Optional[list[str]]",
+        "limit": "int",
+        "return": "dict",
+    }
+
+
+def test_string_annotations_do_not_break_the_schema():
+    """A string annotation must not leave the model unresolvable.
+
+    Unresolved, pydantic raises "<Model> is not fully defined" the first
+    time anything asks for the JSON schema — which for a bridged tool is at
+    tool-call time, far from the cause.
+    """
+    (tool,) = build_method_tools(_LazyAnnotations(), ["query"])
+    schema = tool.args_schema.model_json_schema()
+    assert set(schema["properties"]) == {"question", "repos", "limit"}
+
+
+@pytest.mark.asyncio
+async def test_string_annotated_tool_still_executes():
+    (tool,) = build_method_tools(_LazyAnnotations(), ["query"])
+    result = await tool._execute(question="graph", limit=3)
+    assert result.result["question"] == "graph"
+    assert result.result["limit"] == 3

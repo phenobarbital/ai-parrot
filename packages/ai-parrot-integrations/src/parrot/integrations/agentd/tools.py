@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence, get_type_hints
 
 from pydantic import BaseModel, Field, create_model
 
@@ -131,21 +131,61 @@ def _schema_from_signature(name: str, method: Callable[..., Any]) -> type[BaseMo
         A pydantic model class usable as ``args_schema``.
     """
     signature = inspect.signature(method)
+    hints = _resolved_hints(method)
     fields: dict[str, Any] = {}
     for param in signature.parameters.values():
         if param.name in ("self", "cls"):
             continue
         if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
             continue
-        annotation = (
-            Any if param.annotation is inspect.Parameter.empty else param.annotation
-        )
+        annotation = hints.get(param.name, param.annotation)
+        if annotation is inspect.Parameter.empty or isinstance(annotation, str):
+            # An unresolved string annotation would make pydantic raise
+            # "<Model> is not fully defined" the first time anything asks
+            # for its JSON schema — which, for a bridged tool, is at
+            # tool-call time and far from the cause. `Any` keeps the field
+            # usable instead.
+            annotation = Any
         if param.default is inspect.Parameter.empty:
             fields[param.name] = (annotation, Field(...))
         else:
             fields[param.name] = (annotation, Field(default=param.default))
     model_name = f"{name.title().replace('_', '')}Args"
-    return create_model(model_name, **fields)
+    model = create_model(model_name, **fields)
+    # Force resolution now, so a bad annotation surfaces here (and is caught
+    # by build_method_tools) rather than mid-conversation.
+    model.model_rebuild()
+    return model
+
+
+def _resolved_hints(method: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a method's annotations to real types.
+
+    A module with ``from __future__ import annotations`` — the norm in
+    modern code — stores every annotation as a **string**, and
+    :func:`inspect.signature` hands those strings straight through.
+    Feeding them to :func:`pydantic.create_model` builds a model that
+    cannot be resolved, so :func:`typing.get_type_hints` is used to
+    evaluate them against the function's own globals first.
+
+    Args:
+        method: The bound method to inspect.
+
+    Returns:
+        Mapping of parameter name to resolved type; empty when the
+        annotations cannot be evaluated (a forward reference to a type
+        that is not importable at runtime, say), in which case the caller
+        falls back to ``Any``.
+    """
+    try:
+        return get_type_hints(method)
+    except Exception as exc:  # noqa: BLE001 — see docstring
+        logger.debug(
+            "Could not resolve type hints for %r (%s); falling back to Any",
+            getattr(method, "__qualname__", method),
+            exc,
+        )
+        return {}
 
 
 def _description(name: str, method: Callable[..., Any]) -> str:
