@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 import uvicorn
-from mcp import types
+import mcp.types as types
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager

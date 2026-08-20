@@ -93,6 +93,17 @@ def _lazy_claude_agent():
         ) from exc
 
 
+def _lazy_openai_codex():
+    """Lazy loader for :class:`OpenAICodexClient`.
+
+    Importing :mod:`parrot.clients.codex_agent` does not import the optional
+    ``openai_codex`` SDK at module scope. The SDK is resolved only when the
+    SDK backend is used; the CLI backend can reuse installed Codex CLI auth.
+    """
+    from .codex_agent import OpenAICodexClient
+    return OpenAICodexClient
+
+
 SUPPORTED_CLIENTS = {
     "claude": AnthropicClient,
     "anthropic": AnthropicClient,
@@ -132,6 +143,9 @@ SUPPORTED_CLIENTS = {
     "gemma4": _lazy_gemma4,
     "claude-agent": _lazy_claude_agent,
     "claude-code": _lazy_claude_agent,
+    "codex-agent": _lazy_openai_codex,
+    "openai-codex": _lazy_openai_codex,
+    "codex-code": _lazy_openai_codex,
 }
 
 # FEAT-232: provider keys that require a specific AnthropicClient backend value.

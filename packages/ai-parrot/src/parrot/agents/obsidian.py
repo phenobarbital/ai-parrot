@@ -9,9 +9,10 @@ under the 'meetings' folder. Supports two operations:
 The sync operation is safe to schedule every 8 hours via /schedule.
 """
 import os
+import re
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import logging
 from navconfig import config
 from parrot.bots.agent import BasicAgent
@@ -19,6 +20,25 @@ from parrot.tools.obsidian import ObsidianToolkit
 from parrot.models.responses import AIMessage
 from parrot.interfaces.obsidian.okf import project_okf_block
 from parrot.knowledge.okf.ontology import ConceptType, RelationType
+
+
+#: Leading markdown/ordered list markers the LLM may already have written
+#: ("- ", "* ", "1. ", "2) ") — stripped so
+#: :meth:`FirefliesObsidianAgent._append_analysis_section` does not render a
+#: doubled bullet like ``- 1. ...`` or ``- - ...``.
+_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*\u2022]\s*|\d+\s*[.)]\s*)+")
+
+
+def _strip_list_marker(line: str) -> str:
+    """Remove leading bullet or numbering from one list item.
+
+    Args:
+        line: A single raw list line from the LLM response.
+
+    Returns:
+        The item text without its leading marker(s).
+    """
+    return _LIST_MARKER_RE.sub("", line).strip()
 # SourceProvenance
 
 
@@ -48,6 +68,10 @@ class FirefliesObsidianAgent(BasicAgent):
             --cron "0 */8 * * *" \
             --command "agent FirefliesObsidianAgent sync"
     """
+
+    #: Heading written by :meth:`_append_analysis_section`; also the marker
+    #: used to detect notes that were already summarized.
+    ANALYSIS_HEADING: str = "## Analysis"
 
     def __init__(
         self,
@@ -162,6 +186,9 @@ class FirefliesObsidianAgent(BasicAgent):
             Dict with:
             - status: 'ok' | 'error'
             - synced: number of new transcripts saved
+            - skipped: number of transcripts already in the vault
+            - notes: list of note titles created by this run (feed these to
+              :meth:`summarize_transcript`)
             - errors: list of error messages
             - timestamp: ISO-8601 sync time
         """
@@ -169,6 +196,7 @@ class FirefliesObsidianAgent(BasicAgent):
             "status": "ok",
             "synced": 0,
             "skipped": 0,
+            "notes": [],
             "errors": [],
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -259,6 +287,7 @@ class FirefliesObsidianAgent(BasicAgent):
                     )
 
                     self.logger.info(f"✅ Synced: {note_title}")
+                    report["notes"].append(note_title)
                     report["synced"] += 1
 
                 except Exception as e:
@@ -319,7 +348,10 @@ class FirefliesObsidianAgent(BasicAgent):
                 result["error"] = f"Note not found: {note_title}"
                 return result
 
-            transcript_text = note.get("content", "")
+            # Drop any previous Analysis block so a re-analysis replaces it
+            # instead of stacking a second one, and so the LLM sees the raw
+            # transcript rather than its own earlier summary.
+            transcript_text = self._strip_analysis_section(note.get("content", ""))
 
             # Call LLM for analysis
             analysis_prompt = self._build_analysis_prompt(
@@ -356,6 +388,131 @@ class FirefliesObsidianAgent(BasicAgent):
             self.logger.error(f"Summarization failed: {e}", exc_info=True)
 
         return result
+
+    async def summarize_pending_transcripts(
+        self,
+        note_titles: Optional[List[str]] = None,
+        granularity: str = "standard",
+        limit: Optional[int] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """LLM-powered: summarize every meeting note that has no analysis yet.
+
+        Wraps :meth:`summarize_transcript` over a set of notes instead of a
+        single one, so a sync that brought in N meetings produces N summaries.
+
+        Args:
+            note_titles: Explicit notes to consider (e.g. ``report['notes']``
+                from :meth:`sync_fireflies_transcripts`). When None, the whole
+                meetings folder is scanned.
+            granularity: 'minimal' | 'standard' | 'detailed'.
+            limit: Max notes to analyze in this run (None = no limit). Useful
+                to bound LLM cost when catching up on a backlog.
+            force: Re-analyze notes that already carry an Analysis section.
+
+        Returns:
+            Dict with:
+            - status: 'ok' | 'error'
+            - analyzed: list of note titles that got a fresh analysis
+            - skipped: list of note titles already analyzed
+            - errors: list of ``{'note': title, 'error': msg}`` entries
+        """
+        outcome: Dict[str, Any] = {
+            "status": "ok",
+            "analyzed": [],
+            "skipped": [],
+            "errors": [],
+        }
+
+        try:
+            if note_titles is None:
+                candidates = sorted(await self._get_existing_meeting_titles())
+            else:
+                candidates = list(note_titles)
+
+            if not candidates:
+                self.logger.info("No meeting notes to analyze.")
+                return outcome
+
+            for note_title in candidates:
+                if limit is not None and len(outcome["analyzed"]) >= limit:
+                    self.logger.info(
+                        "Analysis limit reached (%s); %s note(s) left for the "
+                        "next run.",
+                        limit,
+                        len(candidates) - len(outcome["analyzed"])
+                        - len(outcome["skipped"]) - len(outcome["errors"]),
+                    )
+                    break
+
+                if not force and await self._has_analysis(note_title):
+                    self.logger.debug("Already analyzed, skipping: %s", note_title)
+                    outcome["skipped"].append(note_title)
+                    continue
+
+                analysis = await self.summarize_transcript(
+                    note_title=note_title,
+                    granularity=granularity,
+                )
+                if analysis.get("status") == "ok":
+                    outcome["analyzed"].append(note_title)
+                else:
+                    outcome["errors"].append({
+                        "note": note_title,
+                        "error": analysis.get("error", "unknown error"),
+                    })
+
+            if outcome["errors"]:
+                outcome["status"] = "partial"
+
+        except Exception as e:
+            outcome["status"] = "error"
+            outcome["errors"].append({"note": None, "error": str(e)})
+            self.logger.error(f"Batch summarization failed: {e}", exc_info=True)
+
+        return outcome
+
+    @classmethod
+    def _strip_analysis_section(cls, content: str) -> str:
+        """Remove a previously generated Analysis block from a note body.
+
+        :meth:`_append_analysis_section` appends ``\n---\n\n## Analysis ...``
+        to the transcript, so re-analyzing a note must cut that block off
+        first — otherwise the note accumulates one Analysis section per run.
+
+        Args:
+            content: Full note body, with or without an Analysis block.
+
+        Returns:
+            The transcript with any Analysis block (and its preceding ``---``
+            separator) removed.
+        """
+        head, sep, _ = content.partition(cls.ANALYSIS_HEADING)
+        if not sep:
+            return content
+        # Drop the '---' separator emitted just before the heading.
+        return head.rstrip().removesuffix("---").rstrip()
+
+    async def _has_analysis(self, note_title: str) -> bool:
+        """Whether a meeting note already carries a generated Analysis section.
+
+        Args:
+            note_title: Note title (file stem) inside the meetings folder.
+
+        Returns:
+            True when the note body contains the ``## Analysis`` heading
+            written by :meth:`_append_analysis_section`.
+        """
+        try:
+            note = await self.obsidian_toolkit.read_note(
+                path=f"{self.meetings_folder}/{note_title}",
+            )
+        except Exception as e:  # noqa: BLE001 — missing/unreadable note
+            self.logger.warning(f"Could not read {note_title}: {e}")
+            return False
+
+        content = (note or {}).get("content", "") or ""
+        return self.ANALYSIS_HEADING in content
 
     # ========== Private Helpers ==========
 
@@ -533,19 +690,36 @@ class FirefliesObsidianAgent(BasicAgent):
         return result
 
     async def _get_existing_meeting_titles(self) -> set[str]:
-        """List all existing meeting notes in vault."""
+        """List all existing meeting notes in vault.
+
+        ``list_notes()`` returns :class:`VaultFileInfo` descriptors
+        (path/name/size/mtime) — there is **no** ``title`` key — so the note
+        title is derived from the file stem, which is exactly what
+        :meth:`_make_note_title` produced when the note was created.
+
+        Returns:
+            Set of note titles (file stems, without the ``.md`` suffix).
+        """
         try:
             result = await self.obsidian_toolkit.list_notes(
                 folder=self.meetings_folder,
                 recursive=False,
             )
-            # result is a dict with 'notes' key containing list of note dicts
+            # result is a dict with 'notes' key containing VaultFileInfo dicts
             notes = result.get("notes", []) if isinstance(result, dict) else result or []
-            return {
-                title
-                for note in notes
-                if (title := note.get("title", ""))
-            }
+            titles: set[str] = set()
+            for note in notes:
+                if not isinstance(note, dict):
+                    continue
+                # Prefer an explicit title when a backend supplies one,
+                # otherwise fall back to the file stem.
+                name = note.get("title") or note.get("name") or note.get("path") or ""
+                if not name:
+                    continue
+                stem = PurePosixPath(str(name)).stem
+                if stem:
+                    titles.add(stem)
+            return titles
         except Exception as e:
             self.logger.warning(f"Failed to list existing notes: {e}")
             return set()
@@ -648,14 +822,14 @@ Be concise and actionable."""
                     stripped = line.strip()
                     # Check if line starts with digit (handles indentation)
                     if stripped and stripped[0].isdigit():
-                        follow_ups.append(stripped)
+                        follow_ups.append(_strip_list_marker(stripped))
             elif "Insight" in section:
                 # Extract bullet points
                 lines = section.strip().split("\n")
                 for line in lines:
                     stripped = line.strip()
                     if stripped.startswith("-"):
-                        insights.append(stripped)
+                        insights.append(_strip_list_marker(stripped))
 
         return {
             "summary": summary,
@@ -678,7 +852,7 @@ Be concise and actionable."""
         analysis = f"""
 ---
 
-## Analysis (Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')})
+{FirefliesObsidianAgent.ANALYSIS_HEADING} (Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')})
 
 ### Summary
 {summary}

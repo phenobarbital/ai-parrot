@@ -53,6 +53,10 @@ RESPONSES_ONLY_MODELS = {
 }
 
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
+    OpenAIModel.GPT5_6.value,
+    OpenAIModel.GPT5_6_SOL.value,
+    OpenAIModel.GPT5_6_TERRA.value,
+    OpenAIModel.GPT5_6_LUNA.value,
     OpenAIModel.GPT5_5.value,
     OpenAIModel.GPT5_5_PRO.value,
     OpenAIModel.GPT5_4.value,

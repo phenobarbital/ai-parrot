@@ -39,7 +39,7 @@ from ..core.constraints import (
     PostDependency,
 )
 from ..core.resolution import find_field_by_uid, resolve_answer
-from ..core.schema import FormField, FormSchema
+from ..core.schema import FormField, FormSchema, walk_fields
 
 
 logger = logging.getLogger(__name__)
@@ -556,12 +556,69 @@ class RuleEvaluator:
                 location_vars, visit_context,
             )
 
+        # Section gating runs LAST and wins: a section the answers do not
+        # reveal hides everything inside it, whatever the fields' own rules
+        # or post-dependencies concluded. Without this, `FormSection`'s
+        # `depends_on` — populated by the designer and by the networkninja
+        # importer — was evaluated by nothing on the server, so a hidden
+        # section's required fields still blocked a submission the rep had
+        # completed correctly.
+        self._apply_section_visibility(
+            form, answers, visible, required, location_vars, visit_context
+        )
+
         return RuleResolution(
             visible=visible,
             required=required,
             computed=computed,
             cleared=cleared,
         )
+
+    def _apply_section_visibility(
+        self,
+        form: FormSchema,
+        answers: dict[str, Any],
+        visible: dict[str, bool],
+        required: dict[str, bool],
+        location_vars: dict[str, Any] | None = None,
+        visit_context: dict[str, Any] | None = None,
+    ) -> None:
+        """Hide every field of a section whose ``depends_on`` does not fire.
+
+        A field inside a hidden section is not merely invisible, it is also
+        not required — that pairing is the whole point: ``FormValidator``
+        reads ``required`` to decide what a submission must carry, and
+        demanding an answer to a question the form never displayed is how a
+        correctly-filled submission gets rejected.
+
+        Only hides. A section whose rule fires leaves its fields exactly as
+        the field-level passes left them, so this can never reveal something
+        a field rule hid.
+
+        Args:
+            form: The form being resolved.
+            answers: Current answer dict, keyed by ``field_id``.
+            visible: Mutable visibility dict to update.
+            required: Mutable required dict to update.
+            location_vars: Org-graph location variables, keyed by name.
+            visit_context: Visit-level metadata, keyed by name.
+        """
+        for section in form.sections:
+            rule = section.depends_on
+            if rule is None:
+                continue
+
+            fired = _eval_logic(
+                rule.conditions, rule.logic, answers, form,
+                location_vars, visit_context,
+            )
+            shown = fired if rule.effect != "hide" else not fired
+            if shown:
+                continue
+
+            for field in walk_fields(section.fields):
+                visible[field.field_id] = False
+                required[field.field_id] = False
 
     async def _apply_pre_dependency(
         self,

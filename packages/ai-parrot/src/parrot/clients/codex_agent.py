@@ -4,21 +4,24 @@ import asyncio
 import contextlib
 import json
 import os
+import subprocess
 import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, AsyncIterator, Literal, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, Optional
 
 from pydantic import BaseModel
 
 from parrot.clients.base import AbstractClient, MessageResponse
-from parrot.clients.codex_tool_bridge import CodexToolBridge
 from parrot.exceptions import InvokeError
 from parrot.models import AIMessage, StructuredOutputConfig
 from parrot.models.basic import CompletionUsage, ToolCall
 from parrot.models.responses import InvokeResult
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from parrot.clients.codex_tool_bridge import CodexToolBridge
 
 
 Backend = Literal["auto", "sdk", "cli"]
@@ -146,6 +149,38 @@ class OpenAICodexClient(AbstractClient):
         if message.response:
             yield message.response
         yield message
+
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
+        """Return a plain-text Codex reply without forcing SDK initialization.
+
+        The base ``AbstractClient.complete()`` enters the SDK client before
+        calling ``ask()``. That is useful for HTTP SDK clients, but it defeats
+        this client's CLI fallback because ``__aenter__`` would import
+        ``openai-codex`` even when ``backend="cli"``. ``ask()`` already owns
+        the backend-specific lifecycle, so this wrapper delegates directly.
+        """
+        response = await self.ask(
+            prompt=prompt,
+            model=model,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens or 4096,
+            temperature=temperature if temperature is not None else 0.7,
+        )
+        text = self._extract_text(response)
+        if not text:
+            raise RuntimeError(
+                f"LLM returned no extractable text "
+                f"(response type: {type(response).__name__})"
+            )
+        return text
 
     async def resume(
         self,
@@ -309,10 +344,16 @@ class OpenAICodexClient(AbstractClient):
                     session_id=session_id,
                     bridge_config=active_bridge.config if active_bridge else None,
                 )
-                stdout, stderr, return_code = await self._run_cli_command(command)
+                stdout, stderr, return_code = await self._run_cli_command(
+                    command,
+                    prompt,
+                )
             if return_code != 0:
+                error_detail = stderr.strip() or "\n".join(
+                    stdout.strip().splitlines()[-5:]
+                )
                 raise RuntimeError(
-                    f"codex exec failed with exit code {return_code}: {stderr.strip()}"
+                    f"codex exec failed with exit code {return_code}: {error_detail}"
                 )
             output = Path(output_path).read_text(encoding="utf-8").strip()
             return self._parse_cli_result(
@@ -342,7 +383,7 @@ class OpenAICodexClient(AbstractClient):
         if options.model:
             command.extend(["--model", options.model])
         command.extend(["--sandbox", options.sandbox])
-        command.extend(["--ask-for-approval", options.approval_policy])
+        command.extend(["-c", f"approval_policy={json.dumps(options.approval_policy)}"])
         if options.ephemeral:
             command.append("--ephemeral")
         if options.ignore_user_config:
@@ -357,16 +398,23 @@ class OpenAICodexClient(AbstractClient):
         if bridge_config is not None:
             command.extend(bridge_config.to_codex_config_args())
         command.extend(options.extra_args)
-        command.append(prompt)
+        command.append("-")
         return command
 
-    async def _run_cli_command(self, command: list[str]) -> tuple[str, str, int]:
+    async def _run_cli_command(
+        self,
+        command: list[str],
+        input_text: Optional[str] = None,
+    ) -> tuple[str, str, int]:
+        stdin = asyncio.subprocess.PIPE if input_text is not None else subprocess.DEVNULL
         process = await asyncio.create_subprocess_exec(
             *command,
+            stdin=stdin,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout_bytes, stderr_bytes = await process.communicate()
+        input_bytes = input_text.encode("utf-8") if input_text is not None else None
+        stdout_bytes, stderr_bytes = await process.communicate(input_bytes)
         return (
             stdout_bytes.decode("utf-8", errors="replace"),
             stderr_bytes.decode("utf-8", errors="replace"),
@@ -445,9 +493,11 @@ class OpenAICodexClient(AbstractClient):
     def _new_tool_bridge(
         self,
         options: CodexAgentRunOptions,
-    ) -> Optional[CodexToolBridge]:
+    ) -> Optional["CodexToolBridge"]:
         if not options.expose_parrot_tools or self.tool_manager.tool_count() == 0:
             return None
+        from parrot.clients.codex_tool_bridge import CodexToolBridge
+
         return CodexToolBridge(
             self.tool_manager,
             permission_context=getattr(self, "_permission_context", None),
@@ -459,8 +509,8 @@ class OpenAICodexClient(AbstractClient):
     @contextlib.asynccontextmanager
     async def _maybe_started_bridge(
         self,
-        bridge: Optional[CodexToolBridge],
-    ) -> AsyncIterator[Optional[CodexToolBridge]]:
+        bridge: Optional["CodexToolBridge"],
+    ) -> AsyncIterator[Optional["CodexToolBridge"]]:
         if bridge is None:
             yield None
             return
@@ -479,7 +529,10 @@ class OpenAICodexClient(AbstractClient):
             value = getattr(override, field_name)
             if value != getattr(CodexAgentRunOptions(), field_name):
                 setattr(effective, field_name, value)
-        effective.model = model or effective.model or self.model
+        if model is not None:
+            effective.model = model
+        elif effective.model is None:
+            effective.model = self.model
         return effective
 
     @staticmethod

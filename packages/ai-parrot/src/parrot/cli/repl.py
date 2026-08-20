@@ -6,6 +6,7 @@ that interacts with a registered agent via ``ask()`` / ``ask_stream()``.
 Also exports ``REPLConfig`` — a Pydantic v2 model holding session configuration.
 """
 import logging
+import sys
 from datetime import datetime
 from typing import Any, AsyncIterator, List, Optional
 from uuid import uuid4
@@ -90,7 +91,8 @@ class AgentREPL:
         self.renderer = renderer
         self.dispatcher = SlashCommandDispatcher()
         self.history: List[ConversationTurn] = []
-        self.console = Console()
+        # Bypass prompt_toolkit's StdoutProxy — see renderer.py docstring.
+        self.console = Console(file=sys.__stdout__, force_terminal=True)
         self.logger = logging.getLogger(__name__)
 
     async def run(self) -> None:
@@ -200,7 +202,6 @@ class AgentREPL:
         Args:
             query: The user's input string.
         """
-        self.logger.debug("Streaming query to agent: %r", query[:80])
         self.renderer.render_stream_start()
         accumulated = ""
         final_response = None

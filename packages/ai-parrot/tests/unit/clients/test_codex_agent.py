@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,6 @@ import pytest
 from pydantic import BaseModel
 
 from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
-from parrot.clients.codex_tool_bridge import CodexToolBridge
 from parrot.clients.factory import LLMFactory
 from parrot.tools.manager import ToolManager
 
@@ -21,11 +21,17 @@ class _FakeCodexClient(OpenAICodexClient):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.commands: list[list[str]] = []
+        self.inputs: list[str | None] = []
         self.stdout = ""
         self.output = "ok"
 
-    async def _run_cli_command(self, command: list[str]) -> tuple[str, str, int]:
+    async def _run_cli_command(
+        self,
+        command: list[str],
+        input_text: str | None = None,
+    ) -> tuple[str, str, int]:
         self.commands.append(command)
+        self.inputs.append(input_text)
         output_index = command.index("-o") + 1
         Path(command[output_index]).write_text(self.output, encoding="utf-8")
         return self.stdout, "", 0
@@ -71,10 +77,34 @@ async def test_cli_ask_builds_codex_exec_command() -> None:
     assert "--json" in command
     assert command[command.index("--cd") + 1] == "/tmp"
     assert command[command.index("--model") + 1] == "gpt-test"
-    assert command[-1] == "hello"
+    assert "-c" in command
+    assert 'approval_policy="never"' in command
+    assert command[-1] == "-"
+    assert client.inputs == ["hello"]
     assert message.response == "ok"
     assert message.session_id == "thread-1"
     assert message.usage.total_tokens == 10
+
+
+@pytest.mark.asyncio
+async def test_cli_ask_can_use_codex_default_model() -> None:
+    client = _FakeCodexClient(backend="cli")
+
+    message = await client.ask(
+        "hello",
+        run_options=CodexAgentRunOptions(
+            backend="cli",
+            model="",
+            cwd="/tmp",
+            expose_parrot_tools=False,
+        ),
+    )
+
+    command = client.commands[0]
+    assert "--model" not in command
+    assert command[-1] == "-"
+    assert client.inputs == ["hello"]
+    assert message.response == "ok"
 
 
 @pytest.mark.asyncio
@@ -97,6 +127,13 @@ async def test_invoke_parses_structured_output() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_bridge_routes_through_tool_manager() -> None:
+    tests_dir = str(Path(__file__).parents[2])
+    if tests_dir in sys.path:
+        sys.path.remove(tests_dir)
+    sys.modules.pop("mcp", None)
+
+    from parrot.clients.codex_tool_bridge import CodexToolBridge
+
     manager = ToolManager(include_search_tool=False)
 
     async def echo(value: str) -> str:

@@ -117,14 +117,26 @@ class FormValidator:
         *,
         locale: str = "en",
         auth_context: AuthContext | None = None,
+        location_vars: dict[str, Any] | None = None,
+        visit_context: dict[str, Any] | None = None,
     ) -> ValidationResult:
         """Validate all form submission data against the schema.
+
+        Conditional visibility is resolved first, and a field the form did
+        not display is not required — see the note at the resolution call.
 
         Args:
             form: The FormSchema to validate against.
             data: Submitted form data keyed by field_id.
             locale: Locale for error message resolution.
             auth_context: Optional runtime auth context for REMOTE_RESPONSE fields.
+            location_vars: Org-graph location variables, forwarded to rule
+                resolution. A rule reading one of these evaluates against
+                nothing when it is omitted, which reads as "not shown" and so
+                relaxes that field's required check — pass the same context
+                the renderer used to keep both sides in agreement.
+            visit_context: Visit-level metadata, forwarded to rule resolution
+                with the same caveat as ``location_vars``.
 
         Returns:
             ValidationResult with field-level errors and sanitized data.
@@ -149,14 +161,35 @@ class FormValidator:
         for section in form.sections:
             all_fields.extend(self._collect_fields(section))
 
+        # Resolve conditional visibility before demanding anything. A field
+        # the form never displayed — because its own rule did not fire, or
+        # because it sits in a section whose rule did not — cannot be
+        # required: enforcing the schema's static `required` flag rejected
+        # submissions a rep had filled in correctly.
+        #
+        # Only the required check is relaxed. A hidden field that DID arrive
+        # with a value is still validated in full, so nothing is silently
+        # accepted, and a visible field behaves exactly as before.
+        from .rule_evaluator import RuleEvaluator  # noqa: PLC0415
+
+        resolution = await RuleEvaluator().resolve(
+            form, data, locale=locale,
+            location_vars=location_vars, visit_context=visit_context,
+        )
+
         # Validate each field
         for field in all_fields:
+            effective_required = (
+                resolution.required.get(field.field_id, field.required)
+                and resolution.visible.get(field.field_id, True)
+            )
             field_errors = await self.validate_field(
                 field,
                 data.get(field.field_id),
                 all_data=data,
                 locale=locale,
                 auth_context=auth_context,
+                required=effective_required,
             )
             if field_errors:
                 errors[field.field_id] = field_errors
@@ -191,6 +224,7 @@ class FormValidator:
         all_data: dict[str, Any] | None = None,
         locale: str = "en",
         auth_context: AuthContext | None = None,
+        required: bool | None = None,
     ) -> list[str]:
         """Validate a single field value against its constraints.
 
@@ -200,11 +234,15 @@ class FormValidator:
             all_data: Full submission data for cross-field validation.
             locale: Locale for error message resolution.
             auth_context: Optional runtime auth context for REMOTE_RESPONSE fields.
+            required: Overrides ``field.required`` for this call. ``validate``
+                passes the rule-resolved value, so a field the form never
+                displayed is not demanded; ``None`` keeps the schema default.
 
         Returns:
             List of error messages (empty list if valid).
         """
         errors: list[str] = []
+        is_required = field.required if required is None else required
 
         # Resolve label for error messages
         label = _resolve_localized(field.label, locale) or field.field_id
@@ -217,11 +255,11 @@ class FormValidator:
 
         # REST: validate the submitted {answer, blob_ref, status?} shape
         if field.field_type == FieldType.REST:
-            return self._validate_rest_field(field, value, label)
+            return self._validate_rest_field(field, value, label, is_required)
 
         # Required check
         is_empty = value is None or (isinstance(value, str) and not value.strip())
-        if field.required and is_empty:
+        if is_required and is_empty:
             errors.append(f"{label} is required")
             return errors
 
@@ -593,6 +631,7 @@ class FormValidator:
         field: FormField,
         value: Any,
         label: str,
+        required: bool | None = None,
     ) -> list[str]:
         """Validate a REST field submission at form-submit time.
 
@@ -646,7 +685,8 @@ class FormValidator:
             return errors
 
         # Required check
-        if field.required and value.get("answer") is None:
+        is_required = field.required if required is None else required
+        if is_required and value.get("answer") is None:
             errors.append(f"{label} is required (answer must not be null)")
             return errors
 

@@ -10,6 +10,7 @@ The function name must be ``agent`` to match the LazyGroup key:
 """
 import asyncio
 import logging
+import sys
 from typing import Optional
 
 import click
@@ -21,7 +22,7 @@ from parrot.cli.repl import AgentREPL, REPLConfig
 from parrot.cli.renderer import ResponseRenderer
 
 logger = logging.getLogger(__name__)
-console = Console()
+console = Console(file=sys.__stdout__, force_terminal=True)
 
 
 @click.command("agent")
