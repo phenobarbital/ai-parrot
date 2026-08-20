@@ -32,7 +32,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Lives entirely in the ai-parrot-integrations package (agentd server.py + config.py). Disjoint from every other task's files, so it CAN run in its own worktree; TASK-2290 consumes its PermissionContext.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2286-agentd-caller-identity.md"
+      "completed_at": "2026-08-20T01:39:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2286-agentd-caller-identity.md"
     },
     {
       "id": "TASK-2287",
