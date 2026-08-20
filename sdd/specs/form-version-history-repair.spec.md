@@ -893,6 +893,25 @@ None. No new packages, no migration.
       - `VersionMeta`/`is_published` derivation (Module 3) is unaffected —
         the rule is still `published_version == version`.
 
+      **Why this satisfies "one immutable row per version"** (the
+      maintainer's requirement, restated 2026-08-19): promote-in-place is
+      an UPDATE, so it does touch a row — but what it writes is the
+      publication label, never the model. What the requirement actually
+      demands is that a **published** version cannot be rewritten
+      afterwards, and nothing enforces that today: `_upsert_sql` ends in
+      `DO UPDATE`, so a published snapshot can be silently replaced.
+      Module 6's guard is what introduces that enforcement for the first
+      time. Bump-on-publish would satisfy the letter and lose the intent:
+      publishing draft `1.5` yields a content-identical `1.6`, so "answered
+      with 1.5" and "published as 1.6" name the same model under two
+      numbers. Promote-in-place gives one row per real change, and the
+      number the user saw is the number stamped on the response
+      (`<tenant>.fs_form_data.form_version` / `fs_form_information.form_version`,
+      populated today — measured 2026-08-19: epson `1.2`, flexroc `1.0`).
+      If the requirement is instead strict immutability **from creation**
+      — no row ever touched, drafts included — then the thing to revisit is
+      the editor save path's UPSERT, not this decision.
+
 ---
 
 ## Revision History
