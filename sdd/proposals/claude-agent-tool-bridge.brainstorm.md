@@ -8,7 +8,7 @@ base_branch: dev
 
 **Date**: 2026-08-20
 **Author**: Jesus (with Claude Opus 5)
-**Status**: exploration
+**Status**: exploration (all open questions resolved — ready for /sdd-spec)
 **Recommended Option**: Option B
 
 ---
@@ -82,9 +82,17 @@ the bridge is a wiring job, not research (see Code Context → User-Provided Cod
   peer (`SO_PEERCRED` → uid → `pwd`), falling back to a fixed service identity.
   `"anonymous"` is not acceptable, because confirmation windows and grants are
   keyed on `user_id`.
-- **Narrowing is parrot's job.** Claude Code loads every exposed MCP tool
-  eagerly (measured), so the bridge — not the sub-agent — is responsible for
-  bounding how many tools are handed over.
+- **Narrowing is parrot's job, and needs a real ranker.** Claude Code loads
+  every exposed MCP tool eagerly (measured), so the bridge — not the sub-agent —
+  bounds how many tools are handed over. The existing `search_tools()` cannot
+  drive that (substring match, alphabetical sort, returns a string), so a
+  genuine relevance ranker returning scored `AbstractTool` objects is part of
+  this feature's deliverable, with `search_tools()` refactored into a formatting
+  wrapper over it.
+- **The fallback identity never holds a confirmation window.**
+  `ConfirmationConfig.window_seconds` must stay `0` for the service identity
+  regardless of deployment settings, because its `owner_id` is shared and the
+  window key is `(owner_id, tool_name, args_hash)`.
 - **Results are compressed, not truncated.** The existing
   `parrot.tools.compression` codecs apply to bridged results; no size ceiling
   silently drops data.
@@ -407,7 +415,9 @@ All four surfaces get the treatment — `ask`, `ask_stream`, `resume` and
 | `parrot/agents/claude_code.py` | extends | the daemon target becomes the reference integration |
 | `parrot/integrations/agentd/server.py` | modifies | `_handle_connection` must read `SO_PEERCRED` and carry caller identity onto the `Session` — new work, nothing exists today |
 | `parrot/auth/permission.py` | depends on | `PermissionContext` / `UserSession` built from the OS user |
-| `parrot/tools/compression/` | depends on | codecs applied to bridged results |
+| `parrot/tools/compression/` | depends on | codecs applied automatically via `execute_tool()`; no new code |
+| `parrot/tools/manager.py` (ranker) | modifies | new relevance ranker returning scored `AbstractTool`s; `search_tools()` becomes a formatting wrapper over it — behaviour change for every existing caller |
+| `parrot/auth/confirmation.py` | depends on | `window_seconds` pinned to 0 for the fallback identity; HITL channel overridden away from the `"telegram"` default |
 | `examples/agents/claude_code_daemon.yaml` | extends | gains a `tools:` example |
 | `tests/clients/test_claude_agent.py` | extends | currently 20 passing; add bridge coverage |
 | `docs/agentd.md`, `docs/tools.md` | modifies | document the new visibility and its HITL behaviour |
@@ -813,6 +823,12 @@ Verified absent by introspection on 2026-08-20 — do not assume any of these:
 - ~~A shape-detecting codec selector~~ — codec choice is declarative per tool
   name in `compressors.toml`; shape sensitivity lives in codec *params*
   (`min_rows`), not in a runtime dispatcher.
+- ~~`ConfirmationConfig.confirm_window_seconds`~~ — the real field is
+  **`window_seconds`** (confirmation.py:83, default `0`). The
+  `confirm_window_seconds` name appears only in the `ConfirmationGuard` class
+  docstring and is stale.
+- ~~`ToolManager.rank_tools()`~~ — does **not** exist yet; it is a deliverable
+  of this feature, not something to import.
 
 ---
 
@@ -941,17 +957,33 @@ Verified absent by introspection on 2026-08-20 — do not assume any of these:
   the change set: `_handle_connection` reads the peer credentials and the
   identity travels on the `Session` so `execute_tool()` receives a real
   `PermissionContext`.
-- [ ] Does the fixed service identity get a `ConfirmationGuard` window, or must
+- [x] Does the fixed service identity get a `ConfirmationGuard` window, or must
   it re-confirm every destructive call? A shared window keyed on a shared
   `user_id` means one human's approval can unlock a later call made on behalf
-  of somebody else. — *Owner: Jesus*
-- [ ] **Narrowing signal — needs a re-decision.** The answer given was "the
-  primary LLM's `search_tools` ranking", but that mechanism does not exist in
-  the form implied. Two findings block it, see Code Context → Narrowing signal
-  reality check:
-  (a) `ToolManager.search_tools()` is not a ranking — plain substring match,
-      alphabetical sort, returns a JSON *string* built for an LLM to read;
-  (b) with `ClaudeAgentClient` as the bot's LLM there is no separate "primary
-      LLM" to do the searching, and the tool list must be built *before* the
-      turn starts, when only the raw prompt is available.
-  — *Owner: Jesus*
+  of somebody else. — *Owner: Jesus*: **never holds a window — always
+  re-confirms.** Because the window is keyed
+  `(owner_id, tool_name, args_hash)` (confirmation.py:116) and the service
+  identity's `owner_id` is shared by construction, a window there would let one
+  human's approval clear a later destructive call made for somebody else.
+  Convenient detail: `ConfirmationConfig.window_seconds` already defaults to
+  `0`, documented as "always re-ask — the safe, per-call default"
+  (confirmation.py:82), so this is a *guarantee to preserve* rather than code
+  to add: the spec must forbid raising `window_seconds` for the fallback
+  identity, even if a deployment raises it for real users.
+- [x] **Narrowing signal** — *Owner: Jesus*: **build a real ranking and reuse
+  it.** Add a genuine relevance ranker to `ToolManager` returning scored
+  `AbstractTool` objects (not a formatted string), have the bridge call it with
+  the turn's prompt and the exposure budget, and refactor the existing
+  `search_tools()` into a thin wrapper that formats the ranker's output as JSON
+  for LLM consumption. This pays down the substring-match/alphabetical-sort debt
+  for every caller instead of routing around it, and gives the bridge the one
+  thing it actually needs: an ordered list of tool objects, computable before
+  the turn starts from the prompt alone.
+
+### Notes for the spec (no decision pending)
+- `ConfirmationConfig.default_channel` is `"telegram"` (confirmation.py:85).
+  The daemon's HITL path must set the channel to the agentd console explicitly —
+  the default would route a bridged tool's approval request to Telegram, not to
+  the operator sitting in `parrot attach`.
+- The `ConfirmationGuard` class docstring refers to `confirm_window_seconds`;
+  the real field is `window_seconds`. Do not code against the docstring name.
