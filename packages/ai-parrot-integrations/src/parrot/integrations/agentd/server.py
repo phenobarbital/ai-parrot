@@ -262,7 +262,9 @@ class JsonRpcUnixServer:
         previous_umask = os.umask(0o177)
         try:
             self._server = await asyncio.start_unix_server(
-                self._handle_connection, path=str(self.socket_path)
+                self._handle_connection,
+                path=str(self.socket_path),
+                limit=self.max_line_bytes,
             )
         finally:
             os.umask(previous_umask)
