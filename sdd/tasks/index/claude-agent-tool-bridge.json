@@ -68,7 +68,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Modifies parrot/clients/claude_agent.py, which TASK-2289 also edits, and imports the bridge from TASK-2287. Must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2288-client-options-plumbing.md"
+      "completed_at": "2026-08-20T02:03:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2288-client-options-plumbing.md"
     },
     {
       "id": "TASK-2289",

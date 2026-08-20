@@ -238,10 +238,59 @@ class TestPromptThreading:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-20
+**Notes**: Added the four `ClaudeAgentRunOptions` fields (`mcp_servers`,
+`expose_parrot_tools=True`, `max_exposed_tools=15`, `tool_timeout=None`);
+the 17 existing fields are untouched. `_build_options()` gained a
+`prompt` parameter and, right before the `extra_options`-wins-last step,
+builds `ClaudeAgentToolBridge(self.tool_manager, tool_timeout=merged.
+tool_timeout).build_server(list(self.tool_manager.get_all_tools()))`
+whenever `merged.expose_parrot_tools` is true and the tool manager has
+at least one registered tool — merging the generated `"parrot"` server
+into a caller-supplied `mcp_servers` mapping (never replacing it) and
+appending the exposed `mcp__parrot__*` names onto `allowed_tools` (only
+when the caller set it — `[]` counts as set; unset stays unset). Ranking
+is TASK-2289's job — this task always passes the full registered tool
+set.
 
-**Completed by**:
-**Date**:
-**Notes**:
+All four surfaces thread the turn's text into `_build_options(prompt=…)`
+(`resume` passes `user_input`); `ask`/`ask_stream`/`invoke` no longer
+`del` `use_tools` (still `del tools` — the inline per-call tool list is
+genuinely unconsumed; FEAT-434 bridges the registered `ToolManager`
+instead, governed by `expose_parrot_tools`/`use_tools`, not that list).
 
-**Deviations from spec**: none | describe if any
+`ask()`'s `use_tools` (default `None`) disables the bridge for that call
+only when explicitly `False`; `None`/`True` leave `expose_parrot_tools`
+(default `True`) in charge — i.e. automatic exposure by default, per
+spec decision #1. `invoke()`'s existing `use_tools` default is `False`
+(unchanged, per its "accepted for parity" docstring) — bridging there is
+opt-in via `use_tools=True`, decoupled from a caller's own
+`run_options.expose_parrot_tools`. `ask_stream()` has no `use_tools`
+parameter (unchanged signature) — only `run_options.expose_parrot_tools`
+gates it there.
+
+22 new tests added to the canonical `tests/clients/test_claude_agent.py`
+(`TestBridgeInjection` ×7, `TestAllowedToolsReconciliation` ×4,
+`TestPromptThreading` ×4 — the rest are incidental improvements from a
+`ruff --fix` pass on the file) — all 35 pass. The older
+`packages/ai-parrot/tests/clients/test_claude_agent.py` (8 tests,
+`TestBuildOptionsForwardsExtensions`) still passes untouched. Both files
+run in isolation per the task's own instruction; running them in one
+combined `pytest` invocation reproduces a pre-existing cross-file
+`claude_agent_sdk` module-pollution failure verified identical on the
+pre-TASK-2288 baseline via `git stash` (not something this task
+introduced). Zero new `ruff check` findings on either modified file
+(verified via before/after `git stash` diffs — `claude_agent.py` stays
+at 89 baseline findings, the test file's 12 baseline findings are now 1
+after a `ruff --fix` pass that also cleaned up several pre-existing
+import-order nits).
+
+**Deviations from spec**: `invoke()`'s bridging-by-default-off behaviour
+(gated on its pre-existing `use_tools: bool = False` default rather than
+`None`) is a conservative reading, not an instructed signature change —
+flagged for review since the spec's "all four surfaces bridge tools"
+acceptance criterion could be read as expecting default-on there too.
+Not changing an existing default without an explicit instruction seemed
+the safer choice; happy to flip if the intended behavior was
+default-on.
