@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 
+from parrot_formdesigner.api._utils import _bump_version
 from parrot_formdesigner.core.schema import FormField, FormSchema
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers.html5 import HTML5Renderer
@@ -51,13 +52,32 @@ class InMemoryStorage(FormStorage):
         self._rows: dict[tuple[str, str], dict[str, FormSchema]] = {}
 
     async def save(self, form: FormSchema, style=None, *, tenant=None) -> str:
+        """UPSERT semantics (FEAT-433 TASK-2269): mirrors production's
+        ``ON CONFLICT (form_uid, version) DO UPDATE`` — a duplicate
+        ``(form_uid, version)`` overwrites, it does NOT raise. This double
+        used to raise here, making it STRICTER than ``PostgresFormStorage``
+        (the divergence Module 6 exists to close). ``publish()`` no longer
+        uses this path at all (it uses :meth:`promote`), so ``save()`` now
+        exclusively serves the editor's legitimate "rewrite a draft in
+        place" path, which production also just overwrites."""
         versions = self._rows.setdefault((tenant, form.form_uid), {})
-        if form.version in versions:
-            raise RuntimeError(
-                'duplicate key value violates unique constraint "form_schemas_form_uid_version_key"'
-            )
         versions[form.version] = form.model_copy(deep=True)
         return form.form_uid
+
+    async def promote(self, form_uid, version, schema_json, *, tenant=None) -> bool:
+        """Guarded promote (FEAT-433 Module 6) — mirrors
+        ``PostgresFormStorage._promote_sql()``'s upsert-with-conditionally-
+        skipped-update: a version with no existing row is written normally
+        (the form's very first publish — nothing published yet to
+        protect); a version whose existing row is ALREADY published is
+        rejected (the guard). Aligns this double with production for the
+        write path ``publish()`` actually uses."""
+        versions = self._rows.setdefault((tenant, form_uid), {})
+        existing = versions.get(version)
+        if existing is not None and existing.published_version == version:
+            return False
+        versions[version] = FormSchema.model_validate_json(schema_json)
+        return True
 
     async def load(self, form_uid, version=None, *, tenant=None):
         versions = self._rows.get((tenant, form_uid), {})
@@ -99,9 +119,16 @@ class InMemoryStorage(FormStorage):
 
 
 class FailingStorage(InMemoryStorage):
-    """Storage whose save/list always fail — simulates an unreachable DB."""
+    """Storage whose save/promote/list always fail — simulates an
+    unreachable DB. promote() is overridden too (FEAT-433 TASK-2269):
+    publish() now writes via promote(), not save() — without this
+    override, test_storage_failure_propagates would hit InMemoryStorage's
+    inherited (successful) promote() instead of a simulated failure."""
 
     async def save(self, form, style=None, *, tenant=None) -> str:
+        raise ConnectionError("database unreachable")
+
+    async def promote(self, form_uid, version, schema_json, *, tenant=None) -> bool:
         raise ConnectionError("database unreachable")
 
     async def list_forms(self, *, tenant=None):
@@ -199,8 +226,18 @@ class TestH1HistorySurvivesRestart:
         registry, form = await _registry_with_form()
         svc = FormVersionService(registry, storage=storage)
 
-        v1 = await svc.publish(form.form_uid, tenant="t1")  # 1.1
-        v2 = await svc.publish(form.form_uid, tenant="t1")  # 1.2
+        v1 = await svc.publish(form.form_uid, tenant="t1")  # promotes "1.0" in place
+
+        # FEAT-433 Q5: publish() no longer bumps — an editor SAVE is what
+        # produces a new draft to publish next (mirrors the real PUT/PATCH
+        # handler: bump the version, write directly to storage).
+        live = await registry.get(form.form_uid, tenant="t1")
+        bumped = live.model_copy(deep=True, update={"version": _bump_version(live.version)})
+        await storage.save(bumped, tenant="t1")
+        await registry.register(bumped, overwrite=True, tenant="t1")
+
+        v2 = await svc.publish(form.form_uid, tenant="t1")  # promotes the new draft
+        assert v2 != v1
 
         # Simulate process restart: fresh service, same storage, empty _meta.
         # registry2's form shares the same fixed form_uid default as
@@ -239,29 +276,65 @@ class TestH3H4PublishStorageFailures:
         with pytest.raises(ConnectionError):
             await svc.publish(form.form_uid, tenant="t1")
 
-    async def test_unique_violation_surfaces_as_frozen_error(self):
-        """H4: the DB unique constraint is the atomic immutability guard."""
+    async def test_publish_twice_without_edit_raises_frozen_error(self):
+        """H4, reshaped by FEAT-433 Q5 (promote in place): re-publishing an
+        already-published version (no editor save in between — so there is
+        no new draft to promote, just the same already-frozen row) raises
+        ValueError and leaves the stored row byte-identical. The old
+        version of this test simulated a TOCTOU race assuming publish()
+        bumps to a NEW tag each time; that assumption no longer holds — the
+        guard below is the same guard, it just fires on a plain re-publish
+        now, since that alone is enough to hit an already-published row."""
         storage = InMemoryStorage()
         registry, form = await _registry_with_form()
         svc = FormVersionService(registry, storage=storage)
-        await svc.publish(form.form_uid, tenant="t1")  # creates 1.1
+        await svc.publish(form.form_uid, tenant="t1")  # promotes form.version
 
-        # Simulate the TOCTOU race: a second writer saved 1.2 between the
-        # fast-path check and save() — seed 1.2 directly, then reset the
-        # live form version so publish() recomputes 1.2 (stale read).
-        live = await registry.get(form.form_uid, tenant="t1")
-        stale = live.model_copy(deep=True, update={"version": "1.1"})
-        racing = stale.model_copy(
-            deep=True, update={"version": "1.2", "published_version": "1.2"}
-        )
-        # bypass published_version check in get_published (no stamp → still frozen row)
-        storage._rows[("t1", form.form_uid)]["1.2"] = racing.model_copy(
-            deep=True, update={"published_version": None}
-        )
-        await registry.register(stale, overwrite=True, tenant="t1")
+        stored_before = storage._rows[("t1", form.form_uid)][form.version].model_dump_json()
 
         with pytest.raises(ValueError, match="already exists and is frozen"):
             await svc.publish(form.form_uid, tenant="t1")
+
+        stored_after = storage._rows[("t1", form.form_uid)][form.version].model_dump_json()
+        assert stored_after == stored_before  # byte-identical — not overwritten
+
+    async def test_promote_guard_rejects_already_published_row_directly(self):
+        """The storage-level promote() guard — not just the service's
+        (non-atomic) fast-path pre-check — is the atomic immutability
+        guard: it rejects re-promoting an already-published row even when
+        called directly, and leaves the row byte-identical."""
+        storage = InMemoryStorage()
+        registry, form = await _registry_with_form()
+        svc = FormVersionService(registry, storage=storage)
+        await svc.publish(form.form_uid, tenant="t1")
+
+        stored_before = storage._rows[("t1", form.form_uid)][form.version].model_dump_json()
+
+        promoted_again = await storage.promote(
+            form.form_uid, form.version, stored_before, tenant="t1"
+        )
+
+        assert promoted_again is False
+        stored_after = storage._rows[("t1", form.form_uid)][form.version].model_dump_json()
+        assert stored_after == stored_before
+
+    async def test_inmemory_double_matches_postgres_contract(self):
+        """The InMemoryStorage double and PostgresFormStorage agree on
+        duplicate-key behavior for BOTH write paths (Module 6): save()
+        overwrites a duplicate (form_uid, version) — matching
+        PostgresFormStorage._upsert_sql's ON CONFLICT DO UPDATE — while
+        promote() (tested directly above) rejects re-promoting an
+        already-published row. The double used to be stricter than
+        production only on the first half; this closes that gap."""
+        storage = InMemoryStorage()
+        registry, form = await _registry_with_form()
+
+        await storage.save(form, tenant="t1")
+        edited = form.model_copy(deep=True, update={"title": "Edited"})
+        await storage.save(edited, tenant="t1")  # same (form_uid, version) — must NOT raise
+
+        loaded = await storage.load(form.form_uid, version=form.version, tenant="t1")
+        assert str(loaded.title) == "Edited"
 
 
 # ---------------------------------------------------------------------------

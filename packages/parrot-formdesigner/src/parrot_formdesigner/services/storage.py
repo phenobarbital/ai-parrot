@@ -193,6 +193,38 @@ class PostgresFormStorage(FormStorage):
             updated_at = NOW()
         """
 
+    def _promote_sql(self, tenant: str | None) -> str:
+        """SQL for ``promote()`` (FEAT-433 Module 6, spec §8 Q5).
+
+        An upsert whose UPDATE half is conditionally skipped — NOT a plain
+        ``UPDATE``: publish() promotes whatever row is already at
+        ``version`` (the live version, draft or never-before-persisted) in
+        place. A version with no existing row at all (the form's very
+        first publish) has nothing to protect, so the ``INSERT`` branch
+        writes it normally, same as :meth:`_upsert_sql` would.
+
+        The ``WHERE`` clause on ``DO UPDATE`` is the immutability guarantee:
+        when the conflicting row is ALREADY published, the condition is
+        false, Postgres skips the update, and ``RETURNING`` yields no row —
+        a no-op, not a silent re-promotion. ``IS DISTINCT FROM`` (never
+        ``<>``): ``published_version`` is ``NULL`` on every unpublished
+        row, and ``NULL <> version`` is ``NULL`` (falsy) in SQL, not
+        ``true`` — a plain ``<>`` would exclude exactly the rows this path
+        exists to promote.
+        """
+        qt = self._qualified(tenant)
+        return f"""
+        INSERT INTO {qt} (form_uid, form_id, version, schema_json, tenant)
+        VALUES ($1, $2, $3, $4::text::jsonb, $5)
+        ON CONFLICT (form_uid, version)
+        DO UPDATE SET
+            form_id = EXCLUDED.form_id,
+            schema_json = EXCLUDED.schema_json,
+            updated_at = NOW()
+        WHERE (schema_json ->> 'published_version') IS DISTINCT FROM version
+        RETURNING id
+        """
+
     def _load_sql(self, tenant: str | None) -> str:
         qt = self._qualified(tenant)
         return f"""
@@ -396,6 +428,55 @@ class PostgresFormStorage(FormStorage):
             self._qualified(effective_tenant),
         )
         return form.form_id
+
+    async def promote(
+        self,
+        form_uid: uuid.UUID,
+        version: str,
+        schema_json: str,
+        *,
+        tenant: str | None = None,
+    ) -> bool:
+        """Promote a version to published, in place (FEAT-433 Module 6).
+
+        An upsert whose update half is conditionally skipped (see
+        :meth:`_promote_sql`) — this is the authoritative immutability
+        guard for ``publish()`` (spec §8 Q5): a published row can never be
+        silently re-promoted or overwritten, because the ``WHERE`` clause
+        on the conflicting update excludes it. A version with no existing
+        row (the form's very first publish) is written normally — there is
+        nothing published yet to protect. The editor's own save path is
+        untouched — it keeps using :meth:`save`'s unconditional ``ON
+        CONFLICT ... DO UPDATE`` UPSERT, which legitimately rewrites a
+        draft in place.
+
+        Args:
+            form_uid: The form's immutable UUID (FEAT-389).
+            version: The version tag being promoted.
+            schema_json: The new (already ``published_version``-stamped)
+                schema, serialized (``FormSchema.model_dump_json()``).
+            tenant: Optional tenant override; resolves the schema for this
+                single call.
+
+        Returns:
+            ``True`` if the row was written (promoted, or written for the
+            first time); ``False`` if no row was affected — the version is
+            ALREADY published (the guard).
+        """
+        self._require_pool()
+        form_id = json.loads(schema_json).get("form_id", "")
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                self._promote_sql(tenant), form_uid, form_id, version, schema_json, tenant
+            )
+
+        promoted = row is not None
+        self.logger.debug(
+            "Promote form_uid=%s version=%s in %s: %s",
+            form_uid, version, self._qualified(tenant),
+            "promoted" if promoted else "no row affected (already published)",
+        )
+        return promoted
 
     async def load(
         self,

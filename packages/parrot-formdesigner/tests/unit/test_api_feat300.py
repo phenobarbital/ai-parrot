@@ -24,6 +24,7 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+from parrot_formdesigner.api._utils import _bump_version
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
@@ -466,18 +467,22 @@ class TestListVersions:
 
     async def test_list_versions_labels_draft_and_published_rows(self):
         """FEAT-433 D1/D3: every stored row is listed — editor-saved drafts
-        AND published rows — each correctly labelled is_published."""
+        AND published rows — each correctly labelled is_published.
+
+        FEAT-433 Q5 (promote in place): publish() stamps the CURRENT live
+        version published — it does not bump. A NEW draft only appears
+        after an editor save (``_bump_version``)."""
         storage = _FakeFormStorage()
         registry = FormRegistry(storage=storage)
         form = _make_form()
         await registry.register(form, persist=True, tenant="t1")  # 1.0 draft
 
         handler = _make_handler(registry)
-        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # 1.1 published
+        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
 
         live = await registry.get(form.form_uid, tenant="t1")
-        edited = live.model_copy(deep=True, update={"version": "1.2"})
-        await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.2 draft
+        edited = live.model_copy(deep=True, update={"version": _bump_version(live.version)})
+        await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.1 draft
 
         req = _tenant_request(method="GET", form_uid=form.form_uid)
         resp = await handler.list_versions(req)
@@ -486,45 +491,44 @@ class TestListVersions:
         body = json.loads(resp.body)
         by_version = {v["version"]: v for v in body["versions"]}
 
-        assert by_version["1.0"]["is_published"] is False
-        assert by_version["1.1"]["is_published"] is True
-        assert by_version["1.2"]["is_published"] is False
+        assert by_version["1.0"]["is_published"] is True
+        assert by_version["1.1"]["is_published"] is False
 
     async def test_list_versions_is_current_and_is_published_can_diverge(self):
         """FEAT-433 §1.1 item 4: is_current and is_published are independent
         — an OLDER published row is no longer "current" once a later
         publish moves the pin forward (`is_current` keeps its existing
-        `form.published_version or form.version` rule, unchanged)."""
+        `form.published_version or form.version` rule, unchanged).
+
+        FEAT-433 Q5 (promote in place): each publish stamps whatever
+        version is currently live — an editor save must bump the version
+        first for the second publish to land on a different tag."""
         storage = _FakeFormStorage()
         registry = FormRegistry(storage=storage)
         form = _make_form()
         await registry.register(form, persist=True, tenant="t1")  # 1.0 draft
 
         handler = _make_handler(registry)
-        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # 1.1 published
+        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
 
         live = await registry.get(form.form_uid, tenant="t1")
-        edited = live.model_copy(deep=True, update={"version": "1.2"})
-        await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.2 draft
+        edited = live.model_copy(deep=True, update={"version": _bump_version(live.version)})
+        await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.1 draft
 
-        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # 1.3 published
+        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.1
 
         req = _tenant_request(method="GET", form_uid=form.form_uid)
         resp = await handler.list_versions(req)
         body = json.loads(resp.body)
         by_version = {v["version"]: v for v in body["versions"]}
 
-        # 1.1 is still labelled published — but no longer the current one.
+        # 1.0 is still labelled published — but no longer the current one.
+        assert by_version["1.0"]["is_published"] is True
+        assert by_version["1.0"]["is_current"] is False
+
+        # 1.1 is both the newest publish AND the current one.
         assert by_version["1.1"]["is_published"] is True
-        assert by_version["1.1"]["is_current"] is False
-
-        # 1.3 is both the newest publish AND the current one.
-        assert by_version["1.3"]["is_published"] is True
-        assert by_version["1.3"]["is_current"] is True
-
-        # The drafts never carried is_current or is_published.
-        assert by_version["1.0"]["is_published"] is False
-        assert by_version["1.2"]["is_published"] is False
+        assert by_version["1.1"]["is_current"] is True
 
 
 # ---------------------------------------------------------------------------

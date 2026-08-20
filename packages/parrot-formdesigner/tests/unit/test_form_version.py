@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from parrot_formdesigner.api._utils import _bump_version
 from parrot_formdesigner.core.schema import FormSchema, FormSection, FormField
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.form_version import (
@@ -120,7 +121,6 @@ def test_bump_twice():
 def test_bump_grammar_is_single():
     """Both former call sites (api._utils._bump_version and this module's
     _bump) produce identical output — _bump_version now delegates here."""
-    from parrot_formdesigner.api._utils import _bump_version
 
     for v in ("1.0", "1.9", "1.14"):
         assert _bump_version(v) == _bump(v)
@@ -130,8 +130,6 @@ def test_three_component_input_has_one_documented_behaviour():
     """Three-part input has one documented, tested behaviour — the last
     component is incremented, the shape is preserved. Not a silent (1, 0)
     degradation, and identical across both former call sites."""
-    from parrot_formdesigner.api._utils import _bump_version
-
     assert _bump("1.2.3") == "1.2.4"
     assert _bump_version("1.2.3") == "1.2.4"
     # bump="major" on 3-part input drops the patch, same rule as 2-part.
@@ -147,8 +145,6 @@ def test_major_bump_survives():
 def test_non_conforming_input_is_total_not_raising():
     """_bump_version is called on the editor's hot path (every save) and
     must never raise — even on a legacy/malformed value already stored."""
-    from parrot_formdesigner.api._utils import _bump_version
-
     assert _bump("garbage") == "garbage.1"
     assert _bump_version("1") == "1.1"  # bare major-only input, pre-existing case
 
@@ -159,9 +155,11 @@ def test_non_conforming_input_is_total_not_raising():
 
 
 async def test_form_version_publish_sets_flag(svc, form):
-    """publish() returns the new version tag and sets published_version."""
+    """FEAT-433 Q5: publish() promotes the live version IN PLACE — it
+    returns the SAME tag the form was already at and sets published_version
+    to that same tag (no bump)."""
     tag = await svc.publish(form.form_uid, tenant="t1")
-    assert tag == "1.1"
+    assert tag == "1.0"
 
     published = await svc.get_published(form.form_uid, version=tag, tenant="t1")
     assert published is not None
@@ -169,23 +167,32 @@ async def test_form_version_publish_sets_flag(svc, form):
 
 
 async def test_form_version_publish_version_tag_correct(svc, form):
-    """First publish of a 1.0 form yields 1.1."""
+    """Publishing a 1.0 form yields 1.0 (promoted in place, not bumped)."""
     tag = await svc.publish(form.form_uid, tenant="t1")
-    assert tag == "1.1"
+    assert tag == "1.0"
 
 
 async def test_form_version_publish_twice_increments(svc, form):
-    """Second publish increments minor again: 1.1 → 1.2."""
+    """A second publish only produces a NEW tag if an editor SAVE bumped
+    the version in between — publish() itself no longer bumps (Q5)."""
     tag1 = await svc.publish(form.form_uid, tenant="t1")
+    assert tag1 == "1.0"
+
+    # Simulate an editor save (the only thing that bumps now).
+    live = await svc._registry.get(form.form_uid, tenant="t1")
+    bumped = live.model_copy(update={"version": _bump_version(live.version)})
+    await svc._registry.register(bumped, overwrite=True, tenant="t1")
+
     tag2 = await svc.publish(form.form_uid, tenant="t1")
-    assert tag1 == "1.1"
-    assert tag2 == "1.2"
+    assert tag2 == "1.1"
 
 
-async def test_form_version_publish_major_bump(svc, form):
-    """Major bump resets minor to 0."""
+async def test_form_version_publish_bump_param_is_now_unused(svc, form):
+    """FEAT-433 Q5: the `bump` kwarg is kept only for backward API
+    compatibility — publish() no longer calls _bump() at all, so it has no
+    effect; publishing always promotes the live version as-is."""
     tag = await svc.publish(form.form_uid, tenant="t1", bump="major")
-    assert tag == "2.0"
+    assert tag == "1.0"  # unchanged by bump="major" — NOT "2.0"
 
 
 async def test_form_version_publish_unknown_form_raises(svc):
@@ -202,21 +209,19 @@ async def test_form_version_publish_unknown_form_raises(svc):
 async def test_form_version_immutable_on_edit(svc, form):
     """Attempting to re-publish an already-published version raises ValueError.
 
+    FEAT-433 Q5: publish() promotes in place, so this no longer needs a
+    "roll the live version back" trick — publishing the SAME version twice
+    in a row (no editor save in between) already targets an
+    already-published row directly.
+
     Strategy:
-    1. Publish once → live form bumped to 1.1; snapshot 1.1 stored.
-    2. Force the live form's version back to 1.0 so the next publish
-       would try to create 1.1 again.
-    3. publish() must detect the existing 1.1 snapshot and raise ValueError.
+    1. Publish once → live form's version ("1.0") is stamped published.
+    2. publish() again, unchanged, must detect the already-published "1.0"
+       row and raise ValueError.
     """
     tag = await svc.publish(form.form_uid, tenant="t1")
-    assert tag == "1.1"
+    assert tag == "1.0"
 
-    # Force live form back to 1.0 to trigger the guard on re-publish
-    live = await svc._registry.get(form.form_uid, tenant="t1")
-    rolled_back = live.model_copy(update={"version": "1.0"})
-    await svc._registry.register(rolled_back, overwrite=True, tenant="t1")
-
-    # Now publishing again will try to create 1.1 which already exists
     with pytest.raises(ValueError, match="frozen"):
         await svc.publish(form.form_uid, tenant="t1")
 
@@ -232,7 +237,7 @@ async def test_form_version_list_versions(svc, form):
     versions = await svc.list_versions(form.form_uid, tenant="t1")
     assert len(versions) == 1
     assert isinstance(versions[0], VersionMeta)
-    assert versions[0].version == "1.1"
+    assert versions[0].version == "1.0"
 
 
 async def test_form_version_list_versions_empty(svc, form):
@@ -242,12 +247,20 @@ async def test_form_version_list_versions_empty(svc, form):
 
 
 async def test_form_version_list_versions_multiple(svc, form):
-    """list_versions() accumulates entries across multiple publishes."""
-    await svc.publish(form.form_uid, tenant="t1")
-    await svc.publish(form.form_uid, tenant="t1")
+    """list_versions() accumulates entries across multiple publishes —
+    each preceded by an editor save (FEAT-433 Q5: publish() itself no
+    longer bumps, so a second publish needs a new draft to promote)."""
+    await svc.publish(form.form_uid, tenant="t1")  # "1.0"
+
+    live = await svc._registry.get(form.form_uid, tenant="t1")
+    bumped = live.model_copy(update={"version": _bump_version(live.version)})
+    await svc._registry.register(bumped, overwrite=True, tenant="t1")
+
+    await svc.publish(form.form_uid, tenant="t1")  # "1.1"
+
     versions = await svc.list_versions(form.form_uid, tenant="t1")
     assert len(versions) == 2
-    assert [v.version for v in versions] == ["1.1", "1.2"]
+    assert [v.version for v in versions] == ["1.0", "1.1"]
 
 
 # ---------------------------------------------------------------------------
@@ -558,12 +571,17 @@ async def test_publish_then_edit_isolation(registry):
     v1_tag = await svc.publish(form.form_uid, tenant="t1")
     original_title = form.title
 
-    # Simulate editing the live form (changing its title)
+    # Simulate an editor save: bump the version AND change the title
+    # (FEAT-433 Q5: publish() itself no longer bumps, so a second publish
+    # needs the editor's save to produce a new draft first).
     live = await registry.get(form.form_uid, tenant="t1")
-    edited = live.model_copy(update={"title": "Edited Title"})
+    edited = live.model_copy(update={
+        "version": _bump_version(live.version),
+        "title": "Edited Title",
+    })
     await registry.register(edited, overwrite=True, tenant="t1")
 
-    # Publish a second version
+    # Publish the new draft as a second version
     v2_tag = await svc.publish(form.form_uid, tenant="t1")
     assert v2_tag != v1_tag
 
@@ -652,34 +670,39 @@ async def test_every_listed_version_is_retrievable():
     draft2 = form.model_copy(deep=True, update={"version": "1.1"})
     await storage.save(draft2, tenant="t1")  # 1.1 draft
     await registry.register(draft2, overwrite=True, tenant="t1")
-    await svc.publish(form.form_uid, tenant="t1")  # bumps live 1.1 -> 1.2, published
+    await svc.publish(form.form_uid, tenant="t1")  # promotes live "1.1" in place (Q5)
 
     versions = await svc.list_versions(form.form_uid, tenant="t1")
-    assert len(versions) == 3  # sanity: drafts AND the published row
+    assert len(versions) == 2  # "1.0" draft, "1.1" now published in place
 
     for v in versions:
         snap = await svc.get_published(form.form_uid, version=v.version, tenant="t1")
         assert snap is not None, f"version {v.version} listed but not retrievable"
 
 
-async def test_publish_pre_check_no_longer_passes_silently_on_existing_draft():
-    """publish()'s fast-path pre-check now sees an existing draft row at the
-    target tag (it used to pass silently — Module 5)."""
+async def test_publish_succeeds_when_target_version_has_only_a_draft_row():
+    """FEAT-433 Q5 + Module 5: publish()'s fast-path pre-check distinguishes
+    "a row exists at the target version" from "that row is ALREADY
+    published" — an editor-saved draft at the live version (the normal
+    case: the editor always saves before publishing) does not trip the
+    guard; only an already-published row does (see
+    test_form_version_immutable_on_edit)."""
     storage = _LoadableStorage()
     registry = FormRegistry()
     form = _minimal_form(version="1.0")
     await registry.register(form, tenant="t1")
     svc = FormVersionService(registry, storage=storage)
 
-    # An editor already saved a draft at the tag publish() is about to
-    # compute (_bump("1.0") == "1.1") — simulating a stale-live-version
-    # race no different from the one H4 in test_feat300_review_fixes.py
-    # covers for storage.save()'s own path.
-    draft_at_target = form.model_copy(deep=True, update={"version": "1.1"})
-    await storage.save(draft_at_target, tenant="t1")
+    # The editor already saved a draft at "1.0" — the live version publish()
+    # is about to promote. This is the NORMAL case, not a race.
+    await storage.save(form, tenant="t1")
 
-    with pytest.raises(ValueError, match="frozen"):
-        await svc.publish(form.form_uid, tenant="t1")
+    tag = await svc.publish(form.form_uid, tenant="t1")
+    assert tag == "1.0"
+
+    published = await svc.get_published(form.form_uid, version="1.0", tenant="t1")
+    assert published is not None
+    assert published.published_version == "1.0"
 
 
 # ---------------------------------------------------------------------------

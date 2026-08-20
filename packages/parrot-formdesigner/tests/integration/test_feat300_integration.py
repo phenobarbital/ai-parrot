@@ -22,6 +22,8 @@ import json
 import time
 from datetime import datetime, timezone
 
+import pytest
+
 from parrot_formdesigner.api._utils import _bump_version
 from parrot_formdesigner.core.schema import (
     FormField,
@@ -268,8 +270,8 @@ async def test_question_bank_reuse_in_two_forms():
 
 
 async def test_inflight_response_keeps_version():
-    """RF-06: a response started against v1.1 resolves against the v1.1
-    snapshot even after v1.2 is published mid-capture."""
+    """RF-06: a response started against v1.0 resolves against the v1.0
+    snapshot even after v1.1 is published mid-capture."""
     registry = FormRegistry()
     svc = FormVersionService(registry, storage=None)
 
@@ -287,16 +289,20 @@ async def test_inflight_response_keeps_version():
         tenant="t1",
     )
     await registry.register(original, tenant="t1")
-    inflight_version = await svc.publish(original.form_uid, tenant="t1")  # "1.1"
+    inflight_version = await svc.publish(original.form_uid, tenant="t1")  # "1.0"
 
     # An in-flight response pins this version.
-    # Meanwhile the form is edited (starting from the CURRENT live form,
-    # whose version was bumped by publish) and re-published (v1.2):
+    # Meanwhile the form is edited — an editor SAVE bumps the version AND
+    # changes the title (FEAT-433 Q5: publish() itself no longer bumps, so
+    # a second publish needs the editor's save to produce a new draft
+    # first) — and the new draft is re-published (v1.1):
     live = await registry.get(original.form_uid, tenant="t1")
-    edited = live.model_copy(deep=True)
-    edited.title = "Recap v2 — restructured"
+    edited = live.model_copy(deep=True, update={
+        "version": _bump_version(live.version),
+        "title": "Recap v2 — restructured",
+    })
     await registry.register(edited, tenant="t1", overwrite=True)
-    newer_version = await svc.publish(original.form_uid, tenant="t1")  # "1.2"
+    newer_version = await svc.publish(original.form_uid, tenant="t1")  # "1.1"
     assert newer_version != inflight_version
 
     # The in-flight response still resolves against its pinned snapshot:
@@ -382,14 +388,42 @@ async def test_every_listed_version_is_retrievable():
         await storage.save(cur, tenant="t1")
         await registry.register(cur, overwrite=True, tenant="t1")
 
-    await svc.publish(form.form_uid, tenant="t1")  # adds one more, published, entry
+    # FEAT-433 Q5: promotes the live version ("1.4") in place — no new row.
+    await svc.publish(form.form_uid, tenant="t1")
 
     versions = await svc.list_versions(form.form_uid, tenant="t1")
-    assert len(versions) >= 5  # the 5 editor-saved drafts, at minimum
+    assert len(versions) == 5  # the 5 editor-saved drafts; "1.4" is now published
 
     for v in versions:
         snap = await svc.get_published(form.form_uid, version=v.version, tenant="t1")
         assert snap is not None, f"listed version {v.version} is not retrievable"
+
+
+async def test_publish_twice_same_tag_does_not_overwrite():
+    """FEAT-433 Module 6 (Q5): the second publish at an existing (already
+    published) tag raises and leaves the stored row byte-identical."""
+    storage = _ListFetchStorage()
+    registry = FormRegistry()
+    svc = FormVersionService(registry, storage=storage)
+
+    form = FormSchema(
+        form_id="promote-guard",
+        title="Promote Guard",
+        sections=[FormSection(section_id="s1", fields=[
+            FormField(field_id="q1", field_type=FieldType.TEXT, label="Q1"),
+        ])],
+        tenant="t1",
+    )
+    await registry.register(form, tenant="t1")
+
+    tag = await svc.publish(form.form_uid, tenant="t1")
+    stored_before = storage._rows[("t1", str(form.form_uid))][tag].model_dump_json()
+
+    with pytest.raises(ValueError, match="already exists and is frozen"):
+        await svc.publish(form.form_uid, tenant="t1")
+
+    stored_after = storage._rows[("t1", str(form.form_uid))][tag].model_dump_json()
+    assert stored_after == stored_before
 
 
 # ---------------------------------------------------------------------------
