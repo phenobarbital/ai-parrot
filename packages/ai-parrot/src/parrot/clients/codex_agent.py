@@ -9,16 +9,18 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, AsyncIterator, Literal, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, Optional
 
 from pydantic import BaseModel
 
 from parrot.clients.base import AbstractClient, MessageResponse
-from parrot.clients.codex_tool_bridge import CodexToolBridge
 from parrot.exceptions import InvokeError
 from parrot.models import AIMessage, StructuredOutputConfig
 from parrot.models.basic import CompletionUsage, ToolCall
 from parrot.models.responses import InvokeResult
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from parrot.clients.codex_tool_bridge import CodexToolBridge
 
 
 Backend = Literal["auto", "sdk", "cli"]
@@ -445,9 +447,11 @@ class OpenAICodexClient(AbstractClient):
     def _new_tool_bridge(
         self,
         options: CodexAgentRunOptions,
-    ) -> Optional[CodexToolBridge]:
+    ) -> Optional["CodexToolBridge"]:
         if not options.expose_parrot_tools or self.tool_manager.tool_count() == 0:
             return None
+        from parrot.clients.codex_tool_bridge import CodexToolBridge
+
         return CodexToolBridge(
             self.tool_manager,
             permission_context=getattr(self, "_permission_context", None),
@@ -459,8 +463,8 @@ class OpenAICodexClient(AbstractClient):
     @contextlib.asynccontextmanager
     async def _maybe_started_bridge(
         self,
-        bridge: Optional[CodexToolBridge],
-    ) -> AsyncIterator[Optional[CodexToolBridge]]:
+        bridge: Optional["CodexToolBridge"],
+    ) -> AsyncIterator[Optional["CodexToolBridge"]]:
         if bridge is None:
             yield None
             return
