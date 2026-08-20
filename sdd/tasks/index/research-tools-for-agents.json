@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T00:40:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2234-research-models-and-base-toolkit.md"
+      "file": "sdd/tasks/completed/TASK-2234-research-models-and-base-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2235",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T00:42:56+00:00",
-      "file": "sdd/tasks/completed/TASK-2235-world-bank-methods.md"
+      "file": "sdd/tasks/completed/TASK-2235-world-bank-methods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2236",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T00:45:29+00:00",
-      "file": "sdd/tasks/completed/TASK-2236-eu-open-data-search.md"
+      "file": "sdd/tasks/completed/TASK-2236-eu-open-data-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2237",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T00:49:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2237-oecd-sdmx-methods.md"
+      "file": "sdd/tasks/completed/TASK-2237-oecd-sdmx-methods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2238",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T00:53:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2238-crossref-search.md"
+      "file": "sdd/tasks/completed/TASK-2238-crossref-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2239",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T00:56:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2239-pubmed-search.md"
+      "file": "sdd/tasks/completed/TASK-2239-pubmed-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2240",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T01:00:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2240-semantic-scholar-and-arxiv.md"
+      "file": "sdd/tasks/completed/TASK-2240-semantic-scholar-and-arxiv.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2241",
@@ -163,7 +170,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T01:03:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2241-get-paper-details.md"
+      "file": "sdd/tasks/completed/TASK-2241-get-paper-details.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2242",
@@ -184,7 +192,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T01:06:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2242-research-router.md"
+      "file": "sdd/tasks/completed/TASK-2242-research-router.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2243",
@@ -204,7 +213,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T01:17:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2243-integration-and-discovery.md"
+      "file": "sdd/tasks/completed/TASK-2243-integration-and-discovery.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2244",
@@ -224,7 +234,8 @@
       "assigned_to": null,
       "started_at": "2026-08-17T00:34:02+00:00",
       "completed_at": "2026-08-17T01:19:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2244-research-tools-documentation.md"
+      "file": "sdd/tasks/completed/TASK-2244-research-tools-documentation.md",
+      "verification": "verified"
     }
   ]
 }
