@@ -27,6 +27,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from parrot.knowledge.graphindex.schema import EdgeKind, NodeKind
+from parrot.knowledge.retrieval.digest import DigestScope
 
 logger = logging.getLogger(__name__)
 
@@ -220,9 +221,8 @@ class Evidence(BaseModel):
         digest: Content hash of the L0 node at ``rev``, computed over the
             bytes actually served (spec §3.5.1). Populated by TASK-2273;
             this task only defines the field.
-        digest_scope: The granularity the digest was computed at
-            (``"span"``/``"file"``/``"summary"``). Left as a plain ``str``
-            here — tightened to the `DigestScope` enum once TASK-2273 lands.
+        digest_scope: The granularity the digest was computed at — see
+            `DigestScope` (spec §3.5.1, TASK-2273).
         line_span: ``(start_line, end_line)``, or ``None`` for nodes with no
             line span (rationale, module-level, synthetic nodes).
         edge_path: How this node was reached from the seed set — empty for
@@ -238,7 +238,7 @@ class Evidence(BaseModel):
 
     node: NodeRef
     digest: str
-    digest_scope: str
+    digest_scope: DigestScope
     line_span: tuple[int, int] | None = None
     edge_path: tuple[EdgeRef, ...] = ()
     origin: EvidenceOrigin

@@ -15,6 +15,7 @@ The public surface here grows task by task; re-export new symbols as they
 land so downstream code can do ``from parrot.knowledge.retrieval import X``.
 """
 
+from parrot.knowledge.retrieval.digest import DigestScope, derive_digest
 from parrot.knowledge.retrieval.models import (
     ContextBundle,
     ContextUnit,
@@ -29,10 +30,12 @@ from parrot.knowledge.retrieval.models import (
 __all__ = [
     "ContextBundle",
     "ContextUnit",
+    "DigestScope",
     "EdgeRef",
     "Evidence",
     "EvidenceOrigin",
     "NodeRef",
     "RetrievalBudget",
     "RetrievalRequest",
+    "derive_digest",
 ]
