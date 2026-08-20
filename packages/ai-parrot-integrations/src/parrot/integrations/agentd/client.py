@@ -174,6 +174,14 @@ class AgentDaemonClient:
         last_exc: Exception | None = None
         for attempt in range(1, retries + 1):
             try:
+                # `limit` MUST match the server's `max_line_bytes`. Without
+                # it asyncio caps the StreamReader at its 64 KiB default, so
+                # any reply larger than that makes `readuntil(b"\n")` raise
+                # LimitOverrunError, kills the reader task, and surfaces on
+                # every pending call as the very misleading "Connection
+                # closed by daemon" -- while the daemon had in fact answered
+                # correctly. Agent replies carrying a structured artifact,
+                # or a bridged tool result (FEAT-434), routinely exceed it.
                 reader, writer = await asyncio.open_unix_connection(
                     path=str(socket_path), limit=max_line_bytes
                 )

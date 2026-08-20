@@ -261,6 +261,10 @@ class JsonRpcUnixServer:
         # looser permissions before the chmod() below lands.
         previous_umask = os.umask(0o177)
         try:
+            # Same 64 KiB StreamReader default as on the client side (see
+            # AgentDaemonClient.connect): without an explicit `limit` a
+            # request larger than that is unreadable no matter what
+            # `max_line_bytes` allows.
             self._server = await asyncio.start_unix_server(
                 self._handle_connection,
                 path=str(self.socket_path),
@@ -452,9 +456,38 @@ class JsonRpcUnixServer:
                     id=request.id,
                     error=RpcError(code=INTERNAL_ERROR, message=str(exc)),
                 )
+            except asyncio.CancelledError:
+                # CancelledError derives from BaseException, so the clause
+                # above never sees it: the handler dies and the client gets a
+                # bare disconnect with no response. Report it, then let the
+                # cancellation keep unwinding.
+                self.logger.warning(
+                    "Handler for %r was cancelled before producing a result",
+                    request.method,
+                )
+                with contextlib.suppress(Exception):
+                    await session.send(
+                        RpcResponse(
+                            id=request.id,
+                            error=RpcError(
+                                code=INTERNAL_ERROR,
+                                message=f"{request.method} was cancelled",
+                            ),
+                        )
+                    )
+                raise
 
-        with contextlib.suppress(Exception):
+        try:
             await session.send(response)
+        except Exception:  # noqa: BLE001 - a failed send must not kill the server
+            # This is the ONLY path that delivers an answer, so swallowing a
+            # failure here reads to the client as "connection closed by
+            # daemon" with no clue why. Log it and keep serving.
+            self.logger.exception(
+                "Could not send the response for %r to session %s",
+                request.method,
+                session.session_id,
+            )
 
     async def _disconnect(self, session: Session) -> None:
         """Tear down a session: cancel tasks, unsubscribe, close the writer."""
