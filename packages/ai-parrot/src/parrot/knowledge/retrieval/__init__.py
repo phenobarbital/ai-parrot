@@ -17,6 +17,13 @@ land so downstream code can do ``from parrot.knowledge.retrieval import X``.
 
 from parrot.knowledge.retrieval.digest import DigestScope, derive_digest
 from parrot.knowledge.retrieval.exceptions import IndexPinMismatchError, StalePinError
+from parrot.knowledge.retrieval.features import QueryFeatures, extract_features
+from parrot.knowledge.retrieval.lexicon import (
+    DEFAULT_LEXICON,
+    CompiledMarkerLexicon,
+    Interrogative,
+    MarkerLexicon,
+)
 from parrot.knowledge.retrieval.models import (
     ContextBundle,
     ContextUnit,
@@ -37,7 +44,9 @@ from parrot.knowledge.retrieval.pin import (
 from parrot.knowledge.retrieval.symbols import DerivedSymbolIndex
 
 __all__ = [
+    "DEFAULT_LEXICON",
     "CoherenceReport",
+    "CompiledMarkerLexicon",
     "ContextBundle",
     "ContextUnit",
     "DerivedSymbolIndex",
@@ -46,13 +55,17 @@ __all__ = [
     "Evidence",
     "EvidenceOrigin",
     "IndexPinMismatchError",
+    "Interrogative",
+    "MarkerLexicon",
     "NodeRef",
+    "QueryFeatures",
     "RetrievalBudget",
     "RetrievalRequest",
     "StalePinError",
     "WorkspacePin",
     "check_pin_coherence",
     "derive_digest",
+    "extract_features",
     "read_at_rev",
     "resolve_workspace",
 ]
