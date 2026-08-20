@@ -40,6 +40,8 @@ LOADER_REGISTRY: dict[str, str] = {
     # --- Factory ---
     "get_loader_class": "parrot_loaders.factory.get_loader_class",
     "LOADER_MAPPING": "parrot_loaders.factory.LOADER_MAPPING",
+    # --- Synced from drift audit (FEAT-436) ---
+    "WebScrapingLoader": "parrot_loaders.webscraping.WebScrapingLoader",
 }
 
 __all__ = ["__version__", "LOADER_REGISTRY"]
