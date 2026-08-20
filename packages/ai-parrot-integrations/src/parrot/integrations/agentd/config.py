@@ -243,6 +243,16 @@ class AgentServiceConfig(BaseModel):
         socket: Explicit UDS path. `None` means `default_socket_path(name)`
             is used at daemon start time.
         scheduler: Headless scheduler bootstrap options.
+        expose_as_tools: Which allowlisted methods also become LLM tools, so
+            the agent can call them mid-conversation instead of only
+            answering RPC. `None` (the default) derives a tool for every
+            name in `exposed_methods`; an explicit list narrows it (use it
+            to keep slow or destructive methods RPC-only); `[]` disables
+            derivation entirely. A tool the agent already registers itself
+            always wins over a derived one. Composes with FEAT-434: the
+            derived tools land in the agent's `ToolManager`, so a
+            `claude-agent` LLM reaches them through the bridge as
+            `mcp__parrot__<method>` like any other registered tool.
         exposed_methods: Allowlist of agent method names exposed via the
             `agent.invoke` RPC method; when non-empty it is also a hard
             requirement for the MCP `invoke_method` tool to be registered
@@ -260,6 +270,7 @@ class AgentServiceConfig(BaseModel):
     socket: Path | None = None
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     exposed_methods: list[str] = Field(default_factory=list)
+    expose_as_tools: list[str] | None = None
     log_level: str = "INFO"
     max_line_bytes: int = _DEFAULT_MAX_LINE_BYTES
     shutdown_grace: float = 30.0
