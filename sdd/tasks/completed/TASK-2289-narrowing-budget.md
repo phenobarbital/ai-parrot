@@ -183,10 +183,37 @@ class TestSelection:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-20
+**Notes**: Added `ClaudeAgentToolBridge.select(query, limit)`, delegating
+scoring entirely to `ToolManager.rank_tools()` (never reimplemented
+here). Treats the tool literally named `search_tools` as structurally
+excluded from the "registry" population (mirroring `rank_tools()`'s own
+exclusion) so it never shows up as a false "dropped by narrowing" entry.
+`limit <= 0` returns `[]` (warns only if the registry was non-empty);
+a blank/whitespace query falls back to registration order
+(`get_all_tools()[:limit]`) instead of an empty selection; when the
+registry exceeds `limit`, logs one WARNING naming both the dropped count
+and every dropped tool's name — nothing is silently truncated.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Wired into `claude_agent.py`'s `_build_options()` injection path: it now
+always calls `bridge.select(prompt or "", merged.max_exposed_tools)`
+when `expose_parrot_tools` is true (regardless of registry size — an
+empty selection naturally skips server injection, which also covers the
+`limit=0` "no server" acceptance criterion for free), replacing the
+TASK-2288 placeholder that passed the full `get_all_tools()` list
+unranked.
 
-**Deviations from spec**: none | describe if any
+7 new tests in `TestSelection` (`tests/clients/test_claude_agent_bridge.py`):
+respects limit, delegates to `rank_tools()` (spied), registry-smaller-
+than-budget silence, dropped-names-in-log content, `limit=0`, blank-
+prompt stable-order fallback (compares empty vs whitespace-only), and
+`search_tools` never counted as dropped. All 57 tests in
+`tests/clients/test_claude_agent.py` + `test_claude_agent_bridge.py`
+pass; the older `packages/ai-parrot/tests/clients/test_claude_agent.py`
+(8 tests) still passes untouched. Zero new `ruff check` findings
+(`claude_agent.py` stays at its 89-finding baseline; one `UP037`
+quoted-annotation nit on the new `select()` signature was introduced and
+immediately auto-fixed).
+
+**Deviations from spec**: none

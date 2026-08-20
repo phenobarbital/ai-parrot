@@ -88,7 +88,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Edits both claude_agent_bridge.py (TASK-2287) and claude_agent.py (TASK-2288), and calls rank_tools() from TASK-2285. Sequential by construction.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2289-narrowing-budget.md"
+      "completed_at": "2026-08-20T02:07:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2289-narrowing-budget.md"
     },
     {
       "id": "TASK-2290",
