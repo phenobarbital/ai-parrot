@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-437
 **Date**: 2026-08-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -571,11 +571,11 @@ if __name__ == "__main__":
   self-contained script per model.
 - [x] README or docstrings only? — *Resolved in brainstorm*: Shared README.md
   in the `aws/` directory.
-- [ ] Should Deepseek V3.2 and MiniMax M2.5 be added to `PUBLIC_TO_BEDROCK` in
+- [x] Should Deepseek V3.2 and MiniMax M2.5 be added to `PUBLIC_TO_BEDROCK` in
   `bedrock_models.py`? — *Owner: Jesus Lara*: Currently they pass through as
   vendor-namespaced raw strings (`"deepseek.v3.2"`, `"minimax.minimax-m2.5"`).
   Adding them would provide friendly aliases. Low priority — can be a follow-up
-  feature.
+  feature.: Yes
 
 ---
 
