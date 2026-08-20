@@ -110,7 +110,7 @@
       "feature_id": "FEAT-434",
       "feature": "claude-agent-tool-bridge",
       "spec": "sdd/specs/claude-agent-tool-bridge.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Spans parrot/agents/claude_code.py, the bridge module and agentd/service.py; needs the PermissionContext from TASK-2286 and the handler seam from TASK-2287.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:25:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2290-bridged-hitl-wiring.md"
+      "completed_at": "2026-08-20T02:23:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2290-bridged-hitl-wiring.md"
     },
     {
       "id": "TASK-2291",
