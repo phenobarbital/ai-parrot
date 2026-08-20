@@ -13,8 +13,8 @@ invariant from ``revision_handoff.py`` applies here too), it:
    unavailable. No code ``wikitoolkit upsert`` here (deferred to the
    post-merge hook — spec's resolved decision).
 3. Publishes the run outcome to the knowledge graph via
-   ``DevLoopGraphMemory.publish_run_outcome()`` — no-op with a debug log
-   when FEAT-377/B is unavailable.
+   ``DevLoopGraphMemory.publish_run_outcome()`` — a strict no-op when no
+   facade was injected (the default).
 4. Transitions Jira + comments ONLY when a ticket key is present
    (feature-mode Jira is optional and link-only — this node never
    creates a ticket).
@@ -34,6 +34,7 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatchers.nova import summarize_pr_changes
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     DevelopmentOutput,
     FeedbackDecision,
@@ -82,6 +83,9 @@ class FeatureHandoffNode(DevLoopNode):
             ``conf.DEV_LOOP_DOCS_ARTIFACT_DIR``.
         wiki_page_ingest: Overrides ``conf.DEV_LOOP_WIKI_PAGE_INGEST`` when
             not ``None``.
+        graph_memory: Optional :class:`DevLoopGraphMemory` used to record
+            this run's outcome in the graph plane. ``None`` (the default)
+            disables the seam entirely.
         name: Node id, default ``"feature_handoff"``.
     """
 
@@ -97,6 +101,7 @@ class FeatureHandoffNode(DevLoopNode):
         base_branch: str = "dev",
         docs_artifact_dir: Optional[str] = None,
         wiki_page_ingest: Optional[bool] = None,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
         name: str = "feature_handoff",
     ) -> None:
         super().__init__(node_id=name)
@@ -117,6 +122,11 @@ class FeatureHandoffNode(DevLoopNode):
             self, "_wiki_page_ingest",
             conf.DEV_LOOP_WIKI_PAGE_INGEST if wiki_page_ingest is None else wiki_page_ingest,
         )
+        # FEAT-377 TASK-1915 (G2 seam 3): opt-in graph write-back, built
+        # once by the caller via ``DevLoopGraphMemory.from_config()``.
+        # None (default) is a strict no-op — same contract as
+        # DevLoopCloseNode/FailureHandlerNode.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     # ------------------------------------------------------------------
     # Execute
@@ -205,8 +215,12 @@ class FeatureHandoffNode(DevLoopNode):
         # 4. Wiki page ingest (optional, degrades independently).
         wiki_page_id = await self._ingest_wiki_page(planner, docs_content)
 
-        # 5. Graph write-back (no-op when FEAT-377/B is unavailable).
-        await self._publish_graph_outcome(planner, pr_url)
+        # 5. Graph write-back (no-op when no facade was injected).
+        await self._publish_graph_outcome(
+            run_id=shared.get("run_id", ""),
+            qa_report=qa_report,
+            summary=f"{planner.feat_id} handed off: {pr_url}",
+        )
 
         # Record DocsArtifactLinked (TASK-1919).
         session_host: Optional[SessionHost] = shared.get("session_host")
@@ -476,31 +490,31 @@ class FeatureHandoffNode(DevLoopNode):
     # Internal — graph write-back (FEAT-377/B, optional)
     # ------------------------------------------------------------------
 
-    async def _publish_graph_outcome(self, planner: PlannerOutput, pr_url: str) -> None:
-        """Best-effort ``DevLoopGraphMemory.publish_run_outcome()`` (FEAT-377/B).
+    async def _publish_graph_outcome(
+        self,
+        *,
+        run_id: str,
+        qa_report: Optional[QAReport],
+        summary: str,
+    ) -> None:
+        """Best-effort ``DevLoopGraphMemory.publish_run_outcome()`` (FEAT-377 G2).
 
-        FEAT-377 had not merged to ``dev`` as of this task (2026-07-27) —
-        the import itself is the primary degradation guard. Once it lands,
-        revisit this call against its actual landed signature.
+        Mirrors ``DevLoopCloseNode``'s seam: the facade is injected (built
+        once by the caller via ``DevLoopGraphMemory.from_config()``), never
+        constructed here, and ``publish_run_outcome`` already degrades to a
+        logged warning on any failure — it never raises into this terminal
+        node.
+
+        Args:
+            run_id: This run's id, from shared state.
+            qa_report: The run's :class:`QAReport`, when QA produced one.
+            summary: Human-readable outcome summary stored on the RUN node.
         """
-        try:
-            from parrot.flows.dev_loop.graph_memory import (  # type: ignore[import-not-found]
-                DevLoopGraphMemory,
-            )
-        except ImportError:
-            self.logger.debug(
-                "DevLoopGraphMemory not available (FEAT-377/B not yet "
-                "merged); skipping graph write-back for %s.", planner.feat_id,
-            )
+        if self._graph_memory is None:
             return
-        try:
-            memory = DevLoopGraphMemory()
-            await memory.publish_run_outcome(feat_id=planner.feat_id, pr_url=pr_url)
-        except Exception as exc:  # noqa: BLE001 - graph write-back is best-effort
-            self.logger.warning(
-                "DevLoopGraphMemory.publish_run_outcome failed for %s "
-                "(degrading): %s", planner.feat_id, exc,
-            )
+        await self._graph_memory.publish_run_outcome(
+            run_id, qa_report, "succeeded", summary,
+        )
 
     # ------------------------------------------------------------------
     # Internal — PR copy
