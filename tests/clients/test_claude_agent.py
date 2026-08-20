@@ -17,20 +17,24 @@ Covers (per spec §4 / TASK-861 acceptance criteria):
   ``pip install ai-parrot[claude-agent]`` hint.
 * A live smoke test marked ``@pytest.mark.live`` skips when the bundled
   ``claude`` CLI is unavailable.
+* FEAT-434 (TASK-2288): ``_build_options()`` bridges the agent's
+  registered tools as an in-process SDK-MCP server, reconciles
+  ``allowed_tools``, and threads the turn's prompt (``resume``'s
+  ``user_input``) through all four surfaces.
 
 All non-live tests fully mock the SDK; no subprocess is spawned.
 """
 from __future__ import annotations
 
-import importlib
 import shutil
 import sys
 from types import SimpleNamespace
-from typing import Any, List
+from typing import Any
 from unittest.mock import patch
 
 import pytest
-
+from parrot.tools.abstract import AbstractTool, ToolResult
+from parrot.tools.manager import ToolManager
 
 # ---------------------------------------------------------------------------
 # Helpers — async-iter wrapper for query() mocks
@@ -40,10 +44,10 @@ import pytest
 class _AsyncIter:
     """Wrap a synchronous iterable as an async iterator."""
 
-    def __init__(self, items: List[Any]) -> None:
+    def __init__(self, items: list[Any]) -> None:
         self._items = list(items)
 
-    def __aiter__(self) -> "_AsyncIter":
+    def __aiter__(self) -> _AsyncIter:
         return self
 
     async def __anext__(self) -> Any:
@@ -52,7 +56,7 @@ class _AsyncIter:
         return self._items.pop(0)
 
 
-def _fake_query_factory(messages: List[Any]):
+def _fake_query_factory(messages: list[Any]):
     """Build a stand-in for ``claude_agent_sdk.query`` that yields messages."""
 
     def _query(*args: Any, **kwargs: Any) -> _AsyncIter:
@@ -94,8 +98,8 @@ class TestClaudeAgentAsk:
 
     @pytest.mark.asyncio
     async def test_ask_assembles_text(self, fake_claude_agent_messages):
-        from parrot.clients.claude_agent import ClaudeAgentClient
         from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
 
         fake_query = _fake_query_factory(fake_claude_agent_messages)
 
@@ -121,8 +125,8 @@ class TestClaudeAgentAskStream:
 
     @pytest.mark.asyncio
     async def test_yields_text_in_order(self, fake_claude_agent_messages):
-        from parrot.clients.claude_agent import ClaudeAgentClient
         from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
         from parrot.models import AIMessage
 
         fake_query = _fake_query_factory(fake_claude_agent_messages)
@@ -133,7 +137,7 @@ class TestClaudeAgentAskStream:
             return_value=(fake_query, object, lambda **_: SimpleNamespace()),
         ):
             client = ClaudeAgentClient()
-            pieces: List[Any] = []
+            pieces: list[Any] = []
             async for piece in client.ask_stream("hi"):
                 pieces.append(piece)
 
@@ -149,8 +153,8 @@ class TestClaudeAgentToolUseRecorded:
 
     @pytest.mark.asyncio
     async def test_tool_use_recorded(self):
-        from parrot.clients.claude_agent import ClaudeAgentClient
         from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
 
         # Build a stream with a ToolUseBlock interleaved with text.
         try:
@@ -355,8 +359,8 @@ class TestClaudeAgentResume:
 
     @pytest.mark.asyncio
     async def test_resume_collects_messages(self, fake_claude_agent_messages):
-        from parrot.clients.claude_agent import ClaudeAgentClient
         from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
 
         fake_query = _fake_query_factory(fake_claude_agent_messages)
 
@@ -371,6 +375,323 @@ class TestClaudeAgentResume:
             )
         assert result.output == "hello world"
         assert result.session_id == "sess-x"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-434 (TASK-2288) — bridge injection, allowed_tools reconciliation,
+# prompt threading
+# ---------------------------------------------------------------------------
+
+
+class _StubTool(AbstractTool):
+    """A trivial registered tool used to exercise bridge injection."""
+
+    name = "stub_tool"
+
+    def __init__(self, **kwargs):
+        super().__init__(description="A stub tool.", **kwargs)
+
+    async def _execute(self, **kwargs: Any) -> ToolResult:
+        return ToolResult(success=True, status="success", result="ok")
+
+
+class _ReadNamedTool(AbstractTool):
+    """A registered tool literally named like a native CC tool (collision probe)."""
+
+    name = "Read"
+
+    def __init__(self, **kwargs):
+        super().__init__(description="Collides with a native tool name.", **kwargs)
+
+    async def _execute(self, **kwargs: Any) -> ToolResult:
+        return ToolResult(success=True, status="success", result="ok")
+
+
+def _fake_options_capture():
+    """A `_import_sdk`-compatible `ClaudeAgentOptions` stand-in that records kwargs."""
+    captured: dict = {}
+
+    class _FakeOptions:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    return captured, _FakeOptions
+
+
+class TestBridgeInjection:
+    """`_build_options()` bridges registered tools as an SDK-MCP server."""
+
+    def test_no_tool_manager_injects_no_server(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        client = ca_module.ClaudeAgentClient()
+        client._build_options()
+
+        assert "mcp_servers" not in captured
+
+    def test_empty_registry_injects_no_server(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        client = ca_module.ClaudeAgentClient(tool_manager=ToolManager())
+        client._build_options()
+
+        assert "mcp_servers" not in captured
+
+    def test_server_injected_when_tools_registered(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        client._build_options()
+
+        assert "mcp_servers" in captured
+        assert "parrot" in captured["mcp_servers"]
+        assert captured["mcp_servers"]["parrot"]["type"] == "sdk"
+
+    def test_caller_supplied_mcp_servers_survive_merge(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        run_opts = ca_module.ClaudeAgentRunOptions(
+            mcp_servers={"other": {"type": "stdio", "command": "x"}}
+        )
+        client._build_options(run_options=run_opts)
+
+        assert "other" in captured["mcp_servers"]
+        assert "parrot" in captured["mcp_servers"]
+
+    def test_extra_options_mcp_servers_still_wins(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        run_opts = ca_module.ClaudeAgentRunOptions(
+            extra_options={"mcp_servers": {"only": "this"}}
+        )
+        client._build_options(run_options=run_opts)
+
+        assert captured["mcp_servers"] == {"only": "this"}
+
+    def test_expose_parrot_tools_false_disables_bridge(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        run_opts = ca_module.ClaudeAgentRunOptions(expose_parrot_tools=False)
+        client._build_options(run_options=run_opts)
+
+        assert "mcp_servers" not in captured
+
+    @pytest.mark.asyncio
+    async def test_use_tools_false_disables_bridge(self, fake_claude_agent_messages, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
+
+        captured, fake_options = _fake_options_capture()
+        fake_query = _fake_query_factory(fake_claude_agent_messages)
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+
+        with patch.object(
+            ca_module, "_import_sdk", return_value=(fake_query, object, fake_options)
+        ):
+            client = ClaudeAgentClient(tool_manager=tm)
+            await client.ask("hi", use_tools=False)
+
+        assert "mcp_servers" not in captured
+
+
+class TestAllowedToolsReconciliation:
+    """`allowed_tools` gains the exposed `mcp__parrot__*` names when set."""
+
+    def test_set_allowed_tools_gains_exposed_names(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        run_opts = ca_module.ClaudeAgentRunOptions(allowed_tools=["Read", "Bash"])
+        client._build_options(run_options=run_opts)
+
+        assert "Read" in captured["allowed_tools"]
+        assert "Bash" in captured["allowed_tools"]
+        assert "mcp__parrot__stub_tool" in captured["allowed_tools"]
+
+    def test_empty_allowed_tools_gains_exposed_names(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        run_opts = ca_module.ClaudeAgentRunOptions(allowed_tools=[])
+        client._build_options(run_options=run_opts)
+
+        assert captured["allowed_tools"] == ["mcp__parrot__stub_tool"]
+
+    def test_unset_allowed_tools_stays_unset(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_StubTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        client._build_options()
+
+        assert "allowed_tools" not in captured
+
+    def test_bare_colliding_name_not_appended(self, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+
+        captured, fake_options = _fake_options_capture()
+        monkeypatch.setattr(ca_module, "_import_sdk", lambda: (None, None, fake_options))
+
+        tm = ToolManager()
+        tm.register_tool(_ReadNamedTool())
+        client = ca_module.ClaudeAgentClient(tool_manager=tm)
+        run_opts = ca_module.ClaudeAgentRunOptions(allowed_tools=["Read"])
+        client._build_options(run_options=run_opts)
+
+        # The bare native "Read" stays exactly once; the parrot tool is
+        # reachable only under its prefixed name.
+        assert captured["allowed_tools"].count("Read") == 1
+        assert "mcp__parrot__Read" in captured["allowed_tools"]
+
+
+class TestPromptThreading:
+    """All four surfaces thread the turn's text into `_build_options(prompt=...)`."""
+
+    @pytest.mark.asyncio
+    async def test_ask_threads_prompt(self, fake_claude_agent_messages, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
+
+        captured = {}
+        original_build = ca_module.ClaudeAgentClient._build_options
+
+        def _spy(self, **kwargs):
+            captured.update(kwargs)
+            return original_build(self, **kwargs)
+
+        monkeypatch.setattr(ca_module.ClaudeAgentClient, "_build_options", _spy)
+        fake_query = _fake_query_factory(fake_claude_agent_messages)
+
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(fake_query, object, lambda **_: SimpleNamespace()),
+        ):
+            client = ClaudeAgentClient()
+            await client.ask("test prompt")
+
+        assert captured["prompt"] == "test prompt"
+
+    @pytest.mark.asyncio
+    async def test_ask_stream_threads_prompt(self, fake_claude_agent_messages, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
+
+        captured = {}
+        original_build = ca_module.ClaudeAgentClient._build_options
+
+        def _spy(self, **kwargs):
+            captured.update(kwargs)
+            return original_build(self, **kwargs)
+
+        monkeypatch.setattr(ca_module.ClaudeAgentClient, "_build_options", _spy)
+        fake_query = _fake_query_factory(fake_claude_agent_messages)
+
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(fake_query, object, lambda **_: SimpleNamespace()),
+        ):
+            client = ClaudeAgentClient()
+            async for _ in client.ask_stream("stream prompt"):
+                pass
+
+        assert captured["prompt"] == "stream prompt"
+
+    @pytest.mark.asyncio
+    async def test_invoke_threads_prompt(self, fake_claude_agent_messages, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
+
+        captured = {}
+        original_build = ca_module.ClaudeAgentClient._build_options
+
+        def _spy(self, **kwargs):
+            captured.update(kwargs)
+            return original_build(self, **kwargs)
+
+        monkeypatch.setattr(ca_module.ClaudeAgentClient, "_build_options", _spy)
+        fake_query = _fake_query_factory(fake_claude_agent_messages)
+
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(fake_query, object, lambda **_: SimpleNamespace()),
+        ):
+            client = ClaudeAgentClient()
+            await client.invoke("invoke prompt")
+
+        assert captured["prompt"] == "invoke prompt"
+
+    @pytest.mark.asyncio
+    async def test_resume_threads_user_input(self, fake_claude_agent_messages, monkeypatch):
+        from parrot.clients import claude_agent as ca_module
+        from parrot.clients.claude_agent import ClaudeAgentClient
+
+        captured = {}
+        original_build = ca_module.ClaudeAgentClient._build_options
+
+        def _spy(self, **kwargs):
+            captured.update(kwargs)
+            return original_build(self, **kwargs)
+
+        monkeypatch.setattr(ca_module.ClaudeAgentClient, "_build_options", _spy)
+        fake_query = _fake_query_factory(fake_claude_agent_messages)
+
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(fake_query, object, lambda **_: SimpleNamespace()),
+        ):
+            client = ClaudeAgentClient()
+            await client.resume(session_id="sess-x", user_input="continue please")
+
+        assert captured["prompt"] == "continue please"
 
 
 @pytest.mark.live
