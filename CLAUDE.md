@@ -121,26 +121,53 @@ Consume any OpenAPI spec as a dynamic toolkit using `OpenAPIToolkit`
 - Never run `rm -rf` or system-level deletions
 - No form submissions or logins without user approval
 
-### Adversarial Second Opinion: Codex CLI
+### Adversarial Second Opinion
 
-The OpenAI `codex` CLI is installed and authenticated. Use it as an
-independent perspective for adversarial code reviews, design opinions,
-brainstorming, research cross-checks, and implementation sanity checks.
+Use an external CLI agent as an independent perspective for adversarial
+code reviews, design opinions, brainstorming, research cross-checks, and
+implementation sanity checks. **Prefer `agy` (Google Gemini)** when
+available; fall back to `codex` (OpenAI) otherwise.
 
 Rules:
-- Never feed Codex your reasoning, justification, or preferred conclusion.
-  Give it only the diff, the requirement, and the question. Supplying your
-  conclusions produces ratification, not review.
-- Treat Codex output as advisory. For every substantive finding, explicitly
-  mark it as `CONFIRM` (adopt), `REJECT` (with reason), or `ESCALATE`.
-- Never silently concede to Codex and never silently drop a finding.
-- Run each Codex call as a full background agent session. Typical runtime is
-  30 seconds to 2 minutes; do not call it per edit or from hooks.
+- Never feed the reviewer your reasoning, justification, or preferred
+  conclusion. Give it only the diff, the requirement, and the question.
+  Supplying your conclusions produces ratification, not review.
+- Treat reviewer output as advisory. For every substantive finding,
+  explicitly mark it as `CONFIRM` (adopt), `REJECT` (with reason), or
+  `ESCALATE`.
+- Never silently concede to the reviewer and never silently drop a finding.
+- Run each reviewer call as a full background agent session. Typical runtime
+  is 30 seconds to 2 minutes; do not call it per edit or from hooks.
 - For parallel perspective, use one Claude subagent and one background
-  `codex exec` with the same neutral brief, then synthesize agreements and
-  disagreements.
+  reviewer session with the same neutral brief, then synthesize agreements
+  and disagreements.
 
-Commands:
+**Detection — pick the first available:**
+```bash
+if command -v agy &>/dev/null; then REVIEWER="agy"
+elif command -v codex &>/dev/null; then REVIEWER="codex"
+else echo "No external reviewer CLI found"; fi
+```
+
+#### agy commands (preferred)
+```bash
+# Reviews
+agy --sandbox --print "Review the uncommitted changes (run git diff). \
+  Focus on correctness, security, async patterns, and project conventions. \
+  Output findings with file:line references."
+agy --sandbox --print "Review changes between current branch and dev \
+  (run git diff dev...HEAD). List findings with file:line references."
+agy --sandbox --print "Review commit <sha> (run git show <sha>). \
+  List findings with file:line references."
+
+# Opinions, brainstorming, and cross-checks
+agy --sandbox --print "<neutral brief>" > <scratch-file>
+
+# Follow-up in the same agy session
+agy --continue --print "<question>"
+```
+
+#### codex commands (fallback)
 ```bash
 # Reviews
 codex exec review --uncommitted
@@ -153,16 +180,10 @@ codex exec --sandbox read-only -o <scratch-file> "<neutral brief>"
 # Follow-up in the same Codex session
 codex exec resume --last "<question>"
 
-# Image generation / mockups / wireframes
+# Image generation / mockups / wireframes (codex-only)
 codex exec --sandbox workspace-write -o <out.txt> \
   "Generate an image: <description>. Save as <name>.png"
-codex exec --sandbox workspace-write -i <screenshot.png> -o <out.txt> \
-  "Generate an image variant: <neutral brief>. Save as <name>.png"
 ```
-
-Image-generation gotcha: `resume` does not accept `--sandbox`; use
-`-c sandbox_mode="workspace-write"` on resume when a writable sandbox is
-required.
 
 ## Key References
 - Architecture & patterns: @.agent/CONTEXT.md
