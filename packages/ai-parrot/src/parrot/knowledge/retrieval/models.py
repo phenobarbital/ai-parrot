@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Literal
+from enum import StrEnum
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -175,3 +176,179 @@ class EdgeRef(BaseModel):
     target: NodeRef
     kind: EdgeKind
     derivation: Literal["ast", "package_metadata"]
+
+
+class EvidenceOrigin(StrEnum):
+    """Where a `ContextUnit`'s text came from.
+
+    Closed set, widened pre-emptively for the cross-corpus bridge (OQ-6).
+    The ``L2_*`` members are **RESERVED**: declared now so the union is
+    stable across a future spec, but no retrieval policy in THIS feature may
+    emit them until the cross-corpus bridge spec lands. Emitting a reserved
+    origin from a policy is a contract violation, caught by the
+    TASK-2272 parametrised contract test.
+
+    Attributes:
+        L0_SOURCE: Raw source excerpt read directly from the L0 graph.
+        L1_WIKI: Prose from an LLM-synthesized `WikiSection`.
+        L1_RATIONALE: Prose sourced from a `Rationale` L0 node / wiki
+            ``## Rationale`` section.
+        L2_DOC: RESERVED — ADRs, SDD specs, tickets. Not emittable in v1.
+        L2_NORM: RESERVED — legal/regulatory clauses (Fieldsync). Not
+            emittable in v1.
+        L2_EXTERNAL: RESERVED — third-party dependency docs. Not emittable
+            in v1.
+    """
+
+    L0_SOURCE = "l0_source"
+    L1_WIKI = "l1_wiki"
+    L1_RATIONALE = "l1_rationale"
+    L2_DOC = "l2_doc"
+    L2_NORM = "l2_norm"
+    L2_EXTERNAL = "l2_external"
+
+
+class Evidence(BaseModel):
+    """Provenance for a single retrieved unit, sufficient to attribute it.
+
+    Satisfies INV-4: every unit in a `ContextBundle` must be traceable to
+    ``file:line_span`` at a concrete rev, except `RATIONALE`-kind evidence
+    (``line_span`` may be ``None`` until the L0 lineno fix lands — RQ-4).
+
+    Attributes:
+        node: The `NodeRef` this evidence is about.
+        digest: Content hash of the L0 node at ``rev``, computed over the
+            bytes actually served (spec §3.5.1). Populated by TASK-2273;
+            this task only defines the field.
+        digest_scope: The granularity the digest was computed at
+            (``"span"``/``"file"``/``"summary"``). Left as a plain ``str``
+            here — tightened to the `DigestScope` enum once TASK-2273 lands.
+        line_span: ``(start_line, end_line)``, or ``None`` for nodes with no
+            line span (rationale, module-level, synthetic nodes).
+        edge_path: How this node was reached from the seed set — empty for
+            direct hits (`DirectSymbolPolicy`), populated for traversal
+            policies.
+        origin: Where the served text came from — see `EvidenceOrigin`.
+        score: Policy-local relevance score. **Not comparable across
+            policies** — each policy has its own scale and semantics; do not
+            sort or threshold scores from different policies together.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    node: NodeRef
+    digest: str
+    digest_scope: str
+    line_span: tuple[int, int] | None = None
+    edge_path: tuple[EdgeRef, ...] = ()
+    origin: EvidenceOrigin
+    score: float
+
+
+class ContextUnit(BaseModel):
+    """A single attributable piece of retrieved context.
+
+    Attributes:
+        text: The source excerpt or wiki prose actually served to the caller.
+        evidence: Provenance for ``text`` — see `Evidence`.
+        token_estimate: Estimated token count of ``text``, used for budget
+            accounting against `RetrievalBudget.max_tokens`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    text: str
+    evidence: Evidence
+    token_estimate: int
+
+
+class ContextBundle(BaseModel):
+    """The retrieval layer's output: a bounded, attributable set of units.
+
+    Attributes:
+        schema_version: Bump on any breaking change to this shape. Declared
+            explicitly (unlike `EventEnvelope`'s past omission) so persisted
+            and traced bundles remain interpretable across versions.
+        units: The retrieved, budget-bounded context units.
+        decision: The full routing trace that produced this bundle —
+            `RetrievalRoutingDecision` (TASK-2278). Typed ``Any`` here
+            because that model does not exist yet; tighten the annotation
+            when TASK-2278 lands.
+        truncated: INV-5 — ``True`` iff the budget was exhausted before the
+            policy completed. Partial results are flagged, never disguised.
+        stale_sources: INV-2 — nodes whose backing wiki section was served
+            stale (with a staleness marker) rather than freshly regenerated.
+        token_total: Sum of ``token_estimate`` across ``units``.
+        elapsed_ms: Wall-clock time spent producing this bundle.
+        mixed_freshness: RQ-2 — ``True`` when the selected `WikiSection`s do
+            not all share one `coherence_group`, i.e. the bundle describes
+            more than one point-in-time state of the code. Surfaced, not
+            prevented.
+        index_pin_mismatch: §3.5.3 — ``True`` when the sampled pin-coherence
+            check found a mismatch and the request was served anyway under
+            ``budget.allow_stale``.
+        boundary_truncation: §5.3.1 — ``True`` when traversal was terminated
+            at a cross-repo boundary because the target repo is absent from
+            `WorkspacePin.pins`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    units: tuple[ContextUnit, ...]
+    decision: Any
+    truncated: bool
+    stale_sources: tuple[NodeRef, ...] = ()
+    token_total: int
+    elapsed_ms: float
+    mixed_freshness: bool = False
+    index_pin_mismatch: bool = False
+    boundary_truncation: bool = False
+
+
+class RetrievalBudget(BaseModel):
+    """Bounds a retrieval request must respect (INV-5: budget honesty).
+
+    Attributes:
+        deadline_ms: Wall-clock deadline for the whole request. Policies are
+            interruptible and must return the best partial result rather
+            than overrun.
+        max_tokens: Maximum total token budget across all `ContextUnit`s.
+        max_llm_calls: ``0`` = synthesis-free path (no L1 regeneration
+            allowed); ``>0`` permits L1 lazy fill / regeneration.
+        max_expansion_nodes: Upper bound on nodes visited during traversal
+            (`expand` stage of `RetrievalPolicyProtocol`).
+        allow_stale: Whether a stale `WikiSection` may be served with a
+            staleness marker, versus falling back to L0 source excerpts.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    deadline_ms: int = 800
+    max_tokens: int = 12_000
+    max_llm_calls: int = 0
+    max_expansion_nodes: int = 400
+    allow_stale: bool = True
+
+
+class RetrievalRequest(BaseModel):
+    """A single retrieval request over a pinned workspace.
+
+    Attributes:
+        query: The natural-language question to answer.
+        workspace: The frozen set of repo/rev pins this request is scoped
+            to. Typed ``Any`` here because `WorkspacePin` (TASK-2274) does
+            not exist yet; tighten the annotation when it lands.
+        budget: The `RetrievalBudget` this request must respect.
+        policy_override: Escape hatch — bypasses `QueryClassifier` and
+            forces a specific policy. Logged with
+            ``matched_rule="OVERRIDE"``. Typed ``Any`` here because
+            `RetrievalPolicy` (TASK-2280 onward) does not exist yet.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    query: str
+    workspace: Any
+    budget: RetrievalBudget = RetrievalBudget()
+    policy_override: Any | None = None
