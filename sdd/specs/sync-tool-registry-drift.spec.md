@@ -56,11 +56,12 @@ already present in the current registry (not just keys) splits them into
 three distinct categories — this distinction is the crux of the spec and
 was not visible before this analysis:
 
-1. **49 genuinely unregistered classes** — the dotted import path does
-   not appear anywhere in the current `TOOL_REGISTRY.values()`. These are
-   real tools/toolkits added to the source tree without ever being wired
-   into the registry. **In scope: add these.**
-2. **42 "alias duplicates"** — the scanned class **is already registered**
+1. **48 genuinely unregistered classes** — no existing registry entry
+   resolves (by import identity, not just string equality — see the
+   `multi_store_search` correction below) to the same class object.
+   These are real tools/toolkits added to the source tree without ever
+   being wired into the registry. **In scope: add these.**
+2. **43 "alias duplicates"** — the scanned class **is already registered**
    under a different, hand-chosen key (e.g. existing key `"bestbuy"` →
    `parrot_tools.retail.bby.BestBuyToolkit`, while the generator's naming
    convention independently derives `"best_buy"` for the exact same
@@ -68,6 +69,27 @@ was not visible before this analysis:
    pointing at an already-registered class — not closing drift, just
    adding ambiguous duplicate aliases. **Out of scope for this task** —
    see §1 Non-Goals and §8 Open Questions.
+
+   **Correction found during implementation (2026-08-20):** the initial
+   spec draft classified `"multi_store_search"` →
+   `parrot_tools.multistoresearch.toolkit.MultiStoreSearchToolkit` as
+   category 1 (true-new) because its dotted **string** differs from the
+   existing `"multi_store_search_toolkit"` →
+   `parrot_tools.multistoresearch.MultiStoreSearchToolkit` (a package-root
+   re-export vs. the submodule where the class is actually defined — the
+   same shape as the `odoo` rename in category 3). A string-equality
+   check on `.values()` does not catch this; only importing both dotted
+   paths and comparing the resulting class objects by identity (`is`)
+   does. Implementing this task's first draft added the key, which broke
+   `packages/ai-parrot-tools/tests/multistoresearch/test_registry.py
+   ::test_old_registry_key_removed` — a FEAT-379 clean-break-migration
+   regression test that explicitly asserts `"multi_store_search"` is
+   *not* a registry key (the old `MultiStoreSearchTool` class was
+   deliberately removed with no alias). This entry was moved to category
+   2/Appendix B and excluded. **Lesson for any future re-run of this
+   classification**: compare by imported class identity, not dotted-path
+   string equality — re-exports make the same class reachable via more
+   than one dotted path.
 3. **1 renamed value, same key** — `"odoo"` currently points to
    `parrot_tools.odoo.OdooToolkit` (a re-export); the scanner finds the
    class's actual defining module, `parrot_tools.odoo.toolkit.OdooToolkit`.
@@ -84,7 +106,7 @@ importable). **In scope: add it.**
 
 ### Goals
 - `packages/ai-parrot-tools/src/parrot_tools/__init__.py`'s
-  `TOOL_REGISTRY` gains the 49 genuinely-missing entries (§6 Appendix A,
+  `TOOL_REGISTRY` gains the 48 genuinely-missing entries (§6 Appendix A,
   "TRUE NEW" list) and the `"odoo"` value is corrected in place.
 - `packages/ai-parrot-loaders/src/parrot_loaders/__init__.py`'s
   `LOADER_REGISTRY` gains the 1 genuinely-missing `WebScrapingLoader`
@@ -96,13 +118,13 @@ importable). **In scope: add it.**
   labeled trailing comment section, not interleaved in a way that
   reorders or re-groups existing entries.
 - After this change, `python scripts/generate_tool_registry.py --check`
-  reports **only** the 42 known alias-duplicates (§1 Open Questions) as
+  reports **only** the 43 known alias-duplicates (§1 Open Questions) as
   remaining "changes" — i.e. drift is reduced from 93 lines to exactly
-  the 42 deferred alias-duplicate lines, not eliminated to zero (that
+  the 43 deferred alias-duplicate lines, not eliminated to zero (that
   would require resolving the naming-convention question first).
 
 ### Non-Goals (explicitly out of scope)
-- **Do NOT add any of the 42 alias-duplicate entries** listed in §6
+- **Do NOT add any of the 43 alias-duplicate entries** listed in §6
   Appendix B. Adding a second key for an already-registered class is a
   naming-policy decision (should the registry have exactly one canonical
   key per class, and if so, which naming convention wins — the curated
@@ -132,8 +154,8 @@ importable). **In scope: add it.**
 
 ### Overview
 
-This is a **data-sync task, not a code-logic change**: hand-add the 49 +
-1 = 50 missing entries (49 to `TOOL_REGISTRY`, 1 to `LOADER_REGISTRY`)
+This is a **data-sync task, not a code-logic change**: hand-add the 48 +
+1 = 49 missing entries (48 to `TOOL_REGISTRY`, 1 to `LOADER_REGISTRY`)
 and correct the 1 renamed value (`odoo`), directly editing the two
 `__init__.py` files with `Edit`, preserving every existing line. New
 entries go in a new trailing section so the diff is purely additive for
@@ -144,7 +166,7 @@ everything except the single `odoo` line.
 scripts/generate_tool_registry.py --check   (read-only, evidence source — NOT run in write mode)
         │
         ▼
-packages/ai-parrot-tools/src/parrot_tools/__init__.py       (hand-edited: +49 entries, ~1 renamed value)
+packages/ai-parrot-tools/src/parrot_tools/__init__.py       (hand-edited: +48 entries, ~1 renamed value)
 packages/ai-parrot-loaders/src/parrot_loaders/__init__.py   (hand-edited: +1 entry)
 ```
 
@@ -152,7 +174,7 @@ packages/ai-parrot-loaders/src/parrot_loaders/__init__.py   (hand-edited: +1 ent
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `packages/ai-parrot-tools/src/parrot_tools/__init__.py` | modify | append 49 entries in a new trailing section inside `TOOL_REGISTRY`; fix `"odoo"` value in place |
+| `packages/ai-parrot-tools/src/parrot_tools/__init__.py` | modify | append 48 entries in a new trailing section inside `TOOL_REGISTRY`; fix `"odoo"` value in place |
 | `packages/ai-parrot-loaders/src/parrot_loaders/__init__.py` | modify | append 1 entry (`WebScrapingLoader`) in a new trailing section inside `LOADER_REGISTRY` |
 | `scripts/generate_tool_registry.py` | verify only | run with `--check`/`--dry-run` to confirm before/after state; not modified |
 
@@ -177,7 +199,7 @@ values are dotted paths to classes that **already exist** in the tree
      unchanged.
   2. Immediately before the closing `}` of `TOOL_REGISTRY` (currently
      line ~150), add a new comment `# --- Synced from drift audit
-     (FEAT-436) ---` followed by the 49 entries from §6 Appendix A, TRUE
+     (FEAT-436) ---` followed by the 48 entries from §6 Appendix A, TRUE
      NEW list, each as `"<key>": "<dotted.path.ClassName>",` — alphabetized
      by key for reviewability.
 - **Depends on**: none.
@@ -220,7 +242,7 @@ covers the parser; it is unaffected by data-only edits to unrelated
 ### Manual Verification Commands
 ```bash
 python scripts/generate_tool_registry.py --check --tools-only
-# Expect: reports exactly 42 remaining "changes" (the deferred alias-duplicates
+# Expect: reports exactly 43 remaining "changes" (the deferred alias-duplicates
 # from §6 Appendix B) — NOT 92, NOT 0.
 
 python scripts/generate_tool_registry.py --check --loaders-only
@@ -236,20 +258,20 @@ python scripts/generate_tool_registry.py --check --loaders-only
       `"parrot_tools.odoo.toolkit.OdooToolkit"` (was
       `"parrot_tools.odoo.OdooToolkit"`).
 - [ ] `packages/ai-parrot-tools/src/parrot_tools/__init__.py`:
-      `TOOL_REGISTRY` contains all 49 keys listed in §6 Appendix A (TRUE
+      `TOOL_REGISTRY` contains all 48 keys listed in §6 Appendix A (TRUE
       NEW), each mapping to exactly the dotted path shown there.
 - [ ] `packages/ai-parrot-loaders/src/parrot_loaders/__init__.py`:
       `LOADER_REGISTRY` contains
       `"WebScrapingLoader": "parrot_loaders.webscraping.WebScrapingLoader"`.
-- [ ] None of the 42 keys listed in §6 Appendix B (alias-duplicates) were
+- [ ] None of the 43 keys listed in §6 Appendix B (alias-duplicates) were
       added to `TOOL_REGISTRY`.
 - [ ] Every pre-existing entry and every pre-existing `# --- ... ---`
       section comment in both files is byte-for-byte unchanged (verify
       with `git diff` — the diff must be purely additive except for the
       single `odoo` value line).
 - [ ] `python scripts/generate_tool_registry.py --check --tools-only`
-      reports exactly the 42 deferred alias-duplicates as remaining
-      changes (not 92, not 0) — confirms this task's 49 additions + 1
+      reports exactly the 43 deferred alias-duplicates as remaining
+      changes (not 92, not 0) — confirms this task's 48 additions + 1
       rename are exactly and only what landed.
 - [ ] `python scripts/generate_tool_registry.py --check --loaders-only`
       exits `0`.
@@ -298,7 +320,7 @@ LOADER_REGISTRY: dict[str, str] = {
 __all__ = ["__version__", "LOADER_REGISTRY"]   # line 45
 ```
 
-### Appendix A — TRUE NEW entries to add (49 tools + 1 loader, verified importable 2026-08-20)
+### Appendix A — TRUE NEW entries to add (48 tools + 1 loader, verified importable 2026-08-20)
 
 `TOOL_REGISTRY` additions:
 ```
@@ -328,7 +350,6 @@ __all__ = ["__version__", "LOADER_REGISTRY"]   # line 45
 "list_messages": "parrot_tools.o365.mail.ListMessagesTool",
 "list_one_drive_files": "parrot_tools.o365.onedrive.ListOneDriveFilesTool",
 "list_share_point_files": "parrot_tools.o365.sharepoint.ListSharePointFilesTool",
-"multi_store_search": "parrot_tools.multistoresearch.toolkit.MultiStoreSearchToolkit",
 "o365": "parrot_tools.o365.base.O365Tool",
 "office365": "parrot_tools.o365.oauth_toolkit.Office365Toolkit",
 "office365_file_management": "parrot_tools.o365.bundle.Office365FileManagementToolkit",
@@ -358,13 +379,13 @@ __all__ = ["__version__", "LOADER_REGISTRY"]   # line 45
 "WebScrapingLoader": "parrot_loaders.webscraping.WebScrapingLoader",
 ```
 
-All 50 dotted paths above were verified importable via
+All 49 dotted paths above were verified importable via
 `importlib.import_module(...)` + `getattr(...)` on 2026-08-20 against
 `dev` HEAD `0dfa99db9` — 0 failures.
 
-### Appendix B — Alias-duplicates to LEAVE UNADDED (42; deferred, see §8)
+### Appendix B — Alias-duplicates to LEAVE UNADDED (43; deferred, see §8)
 ```
-arango_db_search      → parrot_tools.arangodbsearch.ArangoDBSearchTool       (existing key: "arango_search" or similar — verify at implementation time)
+arango_db_search      → parrot_tools.arangodbsearch.ArangoDBSearchTool       (existing key: "arangodb_search")
 best_buy               → parrot_tools.retail.bby.BestBuyToolkit               (existing key: "bestbuy")
 break_even_analysis     → parrot_tools.breakeven.BreakEvenAnalysisTool
 cloud_sploit            → parrot_tools.cloudsploit.toolkit.CloudSploitToolkit
@@ -385,6 +406,7 @@ lead_iq                 → parrot_tools.leadiq.tool.LeadIQToolkit          (exi
 monte_carlo_simulation    → parrot_tools.montecarlo.MonteCarloSimulationTool
 ms_teams                → parrot_tools.msteams.MSTeamsToolkit             (existing key: "msteams")
 ms_word                 → parrot_tools.msword.MSWordTool
+multi_store_search       → parrot_tools.multistoresearch.toolkit.MultiStoreSearchToolkit   (existing key: "multi_store_search_toolkit" — SAME CLASS OBJECT via a package-root re-export vs. the submodule; NOT a string-value match, caught only by import-identity comparison; adding this exact key was also independently blocked by a FEAT-379 clean-break-migration regression test asserting it must NOT exist — see §1 correction note)
 network_ninja            → parrot_tools.networkninja.NetworkNinjaTool
 open_weather             → parrot_tools.openweather.OpenWeatherTool
 power_bi_query           → parrot_tools.powerbi.PowerBIQueryTool
@@ -409,7 +431,7 @@ zoom_us                 → parrot_tools.zoomtoolkit.ZoomUsToolkit          (exi
 ```
 (Determined by: value already present in `TOOL_REGISTRY.values()` under a
 different key, cross-referenced 2026-08-20 against `dev` HEAD `0dfa99db9`.
-The implementer MUST NOT add any of these 42 keys — re-verify this list
+The implementer MUST NOT add any of these 43 keys — re-verify this list
 against the then-current `--check --tools-only` output at implementation
 time in case unrelated commits shifted the registry in the interim; the
 categorization rule (value already in `.values()`) is what matters, not
@@ -433,7 +455,7 @@ this frozen list, if the two have drifted.)
 
 ### Patterns to Follow
 - Use `Edit` (not the generator script) on both `__init__.py` files.
-- Alphabetize the 49 (or 1) new entries within their new trailing
+- Alphabetize the 48 (or 1) new entries within their new trailing
   section for reviewability — the existing sections are NOT
   alphabetical (they're grouped by rollout batch), so do not attempt to
   re-sort or merge new entries into the old sections; a new, clearly
@@ -445,21 +467,21 @@ this frozen list, if the two have drifted.)
 
 ### Known Risks / Gotchas
 - **Do not trust `--check`'s raw diff count as "safe to auto-apply."**
-  As this spec demonstrates, 42 of the 92 reported "changes" are
-  same-class alias duplicates, not real gaps — always cross-reference
-  against `.values()`, not just against the raw generator diff, before
-  adding anything to a registry.
+  As this spec demonstrates, 43 of the 92 reported "changes" are
+  same-class alias duplicates, not real gaps — always cross-reference by
+  **import identity** (not string equality against `.values()`, which
+  misses re-export duplicates like `multi_store_search` — see the
+  correction note in §1) before adding anything to a registry.
 - The `"lambda"` key (existing, alias-duplicate, NOT added by this task)
   is a Python keyword as a *string* dict key, which is syntactically
   fine (`"lambda"` is a str literal, not an identifier) — no escaping
   concerns, just noting it for the implementer's sanity check when
   scanning the diff.
-- `arango_db_search`'s existing alias key was not pinned down precisely
-  during spec authoring (only confirmed the value collision, not the
-  exact existing key string) — the implementer should verify the exact
-  existing key via `grep -n "arangodbsearch" packages/ai-parrot-tools/src/parrot_tools/__init__.py`
-  before writing the Completion Note, but this does not change the
-  Non-Goal (still must not add `arango_db_search` as a new key).
+- `arango_db_search`'s existing alias key is `"arangodb_search"` (verified
+  during implementation via `grep -n "arangodbsearch"
+  packages/ai-parrot-tools/src/parrot_tools/__init__.py`) — this does not
+  change the Non-Goal (still must not add `arango_db_search` as a new
+  key).
 
 ### External Dependencies
 None.
@@ -469,17 +491,17 @@ None.
 ## 8. Open Questions
 
 - [ ] **Registry key-naming policy**: should `TOOL_REGISTRY` converge on
-      exactly one canonical key per class (deciding, for each of the 42
+      exactly one canonical key per class (deciding, for each of the 43
       alias-duplicates, whether the short hand-curated alias or
       `_class_to_key()`'s derived form wins), or is intentional
       dual-keying (both `"bestbuy"` and `"best_buy"` resolving to the
       same class) acceptable/desirable for discoverability? — *Owner:
       repo maintainer* — explicitly deferred; this spec only closes the
-      unambiguous 49+1 true-gap entries.
+      unambiguous 48+1 true-gap entries.
 - [ ] Once the naming-policy question above is resolved, should
       `_class_to_key()` itself be changed to match the curated
       convention (so future scans stop proposing a second key for
-      already-registered classes), or should the 42 existing short
+      already-registered classes), or should the 43 existing short
       aliases be renamed to match `_class_to_key()`'s output instead? —
       *Owner: repo maintainer* — out of scope here; likely its own
       follow-up spec once decided.
@@ -491,3 +513,4 @@ None.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-20 | Jesus | Initial draft — filed as a follow-up from FEAT-427's Completion Note recommendation |
+| 0.2 | 2026-08-20 | sdd-worker (TASK-2292) | Corrected classification: moved `multi_store_search` from Appendix A (true-new) to Appendix B (alias-duplicate) — it is the same class object as the existing `multi_store_search_toolkit` entry via a package-root re-export, only catchable by import-identity comparison, not string equality. Counts updated 49→48 true-new / 42→43 deferred throughout. Discovered because adding it broke `test_old_registry_key_removed` (FEAT-379 clean-break regression test). |

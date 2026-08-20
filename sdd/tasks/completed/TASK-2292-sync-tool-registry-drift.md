@@ -32,7 +32,7 @@ Module 1 + Module 2.
     `"parrot_tools.odoo.toolkit.OdooToolkit"` (same key, corrected value
     — the class's actual defining module; both paths currently resolve,
     this is a safe canonicalization).
-  - Add the 49 genuinely-missing entries listed in spec §6 Appendix A
+  - Add the 48 genuinely-missing entries listed in spec §6 Appendix A
     ("TRUE NEW") to `TOOL_REGISTRY`, in a new trailing comment section
     `# --- Synced from drift audit (FEAT-436) ---`, alphabetized by key.
 - In `packages/ai-parrot-loaders/src/parrot_loaders/__init__.py`:
@@ -44,7 +44,7 @@ Module 1 + Module 2.
   write mode).
 
 **NOT in scope** (spec §1 Non-Goals / §8 Open Questions):
-- Do **NOT** add any of the 42 "alias duplicate" keys listed in spec §6
+- Do **NOT** add any of the 43 "alias duplicate" keys listed in spec §6
   Appendix B (e.g. `best_buy`, `duck_duck_go`, `ms_teams`, `zipcode_api`,
   `zoom_us`, …) — each of these classes is **already registered** under
   a different, hand-curated key. Adding a second key for an
@@ -64,7 +64,7 @@ Module 1 + Module 2.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-tools/src/parrot_tools/__init__.py` | MODIFY | Fix `"odoo"` value; append 49 new entries in a new trailing section |
+| `packages/ai-parrot-tools/src/parrot_tools/__init__.py` | MODIFY | Fix `"odoo"` value; append 48 new entries in a new trailing section |
 | `packages/ai-parrot-loaders/src/parrot_loaders/__init__.py` | MODIFY | Append 1 new entry (`WebScrapingLoader`) in a new trailing section |
 
 No test files are created or modified by this task (pure data-sync; see
@@ -81,8 +81,8 @@ data change).
   the existing hand-curated section comments.
 - Match existing formatting exactly: `    "<key>": "<dotted.path.ClassName>",`
   (4-space indent, trailing comma, double quotes).
-- The full list of 49 `TOOL_REGISTRY` entries + 1 `LOADER_REGISTRY` entry
-  to add, and the full list of 42 alias-duplicate keys to leave unadded,
+- The full list of 48 `TOOL_REGISTRY` entries + 1 `LOADER_REGISTRY` entry
+  to add, and the full list of 43 alias-duplicate keys to leave unadded,
   are both given verbatim in spec §6 Appendix A / Appendix B — copy from
   there, do not re-derive by re-running the generator and guessing which
   "changes" are real gaps vs. alias duplicates (that classification is
@@ -90,8 +90,8 @@ data change).
   `--check` diff alone).
 - Re-verify Appendix B's list is still accurate at implementation time
   (`python scripts/generate_tool_registry.py --check --tools-only`
-  should report 92 changes broken down as exactly 49 additions + 1
-  rename that this task will apply, plus 42 additions this task must
+  should report 92 changes broken down as exactly 48 additions + 1
+  rename that this task will apply, plus 43 additions this task must
   leave alone) in case unrelated commits shifted the registry since the
   spec was written (2026-08-20, `dev` HEAD `0dfa99db9`).
 
@@ -110,18 +110,18 @@ data change).
 - [ ] `packages/ai-parrot-tools/src/parrot_tools/__init__.py`: `"odoo"`
       value is `"parrot_tools.odoo.toolkit.OdooToolkit"`.
 - [ ] `packages/ai-parrot-tools/src/parrot_tools/__init__.py`:
-      `TOOL_REGISTRY` contains all 49 keys from spec §6 Appendix A with
+      `TOOL_REGISTRY` contains all 48 keys from spec §6 Appendix A with
       exactly the dotted paths shown there.
 - [ ] `packages/ai-parrot-loaders/src/parrot_loaders/__init__.py`:
       `LOADER_REGISTRY` contains
       `"WebScrapingLoader": "parrot_loaders.webscraping.WebScrapingLoader"`.
-- [ ] None of the 42 alias-duplicate keys from spec §6 Appendix B were
+- [ ] None of the 43 alias-duplicate keys from spec §6 Appendix B were
       added.
 - [ ] `git diff` on both files shows only additive changes plus the
       single `odoo` value-line change — every pre-existing line
       (including every `# --- ... ---` comment) is untouched.
 - [ ] `python scripts/generate_tool_registry.py --check --tools-only`
-      reports exactly the 42 deferred alias-duplicates as remaining
+      reports exactly the 43 deferred alias-duplicates as remaining
       changes (not 92, not 0).
 - [ ] `python scripts/generate_tool_registry.py --check --loaders-only`
       exits `0`.
@@ -146,7 +146,87 @@ When complete:
 1. Move this file to `sdd/tasks/completed/`.
 2. Update `sdd/tasks/index/sync-tool-registry-drift.json` status to `"done"`.
 3. Add a completion note below, including the actual `--check` output
-   before/after and confirmation of the 42-remaining-changes assertion.
+   before/after and confirmation of the 43-remaining-changes assertion.
 
 ### Completion Note
-(Agent fills this in when done)
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-20
+
+Applied exactly the 48 `TOOL_REGISTRY` additions + 1 `odoo` value
+correction + 1 `LOADER_REGISTRY` addition, all via `Edit` (never ran the
+generator's write mode). `git diff` on both files is purely additive
+plus the single `odoo` value line, confirmed by inspection — no
+pre-existing entry or `# --- ... ---` comment was touched or reordered.
+
+**Before** (`dev` HEAD `78519f4d1`, `python scripts/generate_tool_registry.py --check`):
+```
+Would update TOOL_REGISTRY (92 changes): [91 additions + 1 rename]
+Would update LOADER_REGISTRY (1 changes): [1 addition]
+Registries are STALE.
+```
+
+**After** (`--check --tools-only`):
+```
+Would update TOOL_REGISTRY (43 changes): [exactly the 43 deferred alias-duplicates]
+Registries are STALE.
+```
+**After** (`--check --loaders-only`):
+```
+All registries are up to date.
+```
+
+**Deviation from spec — found and corrected during implementation**:
+the spec's first-draft Appendix A classified `"multi_store_search"` →
+`parrot_tools.multistoresearch.toolkit.MultiStoreSearchToolkit` as
+true-new (48 became 49 in the original draft). Applying it broke
+`packages/ai-parrot-tools/tests/multistoresearch/test_registry.py
+::test_old_registry_key_removed` — a FEAT-379 clean-break-migration
+regression test asserting `"multi_store_search"` must NOT be a
+registry key (the old `MultiStoreSearchTool` was deliberately removed,
+no alias). Root cause: the spec's classification compared dotted-path
+**strings** against `.values()`; this entry's value differs by module
+path from the existing `"multi_store_search_toolkit"` entry (package-root
+re-export `parrot_tools.multistoresearch.MultiStoreSearchToolkit` vs.
+the submodule `parrot_tools.multistoresearch.toolkit.MultiStoreSearchToolkit`)
+even though both resolve, by import, to the **same class object** —
+verified via `importlib.import_module(...)` + identity (`is`) comparison
+against every existing registry entry, not just string equality. Fixed
+by removing the entry from the edit and updating the spec itself
+(`sdd/specs/sync-tool-registry-drift.spec.md`, revision 0.2) to move it
+into Appendix B with an explanatory note, correcting all counts (49→48
+true-new, 42→43 deferred) throughout the spec and this task file.
+
+**Verification**:
+- All 49 in-scope dotted paths (48 tools + 1 loader, post-correction)
+  import successfully via `importlib.import_module` + `getattr` — 0
+  failures.
+- `TOOL_REGISTRY` grew from 118 → 166 entries (118 + 48); `LOADER_REGISTRY`
+  grew from 27 → 28 entries (27 + 1) — both confirmed by direct import.
+- `packages/ai-parrot-tools/tests/multistoresearch/test_registry.py`:
+  4/4 pass (this is the test that caught the classification error above).
+- Full `packages/ai-parrot-tools/tests/` suite: compared failing-test-ID
+  sets before vs. after this change (excluding 5 pre-existing,
+  unrelated collection errors present on `dev` before this task:
+  `shell_tool/test_command_rules.py`, `shell_tool/test_command_sanitizer.py`,
+  `shell_tool/test_security_policy.py`, `test_alpaca.py`,
+  `test_zoom_interface.py` — all `ModuleNotFoundError`/stale-import
+  issues unrelated to tool registries). Result: **232 failures before,
+  232 after, identical sets (zero new, zero resolved)** — this change
+  introduces no regressions.
+- `packages/ai-parrot-loaders/tests/` suite: 21 failed → 20 failed (one
+  *fewer* failure). The resolved test is
+  `test_webscraping_loader.py::test_registry_entry`, a pre-existing test
+  that already asserted `WebScrapingLoader` must be in `LOADER_REGISTRY`
+  — this task's addition makes it pass, as intended.
+- `ruff check` on both files: same 8 pre-existing findings present on
+  `dev` before this change (confirmed via `git stash` A/B comparison —
+  `I001`/`F401`/`RUF022` on the pre-existing `from .version import ...`
+  line and `__all__` ordering, neither touched by this task). Zero new
+  findings from this task's own additions.
+
+**Not done (explicitly out of scope, per spec §1 Non-Goals / §8 Open
+Questions)**: the 43 alias-duplicate keys (§6 Appendix B) were
+deliberately left unadded — resolving whether `TOOL_REGISTRY` should
+canonicalize on one key per class (and which naming convention wins) is
+a policy decision for the repo maintainer, not a mechanical drift-sync.
