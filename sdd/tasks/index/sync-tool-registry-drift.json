@@ -14,14 +14,14 @@
       "feature_id": "FEAT-436",
       "feature": "sync-tool-registry-drift",
       "spec": "sdd/specs/sync-tool-registry-drift.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single-file-pair data-sync task. No parallelism to consider.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-20T08:38:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2292-sync-tool-registry-drift.md"
     }
