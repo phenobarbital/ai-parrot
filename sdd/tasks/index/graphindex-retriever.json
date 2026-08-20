@@ -255,7 +255,7 @@
       "feature_id": "FEAT-435",
       "feature": "graphindex-retriever",
       "spec": "sdd/specs/graphindex-retriever.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -266,8 +266,8 @@
       "parallelism_notes": "Orchestrates both policies; must follow both.",
       "assigned_to": null,
       "started_at": "2026-08-20T01:18:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2282-sufficiency-escalation-driver.md"
+      "completed_at": "2026-08-20T02:33:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2282-sufficiency-escalation-driver.md"
     },
     {
       "id": "TASK-2283",
