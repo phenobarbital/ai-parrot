@@ -53,6 +53,7 @@ from parrot.knowledge.retrieval.policies import (
     RetrievalPolicyProtocol,
     Seed,
     Subgraph,
+    VectorSeedPolicy,
 )
 from parrot.knowledge.retrieval.sections import (
     GOTCHA_TAGS,
@@ -95,6 +96,7 @@ __all__ = [
     "Seed",
     "StalePinError",
     "Subgraph",
+    "VectorSeedPolicy",
     "WorkspacePin",
     "check_pin_coherence",
     "derive_digest",

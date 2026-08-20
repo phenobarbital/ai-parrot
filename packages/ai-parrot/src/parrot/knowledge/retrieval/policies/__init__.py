@@ -14,10 +14,12 @@ from parrot.knowledge.retrieval.policies.base import (
     Subgraph,
 )
 from parrot.knowledge.retrieval.policies.direct_symbol import DirectSymbolPolicy
+from parrot.knowledge.retrieval.policies.vector_seed import VectorSeedPolicy
 
 __all__ = [
     "DirectSymbolPolicy",
     "RetrievalPolicyProtocol",
     "Seed",
     "Subgraph",
+    "VectorSeedPolicy",
 ]
