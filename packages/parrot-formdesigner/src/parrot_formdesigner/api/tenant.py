@@ -22,6 +22,7 @@ from functools import wraps
 from typing import Any
 
 from aiohttp import web
+from navigator_auth.conf import AUTH_SESSION_OBJECT
 
 from .errors import (
     TenantConflictError,
@@ -36,41 +37,61 @@ _Handler = Callable[[web.Request], Awaitable[web.Response]]
 _EXPECTED_HINT = "/api/v1/{tenant}/forms/{form_uid}"
 
 
+def _session_userinfo(request: web.Request) -> dict:
+    """Return the navigator-auth userinfo dict for this request.
+
+    Reads ``request["session"]`` — the dict-key ``user_session``'s function
+    path ALWAYS sets (``navigator_auth/decorators.py`` ``_func_wrapper``:
+    ``request["session"] = session``). The previous read here was
+    ``getattr(request, "session", None)``: that ATTRIBUTE has exactly one
+    assignment in all of navigator-auth — the class-based-view
+    ``_method_wrapper`` — and this package wraps its handlers as plain
+    functions, so on every real request it was ``None``, ``programs`` came
+    back ``[]``, and every tenant declaration was refused
+    (``tenant_forbidden``) for every caller, superusers included — observed
+    live on 0.9.1 (epson, 2026-08-20). The attribute is kept as a FALLBACK
+    only, so a CBV-path caller (where it does exist) resolves identically.
+
+    The userinfo key is ``AUTH_SESSION_OBJECT`` (navigator-auth's own
+    constant), not a hardcoded ``"session"``.
+    """
+    session = request.get("session") if hasattr(request, "get") else None
+    if session is None:
+        session = getattr(request, "session", None)
+    if session is None:
+        return {}
+    try:
+        return session.get(AUTH_SESSION_OBJECT, {}) or {}
+    except AttributeError:
+        return {}
+
+
 def _get_programs(request: web.Request) -> list[str]:
     """Extract programs (tenant context) from the user session.
 
-    Mirrors ``FormAPIHandler._get_programs`` (``api/handlers.py:235``) — the
+    Mirrors ``FormAPIHandler._get_programs`` (``api/handlers.py``) — the
     exact session read the decorator must reuse.
-
-    Args:
-        request: Incoming HTTP request with ``session`` attribute attached
-            by the navigator-auth ``user_session`` decorator.
 
     Returns:
         A list of program slug strings. Empty when no session/programs.
     """
-    session = getattr(request, "session", None)
-    if session is None:
-        return []
-    userinfo = session.get("session", {})
-    return userinfo.get("programs", [])
+    return _session_userinfo(request).get("programs", [])
 
 
 def _is_superuser(request: web.Request) -> bool:
-    """Read the ``superuser`` flag from the same session dict as programs.
+    """Is the caller a superuser?
 
-    Args:
-        request: Incoming HTTP request with ``session`` attribute attached
-            by the navigator-auth ``user_session`` decorator.
-
-    Returns:
-        ``True`` when the session declares the caller a superuser.
+    ``request.user`` is the object navigator-auth's OWN middleware attaches
+    on every authenticated request (``auth.py``, ``middlewares/unified.py``,
+    ``backends/abstract.py``) — ``AuthUser.superuser`` is a declared field,
+    so it is the authoritative read and needs no session dict at all. The
+    session userinfo is kept as a fallback for callers authenticated through
+    a path that set no user object.
     """
-    session = getattr(request, "session", None)
-    if session is None:
-        return False
-    userinfo = session.get("session", {})
-    return bool(userinfo.get("superuser", False))
+    user = getattr(request, "user", None)
+    if user is not None and bool(getattr(user, "superuser", False)):
+        return True
+    return bool(_session_userinfo(request).get("superuser", False))
 
 
 def _authorize(request: web.Request, tenant: str) -> None:

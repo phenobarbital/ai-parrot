@@ -252,11 +252,15 @@ class FormAPIHandler:
             A list of program slug strings. Returns an empty list when no
             programs are found or no session is available.
         """
-        session = getattr(request, "session", None)
-        if session is None:
-            return []
-        userinfo = session.get("session", {})
-        return userinfo.get("programs", [])
+        # Same read as `api.tenant._get_programs`, for the same reason: the
+        # session travels on `request["session"]` (function path) — the
+        # attribute exists only on the CBV path, and reading only it is what
+        # made every real request see `programs=[]` (0.9.1's universal
+        # `tenant_forbidden`; pre-0.9.0, the silent `navigator`-bucket
+        # misroute this same read fed through the fallback chain).
+        from .tenant import _session_userinfo
+
+        return _session_userinfo(request).get("programs", [])
 
     def _get_tenant(self, request: web.Request) -> str:
         """Return the tenant declared in the URL and validated by the decorator.

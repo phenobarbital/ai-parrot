@@ -58,14 +58,12 @@ def _extract_org_id(request: web.Request) -> int | None:
 
 def _extract_programs(request: web.Request) -> list[str]:
     """Read the programs list from the navigator-auth session."""
-    session = getattr(request, "session", None)
-    if session is None:
-        return []
-    try:
-        userinfo = session.get("session", {}) or {}
-    except AttributeError:
-        return []
-    programs = userinfo.get("programs", []) or []
+    # `request["session"]` first — the dict-key the function-path
+    # `user_session` always sets; the attribute exists only on the CBV path
+    # (see `api.tenant._session_userinfo`, the shared rationale).
+    from ..api.tenant import _session_userinfo
+
+    programs = _session_userinfo(request).get("programs", []) or []
     return [str(p) for p in programs]
 
 

@@ -14,27 +14,41 @@ from parrot_formdesigner.api.tenant import (
 
 
 class _FakeRequest(dict):
-    """Minimal stand-in exposing .match_info, .session and dict item access.
+    """Minimal stand-in shaped like a REAL function-path request.
 
-    aiohttp's real ``web.Request`` supports ``request["key"] = value`` and
-    ``request.get("key")`` via its own Mapping implementation; a plain dict
-    subclass gives us that for free while letting us bolt on ``match_info``
-    and ``session`` attributes.
+    On navigator-auth's function path (`_func_wrapper`), the session travels
+    as the ``request["session"]`` DICT KEY; the ``request.session``
+    ATTRIBUTE is set only by the class-based-view `_method_wrapper`. The
+    previous version of this fake set ``self.session`` in its constructor —
+    an attribute no real function-path request ever has — so the suite
+    stayed green while every production request was refused (0.9.1's
+    universal ``tenant_forbidden``). The double is now shaped like the
+    request the code actually receives: session under the dict key, NO
+    session attribute, and an optional ``user`` attribute standing in for
+    the object navigator-auth's middleware attaches.
     """
 
-    def __init__(self, *, match_info=None, session=None):
+    def __init__(self, *, match_info=None, session=None, user=None):
         super().__init__()
         self.match_info = match_info or {}
-        self.session = session
+        if session is not None:
+            self["session"] = session
+        if user is not None:
+            self.user = user
 
 
-def make_request(tenant=None, programs=None, superuser=False, with_session=True):
+class _FakeUser:
+    def __init__(self, superuser=False):
+        self.superuser = superuser
+
+
+def make_request(tenant=None, programs=None, superuser=False, with_session=True, user=None):
     """Build a fake request declaring a tenant and (optionally) a session."""
     match_info = {"tenant": tenant} if tenant is not None else {}
     session = None
     if with_session:
         session = {"session": {"programs": programs or [], "superuser": superuser}}
-    return _FakeRequest(match_info=match_info, session=session)
+    return _FakeRequest(match_info=match_info, session=session, user=user)
 
 
 class TestRequiresTenant:
@@ -138,3 +152,57 @@ class TestNoForbiddenReferences:
         assert "tenant_context" not in source
         assert "program_slug" not in source
         assert "default_tenant" not in source
+
+
+class TestSessionDelivery:
+    """The 0.9.1 regression, pinned at the exact seam it slipped through."""
+
+    async def test_the_dict_key_alone_is_enough(self):
+        """A REAL function-path request carries the session ONLY under
+        ``request["session"]``. This is the case 0.9.1 refused universally —
+        and the one the old attribute-bearing fake could never exercise."""
+        req = _FakeRequest(
+            match_info={"tenant": "epson"},
+            session={"session": {"programs": ["epson"], "superuser": False}},
+        )
+        assert not hasattr(req, "session")  # the shape that shipped the bug
+
+        @requires_tenant()
+        async def handler(request):
+            return "ok"
+
+        assert await handler(req) == "ok"
+
+    async def test_middleware_user_object_grants_superuser(self):
+        """``request.user`` is what navigator-auth's middleware attaches on
+        every authenticated request; ``AuthUser.superuser`` is a declared
+        field. No session dict needed at all for the superuser grant."""
+        req = _FakeRequest(match_info={"tenant": "epson"}, user=_FakeUser(superuser=True))
+
+        @requires_tenant()
+        async def handler(request):
+            return "ok"
+
+        assert await handler(req) == "ok"
+
+    async def test_a_cbv_style_attribute_still_resolves(self):
+        """The CBV `_method_wrapper` DOES set the attribute — a caller from
+        that path must keep working through the fallback."""
+        req = _FakeRequest(match_info={"tenant": "epson"})
+        req.session = {"session": {"programs": ["epson"], "superuser": False}}
+
+        @requires_tenant()
+        async def handler(request):
+            return "ok"
+
+        assert await handler(req) == "ok"
+
+    async def test_non_superuser_user_object_does_not_grant(self):
+        req = _FakeRequest(match_info={"tenant": "epson"}, user=_FakeUser(superuser=False))
+
+        @requires_tenant()
+        async def handler(request):
+            return "ok"
+
+        with pytest.raises(TenantForbiddenError):
+            await handler(req)
