@@ -12,10 +12,20 @@ This dispatcher does **NOT** drive the dev seat through :class:`NovaClient`/
 Converse — ``BedrockConverseBase`` exposes no OpenAI-shaped
 ``_chat_completion``, so the base dispatcher's ``_chat_completion`` would
 raise ``DispatchExecutionError("... does not expose chat completion")``
-against it. Instead, the injected ``client_factory`` builds a plain
-:class:`~parrot.clients.gpt.OpenAIClient` pointed at the bedrock-mantle base
-URL, reusing the inherited tool loop, Redis event streaming, cwd-safety
-guard, and output validation unchanged.
+against it. Instead, the injected ``client_factory`` builds a
+:class:`~parrot.clients.nova.mantle.BedrockMantleClient` pointed at the
+bedrock-mantle base URL, reusing the inherited tool loop, Redis event
+streaming, cwd-safety guard, and output validation unchanged.
+
+FEAT-438 code-review fix: this used to construct a plain
+:class:`~parrot.clients.gpt.OpenAIClient` here instead of
+``BedrockMantleClient``. Since ``OpenAIClient`` carries OpenAI-the-
+provider's own ``gpt-*`` defaults (``_default_model``/``_fallback_model``/
+``_lightweight_model``), a capacity-error fallback on this dispatcher's
+client could have silently retried against a ``gpt-*`` model id on the
+bedrock-mantle endpoint — the exact 404 class of bug FEAT-438 exists to
+kill, just reached via direct instantiation instead of inheritance.
+``BedrockMantleClient`` carries none of those defaults.
 """
 
 from __future__ import annotations
@@ -28,8 +38,8 @@ from pydantic import BaseModel
 
 from parrot import conf
 from parrot.clients.factory import LLMFactory
-from parrot.clients.gpt import OpenAIClient
 from parrot.clients.nova import NovaClient
+from parrot.clients.nova.mantle import BedrockMantleClient
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,
     CodeReviewDispatcherFactory,
@@ -92,10 +102,15 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
             model_args: Optional dict with ``temperature``/``max_tokens``
                 (matches the shape ``LLMCodeDispatcher._create_client``
                 passes to the default ``LLMFactory.create`` factory).
-            **kwargs: Forwarded to :class:`OpenAIClient`.
+            **kwargs: Forwarded to :class:`BedrockMantleClient`.
 
         Returns:
-            An :class:`OpenAIClient` instance targeting bedrock-mantle.
+            A :class:`BedrockMantleClient` instance targeting bedrock-mantle.
+            Deliberately NOT ``OpenAIClient`` — see the module docstring's
+            FEAT-438 code-review-fix note; ``BedrockMantleClient`` carries no
+            ``gpt-*`` model defaults, so a capacity-error fallback here can
+            never retry against an OpenAI model id on this non-OpenAI
+            endpoint.
 
         Raises:
             DispatchExecutionError: When the mantle base URL or the Bedrock
@@ -111,7 +126,7 @@ class NovaCodeDispatcher(LLMCodeDispatcher):
                 if value is not None:
                     init_params[key] = value
         init_params.update(kwargs)
-        return OpenAIClient(
+        return BedrockMantleClient(
             api_key=self._resolve_bedrock_api_key(),
             base_url=self._resolve_mantle_base_url(),
             **init_params,

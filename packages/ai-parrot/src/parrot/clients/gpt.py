@@ -2172,92 +2172,12 @@ class OpenAIClient(OpenAIBaseClient):
             raw_response=raw_dump,
         )
 
-    async def invoke(
-        self,
-        prompt: str,
-        *,
-        output_type: Optional[type] = None,
-        structured_output: Optional[StructuredOutputConfig] = None,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
-        temperature: float = 0.0,
-        use_tools: bool = False,
-        tools: Optional[list] = None,
-    ) -> InvokeResult:
-        """Lightweight stateless invocation for OpenAIClient.
-
-        Uses native ``response_format`` with ``json_schema`` and ``strict: True``
-        for structured output. A single call is made through
-        :meth:`_chat_completion` (FEAT-438 G3 — the single completion
-        funnel; this call previously bypassed it and called
-        ``chat.completions.create()`` directly) — no history, no prompt
-        builder.
-
-        Args:
-            prompt: User prompt.
-            output_type: Pydantic model or dataclass to parse the response into.
-            structured_output: Full :class:`StructuredOutputConfig`; takes
-                precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model`` (``gpt-4.1``).
-            system_prompt: System prompt override.
-            max_tokens: Maximum completion tokens.
-            temperature: Sampling temperature.
-            use_tools: Whether to inject registered tools.
-            tools: Additional tool definitions.
-
-        Returns:
-            :class:`InvokeResult` with parsed output.
-
-        Raises:
-            :class:`InvokeError`: On provider errors.
-        """
-        try:
-            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
-            config = self._build_invoke_structured_config(output_type, structured_output)
-            resolved_model = self._resolve_invoke_model(model)
-
-            messages = [
-                {"role": "system", "content": resolved_prompt},
-                {"role": "user", "content": prompt},
-            ]
-
-            kwargs: Dict[str, Any] = {
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            }
-
-            # Native JSON schema structured output
-            if config:
-                response_format = self._build_response_format_from(config)
-                if response_format:
-                    kwargs["response_format"] = response_format
-
-            # Tools
-            if use_tools:
-                tool_defs = self._prepare_tools()
-                if tool_defs:
-                    kwargs["tools"] = tool_defs
-
-            if not self.client:
-                raise RuntimeError("OpenAIClient not initialised. Use async context manager.")
-
-            response = await self._chat_completion(
-                model=resolved_model, messages=messages, use_tools=True, **kwargs
-            )
-            raw_text = response.choices[0].message.content or ""
-
-            # Parse output
-            output: Any = raw_text
-            if config:
-                if config.custom_parser:
-                    output = config.custom_parser(raw_text)
-                else:
-                    output = await self._parse_structured_output(raw_text, config)
-
-            usage = CompletionUsage.from_openai(response.usage)
-            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
-        except InvokeError:
-            raise
-        except Exception as exc:
-            raise self._handle_invoke_error(exc)
+    # invoke() is inherited unchanged from OpenAIBaseClient (FEAT-438
+    # code-review fix): this override used to be byte-for-byte functionally
+    # identical to the base implementation (same logic, same call
+    # sequence — only the "not initialised" error-message string differed
+    # cosmetically, and that string renders identically for an
+    # OpenAIClient instance either way since the base uses
+    # ``type(self).__name__``). Keeping a dead duplicate here was a
+    # maintenance hazard: a future change to the base's invoke() would
+    # have silently failed to propagate to OpenAIClient.

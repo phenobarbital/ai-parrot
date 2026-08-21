@@ -1,11 +1,143 @@
 """Unit tests for vLLMClient."""
 
-import pytest
+import contextlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
-from pydantic import BaseModel
 
+import pytest
+from parrot.clients.localllm import LocalLLMClient
 from parrot.clients.vllm import vLLMClient
 from parrot.models.vllm import VLLMServerInfo
+from pydantic import BaseModel
+
+
+def make_mock_completion(content: str = "ok"):
+    """Build a MagicMock shaped like an OpenAI ``ChatCompletion`` response."""
+    mock_choice = MagicMock()
+    mock_choice.message.content = content
+    mock_choice.message.tool_calls = None
+    mock_choice.message.role = "assistant"
+    mock_choice.finish_reason = "stop"
+    mock_choice.stop_reason = "stop"
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_response.usage = MagicMock(
+        prompt_tokens=1, completion_tokens=1, total_tokens=2
+    )
+    mock_response.dict = MagicMock(return_value={})
+    mock_response.model_dump = MagicMock(return_value={})
+    return mock_response
+
+
+@contextlib.asynccontextmanager
+async def mocked_sdk(target_client, recorder=None, content: str = "ok"):
+    """Enter ``target_client`` with a stubbed OpenAI SDK handle.
+
+    FEAT-438 code-review fix: vLLMClient's ``extra_body`` (guided output,
+    LoRA, extended sampling) now rides a ContextVar from ``ask()``/
+    ``ask_stream()`` down to ``vLLMClient._chat_completion()`` — it is no
+    longer passed as an explicit kwarg to ``super().ask()`` (which always
+    raised ``TypeError``, since ``OpenAIBaseClient.ask()``'s signature has
+    no ``extra_body`` param). This helper stubs at the real SDK boundary
+    (``LocalLLMClient.get_client()``) so the whole real call chain —
+    ``ask()`` -> ``OpenAIBaseClient.ask()`` -> ``vLLMClient._chat_completion()``
+    (merges the ContextVar) -> ``OpenAIBaseClient._chat_completion()`` ->
+    the stubbed ``chat.completions.create`` — actually runs, proving
+    ``extra_body`` reaches the wire instead of asserting on a mocked
+    intermediate method that no longer receives it.
+
+    Args:
+        target_client: The vLLMClient to enter with a stubbed SDK.
+        recorder: Optional dict updated with the kwargs of each
+            ``chat.completions.create`` call.
+        content: Text content of the stubbed response.
+
+    Yields:
+        The ``AsyncMock`` standing in for ``chat.completions.create``.
+    """
+
+    async def _fake_create(**kwargs):
+        if recorder is not None:
+            recorder.update(kwargs)
+        return make_mock_completion(content)
+
+    mock_create = AsyncMock(side_effect=_fake_create)
+    # SimpleNamespace, NOT MagicMock: OpenAIBaseClient._chat_completion does
+    # ``getattr(self.client.chat.completions, "parse", ...create)`` — a
+    # MagicMock auto-vivifies ``.parse`` too, so ``getattr`` would always
+    # "find" it and never fall back to the stubbed ``.create``, matching
+    # the SimpleNamespace convention already used in
+    # tests/clients/test_openai_base_parity.py.
+    fake_sdk = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=mock_create))
+    )
+
+    with patch.object(
+        LocalLLMClient, "get_client", new=AsyncMock(return_value=fake_sdk)
+    ):
+        await target_client.__aenter__()
+        try:
+            yield mock_create
+        finally:
+            await target_client.__aexit__(None, None, None)
+
+
+@contextlib.asynccontextmanager
+async def mocked_stream_sdk(target_client, pieces, recorder=None):
+    """Enter ``target_client`` with a stubbed streaming SDK handle.
+
+    Same rationale as ``mocked_sdk`` above, but for ``ask_stream()`` —
+    mirrors ``test_nvidia_client.py``'s ``_fake_stream_create`` shape (a
+    ``ChatCompletionChunk``-like async generator, final usage-only chunk
+    with no choices) since ``vLLMClient.ask_stream()`` also routes through
+    ``_chat_completion(stream=True, ...)``.
+
+    Args:
+        target_client: The vLLMClient to enter with a stubbed SDK.
+        pieces: Text chunks the fake stream yields, in order.
+        recorder: Optional dict updated with the kwargs of the
+            ``chat.completions.create(stream=True, ...)`` call.
+
+    Yields:
+        Nothing meaningful — callers inspect ``recorder`` after the
+        ``async with`` block.
+    """
+
+    async def _gen():
+        for piece in pieces:
+            chunk = MagicMock()
+            chunk.choices = [MagicMock(delta=MagicMock(content=piece))]
+            chunk.usage = None
+            yield chunk
+        final = MagicMock()
+        final.choices = []
+        final.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        yield final
+
+    async def _fake_create(**kwargs):
+        if recorder is not None:
+            recorder.update(kwargs)
+        if kwargs.get("stream"):
+            return _gen()
+        return make_mock_completion()
+
+    # SimpleNamespace, not MagicMock — see mocked_sdk()'s docstring above for
+    # why a MagicMock would defeat the getattr(..., "parse", ...create)
+    # fallback in OpenAIBaseClient._chat_completion.
+    fake_sdk = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=AsyncMock(side_effect=_fake_create))
+        )
+    )
+
+    with patch.object(
+        LocalLLMClient, "get_client", new=AsyncMock(return_value=fake_sdk)
+    ):
+        await target_client.__aenter__()
+        try:
+            yield
+        finally:
+            await target_client.__aexit__(None, None, None)
 
 
 # ---- Client Initialization Tests ----
@@ -120,74 +252,56 @@ class TestVLLMClientAsk:
 
     @pytest.mark.asyncio
     async def test_guided_json_parameter(self):
-        """guided_json is passed in extra_body."""
+        """guided_json is passed in extra_body all the way to the SDK call.
+
+        FEAT-438 code-review fix: extra_body now rides a ContextVar through
+        vLLMClient._chat_completion() rather than a direct ask() kwarg (see
+        module-level ``mocked_sdk`` docstring), so this stubs at the real
+        SDK boundary instead of mocking the parent's ``ask``.
+        """
         client = vLLMClient()
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content='{"name": "Alice"}')
-
+        async with mocked_sdk(client, captured, content='{"name": "Alice"}'):
             await client.ask("Extract name", model="test", guided_json=schema)
 
-            call_kwargs = mock_ask.call_args.kwargs
-            assert call_kwargs["extra_body"]["guided_json"] == schema
+        assert captured["extra_body"]["guided_json"] == schema
 
     @pytest.mark.asyncio
     async def test_guided_regex_parameter(self):
-        """guided_regex is passed in extra_body."""
+        """guided_regex is passed in extra_body all the way to the SDK call."""
         client = vLLMClient()
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content="123-4567")
-
+        async with mocked_sdk(client, captured, content="123-4567"):
             await client.ask("Phone number", model="test", guided_regex=r"\d{3}-\d{4}")
 
-            call_kwargs = mock_ask.call_args.kwargs
-            assert call_kwargs["extra_body"]["guided_regex"] == r"\d{3}-\d{4}"
+        assert captured["extra_body"]["guided_regex"] == r"\d{3}-\d{4}"
 
     @pytest.mark.asyncio
     async def test_guided_choice_parameter(self):
-        """guided_choice is passed in extra_body."""
+        """guided_choice is passed in extra_body all the way to the SDK call."""
         client = vLLMClient()
         choices = ["yes", "no", "maybe"]
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content="yes")
-
+        async with mocked_sdk(client, captured, content="yes"):
             await client.ask("Choose one", model="test", guided_choice=choices)
 
-            call_kwargs = mock_ask.call_args.kwargs
-            assert call_kwargs["extra_body"]["guided_choice"] == choices
+        assert captured["extra_body"]["guided_choice"] == choices
 
     @pytest.mark.asyncio
     async def test_guided_grammar_parameter(self):
-        """guided_grammar is passed in extra_body."""
+        """guided_grammar is passed in extra_body all the way to the SDK call."""
         client = vLLMClient()
         grammar = "root ::= 'hello' | 'world'"
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content="hello")
-
+        async with mocked_sdk(client, captured, content="hello"):
             await client.ask("Say something", model="test", guided_grammar=grammar)
 
-            call_kwargs = mock_ask.call_args.kwargs
-            assert call_kwargs["extra_body"]["guided_grammar"] == grammar
+        assert captured["extra_body"]["guided_grammar"] == grammar
 
     @pytest.mark.asyncio
     async def test_structured_output_converts_to_guided_json(self):
@@ -198,51 +312,34 @@ class TestVLLMClientAsk:
             age: int
 
         client = vLLMClient()
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content='{"name": "Bob", "age": 30}')
-
+        async with mocked_sdk(client, captured, content='{"name": "Bob", "age": 30}'):
             await client.ask("Extract person", model="test", structured_output=Person)
 
-            call_kwargs = mock_ask.call_args.kwargs
-            guided_json = call_kwargs["extra_body"]["guided_json"]
-            assert "properties" in guided_json
-            assert "name" in guided_json["properties"]
-            assert "age" in guided_json["properties"]
+        guided_json = captured["extra_body"]["guided_json"]
+        assert "properties" in guided_json
+        assert "name" in guided_json["properties"]
+        assert "age" in guided_json["properties"]
 
     @pytest.mark.asyncio
     async def test_lora_adapter_parameter(self):
-        """lora_adapter is passed in extra_body."""
+        """lora_adapter is passed in extra_body all the way to the SDK call."""
         client = vLLMClient()
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content="Response")
-
+        async with mocked_sdk(client, captured):
             await client.ask("Test", model="test", lora_adapter="my-lora-v1")
 
-            call_kwargs = mock_ask.call_args.kwargs
-            assert call_kwargs["extra_body"]["lora_request"] == {"lora_name": "my-lora-v1"}
+        assert captured["extra_body"]["lora_request"] == {"lora_name": "my-lora-v1"}
 
     @pytest.mark.asyncio
     async def test_extended_sampling_parameters(self):
         """Extended sampling parameters are passed in extra_body."""
         client = vLLMClient()
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content="Response")
-
+        async with mocked_sdk(client, captured):
             await client.ask(
                 "Test",
                 model="test",
@@ -252,31 +349,24 @@ class TestVLLMClientAsk:
                 length_penalty=0.9
             )
 
-            call_kwargs = mock_ask.call_args.kwargs
-            extra_body = call_kwargs["extra_body"]
-            assert extra_body["top_k"] == 50
-            assert extra_body["min_p"] == 0.1
-            assert extra_body["repetition_penalty"] == 1.2
-            assert extra_body["length_penalty"] == 0.9
+        extra_body = captured["extra_body"]
+        assert extra_body["top_k"] == 50
+        assert extra_body["min_p"] == 0.1
+        assert extra_body["repetition_penalty"] == 1.2
+        assert extra_body["length_penalty"] == 0.9
 
     @pytest.mark.asyncio
     async def test_default_sampling_params_not_included(self):
         """Default sampling parameters are not included in extra_body."""
         client = vLLMClient()
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content="Response")
-
+        async with mocked_sdk(client, captured):
             await client.ask("Test", model="test")
 
-            call_kwargs = mock_ask.call_args.kwargs
-            # extra_body should be None or empty when no vLLM params set
-            extra_body = call_kwargs.get("extra_body")
-            assert extra_body is None or extra_body == {}
+        # extra_body should be None or absent when no vLLM params set
+        extra_body = captured.get("extra_body")
+        assert extra_body is None or extra_body == {}
 
     @pytest.mark.asyncio
     async def test_multiple_guided_constraints_raises_error(self):
@@ -301,14 +391,9 @@ class TestVLLMClientAsk:
 
         client = vLLMClient()
         explicit_schema = {"type": "string"}  # Different from Person schema
+        captured: dict = {}
 
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask',
-            new_callable=AsyncMock
-        ) as mock_ask:
-            mock_ask.return_value = MagicMock(content="test")
-
+        async with mocked_sdk(client, captured, content="test"):
             await client.ask(
                 "Test",
                 model="test",
@@ -316,9 +401,8 @@ class TestVLLMClientAsk:
                 structured_output=Person
             )
 
-            call_kwargs = mock_ask.call_args.kwargs
-            # structured_output should be ignored when guided_json is explicit
-            assert call_kwargs["extra_body"]["guided_json"] == explicit_schema
+        # structured_output should be ignored when guided_json is explicit
+        assert captured["extra_body"]["guided_json"] == explicit_schema
 
 
 # ---- ask_stream() Method Tests ----
@@ -348,24 +432,24 @@ class TestVLLMClientAskStream:
 
     @pytest.mark.asyncio
     async def test_stream_with_guided_json(self):
-        """Streaming with guided_json passes extra_body."""
+        """Streaming with guided_json passes extra_body all the way to the
+        SDK call.
+
+        FEAT-438 code-review fix: same rationale as
+        ``TestVLLMClientAsk.test_guided_json_parameter`` — extra_body rides
+        a ContextVar through ``vLLMClient._chat_completion()`` now, so this
+        stubs the real SDK boundary instead of mocking the parent's
+        ``ask_stream``.
+        """
         client = vLLMClient()
         schema = {"type": "object"}
-        captured_kwargs = {}
+        captured: dict = {}
 
-        async def mock_stream(*args, **kwargs):
-            captured_kwargs.update(kwargs)
-            yield '{"test": true}'
-
-        with patch.object(
-            client.__class__.__bases__[0],
-            'ask_stream',
-            mock_stream
-        ):
+        async with mocked_stream_sdk(client, ['{"test": true}'], captured):
             async for _ in client.ask_stream("Test", model="test", guided_json=schema):
                 pass
 
-            assert captured_kwargs["extra_body"]["guided_json"] == schema
+        assert captured["extra_body"]["guided_json"] == schema
 
     @pytest.mark.asyncio
     async def test_stream_multiple_guided_raises_error(self):

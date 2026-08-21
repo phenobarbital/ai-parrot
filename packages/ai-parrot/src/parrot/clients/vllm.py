@@ -6,6 +6,7 @@ sampling parameters, and batch processing.
 """
 
 import asyncio
+import contextvars
 import os
 from enum import Enum
 from logging import getLogger
@@ -30,6 +31,22 @@ from ..models.vllm import (
 from ..models.responses import AIMessage
 
 logger = getLogger(__name__)
+
+# Context variable that carries the vLLM-specific extra_body (guided output,
+# LoRA, extended sampling) from ask()/ask_stream() down to _chat_completion()
+# without altering OpenAIBaseClient.ask()'s fixed call signature.
+#
+# FEAT-438 code-review fix: ask()/ask_stream() used to pass
+# ``extra_body=extra_body if extra_body else None`` straight through to
+# ``super().ask()``/``super().ask_stream()`` — but OpenAIBaseClient.ask()'s
+# signature is fixed with no ``**kwargs``/``extra_body`` param, so every real
+# call raised ``TypeError: ask() got an unexpected keyword argument
+# 'extra_body'``. Mirrors NvidiaClient's ``_sampling_ctx``/``_thinking_ctx``
+# pattern (nvidia.py) exactly. Using a ContextVar is safe for concurrent
+# async calls because each asyncio Task inherits an isolated copy.
+_extra_body_ctx: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "_vllm_extra_body_ctx", default=None
+)
 
 
 class vLLMClient(LocalLLMClient):
@@ -102,6 +119,40 @@ class vLLMClient(LocalLLMClient):
             **kwargs
         )
         self.timeout = timeout
+
+    async def _chat_completion(
+        self,
+        model: str,
+        messages: Any,
+        use_tools: bool = False,
+        **kwargs,
+    ) -> Any:
+        """Merge the vLLM-specific ``extra_body`` into the completion request.
+
+        Reads the ``extra_body`` set by ``ask()``/``ask_stream()`` via
+        ``_extra_body_ctx`` (guided output, LoRA, extended sampling — none of
+        which ``OpenAIBaseClient.ask()``'s fixed signature can accept
+        directly) and merges it into ``kwargs["extra_body"]`` before
+        delegating to the shared funnel. An explicit ``extra_body`` already
+        in ``kwargs`` (e.g. from a caller using ``_chat_completion``
+        directly) always wins over the context-var value.
+
+        Args:
+            model: Model identifier string.
+            messages: Chat messages list.
+            use_tools: Whether tools are enabled (forwarded unchanged).
+            **kwargs: Additional completion arguments forwarded to
+                :meth:`OpenAIBaseClient._chat_completion`.
+
+        Returns:
+            The raw SDK response object (or async stream when streaming).
+        """
+        ctx_extra_body = _extra_body_ctx.get()
+        if ctx_extra_body and "extra_body" not in kwargs:
+            kwargs["extra_body"] = ctx_extra_body
+        return await super()._chat_completion(
+            model=model, messages=messages, use_tools=use_tools, **kwargs
+        )
 
     async def ask(
         self,
@@ -202,15 +253,19 @@ class vLLMClient(LocalLLMClient):
         elif isinstance(model, Enum):
             model = model.value
 
-        # Pass extra_body to parent ask()
-        return await super().ask(
-            prompt=prompt,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            extra_body=extra_body if extra_body else None,
-            **kwargs
-        )
+        # extra_body rides the context-var channel to _chat_completion();
+        # OpenAIBaseClient.ask()'s fixed signature has no extra_body param.
+        token = _extra_body_ctx.set(extra_body or None)
+        try:
+            return await super().ask(
+                prompt=prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+        finally:
+            _extra_body_ctx.reset(token)
 
     async def ask_stream(
         self,
@@ -311,16 +366,21 @@ class vLLMClient(LocalLLMClient):
         elif isinstance(model, Enum):
             model = model.value
 
-        # Pass extra_body to parent ask_stream()
-        async for chunk in super().ask_stream(
-            prompt=prompt,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            extra_body=extra_body if extra_body else None,
-            **kwargs
-        ):
-            yield chunk
+        # extra_body rides the context-var channel to _chat_completion();
+        # OpenAIBaseClient.ask_stream()'s fixed signature has no extra_body
+        # param (same fix as ask() above).
+        token = _extra_body_ctx.set(extra_body or None)
+        try:
+            async for chunk in super().ask_stream(
+                prompt=prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            ):
+                yield chunk
+        finally:
+            _extra_body_ctx.reset(token)
 
     def _get_base_url_root(self) -> str:
         """Get the base URL without the /v1 suffix.
