@@ -16,11 +16,28 @@ from ..models import AIMessage, CompletionUsage, OutputFormat, StructuredOutputC
 from ..models.responses import InvokeResult
 from ..models.zai import THINKING_CAPABLE_ZAI_MODELS, ZaiModel
 from ..exceptions import InvokeError
-from .base import AbstractClient
+from .openai_base import OpenAIBaseClient
 
 
-class ZaiClient(AbstractClient):
-    """Client for Z.ai chat completions using the official ``zai-sdk`` package."""
+class ZaiClient(OpenAIBaseClient):
+    """Client for Z.ai chat completions using the official ``zai-sdk`` package.
+
+    FEAT-438 (TASK-2304): rebased onto ``OpenAIBaseClient``. The inherited
+    ``tool_format = ToolFormat.OPENAI`` is CORRECT and left undeclared here
+    — Z.ai's API takes the same ``{"type":"function","function":{...}}``
+    wrapper — but it is a non-issue either way: ``ask()``/``ask_stream()``/
+    ``resume()``/``invoke()`` build tool payloads via this module's own
+    ``_prepare_zai_tools()`` (kept, never calls the inherited
+    ``_prepare_tools()``), which never emits ``"strict"`` — so the base's
+    OPENAI-gated strict-tools branch (base.py:1435) never applies to any
+    real Z.ai request regardless of the declared ``tool_format``.
+
+    Unlike Groq's ``AsyncGroq``, the official ``zai`` SDK is **synchronous**
+    — every wire call wraps ``client.chat.completions.create`` in
+    ``asyncio.to_thread()`` (see ``_chat_completion`` below, adapted from
+    the pre-rebase ``_create_completion``/``_stream_completion`` seams into
+    the shared funnel signature from TASK-2298).
+    """
 
     client_type: str = "zai"
     client_name: str = "zai"
@@ -37,19 +54,24 @@ class ZaiClient(AbstractClient):
         max_retries: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
-        self.api_key = api_key or config.get("ZAI_API_KEY")
-        if not self.api_key:
+        resolved_key = api_key or config.get("ZAI_API_KEY")
+        if not resolved_key:
             raise ValueError(
                 "ZAI_API_KEY is required. Pass api_key= or set the ZAI_API_KEY environment variable."
             )
-        self.base_url = base_url or config.get("ZAI_BASE_URL") or "https://api.z.ai/api/paas/v4/"
+        resolved_base_url = base_url or config.get("ZAI_BASE_URL") or "https://api.z.ai/api/paas/v4/"
         self.timeout = timeout
         self.max_retries = max_retries
-        self.base_headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-        super().__init__(**kwargs)
+        super().__init__(
+            api_key=resolved_key,
+            base_url=resolved_base_url,
+            **kwargs,
+        )
+        # Re-set after super().__init__ because AbstractClient may overwrite
+        # self.api_key during its own initialisation. This mirrors the
+        # guard used by NvidiaClient/OpenRouterClient/MoonshotClient/
+        # GroqClient.
+        self.api_key = resolved_key
 
     async def get_client(self) -> Any:
         """Create the official Z.ai SDK client for the current event loop."""
@@ -285,6 +307,42 @@ class ZaiClient(AbstractClient):
         client = await self._ensure_client()
         return await asyncio.to_thread(client.chat.completions.create, **request_args)
 
+    async def _chat_completion(
+        self, model: str, messages: Any, use_tools: bool = False, stream: bool = False, **kwargs: Any
+    ) -> Any:
+        """Zai-specific completion funnel (FEAT-438 TASK-2298/2304 seam).
+
+        The official ``zai`` SDK is synchronous — unlike ``AsyncOpenAI``/
+        ``AsyncGroq``, there is no async-native call and no ``.parse()``
+        shortcut to gate on ``use_tools``. Delegates to the existing
+        thread-wrapped helpers unchanged:
+
+        - Non-streaming: awaits :meth:`_create_completion` directly.
+        - Streaming: returns the async-generator produced by
+          :meth:`_stream_completion` (itself a single
+          ``asyncio.to_thread`` call collecting every sync-stream chunk)
+          for the caller to iterate — this method does not iterate it
+          itself, mirroring ``OpenAIBaseClient._chat_completion``'s
+          contract of returning an awaitable-then-iterable stream object.
+
+        Args:
+            model: The resolved model id.
+            messages: The chat-completions message list.
+            use_tools: Unused for dispatch (no ``.parse()`` alternative
+                exists); accepted for interface parity with the base
+                funnel seam.
+            stream: If ``True``, request a streaming response.
+            **kwargs: Additional Z.ai chat-completions request kwargs.
+
+        Returns:
+            The raw Z.ai SDK response object, or (when ``stream=True``)
+            an async-iterable of raw chunk objects.
+        """
+        request_args: dict[str, Any] = {"model": model, "messages": messages, "stream": stream, **kwargs}
+        if stream:
+            return self._stream_completion(**request_args)
+        return await self._create_completion(**request_args)
+
     def _parse_tool_arguments(self, raw_arguments: Any) -> Dict[str, Any]:
         if isinstance(raw_arguments, dict):
             return raw_arguments
@@ -343,7 +401,7 @@ class ZaiClient(AbstractClient):
 
             follow_up_args = dict(request_args)
             follow_up_args["messages"] = messages
-            response = await self._create_completion(**follow_up_args)
+            response = await self._chat_completion(**follow_up_args, use_tools=True)
             result = response.choices[0].message
         return response, all_tool_calls
 
@@ -444,7 +502,7 @@ class ZaiClient(AbstractClient):
             has_tools=bool(_use_tools),
         )
         try:
-            response = await self._create_completion(**request_args)
+            response = await self._chat_completion(**request_args, use_tools=_use_tools)
             all_tool_calls: List[ToolCall] = []
             if _use_tools:
                 response, all_tool_calls = await self._run_tool_loop(
@@ -651,7 +709,7 @@ class ZaiClient(AbstractClient):
         tool_call_accumulator: Dict[int, Dict[str, Any]] = {}
 
         try:
-            async for chunk in self._stream_completion(**request_args):
+            async for chunk in await self._chat_completion(**request_args, use_tools=_use_tools):
                 last_raw_chunk = self._response_to_dict(chunk)
                 if getattr(chunk, "usage", None):
                     usage = self._usage_from_response(chunk)
@@ -717,7 +775,7 @@ class ZaiClient(AbstractClient):
                 follow_up_args = dict(request_args)
                 follow_up_args["messages"] = messages
                 follow_up_args.pop("tool_stream", None)
-                async for chunk in self._stream_completion(**follow_up_args):
+                async for chunk in await self._chat_completion(**follow_up_args, use_tools=True):
                     last_raw_chunk = self._response_to_dict(chunk)
                     if getattr(chunk, "usage", None):
                         usage = self._usage_from_response(chunk)
@@ -863,7 +921,7 @@ class ZaiClient(AbstractClient):
             request_args["tools"] = self._prepare_zai_tools()
             request_args["tool_choice"] = "auto"
 
-        response = await self._create_completion(**request_args)
+        response = await self._chat_completion(**request_args, use_tools=self.enable_tools)
         all_tool_calls: List[ToolCall] = []
         result = response.choices[0].message
         max_turns = 10
@@ -910,7 +968,7 @@ class ZaiClient(AbstractClient):
 
             follow_up = dict(request_args)
             follow_up["messages"] = messages
-            response = await self._create_completion(**follow_up)
+            response = await self._chat_completion(**follow_up, use_tools=True)
             result = response.choices[0].message
 
         return self._create_ai_message(
@@ -1001,7 +1059,7 @@ class ZaiClient(AbstractClient):
                     kwargs["tools"] = tool_defs
                     kwargs["tool_choice"] = "auto"
 
-            response = await self._create_completion(**kwargs)
+            response = await self._chat_completion(**kwargs, use_tools=use_tools)
             raw_text = getattr(response.choices[0].message, "content", None) or ""
 
             output: Any = raw_text

@@ -27,6 +27,7 @@ from parrot.clients.nvidia import NvidiaClient
 from parrot.clients.openai_base import OpenAIBaseClient
 from parrot.clients.openrouter import OpenRouterClient
 from parrot.clients.vllm import vLLMClient
+from parrot.clients.zai import ZaiClient
 from parrot.models import AIMessage
 from parrot.models.responses import InvokeResult
 from parrot.tools.manager import ToolFormat
@@ -45,7 +46,7 @@ def test_openai_client_extends_base():
     "cls",
     [
         OpenRouterClient, MoonshotClient, NvidiaClient, LocalLLMClient,
-        vLLMClient, BedrockMantleClient, GroqClient,
+        vLLMClient, BedrockMantleClient, GroqClient, ZaiClient,
     ],
     ids=lambda c: c.__name__,
 )
@@ -332,6 +333,7 @@ WIRE_SUBCLASSES = [
     vLLMClient,
     BedrockMantleClient,
     GroqClient,
+    ZaiClient,
 ]
 
 # vLLMClient.ask()/ask_stream() unconditionally forward
@@ -532,3 +534,145 @@ async def test_invoke_reaches_chat_completion(cls, monkeypatch):
     await client._ensure_client()
     await client.invoke("hello")
     assert len(spy.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# FEAT-438 TASK-2304 — Zai-specific parity (native SDK, thinking, tools, stream)
+# ---------------------------------------------------------------------------
+
+
+def _zai_completion_response(content="ok", tool_calls=None):
+    """Build a SimpleNamespace shaped like the official zai SDK's
+    (synchronous) chat-completion response — mirrors
+    packages/ai-parrot/tests/test_zai_client.py's ``completion_response``."""
+    message = SimpleNamespace(
+        content=content, role="assistant", reasoning_content=None, tool_calls=tool_calls
+    )
+    choice = SimpleNamespace(message=message, finish_reason="stop")
+    usage = SimpleNamespace(
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        prompt_tokens_details=SimpleNamespace(cached_tokens=None),
+        completion_tokens_details=SimpleNamespace(reasoning_tokens=None),
+    )
+    return SimpleNamespace(choices=[choice], usage=usage, model="glm-5.1", id="resp_1")
+
+
+def _zai_stream_chunk(content=None, finish_reason=None):
+    delta = SimpleNamespace(content=content, reasoning_content=None, tool_calls=None)
+    choice = SimpleNamespace(delta=delta, finish_reason=finish_reason, index=0)
+    return SimpleNamespace(choices=[choice], usage=None, model="glm-5.1")
+
+
+@pytest.mark.asyncio
+async def test_zai_keeps_native_sdk():
+    """get_client() still returns the official zai SDK client, NOT
+    AsyncOpenAI — the AsyncOpenAI swap was explicitly rejected at spec
+    time."""
+    client = ZaiClient(api_key="test-key")
+
+    class _FakeOfficialZaiClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    import sys
+    import types
+
+    fake_zai_module = types.ModuleType("zai")
+    fake_zai_module.ZaiClient = _FakeOfficialZaiClient
+    sys_modules_backup = sys.modules.get("zai")
+    sys.modules["zai"] = fake_zai_module
+    try:
+        sdk = await client.get_client()
+    finally:
+        if sys_modules_backup is not None:
+            sys.modules["zai"] = sys_modules_backup
+        else:
+            del sys.modules["zai"]
+
+    assert isinstance(sdk, _FakeOfficialZaiClient)
+    assert sdk.kwargs["api_key"] == "test-key"
+
+
+@pytest.mark.asyncio
+async def test_zai_thinking_payload_preserved():
+    """The thinking/deep_thinking kwargs on ask() still reach the request
+    payload as a "thinking" key — real provider behavior, unaffected by
+    the rebase."""
+    fake_sdk = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kw: _zai_completion_response())
+        )
+    )
+    client = ZaiClient(api_key="test-key")
+    client._ensure_client = AsyncMock(return_value=fake_sdk)
+
+    captured = {}
+    original_create = fake_sdk.chat.completions.create
+
+    def _spy_create(**kw):
+        captured.update(kw)
+        return original_create(**kw)
+
+    fake_sdk.chat.completions.create = _spy_create
+
+    await client.ask("hello", model="glm-4.5-flash", thinking=True)
+
+    assert captured["thinking"] == {"type": "enabled"}
+
+
+@pytest.mark.asyncio
+async def test_zai_tools_payload_shape():
+    """_prepare_zai_tools() (used by ask()) emits the OpenAI-shaped
+    function wrapper, matching the inherited ToolFormat.OPENAI."""
+    client = ZaiClient(api_key="test-key")
+
+    class _StubTool:
+        name: ClassVar[str] = "calculator"
+        description: ClassVar[str] = "Evaluate a mathematical expression."
+        input_schema: ClassVar[dict] = {
+            "type": "object",
+            "properties": {"expression": {"type": "string"}},
+            "required": ["expression"],
+        }
+
+    class _StubToolManager:
+        def all_tools(self):
+            return [_StubTool()]
+
+    client.tool_manager = _StubToolManager()
+    tools = client._prepare_zai_tools()
+
+    assert len(tools) == 1
+    assert tools[0]["type"] == "function"
+    assert tools[0]["function"]["name"] == "calculator"
+    assert tools[0]["function"]["parameters"] == _StubTool.input_schema
+
+
+@pytest.mark.asyncio
+async def test_zai_stream_final_yield_is_aimessage():
+    """ask_stream() still yields str chunks then a final AIMessage
+    (TASK-1175 contract) after the rebase."""
+
+    async def _fake_create(**kwargs):
+        pass  # pragma: no cover - never awaited; zai SDK is synchronous
+
+    def _sync_stream_create(**kwargs):
+        return iter([
+            _zai_stream_chunk(content="chunk-a"),
+            _zai_stream_chunk(content="chunk-b", finish_reason="stop"),
+        ])
+
+    fake_sdk = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_sync_stream_create))
+    )
+    client = ZaiClient(api_key="test-key")
+    client._ensure_client = AsyncMock(return_value=fake_sdk)
+
+    chunks = [chunk async for chunk in client.ask_stream("hello", model="glm-5.1")]
+
+    assert chunks[0] == "chunk-a"
+    assert chunks[1] == "chunk-b"
+    assert isinstance(chunks[-1], AIMessage)
+    assert chunks[-1].response == "chunk-achunk-b"

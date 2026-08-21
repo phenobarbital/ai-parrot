@@ -31,6 +31,7 @@ from parrot.clients.nvidia import NvidiaClient
 from parrot.clients.openai_base import OpenAIBaseClient
 from parrot.clients.openrouter import OpenRouterClient
 from parrot.clients.vllm import vLLMClient
+from parrot.clients.zai import ZaiClient
 from parrot.tools.manager import ToolFormat
 
 # Every client that speaks the OpenAI wire protocol under its own label.
@@ -43,9 +44,8 @@ OPENAI_COMPATIBLE = [
     NvidiaClient,
 ]
 
-# FEAT-438 TASK-2301/2303: every OpenAIBaseClient subclass — Phase 1 (six
-# wire clients) + Phase 2's GroqClient (TASK-2303; ZaiClient joins in
-# TASK-2304).
+# FEAT-438 TASK-2301/2303/2304: every OpenAIBaseClient subclass — Phase 1
+# (six wire clients) + Phase 2 (GroqClient, ZaiClient).
 WIRE_SUBCLASSES = [
     OpenRouterClient,
     MoonshotClient,
@@ -54,6 +54,7 @@ WIRE_SUBCLASSES = [
     vLLMClient,
     BedrockMantleClient,
     GroqClient,
+    ZaiClient,
 ]
 
 # Matches an OpenAI-the-provider model id (e.g. "gpt-5-mini", "gpt-4.1").
