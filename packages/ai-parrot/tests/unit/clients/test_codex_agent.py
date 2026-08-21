@@ -157,3 +157,69 @@ async def test_tool_bridge_routes_through_tool_manager() -> None:
     assert [tool.name for tool in tools] == ["echo"]
     assert result.isError is False
     assert result.content[0].text == "echo:x"
+
+
+@pytest.mark.asyncio
+async def test_cli_backend_get_client_does_not_import_the_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``backend="cli"`` must not need ``openai-codex``.
+
+    The CLI backend exists precisely so Codex can be driven through its own
+    binary and session instead of an SDK plus API key. ``get_client()`` used
+    to import the SDK unconditionally, so every caller that goes through
+    ``async with client`` — which is every agent turn, via
+    ``execute_llm_call()`` — failed with "SDK backend requires openai-codex"
+    even though it never needed one.
+    """
+
+    def _boom() -> Any:
+        raise AssertionError("the CLI backend must not import the SDK")
+
+    client = OpenAICodexClient(backend="cli")
+    monkeypatch.setattr(client, "_import_sdk", _boom)
+
+    handle = await client.get_client()
+    assert handle is not None
+
+    # The same handle every time: AbstractClient caches it per event loop and
+    # never calls into it, so it stays inert.
+    assert await client.get_client() is handle
+
+
+@pytest.mark.asyncio
+async def test_cli_backend_survives_the_client_context_manager() -> None:
+    """Entering the client is what an agent turn does before ask()."""
+    client = _FakeCodexClient(backend="cli")
+    async with client:
+        message = await client.ask(
+            "hello",
+            run_options=CodexAgentRunOptions(
+                backend="cli", model="", cwd="/tmp", expose_parrot_tools=False
+            ),
+        )
+    assert message.response == "ok"
+
+
+@pytest.mark.asyncio
+async def test_sdk_backend_still_imports_the_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SDK path is unchanged: it must still resolve the SDK."""
+    calls: list[bool] = []
+
+    def _fake_import() -> Any:
+        calls.append(True)
+
+        class _Sdk:
+            @staticmethod
+            def AsyncCodex() -> str:  # noqa: N802 - mirrors the SDK name
+                return "sdk-client"
+
+        return _Sdk
+
+    client = OpenAICodexClient(backend="sdk")
+    monkeypatch.setattr(client, "_import_sdk", _fake_import)
+
+    assert await client.get_client() == "sdk-client"
+    assert calls == [True]
