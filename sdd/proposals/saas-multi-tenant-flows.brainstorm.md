@@ -363,7 +363,7 @@ PBAC/`ExecutionPolicy`.
 > Lo que esta decisión **no** resuelve: un flow *del catálogo* también puede llevar tools que
 > ejecutan código (pandas agent, sandbox tool). En shared esas siguen teniendo que ir al
 > executor docker/qworker. La restricción cierra la superficie de definiciones arbitrarias,
-> no el riesgo de vecinos ruidosos (pregunta abierta nº 4).
+> no el riesgo de vecinos ruidosos (pregunta abierta "vecinos ruidosos en modo shared").
 
 ### 4. BYOK
 
@@ -692,6 +692,201 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
 
 ---
 
+## Feature Description
+
+### User-Facing Behavior
+
+El cliente obtiene un **tenant** y una o más **API keys**. Con ellas lanza un flow del
+catálogo (`POST /api/v1/saas/runs`) y recibe un `run_id` inmediato. Puede seguir la ejecución
+en vivo por SSE/WS, recibir un webhook firmado al terminar, y descargar el **dossier
+completo** — contenido de cada tool por agente, resultado de cada agente, executive summary e
+infografía — vía REST y URLs firmadas. Los humanos del tenant entran por navigator-auth
+(ABAC/PBAC) al portal; las máquinas por API key.
+
+En modo shared solo ejecuta flows del catálogo. En enterprise puede además registrar sus
+propias definiciones. Aporta sus claves LLM (BYOK), salvo en el modo enterprise-managed,
+donde las ponemos nosotros y se le factura el consumo.
+
+Desarrollo completo en §1–§7 de "Diseño recomendado".
+
+### Internal Behavior
+
+Una petición atraviesa: `tenant_middleware` (resuelve principal → `TenantContext`, lo deposita
+en `request`, en un ContextVar y en `_pctx_var`) → **admisión** (entitlement + cuota +
+presencia de clave BYOK, evaluada con `navrules`) → `RunService`, que construye el crew/flow
+desde la definición del catálogo inyectando la clave del tenant en `LLMFactory.create()` →
+ejecución → `DossierBuilder` ensambla el `ResearchDossier` desde el `FlowResult` → persistencia
+en el schema del tenant con offload a object storage por encima del umbral → emisión de
+eventos `saas.*` que alimentan SSE y webhooks → `TenantUsageRecorder` escribe `usage_events`
+en el plano de control.
+
+### Edge Cases & Error Handling
+
+- **Sin clave BYOK válida**: 402 con cuerpo con forma `NeedsAuth`. Nunca se cae al pool de
+  plataforma en modo shared — eso sería cargarnos un coste silenciosamente.
+- **Cuota o presupuesto agotado**: rechazo en admisión (402/429 con `reason` legible), o corte
+  en caliente vía `BudgetGuard` si se supera durante el run. El corte deja un `FlowResult`
+  parcial que se persiste con `status=budget_exceeded`, no se descarta.
+- **Fallo de un nodo**: `FlowResult` ya modela `partial`/`failed` y `errors` por nodo; el
+  dossier los propaga en `errors` en vez de perderlos.
+- **Infografía fallida**: hoy `AgentCrew._finalize_infographic` se traga toda excepción y deja
+  `infographic=None`. El diseño exige registrarla en `dossier.errors` (§2.d).
+- **Tool result gigante**: por encima de `SAAS_TOOL_MAX_BYTES` se trunca marcando
+  `truncated=True` y guardando el sha256 del cuerpo completo.
+- **Control plane caído** (enterprise): el data plane sigue sirviendo con los últimos
+  entitlements durante `SAAS_OFFLINE_GRACE` (72 h), bufferizando uso, y solo entonces rechaza
+  runs nuevos.
+- **Webhook a URL del tenant**: guardia SSRF obligatoria (§6).
+
+---
+
+## Capabilities
+
+### New Capabilities
+
+- `saas-auth-hardening`: cerrar las rutas de crew sin autenticar y dejar de derivar el tenant
+  del body. **Prerrequisito duro de todo lo demás.**
+- `tenant-context-and-middleware`: `TenantContext`, resolución de tenant, API keys de tenant.
+- `tenant-schema-provisioning`: `client_slug` aleatorio, `CREATE SCHEMA`, migraciones,
+  nombres cualificados.
+- `agentsflow-result-fidelity`: `unwrap_node_response()` en los dos sitios de llamada.
+- `agentsflow-parity`: `ExecutionMemory`, args de ctor, `InfographicMixin`, persistencia.
+- `research-dossier`: modelo, builder, store, redacción, umbral inline/offload.
+- `flow-catalog-and-entitlements`: bundles versionados, `FlowCatalog`, gate de shared.
+- `byok-llm-credentials`: vault por tenant, resolver, inyección, validación en alta.
+- `usage-metering-store`: `usage_events`, `TenantUsageRecorder`, `BudgetGuard`, enmienda del
+  contrato de PII de observabilidad.
+- `run-service-and-api`, `run-streaming-and-webhooks`, `pulumi-config-and-state`,
+  `tenant-dataplane-provisioning`, `control-plane-ingest`, `managed-key-pool-and-rating`,
+  `custom-definitions-sandbox`, `tenant-portal`.
+
+Correspondencia y dependencias en "Plan de features".
+
+### Modified Capabilities
+
+- `granular-permission-system` / `botmanager-pbac-permissions`: el `EvalContext` pasa a llevar
+  `tenant`, y `setup_pbac` deja de fallar abierto bajo `PARROT_SAAS_MODE`.
+- `formregistry-multi-tenancy`: `_identifiers.py` se promueve al core y formdesigner pasa a
+  importarlo de ahí.
+
+---
+
+## Impact & Integration
+
+| Componente afectado | Tipo de impacto | Notas |
+|---|---|---|
+| `packages/ai-parrot-saas` | nuevo | Plano de control; extras `[control]`/`[dataplane]` |
+| `parrot/bots/flows/flow/flow.py` | modifica | Fidelidad del resultado + tenant + persistencia |
+| `parrot/bots/flows/core/result.py` | extiende | `unwrap_node_response()` |
+| `parrot/bots/flows/core/storage/backends/postgres.py` | modifica | Schema por tenant |
+| `parrot/observability/{context,recorders}` + `clients/base.py` | extiende | `tenant_id`/`run_id`; **enmienda el contrato de PII documentado** |
+| `parrot/auth/{pbac,eval_context}` | modifica | Fail-closed + `tenant` en contexto |
+| `parrot_tools/pulumi/executor.py` | corrige | `config_values` y `pulumi login` |
+| `handlers/crew/*`, `handlers/stream.py`, `app.py` | modifica | **Cambio de seguridad**: rutas hoy abiertas se cierran |
+| `parrot_formdesigner/services/_identifiers.py` | mueve | Al core, import redirigido |
+| `navigator-eventbus/TOPICS.md` | extiende | Namespace `saas.*` |
+
+**Breaking changes**: cerrar `/api/v1/crew*` y `/bots/*/stream/*` rompe a cualquier consumidor
+que hoy dependa de que estén abiertos. Es intencionado y es el prerrequisito de la venta.
+
+**Nuevas dependencias**: Argon2 (hash de API keys), provider `postgresql` de Pulumi. Sin Redis
+ni Postgres adicionales.
+
+---
+
+## Code Context
+
+### User-Provided Code
+
+Ninguno. Los requisitos se dieron en prosa; todas las referencias de abajo salen de
+investigación sobre el repo.
+
+### Verified Codebase References
+
+#### Classes & Signatures
+
+```python
+# From parrot/bots/flows/core/node.py:310 — el envoltorio que rompe la fidelidad
+return {"response": response, "output": output,
+        "execution_time": end_time - start_time, "prompt": prompt}
+
+# From parrot/bots/flows/core/result.py:619
+def build_node_metadata(node_id, agent, response, output,
+                        execution_time, status, error=None) -> NodeExecutionInfo: ...
+
+# From parrot/models/basic.py:23 — el contenido real de cada tool
+class ToolCall(BaseModel):
+    id: str; name: str; arguments: Dict[str, Any]
+    result: Optional[Any] = None; error: Optional[str] = None
+    execution_time: Optional[float] = None
+
+# From parrot/auth/broker.py:297 — patrón BYOK a extender
+async def store_key(self, user_id: str, api_key: str) -> None: ...
+
+# From parrot/storage/artifacts.py:177 — lanza ValueError si el artefacto es inline
+async def get_public_url(self, user_id, agent_id, session_id, artifact_id,
+                         *, format="html") -> str: ...
+```
+
+#### Verified Imports
+
+```python
+from parrot.models.basic import ToolCall, CompletionUsage      # parrot/models/basic.py:23,48
+from parrot.bots.flows.core.result import build_node_metadata  # core/result.py:619
+from parrot.auth.credentials import CredentialResolver, ResolvedCredential, NeedsAuth
+from parrot.security.vault_utils import store_vault_credential, retrieve_vault_credential
+from parrot.observability.cost.calculator import CostCalculator
+from navigator_eventbus import EventBus, EventEnvelope, CompositeBackend
+```
+
+#### Key Attributes & Constants
+
+- `PostgresResultStorage._TABLE_RE` → `^[a-z_][a-z0-9_]*$` — **rechaza puntos**
+  (`core/storage/backends/postgres.py:19`)
+- `PARROT_SCHEMA` → constante estática (`parrot/conf.py:103`)
+- `CREW_RESULT_STORAGE` → por defecto `documentdb`, **no** postgres (`parrot/conf.py:309`)
+- `FlowResult.infographic` → `Optional[InfographicRenderResult]` (`core/result.py`)
+- ContextVars leídos **en construcción del evento**, no al emitir
+  (`clients/base.py:479`, `:558`, `:606`)
+
+### Does NOT Exist (Anti-Hallucination)
+
+- ~~Cualquier programa Pulumi~~ — solo existe el fixture de test
+  `packages/ai-parrot/tests/fixtures/pulumi_docker_project/`
+- ~~`pulumi config set` en el executor~~ — `config_values` se acepta y se **descarta**
+- ~~Uso de `PulumiConfig.state_backend`~~ — declarado, nunca leído; no hay `pulumi login`
+- ~~Clase `RateLimiter`~~ — `a2a/security.py:1444` es un hook que siempre vale `None`
+- ~~Store durable de uso~~ — `cumulative_cost_usd` es in-memory por proceso
+- ~~`tenant_id` en `UsageRecord` o en `AfterClientCallEvent`~~ — no existen hoy
+- ~~Resolver de credenciales LLM~~ — no hay ninguno para proveedores LLM
+- ~~Middleware de tenant / construcción de `UserSession` desde HTTP~~ — `UserSession.tenant_id`
+  está declarado en `parrot/auth/permission.py:20` pero **nunca se construye** desde request
+- ~~Instanciación de `RlsRegistry`, `DataPlanePolicyGuard`, `DatasetPolicyGuard`~~ —
+  implementados, cero construcciones en `src/`
+- ~~Consumidores de `navrules`~~ — cero imports fuera de su propio paquete
+- ~~`ExecutionMemory` en `AgentsFlow`~~ — cero referencias en `flow.py` (60 en `crew.py`)
+- ~~Endpoint HTTP genérico para ejecutar un `AgentsFlow`~~ — solo existe la superficie de
+  checkpoints
+- ~~`tenant` en `FlowDefinition`~~ — existe en `CrewDefinition`, no en `FlowDefinition`
+
+---
+
+## Parallelism Assessment
+
+- **Internal parallelism**: alto. `S3a`/`S3b` (fidelidad y paridad de `AgentsFlow`) tocan solo
+  `parrot/bots/flows/` y no dependen de la tenencia, así que van en paralelo desde el día 1.
+  `S10` (Pulumi) es independiente de todo. `S5`/`S6`/`S7` son disjuntos entre sí una vez está
+  `S1`.
+- **Cross-feature independence**: el riesgo de colisión está en tres ficheros compartidos —
+  `app.py` (orden de middleware), `handlers/crew/*` (los toca `S0`) y `clients/base.py` (lo
+  toca `S7`). `S0` debe cerrar antes de que nadie más entre en `handlers/crew/*`.
+- **Recommended isolation**: per-spec.
+- **Rationale**: el grueso del trabajo vive en un paquete nuevo (`ai-parrot-saas`) que nadie
+  más toca, y los cambios en core son quirúrgicos y localizados. Un worktree por feature evita
+  el único choque real, que es el de los tres ficheros compartidos.
+
+---
+
 ## Decisiones cerradas
 
 - **Definiciones de flow propias del cliente: prohibidas en modo shared.** El catálogo es la
@@ -723,33 +918,56 @@ tenants concurrentes ejecutando el mismo flow del catálogo con claves BYOK dist
 
 ## Open Questions
 
-1. **`ArtifactStore` sin tenant y con URL firmada no autenticada** — clave de partición
-   `(user_id, agent_id, session_id)`, firma sigv4 de hasta **7 días**, y autorización *solo*
-   por firma. Las infografías del tenant A no pueden ser alcanzables por B: hay que meter el
-   tenant en la clave y en el payload de la firma, y acortar el TTL. Además
-   **`get_public_url()` lanza `ValueError` para artefactos inline** (los pequeños, que no
-   pasan por S3) — así que el dossier y la infografía deben escribirse con offload forzado
-   si queremos URL firmada siempre.
-2. **`PostgresResultStorage` usa `CREW_RESULT_STORAGE_PG_DSN`**, una conexión distinta de
-   `app['database']`, y **se traga todos los errores de `save()`** en un `logger.warning`.
-   En un producto facturable, un registro de ejecución perdido en silencio es un ticket de
-   soporte. Decisión a tomar: que la escritura del **dossier** sea la autoritativa y
-   transaccional con el estado del run, dejando `crew_executions` como telemetría
-   best-effort.
-3. **`CREW_RESULT_STORAGE` por defecto es `documentdb`**, no postgres (`conf.py:309`). Toda
-   la historia de schema-per-tenant asume postgres: hay que confirmar que el despliegue
-   compartido fija `CREW_RESULT_STORAGE=postgres`, o los datos de todos los tenants acaban
-   en una colección DocumentDB compartida distinguida solo por un campo `tenant`.
-4. **Vecinos ruidosos en modo shared**: un solo proceso aiohttp sirviendo los flows de todos
-   los tenants. Hay caps de concurrencia por tenant en el plan, pero no aislamiento de
-   CPU/memoria: una tool de pandas o de código puede bloquear el event loop. En shared, todo
-   lo que ejecute código debe ir al executor docker/qworker.
-5. **Frescura de las tablas de precios** (avisan a los 90 días): facturar claves gestionadas
-   con precios rancios es riesgo de ingresos. Necesita un proceso de refresco.
-6. **Límite de escala del schema-per-tenant**: Postgres se degrada con miles de schemas
-   (bloat de catálogo, coste de `pg_dump`). Bien para cientos; hay que marcar la ruta de
-   migración (tablas particionadas por tenant + RLS — `RlsRegistry` ya existe sin usar)
-   antes de pasar de ~1–2k tenants.
+> Convención consumida por `/sdd-spec`: `[ ]` sin resolver, `[x]` resuelta con la respuesta
+> tras el último `:`. Las resueltas se desarrollan en "Decisiones cerradas".
+
+- [ ] `ArtifactStore` no tiene dimensión de tenant y su URL firmada no está autenticada:
+  partición `(user_id, agent_id, session_id)`, firma sigv4 de hasta 7 días, autorización solo
+  por firma. Hay que meter el tenant en la clave y en el payload de la firma, y acortar el
+  TTL. Además `get_public_url()` lanza `ValueError` para artefactos inline, así que el dossier
+  y la infografía deben escribirse con offload forzado si queremos URL firmada siempre.
+  — *Owner: Platform Eng*
+- [ ] `PostgresResultStorage` usa `CREW_RESULT_STORAGE_PG_DSN`, una conexión distinta de
+  `app['database']`, y se traga todos los errores de `save()` en un `logger.warning`. En un
+  producto facturable, un registro de ejecución perdido en silencio es un ticket de soporte.
+  ¿Hacemos que la escritura del dossier sea la autoritativa y transaccional con el estado del
+  run, dejando `crew_executions` como telemetría best-effort? — *Owner: Platform Eng*
+- [ ] `CREW_RESULT_STORAGE` por defecto es `documentdb`, no postgres (`conf.py:309`). Toda la
+  historia de schema-per-tenant asume postgres: hay que confirmar que el despliegue compartido
+  fija `CREW_RESULT_STORAGE=postgres`, o los datos de todos los tenants acaban en una colección
+  DocumentDB compartida distinguida solo por un campo `tenant`. — *Owner: Platform Eng*
+- [ ] Vecinos ruidosos en modo shared: un solo proceso aiohttp sirviendo los flows de todos los
+  tenants. Hay caps de concurrencia por tenant, pero no aislamiento de CPU/memoria: una tool de
+  pandas o de código puede bloquear el event loop. En shared, todo lo que ejecute código
+  debería ir al executor docker/qworker. — *Owner: Platform Eng*
+- [ ] Frescura de las tablas de precios (avisan a los 90 días): facturar claves gestionadas con
+  precios rancios es riesgo de ingresos. Necesita un proceso de refresco y reconciliación
+  mensual contra la factura real del proveedor. — *Owner: Platform Eng + Finance*
+- [ ] Límite de escala del schema-per-tenant: Postgres se degrada con miles de schemas (bloat
+  de catálogo, coste de `pg_dump`). Bien para cientos; hay que marcar la ruta de migración
+  (tablas particionadas por tenant + RLS, con `RlsRegistry` que ya existe sin usar) antes de
+  pasar de ~1–2k tenants. — *Owner: Platform Eng*
+- [ ] SLA de recuperación por tenant: el PITR es de cluster completo, así que restaurar un
+  tenant a un punto en el tiempo exige dumps lógicos por base. Hay que fijar el SLA antes de
+  venderlo. — *Owner: Platform Eng*
+
+Resueltas:
+
+- [x] ¿El tercer modo (claves LLM nuestras) entra desde v1 o se pospone? — *Owner: phenobarbital*:
+  desde v1. El punto de captura de uso es el mismo en los tres modos, así que diseñarlo después
+  obligaría a un retrofit.
+- [x] ¿Se permiten definiciones de flow propias del cliente en modo shared? — *Owner: phenobarbital*:
+  no. El catálogo es la única superficie de ejecución en shared; las definiciones propias son
+  exclusivas de enterprise.
+- [x] ¿Se puede enmendar el contrato de PII de observabilidad para añadir `tenant_id`/`run_id`?
+  — *Owner: phenobarbital*: sí, documentándolo en `observability/README.md` como criterio de
+  aceptación de la feature de metering.
+- [x] ¿Instancias Postgres dedicadas por tenant enterprise, o cluster compartido? — *Owner: phenobarbital*:
+  cluster compartido con aislamiento lógico. Enterprise será poco frecuente al principio y el
+  coste de instancias dedicadas no está justificado; con disparadores de revisión definidos.
+- [x] ¿Cómo se nombran schemas y bases de datos? — *Owner: phenobarbital*: con un `client_slug`
+  aleatorio de CSPRNG, unido al cliente por una relación `cliente ↔ client_slug` que solo existe
+  en el plano de control.
 
 ---
 
