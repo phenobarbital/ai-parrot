@@ -1,6 +1,6 @@
 {
   "next_task_id": 2306,
-  "next_feature_id": 439,
-  "updated_at": "2026-08-21T13:55:30+00:00",
-  "updated_by": "openai-compatible-clients"
+  "next_feature_id": 440,
+  "updated_at": "2026-08-21T15:54:35+00:00",
+  "updated_by": "onnx-injection-guardrail-backend"
 }
