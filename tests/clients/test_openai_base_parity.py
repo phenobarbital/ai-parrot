@@ -1,4 +1,4 @@
-"""Tool-loop + completion-funnel parity tests for FEAT-438 TASK-2297/2298.
+"""Tool-loop + completion-funnel parity tests for FEAT-438 TASK-2297/2298/2301.
 
 Verifies the shared ``OpenAIBaseClient._run_tool_call_loop()`` reproduces
 the semantics of the two inline loops it replaces
@@ -18,9 +18,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 from parrot.clients.gpt import OpenAIClient
+from parrot.clients.localllm import LocalLLMClient
+from parrot.clients.moonshot import MoonshotClient
+from parrot.clients.nova.mantle import BedrockMantleClient
+from parrot.clients.nvidia import NvidiaClient
 from parrot.clients.openai_base import OpenAIBaseClient
+from parrot.clients.openrouter import OpenRouterClient
+from parrot.clients.vllm import vLLMClient
 from parrot.models import AIMessage
 from parrot.models.responses import InvokeResult
+from parrot.tools.manager import ToolFormat
 
 
 def test_openai_client_extends_base():
@@ -276,3 +283,150 @@ async def test_invoke_routes_via_funnel():
     assert len(client.calls) == 1
     assert client.calls[0]["use_tools"] is True
     assert isinstance(result, InvokeResult)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-438 TASK-2301 — per-client payload parity + funnel-coverage consolidation
+# ---------------------------------------------------------------------------
+
+# The Phase-1 wire roster (Phase 2 adds Groq/Zai in TASK-2303/2304 — NOT here).
+WIRE_SUBCLASSES = [
+    OpenRouterClient,
+    MoonshotClient,
+    NvidiaClient,
+    LocalLLMClient,
+    vLLMClient,
+    BedrockMantleClient,
+]
+
+# vLLMClient.ask()/ask_stream() unconditionally forward
+# extra_body=extra_body if extra_body else None up through
+# LocalLLMClient -> OpenAIBaseClient, whose ask()/ask_stream() have never
+# accepted an extra_body kwarg (neither did OpenAIClient's, pre-FEAT-438).
+# Genuine pre-existing defect (present since at least commit ae3d613ab),
+# unrelated to this feature — reported (see
+# tests/clients/test_openai_compatible_defaults.py), not fixed here.
+_ASK_FUNNEL_ROSTER = [c for c in WIRE_SUBCLASSES if c is not vLLMClient]
+_ASK_STREAM_FUNNEL_ROSTER = [c for c in WIRE_SUBCLASSES if c is not vLLMClient]
+
+# LocalLLMClient/vLLMClient's invoke() intentionally does NOT route through
+# _chat_completion (TASK-2300 kept it verbatim for its real
+# schema-in-prompt structured-output fallback value, calling the SDK
+# directly) — not a funnel-coverage gap, a deliberate exception.
+_INVOKE_FUNNEL_ROSTER = [
+    c for c in WIRE_SUBCLASSES if c not in (LocalLLMClient, vLLMClient)
+]
+
+
+def _parity_client_kwargs(cls) -> dict:
+    """Minimal explicit construction kwargs so no test touches real env vars."""
+    if cls is BedrockMantleClient:
+        return {"api_key": "test-key", "region": "us-east-1"}
+    if cls in (LocalLLMClient, vLLMClient):
+        return {"api_key": "test-key", "base_url": "http://localhost:8000/v1"}
+    return {"api_key": "test-key"}
+
+
+@pytest.mark.parametrize("cls", WIRE_SUBCLASSES, ids=lambda c: c.__name__)
+def test_wire_subclass_tool_wrapper_is_openai_shaped_and_strict(cls):
+    """Every Phase-1 wire subclass declares ToolFormat.OPENAI and emits the
+    {"type":"function","function":{...}} tool wrapper (not
+    Anthropic-shaped). AbstractClient._prepare_tools() applies "strict"
+    based on tool_format == ToolFormat.OPENAI (base.py:1420) — a wire-
+    protocol property, not an OpenAIClient-specific one — so every one of
+    these clients gets strict tools too (Groq is the one wire-compatible
+    provider that opts out, via ToolFormat.GROQ, not this roster)."""
+    client = cls(model="provider-model-x", **_parity_client_kwargs(cls))
+    assert client.tool_format is ToolFormat.OPENAI
+
+    class _StubToolManager:
+        def get_tool_schemas(self, provider_format=None):
+            return [
+                {
+                    "name": "calculator",
+                    "description": "Evaluate a mathematical expression.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"expression": {"type": "string"}},
+                        "required": ["expression"],
+                    },
+                }
+            ]
+
+    client.tool_manager = _StubToolManager()
+    schemas = client._prepare_tools()
+    assert len(schemas) == 1
+    assert schemas[0]["type"] == "function"
+    assert schemas[0]["function"]["name"] == "calculator"
+    assert schemas[0]["function"]["strict"] is True
+
+
+def _make_funnel_coverage_spy():
+    """Build a plain async function to monkeypatch onto a class as
+    ``_chat_completion`` — a plain function (not a callable-object
+    instance) so Python's normal method-binding rules apply when the
+    client calls ``self._chat_completion(...)``. Records every call and
+    returns a canned response shaped for both chat-completions and
+    streaming; the returned function's ``.calls`` list is the spy log.
+    """
+    calls: list = []
+
+    async def _chat_completion(self, model, messages, use_tools=False, stream=False, **kwargs):
+        calls.append({"model": model, "use_tools": use_tools, "stream": stream})
+        if stream:
+            async def _gen():
+                yield SimpleNamespace(
+                    choices=[SimpleNamespace(delta=SimpleNamespace(content="hi"))],
+                    usage=None,
+                )
+                yield SimpleNamespace(
+                    choices=[],
+                    usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                )
+            return _gen()
+        message = SimpleNamespace(content="ok", tool_calls=None)
+        response = SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
+        response.model_dump = lambda: {"choices": [{"message": {"content": "ok"}}]}
+        return response
+
+    _chat_completion.calls = calls
+    return _chat_completion
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cls", _ASK_FUNNEL_ROSTER, ids=lambda c: c.__name__)
+async def test_ask_reaches_chat_completion(cls, monkeypatch):
+    """ask() observably reaches _chat_completion (own override or inherited)
+    for every roster client except the excluded pre-existing-defect case."""
+    spy = _make_funnel_coverage_spy()
+    monkeypatch.setattr(cls, "_chat_completion", spy)
+    client = cls(model="provider-model-x", **_parity_client_kwargs(cls))
+    await client.ask("hello")
+    assert len(spy.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cls", _ASK_STREAM_FUNNEL_ROSTER, ids=lambda c: c.__name__)
+async def test_ask_stream_reaches_chat_completion(cls, monkeypatch):
+    """ask_stream() observably reaches _chat_completion with stream=True."""
+    spy = _make_funnel_coverage_spy()
+    monkeypatch.setattr(cls, "_chat_completion", spy)
+    client = cls(model="provider-model-x", **_parity_client_kwargs(cls))
+    chunks = [c async for c in client.ask_stream("hello") if isinstance(c, str)]
+    assert chunks == ["hi"]
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["stream"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cls", _INVOKE_FUNNEL_ROSTER, ids=lambda c: c.__name__)
+async def test_invoke_reaches_chat_completion(cls, monkeypatch):
+    """invoke() observably reaches _chat_completion for every roster client
+    that routes through the funnel (LocalLLM/vLLM's schema-in-prompt
+    fallback intentionally does not — excluded, see _INVOKE_FUNNEL_ROSTER)."""
+    spy = _make_funnel_coverage_spy()
+    monkeypatch.setattr(cls, "_chat_completion", spy)
+    client = cls(model="provider-model-x", **_parity_client_kwargs(cls))
+    await client._ensure_client()
+    await client.invoke("hello")
+    assert len(spy.calls) == 1
