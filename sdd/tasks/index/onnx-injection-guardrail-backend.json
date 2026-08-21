@@ -50,7 +50,7 @@
       "feature_id": "FEAT-439",
       "feature": "onnx-injection-guardrail-backend",
       "spec": "sdd/specs/onnx-injection-guardrail-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Same file as TASK-2307; consumes its engine interface.",
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2308-check-engine-swap.md"
+      "completed_at": "2026-08-21T17:11:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2308-check-engine-swap.md"
     },
     {
       "id": "TASK-2309",

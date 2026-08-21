@@ -209,10 +209,59 @@ class TestCheckFlowPreservation:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-21
 **Notes**:
+- `__init__` now resolves `self._injection_engine = _resolve_injection_engine()`
+  (TASK-2307's singleton) instead of calling `_get_shared_injection_detector()`
+  directly. `_pytector_available` is preserved as-is; `_pytector_detector`
+  is preserved for back-compat by unwrapping the underlying detector when
+  the resolved engine is a `_PytectorInjectionEngine` (`None` otherwise).
+  `_injection_detector` keeps its regex-fallback role unchanged.
+- `check()`: replaced the hardcoded
+  `self._pytector_detector.detect_injection(scan_text)` call with
+  `self._injection_engine.score(scan_text)` when an ML engine resolved;
+  threshold compare simplified to `probability > threshold` (the old
+  `is_injection and probability > threshold` double-gate is now redundant
+  — pytector's own `is_injection` used its *own* `default_threshold=0.5`,
+  which `probability > 0.98` already implies; dropping it changes no
+  observable behaviour). `pattern` is `"onnx-model"` for the ONNX engine,
+  `"pytector-model"` otherwise (unchanged for pytector) — verified by
+  `test_pattern_field_names_engine`. Regex branch
+  (`self._injection_detector.sanitize(...)`) preserved verbatim, taken
+  only when `_injection_engine is None`.
+- Added the empty/whitespace-input short-circuit
+  (`if not content or not content.strip(): PASS`) immediately after the
+  trusted-source/strict_mode bypasses, before framework stripping or any
+  engine call — proven by
+  `test_empty_input_short_circuits_no_engine_call`/
+  `test_whitespace_input_short_circuits` asserting the engine mock's
+  `.score()` is never called.
+- Everything else in `check()` — trusted-source bypass, `strict_mode`
+  bypass, `strip_framework_patterns`, security-event logging call/payload
+  shape, the intentionally-preserved `max()` severity quirk, BLOCK
+  report shape (`reason="prompt_injection_detected"`,
+  `report={"threats_detected": N}`), TRANSFORM/`_wrap_flagged_input` — is
+  byte-for-byte untouched.
+- Updated the 7 test-file blocks that patched `_get_shared_injection_detector`
+  directly to instead patch `_resolve_injection_engine` (returning either
+  `None` for construction-only tests, or a
+  `_PytectorInjectionEngine(mock_detector, ...)` via the new
+  `_mock_pytector_engine()` helper for tests exercising detection) — this
+  was necessary because `_resolve_injection_engine()` is a real,
+  memoized, filesystem-probing singleton that would otherwise bypass the
+  mock entirely (and, in this dev environment, resolve a REAL cached v2
+  pytector snapshot). All pre-existing test **assertions** are unmodified;
+  only the patch *target* changed, per the task's explicit allowance.
+- Added `TestCheckFlowPreservation` (8 tests): empty/whitespace
+  short-circuit (no engine call), ONNX engine over/under threshold,
+  BLOCK with ONNX engine, `pattern` field naming (onnx vs pytector),
+  regex branch when no engine, and security-event payload shape
+  (key set unchanged).
+- Full suite: `pytest packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py -v`
+  — **32 passed** (13 pre-existing with unmodified assertions + 11 from
+  TASK-2307 + 8 new flow-preservation tests). `ruff check` clean.
+- No change to `name`, `stages`, `priority`, `on_error`, `check()`
+  signature, or the registered guardrail name `"prompt_injection"`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
