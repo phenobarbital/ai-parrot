@@ -296,3 +296,24 @@ body BEFORE deleting: delete only what the funnel now provides" guidance
 and from the acceptance criterion requiring `invoke()` rate-limit coverage
 to be proven; leaving the double-acquire in place would have been a
 correctness regression the rebase itself introduced.
+
+**Addendum (TASK-2305, same feature)**: the "pre-existing, unrelated"
+`MagicMock().model_dump()`/`hasattr` gotcha called out above (byte-identical
+to baseline at the time, correctly left unfixed here) was revisited during
+TASK-2305's final full-suite verification pass, since the spec's own
+Acceptance Criteria demand "every pre-existing client test suite passes...
+`pytest` full run green" as a FEAT-438-level completion condition — not
+satisfiable while leaving it broken. Pinned `mock_response.model_dump =
+MagicMock(return_value={})` alongside the existing `.dict` mock in both
+`test_nvidia_client.py`'s `make_mock_completion()` and
+`test_bedrock_mantle.py`'s `_make_mock_chat_completion_response()` (the
+same fixture pattern in both files), since `AIMessageFactory.from_openai`
+(responses.py:492) checks `hasattr(response, "model_dump")` before
+`.dict()` — and a bare `MagicMock` auto-vivifies `model_dump` too, so that
+branch always won and always returned a non-dict. Confirmed via a
+temporary `dev`-branch worktree that this exact failure (same
+`ValidationError` on `raw_response`) pre-dates FEAT-438 entirely — not
+something this rebase introduced, just something its now-corrected patch
+targets (`OpenAIBaseClient._chat_completion` instead of the dead
+`OpenAIClient._chat_completion` reference) finally exercise for real
+instead of silently no-op'ing.

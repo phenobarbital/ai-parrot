@@ -187,6 +187,38 @@ scope):
 - Bumped the plain-`ask` leg's `max_tokens` from 16 → 64 (see Mantle row
   above) for robustness against reasoning-heavy models.
 
+**Offline regression fixes found and fixed during the final full-suite
+verification pass** (unit tests, not live smokes — see the "Addendum
+(TASK-2305...)" note appended to `sdd/tasks/completed/
+TASK-2300-phase1-subclass-rebase.md` for full detail):
+- `test_bedrock_mantle.py::test_ask_delegates_to_openai_machinery` still
+  patched the dead `parrot.clients.gpt.OpenAIClient._chat_completion`
+  target post-rebase (silent no-op since `BedrockMantleClient` no longer
+  extends `OpenAIClient`) — repointed to
+  `parrot.clients.openai_base.OpenAIBaseClient._chat_completion`.
+- That fix then surfaced a genuinely pre-existing (confirmed via a
+  throwaway `dev`-branch worktree — same failure there, untouched by
+  FEAT-438) `MagicMock().model_dump()`/`hasattr` gap in both
+  `test_bedrock_mantle.py` and `test_nvidia_client.py`'s shared mock
+  response helpers — pinned `mock_response.model_dump =
+  MagicMock(return_value={})` in both. Required for the spec's own
+  Acceptance Criteria ("every pre-existing client test suite passes...
+  full run green").
+- Full `tests/clients/` + `test_nvidia_client.py` + `test_openrouter_client.py`
+  + `test_bedrock_mantle.py` run after both fixes: 32 failed / 25 errors
+  remain, ALL confirmed pre-existing and unrelated to FEAT-438 (verified
+  file-by-file via `git diff dev...HEAD -- <file>` = empty, or a direct
+  run against a throwaway `dev` worktree reproducing the identical
+  failure): Google/Anthropic fallback-model test drift
+  (`test_google_fallback.py`, `test_client_fallback.py`,
+  `test_anthropic_fallback.py` — unrelated model-string/timing changes on
+  `dev`), missing `claude_agent_sdk` dependency causing collection ERRORs
+  (`test_claude_agent*.py`, `test_aimessage_factory_claude_agent.py`), and
+  2 live-network `TestNvidiaIntegration` tests hitting a since-retired
+  model (`410 Gone — reached its end of life`) because this environment
+  happens to have a real `NVIDIA_API_KEY` configured (these tests are
+  correctly `skipif`-gated for keyless machines/CI).
+
 **Worktree gotcha hit and documented**: a bare `python
 examples/clients/smoke/smoke_X.py` from inside this worktree silently
 imported the **main checkout's** pre-rebase code (editable-install `.pth`

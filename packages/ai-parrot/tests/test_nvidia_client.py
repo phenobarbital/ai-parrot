@@ -56,6 +56,14 @@ def make_mock_completion():
         prompt_tokens=1, completion_tokens=1, total_tokens=2
     )
     mock_response.dict = MagicMock(return_value={})
+    # AIMessageFactory.from_openai checks hasattr(response, "model_dump")
+    # first (responses.py:492) — a bare MagicMock auto-vivifies that
+    # attribute too, returning another MagicMock instead of a dict, which
+    # fails AIMessage's raw_response validation. Pin it explicitly so this
+    # mock exercises the same code path AIMessageFactory.from_openai
+    # actually takes (pre-existing gap, predates FEAT-438 — confirmed via
+    # the same failure on dev's gpt.py with this exact fixture).
+    mock_response.model_dump = MagicMock(return_value={})
     return mock_response
 
 
