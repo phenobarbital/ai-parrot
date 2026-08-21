@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-21T18:30:00+02:00",
-  "completed_at": "2026-08-21T17:21:56+00:00",
+  "completed_at": "2026-08-21T20:16:52+00:00",
   "tasks": [
     {
       "id": "TASK-2306",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
       "completed_at": "2026-08-21T17:04:36+00:00",
-      "file": "sdd/tasks/completed/TASK-2306-benchmark-parity-512-rerun.md"
+      "file": "sdd/tasks/completed/TASK-2306-benchmark-parity-512-rerun.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2307",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
       "completed_at": "2026-08-21T17:07:23+00:00",
-      "file": "sdd/tasks/completed/TASK-2307-onnx-engine-hybrid-resolution.md"
+      "file": "sdd/tasks/completed/TASK-2307-onnx-engine-hybrid-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2308",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
       "completed_at": "2026-08-21T17:11:33+00:00",
-      "file": "sdd/tasks/completed/TASK-2308-check-engine-swap.md"
+      "file": "sdd/tasks/completed/TASK-2308-check-engine-swap.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2309",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
       "completed_at": "2026-08-21T17:14:34+00:00",
-      "file": "sdd/tasks/completed/TASK-2309-warmup-entrypoint.md"
+      "file": "sdd/tasks/completed/TASK-2309-warmup-entrypoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2310",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
       "completed_at": "2026-08-21T17:18:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2310-backend-matrix-tests.md"
+      "file": "sdd/tasks/completed/TASK-2310-backend-matrix-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2311",
@@ -125,7 +130,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
       "completed_at": "2026-08-21T17:21:56+00:00",
-      "file": "sdd/tasks/completed/TASK-2311-packaging-docs-followup.md"
+      "file": "sdd/tasks/completed/TASK-2311-packaging-docs-followup.md",
+      "verification": "verified"
     }
   ]
 }
