@@ -25,6 +25,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 Backend = Literal["auto", "sdk", "cli"]
+
+#: Placeholder cached by ``AbstractClient`` when the CLI backend is active.
+#: The CLI path owns its own lifecycle, so no SDK object is ever needed —
+#: see :meth:`OpenAICodexClient.get_client`.
+_CLI_BACKEND_HANDLE = object()
 SandboxMode = Literal["read-only", "workspace-write", "danger-full-access"]
 ApprovalPolicy = Literal["untrusted", "on-request", "never"]
 
@@ -89,6 +94,22 @@ class OpenAICodexClient(AbstractClient):
         self.run_options.codex_bin = codex_bin
 
     async def get_client(self) -> Any:
+        """Return the SDK client, or an inert handle for the CLI backend.
+
+        With ``backend="cli"`` there is no SDK client to build: ``ask()``
+        drives the ``codex`` binary itself and never touches the cached
+        handle (``AbstractClient`` only stores it per event loop). Importing
+        the SDK here would make the CLI backend depend on the very package
+        it exists to avoid — which is what happened to every caller that
+        goes through ``async with client`` instead of ``complete()``, e.g.
+        an agent turn via ``execute_llm_call()``.
+
+        Returns:
+            The ``AsyncCodex`` SDK client, or ``_CLI_BACKEND_HANDLE`` when
+            running the CLI backend.
+        """
+        if self.run_options.backend == "cli":
+            return _CLI_BACKEND_HANDLE
         sdk = self._import_sdk()
         return sdk.AsyncCodex()
 
