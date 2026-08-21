@@ -18,9 +18,10 @@ Measured on 96 labelled samples (10 timed passes, thread caps applied,
 
 Same weights, same inputs, **zero flipped verdicts** (max\|Δ\|=0.000) —
 the ONNX path is a backend swap, not a different classifier. Re-verified
-at the shipping tokenizer length (512) in
+at the shipping tokenizer length (512), with proper per-tier process
+isolation, in
 `benchmarks/injection_guardrail_latency/results-v2-512/report.md`: p50
-139.61 ms (torch) vs 40.08 ms (ONNX), still 0 flipped verdicts.
+124.35 ms (torch) vs 34.79 ms (ONNX), still 0 flipped verdicts.
 
 This does **not** fix the guardrail running synchronously on the event
 loop — `check()` still blocks the loop for the engine's full latency.
