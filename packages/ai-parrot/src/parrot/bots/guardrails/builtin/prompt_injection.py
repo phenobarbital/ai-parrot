@@ -588,6 +588,20 @@ class PromptInjectionGuardrail(Guardrail):
         block_on_threat: Mirrors the legacy ``block_on_threat`` ctor flag.
         injection_probability_threshold: Mirrors the legacy pytector
             probability threshold.
+        _injection_engine: FEAT-439 — the resolved ML scoring engine
+            (``_OnnxInjectionEngine`` | ``_PytectorInjectionEngine`` |
+            ``None`` for the regex floor). This is the source of truth
+            ``check()`` consults; prefer it over the two attributes below.
+        _pytector_detector: Back-compat only. The underlying pytector
+            detector when ``_injection_engine`` is pytector-backed,
+            **``None`` otherwise — including when the resolved engine is
+            ONNX**. Do NOT read this expecting "whatever ML detector is
+            active regardless of backend"; it is specifically the
+            pytector one.
+        _injection_detector: Back-compat only, mirrors
+            ``_pytector_detector`` when an ML engine resolved, or a real
+            ``PromptInjectionDetector`` (regex) when none did. Also
+            ``None`` under the ONNX engine, for the same reason as above.
     """
     name = "prompt_injection"
     stages: ClassVar[set] = {GuardrailStage.INPUT}
@@ -632,6 +646,12 @@ class PromptInjectionGuardrail(Guardrail):
         # `_injection_engine` is the source of truth `check()` consults.
         self._injection_engine = _resolve_injection_engine()
         self._pytector_available = importlib.util.find_spec("pytector") is not None
+        # NOTE: `_pytector_detector`/`_injection_detector` are `None` (not
+        # "the active ML detector") whenever `_injection_engine` resolved
+        # to the ONNX backend — they are back-compat aliases for the
+        # PYTECTOR detector specifically, not "whichever ML engine is in
+        # use." Code that needs the active engine regardless of backend
+        # must read `self._injection_engine` instead (see class docstring).
         self._pytector_detector = (
             self._injection_engine._detector
             if isinstance(self._injection_engine, _PytectorInjectionEngine)
