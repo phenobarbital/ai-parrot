@@ -1,0 +1,209 @@
+{
+  "feature": "openai-compatible-clients",
+  "feature_id": "FEAT-438",
+  "spec": "sdd/specs/openai-compatible-clients.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-21T00:00:00-04:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2296",
+      "slug": "openai-base-skeleton",
+      "title": "OpenAIBaseClient skeleton — new module, neutral hooks, no OpenAI defaults",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Creates openai_base.py that every later task builds on; head of the serialized Phase-1 chain.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2296-openai-base-skeleton.md"
+    },
+    {
+      "id": "TASK-2297",
+      "slug": "rebase-openaiclient-tool-loop",
+      "title": "Rebase OpenAIClient — move ask/resume + shared tool loop into OpenAIBaseClient",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2296"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Rewrites gpt.py and openai_base.py — same files as TASK-2298.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2297-rebase-openaiclient-tool-loop.md"
+    },
+    {
+      "id": "TASK-2298",
+      "slug": "funnel-ask-stream-invoke",
+      "title": "Single completion funnel — move ask_stream/invoke/helpers into the base, route via _chat_completion",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2297"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Continues the gpt.py/openai_base.py rewrite started in TASK-2297.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2298-funnel-ask-stream-invoke.md"
+    },
+    {
+      "id": "TASK-2299",
+      "slug": "fallback-model-shadowing-fix",
+      "title": "Fix _fallback_model constructor shadowing in AbstractClient",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "File-disjoint from TASK-2296-2298 (touches base.py + nova/mantle.py only); could run in a separate worktree, though per-spec sequential execution is the plan.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2299-fallback-model-shadowing-fix.md"
+    },
+    {
+      "id": "TASK-2300",
+      "slug": "phase1-subclass-rebase",
+      "title": "Phase-1 subclass rebase — six wire clients onto OpenAIBaseClient",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2298",
+        "TASK-2299"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches mantle.py after TASK-2299 and relies on the finished funnel from TASK-2298.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2300-phase1-subclass-rebase.md"
+    },
+    {
+      "id": "TASK-2301",
+      "slug": "phase1-verification-suite",
+      "title": "Phase-1 verification suite — no-gpt-leak + payload parity + funnel tests",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2300"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Gates Phase 2; asserts the state produced by TASK-2300.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2301-phase1-verification-suite.md"
+    },
+    {
+      "id": "TASK-2302",
+      "slug": "isinstance-audit",
+      "title": "isinstance/issubclass audit — OpenAIClient checks across the workspace",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2300"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Read-mostly sweep, file-disjoint from TASK-2301's test files; can overlap TASK-2301.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2302-isinstance-audit.md"
+    },
+    {
+      "id": "TASK-2303",
+      "slug": "groq-rebase",
+      "title": "Phase 2 — rebase GroqClient onto OpenAIBaseClient (native AsyncGroq retained)",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2301"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-2304 (groq.py vs zai.py, no shared files beyond additive test-roster edits); both depend on TASK-2301.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2303-groq-rebase.md"
+    },
+    {
+      "id": "TASK-2304",
+      "slug": "zai-rebase",
+      "title": "Phase 2 — rebase ZaiClient onto OpenAIBaseClient (native zai SDK retained)",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2301"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-2303 (zai.py vs groq.py); both depend on TASK-2301.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2304-zai-rebase.md"
+    },
+    {
+      "id": "TASK-2305",
+      "slug": "smoke-scripts-docs",
+      "title": "Live smoke scripts + hierarchy documentation",
+      "feature_id": "FEAT-438",
+      "feature": "openai-compatible-clients",
+      "spec": "sdd/specs/openai-compatible-clients.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2303",
+        "TASK-2304"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Terminal task; validates the finished hierarchy end-to-end.",
+      "assigned_to": null,
+      "started_at": "2026-08-21T14:09:07+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2305-smoke-scripts-docs.md"
+    }
+  ]
+}

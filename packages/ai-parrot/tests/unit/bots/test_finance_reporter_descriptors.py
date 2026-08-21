@@ -157,3 +157,45 @@ class TestFinanceReporterDescriptors:
             f"budget-narrative not discovered via FinanceReporter.skill_paths "
             f"({FinanceReporter.skill_paths}); found: {names}"
         )
+
+
+class TestFinanceReporterDatasetSQL:
+    """`troc.finance_projection` is a `TableSource` — replay needs explicit SQL."""
+
+    _REQUIRED_COLUMNS = (
+        "snapshot_date",
+        "division",
+        "project",
+        "rev_actual",
+        "rev_budget",
+        "ebitda_actual",
+        "ebitda_budget",
+    )
+
+    @pytest.mark.parametrize("key", ["report", "dashboard"])
+    def test_snapshots_dataset_declares_sql(self, descriptors, key):
+        assert descriptors[key].dataset_sql.get("snapshots")
+
+    @pytest.mark.parametrize("key", ["report", "dashboard"])
+    def test_sql_selects_every_column_the_transformers_require(self, descriptors, key):
+        sql = descriptors[key].dataset_sql["snapshots"]
+        for column in self._REQUIRED_COLUMNS:
+            assert column in sql, f"{column!r} missing from replay SQL"
+
+    @pytest.mark.parametrize("key", ["report", "dashboard"])
+    def test_sql_is_not_select_star(self, descriptors, key):
+        """DatasetManager rejects a bare star on a TableSource."""
+        sql = descriptors[key].dataset_sql["snapshots"]
+        assert "*" not in sql.split("FROM")[0]
+
+    @pytest.mark.parametrize("key", ["report", "dashboard"])
+    def test_sql_targets_the_real_table_not_the_alias(self, descriptors, key):
+        """TableSource.fetch() validates the statement against its own table."""
+        sql = descriptors[key].dataset_sql["snapshots"]
+        assert "troc.finance_projection" in sql
+
+    @pytest.mark.parametrize("key", ["report", "dashboard"])
+    def test_sql_declares_no_unresolvable_placeholders(self, descriptors, key):
+        """The published recipes declare no params, so `{...}` would not resolve."""
+        sql = descriptors[key].dataset_sql["snapshots"]
+        assert "{" not in sql

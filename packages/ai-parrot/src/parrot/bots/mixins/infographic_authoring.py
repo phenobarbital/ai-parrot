@@ -390,7 +390,20 @@ class InfographicAuthoringMixin:
                     continue
                 if alias not in aliases:
                     aliases.append(alias)
-        data_sources = [DataSourceSpec(dataset=alias, alias=alias) for alias in aliases]
+        # Per-dataset SQL, when the descriptor declares it. A `TableSource`
+        # REJECTS any fetch without an explicit statement (no `SELECT *` on a
+        # database table), so a recipe over one is unreplayable unless the SQL
+        # travels with it — `RecipeRunner._fetch_frames` reads it straight off
+        # `DataSourceSpec.sql`. Entries for aliases that are not data sources
+        # (e.g. a chained `output_key` excluded above) are simply unused.
+        data_sources = [
+            DataSourceSpec(
+                dataset=alias,
+                alias=alias,
+                sql=descriptor.dataset_sql.get(alias),
+            )
+            for alias in aliases
+        ]
 
         # FEAT-420 (Module 7): use the descriptor's declared A2UI layout
         # verbatim when present; absent means today's template-based
