@@ -669,17 +669,29 @@ class LLMWikiToolkit(AbstractToolkit):
         markdown = f"# {title}\n\n<!-- category: {category} -->\n\n{content}"
 
         page_id: Optional[str] = None
-        try:
-            pi_result = await self._pi.insert_markdown(
-                wiki_name, markdown, doc_name=title
+        if self._pi is None:
+            # Composed without an authoring plane (the caller passed None
+            # for ``pageindex_toolkit``). Say so plainly, instead of
+            # letting the AttributeError fall into the except below and
+            # surface as "'NoneType' object has no attribute
+            # 'insert_markdown'" on every single page.
+            self.logger.debug(
+                "create_page: no PageIndexToolkit composed — writing to the "
+                "WikiStore retrieval plane only (page id derived from the "
+                "title, not a PageIndex node id)."
             )
-            if isinstance(pi_result, dict):
-                # PageIndexToolkit.insert_markdown() contract:
-                # {"tree_name", "new_node_ids"}
-                new_ids = pi_result.get("new_node_ids") or []
-                page_id = str(new_ids[0]) if new_ids else None
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("create_page PageIndex insert failed: %s", exc)
+        else:
+            try:
+                pi_result = await self._pi.insert_markdown(
+                    wiki_name, markdown, doc_name=title
+                )
+                if isinstance(pi_result, dict):
+                    # PageIndexToolkit.insert_markdown() contract:
+                    # {"tree_name", "new_node_ids"}
+                    new_ids = pi_result.get("new_node_ids") or []
+                    page_id = str(new_ids[0]) if new_ids else None
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("create_page PageIndex insert failed: %s", exc)
 
         if not page_id:
             page_id = f"page-{title[:40].lower().replace(' ', '-')}"
