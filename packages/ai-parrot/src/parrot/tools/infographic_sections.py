@@ -88,6 +88,17 @@ class SectionDescriptor(BaseModel):
             marker for data-splice mode (ignored for jinja mode).
         sections: The ordered list of section specs.
         params: Free-form descriptor-level parameters (e.g. snapshot date).
+        dataset_sql: Optional per-dataset SQL statements, keyed by the dataset
+            alias used in ``SectionSpec.datasets``. Declared at descriptor
+            level (like ``params``) because several sections routinely read
+            the SAME dataset — a single statement is fetched once per replay.
+            ``publish_recipe`` threads each entry into the matching
+            ``DataSourceSpec.sql``, which the ``RecipeRunner`` passes to
+            ``DatasetManager.fetch_dataset``. REQUIRED for datasets backed by
+            a ``TableSource``: that source rejects a fetch without explicit
+            SQL (no ``SELECT *`` on database tables). Statements may contain
+            ``{param}`` placeholders resolved from the recipe's params at
+            replay time (the runner rejects unsafe substitutions).
         layout: Optional A2UI catalog-component layout (FEAT-420) with
             ``$bind`` pointers into the assembled ``dataModel``. When set,
             ``publish_recipe`` uses it VERBATIM instead of building today's
@@ -113,6 +124,14 @@ class SectionDescriptor(BaseModel):
     params: Dict[str, Any] = Field(
         default_factory=dict,
         description="Descriptor-level parameters.",
+    )
+    dataset_sql: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional per-dataset SQL, keyed by dataset alias. Required for "
+            "TableSource-backed datasets, which reject a fetch without an "
+            "explicit statement."
+        ),
     )
     layout: Optional[LayoutSpec] = Field(
         default=None,

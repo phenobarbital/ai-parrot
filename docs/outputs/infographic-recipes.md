@@ -292,6 +292,40 @@ resolve and pass it automatically (the invoker's user id for chat/REST,
 — a permission-denied dataset fails the run, it never silently narrows or
 widens access.
 
+### Publishing a recipe over a `TableSource`
+
+`DatasetManager`'s `TableSource` REJECTS any fetch that arrives without an
+explicit `sql` statement (and any bare `SELECT *`) — a deliberate data-plane
+guardrail, not a bug. A recipe whose `DataSourceSpec.sql` is empty therefore
+publishes fine and then aborts every replay with a `stage="data"` error.
+
+Declare the statement on the descriptor and `publish_recipe` threads it into
+the matching data source:
+
+```python
+SectionDescriptor(
+    template="budget_variance_dashboard_Template.html",
+    mode="data-splice",
+    sections=[...],                      # datasets=["snapshots"]
+    dataset_sql={
+        "snapshots": (
+            "SELECT snapshot_date, division, project, "
+            "rev_actual, rev_budget, ebitda_actual, ebitda_budget "
+            "FROM troc.finance_projection ORDER BY snapshot_date"
+        ),
+    },
+)
+```
+
+`dataset_sql` is keyed by DATASET ALIAS and lives at descriptor level (like
+`params`) because several sections routinely read the same dataset — one
+statement, fetched once per replay. Select exactly the columns the target
+transformers declare in `requires_columns` (plus whatever `snapshot_col`
+they compare across snapshots); aliases that turn out to be a prior step's
+`output_key` are not data sources at all, so an entry for one is inert. See
+`agents/finance_reporter.py` for a worked example against a live Postgres
+table.
+
 ### `{param}` substitution into `sql` templates
 
 `DataSourceSpec.sql`'s `{param}` substitution is guarded against SQL
