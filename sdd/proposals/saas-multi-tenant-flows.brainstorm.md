@@ -389,6 +389,24 @@ agregar cross-tenant: `usage_events` (append-only: run_id, tenant_id, provider, 
 tokens in/out/cached, cost_usd, billable, mode, ts), `run_records`, `tenant_quota`,
 `tenant_subscription`, `invoice_lines`.
 
+**Papel de OTEL y OpenLIT, y qué es la fuente de verdad.** La pila de observabilidad ya
+existe y se arranca sola: `ensure_observability_bootstrapped()` lee `ObservabilityConfig`
+del entorno en la primera construcción de bot o cliente, y `OBSERVABILITY_OPENLIT=true`
+escala `usage_backend` a `otel`, instalando OpenLIT **después** del `TracerProvider` global
+para que sus spans aniden como hijos. En modo SaaS se activa con `usage_backend=otel` y
+exportador OTLP.
+
+La distinción importa y hay que dejarla escrita: **OpenLIT y los spans GenAI son
+observabilidad — diagnóstico, latencias, dashboards — y no son la fuente de verdad de la
+factura.** Lo facturable sale de `usage_events`, escrito por `TenantUsageRecorder` desde
+`AfterClientCallEvent`, que es un camino durable y transaccional. Un exportador OTLP puede
+perder spans bajo presión sin que eso sea un fallo; una factura no puede. Se cruzan como
+control (`gen_ai.client.cost.total` frente a la suma de `usage_events`), y una discrepancia
+sostenida es una alerta operativa, no un ajuste de facturación.
+
+`capture_prompts`/`capture_completions` quedan en `false` en SaaS: es el único punto por el
+que un prompt con una clave pegada podría acabar en un span.
+
 `TenantUsageRecorder(AbstractLogger)` registrado extendiendo `build_recorders_from_config`.
 Encola en un `asyncio.Queue` y un flusher de fondo escribe INSERTs multi-fila cada 1 s o
 200 filas, honrando el contrato "MUST be cheap and non-blocking" del docstring de
