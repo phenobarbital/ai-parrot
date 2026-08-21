@@ -84,6 +84,30 @@ Useful flags:
 | `--clf-threshold` | 0.98 | Classifier decision threshold (matches production) |
 | `--isolate` | off | One subprocess per tier — required for meaningful RSS |
 
+## Comparing two runs (`compare_runs.py`)
+
+The harness computes *parity* only **within** a single run — one backend
+against a reference tier that ran in the same process over the same
+weights. It cannot answer "did switching the model change what we block?",
+because the two models were never in the same run.
+
+`compare_runs.py` closes that gap: it aligns the per-sample `scores` arrays
+of two `results.json` files by corpus index and reports the verdict delta
+per bucket. Hold the *backend* constant to isolate a model change; hold the
+*model* constant to isolate a backend change.
+
+```bash
+# v1 -> v2 model delta, both on torch
+python -m benchmarks.injection_guardrail_latency.compare_runs \
+    --baseline benchmarks/injection_guardrail_latency/results/results.json \
+    --candidate benchmarks/injection_guardrail_latency/results-v2/results.json \
+    --tier clf-torch \
+    --output benchmarks/injection_guardrail_latency/results-v2/delta-v1-to-v2.md
+```
+
+It refuses to run if the two runs scored different corpora, and warns if
+you compare a run against itself.
+
 ## Output
 
 `results/results.json` (machine-readable, includes every per-sample
