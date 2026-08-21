@@ -111,7 +111,7 @@
       "feature_id": "FEAT-438",
       "feature": "openai-compatible-clients",
       "spec": "sdd/specs/openai-compatible-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Gates Phase 2; asserts the state produced by TASK-2300.",
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2301-phase1-verification-suite.md"
+      "completed_at": "2026-08-21T17:02:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2301-phase1-verification-suite.md"
     },
     {
       "id": "TASK-2302",
