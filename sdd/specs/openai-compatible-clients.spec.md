@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-438
 **Date**: 2026-08-21
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Brainstorm**: `sdd/proposals/openai-compatible-clients.brainstorm.md` (Option B accepted)
 
