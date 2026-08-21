@@ -59,6 +59,39 @@ def make_mock_completion():
     return mock_response
 
 
+def _fake_stream_create(pieces):
+    """Build a ``chat.completions.create`` stand-in that returns a fake
+    streaming async-iterable when called with ``stream=True`` (mirroring
+    the OpenAI SDK's ``ChatCompletionChunk`` shape — a final usage-only
+    chunk with no choices), else a plain completion.
+
+    FEAT-438 TASK-2300: since ``ask_stream()`` now routes through
+    ``_chat_completion`` (the completion funnel, TASK-2298) instead of
+    calling the SDK directly, streaming tests must stub the SDK itself
+    (via ``get_client``) rather than patching the parent class's
+    ``ask_stream`` — patching ``OpenAIClient.ask_stream`` has no effect
+    once ``NvidiaClient`` no longer has ``OpenAIClient`` in its MRO.
+    """
+
+    async def _gen():
+        for piece in pieces:
+            chunk = MagicMock()
+            chunk.choices = [MagicMock(delta=MagicMock(content=piece))]
+            chunk.usage = None
+            yield chunk
+        final = MagicMock()
+        final.choices = []
+        final.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        yield final
+
+    async def _fake_create(**kwargs):
+        if kwargs.get("stream"):
+            return _gen()
+        return make_mock_completion()
+
+    return AsyncMock(side_effect=_fake_create)
+
+
 @contextlib.asynccontextmanager
 async def mocked_sdk(target_client, recorder=None, side_effect=None):
     """Enter ``target_client`` with a stubbed OpenAI SDK handle.
@@ -339,15 +372,22 @@ class TestNvidiaSamplingParams:
 
     @pytest.mark.asyncio
     async def test_stream_still_works_without_sampling_params(self, client):
-        """The guard does not disturb ordinary streaming."""
+        """The guard does not disturb ordinary streaming.
 
-        async def fake_parent_stream(self, prompt, **kwargs):
-            yield "a"
+        FEAT-438 TASK-2300: mocks the SDK level (via get_client), not
+        OpenAIClient.ask_stream — NvidiaClient no longer has OpenAIClient
+        in its MRO, so patching the old parent has no effect."""
+        mock_create = _fake_stream_create(["a"])
+        fake_sdk = MagicMock()
+        fake_sdk.chat.completions.create = mock_create
 
-        with patch(
-            "parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_parent_stream
+        with patch.object(
+            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
         ):
-            chunks = [chunk async for chunk in client.ask_stream("hello")]
+            async with client:
+                chunks = [
+                    chunk async for chunk in client.ask_stream("hello") if isinstance(chunk, str)
+                ]
 
         assert chunks == ["a"]
 
@@ -596,17 +636,39 @@ class TestNvidiaRateLimitIntegration:
         assert client._rate_limiter.current_usage() == 2
 
     @pytest.mark.asyncio
+    async def test_invoke_consumes_a_slot(self, client):
+        """FEAT-438 TASK-2300: invoke() has no override on NvidiaClient — it
+        is inherited from OpenAIBaseClient, which now routes through
+        _chat_completion (the completion funnel, TASK-2298). The free-tier
+        rate limiter — previously only reachable via ask()/ask_stream() —
+        now covers invoke() too, with no extra code on NvidiaClient's part.
+
+        Passes model= explicitly: NvidiaClient never sets self.model, and
+        _resolve_invoke_model() falls back to self.model (not
+        _default_model) when no model is given — a pre-existing,
+        unrelated gap, not something this task's rebase changes."""
+        async with mocked_sdk(client):
+            await client.invoke("hello", model="minimaxai/minimax-m3")
+
+        assert client._rate_limiter.current_usage() == 1
+
+    @pytest.mark.asyncio
     async def test_ask_stream_consumes_a_slot(self, client):
-        """ask_stream() reserves a slot even though it bypasses _chat_completion."""
+        """FEAT-438 TASK-2300: ask_stream() no longer reserves a slot itself
+        — it now routes through _chat_completion (the completion funnel,
+        TASK-2298), which reserves the slot. End-to-end: a stream still
+        consumes exactly one slot, with no double-count."""
+        mock_create = _fake_stream_create(["chunk-a", "chunk-b"])
+        fake_sdk = MagicMock()
+        fake_sdk.chat.completions.create = mock_create
 
-        async def fake_parent_stream(self, prompt, **kwargs):
-            yield "chunk-a"
-            yield "chunk-b"
-
-        with patch(
-            "parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_parent_stream
+        with patch.object(
+            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
         ):
-            chunks = [c async for c in client.ask_stream("hello")]
+            async with client:
+                chunks = [
+                    c async for c in client.ask_stream("hello") if isinstance(c, str)
+                ]
 
         assert chunks == ["chunk-a", "chunk-b"]
         assert client._rate_limiter.current_usage() == 1
@@ -615,14 +677,17 @@ class TestNvidiaRateLimitIntegration:
     async def test_ask_stream_not_throttled_when_free_tier_off(self):
         """free_tier=False leaves ask_stream unthrottled and limiter-free."""
         c = NvidiaClient(api_key="k", free_tier=False)
+        mock_create = _fake_stream_create(["x"])
+        fake_sdk = MagicMock()
+        fake_sdk.chat.completions.create = mock_create
 
-        async def fake_parent_stream(self, prompt, **kwargs):
-            yield "x"
-
-        with patch(
-            "parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_parent_stream
+        with patch.object(
+            NvidiaClient, "get_client", new=AsyncMock(return_value=fake_sdk)
         ):
-            chunks = [chunk async for chunk in c.ask_stream("hello")]
+            async with c:
+                chunks = [
+                    chunk async for chunk in c.ask_stream("hello") if isinstance(chunk, str)
+                ]
 
         assert chunks == ["x"]
         assert c._rate_limiter is None

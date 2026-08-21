@@ -1,7 +1,8 @@
 """LocalLLM client for AI-Parrot.
 
-Extends OpenAIClient to support local/self-hosted OpenAI-compatible LLM
-servers such as Ollama, vLLM, llama.cpp, and LM Studio.
+Extends OpenAIBaseClient (FEAT-438) to support local/self-hosted
+OpenAI-compatible LLM servers such as Ollama, vLLM, llama.cpp, and LM
+Studio.
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
@@ -10,7 +11,7 @@ from logging import getLogger
 
 from navconfig import config
 
-from .gpt import OpenAIClient
+from .openai_base import OpenAIBaseClient
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
@@ -22,10 +23,10 @@ from ..exceptions import InvokeError
 logger = getLogger(__name__)
 
 
-class LocalLLMClient(OpenAIClient):
+class LocalLLMClient(OpenAIBaseClient):
     """Client for local/self-hosted OpenAI-compatible LLM servers.
 
-    Extends OpenAIClient with local-server-friendly defaults:
+    Extends OpenAIBaseClient (FEAT-438) with local-server-friendly defaults:
     - No API key required (optional)
     - Configurable base_url (defaults to vLLM's ``http://localhost:8000/v1``)
     - Higher timeout (120s vs 60s for cloud)
@@ -44,7 +45,7 @@ class LocalLLMClient(OpenAIClient):
             ``LOCAL_LLM_BASE_URL`` env var.
         model: Default model to use. Falls back to ``LOCAL_LLM_MODEL``
             env var, then ``llama3.1:8b``.
-        **kwargs: Additional arguments passed to OpenAIClient.
+        **kwargs: Additional arguments passed to OpenAIBaseClient.
 
     Example:
         >>> client = LocalLLMClient()
@@ -60,8 +61,8 @@ class LocalLLMClient(OpenAIClient):
     client_type: str = "localllm"
     client_name: str = "localllm"
     model: str = LocalLLMModel.LLAMA3_1_8B.value
-    # None — _resolve_invoke_model() falls back to self.model
-    _lightweight_model: Optional[str] = None
+    # _lightweight_model is inherited as None from OpenAIBaseClient
+    # (FEAT-438) — _resolve_invoke_model() falls back to self.model.
     _default_model: str = "llama3.1:8b"
 
     def __init__(
@@ -115,19 +116,10 @@ class LocalLLMClient(OpenAIClient):
             timeout=config.get('LOCAL_LLM_TIMEOUT', 120),
         )
 
-    def _is_responses_model(self, model_str: str) -> bool:
-        """Always returns False.
-
-        Local servers don't support OpenAI's Responses API, so all
-        requests go through the Chat Completions path.
-
-        Args:
-            model_str: Model identifier string (ignored).
-
-        Returns:
-            False, always.
-        """
-        return False
+    # _is_responses_model override deleted (FEAT-438 TASK-2300) —
+    # OpenAIBaseClient._is_responses_model() already always returns False,
+    # so local servers never route to the (OpenAI-only) Responses API
+    # without needing this override.
 
     async def ask(
         self,
@@ -137,13 +129,13 @@ class LocalLLMClient(OpenAIClient):
     ):
         """Ask the local LLM a question.
 
-        Overrides OpenAIClient.ask() to use the local default model
+        Overrides OpenAIBaseClient.ask() to use the local default model
         and skip structured output model guards.
 
         Args:
             prompt: The prompt to send to the model.
             model: Model to use. Defaults to the client's configured model.
-            **kwargs: Additional arguments passed to OpenAIClient.ask().
+            **kwargs: Additional arguments passed to OpenAIBaseClient.ask().
 
         Returns:
             AIMessage with the model's response.
@@ -162,12 +154,12 @@ class LocalLLMClient(OpenAIClient):
     ):
         """Stream the local LLM's response.
 
-        Overrides OpenAIClient.ask_stream() to use the local default model.
+        Overrides OpenAIBaseClient.ask_stream() to use the local default model.
 
         Args:
             prompt: The prompt to send to the model.
             model: Model to use. Defaults to the client's configured model.
-            **kwargs: Additional arguments passed to OpenAIClient.ask_stream().
+            **kwargs: Additional arguments passed to OpenAIBaseClient.ask_stream().
 
         Yields:
             Text chunks from the streaming response.

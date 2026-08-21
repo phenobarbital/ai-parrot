@@ -1,10 +1,10 @@
 """Nvidia NIM client for AI-Parrot.
 
-Extends OpenAIClient to route requests through Nvidia's OpenAI-compatible
+Extends OpenAIBaseClient to route requests through Nvidia's OpenAI-compatible
 NIM gateway at https://integrate.api.nvidia.com/v1.
 
 All completion, streaming, tool-calling, retry, and invoke logic is inherited
-from OpenAIClient unchanged. Two Nvidia-specific affordances are added:
+from OpenAIBaseClient unchanged. Two Nvidia-specific affordances are added:
 
 1. The ``enable_thinking`` keyword on ``ask`` / ``ask_stream`` that injects
    ``chat_template_kwargs`` into ``extra_body`` for reasoning-capable models
@@ -29,7 +29,7 @@ from tenacity import (
 
 from ..exceptions import ParrotError
 from ..models import AIMessage
-from .gpt import OpenAIClient
+from .openai_base import OpenAIBaseClient
 from ..models.nvidia import NvidiaModel
 
 #: Requests-per-minute quota enforced on Nvidia's free NIM endpoints.
@@ -46,7 +46,7 @@ _thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
     "_nvidia_thinking_ctx", default={}
 )
 
-# Sampling parameters that ``OpenAIClient.ask`` cannot accept.  Its signature is
+# Sampling parameters that ``OpenAIBaseClient.ask`` cannot accept.  Its signature is
 # fixed and carries no ``**kwargs``, so passing ``top_p``/``seed`` to it raises
 # TypeError.  They ride the same ContextVar channel as the thinking flags and
 # are merged into the request inside ``_chat_completion``.
@@ -204,7 +204,7 @@ class SlidingWindowRateLimiter:
             waited += sleep_for
 
 
-class NvidiaClient(OpenAIClient):
+class NvidiaClient(OpenAIBaseClient):
     """Client for Nvidia NIM's OpenAI-compatible API gateway.
 
     Routes all requests through ``https://integrate.api.nvidia.com/v1`` and
@@ -246,7 +246,7 @@ class NvidiaClient(OpenAIClient):
             ``None`` (default) waits as long as necessary; a number makes the
             client raise :class:`NvidiaRateLimitError` rather than block past
             that budget.
-        **kwargs: Additional arguments passed to ``OpenAIClient`` /
+        **kwargs: Additional arguments passed to ``OpenAIBaseClient`` /
             ``AbstractClient``.
 
     Example::
@@ -413,7 +413,7 @@ class NvidiaClient(OpenAIClient):
     ) -> Any:
         """Run a chat completion against NVIDIA NIM via ``create()``.
 
-        Three NVIDIA-specific differences from ``OpenAIClient._chat_completion``:
+        Three NVIDIA-specific differences from ``OpenAIBaseClient._chat_completion``:
 
         1. Always uses ``client.chat.completions.create``. NIM rejects the
            OpenAI SDK's ``parse()`` shortcut (returns 5xx / "page not found"),
@@ -482,12 +482,12 @@ class NvidiaClient(OpenAIClient):
     ) -> AIMessage:
         """Submit a prompt and return the full response.
 
-        Identical to ``OpenAIClient.ask`` with two additions:
+        Identical to ``OpenAIBaseClient.ask`` with two additions:
 
         1. An ``enable_thinking`` shortcut that injects
            ``chat_template_kwargs`` into ``extra_body`` for reasoning-capable
            models (e.g. ``z-ai/glm-5.2``).
-        2. ``top_p`` and ``seed`` support. ``OpenAIClient.ask`` has a fixed
+        2. ``top_p`` and ``seed`` support. ``OpenAIBaseClient.ask`` has a fixed
            signature with no ``**kwargs``, so passing either to it raises
            ``TypeError``; both are accepted here and merged into the request
            inside ``_chat_completion``.
@@ -507,7 +507,7 @@ class NvidiaClient(OpenAIClient):
             seed: Sampling seed for reproducibility. Defaults to the ``seed``
                 passed to the constructor.
             **kwargs: All other keyword arguments delegated to
-                ``OpenAIClient.ask`` (e.g. ``model``, ``temperature``,
+                ``OpenAIBaseClient.ask`` (e.g. ``model``, ``temperature``,
                 ``system_prompt``, ``session_id``).
 
         Returns:
@@ -536,7 +536,7 @@ class NvidiaClient(OpenAIClient):
     ) -> AsyncIterator[str]:
         """Submit a prompt and stream response chunks.
 
-        Identical to ``OpenAIClient.ask_stream`` with the same
+        Identical to ``OpenAIBaseClient.ask_stream`` with the same
         ``enable_thinking`` shortcut as ``ask``.  For reasoning-capable models
         (e.g. ``z-ai/glm-5.2``) each chunk may carry a
         ``delta.reasoning_content`` field in addition to ``delta.content``.
@@ -544,13 +544,15 @@ class NvidiaClient(OpenAIClient):
         The flags are forwarded to ``_chat_completion`` via an async context
         variable, so the parent's call signature is preserved.
 
-        ``OpenAIClient.ask_stream`` calls the SDK's ``create()`` directly rather
-        than routing through ``_chat_completion``, so the free-tier slot is
-        reserved here — once per stream, before the first chunk is requested.
+        FEAT-438 (TASK-2298/2300): ``ask_stream`` now routes through
+        ``_chat_completion`` (the single completion funnel), so the
+        free-tier slot is reserved there — no separate reservation is made
+        here, which would otherwise double-count against the 40 rpm quota.
 
-        That same detour is why ``top_p`` and ``seed`` are **not** supported on
-        the streaming path: with ``_chat_completion`` skipped there is no seam to
-        merge them into. They are accepted in the signature purely so the
+        ``top_p`` and ``seed`` are still **not** supported on the streaming
+        path: unlike ``ask()``, this method does not set the
+        ``_sampling_ctx`` context variable ``_chat_completion`` reads to
+        inject them. They are accepted in the signature purely so the
         limitation raises immediately instead of being silently dropped — a
         silently ignored sampling parameter is the failure mode this client
         already suffered from ``AbstractClient.top_p``.
@@ -564,11 +566,11 @@ class NvidiaClient(OpenAIClient):
             top_p: Unsupported while streaming; raises if not ``None``.
             seed: Unsupported while streaming; raises if not ``None``.
             **kwargs: All other keyword arguments delegated to
-                ``OpenAIClient.ask_stream`` (e.g. ``model``, ``temperature``,
+                ``OpenAIBaseClient.ask_stream`` (e.g. ``model``, ``temperature``,
                 ``system_prompt``, ``session_id``).
 
         Yields:
-            Response text chunks (same shape as ``OpenAIClient.ask_stream``).
+            Response text chunks (same shape as ``OpenAIBaseClient.ask_stream``).
 
         Raises:
             NvidiaRateLimitError: If ``rate_limit_max_wait`` is set and no
@@ -583,15 +585,19 @@ class NvidiaClient(OpenAIClient):
         if unsupported:
             raise NotImplementedError(
                 f"{', '.join(unsupported)} cannot be applied while streaming: "
-                "OpenAIClient.ask_stream calls the SDK directly and bypasses "
-                "NvidiaClient._chat_completion, where these are injected. Use "
-                "ask() for a non-streamed call, or call "
+                "ask_stream() does not set the _sampling_ctx context "
+                "variable NvidiaClient._chat_completion reads to inject "
+                "top_p/seed. Use ask() for a non-streamed call, or call "
                 "client.client.chat.completions.create(..., stream=True) "
                 "directly — note that bypasses the free-tier rate limiter."
             )
 
         kwargs.setdefault("model", self.model or self._default_model)
-        await self._acquire_rate_limit_slot()
+        # FEAT-438 TASK-2300: no manual _acquire_rate_limit_slot() call here
+        # anymore — ask_stream() now routes through _chat_completion (the
+        # single completion funnel, TASK-2298), which already reserves a
+        # slot per attempt. A second reservation here would double-count
+        # every streamed call against the 40 rpm free-tier quota.
         token = _thinking_ctx.set(
             {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )
