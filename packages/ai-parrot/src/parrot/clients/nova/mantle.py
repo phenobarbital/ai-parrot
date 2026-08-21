@@ -95,13 +95,10 @@ class BedrockMantleClient(OpenAIClient):
             or BEDROCK_MANTLE_BASE_URL
             or f"https://bedrock-mantle.{resolved_region}.api.aws/v1"
         )
-        # AbstractClient.__init__ unconditionally does
-        # ``self._fallback_model = kwargs.get('fallback_model', None)``,
-        # which shadows this class's ``_fallback_model`` class attribute
-        # with an instance attribute of ``None`` unless a caller
-        # explicitly passes ``fallback_model=`` (see bedrock.py:199-209 /
-        # spec §7). ``setdefault`` preserves an explicit caller value.
-        kwargs.setdefault("fallback_model", self._fallback_model)
+        # FEAT-438 G5: AbstractClient.__init__ now only creates an instance
+        # attribute when the caller explicitly passes fallback_model=, so
+        # this class's _fallback_model class attribute survives unshadowed
+        # without needing a workaround here anymore.
         super().__init__(
             api_key=resolved_key,
             base_url=resolved_base_url,

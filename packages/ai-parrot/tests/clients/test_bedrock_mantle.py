@@ -68,9 +68,11 @@ class TestBedrockMantleClient:
         assert mantle_client.base_url == "https://bedrock-mantle.us-east-1.api.aws/v1"
 
     def test_fallback_model_survives_init(self, mantle_client):
-        """AbstractClient.__init__ would otherwise shadow the class-level
-        _fallback_model with an instance attribute of None (spec §7
-        gotcha) — the kwargs.setdefault guard must prevent that."""
+        """FEAT-438 G5: AbstractClient.__init__ only creates an instance
+        _fallback_model attribute when fallback_model= is explicitly
+        passed, so this class's class-level _fallback_model is visible
+        without any per-subclass workaround (the former
+        kwargs.setdefault("fallback_model", ...) guard was removed)."""
         assert mantle_client._fallback_model == "google.gemma-4-26b-a4b"
 
     def test_explicit_base_url_wins(self):

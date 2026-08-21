@@ -271,6 +271,14 @@ class AbstractClient(EventEmitterMixin, ABC):
     # None means fall back to self.model.
     _lightweight_model: Optional[str] = None
 
+    # Fallback model for capacity errors — subclasses set their own default
+    # (e.g. OpenAIClient "gpt-5-nano", MoonshotClient MOONSHOT_V1_128K,
+    # BedrockMantleClient "google.gemma-4-26b-a4b"). FEAT-438 G5: declared
+    # here (not just assigned in __init__) so a subclass's class-level
+    # value is visible even when __init__ does not create an instance
+    # attribute (no explicit `fallback_model=` kwarg was passed).
+    _fallback_model: Optional[str] = None
+
     # FEAT-181: minimum token count for provider-side prompt caching.
     # Subclasses override this (e.g., AnthropicClient sets 1024, GoogleGenAIClient 4096).
     # 0 means "provider does not support explicit caching" (the base AbstractClient no-op);
@@ -346,8 +354,14 @@ $backstory
             )
         self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         self.enable_tools: bool = use_tools
-        # Fallback model for capacity errors (subclasses set their own default)
-        self._fallback_model: Optional[str] = kwargs.get('fallback_model', None)
+        # FEAT-438 G5: only create an instance attribute when the caller
+        # explicitly passed fallback_model= (including explicit None) —
+        # an unconditional assignment here would shadow a subclass's
+        # class-level _fallback_model default on every instance (the
+        # class attribute declared above, :~272, is the fallback when no
+        # instance attribute is created).
+        if 'fallback_model' in kwargs:
+            self._fallback_model = kwargs.pop('fallback_model')
         # Initialize tools if provided
         if use_tools and tools:
             self._tool_manager.default_tools(tools)
