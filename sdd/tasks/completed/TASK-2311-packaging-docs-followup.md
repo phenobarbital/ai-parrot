@@ -189,10 +189,42 @@ No pytest for this task. Verification is:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-21
 **Notes**:
+- **Packaging**: added `huggingface_hub>=0.24,<1.0` to the `security`
+  extra of `packages/ai-parrot/pyproject.toml`, with a rationale comment
+  matching the extra's existing comment style (lines 512-534). Bound
+  chosen to stay compatible with the `audio` extra's whisperx 3.8.5 pin
+  (`huggingface-hub<1.0.0`, pyproject:~391) while comfortably covering
+  the installed `0.36.2`. Verified with `uv pip install --dry-run -e
+  packages/ai-parrot[security]` (246 packages resolved, no conflicts) AND
+  together with the `audio` extra (`uv pip install --dry-run -e
+  "packages/ai-parrot[security,audio]"` — 247 packages, no conflicts).
+- **Ops documentation**: created `docs/security/onnx-injection-guardrail.md`
+  (docs/security/ already holds `pbac-guardrails.md` — matched its tone
+  and structure rather than inventing a new docs subtree). Covers: why
+  this exists (measured latency table), the 4-step resolution precedence
+  and its logging contract, all 3 env vars with defaults, warm-up usage
+  (`await warmup_injection_model()`, noting there's no generic warm-up
+  hook to attach to), air-gapped provisioning via the exporter +
+  `PARROT_INJECTION_ONNX_DIR`, the v1→v2 behaviour change with the
+  Spanish-FP regression stated plainly (18.8%→43.8%) and linked to both
+  `results-v2/delta-v1-to-v2.md` and the new follow-up proposal, and a
+  known-limitations section (event-loop blocking, RSS, truncation
+  divergence, threshold not retuned). No docs nav/index file exists that
+  references `pbac-guardrails.md` either (checked via repo-wide grep), so
+  no registration file needed touching.
+- **Follow-up feature filed**:
+  `sdd/proposals/injection-v2-spanish-fp-mitigation.proposal.md` — light
+  proposal (problem/evidence/candidate-directions/open-questions shape,
+  NOT a full brainstorm with options analysis), frontmatter
+  `type: feature, base_branch: dev`, deliberately **no FEAT id** (per the
+  task's explicit instruction — reserved only when this proposal itself
+  gets spec'd via `/sdd-spec`). Parses cleanly via `scripts.sdd.sdd_meta.parse`.
+- **Spec back-reference**: ticked the "Follow-up feature filed" criterion
+  in `sdd/specs/onnx-injection-guardrail-backend.spec.md` §5, referencing
+  the proposal path and noting the deliberate no-FEAT-id-yet state.
+- No changes outside the four listed files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

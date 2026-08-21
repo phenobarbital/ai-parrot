@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-21T18:30:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-21T17:21:56+00:00",
   "tasks": [
     {
       "id": "TASK-2306",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-439",
       "feature": "onnx-injection-guardrail-backend",
       "spec": "sdd/specs/onnx-injection-guardrail-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Docs describe the final env vars/warm-up behaviour; runs last (alongside or after TASK-2310). Prefers TASK-2306's 512 figures for the docs headline when available.",
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2311-packaging-docs-followup.md"
+      "completed_at": "2026-08-21T17:21:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2311-packaging-docs-followup.md"
     }
   ]
 }
