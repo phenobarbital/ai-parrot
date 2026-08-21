@@ -18,11 +18,19 @@ FEAT-396 (TASK-2028): the singleton used to live in
 ``parrot.bots.abstract`` (loaded unconditionally whenever pytector was
 installed, regardless of ``injection_detection``) — it has been moved
 here in full, so the pytector import boundary has exactly one owner.
+
+FEAT-439 (TASK-2307): the same import-boundary discipline now also covers
+``onnxruntime``/``transformers``/``huggingface_hub`` for the ONNX scoring
+engine — all imported lazily, only inside the engine-construction
+functions below, never at module import time.
 """
 import importlib.util
+import json
 import logging
+import os
 import threading
-from typing import Any, ClassVar
+from pathlib import Path
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from parrot.security.prompt_injection import (
     PromptInjectionDetector,
@@ -39,6 +47,26 @@ from ..base import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: Upstream v2 classifier — the primary model this feature moves to
+#: whenever a local ONNX graph or snapshot resolves (spec §1).
+_ONNX_MODEL_ID = "protectai/deberta-v3-base-prompt-injection-v2"
+
+#: Path of the published ONNX graph *inside* the HF repo (used only when
+#: probing an already-cached HF snapshot — NOT the flat layout produced by
+#: `PARROT_INJECTION_ONNX_DIR` / `benchmarks/injection_guardrail_latency/export.py`,
+#: where `model.onnx` sits directly in the directory).
+_ONNX_GRAPH_REPO_PATH = "onnx/model.onnx"
+
+#: Tokenizer truncation length for the ONNX engine (spec §2 — resolved
+#: user decision: the model maximum, re-validated by the parity gate at
+#: 512 in `benchmarks/injection_guardrail_latency/results-v2-512/`).
+_ONNX_MAX_LENGTH = 512
+
+#: Sentinel distinguishing "never resolved" from "resolved to None (use
+#: regex)" in the engine singleton below — `None` is itself a valid,
+#: memoizable resolution outcome, so it cannot double as "unset".
+_UNSET = object()
 
 # Process-wide singleton for the pytector prompt-injection detector.
 #
@@ -77,6 +105,422 @@ def _get_shared_injection_detector():
                     enable_keyword_blocking=True,
                 )
     return _SHARED_INJECTION_DETECTOR
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable, falling back to ``default``.
+
+    Copies the semantics of
+    ``parrot.voice.tts.supertonic_inference._env_int``: a blank or
+    unparseable value yields ``default`` rather than raising.
+
+    Args:
+        name: Environment variable name.
+        default: Value returned when unset or invalid.
+
+    Returns:
+        The parsed integer, or ``default``.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+@runtime_checkable
+class _InjectionScoringEngine(Protocol):
+    """Uniform contract for a resolved ML scoring engine.
+
+    Module-private — NOT part of the public ``Guardrail`` contract (spec
+    §2 Data Models). The regex engine is deliberately NOT behind this
+    protocol; it keeps its existing ``(sanitized, threats)`` path.
+    """
+    engine_name: str  # "onnx" | "pytector"
+    model_id: str
+
+    def score(self, text: str) -> float:
+        """Return an injection probability in ``[0, 1]`` for *text*."""
+        ...
+
+
+class _OnnxInjectionEngine:
+    """ONNX Runtime scoring engine for the prompt-injection classifier.
+
+    Tokenizes with ``truncation=True, max_length=512`` and resolves the
+    injection-class logit index from the model config's ``id2label``
+    mapping — never assumed to be index 1. ORT thread pools are capped
+    BEFORE session construction (mirrors
+    ``supertonic_inference.py:462-475``) so this session can never starve
+    the event loop.
+
+    Attributes:
+        engine_name: Always ``"onnx"``.
+        model_id: The resolved model id or local directory path.
+    """
+    engine_name = "onnx"
+
+    def __init__(self, tokenizer_dir: Path, graph_path: Path, model_id: str) -> None:
+        """Load the tokenizer and construct the capped ORT session.
+
+        Args:
+            tokenizer_dir: Directory containing the tokenizer + config
+                files (may be the same directory as *graph_path*'s parent,
+                or a repo root when the graph lives in a nested ``onnx/``
+                subdirectory of a cached HF snapshot).
+            graph_path: Exact path to ``model.onnx``.
+            model_id: Identifier logged/reported as this engine's model
+                (a repo id or a local directory path).
+
+        Raises:
+            Exception: Any tokenizer/session construction failure —
+                callers MUST catch and fall through; this constructor
+                never swallows errors itself.
+        """
+        import onnxruntime as ort
+        from transformers import AutoTokenizer
+
+        self.model_id = model_id
+        self._tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))
+
+        opts = ort.SessionOptions()
+        # Cap ORT's CPU parallelism BEFORE session construction. Uncapped,
+        # the intra-op pool is sized to every physical core PER SESSION —
+        # the exact failure mode documented in
+        # supertonic_inference.py:462-472, where it starved the event loop.
+        intra = _env_int("PARROT_INJECTION_ORT_INTRA_OP_THREADS", 2)
+        if intra > 0:
+            opts.intra_op_num_threads = intra
+        opts.inter_op_num_threads = _env_int("PARROT_INJECTION_ORT_INTER_OP_THREADS", 1)
+
+        self._session = ort.InferenceSession(
+            str(graph_path), sess_options=opts, providers=["CPUExecutionProvider"],
+        )
+        self._input_names = {inp.name for inp in self._session.get_inputs()}
+        self._injection_index = _resolve_injection_index(tokenizer_dir)
+
+    def score(self, text: str) -> float:
+        """Return the injection probability ORT computes for *text*."""
+        encoded = self._tokenizer(
+            text, return_tensors="np", truncation=True, max_length=_ONNX_MAX_LENGTH,
+        )
+        feed = {
+            name: value for name, value in encoded.items() if name in self._input_names
+        }
+        logits = self._session.run(None, feed)[0]
+        return float(_softmax(logits[0])[self._injection_index])
+
+
+class _PytectorInjectionEngine:
+    """Adapts pytector's ``detect_injection()`` to the scoring-engine shape.
+
+    Attributes:
+        engine_name: Always ``"pytector"``.
+        model_id: The resolved model id or local snapshot directory path.
+    """
+    engine_name = "pytector"
+
+    def __init__(self, detector: Any, model_id: str) -> None:
+        """Wrap an already-constructed pytector detector.
+
+        Args:
+            detector: A ``pytector.PromptInjectionDetector`` instance
+                (shared singleton for the v1 alias, or a fresh instance
+                pointed at a local v2 snapshot directory).
+            model_id: Identifier logged/reported as this engine's model.
+        """
+        self._detector = detector
+        self.model_id = model_id
+
+    def score(self, text: str) -> float:
+        """Return the injection probability pytector computes for *text*."""
+        _, probability = self._detector.detect_injection(text)
+        return float(probability)
+
+
+def _softmax(logits: Any) -> Any:
+    """Numerically stable softmax over the last axis.
+
+    Args:
+        logits: A 1-D ``numpy.ndarray`` of raw logits.
+
+    Returns:
+        A ``numpy.ndarray`` of probabilities summing to 1.
+    """
+    import numpy as np
+
+    shifted = logits - np.max(logits)
+    exps = np.exp(shifted)
+    return exps / np.sum(exps)
+
+
+def _resolve_injection_index(tokenizer_dir: Path) -> int:
+    """Resolve the injection-class logit index from the model config.
+
+    Never assumes index 1 — reads ``id2label`` from ``config.json`` and
+    returns the index of the label containing "inject" (case-insensitive).
+
+    Args:
+        tokenizer_dir: Directory containing ``config.json``.
+
+    Returns:
+        The injection-class index, defaulting to ``1`` when the config is
+        missing, unreadable, or has no matching label.
+    """
+    config_path = tokenizer_dir / "config.json"
+    if not config_path.exists():
+        return 1
+    try:
+        config = json.loads(config_path.read_text())
+    except (OSError, ValueError):
+        return 1
+    id2label = config.get("id2label") or {}
+    for key, label in id2label.items():
+        if "inject" in str(label).lower():
+            return int(key)
+    return 1
+
+
+def _probe_cached_onnx_snapshot() -> Path | None:
+    """Offline-only probe for a cached upstream ONNX graph.
+
+    Never touches the network — ``huggingface_hub.try_to_load_from_cache``
+    only inspects the local cache index. An uncached graph is treated as
+    absent, never triggering a download (spec §2 — "never download on the
+    request path").
+
+    Returns:
+        The snapshot root directory (containing tokenizer files at its
+        root and the graph at ``onnx/model.onnx``), or ``None`` if the
+        graph is not locally cached.
+    """
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError:
+        return None
+    cached_file = try_to_load_from_cache(_ONNX_MODEL_ID, _ONNX_GRAPH_REPO_PATH)
+    if not isinstance(cached_file, str):
+        return None
+    # cached_file: .../snapshots/<rev>/onnx/model.onnx -> snapshot root is
+    # two levels up from the graph file.
+    return Path(cached_file).parent.parent
+
+
+def _probe_cached_v2_snapshot_dir() -> Path | None:
+    """Offline-only probe for a local v2 snapshot usable by pytector.
+
+    Unlike :func:`_probe_cached_onnx_snapshot`, this checks for the files
+    pytector's ``AutoModelForSequenceClassification``/``AutoTokenizer``
+    path needs (config + weights) — independent of whether the ONNX graph
+    specifically is cached. Never touches the network.
+
+    Returns:
+        The snapshot root directory, or ``None`` if no usable local v2
+        snapshot is cached.
+    """
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError:
+        return None
+    config_file = try_to_load_from_cache(_ONNX_MODEL_ID, "config.json")
+    weights_file = try_to_load_from_cache(_ONNX_MODEL_ID, "model.safetensors")
+    if isinstance(config_file, str) and isinstance(weights_file, str):
+        return Path(config_file).parent
+    return None
+
+
+def _try_build_onnx_engine_from_env_dir(env_dir: str) -> _OnnxInjectionEngine | None:
+    """Build the ONNX engine from ``PARROT_INJECTION_ONNX_DIR``, loudly.
+
+    Args:
+        env_dir: The environment variable's value.
+
+    Returns:
+        A constructed engine, or ``None`` if the directory is missing,
+        incomplete, or fails to load — every failure is logged as an
+        ERROR naming the path and the missing/failing piece before
+        falling through.
+    """
+    path = Path(env_dir)
+    if not path.is_dir():
+        logger.error(
+            "PARROT_INJECTION_ONNX_DIR=%s is not a directory; falling back "
+            "to the next injection-engine resolution step.", env_dir,
+        )
+        return None
+    graph_path = path / "model.onnx"
+    if not graph_path.exists():
+        logger.error(
+            "PARROT_INJECTION_ONNX_DIR=%s is missing %s; falling back to "
+            "the next injection-engine resolution step.", env_dir, graph_path.name,
+        )
+        return None
+    try:
+        return _OnnxInjectionEngine(tokenizer_dir=path, graph_path=graph_path, model_id=str(path))
+    except Exception as exc:  # noqa: BLE001 - any construction failure degrades, never raises
+        logger.error(
+            "Failed to construct ONNX engine from PARROT_INJECTION_ONNX_DIR=%s: %s; "
+            "falling back to the next injection-engine resolution step.", env_dir, exc,
+        )
+        return None
+
+
+def _try_build_onnx_engine_from_cache() -> _OnnxInjectionEngine | None:
+    """Build the ONNX engine from an already-cached HF snapshot, loudly.
+
+    Returns:
+        A constructed engine, or ``None`` when nothing is cached (WARNING
+        naming :func:`warmup_injection_model` as the fix) or construction
+        fails (ERROR).
+    """
+    snapshot_dir = _probe_cached_onnx_snapshot()
+    if snapshot_dir is None:
+        logger.warning(
+            "No cached ONNX snapshot found for %s; call warmup_injection_model() "
+            "to download it. Falling back to the next injection-engine "
+            "resolution step.", _ONNX_MODEL_ID,
+        )
+        return None
+    graph_path = snapshot_dir / "onnx" / "model.onnx"
+    try:
+        return _OnnxInjectionEngine(
+            tokenizer_dir=snapshot_dir, graph_path=graph_path, model_id=_ONNX_MODEL_ID,
+        )
+    except Exception as exc:  # noqa: BLE001 - any construction failure degrades, never raises
+        logger.error(
+            "Failed to construct ONNX engine from cached snapshot %s: %s; falling "
+            "back to the next injection-engine resolution step.", snapshot_dir, exc,
+        )
+        return None
+
+
+def _try_build_pytector_engine() -> _PytectorInjectionEngine | None:
+    """Build the pytector fallback engine — local v2 snapshot, else v1 alias.
+
+    Returns:
+        A constructed engine, or ``None`` if pytector itself fails to
+        construct (ERROR logged; the regex floor is the final fallback).
+    """
+    v2_dir = _probe_cached_v2_snapshot_dir()
+    if v2_dir is not None:
+        try:
+            from pytector import (
+                PromptInjectionDetector as _PytectorDetector,  # pylint: disable=E0611
+            )
+            detector = _PytectorDetector(
+                model_name_or_url=str(v2_dir), enable_keyword_blocking=True,
+            )
+            logger.info(
+                "PromptInjectionGuardrail: selected engine=pytector model=%s "
+                "(local v2 snapshot)", v2_dir,
+            )
+            return _PytectorInjectionEngine(detector, model_id=str(v2_dir))
+        except Exception as exc:  # noqa: BLE001 - fall through to the v1 alias
+            logger.error(
+                "Failed to construct pytector engine from local v2 snapshot %s: "
+                "%s; falling back to the 'deberta' (v1) alias.", v2_dir, exc,
+            )
+
+    try:
+        detector = _get_shared_injection_detector()
+    except Exception as exc:  # noqa: BLE001 - regex is the final fallback
+        logger.error("Failed to construct pytector 'deberta' (v1) alias engine: %s", exc)
+        return None
+
+    logger.warning(
+        "PromptInjectionGuardrail: no local v2 snapshot cached; falling back to "
+        "pytector's 'deberta' alias (%s, v1) — the intended model is v2. Call "
+        "warmup_injection_model() to fetch it.",
+        "protectai/deberta-v3-base-prompt-injection",
+    )
+    return _PytectorInjectionEngine(
+        detector, model_id="protectai/deberta-v3-base-prompt-injection",
+    )
+
+
+def _do_resolve_injection_engine() -> _InjectionScoringEngine | None:
+    """Run the full engine-resolution precedence chain once.
+
+    Precedence: ``PARROT_INJECTION_ONNX_DIR`` -> cached HF snapshot ->
+    pytector (local v2 snapshot, else v1 alias) -> ``None`` (regex floor).
+    Every step logs loudly on failure; this function never raises.
+
+    Returns:
+        The resolved engine, or ``None`` when the guardrail must fall
+        back to the regex engine.
+    """
+    env_dir = os.environ.get("PARROT_INJECTION_ONNX_DIR")
+    if env_dir:
+        engine = _try_build_onnx_engine_from_env_dir(env_dir)
+        if engine is not None:
+            logger.info(
+                "PromptInjectionGuardrail: selected engine=onnx model=%s "
+                "(PARROT_INJECTION_ONNX_DIR)", engine.model_id,
+            )
+            return engine
+
+    engine = _try_build_onnx_engine_from_cache()
+    if engine is not None:
+        logger.info(
+            "PromptInjectionGuardrail: selected engine=onnx model=%s "
+            "(cached HF snapshot)", engine.model_id,
+        )
+        return engine
+
+    if importlib.util.find_spec("pytector") is not None:
+        engine = _try_build_pytector_engine()
+        if engine is not None:
+            logger.info(
+                "PromptInjectionGuardrail: selected engine=pytector model=%s",
+                engine.model_id,
+            )
+            return engine
+
+    logger.info(
+        "PromptInjectionGuardrail: selected engine=regex (no ONNX graph or "
+        "pytector available)"
+    )
+    return None
+
+
+# Process-wide singleton for the resolved ML scoring engine — extends the
+# double-checked-lock pattern above. `_UNSET` (not `None`) marks "not yet
+# resolved" so a legitimate "resolved to regex" outcome (`None`) is
+# memoized too, instead of being retried on every construction.
+_RESOLVED_INJECTION_ENGINE: _InjectionScoringEngine | None | object = _UNSET
+_RESOLVED_INJECTION_ENGINE_LOCK = threading.Lock()
+
+
+def _resolve_injection_engine(force_reresolve: bool = False) -> _InjectionScoringEngine | None:
+    """Return the process-wide resolved injection-scoring engine.
+
+    Resolution runs at most once per process (memoized), thread-safe via a
+    double-checked lock — the exact pattern
+    :func:`_get_shared_injection_detector` uses, extended to hold a
+    resolved *engine* instead of a bare pytector detector. Resolution
+    failures never propagate: every step degrades loudly and this
+    function always returns (never raises).
+
+    Args:
+        force_reresolve: When ``True``, bypass the memoized result and
+            resolve again — used by
+            :func:`warmup_injection_model` after a download to upgrade a
+            pre-warm-up ``pytector``/``None`` outcome.
+
+    Returns:
+        The resolved engine, or ``None`` when the guardrail must use the
+        regex engine.
+    """
+    global _RESOLVED_INJECTION_ENGINE
+    if _RESOLVED_INJECTION_ENGINE is not _UNSET and not force_reresolve:
+        return _RESOLVED_INJECTION_ENGINE  # type: ignore[return-value]
+    with _RESOLVED_INJECTION_ENGINE_LOCK:
+        if _RESOLVED_INJECTION_ENGINE is not _UNSET and not force_reresolve:
+            return _RESOLVED_INJECTION_ENGINE  # type: ignore[return-value]
+        _RESOLVED_INJECTION_ENGINE = _do_resolve_injection_engine()
+        return _RESOLVED_INJECTION_ENGINE  # type: ignore[return-value]
 
 
 class PromptInjectionGuardrail(Guardrail):
