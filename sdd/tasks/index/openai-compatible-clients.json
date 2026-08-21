@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-21T00:00:00-04:00",
-  "completed_at": "2026-08-21T17:45:45+00:00",
+  "completed_at": "2026-08-21T20:32:47+00:00",
   "tasks": [
     {
       "id": "TASK-2296",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T14:18:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2296-openai-base-skeleton.md"
+      "file": "sdd/tasks/completed/TASK-2296-openai-base-skeleton.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2297",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T14:43:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2297-rebase-openaiclient-tool-loop.md"
+      "file": "sdd/tasks/completed/TASK-2297-rebase-openaiclient-tool-loop.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2298",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T14:54:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2298-funnel-ask-stream-invoke.md"
+      "file": "sdd/tasks/completed/TASK-2298-funnel-ask-stream-invoke.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2299",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T16:26:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2299-fallback-model-shadowing-fix.md"
+      "file": "sdd/tasks/completed/TASK-2299-fallback-model-shadowing-fix.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2300",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T16:53:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2300-phase1-subclass-rebase.md"
+      "file": "sdd/tasks/completed/TASK-2300-phase1-subclass-rebase.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2301",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T17:02:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2301-phase1-verification-suite.md"
+      "file": "sdd/tasks/completed/TASK-2301-phase1-verification-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2302",
@@ -142,7 +148,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T17:05:01+00:00",
-      "file": "sdd/tasks/completed/TASK-2302-isinstance-audit.md"
+      "file": "sdd/tasks/completed/TASK-2302-isinstance-audit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2303",
@@ -162,7 +169,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T17:16:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2303-groq-rebase.md"
+      "file": "sdd/tasks/completed/TASK-2303-groq-rebase.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2304",
@@ -182,7 +190,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T17:26:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2304-zai-rebase.md"
+      "file": "sdd/tasks/completed/TASK-2304-zai-rebase.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2305",
@@ -203,7 +212,8 @@
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
       "completed_at": "2026-08-21T17:45:36+00:00",
-      "file": "sdd/tasks/completed/TASK-2305-smoke-scripts-docs.md"
+      "file": "sdd/tasks/completed/TASK-2305-smoke-scripts-docs.md",
+      "verification": "verified"
     }
   ]
 }
