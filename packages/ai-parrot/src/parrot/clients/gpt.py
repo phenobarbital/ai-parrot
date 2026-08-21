@@ -1,9 +1,7 @@
 from __future__ import annotations
 from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple, TYPE_CHECKING
-import base64
 import io
 import json
-import mimetypes
 import uuid
 import warnings
 from pathlib import Path
@@ -15,9 +13,7 @@ from parrot._imports import lazy_import
 from pydantic import ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
-from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
-from .base import AbstractClient
-from ..tools.manager import ToolFormat
+from .openai_base import OpenAIBaseClient
 
 if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
@@ -81,14 +77,12 @@ STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
 DEFAULT_STRUCTURED_OUTPUT_MODEL = OpenAIModel.GPT5_MINI.value
 
 
-class OpenAIClient(AbstractClient):
+class OpenAIClient(OpenAIBaseClient):
     """Client for interacting with OpenAI's API."""
 
     client_type: str = "openai"
-    # Declared explicitly so subclasses that relabel ``client_type`` while
-    # still speaking the OpenAI wire protocol (Bedrock Mantle, OpenRouter,
-    # LocalLLM, vLLM, Moonshot, Nvidia) keep emitting OpenAI tool schemas.
-    tool_format: ToolFormat = ToolFormat.OPENAI
+    # tool_format = ToolFormat.OPENAI is inherited from OpenAIBaseClient
+    # (FEAT-438) — no need to redeclare it here.
     model: str = OpenAIModel.GPT5_MINI.value
     client_name: str = "openai"
     _default_model: str = "gpt-5-mini"
@@ -98,12 +92,15 @@ class OpenAIClient(AbstractClient):
     _min_cache_tokens: int = 1024
 
     def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", **kwargs):
-        self.api_key = api_key or config.get("OPENAI_API_KEY")
-        self.base_url = base_url
-        self.base_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+        # FEAT-438: resolve the OpenAI-specific API-key env default here,
+        # then delegate to OpenAIBaseClient.__init__ (which sets
+        # self.api_key/base_url/base_headers) instead of setting them
+        # directly — the base's __init__ would otherwise clobber them back
+        # to None since it no longer receives them via **kwargs.
+        resolved_api_key = api_key or config.get("OPENAI_API_KEY")
         if "model" in kwargs:
             kwargs["model"] = self._normalize_model(kwargs["model"])
-        super().__init__(**kwargs)
+        super().__init__(api_key=resolved_api_key, base_url=base_url, **kwargs)
 
     def _resolve_model(self, model: Union[str, OpenAIModel, None]) -> str:
         """Resolve the model for a call, honouring the client's configuration.
@@ -319,27 +316,12 @@ class OpenAIClient(AbstractClient):
 
         return None
 
-    async def _upload_file(self, file_path: Union[str, Path], purpose: str = "fine-tune") -> None:
-        """Upload a file to OpenAI."""
-        with open(file_path, "rb") as file:
-            await self.client.files.create(file=file, purpose=purpose)
+    # _upload_file moved to OpenAIBaseClient (FEAT-438 Module 2) — generic,
+    # inherited unchanged.
 
-    async def _chat_completion(self, model: str, messages: Any, use_tools: bool = False, **kwargs):
-        from openai import APIConnectionError, RateLimitError, APIError
-
-        retry_policy = AsyncRetrying(
-            retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            stop=stop_after_attempt(3),
-            reraise=True,
-        )
-        if use_tools:
-            method = self.client.chat.completions.create
-        else:
-            method = getattr(self.client.chat.completions, "parse", self.client.chat.completions.create)
-        async for attempt in retry_policy:
-            with attempt:
-                return await method(model=model, messages=messages, **kwargs)
+    # _chat_completion moved to OpenAIBaseClient (FEAT-438 Module 2) — the
+    # tenacity-wrapped retry/dispatch logic is generic and now inherited
+    # unchanged.
 
     def _is_responses_model(self, model_str: str) -> bool:
         """Return True if the selected model must go through Responses API."""
@@ -510,14 +492,8 @@ class OpenAIClient(AbstractClient):
             req["background"] = args["background"]
         return req
 
-    @staticmethod
-    def _with_extra_body(payload: Dict[str, Any], extra_body: Dict[str, Any]) -> Dict[str, Any]:
-        merged = dict(payload)
-        existing_raw = merged.pop("extra_body", None)
-        existing = (dict(existing_raw) if isinstance(existing_raw, dict) else {}) | extra_body
-        if existing:
-            merged["extra_body"] = existing
-        return merged
+    # _with_extra_body moved to OpenAIBaseClient (TASK-2296) — inherited
+    # unchanged.
 
     async def _call_responses_create(self, payloads):
         """
@@ -795,8 +771,6 @@ class OpenAIClient(AbstractClient):
 
         messages.append({"role": "user", "content": prompt})
 
-        all_tool_calls = []
-
         output_config = self._get_structured_config(structured_output)
 
         # Build tools for deep research or regular use
@@ -884,27 +858,6 @@ class OpenAIClient(AbstractClient):
         _used_fallback = False
         _original_model = model_str
 
-        # FEAT-397: per-round token usage accumulation across the tool loop.
-        def _lc_gpt_extract_usage(response_obj):
-            """Build (per-round CompletionUsage, JSON-safe raw usage dict) from
-            a gpt.py SDK response's ``.usage``. Both call paths (Responses API
-            and Chat Completions) expose ``.usage`` the same way."""
-            usage_obj = getattr(response_obj, "usage", None)
-            if not usage_obj:
-                return None, None
-            per_round = CompletionUsage.from_openai(usage_obj)
-            raw = None
-            if hasattr(usage_obj, "model_dump"):
-                try:
-                    raw = usage_obj.model_dump()
-                except Exception:  # pylint: disable=broad-except
-                    raw = None
-            elif isinstance(usage_obj, dict):
-                raw = usage_obj
-            return per_round, raw
-
-        _lc_round_number_gpt = 1
-        _lc_accumulated_usage_gpt: "Optional[CompletionUsage]" = None
         _lc_round_t0_gpt = _lc_time_gpt.perf_counter()
 
         try:
@@ -937,155 +890,45 @@ class OpenAIClient(AbstractClient):
 
         # FEAT-397: round 1 is the initial (pre-loop) call above.
         _lc_round_duration_gpt = (_lc_time_gpt.perf_counter() - _lc_round_t0_gpt) * 1000
-        _lc_round_usage_gpt, _lc_round_raw_usage_gpt = _lc_gpt_extract_usage(response)
-        if _lc_round_usage_gpt is not None:
-            _lc_accumulated_usage_gpt = _lc_round_usage_gpt
-
         result = response.choices[0].message
 
         # ---------- Tool loop (works for both paths) ----------
-        while getattr(result, "tool_calls", None):
-            _lc_round_tool_names_gpt = []
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": result.content,
-                    "tool_calls": [
-                        (
-                            tc.model_dump()
-                            if hasattr(tc, "model_dump")
-                            else {
-                                "id": tc.id,
-                                "function": {
-                                    "name": getattr(tc.function, "name", None),
-                                    "arguments": getattr(tc.function, "arguments", "{}"),
-                                },
-                            }
-                        )
-                        for tc in result.tool_calls
-                    ],
-                }
-            )
+        # FEAT-438: single shared implementation (OpenAIBaseClient) instead
+        # of an inline duplicate of resume()'s loop. `_continue_call` keeps
+        # the Responses-API-vs-chat-completions routing this method already
+        # had; `_on_round` keeps emitting the same ClientRoundEvent as before.
+        async def _continue_call(model, messages, use_tools, **kw):
+            if use_responses:
+                return await self._responses_completion(model=model, messages=messages, **kw)
+            return await self._chat_completion(model=model, messages=messages, use_tools=use_tools, **kw)
 
-            found_new_tools = False
-
-            for tool_call in result.tool_calls:
-                tool_name = tool_call.function.name
-                try:
-                    try:
-                        tool_args = self._json.loads(tool_call.function.arguments)
-                    except json.JSONDecodeError:
-                        tool_args = json_decoder(tool_call.function.arguments)
-
-                    tc = ToolCall(id=getattr(tool_call, "id", ""), name=tool_name, arguments=tool_args)
-
-                    try:
-                        start_time = time.time()
-                        tool_result = await self._execute_tool(tool_name, tool_args)
-                        execution_time = time.time() - start_time
-
-                        # Lazy Loading Check
-                        if lazy_loading and tool_name == "search_tools":
-                            new_tools = self._check_new_tools(tool_name, str(tool_result))
-                            if new_tools:
-                                for nt in new_tools:
-                                    if nt not in active_tool_names:
-                                        active_tool_names.add(nt)
-                                        found_new_tools = True
-
-                        tc.result = tool_result
-                        tc.execution_time = execution_time
-
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": getattr(tool_call, "id", ""),
-                                "name": tool_name,
-                                "content": str(tool_result),
-                            }
-                        )
-                    except Exception as e:
-                        from parrot.core.exceptions import HumanInteractionInterrupt
-
-                        if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
-                            e.messages = messages.copy()
-                            e.tool_call_id = getattr(tool_call, "id", "")
-                            e.agent_name = model_str
-                            raise
-
-                        tc.error = str(e)
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": getattr(tool_call, "id", ""),
-                                "name": tool_name,
-                                "content": str(e),
-                            }
-                        )
-
-                    all_tool_calls.append(tc)
-                    _lc_round_tool_names_gpt.append(tool_name)
-
-                except Exception as e:
-                    all_tool_calls.append(
-                        ToolCall(
-                            id=getattr(tool_call, "id", ""),
-                            name=tool_name,
-                            arguments={"_error": f"malformed tool args: {e}"},
-                        )
-                    )
-                    _lc_round_tool_names_gpt.append(tool_name)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": getattr(tool_call, "id", ""),
-                            "name": tool_name,
-                            "content": f"Error decoding arguments: {e}",
-                        }
-                    )
-
-            # Re-prepare tools if new ones found
-            if lazy_loading and found_new_tools:
-                args["tools"] = self._prepare_tools(filter_names=list(active_tool_names))
-                # Note: We keep tool_choice='auto'
-
-            # FEAT-397: emit ClientRoundEvent for the round whose tool calls
-            # were just executed above.
+        def _on_round(round_number, usage, raw_usage, tool_names, duration_ms):
             self._emit_round_event(
                 _lc_tc_gpt,
                 client_name="openai",
                 model=model_str,
-                round_number=_lc_round_number_gpt,
-                usage=_lc_round_usage_gpt,
-                raw_usage=_lc_round_raw_usage_gpt,
-                tool_calls=_lc_round_tool_names_gpt,
-                duration_ms=_lc_round_duration_gpt,
+                round_number=round_number,
+                usage=usage,
+                raw_usage=raw_usage,
+                tool_calls=tool_names,
+                duration_ms=duration_ms,
             )
 
-            # continue via the same routed API
-            _lc_round_t0_gpt = _lc_time_gpt.perf_counter()
-            if use_responses:
-                if output_config:
-                    args["response_format"] = resp_format
-                response = await self._responses_completion(model=model_str, messages=messages, **args)
-            else:
-                if output_config:
-                    args["response_format"] = resp_format
-                response = await self._chat_completion(model=model_str, messages=messages, use_tools=_use_tools, **args)
-
-            # FEAT-397: accumulate this new round's usage
-            _lc_round_number_gpt += 1
-            _lc_round_duration_gpt = (_lc_time_gpt.perf_counter() - _lc_round_t0_gpt) * 1000
-            _lc_round_usage_gpt, _lc_round_raw_usage_gpt = _lc_gpt_extract_usage(response)
-            if _lc_round_usage_gpt is not None:
-                _lc_accumulated_usage_gpt = (
-                    _lc_round_usage_gpt
-                    if _lc_accumulated_usage_gpt is None
-                    else _lc_accumulated_usage_gpt + _lc_round_usage_gpt
-                )
-
-            result = response.choices[0].message
+        result, response, all_tool_calls, _lc_accumulated_usage_gpt, _lc_round_number_gpt = await self._run_tool_call_loop(
+            result=result,
+            response=response,
+            messages=messages,
+            model_str=model_str,
+            use_tools=_use_tools,
+            args=args,
+            session_id=session_id,
+            call_completion=_continue_call,
+            lazy_loading=lazy_loading,
+            active_tool_names=active_tool_names,
+            track_usage=True,
+            initial_duration_ms=_lc_round_duration_gpt,
+            on_round=_on_round,
+        )
 
         # ---------- Finalization (unchanged) ----------
         messages.append({"role": "assistant", "content": result.content})
@@ -1158,127 +1001,9 @@ class OpenAIClient(AbstractClient):
         )
         return ai_message
 
-    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
-        """Resume a suspended model execution.
-
-        Args:
-            session_id: The session ID
-            user_input: The user's input to inject as tool result
-            state: The suspended state containing messages and tool_call_id
-
-        Returns:
-            MessageResponse: The response from the LLM
-        """
-        await self._ensure_client()
-
-        messages = state["messages"]
-        tool_call_id = state["tool_call_id"]
-        model_str = state.get("agent_name", self.model or self.default_model)
-
-        # Inject user input as tool result
-        messages.append({"role": "tool", "tool_call_id": tool_call_id, "name": "handoff_tool", "content": user_input})
-
-        # Track tools used in this continuation
-        all_tool_calls = []
-        turn_id = str(uuid.uuid4())
-
-        # We need a dummy response to enter the same loop logic if we want to extract it,
-        # but to keep it simple we just call the API again.
-        response = await self._chat_completion(model=model_str, messages=messages, use_tools=True)
-        result = response.choices[0].message
-
-        while getattr(result, "tool_calls", None):
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": result.content,
-                    "tool_calls": [
-                        (
-                            tc.model_dump()
-                            if hasattr(tc, "model_dump")
-                            else {
-                                "id": tc.id,
-                                "function": {
-                                    "name": getattr(tc.function, "name", None),
-                                    "arguments": getattr(tc.function, "arguments", "{}"),
-                                },
-                            }
-                        )
-                        for tc in result.tool_calls
-                    ],
-                }
-            )
-
-            for tool_call in result.tool_calls:
-                tool_name = getattr(tool_call.function, "name", "unknown")
-                try:
-                    try:
-                        tool_args = self._json.loads(tool_call.function.arguments)
-                    except json.JSONDecodeError:
-                        tool_args = json_decoder(tool_call.function.arguments)
-
-                    tc = ToolCall(id=getattr(tool_call, "id", ""), name=tool_name, arguments=tool_args)
-
-                    try:
-                        start_time = time.time()
-                        tool_result = await self._execute_tool(tool_name, tool_args)
-                        execution_time = time.time() - start_time
-
-                        tc.result = tool_result
-                        tc.execution_time = execution_time
-
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": getattr(tool_call, "id", ""),
-                                "name": tool_name,
-                                "content": str(tool_result),
-                            }
-                        )
-                    except Exception as e:
-                        from parrot.core.exceptions import HumanInteractionInterrupt
-
-                        if isinstance(e, HumanInteractionInterrupt):
-                            e.session_id = session_id
-                            e.messages = messages.copy()
-                            e.tool_call_id = getattr(tool_call, "id", "")
-                            e.agent_name = model_str
-                            raise
-
-                        tc.error = str(e)
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": getattr(tool_call, "id", ""),
-                                "name": tool_name,
-                                "content": str(e),
-                            }
-                        )
-                    all_tool_calls.append(tc)
-                except Exception as e:
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": getattr(tool_call, "id", ""),
-                            "name": tool_name,
-                            "content": f"Error decoding arguments: {e}",
-                        }
-                    )
-
-            # Call API again after processing tools
-            response = await self._chat_completion(model=model_str, messages=messages, use_tools=True)
-            result = response.choices[0].message
-
-        ai_message = AIMessageFactory.from_openai(
-            response=response,
-            input_text="[Resumed Conversation]",
-            model=model_str,
-            user_id="unknown",
-            session_id=session_id,
-            turn_id=turn_id,
-        )
-        ai_message.tool_calls = all_tool_calls
-        return ai_message
+    # resume() moved to OpenAIBaseClient (FEAT-438 Module 2) — it had no
+    # OpenAI-only logic; it is now inherited unchanged (reusing the same
+    # _run_tool_call_loop that ask() above uses).
 
     async def ask_stream(
         self,
@@ -1547,29 +1272,25 @@ class OpenAIClient(AbstractClient):
             chat_args = dict(args)
             # Request usage stats in the final streaming chunk (OpenAI SDK >= 1.17)
             chat_args["stream_options"] = {"include_usage": True}
+            if output_config:
+                chat_args["response_format"] = output_config.output_type
             usage_data = None
-            response_stream = None  # initialise; assigned by whichever branch runs
-            method = getattr(self.client.chat.completions, "parse", None) if output_config else None
-            if callable(method):
-                try:
-                    response_stream = await method(  # pylint: disable=E1102 # noqa
-                        model=model_str,
-                        messages=messages,
-                        stream=True,
-                        response_format=(output_config.output_type if output_config else None),
-                        **chat_args,
-                    )
-                except TypeError:
-                    # parse() in this SDK may not accept stream=True → fallback to create()
-                    method = None
-            if not callable(method):
-                response_stream = await self.client.chat.completions.create(
-                    model=model_str,
-                    messages=messages,
-                    stream=True,
-                    response_format=(output_config.output_type if output_config else None),
-                    **chat_args,
-                )
+            # FEAT-438 G3: route through the single completion funnel
+            # (_chat_completion) instead of calling the SDK directly.
+            # `_chat_completion`'s dispatch (`.parse()` only when
+            # use_tools=False) reproduces this branch's original "prefer
+            # .parse() only when output_config is set" intent. Documented,
+            # authorized behavior change (spec G3 / TASK-2298 Completion
+            # Note): this drops the narrow SDK-version TypeError→create()
+            # fallback the direct-call version had for
+            # `.parse(stream=True, ...)`.
+            response_stream = await self._chat_completion(
+                model=model_str,
+                messages=messages,
+                use_tools=not bool(output_config),
+                stream=True,
+                **chat_args,
+            )
 
             async for chunk in response_stream:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
@@ -1639,53 +1360,13 @@ class OpenAIClient(AbstractClient):
                 [],
             )
 
-    async def batch_ask(self, requests) -> List[AIMessage]:
-        """Process multiple requests in batch."""
-        # OpenAI doesn't have a native batch API like Claude, so we process sequentially
-        # In a real implementation, you might want to use asyncio.gather for concurrency
-        results = []
-        for request in requests:
-            result = await self.ask(**request)
-            results.append(result)
-        return results
+    # batch_ask() moved to OpenAIBaseClient (FEAT-438 Module 2) — the
+    # sequential loop over self.ask() is generic and now inherited
+    # unchanged (self.ask() still resolves polymorphically to this
+    # class's own ask() override above).
 
-    def _encode_image_for_openai(
-        self, image: Union[Path, bytes, "Image.Image"], low_quality: bool = False
-    ) -> Dict[str, Any]:
-        """Encode image for OpenAI's vision API."""
-        try:
-            from PIL import Image
-        except ImportError as exc:
-            raise ImportError(
-                "Image methods on OpenAIClient require Pillow. " "Install with: pip install Pillow"
-            ) from exc
-        if isinstance(image, Path):
-            if not image.exists():
-                raise FileNotFoundError(f"Image file not found: {image}")
-            mime_type, _ = mimetypes.guess_type(str(image))
-            mime_type = mime_type or "image/jpeg"
-            with open(image, "rb") as f:
-                encoded_data = base64.b64encode(f.read()).decode("utf-8")
-
-        elif isinstance(image, bytes):
-            mime_type = "image/jpeg"
-            encoded_data = base64.b64encode(image).decode("utf-8")
-
-        elif isinstance(image, Image.Image):
-            buffer = io.BytesIO()
-            if image.mode in ("RGBA", "LA", "P"):
-                image = image.convert("RGB")
-            image.save(buffer, format="JPEG")
-            encoded_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            mime_type = "image/jpeg"
-
-        else:
-            raise ValueError("Image must be a Path, bytes, or PIL.Image object.")
-
-        return {
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime_type};base64,{encoded_data}", "detail": "low" if low_quality else "auto"},
-        }
+    # _encode_image_for_openai moved to OpenAIBaseClient (FEAT-438 Module 2)
+    # — generic, inherited unchanged; still used below by ask_to_image() etc.
 
     async def ask_to_image(
         self,
@@ -2491,89 +2172,12 @@ class OpenAIClient(AbstractClient):
             raw_response=raw_dump,
         )
 
-    async def invoke(
-        self,
-        prompt: str,
-        *,
-        output_type: Optional[type] = None,
-        structured_output: Optional[StructuredOutputConfig] = None,
-        model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
-        temperature: float = 0.0,
-        use_tools: bool = False,
-        tools: Optional[list] = None,
-    ) -> InvokeResult:
-        """Lightweight stateless invocation for OpenAIClient.
-
-        Uses native ``response_format`` with ``json_schema`` and ``strict: True``
-        for structured output.  A single ``chat.completions.create()`` call is
-        made — no retry, no history, no prompt builder.
-
-        Args:
-            prompt: User prompt.
-            output_type: Pydantic model or dataclass to parse the response into.
-            structured_output: Full :class:`StructuredOutputConfig`; takes
-                precedence over ``output_type``.
-            model: Model override. Defaults to ``_lightweight_model`` (``gpt-4.1``).
-            system_prompt: System prompt override.
-            max_tokens: Maximum completion tokens.
-            temperature: Sampling temperature.
-            use_tools: Whether to inject registered tools.
-            tools: Additional tool definitions.
-
-        Returns:
-            :class:`InvokeResult` with parsed output.
-
-        Raises:
-            :class:`InvokeError`: On provider errors.
-        """
-        try:
-            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
-            config = self._build_invoke_structured_config(output_type, structured_output)
-            resolved_model = self._resolve_invoke_model(model)
-
-            messages = [
-                {"role": "system", "content": resolved_prompt},
-                {"role": "user", "content": prompt},
-            ]
-
-            kwargs: Dict[str, Any] = {
-                "model": resolved_model,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "messages": messages,
-            }
-
-            # Native JSON schema structured output
-            if config:
-                response_format = self._build_response_format_from(config)
-                if response_format:
-                    kwargs["response_format"] = response_format
-
-            # Tools
-            if use_tools:
-                tool_defs = self._prepare_tools()
-                if tool_defs:
-                    kwargs["tools"] = tool_defs
-
-            if not self.client:
-                raise RuntimeError("OpenAIClient not initialised. Use async context manager.")
-
-            response = await self.client.chat.completions.create(**kwargs)
-            raw_text = response.choices[0].message.content or ""
-
-            # Parse output
-            output: Any = raw_text
-            if config:
-                if config.custom_parser:
-                    output = config.custom_parser(raw_text)
-                else:
-                    output = await self._parse_structured_output(raw_text, config)
-
-            usage = CompletionUsage.from_openai(response.usage)
-            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
-        except InvokeError:
-            raise
-        except Exception as exc:
-            raise self._handle_invoke_error(exc)
+    # invoke() is inherited unchanged from OpenAIBaseClient (FEAT-438
+    # code-review fix): this override used to be byte-for-byte functionally
+    # identical to the base implementation (same logic, same call
+    # sequence — only the "not initialised" error-message string differed
+    # cosmetically, and that string renders identically for an
+    # OpenAIClient instance either way since the base uses
+    # ``type(self).__name__``). Keeping a dead duplicate here was a
+    # maintenance hazard: a future change to the base's invoke() would
+    # have silently failed to propagate to OpenAIClient.

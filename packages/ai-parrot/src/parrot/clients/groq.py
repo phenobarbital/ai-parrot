@@ -10,7 +10,8 @@ from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
-from .base import AbstractClient
+from .openai_base import OpenAIBaseClient
+from ..tools.manager import ToolFormat
 
 if TYPE_CHECKING:
     from groq import AsyncGroq
@@ -46,8 +47,25 @@ STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
 }
 
 
-class GroqClient(AbstractClient):
+class GroqClient(OpenAIBaseClient):
     """Client for interacting with Groq's API.
+
+    FEAT-438 (TASK-2303): rebased onto ``OpenAIBaseClient`` — the
+    OpenAI-compatible wire protocol with none of OpenAI-the-provider's
+    defaults — while keeping Groq's native ``groq.AsyncGroq`` SDK behind
+    ``get_client()`` (the ``AsyncOpenAI`` swap was explicitly rejected at
+    spec time; ``AsyncGroq`` mirrors the OpenAI SDK's
+    ``chat.completions.create`` surface closely enough that the shared
+    ``_chat_completion`` funnel seam drives it directly — this class
+    overrides it only to force ``.create()`` unconditionally, since
+    ``AsyncGroq`` offers no ``.parse()`` guarantee).
+
+    ``tool_format`` MUST be declared explicitly as ``ToolFormat.GROQ``
+    here: ``OpenAIBaseClient`` declares ``ToolFormat.OPENAI``, and an
+    explicit ``tool_format`` attribute wins over the ``client_type`` map
+    in ``AbstractClient._resolve_tool_format()`` (base.py:1392) — without
+    this override, Groq would silently inherit OPENAI's tool format and
+    start sending ``"strict": true``, which Groq rejects.
 
     Note: Groq has a limitation where structured output (JSON mode) cannot be
     combined with tool calling in the same request. When both are requested,
@@ -58,6 +76,7 @@ class GroqClient(AbstractClient):
 
     client_type: str = "groq"
     client_name: str = "groq"
+    tool_format: ToolFormat = ToolFormat.GROQ
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
     _default_model: str = 'openai/gpt-oss-120b'
     _lightweight_model: str = "kimi-k2-instruct"
@@ -68,16 +87,25 @@ class GroqClient(AbstractClient):
         base_url: str = "https://api.groq.com/openai/v1",
         **kwargs
     ):
-        self.api_key = api_key or config.get('GROQ_API_KEY')
-        self.base_url = base_url
-        self.base_headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-        super().__init__(**kwargs)
+        resolved_key = api_key or config.get('GROQ_API_KEY')
+        super().__init__(
+            api_key=resolved_key,
+            base_url=base_url,
+            **kwargs,
+        )
+        # Re-set after super().__init__ because AbstractClient may overwrite
+        # self.api_key during its own initialisation. This mirrors the
+        # guard used by NvidiaClient (nvidia.py) / OpenRouterClient
+        # (openrouter.py).
+        self.api_key = resolved_key
 
     async def get_client(self) -> "AsyncGroq":
-        """Initialize the Groq client."""
+        """Initialize the Groq client.
+
+        NOTE (spec §7 known quirk, preserved verbatim): ``self.base_url``
+        is stored but deliberately NOT passed to ``AsyncGroq`` — the
+        official SDK resolves its own endpoint. Do not "fix" this.
+        """
         try:
             from groq import AsyncGroq
         except ImportError as exc:
@@ -86,6 +114,33 @@ class GroqClient(AbstractClient):
                 "Install with: pip install ai-parrot[groq]"
             ) from exc
         return AsyncGroq(api_key=self.api_key)
+
+    async def _chat_completion(
+        self, model: str, messages: Any, use_tools: bool = False, stream: bool = False, **kwargs
+    ) -> Any:
+        """Groq-specific completion funnel.
+
+        Always uses ``.create()`` — ``AsyncGroq`` offers no ``.parse()``
+        guarantee (unlike the OpenAI SDK), so this unconditionally
+        overrides the base's use_tools-gated ``.parse()``-preferring
+        dispatch, mirroring ``NvidiaClient._chat_completion``'s
+        create-not-parse pattern.
+
+        Args:
+            model: The resolved model id.
+            messages: The chat-completions message list.
+            use_tools: Unused for dispatch (Groq always uses ``.create()``);
+                accepted for interface parity with the base funnel seam.
+            stream: Forwarded to the SDK as ``stream=True``/``False``.
+            **kwargs: Additional Groq chat-completions request kwargs.
+
+        Returns:
+            The raw Groq SDK response object (or async stream when
+            ``stream=True``).
+        """
+        return await self.client.chat.completions.create(
+            model=model, messages=messages, stream=stream, **kwargs
+        )
 
     def _fix_schema_for_groq(self, schema: dict) -> dict:
         """
@@ -417,7 +472,7 @@ class GroqClient(AbstractClient):
         _lc_round_number_groq = 1
         _lc_accumulated_usage_groq: "Optional[CompletionUsage]" = None
         _lc_round_t0_groq = _lc_time_groq.perf_counter()
-        response = await self.client.chat.completions.create(**request_args)
+        response = await self._chat_completion(**request_args, use_tools=use_tools)
         result = response.choices[0].message
         # FEAT-397: round 1 is this initial call.
         _lc_round_duration_groq = (_lc_time_groq.perf_counter() - _lc_round_t0_groq) * 1000
@@ -537,7 +592,7 @@ class GroqClient(AbstractClient):
                 )
 
                 _lc_round_t0_groq = _lc_time_groq.perf_counter()
-                response = await self.client.chat.completions.create(**continue_args)
+                response = await self._chat_completion(**continue_args, use_tools=use_tools)
                 result = response.choices[0].message
                 # FEAT-397: accumulate this new round's usage
                 _lc_round_number_groq += 1
@@ -590,7 +645,7 @@ class GroqClient(AbstractClient):
                 else:
                     structured_args["response_format"] = {"type": "json_object"}
 
-            structured_response = await self.client.chat.completions.create(**structured_args)
+            structured_response = await self._chat_completion(**structured_args, use_tools=False)
             result = structured_response.message if hasattr(
                 structured_response,
                 'message'
@@ -745,7 +800,7 @@ class GroqClient(AbstractClient):
             request_args["tools"] = tools
             request_args["tool_choice"] = "auto"
 
-        response_stream = await self.client.chat.completions.create(**request_args)
+        response_stream = await self._chat_completion(**request_args, use_tools=bool(tools))
 
         assistant_content = ""
         usage_data = None
@@ -862,7 +917,7 @@ class GroqClient(AbstractClient):
             request_args["tools"] = tools
             request_args["tool_choice"] = "auto"
 
-        response = await self.client.chat.completions.create(**request_args)
+        response = await self._chat_completion(**request_args, use_tools=True)
         result = response.choices[0].message
 
         max_turns = 10
@@ -941,7 +996,7 @@ class GroqClient(AbstractClient):
                 continue_args["tools"] = tools
                 continue_args["tool_choice"] = "auto"
 
-            response = await self.client.chat.completions.create(**continue_args)
+            response = await self._chat_completion(**continue_args, use_tools=True)
             result = response.choices[0].message
 
         ai_message = AIMessageFactory.from_groq(
@@ -955,9 +1010,9 @@ class GroqClient(AbstractClient):
         ai_message.tool_calls = all_tool_calls
         return ai_message
 
-    async def batch_ask(self, requests):
-        """Process multiple requests in batch."""
-        return await super().batch_ask(requests)
+    # batch_ask() deleted (FEAT-438 TASK-2303) — was a pure pass-through
+    # (`return await super().batch_ask(requests)`); OpenAIBaseClient's
+    # generic sequential-loop implementation is inherited unchanged.
 
     async def summarize_text(
         self,
@@ -1355,8 +1410,8 @@ Format your response clearly with these sections.
                 if tool_defs:
                     first_kwargs["tools"] = tool_defs
 
-                first_response = await self.client.chat.completions.create(
-                    **first_kwargs
+                first_response = await self._chat_completion(
+                    **first_kwargs, use_tools=bool(tool_defs)
                 )
                 first_text = first_response.choices[0].message.content or ""
 
@@ -1380,8 +1435,8 @@ Format your response clearly with these sections.
                         "schema": fixed_schema,
                     },
                 }
-                final_response = await self.client.chat.completions.create(
-                    **second_kwargs
+                final_response = await self._chat_completion(
+                    **second_kwargs, use_tools=False
                 )
                 raw_text = final_response.choices[0].message.content or ""
 
@@ -1403,7 +1458,7 @@ Format your response clearly with these sections.
                         "type": "json_object",
                         "schema": fixed_schema,
                     }
-                final_response = await self.client.chat.completions.create(**kwargs)
+                final_response = await self._chat_completion(**kwargs, use_tools=False)
                 raw_text = final_response.choices[0].message.content or ""
 
             # Parse output

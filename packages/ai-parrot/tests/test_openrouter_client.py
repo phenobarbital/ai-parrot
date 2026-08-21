@@ -61,10 +61,14 @@ class TestOpenRouterClientInit:
         """No provider preferences by default."""
         assert client.provider_preferences is None
 
-    def test_inherits_openai_client(self, client):
-        """Client is a subclass of OpenAIClient."""
+    def test_inherits_openai_base_client(self, client):
+        """FEAT-438 TASK-2300: client is a subclass of OpenAIBaseClient,
+        NOT OpenAIClient — the rebase means OpenRouterClient no longer
+        inherits OpenAI-the-provider defaults (gpt-* model ids)."""
         from parrot.clients.gpt import OpenAIClient
-        assert isinstance(client, OpenAIClient)
+        from parrot.clients.openai_base import OpenAIBaseClient
+        assert isinstance(client, OpenAIBaseClient)
+        assert not isinstance(client, OpenAIClient)
 
 
 class TestOpenRouterGetClient:
@@ -209,7 +213,7 @@ class TestChatCompletionOverride:
     async def test_chat_completion_injects_provider_prefs(self, client_with_prefs):
         """_chat_completion injects provider preferences in extra_body."""
         with patch(
-            "parrot.clients.gpt.OpenAIClient._chat_completion",
+            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion",
             new_callable=AsyncMock
         ) as mock_super:
             mock_super.return_value = MagicMock()
@@ -228,7 +232,7 @@ class TestChatCompletionOverride:
     async def test_chat_completion_no_extra_body_without_prefs(self, client):
         """_chat_completion does not inject extra_body without preferences."""
         with patch(
-            "parrot.clients.gpt.OpenAIClient._chat_completion",
+            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion",
             new_callable=AsyncMock
         ) as mock_super:
             mock_super.return_value = MagicMock()
@@ -243,7 +247,7 @@ class TestChatCompletionOverride:
     async def test_chat_completion_merges_existing_extra_body(self, client_with_prefs):
         """_chat_completion merges with existing extra_body."""
         with patch(
-            "parrot.clients.gpt.OpenAIClient._chat_completion",
+            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion",
             new_callable=AsyncMock
         ) as mock_super:
             mock_super.return_value = MagicMock()

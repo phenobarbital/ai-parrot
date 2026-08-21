@@ -197,10 +197,123 @@ def test_localllm_never_routes_responses(mock_sdk):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
 **Notes**:
+- **OpenRouterClient**: trivial base swap (`OpenAIClient` → `OpenAIBaseClient`);
+  `__init__`, `get_client`, `_build_provider_extra_body`,
+  `_chat_completion` (extra_body delegation), `get_generation_stats`,
+  `list_models` all kept unchanged.
+- **BedrockMantleClient**: trivial base swap only, as anticipated (its
+  `__init__` was already cleaned by TASK-2299). Updated a stale comment
+  referencing "OpenAIClient.__init__" to describe the base-class-agnostic
+  mechanism instead.
+- **LocalLLMClient**: base swap; deleted the now-redundant
+  `_is_responses_model` override (base already returns `False`) and the
+  `_lightweight_model = None` class-attr declaration (base already
+  provides `None`). Kept `get_client`, env-driven `__init__`,
+  `ask`/`ask_stream` (real model-defaulting value), `list_models`,
+  `health_check`, `invoke`/`_invoke_with_schema_in_prompt` (real
+  schema-in-prompt fallback value, calls the SDK directly — NOT rerouted
+  through the funnel; that's TASK-2298's completed scope, not
+  requested here for this override).
+- **NvidiaClient**: base swap; kept everything scoped (rate limiter,
+  `_chat_completion` create-not-parse, `ask`/`ask_stream` thinking/sampling
+  params). **Found and fixed a real bug surfaced by the rebase**: since
+  TASK-2298 already made `ask_stream()` route through `_chat_completion`
+  (the funnel), `NvidiaClient.ask_stream()`'s pre-emptive
+  `await self._acquire_rate_limit_slot()` call — written when
+  `ask_stream()` still bypassed the funnel — would now double-count every
+  streamed call against the 40 rpm free-tier quota (slot reserved once
+  manually, once again inside `_chat_completion`). Removed the redundant
+  manual call; updated the stale docstring/error-message claims about the
+  bypass. Added `test_invoke_consumes_a_slot` (required by acceptance
+  criteria) proving the rate limiter now also covers `invoke()` (no
+  override needed — inherited from `OpenAIBaseClient`, which routes
+  through `_chat_completion`). Updated 3 bypass-era tests that patched
+  `parrot.clients.gpt.OpenAIClient.ask_stream` (no longer in Nvidia's MRO,
+  so the patch was a silent no-op) to mock the SDK level instead via
+  `get_client()` — `test_ask_stream_consumes_a_slot`,
+  `test_ask_stream_not_throttled_when_free_tier_off`,
+  `test_stream_still_works_without_sampling_params`.
+- **MoonshotClient**: base swap; deleted the `ask_stream()` K-series
+  temperature-neutralization workaround and the entire `invoke()`
+  override — both existed solely to compensate for `ask_stream()`/
+  `invoke()` bypassing `_chat_completion()` (documented in the module's
+  former "KNOWN LIMITATIONS" note). Now that both route through the
+  funnel (TASK-2298), this module's own `_chat_completion` override
+  already strips `temperature` (and the other fixed sampling params) for
+  K-series models — so K-series `invoke()` calls now **succeed** instead
+  of raising `ValueError`. Kept `_sanitize_params_for_model`,
+  `_capture_reasoning_content`, `_chat_completion`, and the
+  `thinking`/`reasoning_effort` context-var propagation in `ask`/
+  `ask_stream` (real provider value, not bypass workarounds). Rewrote
+  `TestMoonshotAskStreamKSeriesSafety` → `TestMoonshotAskStreamFunnelCoverage`
+  and `TestMoonshotInvokeGuard` → `TestMoonshotInvokeViaFunnel` to prove
+  the new (better) behavior end-to-end via a real mocked-SDK client
+  instead of asserting the removed workarounds. Fixed 6 other tests that
+  patched `parrot.clients.gpt.OpenAIClient.ask`/`ask_stream`/`invoke`
+  (silently no-op post-rebase) to patch `parrot.clients.openai_base.
+  OpenAIBaseClient` instead.
+- **vLLMClient**: untouched relationship (still extends `LocalLLMClient`,
+  itself now on `OpenAIBaseClient`); its own suite passes unmodified.
+- **OpenRouterClient test suite**: `test_inherits_openai_client` asserted
+  `isinstance(client, OpenAIClient)` — the literal wart this whole feature
+  removes. Renamed to `test_inherits_openai_base_client`, now asserting
+  `isinstance(client, OpenAIBaseClient)` AND `not isinstance(client,
+  OpenAIClient)` (Module 7's audit target, confirmed here for this one
+  client). Fixed 3 tests patching `parrot.clients.gpt.OpenAIClient.
+  _chat_completion` (no longer in OpenRouter's MRO) to patch
+  `parrot.clients.openai_base.OpenAIBaseClient._chat_completion` instead.
+- Verification: `tests/clients/test_openai_compatible_defaults.py`
+  (parametrized over all six classes) passes unmodified (12/12).
+  `tests/clients/test_moonshot_client.py` (45/45),
+  `packages/ai-parrot/tests/test_openrouter_client.py` (32/32),
+  `packages/ai-parrot/tests/test_nvidia_client.py`, `test_localllm_client.py`,
+  `test_vllm_client.py`, `packages/ai-parrot/tests/clients/
+  test_bedrock_mantle.py` — diffed failure/error lists against the
+  pre-TASK-2300 baseline (`git stash`) are **byte-identical** (21
+  pre-existing, unrelated failures: a `MagicMock().model_dump()`/
+  `hasattr` gotcha affecting every mocked `ask()` response across
+  Nvidia/OpenRouter's fallback suites, `list_models`/`health_check`
+  connection-error gaps, one Bedrock-Mantle delegation test) — zero
+  regressions. Ran the full 124-file client-touching corpus (~1470 tests,
+  installed `pytest-timeout` transiently per TASK-2299's established
+  practice) — diffed against the TASK-2298 baseline: **zero test-identity
+  differences** (only MagicMock repr memory addresses differ in two
+  unrelated Google error-log lines).
+- `ruff check`: `nova/mantle.py` clean; `localllm.py`/`moonshot.py`/
+  `nvidia.py`/`openrouter.py` pre-existing violation counts unchanged
+  (confirmed via `git stash`); the two test files with genuinely new
+  content (`test_nvidia_client.py`, `tests/clients/test_moonshot_client.py`)
+  also unchanged; `test_openrouter_client.py` had one new I001 (import
+  order in my added test) — fixed, back to its 1 pre-existing violation.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in scope — the Nvidia rate-limiter
+double-acquire fix was not explicitly named in the task's Scope bullet for
+NvidiaClient, but follows directly from its own "read each override's
+body BEFORE deleting: delete only what the funnel now provides" guidance
+and from the acceptance criterion requiring `invoke()` rate-limit coverage
+to be proven; leaving the double-acquire in place would have been a
+correctness regression the rebase itself introduced.
+
+**Addendum (TASK-2305, same feature)**: the "pre-existing, unrelated"
+`MagicMock().model_dump()`/`hasattr` gotcha called out above (byte-identical
+to baseline at the time, correctly left unfixed here) was revisited during
+TASK-2305's final full-suite verification pass, since the spec's own
+Acceptance Criteria demand "every pre-existing client test suite passes...
+`pytest` full run green" as a FEAT-438-level completion condition — not
+satisfiable while leaving it broken. Pinned `mock_response.model_dump =
+MagicMock(return_value={})` alongside the existing `.dict` mock in both
+`test_nvidia_client.py`'s `make_mock_completion()` and
+`test_bedrock_mantle.py`'s `_make_mock_chat_completion_response()` (the
+same fixture pattern in both files), since `AIMessageFactory.from_openai`
+(responses.py:492) checks `hasattr(response, "model_dump")` before
+`.dict()` — and a bare `MagicMock` auto-vivifies `model_dump` too, so that
+branch always won and always returned a non-dict. Confirmed via a
+temporary `dev`-branch worktree that this exact failure (same
+`ValidationError` on `raw_response`) pre-dates FEAT-438 entirely — not
+something this rebase introduced, just something its now-corrected patch
+targets (`OpenAIBaseClient._chat_completion` instead of the dead
+`OpenAIClient._chat_completion` reference) finally exercise for real
+instead of silently no-op'ing.

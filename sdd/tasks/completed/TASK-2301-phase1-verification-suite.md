@@ -179,10 +179,75 @@ def test_invoke_chain_never_yields_gpt(cls, client_kwargs):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
 **Notes**:
+- Extended `tests/clients/test_openai_compatible_defaults.py`: added
+  `WIRE_SUBCLASSES` (the 6 Phase-1 classes, `vLLMClient` imported new),
+  `GPT_LEAK` regex (`^gpt-`, deliberately not matching Mantle's
+  `"openai.gpt-oss-120b"`), `_client_kwargs(cls)`, and 5 new
+  tests/parametrized-groups: `test_openai_base_client_declares_no_model_
+  defaults`, `test_openai_client_still_has_gpt_defaults` (positive
+  control), `test_no_gpt_default_leak` (class-attr check, parametrized
+  ×6), `test_invoke_chain_never_yields_gpt` (parametrized ×6),
+  `test_ask_payload_model_never_leaks_gpt` (mocked `_chat_completion`,
+  parametrized ×5 — vLLMClient excluded, see below).
+- Extended `tests/clients/test_openai_base_parity.py`: added a local
+  `WIRE_SUBCLASSES` roster + `_parity_client_kwargs`,
+  `test_wire_subclass_tool_wrapper_is_openai_shaped_and_strict`
+  (parametrized ×6), and three funnel-coverage tests
+  (`test_ask_reaches_chat_completion`, `test_ask_stream_reaches_
+  chat_completion`, `test_invoke_reaches_chat_completion`) using a
+  plain-function `_chat_completion` spy (a callable-*object* spy silently
+  breaks method-binding when monkeypatched onto a class — switched to a
+  closure-based plain function so `self._chat_completion(...)`
+  auto-binds correctly).
+- **Corrected my own wrong assumption while writing the tests**: initially
+  wrote `test_wire_subclass_tool_wrapper_is_openai_shaped_never_strict`
+  asserting `"strict" not in schema` for non-OpenAI-client wire
+  subclasses, based on a surface reading of the codebase contract's
+  ":1420 strict ONLY for OPENAI (Groq rejects)" note. Actual
+  `AbstractClient._prepare_tools()` gates "strict" on `tool_format ==
+  ToolFormat.OPENAI` (a wire-protocol property all 6 Phase-1 subclasses
+  declare), not on being literally `OpenAIClient` — so strict tools DO
+  apply to all 6. Fixed the test to assert the correct (already-correct,
+  pre-existing) behavior instead of asserting my incorrect expectation.
+- **Found and reported (not fixed) a pre-existing, unrelated defect**:
+  `vLLMClient.ask()`/`ask_stream()` unconditionally forward
+  `extra_body=extra_body if extra_body else None` up through
+  `LocalLLMClient` to `OpenAIBaseClient.ask()`/`ask_stream()`, neither of
+  which has ever accepted an `extra_body` kwarg — nor did
+  `OpenAIClient.ask()`/`ask_stream()` pre-FEAT-438 (verified present as
+  far back as commit `ae3d613ab`, well before this feature). Every real
+  (non-mocked-at-the-override-level) call to `vLLMClient.ask()`/
+  `ask_stream()` has always raised `TypeError`; the existing
+  `test_vllm_client.py` suite never caught this because it patches
+  `LocalLLMClient.ask` with an `AsyncMock` (accepts any kwargs), never
+  exercising the real signature-mismatched chain. Per this task's "NOT in
+  scope: fixing any defect these tests reveal" instruction, excluded
+  `vLLMClient` from the two payload/funnel tests that would otherwise hit
+  it (`test_ask_payload_model_never_leaks_gpt`,
+  `test_ask_reaches_chat_completion`, `test_ask_stream_reaches_
+  chat_completion`) with an inline comment explaining why, rather than
+  silently working around it. **Recommend a follow-up bug ticket** — this
+  predates FEAT-438 and is out of scope for any task in this spec to fix.
+- `LocalLLMClient`/`vLLMClient`'s `invoke()` intentionally does not route
+  through `_chat_completion` (TASK-2300 kept it verbatim for its real
+  schema-in-prompt fallback value) — excluded from the invoke
+  funnel-coverage test with an inline comment; not a gap, a documented
+  exception.
+- Verification: `pytest tests/clients/test_openai_compatible_defaults.py
+  tests/clients/test_openai_base_parity.py -v` → 60/60 passed, fully
+  offline (no network, no env vars — every client constructed with
+  explicit `api_key`/`base_url`). Full `tests/clients/` +
+  `test_openai_client.py` + `test_openai_invoke.py` diffed against the
+  pre-TASK-2301 baseline (`git stash`) — byte-identical failure/error
+  lists, zero regressions.
+- `ruff check` clean on both modified test files (one auto-fixed I001
+  import-order issue).
 
-**Deviations from spec**: none
+**Deviations from spec**: none — the two documented test-roster exclusions
+(vLLMClient's pre-existing `extra_body` defect; LocalLLM/vLLM's
+intentionally-funnel-bypassing `invoke()`) are exactly the kind of
+"exclude with inline comment + Completion Note report" the task's own
+"NOT in scope" clause anticipates, not silent gaps.

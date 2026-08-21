@@ -5,7 +5,8 @@ overrides), API-key resolution order (kwarg -> BEDROCK_MANTLE_API_KEY ->
 AWS_NOVA_API_KEY, surviving ``super().__init__``), the ``_fallback_model``
 shadowing guard, ``get_client()``, ``LLMFactory`` registration (both the
 ``"bedrock-mantle"`` key and the ``"mantle"`` alias), and a mocked ``ask()``
-round trip proving the inherited ``OpenAIClient`` machinery is untouched.
+round trip proving the inherited ``OpenAIBaseClient`` machinery (FEAT-438)
+is untouched.
 
 No live Bedrock/AWS calls are made by default — ``test_live_mantle_ask`` is
 skip-gated behind ``RUN_MANTLE_LIVE_TEST``.
@@ -55,6 +56,14 @@ def _make_mock_chat_completion_response(content: str = "ok"):
         prompt_tokens=1, completion_tokens=1, total_tokens=2
     )
     mock_response.dict = MagicMock(return_value={})
+    # AIMessageFactory.from_openai checks hasattr(response, "model_dump")
+    # first (responses.py:492) — a bare MagicMock auto-vivifies that
+    # attribute too, returning another MagicMock instead of a dict, which
+    # fails AIMessage's raw_response validation. Pin it explicitly so this
+    # mock exercises the same code path AIMessageFactory.from_openai
+    # actually takes (pre-existing gap, predates FEAT-438 — confirmed via
+    # the same failure on dev's gpt.py:1124 with this exact fixture).
+    mock_response.model_dump = MagicMock(return_value={})
     return mock_response
 
 
@@ -68,9 +77,11 @@ class TestBedrockMantleClient:
         assert mantle_client.base_url == "https://bedrock-mantle.us-east-1.api.aws/v1"
 
     def test_fallback_model_survives_init(self, mantle_client):
-        """AbstractClient.__init__ would otherwise shadow the class-level
-        _fallback_model with an instance attribute of None (spec §7
-        gotcha) — the kwargs.setdefault guard must prevent that."""
+        """FEAT-438 G5: AbstractClient.__init__ only creates an instance
+        _fallback_model attribute when fallback_model= is explicitly
+        passed, so this class's class-level _fallback_model is visible
+        without any per-subclass workaround (the former
+        kwargs.setdefault("fallback_model", ...) guard was removed)."""
         assert mantle_client._fallback_model == "google.gemma-4-26b-a4b"
 
     def test_explicit_base_url_wins(self):
@@ -196,15 +207,17 @@ class TestBedrockMantleAsk:
     @pytest.mark.asyncio
     async def test_ask_delegates_to_openai_machinery(self, mantle_client):
         """Mocked chat-completion round trip returns an AIMessage — proves
-        the inherited OpenAIClient.ask() path is untouched (no
-        _chat_completion/ask override on BedrockMantleClient)."""
+        the inherited OpenAIBaseClient.ask() path is untouched (no
+        _chat_completion/ask override on BedrockMantleClient). FEAT-438
+        rebased BedrockMantleClient onto OpenAIBaseClient (not
+        OpenAIClient), so the funnel to patch is on the new base module."""
         mock_response = _make_mock_chat_completion_response("Hello from Mantle")
 
         async def fake_chat_completion(model, messages, use_tools=False, **kwargs):
             return mock_response
 
         with patch(
-            "parrot.clients.gpt.OpenAIClient._chat_completion",
+            "parrot.clients.openai_base.OpenAIBaseClient._chat_completion",
             side_effect=fake_chat_completion,
         ):
             result = await mantle_client.ask(

@@ -220,10 +220,32 @@ def test_module_has_no_gpt_literal():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
+**Notes**: Created `OpenAIBaseClient(AbstractClient)` in
+`packages/ai-parrot/src/parrot/clients/openai_base.py` with `tool_format =
+ToolFormat.OPENAI` and no model-default attributes; `__init__` mirrors
+gpt.py:100's generic parts (api_key/base_url/base_headers, `model` kwarg
+normalization via `_normalize_model`, `timeout` kwarg stored as
+`self._timeout` for `get_client()`, default 60). `get_client()` lazily
+imports `AsyncOpenAI`. `_resolve_model` fails fast with `ValueError` when
+no model resolves. `_is_responses_model` returns `False`. `_with_extra_body`
+is a static copy of gpt.py:514's dict-merge. Exported `OpenAIBaseClient`
+from `parrot.clients`. Added 9 unit tests in
+`tests/clients/test_openai_base.py`, all passing; `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+One test-only adaptation: the spec's test-spec used a cwd-relative
+`pathlib.Path("packages/...")` to scan the module source for a `"gpt-"`
+literal. Importing any `parrot.*` module triggers `navconfig`'s settings
+bootstrap, which `os.chdir()`s to the MAIN repo checkout (a pre-existing,
+documented cross-worktree gotcha — see
+`packages/ai-parrot/tests/unit/bots/test_finance_reporter_descriptors.py`).
+Resolved the path via the imported module's own `__file__` instead so the
+test is worktree-correct; behavior/assertion unchanged.
 
-**Deviations from spec**: none
+Full `tests/clients/` suite run: 291 passed, 10 pre-existing failures
+(Anthropic/Google fallback-model catalog drift, unrelated to this task —
+confirmed identical failures with this task's changes `git stash`d).
+
+**Deviations from spec**: none (test path-resolution adaptation only, no
+behavior change).

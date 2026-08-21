@@ -10,7 +10,7 @@ from logging import getLogger
 import aiohttp
 from navconfig import config
 
-from .gpt import OpenAIClient
+from .openai_base import OpenAIBaseClient
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
@@ -23,10 +23,12 @@ from ..models.openrouter import (
 logger = getLogger(__name__)
 
 
-class OpenRouterClient(OpenAIClient):
+class OpenRouterClient(OpenAIBaseClient):
     """Client for OpenRouter's multi-model API gateway.
 
-    Extends OpenAIClient with OpenRouter-specific features:
+    Extends OpenAIBaseClient (FEAT-438) — the OpenAI-compatible wire
+    protocol with none of OpenAI-the-provider's defaults — with
+    OpenRouter-specific features:
     - Custom headers (HTTP-Referer, X-Title) for app identification
     - Provider routing preferences (fallback, ordering, filtering)
     - Cost/usage tracking via generation stats endpoint

@@ -179,10 +179,66 @@ def test_mantle_no_longer_needs_workaround():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
 **Notes**:
+- `AbstractClient.__init__` (base.py) now only assigns
+  `self._fallback_model` when `fallback_model` is explicitly present in
+  kwargs (`if 'fallback_model' in kwargs: self._fallback_model =
+  kwargs.pop('fallback_model')`), matching the task's suggested pattern
+  exactly (using `.pop`, since `kwargs` was never reused afterward in
+  `__init__` — verified, no behavior change from switching `.get` to
+  `.pop`).
+- Added a class-level `_fallback_model: Optional[str] = None` declaration
+  on `AbstractClient` itself (next to `_lightweight_model`), per the
+  Codebase Contract's "Does NOT Exist" guidance — otherwise any subclass
+  with no class-level override (Anthropic, Google, Bedrock Converse, etc.)
+  would raise `AttributeError` on `self._fallback_model` reads (e.g. in
+  `_should_use_fallback`, base.py:~939) once the unconditional instance
+  assignment was removed.
+- Deleted `BedrockMantleClient`'s `kwargs.setdefault("fallback_model",
+  self._fallback_model)` workaround (mantle.py) and its explanatory
+  comment; replaced with a short note that the workaround is no longer
+  needed. Updated `test_bedrock_mantle.py::test_fallback_model_survives_
+  init`'s docstring to describe the root-cause fix instead of the removed
+  workaround (assertion unchanged — still passes).
+- Grepped every client `__init__` and every read of `self._fallback_model`
+  repo-wide: only `gpt.py` (`"gpt-5-nano"`), `moonshot.py`
+  (`MOONSHOT_V1_128K`), and `nova/mantle.py`
+  (`"google.gemma-4-26b-a4b"`) declare class-level `_fallback_model`
+  values; none of their `__init__`s relied on the instance-level `None`
+  shadowing (none read `self._fallback_model` before calling
+  `super().__init__()`).
+- Added `tests/clients/test_fallback_model_shadowing.py` (5 tests): class
+  attribute survives without the kwarg, explicit kwarg wins, explicit
+  `None` wins, a subclass with NO class-level override falls through to
+  `None` without `AttributeError`, and `BedrockMantleClient` needs no
+  workaround anymore. All pass.
+- Verification: `tests/clients/test_base_fallback.py`,
+  `tests/clients/test_client_fallback.py`,
+  `tests/clients/test_openai_fallback.py`,
+  `tests/clients/test_fallback_model_shadowing.py`,
+  `packages/ai-parrot/tests/clients/test_bedrock_mantle.py` — 4
+  pre-existing, unrelated failures (Google model-catalog drift,
+  `client.client=None` legacy-reset gap) confirmed byte-identical to
+  baseline via `git stash`; the new suite's 6 tests all pass.
+  **Full-run acceptance criterion**: ran every test file in the repo that
+  imports `parrot.clients` (124 files, ~1470 tests after marker/keyword
+  exclusion of live/integration/e2e-network tests — installed
+  `pytest-timeout` transiently, dev-only, not added to any dependency
+  file, to work around pre-existing unmarked network-calling tests that
+  hang indefinitely in this sandbox) — diffed against the identical
+  pre-TASK-2299 baseline via `git stash`: **the only change is the new
+  regression test flipping from fail→pass**; zero other tests changed
+  status. A literal whole-monorepo `pytest` invocation
+  (`packages/ai-parrot/tests/` + `tests/`, ~19.6k tests) was attempted but
+  is infeasible in this sandbox within any reasonable budget (pre-existing
+  hangs on unmarked live-network tests unrelated to this change,
+  independently confirmed via `--collect-only` showing 71 pre-existing,
+  unrelated collection errors present on both baseline and this branch).
+- `ruff check`: `base.py` and `packages/ai-parrot/tests/clients/
+  test_bedrock_mantle.py` have pre-existing violation counts (226 and 1
+  respectively) **unchanged** by this task (confirmed via `git stash`);
+  `mantle.py` and the new test file are fully clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

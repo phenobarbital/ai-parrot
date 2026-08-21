@@ -207,10 +207,95 @@ async def test_lazy_loading_reprepares_tools(mock_openai_sdk):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
 **Notes**:
+- `OpenAIClient` now extends `OpenAIBaseClient`. `_chat_completion`,
+  `resume()`, and `batch_ask()` moved to the base unchanged (they had no
+  OpenAI-only logic); `gpt.py` now inherits them.
+- Added `OpenAIBaseClient._run_tool_call_loop()`, the single shared
+  tool-calling loop replacing the two previously-duplicated inline
+  while-loops (`ask()` gpt.py:947-1143, `resume()` gpt.py:1190-1257).
+  `OpenAIClient.ask()` keeps ALL its OpenAI-only logic (deep research,
+  Responses-API routing via `_responses_completion`, search-preview
+  deprecation warnings, `STRUCTURED_OUTPUT_COMPATIBLE_MODELS` gating,
+  `parallel_tool_calls`, the `gpt-5-nano` max_tokens quirk) and now calls
+  `self._run_tool_call_loop(...)` instead of duplicating the loop, passing
+  a small `_continue_call` closure that preserves the exact
+  Responses-vs-chat-completions dispatch. `OpenAIBaseClient` also gained
+  its own generic `ask()`/`resume()`/`batch_ask()` (no OpenAI-only
+  behavior) for future non-OpenAI subclasses that don't override `ask()`
+  themselves — per spec Module 2's "move ask/resume into the base".
+- Preserved a real, subtle discrepancy between the original `ask()`/
+  `resume()` loops instead of silently unifying it: `resume()`'s malformed
+  tool-args branch never recorded a `ToolCall` in `all_tool_calls` and
+  used `getattr(tool_call.function, "name", "unknown")`, while `ask()`'s
+  did record it (with an `_error` key) and accessed
+  `tool_call.function.name` directly. `_run_tool_call_loop()` exposes this
+  as `record_malformed_tool_calls`/`default_tool_name` params, with `ask()`
+  passing the "record + no fallback name" behavior and `resume()` passing
+  the "drop + fallback name" behavior — byte-identical to both originals.
+  Covered by `test_malformed_tool_call_recorded_by_default_ask_semantics`
+  / `test_malformed_tool_call_dropped_with_resume_semantics`.
+- Removed the redundant `tool_format = ToolFormat.OPENAI` class attr from
+  `OpenAIClient` (now inherited from `OpenAIBaseClient`, same value).
+- Fixed the constructor chain: `OpenAIClient.__init__` now forwards
+  `api_key`/`base_url` to `super().__init__(api_key=..., base_url=...,
+  **kwargs)` instead of setting `self.api_key`/`self.base_url` directly
+  and calling bare `super().__init__(**kwargs)` — required because the
+  base class changed from `AbstractClient` to `OpenAIBaseClient`, which
+  now owns building `self.api_key`/`self.base_url`/`self.base_headers`
+  itself from its own `api_key`/`base_url` params.
+- **Pre-existing gotcha observed (NOT fixed, out of scope for this task
+  and for FEAT-438's spec, which only targets `_fallback_model` shadowing
+  in TASK-2299)**: `AbstractClient.__init__` unconditionally does
+  `self.api_key = kwargs.get('api_key', None)` (base.py:330). Since
+  `api_key` is consumed by `OpenAIBaseClient.__init__`'s own named
+  parameter, it is never present in the `kwargs` forwarded to
+  `AbstractClient.__init__`, so `self.api_key` ends up `None` after
+  construction — for `OpenAIClient` AND for any direct
+  `OpenAIBaseClient` subclass. Verified via `git stash` that this is
+  **already true on `dev` before this task** (identical behavior on the
+  unmodified `OpenAIClient`), so it is not a regression — the OpenAI SDK
+  masks it in practice by reading `OPENAI_API_KEY` from the environment
+  itself when `api_key=None` is passed to `AsyncOpenAI(...)`. Flagging for
+  visibility; a fix would need to extend TASK-2299's scope (or a follow-up)
+  since it affects `AbstractClient.__init__` for every client, not just
+  OpenAI-compatible ones.
+- Verification: `packages/ai-parrot/tests/test_openai_client.py`,
+  `tests/clients/test_openai_fallback.py`,
+  `tests/clients/test_openai_compatible_defaults.py`,
+  `tests/unit/test_openai_invoke.py` — diffed failure/error lists
+  before vs. after (via `git stash`) are **byte-identical** (5 failed / 7
+  errors in `test_openai_invoke.py`+`test_openai_client.py`, both
+  pre-existing and unrelated: a `mock.patch("parrot.clients.gpt.
+  AsyncOpenAI")` target issue and an unrelated `client.client = None`
+  legacy-reset test gap) — zero regressions introduced by this task. Full
+  `tests/clients/` suite (291+14 passed) and the Phase-1 subclass suites
+  (OpenRouter/Moonshot/Nvidia/LocalLLM/vLLM/Mantle, 228 passed) are also
+  byte-identical failure-wise before/after. New:
+  `tests/clients/test_openai_base_parity.py` (5 tests, all passing) covers
+  tool-loop execution/accumulation, both malformed-tool-call semantics,
+  and lazy-tool re-preparation.
+- `ruff check` clean on `openai_base.py` and the new test file (3
+  pre-existing `except Exception:` blocks ported verbatim from gpt.py
+  needed `# noqa: BLE001`, matching the existing `# pylint:
+  disable=broad-except` convention). `gpt.py` itself carries 149
+  pre-existing, unrelated ruff violations (down from a 156 baseline,
+  confirmed via `git stash` — my edits net-removed violations and added
+  zero new ones); a file-wide lint cleanup of `gpt.py` is out of scope
+  (Cardinal Rule: No Scope Creep).
+- Also fixed a bookkeeping mistake from TASK-2296: its "sdd: complete
+  TASK-2296" commit added `sdd/tasks/completed/TASK-2296-*.md` but never
+  staged the corresponding deletion from `sdd/tasks/active/`, leaving a
+  stale duplicate in git history. Corrected via a small follow-up commit
+  on this branch before starting TASK-2297's own work.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in behavior. The base's own `ask()`/
+`resume()`/`batch_ask()` are new generic implementations (not literal
+extractions of gpt.py's OpenAI-specific `ask()`, which stays overridden in
+gpt.py) — this reconciles spec Module 2's "move ask/resume into the base"
+with Module 3's requirement that `OpenAIClient` keep ALL of its
+OpenAI-only routing; both share the same `_run_tool_call_loop` per the
+acceptance criteria ("ONE shared implementation... no duplicate in
+gpt.py").

@@ -177,10 +177,57 @@ async def test_ask_stream_final_yield_is_aimessage(mock_openai_sdk): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
 **Notes**:
+- Chose the "`stream: bool = False` passthrough" seam on `_chat_completion`
+  (not a sibling `_chat_completion_stream`), per the task's "pick ONE and
+  document it": `_chat_completion(self, model, messages, use_tools=False,
+  stream=False, **kwargs)` — the pre-existing `use_tools`/`**kwargs`
+  contract is unchanged, so Moonshot/Nvidia's TASK-2300 overrides need no
+  signature migration.
+- Moved `_upload_file`, `_encode_image_for_openai`, and `_with_extra_body`
+  (already done in TASK-2296) to `OpenAIBaseClient` — all fully generic,
+  inherited unchanged by `OpenAIClient`.
+- Added generic `ask_stream()`/`invoke()` to `OpenAIBaseClient` (no
+  Responses-API/deep-research/search-preview/`STRUCTURED_OUTPUT_COMPATIBLE_
+  MODELS`/`parallel_tool_calls`), both routed through `_chat_completion`.
+  `OpenAIClient` keeps its own richer `ask_stream()` (Responses-API stream
+  branch, deep-research routing, `parallel_tool_calls`) and `invoke()`,
+  reworked so their "chat" paths call `self._chat_completion(...,
+  stream=True, ...)` / `self._chat_completion(..., use_tools=True, ...)`
+  instead of `self.client.chat.completions.create/parse` directly.
+- **Named, tested, intentional behavior change (spec G3 — explicitly
+  authorized for this task, unlike TASK-2297's strict-parity requirement)**:
+  `OpenAIClient.ask_stream()`'s chat branch previously had a narrow
+  SDK-version fallback — if `.parse(stream=True, ...)` raised `TypeError`,
+  it fell back to `.create()`. Routing through `_chat_completion` (which
+  has no such fallback) drops this narrow safety net; `_chat_completion`'s
+  dispatch (`use_tools=not bool(output_config)`) reproduces the *decision*
+  of when to prefer `.parse()` vs `.create()` identically to the original,
+  just without the runtime TypeError catch. `invoke()` gains automatic
+  tenacity retry-on-transient-error as a side effect of routing through the
+  funnel (previously "no retry" per its own docstring) — a net
+  reliability improvement, not a regression.
+- Verification: full `tests/clients/` + `packages/ai-parrot/tests/
+  test_openai_client.py` + `tests/unit/test_openai_invoke.py` failure/error
+  lists are **byte-identical** to the post-TASK-2297 baseline (diffed via
+  `git stash`) — zero new regressions. Phase-1 subclass suites
+  (OpenRouter/Moonshot/Nvidia/LocalLLM/vLLM/Mantle) likewise identical to
+  the pre-FEAT-438 baseline. Extended `tests/clients/
+  test_openai_base_parity.py` with `_FunnelSpy` (overrides
+  `_chat_completion` to record every call) proving `ask()`/`ask_stream()`/
+  `invoke()` all route through the funnel, `ask_stream()` still yields str
+  chunks then a final `AIMessage` (TASK-1175), and `invoke()` still returns
+  an `InvokeResult` — 9/9 new+existing parity tests pass.
+- `ruff check` clean on `openai_base.py` and the test file (2 more
+  pre-existing patterns ported verbatim from gpt.py — a blocking `open()`
+  in an async function, and a `ValueError` for a type-check — needed
+  `# noqa: ASYNC230`/`# noqa: TRY004`, same convention as TASK-2297).
+  `gpt.py` down to 139 pre-existing, unrelated ruff violations (from a 149
+  baseline at the start of this task) — net removal, zero new violations;
+  file-wide cleanup remains out of scope.
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the explicitly-authorized funnel
+behavior change documented above (dropped TypeError→create() fallback in
+the streaming chat path; added retry to `invoke()`).
