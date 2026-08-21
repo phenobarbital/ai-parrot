@@ -10,6 +10,7 @@ from .constraints import (
     DependencyOperation,
     DependencyRule,
     FieldCondition,
+    LogicGroup,
     FieldConstraints,
     PostDependency,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "FieldConstraints",
     "ConditionOperator",
     "FieldCondition",
+    "LogicGroup",
     "DependencyRule",
     "DependencyOperation",
     "PostDependency",
