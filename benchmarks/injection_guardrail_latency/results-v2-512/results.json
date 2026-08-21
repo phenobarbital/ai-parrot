@@ -16,21 +16,21 @@
     "max_length": 512,
     "repeats": 10,
     "warmup": 5,
-    "isolated": false,
+    "isolated": true,
     "python": "3.12.3"
   },
   "results": [
     {
       "tier": "clf-torch",
-      "load_s": 8.441,
-      "rss_delta_mb": 1621.1,
-      "peak_rss_mb": 2229.9,
+      "load_s": 7.148,
+      "rss_delta_mb": 1621.7,
+      "peak_rss_mb": 2230.3,
       "latency": {
-        "p50_ms": 139.6075,
-        "p95_ms": 180.4403,
-        "p99_ms": 209.9251,
-        "mean_ms": 144.1219,
-        "max_ms": 286.8531,
+        "p50_ms": 124.3458,
+        "p95_ms": 154.0165,
+        "p99_ms": 160.1269,
+        "mean_ms": 127.5955,
+        "max_ms": 182.5692,
         "n": 960.0
       },
       "quality": {
@@ -314,15 +314,15 @@
     },
     {
       "tier": "clf-onnx",
-      "load_s": 2.227,
-      "rss_delta_mb": 1141.2,
-      "peak_rss_mb": 2764.5,
+      "load_s": 5.695,
+      "rss_delta_mb": 1850.8,
+      "peak_rss_mb": 2044.7,
       "latency": {
-        "p50_ms": 40.0826,
-        "p95_ms": 73.9491,
-        "p99_ms": 81.1229,
-        "mean_ms": 43.577,
-        "max_ms": 103.2286,
+        "p50_ms": 34.7933,
+        "p95_ms": 61.5691,
+        "p99_ms": 63.7526,
+        "mean_ms": 36.9089,
+        "max_ms": 70.523,
         "n": 960.0
       },
       "quality": {

@@ -8,7 +8,7 @@ Baseline for `PromptInjectionGuardrail` — regex vs embedding-similarity vs the
 - Embedder: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
 - ORT / torch thread cap: `2` (BLAS/OMP pinned to 1)
 - Timed passes: 10 × 96 samples (warm-up 5)
-- Per-tier process isolation: `False`
+- Per-tier process isolation: `True`
 - Python 3.12.3
 
 Corpus: `clean` 34, `clean_framework` 12, `attack_direct` 20, `attack_paraphrase` 20, `attack_obfuscated` 10 — **96 total**, seed catalogue 22 (held disjoint from every eval bucket).
@@ -17,8 +17,8 @@ Corpus: `clean` 34, `clean_framework` 12, `attack_direct` 20, `attack_paraphrase
 
 | Tier | load (s) | RSS Δ (MB) | p50 (ms) | p95 (ms) | p99 (ms) | max (ms) | inline-safe | status |
 |---|---|---|---|---|---|---|---|---|
-| `clf-torch` | 8.44 | 1621.1 | 139.61 | 180.44 | 209.93 | 286.85 | **no** | ok |
-| `clf-onnx` | 2.23 | 1141.2 | 40.08 | 73.95 | 81.12 | 103.23 | **no** | ok |
+| `clf-torch` | 7.15 | 1621.7 | 124.35 | 154.02 | 160.13 | 182.57 | **no** | ok |
+| `clf-onnx` | 5.70 | 1850.8 | 34.79 | 61.57 | 63.75 | 70.52 | **no** | ok |
 
 *inline-safe* = p95 ≤ 5 ms, the budget for an on-loop guardrail stage. Anything above belongs behind `run_in_executor` with a `BudgetRouter`/`CircuitBreaker` (see the comparison doc §5.2).
 

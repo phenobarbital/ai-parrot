@@ -463,8 +463,17 @@ def _run_isolated(tier: str, argv_common: list[str]) -> dict[str, Any]:
         sys.executable, "-m", "benchmarks.injection_guardrail_latency.harness",
         "--tiers", tier, "--child-result-json", str(child_out), *argv_common,
     ]
+    # Pin the child's cwd to the repo root (derived from this file's own
+    # path, not os.getcwd()). Importing `parrot.security.prompt_injection`
+    # in _preimport_framework() can trigger a cwd-changing side effect from
+    # a transitively-imported settings/config loader; inheriting a changed
+    # cwd here would make `-m benchmarks...` resolve a DIFFERENT copy of
+    # this package (e.g. a separate checkout/worktree) than the one this
+    # process is actually running from — silently benchmarking stale code.
+    # Reproduced and root-caused during FEAT-439 (code-review finding).
+    repo_root = Path(__file__).resolve().parents[2]
     logger.info("[%s] spawning isolated child …", tier)
-    completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    completed = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=repo_root)
     if completed.returncode != 0:
         logger.error("[%s] child exited %d:\n%s", tier, completed.returncode, completed.stderr[-2000:])
         return {"tier": tier, "error": f"child_exit_{completed.returncode}", "scores": None}
@@ -526,6 +535,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--child-result-json", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
+
+    # Resolve to absolute paths BEFORE any import below can trigger a
+    # cwd-changing side effect (see the `cwd=` comment in `_run_isolated`
+    # for the root cause). A relative `--onnx-dir`/`--output-dir` must be
+    # evaluated against the cwd the user actually invoked this command
+    # from — resolving now, before that cwd can silently change out from
+    # under a later `Path.exists()`/`.mkdir()` call, makes both paths
+    # immune to it regardless of what happens later in this process.
+    if args.onnx_dir is not None:
+        args.onnx_dir = args.onnx_dir.resolve()
+    if args.output_dir is not None:
+        args.output_dir = args.output_dir.resolve()
+    if args.reanalyse is not None:
+        args.reanalyse = args.reanalyse.resolve()
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

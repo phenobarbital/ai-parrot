@@ -192,34 +192,39 @@ No pytest suite for this task — the deliverable IS a benchmark run. The
 - Re-ran the harness at `--max-length 512`, `--intra-op-threads 2`, on
   `protectai/deberta-v3-base-prompt-injection-v2`. Results committed to
   `benchmarks/injection_guardrail_latency/results-v2-512/`.
-- **Headline figures (512, vs the 256 baseline in `results-v2/report.md`)**:
-  - `clf-torch`: p50 **139.61 ms** (256: 120.71 ms), p95 180.44 ms, p99 209.93 ms.
-  - `clf-onnx`: p50 **40.08 ms** (256: 35.16 ms), p95 73.95 ms, p99 81.12 ms.
+- **Headline figures (512, `--isolate`, vs the 256 baseline in `results-v2/report.md`)**:
+  - `clf-torch`: p50 **124.35 ms** (256: 120.71 ms), p95 154.02 ms, p99 160.13 ms, RSS Δ 1621.7 MB.
+  - `clf-onnx`: p50 **34.79 ms** (256: 35.16 ms), p95 61.57 ms, p99 63.75 ms, RSS Δ 1850.8 MB.
   - **Parity**: max\|Δ\|=0.000, 0/96 flipped verdicts — **PASSED**, identical
     to the 256 gate. Quality unchanged (P=0.85, R=0.92, F1=0.88 for both
     tiers @ threshold 0.98).
-  - Verdict: 512 costs ~19ms more p50 on torch and ~5ms more on ONNX vs 256
-    (both well under the 1.5× regression rule of thumb) — **no escalation
-    needed**; the shipping configuration is latency- and parity-safe.
+  - Verdict: 512 costs ~3.6ms more p50 on torch and is actually marginally
+    *faster* on ONNX than the 256 baseline (noise-level, single-machine
+    single-run) — **no escalation needed**; the shipping configuration is
+    latency- and parity-safe.
 - A default-flags run (no `--max-length`) was re-verified to still resolve
   to 256 (`payload["config"]["max_length"] == 256`), confirming no
   behaviour change for callers that omit the flag.
 - `ruff check` clean on both touched files (one import-sort auto-fix applied).
+- **Root-caused and fixed the `--isolate` bug** (found during code review,
+  not left as a workaround): importing `parrot.security.prompt_injection`
+  (via `_preimport_framework()`) triggers a `cwd`-changing side effect from
+  a transitively-imported settings/config loader. This broke two things
+  for `--isolate`'s subprocess-per-tier children: (1) the child's own
+  relative-path resolution for `--onnx-dir`/`--output-dir` could land in
+  the wrong directory depending on when its OWN corpus-loading imports
+  ran; (2) `subprocess.run()` didn't pin the child's `cwd` at all, so it
+  silently inherited whatever directory the PARENT's own chdir had already
+  moved it to. Fixed both in `harness.py`: `main()` now resolves
+  `--onnx-dir`/`--output-dir`/`--reanalyse` to absolute paths immediately
+  after `argparse`, before any import that could trigger the chdir;
+  `_run_isolated()` now pins the child's `cwd` to the repo root derived
+  from `harness.py`'s own `__file__` (immune to any runtime chdir).
+  Verified: the 512 parity gate was RE-RUN with proper `--isolate`
+  (`"isolated": true` in `results.json`) after the fix — figures above are
+  from that isolated run, with genuinely clean per-tier RSS attribution.
 
-**Deviations from spec**:
-- Ran the 512 measurement **without `--isolate`** (single process,
-  sequential tiers) instead of the suggested one-process-per-tier
-  invocation. Root cause: in this specific worktree checkout, importing
-  `parrot.security.prompt_injection` (via `_preimport_framework()`)
-  triggers a `cwd`-changing side effect from a settings/config loader
-  transitively imported by the framework, which redirects the `--isolate`
-  child subprocess's *relative* `--onnx-dir`/`--output-dir` resolution to
-  the main repository checkout instead of this worktree. This reproduces
-  identically for the pre-existing `regex` tier with no code changes of
-  mine involved, so it is a pre-existing worktree/settings-loader
-  interaction, not something introduced by this task. Using **absolute**
-  paths for `--onnx-dir`/`--output-dir` sidesteps it for the direct
-  (non-isolated) invocation used here; per-tier RSS attribution is
-  therefore not re-isolated in this run (RSS deltas are still reported,
-  just not from clean per-tier processes). Latency and parity numbers are
-  unaffected by process isolation and are reported as measured.
+**Deviations from spec**: none (the initial non-isolated run was a
+temporary workaround pending root-causing the `--isolate` bug; both are
+now fixed and the final committed `results-v2-512/` artifacts are from a
+properly `--isolate`d run).
