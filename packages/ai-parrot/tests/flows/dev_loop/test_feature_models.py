@@ -124,6 +124,50 @@ def test_planner_output_roundtrip():
     assert out.suggested_pool is None
 
 
+@pytest.mark.parametrize("bad_pool", [1, 3, "3", ["claude-code"], True])
+def test_planner_output_drops_scalar_suggested_pool(bad_pool):
+    """A non-object ``suggested_pool`` is dropped, not fatal.
+
+    Regression: sdd-planner is told not to emit this field, but agents
+    emit a bare size (``"suggested_pool": 1``) anyway. That used to raise
+    a pydantic ``model_type`` error, failing the whole planner dispatch
+    over a value ``PlannerNode._resolve_pool`` overwrites moments later.
+    """
+    out = PlannerOutput(
+        spec_path="sdd/specs/x.spec.md",
+        task_index_path="sdd/tasks/index/x.json",
+        feat_id="FEAT-999",
+        branch_name="feat-999-x",
+        worktree_path="/tmp/worktree",
+        suggested_pool=bad_pool,
+    )
+    assert out.suggested_pool is None
+
+
+def test_planner_output_keeps_object_suggested_pool():
+    """Object-shaped input still validates strictly."""
+    out = PlannerOutput(
+        spec_path="sdd/specs/x.spec.md",
+        task_index_path="sdd/tasks/index/x.json",
+        feat_id="FEAT-999",
+        branch_name="feat-999-x",
+        worktree_path="/tmp/worktree",
+        suggested_pool={"agents": [{"agent": "claude-code", "count": 2}]},
+    )
+    assert out.suggested_pool is not None
+    assert out.suggested_pool.agents[0].count == 2
+
+    with pytest.raises(ValidationError):
+        PlannerOutput(
+            spec_path="sdd/specs/x.spec.md",
+            task_index_path="sdd/tasks/index/x.json",
+            feat_id="FEAT-999",
+            branch_name="feat-999-x",
+            worktree_path="/tmp/worktree",
+            suggested_pool={"agents": []},  # min_length=1
+        )
+
+
 def test_synthesis_report_defaults():
     report = SynthesisReport(consistent=True)
     assert report.adjustments == []

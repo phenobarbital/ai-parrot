@@ -191,6 +191,27 @@ async def test_build_research_context_empty_graph_returns_none(tmp_graph_memory)
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_build_research_context_accepts_bare_query_string(tmp_graph_memory):
+    """A plain string is retrieved on directly (feature-mode intake).
+
+    ``FeatureBrief`` has no ``summary`` field, so ``PlannerNode`` passes a
+    query string derived from its SDD document instead of a WorkBrief.
+    """
+    seen: list[str] = []
+
+    class _RecordingBuilder:
+        async def build(self, task: str, config: Any) -> Any:
+            seen.append(task)
+            raise RuntimeError("stop here — the query is what matters")
+
+    tmp_graph_memory._context_builder = _RecordingBuilder()
+    result = await tmp_graph_memory.build_research_context("devloop enhancement")
+
+    assert result is None
+    assert seen == ["devloop enhancement"]
+
+
 # ---------------------------------------------------------------------------
 # ground_findings
 # ---------------------------------------------------------------------------
