@@ -14,7 +14,7 @@
       "feature_id": "FEAT-438",
       "feature": "openai-compatible-clients",
       "spec": "sdd/specs/openai-compatible-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Creates openai_base.py that every later task builds on; head of the serialized Phase-1 chain.",
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2296-openai-base-skeleton.md"
+      "completed_at": "2026-08-21T14:18:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2296-openai-base-skeleton.md"
     },
     {
       "id": "TASK-2297",
