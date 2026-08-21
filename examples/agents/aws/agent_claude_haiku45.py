@@ -86,9 +86,9 @@ async def main() -> None:
     """Run the Claude Haiku 4.5 Bedrock agent with an interactive CLI loop."""
     agent = BasicAgent(
         name="ClaudeHaiku45Agent",
-        llm="bedrock-converse:anthropic.claude-haiku-4-5",
+        llm="bedrock-converse:claude-haiku-4-5",
         # Alternative (Anthropic native SDK with Bedrock backend):
-        # llm="bedrock:anthropic.claude-haiku-4-5",
+        # llm="bedrock:claude-haiku-4-5",
         tools=[python_repl, calculator, current_datetime, system_info],
         system_prompt=(
             "You are a helpful AI assistant powered by Claude Haiku 4.5 on AWS Bedrock. "

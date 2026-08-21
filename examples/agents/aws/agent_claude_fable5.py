@@ -89,9 +89,9 @@ async def main() -> None:
     """Run the Claude Fable 5 Bedrock agent with an interactive CLI loop."""
     agent = BasicAgent(
         name="ClaudeFable5Agent",
-        llm="bedrock-converse:anthropic.claude-fable-5",
+        llm="bedrock-converse:claude-fable-5",
         # Alternative (Anthropic native SDK with Bedrock backend):
-        # llm="bedrock:anthropic.claude-fable-5",
+        # llm="bedrock:claude-fable-5",
         tools=[python_repl, calculator, current_datetime, system_info],
         system_prompt=(
             "You are a helpful AI assistant powered by Claude Fable 5 on AWS Bedrock. "
