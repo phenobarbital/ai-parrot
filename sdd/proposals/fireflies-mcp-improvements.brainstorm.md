@@ -6,12 +6,12 @@ type: feature
 base_branch: dev
 ---
 
-# Brainstorm: Fireflies MCP Meeting Filters
+# Brainstorm: Fireflies MCP Meeting Filters & Native Summary Retrieval
 
 **Date**: 2026-08-21
 **Author**: Arturo Martinez
 **Status**: exploration
-**Recommended Option**: A
+**Recommended Option**: A (meeting filters) + D (native summary retrieval)
 
 ---
 
@@ -40,6 +40,36 @@ exposed via `npx mcp-remote` per `create_fireflies_mcp_server`,
 this filtering server-side — this is a client-side gap in the agent, not a
 capability the MCP server is missing.
 
+### Addendum: native summary retrieval (raised 2026-08-21, same session)
+
+A follow-up review of the sync flow raised a second, related gap. It's
+worth stating precisely, because the first framing of it (during discovery)
+was wrong and got corrected before any option was written:
+
+- **What is *not* the gap**: `sync_fireflies_transcripts()`
+  (`obsidian.py:187-198`) already calls the real `fireflies_get_transcript`
+  tool (verified schema: `transcriptId` → full conversation, sentences
+  prefixed with speaker + timestamp) for every synced meeting and saves that
+  as the note body. The raw transcript is **already** captured today — this
+  is not missing.
+- **What *is* the gap**: Fireflies' own native `fireflies_get_summary` tool
+  (AI-generated keywords, action items, overview — verified schema:
+  `transcriptId` → summary data, explicitly excludes transcript content) is
+  never called anywhere in the agent. Today, the only "summary" a synced
+  note can get is from the *separate*, opt-in `summarize_transcript()`
+  method, which re-derives a summary by sending the transcript text to the
+  agent's *own* LLM (`self.client.completion(...)`, `obsidian.py:271`) —
+  slower and costlier than just reading Fireflies' summary the vendor
+  already computed.
+- **What is explicitly out of scope**: `fireflies_fetch` (the combined
+  "transcript + summary + metadata in one call" tool) was considered and
+  **rejected** — per the user, Fireflies documents it as experimental, and
+  it is not to be relied on anywhere in this feature. The existing two-call
+  retrieval backbone (`fireflies_get_transcripts` for the list,
+  `fireflies_get_transcript` per meeting for the conversation) stays exactly
+  as it is; native summary retrieval is a strictly additive third call,
+  opt-in per sync.
+
 ## Constraints & Requirements
 
 - Must go through the *existing* Fireflies MCP tool call path
@@ -65,6 +95,15 @@ capability the MCP server is missing.
 - Must remain schedule-friendly: `fireflies_daemon.yaml` should be able to
   declare default filters for unattended runs (e.g. "only my meetings")
   without the caller re-specifying them on every invocation.
+- `fireflies_fetch` must **not** be used anywhere in this feature (marked
+  experimental/unreliable by Fireflies; explicit user decision). The
+  existing `fireflies_get_transcripts` (list) + `fireflies_get_transcript`
+  (per-meeting conversation) retrieval backbone is unchanged and is the only
+  path for transcript content.
+- Native summary retrieval (`fireflies_get_summary`) must be strictly
+  opt-in and default-off — existing callers (example script, daemon YAML,
+  `test_obsidian.py`) must see zero behavior change and zero extra API
+  calls unless they explicitly ask for it.
 
 ---
 
@@ -203,9 +242,117 @@ shaped) response.
 
 ---
 
+### Option D: Opt-in `include_summary` flag → per-meeting `fireflies_get_summary` call
+
+Add a new `include_summary: bool = False` parameter to
+`sync_fireflies_transcripts()`. When `True`, after the existing
+`fireflies_get_transcript` call for a meeting, the agent makes one
+additional `fireflies_get_summary` call (`{"transcriptId": transcript_id}`)
+and, on success, appends a distinct `## Fireflies Summary` section to the
+note (kept separate from the LLM-derived `## Analysis` section
+`summarize_transcript()` writes later) plus folds key fields
+(keywords, action items) into the existing OKF frontmatter block. A summary
+fetch failure is a soft failure — logged to `report["errors"]`, the note is
+still created from the transcript alone.
+
+✅ **Pros:**
+- Purely additive: default-off, so every existing caller (example script,
+  `fireflies_daemon.yaml`, `test_obsidian.py`) sees no behavior or API-call
+  change.
+- Reuses Fireflies' own AI summary instead of spending an LLM call via
+  `summarize_transcript()` for the common case of "just want the vendor's
+  keywords/action items" — the two summary sources stay clearly attributed
+  and non-conflicting (native vs. LLM-derived) rather than one silently
+  overwriting the other.
+- Small, isolated change: one new tool call, one new note section, one OKF
+  enrichment — no new model beyond a thin parse of the summary result.
+
+❌ **Cons:**
+- One more MCP round-trip per meeting when enabled (transcript + summary
+  instead of just transcript) — acceptable since it's opt-in.
+- `fireflies_get_summary`'s response *text* layout has not been captured
+  live yet (only its parameter schema is verified) — extracting discrete
+  fields (keywords, action items) for OKF frontmatter may need a small
+  dedicated parser, analogous to `_parse_fireflies_response()` but new (see
+  Open Questions).
+
+📊 **Effort:** Low–Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| *(none new)* | reuses existing `_call_fireflies_tool()` path | no new dependency |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/agents/obsidian.py:476` `_call_fireflies_tool()` — same call path, new tool name `fireflies_get_summary`.
+- `packages/ai-parrot/src/parrot/agents/obsidian.py:` `_append_analysis_section()` pattern — model a new, distinctly-named section-append helper on the same pattern rather than reusing that method (it's coupled to the LLM `summarize_transcript()` fields).
+- `packages/ai-parrot/src/parrot/agents/obsidian.py:` `_build_okf_frontmatter()` — extend with optional summary-derived fields.
+
+---
+
+### Option E: Status quo — no native summary retrieval
+
+Leave `sync_fireflies_transcripts()` exactly as it is (transcript only);
+rely entirely on the existing, separate `summarize_transcript()` LLM step
+whenever a summary is wanted.
+
+✅ **Pros:**
+- Zero implementation cost.
+- One fewer moving part / API call to reason about.
+
+❌ **Cons:**
+- Every summary costs an LLM call, even when Fireflies already computed one
+  for free as part of the transcription pipeline — leaves clear value on
+  the table for a low-cost addition.
+- Does not address the gap the user raised in this session.
+
+📊 **Effort:** None
+
+📦 **Libraries / Tools:** *(none)*
+
+🔗 **Existing Code to Reuse:** *(unchanged — nothing new)*
+
+---
+
+### Option F (unconventional): Expose `fireflies_get_summary` as an on-demand LLM tool instead of a sync-time flag
+
+Rather than baking summary retrieval into `sync_fireflies_transcripts()`,
+register `fireflies_get_summary` as a callable tool on the agent itself
+(it's already an MCP tool registered via `add_fireflies_mcp_server()` —
+this option is really about *not* wrapping it in a private
+`_call_fireflies_tool()` invocation, but letting the agent's own reasoning
+loop invoke it directly when relevant, e.g. during `summarize_transcript()`
+or a future chat-driven query like "what were the action items from
+yesterday's standup?").
+
+✅ **Pros:**
+- No sync-time API-call increase at all — the summary is fetched lazily,
+  only when an LLM turn actually decides it needs it.
+- Fits `FirefliesObsidianAgent`'s `BasicAgent`/tool-using nature better for
+  ad-hoc, conversational use cases than a deterministic sync flag would.
+
+❌ **Cons:**
+- Doesn't solve the actual request: the user wants the native summary
+  *persisted into the synced vault note* deterministically, not fetched
+  reactively during an unrelated LLM turn — this option produces summaries
+  on demand in conversation, not durable artifacts in the vault.
+- Harder to test deterministically (depends on LLM tool-choice behavior)
+  and doesn't compose with the scheduled, no-LLM-required sync path the
+  daemon relies on.
+
+📊 **Effort:** Medium (mostly around exposing/scoping the tool safely, not the retrieval itself)
+
+📦 **Libraries / Tools:** *(none new)*
+
+🔗 **Existing Code to Reuse:**
+- `add_fireflies_mcp_server()` already registers `mcp_fireflies_fireflies_get_summary` on `tool_manager` — no new registration code needed, only exposure/prompting changes.
+
+---
+
 ## Recommendation
 
-**Option A** is recommended.
+**Option A** (meeting filters) and **Option D** (native summary retrieval)
+are recommended together.
 
 The problem statement and every discovery round converged on the same
 shape: a typed `FirefliesFilters` model over `fireflies_get_transcripts`
@@ -223,6 +370,13 @@ Trading off against Option C: `fireflies_search`'s grammar is more powerful
 in the abstract, but it was explicitly ruled out in discovery, and adopting
 it here would mean maintaining two response parsers for one feature with no
 concrete requirement driving that cost.
+
+For native summary retrieval, **Option D** wins over **Option E** because
+the cost is small and strictly opt-in (Option E leaves free vendor-computed
+value unused for no real savings), and over **Option F** because the
+concrete request was a deterministic, sync-time artifact in the vault, not
+an on-demand conversational lookup — Option F solves a different problem
+well but not this one.
 
 ---
 
@@ -254,6 +408,13 @@ concrete requirement driving that cost.
   re-specifying it.
 - Callers who never touch `filters` see byte-for-byte the same behavior as
   today.
+- `sync_fireflies_transcripts()` also gains a new optional `include_summary:
+  bool = False` parameter. When set, each synced note additionally gets a
+  `## Fireflies Summary` section (native keywords/action-items/overview,
+  fetched deterministically — no LLM call) beneath the transcript, and the
+  same fields are folded into the note's OKF frontmatter. Callers who don't
+  set it see no change; `summarize_transcript()` remains available
+  unchanged as a separate, later, LLM-powered step.
 
 ### Internal Behavior
 
@@ -284,6 +445,17 @@ concrete requirement driving that cost.
 - Everything downstream of "list of transcript dicts" — per-transcript
   fetch, `skip_existing` dedup, Obsidian note creation, OKF frontmatter — is
   unchanged.
+- When `include_summary=True`, immediately after the existing
+  `fireflies_get_transcript` call for a meeting, the agent additionally
+  calls `_call_fireflies_tool("fireflies_get_summary", {"transcriptId":
+  transcript_id})`. On success, a new helper (parallel to
+  `_append_analysis_section()`, but a distinct method/section name so it
+  never conflates with the LLM-derived analysis) appends a `## Fireflies
+  Summary` section to the note content before it is saved, and the parsed
+  fields are merged into the existing `_build_okf_frontmatter()` output.
+  `fireflies_get_transcripts` / `fireflies_get_transcript` /
+  `_parse_fireflies_response()` are otherwise untouched — this is a third,
+  additive call, not a replacement of the existing two.
 
 ### Edge Cases & Error Handling
 
@@ -307,6 +479,15 @@ concrete requirement driving that cost.
   unknown channel (almost certainly an empty result set) is surfaced
   unchanged — this feature does not add channel-name resolution
   (`fireflies_list_channels`) as a convenience.
+- **`include_summary=True` and the `fireflies_get_summary` call fails for
+  one meeting**: soft-fail — the note is still created from the transcript
+  alone (no `## Fireflies Summary` section, no summary OKF fields), the
+  failure is appended to `report["errors"]`, and `report["synced"]` still
+  counts the meeting — consistent with how a per-transcript failure is
+  handled today.
+- **`fireflies_fetch` is never called** by this feature under any
+  condition/flag — it is excluded entirely per the explicit decision above,
+  not merely deprioritized.
 
 ---
 
@@ -319,6 +500,11 @@ concrete requirement driving that cost.
   plus transparent multi-page fetching against the Fireflies MCP
   `fireflies_get_transcripts` tool and an agent/daemon-level default-filter
   setting.
+- `fireflies-mcp-native-summary`: opt-in (`include_summary`) retrieval of
+  Fireflies' native per-meeting summary (`fireflies_get_summary`) into a
+  dedicated note section and OKF frontmatter fields, additive to (and
+  clearly separated from) the existing LLM-powered
+  `summarize_transcript()` analysis step.
 
 ### Modified Capabilities
 - None. `FirefliesObsidianAgent` and its sync method were introduced without
@@ -335,8 +521,8 @@ concrete requirement driving that cost.
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/agents/obsidian.py` (`FirefliesObsidianAgent`) | extends | New `FirefliesFilters` model, constructor `default_filters` kwarg, `sync_fireflies_transcripts(filters=...)` param, internal pagination loop. |
-| `packages/ai-parrot/tests/agents/test_obsidian.py` | extends | New tests for filter validation, field-name mapping, pagination, and default-filter merge. |
+| `packages/ai-parrot/src/parrot/agents/obsidian.py` (`FirefliesObsidianAgent`) | extends | New `FirefliesFilters` model, constructor `default_filters` kwarg, `sync_fireflies_transcripts(filters=..., include_summary=...)` params, internal pagination loop, new `fireflies_get_summary` call + note-section/OKF helper. |
+| `packages/ai-parrot/tests/agents/test_obsidian.py` | extends | New tests for filter validation, field-name mapping, pagination, default-filter merge, `include_summary` opt-in behavior, and summary-call soft-failure handling. |
 | `examples/agents/fireflies_daemon.yaml` | extends | Optional new `agent.kwargs.default_filters` documented block; no schema-breaking change since it's additive YAML. |
 | `examples/agents/fireflies_obsidian_sync.py` | extends (optional) | Could show a `filters=FirefliesFilters(...)` usage example; not required for the feature to function. |
 | `packages/ai-parrot/src/parrot/mcp/integration.py` (`create_fireflies_mcp_server` / `add_fireflies_mcp_server`) | none | Unaffected — this feature is entirely about the sync-time tool *call*, not MCP server connection/auth. |
@@ -437,6 +623,26 @@ from parrot.knowledge.okf.ontology import ConceptType, RelationType
 - `skip: number` — pagination offset.
 - `format: "toon" | "json" | "text"` — response shape; existing code implicitly relies on the tool's default (`"toon"`), matching `_parse_fireflies_response()`'s expected text layout. **Not** part of `FirefliesFilters` — this is a response-format switch, not a meeting filter, and changing it would break the existing parser.
 
+#### Fireflies MCP Tool Parameters — `fireflies_get_summary` (verified against the live tool schema)
+- `transcriptId: str` (required) — the meeting ID.
+- No other parameters. Description: "Fetches meeting summary by ID, with
+  optional field filtering. Returns summary data (keywords, action items,
+  overview, etc.) and basic metadata, but excludes transcript content."
+- The tool's *response text layout* has **not** been captured from a live
+  call in this brainstorm — only its parameter schema is verified. A small
+  parser (or a simple "pass the raw text through as a section body" — no
+  parsing needed if OKF enrichment is skipped) will need to be designed
+  against a real sample during implementation; flagged in Open Questions.
+
+#### Fireflies MCP Tool — `fireflies_fetch` (verified to exist; intentionally excluded)
+- Schema: `id: str` (required) → "Retrieve complete meeting transcript with
+  full conversation, metadata, and insights for a specific meeting ID."
+- This tool **does** exist and **does** cover both transcript + summary in
+  one call — it was considered and explicitly rejected for this feature
+  because Fireflies documents it as experimental/unreliable (user decision,
+  2026-08-21). Do not use it as a shortcut to "simplify" Option D's two-call
+  approach.
+
 #### Key Attributes & Constants
 - `FirefliesObsidianAgent.tool_manager` → provided by `BasicAgent`/`MCPEnabledMixin`, used via `.get_tool("mcp_fireflies_fireflies_get_transcripts")` (`packages/ai-parrot/src/parrot/agents/obsidian.py:494`).
 - `FirefliesObsidianAgent._mcp_fireflies_initialized: bool` (`obsidian.py:65`) — gates `_ensure_fireflies_mcp()`; unaffected by this feature.
@@ -447,6 +653,9 @@ from parrot.knowledge.okf.ontology import ConceptType, RelationType
 - ~~Pagination logic of any kind in `sync_fireflies_transcripts()`~~ — does not exist; today's implementation makes exactly one `fireflies_get_transcripts` call and never inspects `skip`.
 - ~~A shared response parser between `fireflies_get_transcripts` and `fireflies_search`~~ — `_parse_fireflies_response()` is written against `fireflies_get_transcripts`'s text layout only; `fireflies_search`'s response shape is unverified against it (this is why Option C is rated High effort).
 - ~~A `default_filters` constructor kwarg on `FirefliesObsidianAgent` today~~ — does not exist; the constructor currently only accepts `name`, `vault_path`, `fireflies_token`, `meetings_folder`, `**kwargs` (`obsidian.py:33-41`).
+- ~~Any call to `fireflies_get_summary` or `fireflies_fetch` anywhere in `obsidian.py`~~ — does not exist today; the agent currently only ever calls `fireflies_get_transcripts` and `fireflies_get_transcript`.
+- ~~An `include_summary` parameter on `sync_fireflies_transcripts()`~~ — does not exist yet.
+- ~~A "## Fireflies Summary" note section or any OKF field derived from Fireflies' native summary~~ — does not exist; `_build_okf_frontmatter()` today only derives fields from the transcript-list metadata (title, date, participants, duration), never from a summary call.
 
 ---
 
@@ -454,10 +663,13 @@ from parrot.knowledge.okf.ontology import ConceptType, RelationType
 
 - **Internal parallelism**: Low. This is a single-file, single-method-family
   change (`FirefliesFilters` model + `sync_fireflies_transcripts()` +
-  constructor kwarg all live in `obsidian.py`); the model, the field-mapping,
-  and the pagination loop are tightly coupled and best implemented as one
-  sequential task. The `fireflies_daemon.yaml` doc update is a trivial
-  same-file-set follow-on, not independent work.
+  constructor kwarg, plus the new `include_summary` / `fireflies_get_summary`
+  path, all live in `obsidian.py`). The two capabilities
+  (`fireflies-mcp-meeting-filters`, `fireflies-mcp-native-summary`) touch the
+  same method and are easiest to sequence as two tasks in the same worktree
+  rather than parallel worktrees — the second (summary) task builds on top
+  of the first's pagination loop landing cleanly. The `fireflies_daemon.yaml`
+  doc update is a trivial same-file-set follow-on, not independent work.
 - **Cross-feature independence**: No conflicts detected with in-flight specs.
   The only related prior spec (FEAT-237, `integrate-mcp-fireflies.spec.md`)
   touches `parrot/mcp/integration.py` and `parrot/mcp/registry.py` — files
@@ -517,3 +729,27 @@ from parrot.knowledge.okf.ontology import ConceptType, RelationType
       block) validate `organizers`/`participants` as well-formed email
       strings client-side, given the underlying tool schema types them as
       `format: email`? — *Owner: Arturo Martinez*
+- [x] Whether to use `fireflies_fetch` for combined transcript+summary
+      retrieval — *Resolved with user (2026-08-21)*: no, excluded entirely
+      — Fireflies marks it experimental/unreliable. Keep the existing
+      `fireflies_get_transcripts` + `fireflies_get_transcript` backbone and
+      add `fireflies_get_summary` as a separate, additive, opt-in call.
+- [x] Whether native summary retrieval should be default-on or opt-in —
+      *Resolved with user (2026-08-21)*: opt-in, default off
+      (`include_summary: bool = False`).
+- [x] Where the native summary should live relative to the LLM-derived
+      `summarize_transcript()` analysis — *Resolved with user (2026-08-21)*:
+      a separate `## Fireflies Summary` note section plus OKF frontmatter
+      fields; never conflated with or substituted for the `## Analysis`
+      section.
+- [x] Behavior when the summary call fails but the transcript call
+      succeeded — *Resolved with user (2026-08-21)*: soft-fail — save the
+      note from the transcript alone, record the error, still count the
+      meeting as synced.
+- [ ] `fireflies_get_summary`'s actual response *text* layout has not been
+      observed live — implementation needs a real sample to confirm whether
+      a dedicated parser (analogous to `_parse_fireflies_response()`) is
+      required to extract keywords/action-items for OKF frontmatter, or
+      whether the raw text can simply be appended as the `## Fireflies
+      Summary` section body with no field-level parsing at all. — *Owner:
+      Arturo Martinez*
