@@ -10,6 +10,11 @@ Two tests, per spec §4 Integration Tests:
   with default flags (`injection_detection=True`) picks up the ONNX
   engine when resolution finds a (mocked) cached snapshot. No network,
   no real model.
+
+The process-wide resolved-engine singleton is reset around every test by
+the autouse `_reset_injection_engine_singleton` fixture in the top-level
+`tests/conftest.py` (applies to `tests/unit/` AND `tests/integration/`) —
+not redefined here.
 """
 import os
 from unittest.mock import MagicMock, patch
@@ -24,16 +29,6 @@ requires_graph = pytest.mark.skipif(
     reason="needs a local ONNX graph (set PARROT_INJECTION_ONNX_DIR — see "
     "benchmarks/injection_guardrail_latency/export.py)",
 )
-
-
-@pytest.fixture(autouse=True)
-def reset_engine_singleton():
-    """Reset the process-wide resolved-engine singleton around every test."""
-    import parrot.bots.guardrails.builtin.prompt_injection as pi_module
-
-    pi_module._RESOLVED_INJECTION_ENGINE = pi_module._UNSET
-    yield
-    pi_module._RESOLVED_INJECTION_ENGINE = pi_module._UNSET
 
 
 class TestRealOnnxGraph:
@@ -109,7 +104,7 @@ class TestBotDefaultEngineSelection:
 
         class _FakeTokenizer:
             @classmethod
-            def from_pretrained(cls, path):
+            def from_pretrained(cls, path, **kwargs):
                 return cls()
 
             def __call__(self, text, return_tensors=None, truncation=None, max_length=None):

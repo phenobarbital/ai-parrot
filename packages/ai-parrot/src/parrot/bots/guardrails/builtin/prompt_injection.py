@@ -196,7 +196,13 @@ class _OnnxInjectionEngine:
         from transformers import AutoTokenizer
 
         self.model_id = model_id
-        self._tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))
+        # `tokenizer_dir` is always a local directory in this module's usage
+        # (an env dir or an already-resolved cached-snapshot path) — never a
+        # bare HF repo id. `local_files_only=True` makes the "construction
+        # never downloads" guarantee mechanical rather than incidental.
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            str(tokenizer_dir), local_files_only=True,
+        )
 
         opts = ort.SessionOptions()
         # Cap ORT's CPU parallelism BEFORE session construction. Uncapped,
@@ -248,7 +254,21 @@ class _PytectorInjectionEngine:
         self.model_id = model_id
 
     def score(self, text: str) -> float:
-        """Return the injection probability pytector computes for *text*."""
+        """Return the injection probability pytector computes for *text*.
+
+        Deliberately discards ``detect_injection()``'s own ``is_injection``
+        boolean — that flag is gated on pytector's *own*
+        ``default_threshold`` (0.5, `pytector/detector.py`), which is
+        strictly looser than this guardrail's own
+        ``injection_probability_threshold`` (default 0.98,
+        ``check()``'s actual gate). Since ``probability > 0.98`` already
+        implies ``probability > 0.5``, ``is_injection`` can never be
+        ``False`` when the caller's own threshold gate matters — dropping
+        it changes no observable behaviour, PROVIDED the guardrail's
+        threshold stays at or above pytector's ``default_threshold``. If a
+        future caller ever configures
+        ``injection_probability_threshold`` below 0.5, revisit this.
+        """
         _, probability = self._detector.detect_injection(text)
         return float(probability)
 
@@ -284,15 +304,27 @@ def _resolve_injection_index(tokenizer_dir: Path) -> int:
     """
     config_path = tokenizer_dir / "config.json"
     if not config_path.exists():
+        logger.warning(
+            "No config.json in %s; defaulting injection-class index to 1 "
+            "(unverified).", tokenizer_dir,
+        )
         return 1
     try:
         config = json.loads(config_path.read_text())
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            "Could not read id2label from %s (%s); defaulting injection-class "
+            "index to 1 (unverified).", config_path, exc,
+        )
         return 1
     id2label = config.get("id2label") or {}
     for key, label in id2label.items():
         if "inject" in str(label).lower():
             return int(key)
+    logger.warning(
+        "config.json at %s has no id2label entry containing 'inject'; "
+        "defaulting injection-class index to 1 (unverified).", config_path,
+    )
     return 1
 
 
@@ -425,10 +457,11 @@ def _try_build_pytector_engine() -> _PytectorInjectionEngine | None:
             detector = _PytectorDetector(
                 model_name_or_url=str(v2_dir), enable_keyword_blocking=True,
             )
-            logger.info(
-                "PromptInjectionGuardrail: selected engine=pytector model=%s "
-                "(local v2 snapshot)", v2_dir,
-            )
+            # NOTE: the "selected engine" line for this path is logged once,
+            # by the caller (`_do_resolve_injection_engine`), not here — this
+            # function's job is picking WHICH pytector configuration to use;
+            # logging "selected" here too would double-log it (code-review
+            # finding, FEAT-439).
             return _PytectorInjectionEngine(detector, model_id=str(v2_dir))
         except Exception as exc:  # noqa: BLE001 - fall through to the v1 alias
             logger.error(
@@ -814,7 +847,11 @@ async def warmup_injection_model(force_download: bool = False) -> str:
 
         if engine is not None:
             try:
-                await asyncio.to_thread(engine.score, "ignore all previous instructions")
+                # A benign dummy string on purpose: pytector's optional
+                # keyword-blocking path (`enable_keyword_blocking=True`)
+                # `print()`s on a match, and an attack-shaped string would
+                # print that noise to stdout on every host startup.
+                await asyncio.to_thread(engine.score, "the quick brown fox jumps over the lazy dog")
             except Exception as exc:  # noqa: BLE001 - warm-up degrades, never raises
                 logger.error("warmup_injection_model: dummy inference failed: %s", exc)
 

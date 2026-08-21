@@ -15,13 +15,17 @@ unpacked as `a, b = ...`, raises `ValueError` (MagicMock's default
 don't care about detection need a concrete default.
 
 FEAT-439 (TASK-2307): `TestEngineResolution` below covers the new
-ONNX/pytector engine-resolution layer. `reset_engine_singleton` is
-autouse — the resolved engine is a process-wide singleton
-(`_resolve_injection_engine`), so every test must start from `_UNSET` or
-resolution outcomes leak across tests. `onnxruntime`/`transformers` are
-never really invoked: `fake_ort_and_transformers` installs lightweight
-fake modules into `sys.modules` so `_OnnxInjectionEngine` can be
-constructed without a real graph or network access.
+ONNX/pytector engine-resolution layer. The resolved engine is a
+process-wide singleton (`_resolve_injection_engine`) reset around EVERY
+test repo-wide by the autouse `_reset_injection_engine_singleton` fixture
+in the top-level `tests/conftest.py` — not redefined per-file, since a
+per-file reset only protects that file (code-review finding: a prior
+per-file-only version of this fixture left `test_guardrails_input_migration.py`
+vulnerable to cross-test leakage from this one). `onnxruntime`/
+`transformers` are never really invoked here: `fake_ort_and_transformers`
+installs lightweight fake modules into `sys.modules` so
+`_OnnxInjectionEngine` can be constructed without a real graph or network
+access.
 """
 import asyncio
 import sys
@@ -347,25 +351,14 @@ class TestRegistration:
 
 # ---------------------------------------------------------------------------
 # FEAT-439 (TASK-2307): engine-resolution layer
+#
+# The `_reset_injection_engine_singleton` autouse fixture that makes these
+# tests (and every OTHER suite that constructs a PromptInjectionGuardrail)
+# safe from cross-test singleton leakage lives in the top-level
+# `packages/ai-parrot/tests/conftest.py` — NOT here. A per-file fixture
+# only protects the file it's defined in; this singleton is shared
+# process-wide, so the reset must be too (code-review finding, FEAT-439).
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def reset_engine_singleton():
-    """Reset the process-wide resolved-engine singleton around every test.
-
-    `_resolve_injection_engine()` memoizes its result in
-    `_RESOLVED_INJECTION_ENGINE` (module-level, `_UNSET` sentinel). Without
-    a reset, whichever test resolves first would leak its outcome into
-    every later test regardless of what that later test patches/mocks.
-    Also resets `_WARMUP_DONE` (TASK-2309's idempotence flag) for the same
-    reason.
-    """
-    pi_module._RESOLVED_INJECTION_ENGINE = pi_module._UNSET
-    pi_module._WARMUP_DONE = False
-    yield
-    pi_module._RESOLVED_INJECTION_ENGINE = pi_module._UNSET
-    pi_module._WARMUP_DONE = False
 
 
 @pytest.fixture
@@ -427,7 +420,7 @@ def fake_ort_and_transformers(monkeypatch):
             self.source = source
 
         @classmethod
-        def from_pretrained(cls, path):
+        def from_pretrained(cls, path, **kwargs):
             return cls(path)
 
         def __call__(self, text, return_tensors=None, truncation=None, max_length=None):
