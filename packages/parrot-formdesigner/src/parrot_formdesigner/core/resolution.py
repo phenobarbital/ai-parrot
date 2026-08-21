@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 from .schema import walk_fields
 
 if TYPE_CHECKING:
-    from .constraints import FieldCondition
+    from .constraints import FieldCondition, DependencyRule
     from .schema import FormField, FormSchema, FormSection
 
 
@@ -98,10 +98,23 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
             return
         cond.field_uid = uuid.UUID(_uid_for(cond.field_id or "", owner, "condition"))
 
+    def _resolve_rule(rule: DependencyRule, owner: str) -> None:
+        """Resolve a rule's conditions, flat list AND nested groups.
+
+        A condition inside ``groups`` is a condition like any other: left
+        unresolved it keeps ``field_uid=None``, and ``_eval_condition``
+        reads the answer through that uid, so the whole group silently
+        never matches.
+        """
+        for c in rule.conditions:
+            _resolve_condition(c, owner)
+        for g in rule.groups or []:
+            for c in g.conditions:
+                _resolve_condition(c, owner)
+
     for f in form.iter_fields_recursive():
         if f.depends_on:
-            for c in f.depends_on.conditions:
-                _resolve_condition(c, f.field_id)
+            _resolve_rule(f.depends_on, f.field_id)
             for op in f.depends_on.operations or []:
                 op.operands = [
                     _uid_for(o, f.field_id, "operation operand") for o in op.operands
@@ -127,8 +140,7 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
     for section in form.sections:
         if not section.depends_on:
             continue
-        for c in section.depends_on.conditions:
-            _resolve_condition(c, section.section_id)
+        _resolve_rule(section.depends_on, section.section_id)
         for op in section.depends_on.operations or []:
             op.operands = [
                 _uid_for(o, section.section_id, "operation operand")
