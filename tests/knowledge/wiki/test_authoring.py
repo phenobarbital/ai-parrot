@@ -353,3 +353,77 @@ class TestUpdatePageRegression:
         assert second["status"] == "updated"
         page = await toolkit._store.get_page(first["page_id"])
         assert page["origin"] == "memory"
+
+
+class TestCreatePageWithoutAuthoringPlane:
+    """``create_page`` composed with ``pageindex_toolkit=None``.
+
+    Regression: the PageIndex insert was called unconditionally, so a
+    ``None`` toolkit raised ``AttributeError`` into the best-effort
+    except and logged "'NoneType' object has no attribute
+    'insert_markdown'" on every page — noise that named neither the cause
+    nor the remedy.
+    """
+
+    def _toolkit(self, tmp_path, pageindex_toolkit):
+        from parrot.knowledge.wiki.models import WikiConfig
+        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+        config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path / "wiki")
+        return LLMWikiToolkit(
+            pageindex_toolkit=pageindex_toolkit,
+            graphindex_toolkit=None,
+            okf_toolkit=None,
+            config=config,
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_pageindex_still_writes_the_retrieval_plane(
+        self, tmp_path, caplog
+    ):
+        toolkit = self._toolkit(tmp_path, None)
+
+        with caplog.at_level("WARNING"):
+            result = await toolkit.create_page("test-wiki", "My Page", "body")
+
+        assert result["status"] == "created"
+        # Falls back to a title-derived id, and says nothing alarming.
+        assert result["page_id"] == "page-my-page"
+        assert not any(
+            "NoneType" in rec.message or "insert failed" in rec.message
+            for rec in caplog.records
+        )
+        page = await toolkit._store.get_page(result["page_id"])
+        assert page["body"] == "body"
+
+    @pytest.mark.asyncio
+    async def test_pageindex_node_id_is_used_when_available(self, tmp_path):
+        class _StubPI:
+            async def insert_markdown(self, *a, **k):
+                return {"tree_name": "t", "new_node_ids": ["node-42"]}
+
+        toolkit = self._toolkit(tmp_path, _StubPI())
+
+        result = await toolkit.create_page("test-wiki", "My Page", "body")
+
+        assert result["page_id"] == "node-42"
+
+    @pytest.mark.asyncio
+    async def test_pageindex_failure_still_degrades_with_a_warning(
+        self, tmp_path, caplog
+    ):
+        """A real toolkit that throws keeps the existing warning path."""
+
+        class _BoomPI:
+            async def insert_markdown(self, *a, **k):
+                raise RuntimeError("tree write failed")
+
+        toolkit = self._toolkit(tmp_path, _BoomPI())
+
+        with caplog.at_level("WARNING"):
+            result = await toolkit.create_page("test-wiki", "My Page", "body")
+
+        assert result["status"] == "created"
+        assert any(
+            "PageIndex insert failed" in rec.message for rec in caplog.records
+        )
