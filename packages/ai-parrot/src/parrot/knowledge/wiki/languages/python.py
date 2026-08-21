@@ -46,7 +46,7 @@ class PythonScanner(LanguageScanner):
             every field degrades to empty.
         """
         try:
-            tree = ast.parse(source)
+            tree = ast.parse(source, filename=rel_path or "<unknown>")
         except (SyntaxError, ValueError):
             return LanguageOutline()
 
