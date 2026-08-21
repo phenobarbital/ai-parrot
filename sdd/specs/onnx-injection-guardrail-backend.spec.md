@@ -376,9 +376,11 @@ def reset_engine_singleton():
 - [ ] The v1→v2 verdict delta is measured and documented
       (`results-v2/delta-v1-to-v2.md` — DONE, commit 637276005; keep it
       referenced from the ops docs).
-- [ ] **Follow-up feature filed** for the v2 Spanish benign
+- [x] **Follow-up feature filed** for the v2 Spanish benign
       false-positive regression (18.8% → 43.8%; threshold retune and/or
       corpus expansion) and referenced from this spec before `/sdd-done`.
+      Filed at `sdd/proposals/injection-v2-spanish-fp-mitigation.proposal.md`
+      (light proposal — no FEAT id yet; reserved when it is spec'd).
 - [ ] No change to the `Guardrail` contract: `name`, `stages`,
       `priority`, `on_error`, `check()` signature identical
       (`guardrails/base.py:119-125`); the guardrail keeps the registered
