@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-21T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-21T00:00:00Z",
   "tasks": [
     {
       "id": "TASK-2293",
@@ -14,15 +14,15 @@
       "feature_id": "FEAT-437",
       "feature": "claude-bedrock-sample-agents",
       "spec": "sdd/specs/claude-bedrock-sample-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "First task — creates examples/agents/aws/ directory and Claude scripts. Must run before TASK-2294/2295.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-08-21T00:00:00Z",
+      "completed_at": "2026-08-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-2293-claude-bedrock-agent-scripts.md"
     },
     {
@@ -32,15 +32,15 @@
       "feature_id": "FEAT-437",
       "feature": "claude-bedrock-sample-agents",
       "spec": "sdd/specs/claude-bedrock-sample-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": ["TASK-2293"],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-2293 for directory creation. Could run in parallel with TASK-2293 if directory is pre-created, but sequential is simpler given the feature's per-spec worktree strategy.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-08-21T00:00:00Z",
+      "completed_at": "2026-08-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-2294-bedrock-mantle-agent-scripts.md"
     },
     {
@@ -50,15 +50,15 @@
       "feature_id": "FEAT-437",
       "feature": "claude-bedrock-sample-agents",
       "spec": "sdd/specs/claude-bedrock-sample-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": ["TASK-2293", "TASK-2294"],
       "parallel": false,
       "parallelism_notes": "Depends on both TASK-2293 and TASK-2294 to exist all 5 scripts for final verification and accurate README content.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-08-21T00:00:00Z",
+      "completed_at": "2026-08-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-2295-bedrock-agents-readme.md"
     }
   ]
