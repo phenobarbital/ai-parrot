@@ -90,7 +90,7 @@
       "feature_id": "FEAT-439",
       "feature": "onnx-injection-guardrail-backend",
       "spec": "sdd/specs/onnx-injection-guardrail-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Verification gate over the final implementation; must anchor against merged 2307-2309 code.",
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2310-backend-matrix-tests.md"
+      "completed_at": "2026-08-21T17:18:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2310-backend-matrix-tests.md"
     },
     {
       "id": "TASK-2311",

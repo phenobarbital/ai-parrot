@@ -190,10 +190,64 @@ async def test_bot_default_on_uses_onnx_when_cached(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-21
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+**Spec §4 → test mapping** (all in
+`packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py` unless noted):
+
+| Spec §4 test | Implementing test(s) |
+|---|---|
+| `test_env_dir_wins_resolution` | `TestEngineResolution::test_env_dir_wins` |
+| `test_env_dir_invalid_falls_through_loudly` | `test_env_dir_invalid_falls_through_with_error_log`, `test_missing_graph_falls_through_loudly` (new — incomplete-dir variant) |
+| `test_uncached_snapshot_is_absent_no_network` | `test_uncached_snapshot_absent_no_network`, `test_full_resolution_with_no_hf_cache_touches_no_network` (new — consolidated `no_hf_cache` fixture) |
+| `test_cached_snapshot_selects_onnx` | `test_cached_snapshot_selects_onnx` (new — was the one gap in the matrix) |
+| `test_ort_thread_caps_applied` | `test_ort_thread_caps_default_and_env_override` |
+| `test_session_failure_falls_back` | `test_session_failure_falls_back_never_raises` |
+| `test_injection_index_from_config` | `test_injection_index_from_config_not_hardcoded`, `test_missing_tokenizer_config_defaults_index` (new — missing-config variant) |
+| `test_pytector_gets_v2_snapshot_dir` | `test_pytector_v2_snapshot_dir_used_when_present` |
+| `test_pytector_v1_alias_warns` | `test_pytector_v1_alias_warns` |
+| `test_regex_floor` | `test_regex_floor_when_nothing_available` |
+| `test_singleton_shared_across_bots` | `test_singleton_shared_and_lock_safe` |
+| `test_empty_input_short_circuits` | `TestCheckFlowPreservation::test_empty_input_short_circuits_no_engine_call`, `test_whitespace_input_short_circuits` |
+| `test_check_flow_unchanged` | `TestCheckFlowPreservation` (8 tests: ONNX over/under threshold, BLOCK, pattern naming, regex branch, security-event payload shape) |
+| `test_warmup_idempotent` | `TestWarmup::test_warmup_idempotent` |
+| `test_warmup_is_only_download_site` | `test_construction_never_downloads`, `test_warmup_skips_download_with_env_dir` |
+| `test_onnx_engine_scores_real_graph` (integration) | `tests/integration/test_guardrails_injection_onnx.py::TestRealOnnxGraph::test_onnx_engine_scores_real_graph` |
+| `test_bot_default_on_uses_onnx_when_cached` (integration) | `TestBotDefaultEngineSelection::test_bot_default_on_uses_onnx_when_cached` |
+
+- Consolidated fixtures added: `fake_onnx_dir_missing_graph`,
+  `fake_onnx_dir_missing_tokenizer` (siblings of the existing valid
+  `fake_onnx_dir`), and `no_hf_cache` (fake `huggingface_hub` whose
+  `try_to_load_from_cache` always reports absent and whose
+  `snapshot_download` raises `AssertionError` if ever called — makes the
+  "no network on the request path" contract mechanically unviolable
+  within a test using it). `reset_engine_singleton` (already autouse from
+  TASK-2307/2309) needed no further changes.
+- Extended `test_lazy_import_no_torch_at_module_import` to also assert
+  `'onnxruntime' not in sys.modules` after importing
+  `parrot.bots.guardrails` — the ONNX import boundary is exactly as lazy
+  as pytector's.
+- Created `packages/ai-parrot/tests/integration/test_guardrails_injection_onnx.py`
+  with the two spec-mandated integration tests:
+  - `test_onnx_engine_scores_real_graph` — `skipif` gated on
+    `PARROT_INJECTION_ONNX_DIR`; verified BOTH ways in this session: skips
+    cleanly with the var unset, and (manually, pointed at TASK-2306's
+    `models/injection-clf-v2/` export) passes for real — attack sample
+    scores >0.9, benign sample scores <0.5.
+  - `test_bot_default_on_uses_onnx_when_cached` — constructs a real
+    `BasicBot(name="TestBot")` (default `injection_detection=True`) with
+    `_probe_cached_onnx_snapshot` mocked to a fake snapshot dir and fake
+    `onnxruntime`/`transformers` modules; asserts the bot's INPUT
+    `GuardrailPipeline` resolves a `PromptInjectionGuardrail` whose
+    `_injection_engine.engine_name == "onnx"`. No network, no real model.
+- Full-suite run (unit + integration):
+  `pytest packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py
+  packages/ai-parrot/tests/integration/test_guardrails_injection_onnx.py -v`
+  — **43 passed, 1 skipped** (the real-graph test, cleanly, with no env
+  var set). No test performs network access (every HF-hub-touching test
+  either mocks `huggingface_hub` or mocks the probe functions directly).
+  `ruff check` clean on all three touched/created files.
+
+**Deviations from spec**: none.
