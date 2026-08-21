@@ -70,7 +70,7 @@
       "feature_id": "FEAT-439",
       "feature": "onnx-injection-guardrail-backend",
       "spec": "sdd/specs/onnx-injection-guardrail-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Same file as TASK-2307/2308; needs the resolution singleton's re-resolution hook.",
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2309-warmup-entrypoint.md"
+      "completed_at": "2026-08-21T17:14:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2309-warmup-entrypoint.md"
     },
     {
       "id": "TASK-2310",

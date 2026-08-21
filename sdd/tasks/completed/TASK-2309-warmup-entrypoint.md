@@ -191,10 +191,53 @@ class TestWarmup:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-21
 **Notes**:
+- Implemented `async def warmup_injection_model(force_download: bool = False) -> str`
+  plus its helpers (`_env_dir_is_valid`, `_download_onnx_snapshot`,
+  `_WARMUP_ALLOW_PATTERNS`, `_WARMUP_LOCK`, `_WARMUP_DONE`) in
+  `prompt_injection.py`. Flow: skip download when
+  `PARROT_INJECTION_ONNX_DIR` is already valid; else
+  `snapshot_download(_ONNX_MODEL_ID, allow_patterns=["onnx/model.onnx",
+  "*.json", "*.model"], force_download=...)` (verified against the
+  installed `huggingface_hub==0.36.2` signature — same call already
+  proven working in TASK-2306's benchmark export step); force
+  re-resolution via `_resolve_injection_engine(True)` (TASK-2307's
+  `force_reresolve` hook); one dummy `engine.score(...)` inference; return
+  `engine.engine_name` or `"regex"`.
+- Download, re-resolution, and dummy inference all run via
+  `asyncio.to_thread` so the coroutine never blocks the loop.
+- Idempotence + single-flight: an `asyncio.Lock` serializes the whole
+  body; a `_WARMUP_DONE` module flag makes a second call (without
+  `force_download`) a fast no-op that skips both the download and the
+  re-resolution/dummy-inference steps, just returning the already-warm
+  engine's name. Verified under real concurrency with
+  `asyncio.gather()` of three simultaneous calls — only one download.
+- Failure handling: both the download step and the dummy-inference step
+  are wrapped in `try/except Exception` that logs an ERROR and continues
+  — `warmup_injection_model()` never raises; on total failure it still
+  returns whatever engine resolves offline (`"pytector"` or `"regex"`).
+- **`AbstractBot` wiring**: intentionally SKIPPED. `abstract.py` is a
+  large, heavily-used core module and adding
+  `warmup_injection()` there was not essential to the deliverable (the
+  spec explicitly permits "otherwise document module-level invocation
+  and leave abstract.py untouched" when the bot-level shape isn't clean).
+  Documented `await warmup_injection_model()` as the explicit,
+  operator-invoked entry point directly in the module docstring instead.
+- Added `TestWarmup` (6 tests): downloads-when-uncached,
+  skips-download-with-env-dir (also proves the underlying
+  `_download_onnx_snapshot` never even imports `snapshot_download` when
+  the env dir is valid), idempotent, failure-falls-back-loudly,
+  construction-never-downloads (regression test — asserts
+  `snapshot_download` raises if called during plain `PromptInjectionGuardrail()`
+  construction), concurrent-single-download. Extended the autouse
+  `reset_engine_singleton` fixture to also reset `_WARMUP_DONE` between
+  tests (same module-level-mutable-state hazard as the engine singleton).
+- Full suite: `pytest packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py -v`
+  — **38 passed**. `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- No `AbstractBot.warmup_injection()` delegate added — see notes above;
+  explicitly permitted by the task's own "otherwise document module-level
+  invocation... leave abstract.py untouched" fallback.
