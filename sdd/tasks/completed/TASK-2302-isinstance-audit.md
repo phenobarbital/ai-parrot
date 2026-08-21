@@ -141,10 +141,73 @@ def test_mro_post_rebase():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
+**Notes**:
 
-**Completed by**:
-**Date**:
-**Notes**: (include the audit table: file:line | check | intent | action)
+Ran the full workspace sweep specified in the task (all `packages/*/src`,
+repo-root `tests/`, `examples/`):
 
-**Deviations from spec**: none
+```bash
+grep -rn "isinstance(.*OpenAIClient\|issubclass(.*OpenAIClient\|type(.*) is OpenAIClient" packages/ tests/ examples/ --include='*.py'
+grep -rn 'client_type == .openai.\|client_name == .openai.' packages/ tests/ examples/ --include='*.py'
+grep -rn 'hasattr(.*_chat_completion' packages/ tests/ examples/ --include='*.py'
+grep -rn 'client_type in (' packages/ tests/ examples/ --include='*.py'
+```
+
+**Audit table**:
+
+| File:Line | Check | Intent | Action |
+|---|---|---|---|
+| `packages/ai-parrot/tests/test_openrouter_client.py:71` | `assert not isinstance(client, OpenAIClient)` | Wire (already correct — added in TASK-2300 as part of rewriting `test_inherits_openai_client` → `test_inherits_openai_base_client`) | None needed — already asserts the correct post-rebase relationship |
+| `tests/clients/test_openai_base_parity.py:34` (pre-TASK-2302) | `assert issubclass(OpenAIClient, OpenAIBaseClient)` | Provider-as-wire-specialization (added in TASK-2297) | None needed — correct; `OpenAIClient` legitimately IS-A `OpenAIBaseClient` |
+| — | `client_type == "openai"` / `client_name == "openai"` string comparisons | — | **Zero hits anywhere in the workspace** |
+| — | `hasattr(client, "_chat_completion")` duck-typing | — | **Zero hits anywhere in the workspace** |
+| — | `client_type in (...)` sets | — | **Zero hits anywhere in the workspace** |
+| `packages/ai-parrot/src/parrot/clients/base.py:1382-1386` | `_resolve_tool_format` client_type map | Explicit-`tool_format`-wins design (task says leave alone) | Verified unchanged, correctly untouched |
+
+**Zero wire-intent isinstance/issubclass sites required a fix** — per the
+task's own fallback clause ("If ZERO wire-intent sites exist, the
+deliverable is the audit table itself + a test asserting
+`issubclass(NvidiaClient, OpenAIBaseClient)` and `not
+issubclass(NvidiaClient, OpenAIClient)`"), the deliverable here is this
+table plus the MRO regression suite added to
+`tests/clients/test_openai_base_parity.py`:
+`test_mro_post_rebase_not_openai_client` (parametrized over all 6 Phase-1
+subclasses: `OpenRouterClient`, `MoonshotClient`, `NvidiaClient`,
+`LocalLLMClient`, `vLLMClient`, `BedrockMantleClient` — each asserted
+`issubclass(cls, OpenAIBaseClient)` AND `not issubclass(cls,
+OpenAIClient)`) and `test_mro_openai_client_is_still_openai_base_client`
+(positive control).
+
+**Important adjacent finding — reported, NOT fixed (out of this task's
+literal scope, which is isinstance/issubclass/client_type-string checks
+only, not construction-site choices)**:
+`packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/nova.py`
+(`NovaCodeDispatcher._create_mantle_client`, lines ~104-118)
+**directly instantiates `OpenAIClient` pointed at the bedrock-mantle
+endpoint** instead of using `BedrockMantleClient` — meaning this one
+call site still carries `OpenAIClient`'s `gpt-5-mini`/`gpt-5-nano`/
+`gpt-4.1` defaults into a Bedrock Mantle context, i.e. it is still
+exposed to the exact DeepSeek-404 bug class FEAT-438 exists to kill,
+just via direct construction rather than inheritance. The module's own
+docstring explains this was a deliberate design choice made before (or
+independent of) `BedrockMantleClient`'s existence ("This dispatcher does
+NOT drive the dev seat through NovaClient/Converse... the injected
+client_factory builds a plain OpenAIClient pointed at the bedrock-mantle
+base URL"). This is not an isinstance/issubclass check, so it falls
+outside this task's grep-defined scope, and swapping the constructor
+touches `dev_loop`'s own dispatcher subsystem (with its own tests/design
+intent) — a "judgment call per site, never bulk-replace" situation this
+task explicitly warns against overreaching on. **Recommending a
+dedicated follow-up task** to evaluate swapping this to
+`BedrockMantleClient`.
+
+**Verification**: `pytest tests/clients/ packages/ai-parrot/tests/
+test_openai_client.py tests/unit/test_openai_invoke.py -q --timeout=10`
+— diffed against the TASK-2301 baseline: **byte-identical**, zero
+regressions. `ruff check` clean on the modified test file.
+
+**Deviations from spec**: none — the `nova.py` finding is reported per
+the spirit of "STOP and report" rather than silently fixed or silently
+dropped.
