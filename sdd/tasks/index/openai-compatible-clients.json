@@ -90,7 +90,7 @@
       "feature_id": "FEAT-438",
       "feature": "openai-compatible-clients",
       "spec": "sdd/specs/openai-compatible-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Touches mantle.py after TASK-2299 and relies on the finished funnel from TASK-2298.",
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2300-phase1-subclass-rebase.md"
+      "completed_at": "2026-08-21T16:53:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2300-phase1-subclass-rebase.md"
     },
     {
       "id": "TASK-2301",
