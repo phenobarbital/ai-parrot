@@ -23,6 +23,7 @@ never really invoked: `fake_ort_and_transformers` installs lightweight
 fake modules into `sys.modules` so `_OnnxInjectionEngine` can be
 constructed without a real graph or network access.
 """
+import asyncio
 import sys
 import types
 from unittest.mock import MagicMock, patch
@@ -352,10 +353,14 @@ def reset_engine_singleton():
     `_RESOLVED_INJECTION_ENGINE` (module-level, `_UNSET` sentinel). Without
     a reset, whichever test resolves first would leak its outcome into
     every later test regardless of what that later test patches/mocks.
+    Also resets `_WARMUP_DONE` (TASK-2309's idempotence flag) for the same
+    reason.
     """
     pi_module._RESOLVED_INJECTION_ENGINE = pi_module._UNSET
+    pi_module._WARMUP_DONE = False
     yield
     pi_module._RESOLVED_INJECTION_ENGINE = pi_module._UNSET
+    pi_module._WARMUP_DONE = False
 
 
 @pytest.fixture
@@ -599,3 +604,123 @@ class TestEngineResolution:
         engine = pi_module._resolve_injection_engine(force_reresolve=True)
         assert engine is not None
         assert engine.engine_name == "onnx"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-439 (TASK-2309): warm-up — the only download site
+# ---------------------------------------------------------------------------
+
+
+class TestWarmup:
+    @pytest.mark.asyncio
+    async def test_warmup_downloads_when_uncached(self, monkeypatch):
+        monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
+        download_calls = []
+        monkeypatch.setattr(
+            pi_module, "_download_onnx_snapshot",
+            lambda force_download: download_calls.append(force_download),
+        )
+        fake_engine = MagicMock()
+        fake_engine.engine_name = "onnx"
+        fake_engine.score.return_value = 0.01
+        monkeypatch.setattr(pi_module, "_resolve_injection_engine", lambda force_reresolve=False: fake_engine)
+
+        result = await pi_module.warmup_injection_model()
+
+        assert result == "onnx"
+        assert download_calls == [False]
+        fake_engine.score.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_warmup_skips_download_with_env_dir(self, fake_onnx_dir, monkeypatch):
+        monkeypatch.setenv("PARROT_INJECTION_ONNX_DIR", str(fake_onnx_dir))
+        # `_download_onnx_snapshot` itself no-ops when the env dir is valid —
+        # assert the real function makes that decision without ever
+        # importing/calling `huggingface_hub.snapshot_download`.
+        fake_hub = types.ModuleType("huggingface_hub")
+        fake_hub.snapshot_download = MagicMock(
+            side_effect=AssertionError("snapshot_download must not be called")
+        )
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+
+        pi_module._download_onnx_snapshot(force_download=False)  # must not raise
+
+        fake_hub.snapshot_download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_warmup_idempotent(self, monkeypatch):
+        monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
+        download_calls = []
+        monkeypatch.setattr(
+            pi_module, "_download_onnx_snapshot",
+            lambda force_download: download_calls.append(force_download),
+        )
+        fake_engine = MagicMock()
+        fake_engine.engine_name = "onnx"
+        monkeypatch.setattr(pi_module, "_resolve_injection_engine", lambda force_reresolve=False: fake_engine)
+
+        first = await pi_module.warmup_injection_model()
+        second = await pi_module.warmup_injection_model()
+
+        assert first == second == "onnx"
+        # Second call is a fast no-op — no second download attempt.
+        assert download_calls == [False]
+
+    @pytest.mark.asyncio
+    async def test_warmup_failure_falls_back_loudly(self, monkeypatch, caplog):
+        monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
+
+        def _boom(force_download):
+            raise RuntimeError("network unreachable")
+
+        monkeypatch.setattr(pi_module, "_download_onnx_snapshot", _boom)
+        monkeypatch.setattr(pi_module.importlib.util, "find_spec", lambda name: None)
+        monkeypatch.setattr(pi_module, "_probe_cached_onnx_snapshot", lambda: None)
+
+        with caplog.at_level("ERROR"):
+            result = await pi_module.warmup_injection_model()
+
+        assert result == "regex"
+        assert any("download failed" in record.message for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_construction_never_downloads(self, monkeypatch):
+        """`PromptInjectionGuardrail()` construction must never call snapshot_download."""
+        fake_hub = types.ModuleType("huggingface_hub")
+
+        def _probe_only(repo_id, filename, **kwargs):
+            return None
+
+        fake_hub.try_to_load_from_cache = _probe_only
+        fake_hub.snapshot_download = MagicMock(
+            side_effect=AssertionError("snapshot_download must not be called at construction")
+        )
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+        monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
+        monkeypatch.setattr(pi_module.importlib.util, "find_spec", lambda name: None)
+
+        PromptInjectionGuardrail()  # must not raise, must not download
+
+        fake_hub.snapshot_download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_warmup_single_download(self, monkeypatch):
+        monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
+        download_calls = []
+
+        def _track_download(force_download):
+            download_calls.append(force_download)
+
+        monkeypatch.setattr(pi_module, "_download_onnx_snapshot", _track_download)
+        fake_engine = MagicMock()
+        fake_engine.engine_name = "onnx"
+        monkeypatch.setattr(pi_module, "_resolve_injection_engine", lambda force_reresolve=False: fake_engine)
+
+        results = await asyncio.gather(
+            pi_module.warmup_injection_model(),
+            pi_module.warmup_injection_model(),
+            pi_module.warmup_injection_model(),
+        )
+
+        assert results == ["onnx", "onnx", "onnx"]
+        assert download_calls == [False]  # only the first caller actually downloaded
