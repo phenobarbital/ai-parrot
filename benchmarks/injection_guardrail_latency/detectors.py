@@ -211,6 +211,7 @@ class TransformerDetector:
         onnx_dir: Path | None = None,
         intra_op_threads: int = 2,
         inter_op_threads: int = 1,
+        max_length: int = MAX_LENGTH,
     ) -> None:
         self.name = f"clf-{backend}"
         self.model_id = model_id
@@ -218,6 +219,7 @@ class TransformerDetector:
         self.onnx_dir = onnx_dir
         self.intra_op_threads = intra_op_threads
         self.inter_op_threads = inter_op_threads
+        self.max_length = max_length
         self._tokenizer = None
         self._model = None
         self._session = None
@@ -286,7 +288,7 @@ class TransformerDetector:
         import torch
 
         inputs = self._tokenizer(
-            text, return_tensors="pt", truncation=True, max_length=MAX_LENGTH
+            text, return_tensors="pt", truncation=True, max_length=self.max_length
         )
         with torch.no_grad():
             logits = self._model(**inputs).logits
@@ -295,7 +297,7 @@ class TransformerDetector:
 
     def _score_onnx(self, text: str) -> float:
         encoded = self._tokenizer(
-            text, return_tensors="np", truncation=True, max_length=MAX_LENGTH
+            text, return_tensors="np", truncation=True, max_length=self.max_length
         )
         feed = {
             name: value
@@ -342,6 +344,7 @@ def build_detector(
     embedder_id: str = DEFAULT_EMBEDDER,
     onnx_dir: Path | None = None,
     intra_op_threads: int = 2,
+    max_length: int = MAX_LENGTH,
 ) -> Detector:
     """Construct (but do not load) the detector for *tier*.
 
@@ -353,6 +356,9 @@ def build_detector(
         embedder_id: HuggingFace id of the sentence encoder.
         onnx_dir: Directory of exported ONNX graphs.
         intra_op_threads: ORT / torch thread cap.
+        max_length: Tokenizer truncation length for the ``clf-*`` tiers.
+            Both the torch and ONNX backends MUST receive the same value
+            or the parity gate is meaningless.
 
     Returns:
         An unloaded :class:`Detector`.
@@ -371,6 +377,7 @@ def build_detector(
             backend=tier.removeprefix("clf-"),
             onnx_dir=onnx_dir,
             intra_op_threads=intra_op_threads,
+            max_length=max_length,
         )
     raise ValueError(f"Unknown tier: {tier!r}")
 

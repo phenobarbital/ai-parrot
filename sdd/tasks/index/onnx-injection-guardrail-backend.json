@@ -14,7 +14,7 @@
       "feature_id": "FEAT-439",
       "feature": "onnx-injection-guardrail-backend",
       "spec": "sdd/specs/onnx-injection-guardrail-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only benchmarks/injection_guardrail_latency/* — no file overlap with the guardrail implementation tasks. Can run first or alongside TASK-2307; its parity verdict gates the merge, not the coding.",
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2306-benchmark-parity-512-rerun.md"
+      "completed_at": "2026-08-21T17:04:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2306-benchmark-parity-512-rerun.md"
     },
     {
       "id": "TASK-2307",

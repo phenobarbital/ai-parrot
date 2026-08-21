@@ -176,10 +176,50 @@ No pytest suite for this task — the deliverable IS a benchmark run. The
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-21
 **Notes**:
+- Added `--max-length` CLI flag to `harness.py` (default 256, forwarded to
+  both `run_tier()` and the `--isolate` child-process `common_argv`, and
+  recorded in `payload["config"]["max_length"]`). Threaded `max_length`
+  through `detectors.py`'s `TransformerDetector.__init__`/`build_detector()`,
+  replacing the module-level `MAX_LENGTH` constant read in `_score_torch`/
+  `_score_onnx` with `self.max_length` (both torch and ONNX tiers receive
+  the identical value).
+- Exported the v2 classifier locally to `models/injection-clf-v2/`
+  (`onnx>=1.22`/`optimum[onnxruntime]>=2.0` installed per the `dev` extra
+  and `export.py`'s own `_UV_HINT` — required to produce the fp32 graph).
+- Re-ran the harness at `--max-length 512`, `--intra-op-threads 2`, on
+  `protectai/deberta-v3-base-prompt-injection-v2`. Results committed to
+  `benchmarks/injection_guardrail_latency/results-v2-512/`.
+- **Headline figures (512, vs the 256 baseline in `results-v2/report.md`)**:
+  - `clf-torch`: p50 **139.61 ms** (256: 120.71 ms), p95 180.44 ms, p99 209.93 ms.
+  - `clf-onnx`: p50 **40.08 ms** (256: 35.16 ms), p95 73.95 ms, p99 81.12 ms.
+  - **Parity**: max\|Δ\|=0.000, 0/96 flipped verdicts — **PASSED**, identical
+    to the 256 gate. Quality unchanged (P=0.85, R=0.92, F1=0.88 for both
+    tiers @ threshold 0.98).
+  - Verdict: 512 costs ~19ms more p50 on torch and ~5ms more on ONNX vs 256
+    (both well under the 1.5× regression rule of thumb) — **no escalation
+    needed**; the shipping configuration is latency- and parity-safe.
+- A default-flags run (no `--max-length`) was re-verified to still resolve
+  to 256 (`payload["config"]["max_length"] == 256`), confirming no
+  behaviour change for callers that omit the flag.
+- `ruff check` clean on both touched files (one import-sort auto-fix applied).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- Ran the 512 measurement **without `--isolate`** (single process,
+  sequential tiers) instead of the suggested one-process-per-tier
+  invocation. Root cause: in this specific worktree checkout, importing
+  `parrot.security.prompt_injection` (via `_preimport_framework()`)
+  triggers a `cwd`-changing side effect from a settings/config loader
+  transitively imported by the framework, which redirects the `--isolate`
+  child subprocess's *relative* `--onnx-dir`/`--output-dir` resolution to
+  the main repository checkout instead of this worktree. This reproduces
+  identically for the pre-existing `regex` tier with no code changes of
+  mine involved, so it is a pre-existing worktree/settings-loader
+  interaction, not something introduced by this task. Using **absolute**
+  paths for `--onnx-dir`/`--output-dir` sidesteps it for the direct
+  (non-isolated) invocation used here; per-tier RSS attribution is
+  therefore not re-isolated in this run (RSS deltas are still reported,
+  just not from clean per-tier processes). Latency and parity numbers are
+  unaffected by process isolation and are reported as measured.
