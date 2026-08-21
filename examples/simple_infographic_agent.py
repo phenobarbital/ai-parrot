@@ -313,6 +313,19 @@ def _sales_descriptor() -> SectionDescriptor:
                                 },
                             },
                             {
+                                "component": "Chart",
+                                "properties": {
+                                    "title": "Revenue by Region",
+                                    "type": "bar",
+                                    "x": "region",
+                                    "y": ["total_revenue", "total_units"],
+                                    "showLegend": True,
+                                    "data": {
+                                        "$bind": "/sales_by_region/by_region"
+                                    },
+                                },
+                            },
+                            {
                                 "component": "DataTable",
                                 "properties": {
                                     "columns": [
@@ -336,6 +349,19 @@ def _sales_descriptor() -> SectionDescriptor:
                                     "label": "Top Product",
                                     "value": {
                                         "$bind": "/top_products/top_product"
+                                    },
+                                },
+                            },
+                            {
+                                "component": "Chart",
+                                "properties": {
+                                    "title": "Revenue by Product",
+                                    "type": "bar",
+                                    "x": "product",
+                                    "y": ["total_revenue"],
+                                    "showLegend": False,
+                                    "data": {
+                                        "$bind": "/top_products/ranking"
                                     },
                                 },
                             },
