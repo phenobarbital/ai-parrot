@@ -34,6 +34,34 @@ def test_openai_client_extends_base():
     assert issubclass(OpenAIClient, OpenAIBaseClient)
 
 
+# ---------------------------------------------------------------------------
+# FEAT-438 TASK-2302 — post-rebase MRO regression (isinstance/issubclass audit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [OpenRouterClient, MoonshotClient, NvidiaClient, LocalLLMClient, vLLMClient, BedrockMantleClient],
+    ids=lambda c: c.__name__,
+)
+def test_mro_post_rebase_not_openai_client(cls):
+    """Every Phase-1 wire subclass is an OpenAIBaseClient, NOT an
+    OpenAIClient, post-TASK-2300 rebase — any isinstance/issubclass check
+    against OpenAIClient meaning "OpenAI-compatible wire client" is now
+    silently False and must target OpenAIBaseClient instead (TASK-2302
+    audit: workspace-wide grep for isinstance/issubclass/client_type==
+    "openai" sites found none needing this fix — both existing hits
+    already assert the correct post-rebase relationship)."""
+    assert issubclass(cls, OpenAIBaseClient)
+    assert not issubclass(cls, OpenAIClient)
+
+
+def test_mro_openai_client_is_still_openai_base_client():
+    """Positive control: OpenAIClient itself is still an OpenAIBaseClient
+    (it IS the OpenAI-the-provider specialization of the wire base)."""
+    assert issubclass(OpenAIClient, OpenAIBaseClient)
+
+
 def _make_message(content=None, tool_calls=None):
     return SimpleNamespace(content=content, tool_calls=tool_calls)
 
