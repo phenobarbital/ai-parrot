@@ -21,13 +21,29 @@ Prerequisites::
 Usage::
 
     source .venv/bin/activate
-    python examples/simple_infographic_agent.py
+    python examples/simple_infographic_agent.py            # generate only
+    python examples/simple_infographic_agent.py --serve     # generate + open in browser
+
+.. note::
+
+   The Tier-2 A2UI ``interactive-html`` renderer produces self-contained HTML
+   with embedded Chart.js and interactive scripts.  These **require HTTP
+   serving** — opening them as ``file://`` triggers browser same-origin
+   restrictions that break canvas rendering and script execution.  Use
+   ``--serve`` to auto-start a local HTTP server, or serve manually::
+
+       cd artifacts/simple_infographic && python -m http.server 8080
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
+import http.server
 import os
+import socketserver
 import sys
+import threading
+import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -523,12 +539,71 @@ async def main() -> None:
     await demo_tier2(sales_df, artifact_store, recipe_store)
 
     print("\n" + "=" * 64)
-    print("  Done. Open the HTML files in artifacts/simple_infographic/")
+    print("  Done.  Output → artifacts/simple_infographic/")
     print("=" * 64)
 
 
+def _serve_and_open(directory: Path, port: int = 8090) -> None:
+    """Start a local HTTP server and open the tier-2 dashboard in the browser.
+
+    The A2UI ``interactive-html`` renderer embeds Chart.js and interactive
+    scripts that **require HTTP serving** — opening them as ``file://``
+    triggers the browser's same-origin policy, breaking canvas rendering
+    and sortable-table scripts.
+    """
+    os.chdir(directory)
+    handler = http.server.SimpleHTTPRequestHandler
+    # Allow port reuse so re-runs don't fail with "address already in use".
+    socketserver.TCPServer.allow_reuse_address = True
+
+    try:
+        httpd = socketserver.TCPServer(("", port), handler)
+    except OSError as exc:
+        print(f"  ⚠ Could not bind port {port}: {exc}")
+        print(f"    Serve manually: cd {directory} && python -m http.server")
+        return
+
+    url = f"http://localhost:{port}/tier2_sales_dashboard.html"
+    print(f"\n  🌐 Serving at {url}")
+    print("     Press Ctrl+C to stop.\n")
+
+    # Open the browser after a short delay so the server is ready.
+    threading.Timer(0.5, webbrowser.open, args=(url,)).start()
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  Server stopped.")
+    finally:
+        httpd.server_close()
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Simple InfographicToolkit + A2UI example",
+    )
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="After generating, start a local HTTP server and open "
+             "the tier-2 dashboard in the browser.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8090,
+        help="Port for the local HTTP server (default: 8090).",
+    )
+    args = parser.parse_args()
+
     asyncio.run(main())
+
+    if args.serve:
+        _serve_and_open(OUTPUT_DIR, port=args.port)
+    else:
+        print("\n  💡 Tip: run with --serve to view the A2UI dashboard")
+        print("     in the browser (required for Chart.js / interactive features).")
+
     # Safety: some parrot subsystems (TF-based injection classifier, navconfig
     # bootstrap) may leave non-daemon threads alive.  ``injection_detection=
     # False`` skips the classifier, but flush + _exit is a belt-and-suspenders
