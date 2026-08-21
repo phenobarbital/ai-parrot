@@ -1,14 +1,21 @@
 """BugIntakeNode — bug-specific intake hook for the dev-loop flow.
 
-FEAT-132 scope-down: universal validation (allowlist heads, path-traversal)
-has moved to :class:`IntentClassifierNode`, which runs before this node on
-the bug path. ``BugIntakeNode`` is now a thin extension hook reserved for
-future bug-only enrichment (severity classification, stack-trace parsing,
-etc.). For v1 it re-emits ``flow.bug_brief_validated`` so existing
-downstream observers keep working, and returns the brief unchanged.
+FEAT-132 scope-down moved universal validation (allowlist heads,
+path-traversal) to :class:`IntentClassifierNode`, which runs before this
+node on the bug path. What is left here is the bug-only enrichment the node
+was reserved for: parse the stack trace, classify severity, and — when a
+replication target is configured — reproduce the failure against a real
+environment and document what was actually observed.
 
-This node deliberately does NOT call the dispatcher; the most
-expensive thing it does is one ``XADD`` to the flow event stream.
+Enrichment is additive and best-effort. Without a replication target, or
+when the brief carries no trace, the node behaves exactly as before:
+re-emit ``flow.bug_brief_validated`` and return the brief. A bug report
+that cannot be enriched still has to reach Research.
+
+The point of reproducing is evidence over narration. A brief that says
+"returns 500" sends Research looking; one that carries the observed status,
+the response body, the culprit frame and a regression test that currently
+fails tells it where to look and how the fix will be judged.
 """
 
 from __future__ import annotations
@@ -21,6 +28,16 @@ from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.models import BugBrief
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
+from parrot.flows.dev_loop.replication import (
+    ReplicationResult,
+    ReplicationTarget,
+    StackTrace,
+    classify_severity,
+    extract_endpoint,
+    parse_stack_trace,
+    proposed_regression_test,
+    replicate_endpoint,
+)
 
 
 @register_dev_loop_node("dev_loop.bug_intake")
@@ -37,6 +54,14 @@ class BugIntakeNode(DevLoopNode):
             The connection is lazy: the node is safe to construct without
             a live Redis. The actual publish happens on first ``execute``.
         name: Node id, defaults to ``"bug_intake"``.
+        replication_target: Environment to reproduce the failure against
+            (dev, staging). ``None`` skips reproduction and the node only
+            parses what the report already carries. The target is an
+            environment on purpose: reproducing where the 500 actually
+            happens beats standing up the service and its database locally
+            for every bug.
+        replicate: Set ``False`` to parse and classify but never issue a
+            request — for a bug whose endpoint must not be touched again.
     """
 
     def __init__(
@@ -44,10 +69,14 @@ class BugIntakeNode(DevLoopNode):
         *,
         redis_url: str,
         name: str = "bug_intake",
+        replication_target: Optional[ReplicationTarget] = None,
+        replicate: bool = True,
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_redis_url", redis_url)
         object.__setattr__(self, "_redis", None)
+        object.__setattr__(self, "_replication_target", replication_target)
+        object.__setattr__(self, "_replicate", replicate)
 
     # ------------------------------------------------------------------
     # Execute
@@ -82,10 +111,178 @@ class BugIntakeNode(DevLoopNode):
         """
         shared = self.shared_state(ctx)
         brief = self._load_brief(self.initial_prompt(ctx), shared)
+        findings = await self._enrich(brief)
+        if findings:
+            # The findings also travel in shared state, unflattened, so
+            # downstream nodes can use the parsed pieces instead of
+            # re-parsing the prose we appended to the description.
+            shared["bug_findings"] = findings
         if run_id := shared.get("run_id", ""):
             await self._emit_validated_event(run_id, brief)
         shared["bug_brief"] = brief
         return brief
+
+    # ------------------------------------------------------------------
+    # Enrichment
+    # ------------------------------------------------------------------
+
+    async def _enrich(self, brief: BugBrief) -> Dict[str, Any]:
+        """Parse, reproduce and document — mutating ``brief`` in place.
+
+        Best-effort throughout: anything that cannot be determined is left
+        out rather than guessed, and no failure here stops the brief from
+        reaching Research.
+
+        Args:
+            brief: The validated brief, enriched in place.
+
+        Returns:
+            The structured findings (also stored in shared state), empty
+            when there was nothing to add.
+        """
+        trace = self._parse_reported_trace(brief)
+        replication = await self._reproduce(brief)
+        severity = classify_severity(trace, replication)
+
+        findings: Dict[str, Any] = {"severity": severity}
+        notes = [f"severidad observada: {severity}"]
+
+        if trace is not None and (trace.frames or trace.exception_type):
+            findings["trace"] = {
+                "language": trace.language,
+                "exception_type": trace.exception_type,
+                "message": trace.message,
+                "culprit": (
+                    {
+                        "file": trace.culprit.file,
+                        "line": trace.culprit.line,
+                        "function": trace.culprit.function,
+                    }
+                    if trace.culprit is not None
+                    else None
+                ),
+            }
+            notes.append(f"trace reportado: {trace.summary()}")
+
+        if replication is not None:
+            findings["replication"] = {
+                "attempted": replication.attempted,
+                "reproduced": replication.reproduced,
+                "target": replication.target,
+                "url": replication.url,
+                "method": replication.method,
+                "status": replication.status,
+                "error": replication.error,
+            }
+            notes.append(f"reproduccion: {replication.summary()}")
+            if replication.reproduced and replication.body_excerpt:
+                # The observed body is stronger evidence than the pasted
+                # excerpt, so it becomes a log source of its own.
+                brief.log_sources.append(
+                    _inline_source(
+                        f"--- Respuesta observada en {replication.target} "
+                        f"({replication.status}) ---\n"
+                        f"{replication.body_excerpt}"
+                    )
+                )
+            observed = replication.trace
+            if observed is not None:
+                findings["observed_trace"] = observed.summary()
+                notes.append(f"trace observado: {observed.summary()}")
+
+        test = (
+            proposed_regression_test(replication, replication.trace or trace)
+            if replication is not None
+            else None
+        )
+        if test is not None:
+            findings["regression_test"] = test
+            notes.append(
+                f"test de regresion propuesto: {test['path']} "
+                f"(criterio: {test['command']})"
+            )
+            self._add_acceptance_command(brief, test["command"])
+
+        if notes:
+            brief.description = (
+                f"{brief.description}\n\n"
+                f"--- Intake automatico ---\n"
+                + "\n".join(f"- {note}" for note in notes)
+            ).strip()
+        return findings
+
+    def _parse_reported_trace(self, brief: BugBrief) -> Optional[StackTrace]:
+        """Parse the stack trace the reporter pasted, if any.
+
+        Only ``inline`` sources are read: the remote kinds are fetched by
+        ``ResearchNode`` later, and this node must not do network I/O for
+        logs it was not given.
+
+        Args:
+            brief: The brief to read.
+
+        Returns:
+            The parsed trace, or ``None`` when there is no inline source.
+        """
+        for source in brief.log_sources:
+            if getattr(source, "kind", None) != "inline":
+                continue
+            trace = parse_stack_trace(getattr(source, "locator", ""))
+            if trace.frames or trace.exception_type:
+                return trace
+        return None
+
+    async def _reproduce(self, brief: BugBrief) -> Optional[ReplicationResult]:
+        """Reproduce the failure against the configured environment.
+
+        Args:
+            brief: The brief, read for the endpoint to hit.
+
+        Returns:
+            The result, or ``None`` when reproduction is off, no target is
+            configured, or no endpoint could be read from the report.
+        """
+        if not self._replicate or self._replication_target is None:
+            return None
+        method, path = extract_endpoint(f"{brief.summary}\n{brief.description}")
+        if not path:
+            return ReplicationResult(
+                attempted=False,
+                target=self._replication_target.name,
+                error="el reporte no nombra ninguna ruta reproducible",
+            )
+        return await replicate_endpoint(self._replication_target, method, path)
+
+    @staticmethod
+    def _add_acceptance_command(brief: BugBrief, command: str) -> None:
+        """Add the regression test as an acceptance criterion.
+
+        QA runs every criterion, so this is what turns "the bug is fixed"
+        from a judgement call into something checkable: a fix that does not
+        make the reproduction pass is not a fix.
+
+        It is *added*, not substituted — the reporter's own criteria stay,
+        and this raises the bar rather than replacing it. (It could not
+        substitute anyway: ``acceptance_criteria`` must be non-empty for the
+        brief to validate, so the list is never empty by the time this runs.)
+        Re-running intake is idempotent: an identical command is not added
+        twice.
+
+        Args:
+            brief: The brief to extend in place.
+            command: The shell command that runs the regression test.
+        """
+        from parrot.flows.dev_loop.models import ShellCriterion
+
+        existing = {
+            getattr(criterion, "command", None)
+            for criterion in brief.acceptance_criteria
+        }
+        if command in existing:
+            return
+        brief.acceptance_criteria.append(
+            ShellCriterion(name="regression", command=command)
+        )
 
     # ------------------------------------------------------------------
     # Internal
@@ -176,3 +373,19 @@ class BugIntakeNode(DevLoopNode):
 
 
 __all__ = ["BugIntakeNode"]
+
+
+def _inline_source(text: str) -> Any:
+    """Build an ``inline`` LogSource carrying ``text``.
+
+    Imported lazily so this module keeps its light import surface.
+
+    Args:
+        text: The log/trace content itself.
+
+    Returns:
+        A ``LogSource`` with ``kind="inline"``.
+    """
+    from parrot.flows.dev_loop.models import LogSource
+
+    return LogSource(kind="inline", locator=text)

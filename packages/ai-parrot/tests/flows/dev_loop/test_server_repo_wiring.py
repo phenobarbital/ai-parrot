@@ -540,3 +540,85 @@ async def test_server_invalid_agent_lists_zai(monkeypatch) -> None:
     with pytest.raises(RuntimeError, match="zai"):
         await server_mod._on_startup(app)
 
+
+
+# ---------------------------------------------------------------------------
+# PageIndex authoring plane (create_page wiring)
+# ---------------------------------------------------------------------------
+
+
+def test_build_pageindex_toolkit_without_wiki_model(monkeypatch, tmp_path, caplog):
+    """No WIKI_MODEL configured -> None, with an actionable warning.
+
+    Regression: ``_build_wiki_toolkit`` used to pass ``None`` for the
+    PageIndex toolkit unconditionally, so every ``create_page`` raised
+    ``AttributeError`` inside LLMWikiToolkit's best-effort except and
+    logged "'NoneType' object has no attribute 'insert_markdown'" with no
+    hint about what to configure.
+    """
+    server = _load_server_module()
+    monkeypatch.setattr(
+        server, "_build_pageindex_toolkit", server._build_pageindex_toolkit
+    )
+    import navconfig
+
+    monkeypatch.setattr(
+        navconfig.config, "get", lambda name, fallback=None: fallback
+    )
+    monkeypatch.delenv("WIKI_MODEL", raising=False)
+
+    with caplog.at_level("WARNING"):
+        result = server._build_pageindex_toolkit(tmp_path)
+
+    assert result is None
+    assert any("WIKI_MODEL" in rec.message for rec in caplog.records)
+
+
+def test_build_pageindex_toolkit_with_wiki_model(monkeypatch, tmp_path):
+    """A configured WIKI_MODEL yields a real PageIndexToolkit."""
+    server = _load_server_module()
+    import navconfig
+
+    monkeypatch.setattr(
+        navconfig.config,
+        "get",
+        lambda name, fallback=None: (
+            "google:gemini-3.1-flash-lite-preview" if name == "WIKI_MODEL" else fallback
+        ),
+    )
+
+    from parrot.clients.factory import LLMFactory
+
+    monkeypatch.setattr(LLMFactory, "create", staticmethod(lambda spec: MagicMock()))
+
+    result = server._build_pageindex_toolkit(tmp_path)
+
+    assert result is not None
+    assert (tmp_path / "pageindex").is_dir()
+
+
+def test_build_pageindex_toolkit_degrades_on_failure(monkeypatch, tmp_path, caplog):
+    """Client construction blowing up degrades to None, never raises."""
+    server = _load_server_module()
+    import navconfig
+
+    monkeypatch.setattr(
+        navconfig.config,
+        "get",
+        lambda name, fallback=None: (
+            "bogus:model" if name == "WIKI_MODEL" else fallback
+        ),
+    )
+
+    from parrot.clients.factory import LLMFactory
+
+    def _boom(spec):
+        raise RuntimeError("no such provider")
+
+    monkeypatch.setattr(LLMFactory, "create", staticmethod(_boom))
+
+    with caplog.at_level("WARNING"):
+        result = server._build_pageindex_toolkit(tmp_path)
+
+    assert result is None
+    assert any("PageIndexToolkit unavailable" in rec.message for rec in caplog.records)

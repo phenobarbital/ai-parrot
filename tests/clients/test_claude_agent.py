@@ -709,3 +709,123 @@ async def test_claude_agent_live_smoke():
     client = ClaudeAgentClient()
     result = await client.ask("Say the word PONG and nothing else.")
     assert result.output
+
+
+class TestSessionResume:
+    """A conversation's second turn must resume, not re-create the session.
+
+    The CLI's ``--session-id`` only ever CREATES a session; handing it an id
+    it already knows makes it exit 1. Any caller holding one conversation
+    open — ``parrot attach``, an agentd ``chat.send`` connection — therefore
+    died on its second message before this behaviour existed.
+    """
+
+    @staticmethod
+    def _capturing_query(messages: list[Any], captured: list[Any]):
+        """A ``query`` stand-in that records the options it was handed."""
+
+        def _query(*args: Any, **kwargs: Any) -> _AsyncIter:
+            captured.append(kwargs.get("options"))
+            return _AsyncIter(messages)
+
+        return _query
+
+    @pytest.mark.asyncio
+    async def test_first_turn_creates_and_second_resumes(
+        self, fake_claude_agent_messages
+    ):
+        from parrot.clients import claude_agent as ca_module
+
+        captured: list[Any] = []
+        client = ca_module.ClaudeAgentClient()
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(
+                self._capturing_query(fake_claude_agent_messages, captured),
+                object,
+                lambda **kw: SimpleNamespace(**kw),
+            ),
+        ):
+            await client.ask("first", session_id="conv-1")
+            await client.ask("second", session_id="conv-1")
+
+        first, second = captured
+        # Turn 1 creates the CLI session...
+        assert getattr(first, "session_id", None) == "conv-1"
+        assert getattr(first, "resume", None) is None
+        # ...turn 2 resumes it, and must NOT also pass session_id: the CLI
+        # rejects both together.
+        assert getattr(second, "resume", None) is not None
+        assert getattr(second, "session_id", None) is None
+
+    @pytest.mark.asyncio
+    async def test_distinct_conversations_do_not_share_a_session(
+        self, fake_claude_agent_messages
+    ):
+        from parrot.clients import claude_agent as ca_module
+
+        captured: list[Any] = []
+        client = ca_module.ClaudeAgentClient()
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(
+                self._capturing_query(fake_claude_agent_messages, captured),
+                object,
+                lambda **kw: SimpleNamespace(**kw),
+            ),
+        ):
+            await client.ask("a", session_id="conv-a")
+            await client.ask("b", session_id="conv-b")
+
+        # Each conversation creates its own CLI session.
+        assert [getattr(o, "session_id", None) for o in captured] == [
+            "conv-a",
+            "conv-b",
+        ]
+        assert all(getattr(o, "resume", None) is None for o in captured)
+
+    @pytest.mark.asyncio
+    async def test_without_a_session_id_nothing_is_tracked(
+        self, fake_claude_agent_messages
+    ):
+        """A stateless caller must not accumulate session state."""
+        from parrot.clients import claude_agent as ca_module
+
+        client = ca_module.ClaudeAgentClient()
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(
+                _fake_query_factory(fake_claude_agent_messages),
+                object,
+                lambda **kw: SimpleNamespace(**kw),
+            ),
+        ):
+            await client.ask("one")
+            await client.ask("two")
+        assert client._cli_sessions == {}
+
+    @pytest.mark.asyncio
+    async def test_resume_passes_only_resume(self, fake_claude_agent_messages):
+        """``resume()`` used to pass BOTH resume and session_id, so every
+        resume exited 1."""
+        from parrot.clients import claude_agent as ca_module
+
+        captured: list[Any] = []
+        client = ca_module.ClaudeAgentClient()
+        with patch.object(
+            ca_module,
+            "_import_sdk",
+            return_value=(
+                self._capturing_query(fake_claude_agent_messages, captured),
+                object,
+                lambda **kw: SimpleNamespace(**kw),
+            ),
+        ):
+            await client.resume("sess-9", "keep going")
+
+        (options,) = captured
+        assert getattr(options, "resume", None) == "sess-9"
+        assert getattr(options, "session_id", None) is None
