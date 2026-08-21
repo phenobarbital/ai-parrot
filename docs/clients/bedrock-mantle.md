@@ -6,10 +6,11 @@ plain OpenAI SDK path, without SigV4 signing or the native Converse API.
 **Related files**:
 
 - `packages/ai-parrot/src/parrot/clients/nova/mantle.py` — `BedrockMantleClient`
-- `packages/ai-parrot/src/parrot/clients/gpt.py` — inherited `OpenAIClient` machinery
+- `packages/ai-parrot/src/parrot/clients/openai_base.py` — inherited `OpenAIBaseClient` machinery (FEAT-438)
 - `packages/ai-parrot/src/parrot/clients/factory.py` — `LLMFactory` registration
 - `packages/ai-parrot/tests/clients/test_bedrock_mantle.py` — unit tests
 - `sdd/specs/bedrock-mantle-client.spec.md` — full design (FEAT-407)
+- `docs/clients/openai-compatible.md` — the shared `OpenAIBaseClient` hierarchy (FEAT-438)
 
 ---
 
@@ -20,11 +21,16 @@ Bedrock-hosted models (`openai.gpt-oss-120b`, `anthropic.claude-*`, …) at
 `https://bedrock-mantle.<region>.api.aws/v1`, authenticated with a Bedrock
 API key as a plain bearer token — no AWS SigV4 signing, no `aioboto3`.
 
-`BedrockMantleClient` is a thin subclass of `OpenAIClient` (the same
-gateway pattern as `NvidiaClient`, `OpenRouterClient`, `MoonshotClient`)
-that only resolves the endpoint and API key before delegating every other
-behavior — `ask`, `ask_stream`, `invoke`, tool-calling, structured output,
-retry, fallback — to the inherited OpenAI machinery, unmodified.
+`BedrockMantleClient` is a thin subclass of `OpenAIBaseClient` (FEAT-438;
+the same gateway pattern as `NvidiaClient`, `OpenRouterClient`,
+`MoonshotClient`, `LocalLLMClient`/`vLLMClient`) that only resolves the
+endpoint and API key before delegating every other behavior — `ask`,
+`ask_stream`, `invoke`, tool-calling, structured output, retry, fallback —
+to the inherited OpenAI-compatible wire machinery, unmodified. Unlike
+`OpenAIClient`, `OpenAIBaseClient` carries none of OpenAI-the-provider's
+defaults (no `gpt-*` model ids), so `_lightweight_model`/`_default_model`
+never leak an OpenAI id for a non-OpenAI provider — see
+`docs/clients/openai-compatible.md` for the full hierarchy.
 
 This client coexists with, and does not replace:
 
