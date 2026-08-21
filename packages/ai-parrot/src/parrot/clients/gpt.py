@@ -1,9 +1,7 @@
 from __future__ import annotations
 from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple, TYPE_CHECKING
-import base64
 import io
 import json
-import mimetypes
 import uuid
 import warnings
 from pathlib import Path
@@ -318,10 +316,8 @@ class OpenAIClient(OpenAIBaseClient):
 
         return None
 
-    async def _upload_file(self, file_path: Union[str, Path], purpose: str = "fine-tune") -> None:
-        """Upload a file to OpenAI."""
-        with open(file_path, "rb") as file:
-            await self.client.files.create(file=file, purpose=purpose)
+    # _upload_file moved to OpenAIBaseClient (FEAT-438 Module 2) — generic,
+    # inherited unchanged.
 
     # _chat_completion moved to OpenAIBaseClient (FEAT-438 Module 2) — the
     # tenacity-wrapped retry/dispatch logic is generic and now inherited
@@ -496,14 +492,8 @@ class OpenAIClient(OpenAIBaseClient):
             req["background"] = args["background"]
         return req
 
-    @staticmethod
-    def _with_extra_body(payload: Dict[str, Any], extra_body: Dict[str, Any]) -> Dict[str, Any]:
-        merged = dict(payload)
-        existing_raw = merged.pop("extra_body", None)
-        existing = (dict(existing_raw) if isinstance(existing_raw, dict) else {}) | extra_body
-        if existing:
-            merged["extra_body"] = existing
-        return merged
+    # _with_extra_body moved to OpenAIBaseClient (TASK-2296) — inherited
+    # unchanged.
 
     async def _call_responses_create(self, payloads):
         """
@@ -1282,29 +1272,25 @@ class OpenAIClient(OpenAIBaseClient):
             chat_args = dict(args)
             # Request usage stats in the final streaming chunk (OpenAI SDK >= 1.17)
             chat_args["stream_options"] = {"include_usage": True}
+            if output_config:
+                chat_args["response_format"] = output_config.output_type
             usage_data = None
-            response_stream = None  # initialise; assigned by whichever branch runs
-            method = getattr(self.client.chat.completions, "parse", None) if output_config else None
-            if callable(method):
-                try:
-                    response_stream = await method(  # pylint: disable=E1102 # noqa
-                        model=model_str,
-                        messages=messages,
-                        stream=True,
-                        response_format=(output_config.output_type if output_config else None),
-                        **chat_args,
-                    )
-                except TypeError:
-                    # parse() in this SDK may not accept stream=True → fallback to create()
-                    method = None
-            if not callable(method):
-                response_stream = await self.client.chat.completions.create(
-                    model=model_str,
-                    messages=messages,
-                    stream=True,
-                    response_format=(output_config.output_type if output_config else None),
-                    **chat_args,
-                )
+            # FEAT-438 G3: route through the single completion funnel
+            # (_chat_completion) instead of calling the SDK directly.
+            # `_chat_completion`'s dispatch (`.parse()` only when
+            # use_tools=False) reproduces this branch's original "prefer
+            # .parse() only when output_config is set" intent. Documented,
+            # authorized behavior change (spec G3 / TASK-2298 Completion
+            # Note): this drops the narrow SDK-version TypeError→create()
+            # fallback the direct-call version had for
+            # `.parse(stream=True, ...)`.
+            response_stream = await self._chat_completion(
+                model=model_str,
+                messages=messages,
+                use_tools=not bool(output_config),
+                stream=True,
+                **chat_args,
+            )
 
             async for chunk in response_stream:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
@@ -1379,43 +1365,8 @@ class OpenAIClient(OpenAIBaseClient):
     # unchanged (self.ask() still resolves polymorphically to this
     # class's own ask() override above).
 
-    def _encode_image_for_openai(
-        self, image: Union[Path, bytes, "Image.Image"], low_quality: bool = False
-    ) -> Dict[str, Any]:
-        """Encode image for OpenAI's vision API."""
-        try:
-            from PIL import Image
-        except ImportError as exc:
-            raise ImportError(
-                "Image methods on OpenAIClient require Pillow. " "Install with: pip install Pillow"
-            ) from exc
-        if isinstance(image, Path):
-            if not image.exists():
-                raise FileNotFoundError(f"Image file not found: {image}")
-            mime_type, _ = mimetypes.guess_type(str(image))
-            mime_type = mime_type or "image/jpeg"
-            with open(image, "rb") as f:
-                encoded_data = base64.b64encode(f.read()).decode("utf-8")
-
-        elif isinstance(image, bytes):
-            mime_type = "image/jpeg"
-            encoded_data = base64.b64encode(image).decode("utf-8")
-
-        elif isinstance(image, Image.Image):
-            buffer = io.BytesIO()
-            if image.mode in ("RGBA", "LA", "P"):
-                image = image.convert("RGB")
-            image.save(buffer, format="JPEG")
-            encoded_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            mime_type = "image/jpeg"
-
-        else:
-            raise ValueError("Image must be a Path, bytes, or PIL.Image object.")
-
-        return {
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime_type};base64,{encoded_data}", "detail": "low" if low_quality else "auto"},
-        }
+    # _encode_image_for_openai moved to OpenAIBaseClient (FEAT-438 Module 2)
+    # — generic, inherited unchanged; still used below by ask_to_image() etc.
 
     async def ask_to_image(
         self,
@@ -2237,8 +2188,11 @@ class OpenAIClient(OpenAIBaseClient):
         """Lightweight stateless invocation for OpenAIClient.
 
         Uses native ``response_format`` with ``json_schema`` and ``strict: True``
-        for structured output.  A single ``chat.completions.create()`` call is
-        made — no retry, no history, no prompt builder.
+        for structured output. A single call is made through
+        :meth:`_chat_completion` (FEAT-438 G3 — the single completion
+        funnel; this call previously bypassed it and called
+        ``chat.completions.create()`` directly) — no history, no prompt
+        builder.
 
         Args:
             prompt: User prompt.
@@ -2269,10 +2223,8 @@ class OpenAIClient(OpenAIBaseClient):
             ]
 
             kwargs: Dict[str, Any] = {
-                "model": resolved_model,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
-                "messages": messages,
             }
 
             # Native JSON schema structured output
@@ -2290,7 +2242,9 @@ class OpenAIClient(OpenAIBaseClient):
             if not self.client:
                 raise RuntimeError("OpenAIClient not initialised. Use async context manager.")
 
-            response = await self.client.chat.completions.create(**kwargs)
+            response = await self._chat_completion(
+                model=resolved_model, messages=messages, use_tools=True, **kwargs
+            )
             raw_text = response.choices[0].message.content or ""
 
             # Parse output

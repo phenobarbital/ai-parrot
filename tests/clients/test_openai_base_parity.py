@@ -1,4 +1,4 @@
-"""Tool-loop parity tests for FEAT-438 TASK-2297.
+"""Tool-loop + completion-funnel parity tests for FEAT-438 TASK-2297/2298.
 
 Verifies the shared ``OpenAIBaseClient._run_tool_call_loop()`` reproduces
 the semantics of the two inline loops it replaces
@@ -6,6 +6,12 @@ the semantics of the two inline loops it replaces
 metadata, usage accumulation, and final ``tool_calls`` assignment, plus the
 two documented ``ask()`` vs ``resume()`` corner-case differences the shared
 loop preserves via ``record_malformed_tool_calls``/``default_tool_name``.
+
+Also verifies (TASK-2298) that ``ask()``/``ask_stream()``/``invoke()`` all
+route through the single ``_chat_completion()`` funnel, that
+``ask_stream()`` still yields str chunks then a final ``AIMessage``
+(TASK-1175 contract), and that ``invoke()`` still returns an
+``InvokeResult``.
 """
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -13,6 +19,8 @@ from unittest.mock import AsyncMock
 import pytest
 from parrot.clients.gpt import OpenAIClient
 from parrot.clients.openai_base import OpenAIBaseClient
+from parrot.models import AIMessage
+from parrot.models.responses import InvokeResult
 
 
 def test_openai_client_extends_base():
@@ -184,3 +192,87 @@ async def test_lazy_loading_reprepares_tools():
 
     assert len(args["tools"]) == 1
     assert set(args["tools"][0]["filtered_for"]) == {"search_tools", "weather_tool"}
+
+
+class _FunnelSpy(OpenAIBaseClient):
+    """Records every ``_chat_completion`` call; returns a canned response."""
+
+    client_type = "funnel-spy"
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.calls = []
+
+    async def get_client(self):
+        return SimpleNamespace()
+
+    async def _chat_completion(self, model, messages, use_tools=False, stream=False, **kwargs):
+        self.calls.append(
+            {"model": model, "messages": messages, "use_tools": use_tools, "stream": stream, "kwargs": kwargs}
+        )
+        if stream:
+
+            async def _gen():
+                yield SimpleNamespace(
+                    choices=[SimpleNamespace(delta=SimpleNamespace(content="hello"))],
+                    usage=None,
+                )
+                yield SimpleNamespace(
+                    choices=[],
+                    usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                )
+
+            return _gen()
+        message = _make_message(content="hi", tool_calls=None)
+        return _make_response(message, usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2, total_tokens=5))
+
+
+async def _noop_conversation_context(*_a, **_kw):
+    return [], None, None
+
+
+async def _noop_update_conversation_memory(*_a, **_kw):
+    return None
+
+
+def _make_funnel_spy(**kwargs):
+    client = _FunnelSpy(api_key="k", base_url="http://x/v1", model="m", **kwargs)
+    client._prepare_conversation_context = _noop_conversation_context
+    client._update_conversation_memory = _noop_update_conversation_memory
+    return client
+
+
+@pytest.mark.asyncio
+async def test_ask_routes_via_funnel():
+    client = _make_funnel_spy()
+    result = await client.ask("hello")
+    assert len(client.calls) == 1
+    assert client.calls[0]["model"] == "m"
+    assert isinstance(result, AIMessage)
+
+
+@pytest.mark.asyncio
+async def test_ask_stream_routes_via_funnel():
+    client = _make_funnel_spy()
+    _ = [item async for item in client.ask_stream("hello")]
+    assert len(client.calls) == 1
+    assert client.calls[0]["stream"] is True
+
+
+@pytest.mark.asyncio
+async def test_ask_stream_final_yield_is_aimessage():
+    """TASK-1175 contract: ask_stream yields str chunks then a final AIMessage."""
+    client = _make_funnel_spy()
+    chunks = [item async for item in client.ask_stream("hello")]
+    assert chunks[0] == "hello"
+    assert isinstance(chunks[-1], AIMessage)
+
+
+@pytest.mark.asyncio
+async def test_invoke_routes_via_funnel():
+    client = _make_funnel_spy()
+    await client._ensure_client()
+    result = await client.invoke("hello")
+    assert len(client.calls) == 1
+    assert client.calls[0]["use_tools"] is True
+    assert isinstance(result, InvokeResult)

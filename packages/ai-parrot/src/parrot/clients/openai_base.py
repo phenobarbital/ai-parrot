@@ -16,12 +16,15 @@ See ``sdd/specs/openai-compatible-clients.spec.md`` (FEAT-438) §3 Module 1.
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
+import mimetypes
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from datamodel.parsers.json import json_decoder
 from tenacity import (
@@ -31,6 +34,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from ..exceptions import InvokeError
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -38,8 +42,12 @@ from ..models import (
     StructuredOutputConfig,
     ToolCall,
 )
+from ..models.responses import InvokeResult
 from ..tools.manager import ToolFormat
 from .base import AbstractClient
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 
 class OpenAIBaseClient(AbstractClient):
@@ -188,29 +196,38 @@ class OpenAIBaseClient(AbstractClient):
         return merged
 
     async def _chat_completion(
-        self, model: str, messages: Any, use_tools: bool = False, **kwargs
+        self, model: str, messages: Any, use_tools: bool = False, stream: bool = False, **kwargs
     ) -> Any:
         """Call ``chat.completions.create``/``.parse`` with retry.
 
-        The tenacity-wrapped single completion funnel shared by ``ask()``,
-        ``resume()``, and (once TASK-2298 lands) ``ask_stream()``/``invoke()``.
-        Moved verbatim from :class:`~parrot.clients.gpt.OpenAIClient`
-        (FEAT-438 Module 2) — the retry policy and dispatch logic are generic
-        to any OpenAI-SDK-shaped ``self.client``.
+        The tenacity-wrapped **single completion funnel** (FEAT-438 G3):
+        ``ask()``, ``resume()``, ``ask_stream()``, and ``invoke()`` all route
+        every wire call through this one method, so a subclass override
+        (Moonshot's thinking params, Nvidia's rate limiter) applies
+        everywhere instead of only to ``ask()`` — closing the bypass wart
+        documented in moonshot.py's ``ask_stream``/``invoke`` docstrings
+        pre-FEAT-438. The retry policy and dispatch logic are generic to any
+        OpenAI-SDK-shaped ``self.client``.
 
         Args:
             model: The resolved model id.
             messages: The chat-completions message list.
             use_tools: If ``True``, always use ``.create`` (tool-calling
-                responses cannot use ``.parse``). If ``False``, prefer
-                ``.parse`` when the SDK exposes it (structured output),
-                falling back to ``.create``.
+                responses, and any call that must not use the SDK's
+                ``.parse()`` shortcut, cannot use ``.parse``). If ``False``,
+                prefer ``.parse`` when the SDK exposes it (structured
+                output), falling back to ``.create``.
+            stream: If ``True``, forwarded to the SDK call as ``stream=True``
+                — the funnel seam ``ask_stream()`` routes through (FEAT-438
+                Module 2 second half). Overrides may inspect this kwarg to
+                special-case streaming.
             **kwargs: Additional OpenAI chat-completions request kwargs
                 (``tools``, ``tool_choice``, ``max_tokens``, ``temperature``,
                 ``response_format``, etc.).
 
         Returns:
-            The raw SDK response object.
+            The raw SDK response object (or, when ``stream=True``, the SDK's
+            async stream object).
         """
         from openai import APIConnectionError, APIError, RateLimitError
 
@@ -224,6 +241,8 @@ class OpenAIBaseClient(AbstractClient):
             method = self.client.chat.completions.create
         else:
             method = getattr(self.client.chat.completions, "parse", self.client.chat.completions.create)
+        if stream:
+            kwargs["stream"] = True
         async for attempt in retry_policy:
             with attempt:
                 return await method(model=model, messages=messages, **kwargs)
@@ -795,3 +814,318 @@ class OpenAIBaseClient(AbstractClient):
             result = await self.ask(**request)
             results.append(result)
         return results
+
+    async def _upload_file(self, file_path: Path | str, purpose: str = "fine-tune") -> None:
+        """Upload a file via the SDK client's ``files.create`` endpoint.
+
+        Args:
+            file_path: Path to the local file to upload.
+            purpose: The SDK-defined upload purpose.
+        """
+        with open(file_path, "rb") as file:  # noqa: ASYNC230 — moved verbatim from gpt.py
+            await self.client.files.create(file=file, purpose=purpose)
+
+    def _encode_image_for_openai(
+        self, image: Path | bytes | Image.Image, low_quality: bool = False
+    ) -> dict[str, Any]:
+        """Encode an image as an OpenAI-shaped ``image_url`` content block.
+
+        Args:
+            image: A file path, raw bytes, or a ``PIL.Image.Image``.
+            low_quality: If ``True``, request the ``"low"`` detail level.
+
+        Returns:
+            A vision-API content block dict.
+
+        Raises:
+            ImportError: If Pillow is not installed.
+            FileNotFoundError: If *image* is a path that does not exist.
+            ValueError: If *image* is not a recognized type.
+        """
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise ImportError(
+                "Image methods require Pillow. Install with: pip install Pillow"
+            ) from exc
+        if isinstance(image, Path):
+            if not image.exists():
+                raise FileNotFoundError(f"Image file not found: {image}")
+            mime_type, _ = mimetypes.guess_type(str(image))
+            mime_type = mime_type or "image/jpeg"
+            with open(image, "rb") as f:
+                encoded_data = base64.b64encode(f.read()).decode("utf-8")
+
+        elif isinstance(image, bytes):
+            mime_type = "image/jpeg"
+            encoded_data = base64.b64encode(image).decode("utf-8")
+
+        elif isinstance(image, Image.Image):
+            buffer = io.BytesIO()
+            if image.mode in ("RGBA", "LA", "P"):
+                image = image.convert("RGB")
+            image.save(buffer, format="JPEG")
+            encoded_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            mime_type = "image/jpeg"
+
+        else:
+            raise ValueError("Image must be a Path, bytes, or PIL.Image object.")  # noqa: TRY004
+
+        return {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime_type};base64,{encoded_data}", "detail": "low" if low_quality else "auto"},
+        }
+
+    async def ask_stream(
+        self,
+        prompt: str,
+        model: Any | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        files: list[str | Path] | None = None,
+        system_prompt: str | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        structured_output: type | StructuredOutputConfig | None = None,
+        lazy_loading: bool = False,
+    ) -> AsyncIterator[str | AIMessage]:
+        """Stream a response with optional conversation memory.
+
+        Generic chat-completions streaming implementation shared by every
+        ``OpenAIBaseClient`` subclass. Subclasses needing Responses-API
+        routing or other OpenAI-provider-only streaming behavior override
+        this method (currently only :class:`~parrot.clients.gpt.OpenAIClient`).
+        Routes through :meth:`_chat_completion` with ``stream=True``
+        (FEAT-438 G3 — the single completion funnel) instead of calling the
+        SDK directly, so a subclass's funnel override applies to streaming
+        too.
+
+        Yields successive string chunks followed by a final
+        :class:`~parrot.models.responses.AIMessage`.
+
+        Raises:
+            NotImplementedError: If the resolved model requires Responses-API
+                routing and this class does not override ``ask_stream()``.
+        """
+        turn_id = str(uuid.uuid4())
+        model_str = self._resolve_model(model)
+
+        if self._is_responses_model(model_str):
+            raise NotImplementedError(
+                f"{type(self).__name__} does not implement Responses-API "
+                "streaming for this model; override ask_stream() to handle it."
+            )
+
+        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+            prompt, files, user_id, session_id, system_prompt
+        )
+
+        _lc_tc = self._emit_before_call(
+            client_name=self.client_name,
+            model=model_str,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=False,
+            parent_trace=None,
+        )
+        _lc_t0 = time.perf_counter()
+
+        if files:
+            for file in files:
+                if isinstance(file, str):
+                    file = Path(file)
+                if isinstance(file, Path):
+                    await self._upload_file(file)
+
+        if lazy_loading and system_prompt:
+            system_prompt += (
+                "\n\nYou have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
+        elif lazy_loading and not system_prompt:
+            system_prompt = (
+                "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            )
+
+        if system_prompt:
+            if isinstance(system_prompt, list):
+                system_prompt = "\n\n".join(s.text for s in system_prompt)
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
+
+        tools_payload = None
+        if self.tools:
+            if lazy_loading:
+                tools_payload = self._prepare_lazy_tools()
+            else:
+                tools_payload = self._prepare_tools()
+
+        args: dict[str, Any] = {"stream_options": {"include_usage": True}}
+        if tools_payload:
+            args["tools"] = tools_payload
+            args["tool_choice"] = "auto"
+
+        max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
+        if max_tokens_value is not None:
+            args["max_tokens"] = max_tokens_value
+
+        temperature_value = temperature if temperature is not None else self.temperature
+        if temperature_value is not None:
+            args["temperature"] = temperature_value
+
+        output_config = self._get_structured_config(structured_output)
+        if output_config:
+            response_format = self._build_response_format_from(output_config)
+            if response_format:
+                args["response_format"] = response_format
+
+        # `.parse()` cannot reliably stream every SDK's tool-calling/plain
+        # responses; only prefer it when structured output was requested —
+        # mirrors the pre-FEAT-438 dispatch this funnel now formalizes.
+        response_stream = await self._chat_completion(
+            model=model_str, messages=messages, use_tools=not bool(output_config), stream=True, **args
+        )
+
+        assistant_content = ""
+        usage_data = None
+        async for chunk in response_stream:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                text_chunk = chunk.choices[0].delta.content
+                assistant_content += text_chunk
+                yield text_chunk
+            if hasattr(chunk, "usage") and chunk.usage is not None:
+                usage_data = chunk.usage
+
+        if usage_data is not None:
+            usage = CompletionUsage.from_openai(usage_data)
+        else:
+            usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+
+        ai_message = AIMessage(
+            input=prompt,
+            output=assistant_content,
+            response=assistant_content,
+            model=model_str,
+            provider=self.client_type,
+            usage=usage,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        await self._emit_after_call(
+            _lc_tc,
+            client_name=self.client_name,
+            model=model_str,
+            duration_ms=(time.perf_counter() - _lc_t0) * 1000,
+            input_tokens=getattr(usage, "prompt_tokens", None),
+            output_tokens=getattr(usage, "completion_tokens", None),
+            finish_reason=None,
+        )
+        yield ai_message
+
+        if assistant_content:
+            messages.append({"role": "assistant", "content": assistant_content})
+            await self._update_conversation_memory(
+                user_id,
+                session_id,
+                conversation_session,
+                messages,
+                system_prompt,
+                turn_id,
+                prompt,
+                assistant_content,
+                [],
+            )
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: type | None = None,
+        structured_output: StructuredOutputConfig | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: list | None = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation routed through the completion funnel.
+
+        Generic implementation shared by every ``OpenAIBaseClient``
+        subclass. A single call is made through :meth:`_chat_completion`
+        (FEAT-438 G3 — previously this bypassed the funnel entirely and
+        called the SDK directly) — no conversation history, no prompt
+        builder; ``use_tools=True`` is passed to the funnel so it always
+        uses ``.create()`` (matching the pre-FEAT-438 behavior of never
+        using ``.parse()`` here).
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full ``StructuredOutputConfig``; takes
+                precedence over ``output_type``.
+            model: Model override. Defaults to ``_lightweight_model``/``self.model``.
+            system_prompt: System prompt override.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions (unused — kept for interface
+                parity with :class:`~parrot.clients.gpt.OpenAIClient`).
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            InvokeError: On provider errors, or if the client is not
+                initialized.
+        """
+        try:
+            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+            config = self._build_invoke_structured_config(output_type, structured_output)
+            resolved_model = self._resolve_invoke_model(model)
+
+            messages = [
+                {"role": "system", "content": resolved_prompt},
+                {"role": "user", "content": prompt},
+            ]
+
+            kwargs: dict[str, Any] = {
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+
+            if config:
+                response_format = self._build_response_format_from(config)
+                if response_format:
+                    kwargs["response_format"] = response_format
+
+            if use_tools:
+                tool_defs = self._prepare_tools()
+                if tool_defs:
+                    kwargs["tools"] = tool_defs
+
+            if not self.client:
+                raise RuntimeError(f"{type(self).__name__} not initialised. Use async context manager.")
+
+            response = await self._chat_completion(
+                model=resolved_model, messages=messages, use_tools=True, **kwargs
+            )
+            raw_text = response.choices[0].message.content or ""
+
+            output: Any = raw_text
+            if config:
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(raw_text, config)
+
+            usage = CompletionUsage.from_openai(response.usage)
+            return self._build_invoke_result(output, output_type, resolved_model, usage, response)
+        except InvokeError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — funnel errors are wrapped into InvokeError
+            raise self._handle_invoke_error(exc)
