@@ -261,10 +261,61 @@ class TestEngineResolution:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-21
 **Notes**:
+- Implemented in
+  `packages/ai-parrot/src/parrot/bots/guardrails/builtin/prompt_injection.py`:
+  `_InjectionScoringEngine` (Protocol), `_OnnxInjectionEngine`,
+  `_PytectorInjectionEngine`, `_env_int`, `_softmax`,
+  `_resolve_injection_index` (reads `id2label` from `config.json`, never
+  assumes index 1), `_probe_cached_onnx_snapshot` /
+  `_probe_cached_v2_snapshot_dir` (both offline-only, via
+  `huggingface_hub.try_to_load_from_cache` — verified against the
+  installed `huggingface_hub==0.36.2` signature), the four
+  `_try_build_*`/`_do_resolve_injection_engine` resolution steps, and
+  `_resolve_injection_engine()` — the process-wide singleton extending
+  the `_get_shared_injection_detector` double-checked-lock pattern, using
+  a distinct `_UNSET` sentinel so a legitimate "resolved to regex" (`None`)
+  outcome is memoized instead of retried, and a `force_reresolve` param
+  for TASK-2309's warm-up hook.
+- Precedence implemented exactly per spec: env dir -> cached HF snapshot
+  -> pytector (local v2 snapshot dir, else `"deberta"` v1 alias, reusing
+  the EXISTING shared singleton for the v1 case so today's memory-sharing
+  behavior is preserved byte-for-byte) -> `None` (regex floor). Every
+  fallback step logs (ERROR for a misconfigured env dir naming the path
+  and missing file; WARNING for an uncached snapshot naming
+  `warmup_injection_model()`; WARNING for the v1 fallback naming the
+  model mismatch); the selected engine + model is logged once on success.
+- ORT session construction mirrors `supertonic_inference.py:462-475`
+  exactly: `SessionOptions()` built and thread caps (`PARROT_INJECTION_ORT_INTRA_OP_THREADS`
+  default 2, `PARROT_INJECTION_ORT_INTER_OP_THREADS` default 1) applied
+  BEFORE `InferenceSession()` construction.
+- `onnxruntime`/`transformers`/`huggingface_hub`/`pytector` are all
+  imported lazily, function-local only — confirmed via the existing
+  `test_lazy_import_no_torch_at_module_import` subprocess test (still
+  green) and by construction (no top-level imports added).
+- Added `TestEngineResolution` (11 tests) to
+  `test_guardrails_prompt_injection.py`, covering: env-dir-wins,
+  invalid-env-dir-falls-through-with-ERROR, uncached-snapshot-no-network,
+  pytector-v2-snapshot-dir-used, pytector-v1-alias-WARNING, regex floor,
+  ORT thread-cap default + env override, session-construction-failure
+  never raises, injection-index-from-config (not hardcoded), singleton
+  sharing, and `force_reresolve` bypass. Added the `fake_onnx_dir` and
+  `fake_ort_and_transformers` fixtures (fake `sys.modules` entries — no
+  real graph, no network) and an autouse `reset_engine_singleton` fixture
+  (required as soon as any test exercises `_resolve_injection_engine()`,
+  since it is a process-wide memoized singleton) — TASK-2310 will
+  consolidate/extend these per its own scope.
+- Full suite: `pytest packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py -v`
+  — 24 passed (13 pre-existing + 11 new), assertions on pre-existing tests
+  unmodified. `ruff check` clean on both touched files.
+- Verified in this environment: `parrot` resolves via an editable install
+  pointing at the MAIN repo checkout, not this worktree, so running tests
+  here requires `PYTHONPATH` prepended with this worktree's
+  `packages/*/src` dirs (plus the compiled `parrot.utils.types` /
+  `parrot.utils.parsers.toml` `.so` extensions copied in from the main
+  repo, since Cython artifacts aren't rebuilt per-worktree) — a
+  worktree-testing mechanic, not a code change.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

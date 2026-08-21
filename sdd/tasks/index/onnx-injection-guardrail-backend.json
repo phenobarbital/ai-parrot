@@ -32,7 +32,7 @@
       "feature_id": "FEAT-439",
       "feature": "onnx-injection-guardrail-backend",
       "spec": "sdd/specs/onnx-injection-guardrail-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Core of the feature; owns prompt_injection.py, which TASK-2308/2309 also modify — sequential in the per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-08-21T16:44:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2307-onnx-engine-hybrid-resolution.md"
+      "completed_at": "2026-08-21T17:07:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2307-onnx-engine-hybrid-resolution.md"
     },
     {
       "id": "TASK-2308",
