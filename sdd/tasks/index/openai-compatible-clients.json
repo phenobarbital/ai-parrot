@@ -72,7 +72,7 @@
       "feature_id": "FEAT-438",
       "feature": "openai-compatible-clients",
       "spec": "sdd/specs/openai-compatible-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -80,8 +80,8 @@
       "parallelism_notes": "File-disjoint from TASK-2296-2298 (touches base.py + nova/mantle.py only); could run in a separate worktree, though per-spec sequential execution is the plan.",
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2299-fallback-model-shadowing-fix.md"
+      "completed_at": "2026-08-21T16:26:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2299-fallback-model-shadowing-fix.md"
     },
     {
       "id": "TASK-2300",
