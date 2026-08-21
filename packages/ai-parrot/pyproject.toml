@@ -532,6 +532,16 @@ security = [
     # `intra_op_num_threads` / `inter_op_num_threads` on the SessionOptions.
     # Prior art: `voice/tts/supertonic_inference.py:462-472`.
     "onnxruntime>=1.16",
+    # FEAT-439: declared explicitly — the ONNX engine-resolution path
+    # (offline cache probing via `try_to_load_from_cache`) and
+    # `warmup_injection_model()`'s `snapshot_download` both call into this
+    # directly. It arrived transitive-only via transformers/pytector until
+    # now. Bound `<1.0` to stay compatible with the `audio` extra's
+    # whisperx 3.8.5, which pins `huggingface-hub<1.0.0` (pyproject:~391);
+    # `>=0.24` is comfortably below the installed 0.36.2 and well past the
+    # release that added `allow_patterns`/`local_files_only` support to
+    # `snapshot_download`/`try_to_load_from_cache`.
+    "huggingface_hub>=0.24,<1.0",
 ]
 
 xai = [
