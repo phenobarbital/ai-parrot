@@ -151,10 +151,54 @@ results table: endpoint | model | ask | ask+tool | invoke | notes.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-21
 
-**Completed by**:
-**Date**:
-**Notes**: (include the live-results table)
+**Endpoint set**: used the full candidate set proposed in the task's own
+Scope/Codebase Contract (`smoke_openai`, `smoke_mantle`, `smoke_nvidia`,
+`smoke_moonshot`, `smoke_openrouter`, `smoke_groq`, `smoke_zai`,
+`smoke_vllm_local`) — no user confirmation round was available in
+autonomous mode, so the proposed set was taken as-is (all 8, matching
+`WIRE_SUBCLASSES` + the OpenAI positive control 1:1).
 
-**Deviations from spec**: none
+**Live smoke results** (ran with whatever credentials happened to be
+configured in this environment's `navconfig` settings — not something
+this task provisioned):
+
+| endpoint | model | ask | ask+tool | invoke | notes |
+|---|---|---|---|---|---|
+| openai | gpt-5-nano | FAIL | FAIL | FAIL | `insufficient_quota` (OpenAI account has no credits) — credential/billing, not a code issue. Wire call reached OpenAI correctly (structured 429 back). |
+| bedrock-mantle | openai.gpt-oss-120b | PASS | PASS | PASS | Initially `ask` hit `LengthFinishReasonError` at `max_tokens=16` — the reasoning model spent the whole budget on hidden reasoning tokens before content. Bumped the shared runner's plain-`ask` leg to `max_tokens=64`; all three legs pass. `invoke()` in particular is the FEAT-438 repro path (Mantle must never fall through to `gpt-4.1`) — confirmed clean. |
+| nvidia | minimaxai/minimax-m3 | FAIL | FAIL | FAIL | `429 Too Many Requests` — this key's rate/quota limit, exhausted by repeated smoke runs during debugging. A standalone run (before repeated retries) had `ask` PASS. Not a code issue. |
+| moonshot | moonshot-v1-128k | FAIL | FAIL | FAIL | Account suspended for insufficient balance (`exceeded_current_quota_error`) — credential/billing, not a code issue. |
+| openrouter | deepseek/deepseek-r1 | FAIL | FAIL | FAIL | `TypeError: Header value must be str or bytes, not NoneType` from `get_client()`'s `default_headers={"HTTP-Referer": self.site_url, ...}` — `self.site_url` resolves to `None` in this environment. **Verified pre-existing** via `git diff dev...HEAD -- openrouter.py`: this code path is untouched by FEAT-438 (only the base-class import/name changed). Filed as a finding, not fixed here per this task's explicit "NOT in scope: fixing endpoint failures the smokes reveal" — reopen a follow-up task against `openrouter.py`'s `get_client()` if this needs fixing. |
+| groq | kimi-k2-instruct | FAIL / FAIL / FAIL | — | — | `ask`/`ask+tool` 404'd against `llama-3.3-70b-versatile` — **not** the model the smoke script requested. Root cause: `GroqClient.ask()`'s own signature default (`model: str = GroqModel.LLAMA_3_3_70B_VERSATILE`, groq.py:328) is used whenever the caller doesn't pass `model=` explicitly, shadowing the instance's configured model. **Verified pre-existing** via `git diff dev...HEAD -- groq.py` — this default predates FEAT-438 (TASK-2303 only rewired the wire-call site, never touched `ask()`'s signature). `invoke()` correctly resolved to `kimi-k2-instruct` (`_lightweight_model`) but that model isn't available on this API key (404 `model_not_found`) — a credential/availability issue. Filed as a finding, not fixed, same rationale as OpenRouter above. |
+| zai | glm-4.5-flash:free | SKIPPED | — | — | No `ZAI_API_KEY` in this environment — clean skip, exit 0. |
+| vllm (local) | llama3.1:8b | SKIPPED | — | — | No `VLLM_BASE_URL`/`LOCAL_LLM_BASE_URL` — clean skip, exit 0. |
+
+**Runner bugs found and fixed during live testing** (in `_runner.py`, this
+task's own new file — not "endpoint failures the smokes reveal", so in
+scope):
+- `run_smoke()` called `client.ask()`/`invoke()` without entering
+  `AbstractClient`'s async context manager first, hitting
+  `"<Client> not initialised. Use async context manager."` /
+  `AttributeError: 'NoneType' object has no attribute 'chat'` on every
+  live provider. Fixed by wrapping the three legs in `async with client:`.
+- Bumped the plain-`ask` leg's `max_tokens` from 16 → 64 (see Mantle row
+  above) for robustness against reasoning-heavy models.
+
+**Worktree gotcha hit and documented**: a bare `python
+examples/clients/smoke/smoke_X.py` from inside this worktree silently
+imported the **main checkout's** pre-rebase code (editable-install `.pth`
+entries point at absolute main-checkout paths, so `cd` alone doesn't
+redirect them) — this produced a false-positive "bug" (Mantle's `invoke()`
+appearing to 404 against `gpt-4.1`) that vanished once `PYTHONPATH` was
+prepended with the worktree's own `src` dirs and the worktree's missing
+compiled `.so` extensions were copied over from the main checkout. Captured
+this as a documented gotcha in `docs/clients/openai-compatible.md`'s "Live
+Smoke Testing" section so it isn't rediscovered per-session.
+
+**Deviations from spec**: none. Both findings above (OpenRouter header
+`None`, Groq `ask()` model-default shadowing) are pre-existing behavior
+confirmed via `git diff dev...HEAD` against the untouched code paths —
+correctly left unfixed per this task's explicit scope boundary.
