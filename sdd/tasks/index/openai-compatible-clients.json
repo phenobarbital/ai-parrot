@@ -171,7 +171,7 @@
       "feature_id": "FEAT-438",
       "feature": "openai-compatible-clients",
       "spec": "sdd/specs/openai-compatible-clients.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -181,8 +181,8 @@
       "parallelism_notes": "Independent of TASK-2303 (zai.py vs groq.py); both depend on TASK-2301.",
       "assigned_to": null,
       "started_at": "2026-08-21T14:09:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2304-zai-rebase.md"
+      "completed_at": "2026-08-21T17:26:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2304-zai-rebase.md"
     },
     {
       "id": "TASK-2305",

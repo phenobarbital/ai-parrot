@@ -183,10 +183,114 @@ async def test_zai_stream_final_yield_is_aimessage(mock_zai_sdk): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-21
 **Notes**:
+- `ZaiClient(AbstractClient)` → `ZaiClient(OpenAIBaseClient)`. **Tool-format
+  decision (verified, not guessed)**: left `tool_format` undeclared,
+  inheriting `ToolFormat.OPENAI` — confirmed correct because
+  `ask()`/`ask_stream()`/`resume()`/`invoke()` all build tool payloads via
+  this module's own `_prepare_zai_tools()` (kept unchanged), which never
+  emits `"strict"` and never calls the inherited `_prepare_tools()` — so
+  the base's OPENAI-gated strict-tools branch (base.py:1435) is a
+  structurally dead path for every real Z.ai request regardless of the
+  declared `tool_format`. Documented this reasoning in the class
+  docstring and pinned it with `test_zai_tools_payload_shape`
+  (`_prepare_zai_tools()`'s actual output) plus the shared
+  `test_wire_subclass_tool_wrapper_is_openai_shaped_and_strict[ZaiClient]`
+  parametrization (the inherited generic `_prepare_tools()`, unused by
+  Zai's own methods but part of the shared contract, also behaves
+  correctly).
+- Fixed `__init__`'s constructor chain (`super().__init__(api_key=...,
+  base_url=..., **kwargs)` + re-set-after-super guard — same pattern as
+  every other Phase-1/2 client); `self.timeout`/`self.max_retries` kept
+  as Zai-specific instance attrs set directly (unaffected, not part of
+  the base's kwargs contract). The `ZAI_API_KEY`-missing `ValueError`
+  (base.py:42-44 equivalent) preserved verbatim.
+- `get_client()` kept **verbatim** — still returns the official `zai` SDK
+  client via a lazy `from zai import ZaiClient as OfficialZaiClient`
+  import.
+- **Strict payload-parity analysis** (same discipline as TASK-2303):
+  read every candidate method in full. `ask()` (150+ lines: thinking
+  payload injection, structured-output-vs-tools precedence, lifecycle
+  events, a custom `_run_tool_loop` with a 10-round cap, Zai-specific
+  `_create_ai_message` response→AIMessage builder extracting
+  `reasoning_content`/`cached_tokens`), `ask_stream()` (200+ lines:
+  `stream_reasoning` kwarg, reasoning-content accumulation, streamed
+  tool-call accumulation + a follow-up stream after tool execution),
+  `resume()`, and `invoke()` all carry genuine, substantial Z.ai-specific
+  business logic with **no equivalent whatsoever** in
+  `OpenAIBaseClient`'s generic implementations. Per the task's own
+  "strict payload parity gates every deletion — never silently
+  normalize," **kept all four methods, and every duplication-looking
+  helper they depend on, unchanged**: `_normalize_content`/
+  `_normalize_messages`/`_build_messages`, `_prepare_zai_tools`,
+  `_prepare_structured_output_format`, `_thinking_payload`,
+  `_usage_from_response`, `_response_to_dict`/`_message_to_dict`/
+  `_create_ai_message`, `_parse_tool_arguments`/`_run_tool_loop`,
+  `_next_stream_item`/`_accumulate_stream_tool_calls`. `embed()` kept
+  verbatim (still raises `NotImplementedError`).
+- **The one thing genuinely reworked into the TASK-2298 funnel seam**
+  (per the task's explicit instruction to rework `_create_completion`/
+  `_stream_completion` "INTO the base's `_chat_completion`... signatures"):
+  added `_chat_completion(self, model, messages, use_tools=False,
+  stream=False, **kwargs)`. The **key discovery**: the official `zai` SDK
+  is **synchronous** (unlike `AsyncOpenAI`/`AsyncGroq`) — every wire call
+  already wrapped `.create()` in `asyncio.to_thread()`
+  (`_create_completion`) or collected a full sync stream in one thread-hop
+  (`_stream_completion`). The new `_chat_completion` delegates to both
+  helpers UNCHANGED (kept as internal implementation details) based on
+  the `stream` flag — a byte-identical payload/behavior adaptation, not a
+  rewrite. **Rewired all 8 real wire-loop call sites** (`ask()` ×2 incl.
+  `_run_tool_loop`'s follow-up, `ask_stream()` ×2, `resume()` ×2,
+  `invoke()` ×1) from `self._create_completion(...)`/`async for chunk in
+  self._stream_completion(...)` to `await self._chat_completion(...)`/
+  `async for chunk in await self._chat_completion(..., stream=True)`
+  — purely to satisfy funnel-coverage (verified by tests) with zero
+  payload change.
+- Extended `WIRE_SUBCLASSES` in both verification suites to include
+  `ZaiClient` — all no-leak/invoke-chain/payload-model/tool-wrapper/
+  funnel-coverage/MRO tests pass immediately, no special-casing needed
+  (Zai's `_default_model`/`_lightweight_model` are `ZaiModel.*` slugs,
+  correctly not `gpt-*`).
+- Added the 4 Zai-specific tests named in the task's Test Specification to
+  `test_openai_base_parity.py`: `test_zai_keeps_native_sdk` (mocks the
+  `zai` module import, asserts the returned client is the official SDK
+  type, not `AsyncOpenAI`), `test_zai_thinking_payload_preserved`
+  (`thinking=True` reaches the request payload as
+  `{"type": "enabled"}`), `test_zai_tools_payload_shape`
+  (`_prepare_zai_tools()`'s OpenAI-shaped function wrapper),
+  `test_zai_stream_final_yield_is_aimessage` (TASK-1175 contract: str
+  chunks then a final `AIMessage`, through a synchronous-iterator mock
+  matching the real SDK's shape).
+- Verification: `pytest packages/ai-parrot/tests/test_zai_client.py
+  tests/clients/test_openai_compatible_defaults.py tests/clients/
+  test_openai_base_parity.py` — 93/93 passed (all 4 pre-existing
+  `test_zai_client.py` tests green unmodified — none pinned an internal
+  that changed). Full `tests/clients/` + `test_zai_client.py` +
+  `test_groq_client.py`/`test_groq_invoke.py` +
+  `test_openai_client.py`/`test_openai_invoke.py` diffed against the
+  pre-TASK-2304 baseline (`git stash`): **byte-identical**, zero
+  regressions.
+- `ruff check`: `zai.py`'s pre-existing violation count (119) unchanged
+  after fixing one net-new `Dict`→`dict` slip in my own new method
+  (confirmed via `git stash`); both test files fully clean (one new
+  `RUF012` mutable-class-default fixed with `ClassVar`, same pattern as
+  TASK-2303).
 
-**Deviations from spec**: none
+**Deviations from spec**: Same documented tension as TASK-2303 — the
+acceptance criterion "Duplicated wire code deleted; shared base drives
+messages/tools/loop/stream" is **not** met in the literal sense (zero of
+`_normalize_messages`/`_prepare_zai_tools`/`_run_tool_loop`/
+`_accumulate_stream_tool_calls`/etc. were deleted), because every one of
+them encodes real, provider-specific behavior with no base equivalent —
+deleting any of them would violate the SAME task's "strict payload parity
+gates every deletion — never silently normalize," which takes precedence
+per spec §2's explicit priority ("Any parity divergence blocks that
+client's migration task — never silently normalized"). What the base
+DOES now drive is the wire call itself (`_chat_completion`, satisfying
+funnel-coverage) and everything already shared via `AbstractClient`
+(conversation-context prep, structured-output config, tool execution,
+lifecycle events) — unchanged by this task since Zai already used those
+correctly before the rebase. All acceptance criteria compatible with
+strict parity are fully met.
