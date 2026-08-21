@@ -161,3 +161,138 @@ class TestNewMapEntries:
         with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
             assert translate("totally-made-up-model") == "totally-made-up-model"
         assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+class TestUnprefixedIdRepair:
+    """A Bedrock-shaped ID that is not usable as written must be repaired.
+
+    Both spellings below were rejected by the Converse API with
+    ``ValidationException: The provided model identifier is invalid`` when the
+    pass-through branch returned them verbatim — the failure that broke the
+    ``bedrock-converse`` sample agents.
+    """
+
+    def test_namespaced_public_id_is_resolved(self):
+        """``anthropic.<public-id>`` gains its version suffix AND prefix."""
+        assert (
+            translate("anthropic.claude-haiku-4-5")
+            == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        )
+
+    def test_namespaced_public_id_honours_explicit_prefix(self):
+        assert (
+            translate("anthropic.claude-haiku-4-5", region_prefix="eu")
+            == "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+        )
+
+    def test_bare_base_id_gains_required_prefix(self):
+        """A base ID whose model has no in-region access gets its prefix."""
+        assert translate("anthropic.claude-opus-5") == "us.anthropic.claude-opus-5"
+        assert (
+            translate("anthropic.claude-fable-5") == "global.anthropic.claude-fable-5"
+        )
+
+    def test_complete_base_id_still_passes_through(self):
+        """A valid, prefix-free base ID must NOT be rewritten."""
+        bid = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+        assert translate(bid) == bid
+
+    def test_already_prefixed_id_untouched(self):
+        for bid in (
+            "us.anthropic.claude-opus-5",
+            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "global.anthropic.claude-fable-5",
+        ):
+            assert translate(bid) == bid
+
+    def test_vendor_namespace_never_repaired(self):
+        for bid in ("minimax.minimax-m2.5", "zai.glm-5", "moonshotai.kimi-k2.5"):
+            assert translate(bid) == bid
+
+    def test_amazon_namespaced_public_id_is_resolved(self):
+        assert translate("amazon.nova-2-lite") == "amazon.nova-2-lite-v1:0"
+
+    def test_arn_never_repaired(self):
+        arn = "arn:aws:bedrock:us-east-1::inference-profile/us.anthropic.claude-x"
+        assert translate(arn) == arn
+
+    def test_no_version_suffix_is_ever_guessed(self, caplog):
+        """An unknown model is passed through, never string-munged."""
+        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+            assert (
+                translate("anthropic.claude-not-a-real-model")
+                == "anthropic.claude-not-a-real-model"
+            )
+
+
+class TestThirdPartyBedrockModels:
+    """Qwen3 Coder / GLM 5 / Kimi K2.5 / Llama 4 Maverick map entries.
+
+    Each has a different prefixing rule, and the two Bedrock endpoints do not
+    always agree on the ID — the sample agents in ``examples/agents/aws/``
+    depend on the first three resolving correctly. Llama 4 Maverick is
+    map-only (no sample ships: Meta geo-restricts it by caller location).
+    """
+
+    def test_llama4_maverick_is_geo_only(self):
+        """No in-region access exists — the ``us.`` profile is mandatory."""
+        assert REQUIRES_REGION_PREFIX["llama4-maverick-17b-instruct"] == "us"
+        assert (
+            translate("llama4-maverick-17b-instruct")
+            == "us.meta.llama4-maverick-17b-instruct-v1:0"
+        )
+
+    @pytest.mark.parametrize("spelling", [
+        "meta.llama4-maverick-17b-instruct",
+        "meta.llama4-maverick-17b-instruct-v1:0",
+    ])
+    def test_llama4_namespaced_spellings_gain_the_prefix(self, spelling):
+        """``meta.`` is prefixable, so a bare id must be repaired, not passed."""
+        assert translate(spelling) == "us.meta.llama4-maverick-17b-instruct-v1:0"
+
+    def test_llama4_already_prefixed_id_untouched(self):
+        bid = "us.meta.llama4-maverick-17b-instruct-v1:0"
+        assert translate(bid) == bid
+
+    def test_qwen3_coder_runtime_id(self):
+        """The public id maps to the bedrock-runtime (Converse) id."""
+        assert (
+            translate("qwen3-coder-480b-a35b") == "qwen.qwen3-coder-480b-a35b-v1:0"
+        )
+
+    def test_qwen3_coder_is_never_prefixed(self):
+        """In-region only — no geo/global profile, so no prefix is added."""
+        assert "qwen3-coder-480b-a35b" not in REQUIRES_REGION_PREFIX
+        bid = "qwen.qwen3-coder-480b-a35b-v1:0"
+        assert translate(bid) == bid
+
+    def test_qwen3_coder_mantle_id_passes_through_verbatim(self, caplog):
+        """The Mantle id differs from the runtime id and must NOT be rewritten."""
+        mantle_id = "qwen.qwen3-coder-480b-a35b-instruct"
+        with caplog.at_level("WARNING", logger="parrot.models.bedrock_models"):
+            assert translate(mantle_id) == mantle_id
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+    def test_glm5_same_id_on_both_endpoints(self):
+        assert PUBLIC_TO_BEDROCK["glm-5"] == "zai.glm-5"
+        assert translate("glm-5") == "zai.glm-5"
+        assert translate("zai.glm-5") == "zai.glm-5"
+
+    def test_glm5_is_never_prefixed(self):
+        assert "glm-5" not in REQUIRES_REGION_PREFIX
+        assert translate("zai.glm-5", region_prefix="us") == "zai.glm-5"
+
+    def test_kimi_k25_same_id_on_both_endpoints(self):
+        assert PUBLIC_TO_BEDROCK["kimi-k2.5"] == "moonshotai.kimi-k2.5"
+        assert translate("kimi-k2.5") == "moonshotai.kimi-k2.5"
+        assert translate("moonshotai.kimi-k2.5") == "moonshotai.kimi-k2.5"
+
+    def test_kimi_k25_is_never_prefixed(self):
+        assert "kimi-k2.5" not in REQUIRES_REGION_PREFIX
+        assert translate("moonshotai.kimi-k2.5", region_prefix="us") == (
+            "moonshotai.kimi-k2.5"
+        )
+
+    def test_qwen_namespace_recognised_as_bedrock_shaped(self):
+        assert _is_bedrock_id("qwen.qwen3-coder-480b-a35b-v1:0") is True
+        assert _is_bedrock_id("meta.llama4-maverick-17b-instruct-v1:0") is True

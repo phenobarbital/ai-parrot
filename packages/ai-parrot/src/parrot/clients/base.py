@@ -257,6 +257,16 @@ class AbstractClient(EventEmitterMixin, ABC):
     client_name: str = 'generic'
     use_session: bool = False
 
+    # Wire format used for tool schemas. ``None`` means "derive it from
+    # ``client_type``" (see :meth:`_resolve_tool_format`), which only works
+    # for clients whose ``client_type`` happens to name their wire protocol.
+    # Clients that speak a provider's protocol under a different label —
+    # every ``OpenAIClient`` subclass: Bedrock Mantle, OpenRouter, LocalLLM,
+    # vLLM, Moonshot, Nvidia — MUST declare it explicitly, otherwise their
+    # tool schemas silently fall back to the Anthropic shape and the provider
+    # rejects the request ("Invalid 'tools': missing field `type`").
+    tool_format: Optional[ToolFormat] = None
+
     # Lightweight model used by invoke() — subclasses override this.
     # None means fall back to self.model.
     _lightweight_model: Optional[str] = None
@@ -1351,22 +1361,36 @@ $backstory
 
         return self._prepare_tools(filter_names=["search_tools"])
 
+    def _resolve_tool_format(self) -> ToolFormat:
+        """Resolve the tool-schema wire format for this client.
+
+        An explicit :attr:`tool_format` class attribute always wins; it lets
+        a client declare the protocol it actually speaks independently of its
+        ``client_type`` label (e.g. ``BedrockMantleClient`` is
+        ``client_type="bedrock-mantle"`` but talks the OpenAI wire format).
+        Otherwise the format is derived from ``client_type`` for backwards
+        compatibility, defaulting to Anthropic.
+
+        Returns:
+            The :class:`~parrot.tools.manager.ToolFormat` to render tool
+            schemas in.
+        """
+        if self.tool_format is not None:
+            return self.tool_format
+
+        return {
+            'openai': ToolFormat.OPENAI,
+            'google': ToolFormat.GOOGLE,
+            'groq': ToolFormat.GROQ,
+            'vertex': ToolFormat.VERTEX,
+        }.get(self.client_type, ToolFormat.ANTHROPIC)
+
     def _prepare_tools(self, filter_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Convert registered tools to API format."""
         tool_schemas = []
         processed_tools = set()  # Track processed tools to avoid duplicates
 
-        # Determine the format based on client type
-        if self.client_type == 'openai':
-            provider_format = ToolFormat.OPENAI
-        elif self.client_type == 'google':
-            provider_format = ToolFormat.GOOGLE
-        elif self.client_type == 'groq':
-            provider_format = ToolFormat.GROQ
-        elif self.client_type == 'vertex':
-            provider_format = ToolFormat.VERTEX
-        else:
-            provider_format = ToolFormat.ANTHROPIC  # Default to Anthropic for Claude
+        provider_format = self._resolve_tool_format()
 
         # Get tools from ToolManager
         manager_tools = self.tool_manager.get_tool_schemas(provider_format=provider_format)
@@ -1383,9 +1407,9 @@ $backstory
                 continue
 
             if tool_name and tool_name not in processed_tools:
-                # Format according to the client type
-                if self.client_type == 'openai':
-                    # OpenAI expects function wrapper
+                # Format according to the wire protocol, not the label
+                if provider_format in (ToolFormat.OPENAI, ToolFormat.GROQ):
+                    # OpenAI-compatible APIs expect the function wrapper
                     formatted_schema = {
                         "type": "function",
                         "function": {
@@ -1394,9 +1418,11 @@ $backstory
                             "parameters": clean_schema.get("parameters", {})
                         }
                     }
-                    formatted_schema = self._make_openai_strict_tool(
-                        formatted_schema
-                    )
+                    if provider_format is ToolFormat.OPENAI:
+                        # strict mode is an OpenAI extension; Groq rejects it
+                        formatted_schema = self._make_openai_strict_tool(
+                            formatted_schema
+                        )
                 else:
                     # Claude/Anthropic and others use direct format
                     formatted_schema = {

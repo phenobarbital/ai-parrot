@@ -17,6 +17,7 @@ from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable
 from navconfig import config
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
 from .base import AbstractClient
+from ..tools.manager import ToolFormat
 
 if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
@@ -84,6 +85,10 @@ class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API."""
 
     client_type: str = "openai"
+    # Declared explicitly so subclasses that relabel ``client_type`` while
+    # still speaking the OpenAI wire protocol (Bedrock Mantle, OpenRouter,
+    # LocalLLM, vLLM, Moonshot, Nvidia) keep emitting OpenAI tool schemas.
+    tool_format: ToolFormat = ToolFormat.OPENAI
     model: str = OpenAIModel.GPT5_MINI.value
     client_name: str = "openai"
     _default_model: str = "gpt-5-mini"
@@ -99,6 +104,24 @@ class OpenAIClient(AbstractClient):
         if "model" in kwargs:
             kwargs["model"] = self._normalize_model(kwargs["model"])
         super().__init__(**kwargs)
+
+    def _resolve_model(self, model: Union[str, OpenAIModel, None]) -> str:
+        """Resolve the model for a call, honouring the client's configuration.
+
+        A hard-coded signature default would override the model the client was
+        constructed with — which silently sent OpenAI model ids to
+        OpenAI-compatible endpoints (Bedrock Mantle, OpenRouter, LocalLLM,
+        vLLM, Moonshot, Nvidia) that do not host them.
+
+        Args:
+            model: Explicit per-call model, or ``None`` to use the configured
+                one.
+
+        Returns:
+            The resolved model id: explicit call argument, then the model this
+            client was configured with, then the class default.
+        """
+        return self._normalize_model(model or self.model or self.default_model)
 
     def _normalize_model(self, model: Union[str, OpenAIModel]) -> str:
         """Coerce model to str and emit a one-shot DeprecationWarning if deprecated.
@@ -670,7 +693,7 @@ class OpenAIClient(AbstractClient):
     async def ask(
         self,
         prompt: str,
-        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_1,
+        model: Union[str, OpenAIModel, None] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -719,7 +742,7 @@ class OpenAIClient(AbstractClient):
         original_prompt = prompt
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
-        model = self._normalize_model(model)
+        model = self._resolve_model(model)
         model_str = model.value if isinstance(model, Enum) else str(model)
 
         # Deep research routing: switch to deep research model if requested
@@ -1260,7 +1283,7 @@ class OpenAIClient(AbstractClient):
     async def ask_stream(
         self,
         prompt: str,
-        model: Union[str, OpenAIModel] = OpenAIModel.GPT5_MINI,
+        model: Union[str, OpenAIModel, None] = None,
         max_tokens: int = None,
         temperature: float = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -1292,7 +1315,7 @@ class OpenAIClient(AbstractClient):
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
-        model = self._normalize_model(model)
+        model = self._resolve_model(model)
         # Extract model value if it's an enum
         model_str = model.value if isinstance(model, Enum) else model
 
