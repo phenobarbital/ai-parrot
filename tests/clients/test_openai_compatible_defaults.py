@@ -23,6 +23,7 @@ from typing import Any
 import pytest
 from parrot.clients.claude import AnthropicClient
 from parrot.clients.gpt import OpenAIClient
+from parrot.clients.groq import GroqClient
 from parrot.clients.localllm import LocalLLMClient
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients.nova.mantle import BedrockMantleClient
@@ -42,8 +43,9 @@ OPENAI_COMPATIBLE = [
     NvidiaClient,
 ]
 
-# FEAT-438 TASK-2301: every Phase-1 OpenAIBaseClient subclass (Phase 2 adds
-# Groq/Zai in TASK-2303/2304 — NOT this roster).
+# FEAT-438 TASK-2301/2303: every OpenAIBaseClient subclass — Phase 1 (six
+# wire clients) + Phase 2's GroqClient (TASK-2303; ZaiClient joins in
+# TASK-2304).
 WIRE_SUBCLASSES = [
     OpenRouterClient,
     MoonshotClient,
@@ -51,6 +53,7 @@ WIRE_SUBCLASSES = [
     LocalLLMClient,
     vLLMClient,
     BedrockMantleClient,
+    GroqClient,
 ]
 
 # Matches an OpenAI-the-provider model id (e.g. "gpt-5-mini", "gpt-4.1").

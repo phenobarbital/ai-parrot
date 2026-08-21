@@ -14,10 +14,12 @@ route through the single ``_chat_completion()`` funnel, that
 ``InvokeResult``.
 """
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock
 
 import pytest
 from parrot.clients.gpt import OpenAIClient
+from parrot.clients.groq import GroqClient
 from parrot.clients.localllm import LocalLLMClient
 from parrot.clients.moonshot import MoonshotClient
 from parrot.clients.nova.mantle import BedrockMantleClient
@@ -41,7 +43,10 @@ def test_openai_client_extends_base():
 
 @pytest.mark.parametrize(
     "cls",
-    [OpenRouterClient, MoonshotClient, NvidiaClient, LocalLLMClient, vLLMClient, BedrockMantleClient],
+    [
+        OpenRouterClient, MoonshotClient, NvidiaClient, LocalLLMClient,
+        vLLMClient, BedrockMantleClient, GroqClient,
+    ],
     ids=lambda c: c.__name__,
 )
 def test_mro_post_rebase_not_openai_client(cls):
@@ -317,7 +322,8 @@ async def test_invoke_routes_via_funnel():
 # FEAT-438 TASK-2301 — per-client payload parity + funnel-coverage consolidation
 # ---------------------------------------------------------------------------
 
-# The Phase-1 wire roster (Phase 2 adds Groq/Zai in TASK-2303/2304 — NOT here).
+# Phase 1 wire roster + Phase 2's GroqClient (TASK-2303; ZaiClient joins
+# in TASK-2304).
 WIRE_SUBCLASSES = [
     OpenRouterClient,
     MoonshotClient,
@@ -325,6 +331,7 @@ WIRE_SUBCLASSES = [
     LocalLLMClient,
     vLLMClient,
     BedrockMantleClient,
+    GroqClient,
 ]
 
 # vLLMClient.ask()/ask_stream() unconditionally forward
@@ -355,15 +362,19 @@ def _parity_client_kwargs(cls) -> dict:
     return {"api_key": "test-key"}
 
 
-@pytest.mark.parametrize("cls", WIRE_SUBCLASSES, ids=lambda c: c.__name__)
+_OPENAI_TOOL_FORMAT_ROSTER = [c for c in WIRE_SUBCLASSES if c is not GroqClient]
+
+
+@pytest.mark.parametrize("cls", _OPENAI_TOOL_FORMAT_ROSTER, ids=lambda c: c.__name__)
 def test_wire_subclass_tool_wrapper_is_openai_shaped_and_strict(cls):
     """Every Phase-1 wire subclass declares ToolFormat.OPENAI and emits the
     {"type":"function","function":{...}} tool wrapper (not
     Anthropic-shaped). AbstractClient._prepare_tools() applies "strict"
     based on tool_format == ToolFormat.OPENAI (base.py:1420) — a wire-
     protocol property, not an OpenAIClient-specific one — so every one of
-    these clients gets strict tools too (Groq is the one wire-compatible
-    provider that opts out, via ToolFormat.GROQ, not this roster)."""
+    these clients gets strict tools too. GroqClient is excluded here
+    (explicitly declares ToolFormat.GROQ, which never gets "strict" — see
+    test_groq_tool_wrapper_has_no_strict below)."""
     client = cls(model="provider-model-x", **_parity_client_kwargs(cls))
     assert client.tool_format is ToolFormat.OPENAI
 
@@ -387,6 +398,67 @@ def test_wire_subclass_tool_wrapper_is_openai_shaped_and_strict(cls):
     assert schemas[0]["type"] == "function"
     assert schemas[0]["function"]["name"] == "calculator"
     assert schemas[0]["function"]["strict"] is True
+
+
+def test_groq_tool_format_explicit():
+    """GroqClient MUST declare tool_format = ToolFormat.GROQ explicitly —
+    otherwise it would silently inherit OpenAIBaseClient's ToolFormat.OPENAI
+    and start sending "strict": true, which Groq rejects."""
+    assert GroqClient.tool_format is ToolFormat.GROQ
+
+
+def test_groq_tool_wrapper_has_no_strict():
+    """GroqClient._prepare_groq_tools() (its own tool-schema builder, used
+    by ask()/ask_stream()/resume()) never includes "strict" — Groq rejects
+    it. Also verify the inherited generic _prepare_tools() (unused by
+    Groq's own ask(), but part of the shared contract) agrees, since
+    ToolFormat.GROQ is excluded from the strict branch (base.py:1435)."""
+    client = GroqClient(api_key="test-key")
+
+    class _StubTool:
+        name: ClassVar[str] = "calculator"
+        description: ClassVar[str] = "Evaluate a mathematical expression."
+        input_schema: ClassVar[dict] = {
+            "type": "object",
+            "properties": {"expression": {"type": "string"}},
+            "required": ["expression"],
+        }
+
+    class _StubToolManager:
+        def all_tools(self):
+            return [_StubTool()]
+
+        def get_tool_schemas(self, provider_format=None):
+            return [
+                {
+                    "name": "calculator",
+                    "description": "Evaluate a mathematical expression.",
+                    "parameters": _StubTool.input_schema,
+                }
+            ]
+
+    client.tool_manager = _StubToolManager()
+
+    groq_schemas = client._prepare_groq_tools()
+    assert len(groq_schemas) == 1
+    assert groq_schemas[0]["type"] == "function"
+    assert "strict" not in groq_schemas[0]["function"]
+
+    generic_schemas = client._prepare_tools()
+    assert len(generic_schemas) == 1
+    assert generic_schemas[0]["type"] == "function"
+    assert "strict" not in generic_schemas[0]["function"]
+
+
+@pytest.mark.asyncio
+async def test_groq_keeps_native_sdk():
+    """get_client() still returns AsyncGroq, NOT AsyncOpenAI — the
+    AsyncOpenAI swap was explicitly rejected at spec time."""
+    from groq import AsyncGroq
+
+    client = GroqClient(api_key="test-key")
+    sdk = await client.get_client()
+    assert isinstance(sdk, AsyncGroq)
 
 
 def _make_funnel_coverage_spy():
@@ -413,7 +485,9 @@ def _make_funnel_coverage_spy():
                 )
             return _gen()
         message = SimpleNamespace(content="ok", tool_calls=None)
-        response = SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
+        choice = SimpleNamespace(message=message, finish_reason="stop", stop_reason="stop")
+        usage = SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        response = SimpleNamespace(choices=[choice], usage=usage)
         response.model_dump = lambda: {"choices": [{"message": {"content": "ok"}}]}
         return response
 
