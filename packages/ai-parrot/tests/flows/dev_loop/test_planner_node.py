@@ -62,8 +62,12 @@ def _planner_output(tmp_path: Path, slug: str, **overrides) -> PlannerOutput:
     return PlannerOutput(**kwargs)
 
 
-def _node(dispatcher, *, development_pool_max: int = 4) -> PlannerNode:
-    return PlannerNode(dispatcher=dispatcher, development_pool_max=development_pool_max)
+def _node(dispatcher, *, development_pool_max: int = 4, graph_memory=None) -> PlannerNode:
+    return PlannerNode(
+        dispatcher=dispatcher,
+        development_pool_max=development_pool_max,
+        graph_memory=graph_memory,
+    )
 
 
 async def test_planner_happy_path_proposal(tmp_path, monkeypatch):
@@ -243,8 +247,8 @@ async def test_cycle_fails_before_dev_dispatch(tmp_path, monkeypatch):
 
 
 async def test_graph_memory_absent_degrades(tmp_path, monkeypatch):
-    """DevLoopGraphMemory does not exist (FEAT-377/B not merged) — the
-    node must still work, dispatching with an empty graph_context."""
+    """No facade injected (the default) — the node must still work,
+    dispatching with an empty graph_context."""
     monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
     slug = "my-feature"
     planner_out = _planner_output(tmp_path, slug)
@@ -258,3 +262,59 @@ async def test_graph_memory_absent_degrades(tmp_path, monkeypatch):
     assert isinstance(result, PlannerOutput)
     _, kwargs = dispatcher.dispatch.call_args
     assert kwargs["brief"].graph_context == ""
+
+
+async def test_graph_memory_context_is_injected(tmp_path, monkeypatch):
+    """An injected facade's context reaches the sdd-planner dispatch.
+
+    Regression: the node used to construct ``DevLoopGraphMemory()``
+    itself, which always raised TypeError (the ctor is keyword-only and
+    mandates ``from_config``), so graph context was silently always "".
+    """
+    monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+    slug = "my-feature"
+    planner_out = _planner_output(tmp_path, slug)
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=planner_out)
+    graph_memory = MagicMock()
+    graph_memory.build_research_context = AsyncMock(return_value="## graph ctx")
+
+    node = _node(dispatcher, graph_memory=graph_memory)
+    shared = {"feature_brief": _brief(tmp_path), "run_id": "r1"}
+
+    await node.execute(shared)
+
+    _, kwargs = dispatcher.dispatch.call_args
+    assert kwargs["brief"].graph_context == "## graph ctx"
+    # The facade is queried with a plain string (FeatureBrief has no
+    # ``summary`` to retrieve on), derived from the document slug.
+    graph_memory.build_research_context.assert_awaited_once_with("x")
+
+
+async def test_graph_memory_empty_context_degrades(tmp_path, monkeypatch):
+    """A facade that finds nothing yields an empty graph_context."""
+    monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+    planner_out = _planner_output(tmp_path, "my-feature")
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=planner_out)
+    graph_memory = MagicMock()
+    graph_memory.build_research_context = AsyncMock(return_value=None)
+
+    node = _node(dispatcher, graph_memory=graph_memory)
+    await node.execute({"feature_brief": _brief(tmp_path), "run_id": "r1"})
+
+    _, kwargs = dispatcher.dispatch.call_args
+    assert kwargs["brief"].graph_context == ""
+
+
+@pytest.mark.parametrize(
+    ("document_path", "expected"),
+    [
+        ("sdd/proposals/devloop-enhancement.brainstorm.md", "devloop enhancement"),
+        ("sdd/proposals/my-feature.proposal.md", "my feature"),
+        ("sdd/specs/graph_memory-seams.spec.md", "graph memory seams"),
+        ("plain.md", "plain"),
+    ],
+)
+def test_document_query_derivation(document_path, expected):
+    assert PlannerNode._document_query(document_path) == expected

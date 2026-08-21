@@ -928,6 +928,26 @@ class PlannerOutput(BaseModel):
         description="Pool sized from the first ``TaskScheduler`` wave width.",
     )
 
+    @field_validator("suggested_pool", mode="before")
+    @classmethod
+    def _drop_malformed_pool(cls, v: Any) -> Any:
+        """Drop a non-object ``suggested_pool`` instead of failing the parse.
+
+        ``sdd-planner.md`` tells the subagent NOT to emit this field —
+        pool sizing is computed by ``PlannerNode._resolve_pool`` in Python
+        after the dispatch returns, and that method never reads this value.
+        Agents nevertheless emit a bare size (``"suggested_pool": 3``),
+        which used to raise ``model_type`` and fail the whole planning
+        node over a field whose content is discarded moments later.
+
+        Anything that is not already object-shaped is coerced to ``None``;
+        object-shaped input still validates strictly, so a genuinely
+        malformed pool dict is still rejected.
+        """
+        if v is None or isinstance(v, (DevAgentPoolConfig, dict)):
+            return v
+        return None
+
 
 class SynthesisReport(BaseModel):
     """Structured output from the ``SynthesisNode`` reconciliation dispatch."""

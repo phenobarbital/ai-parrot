@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from parrot.knowledge.graphindex import (
     CommitReceipt,
@@ -158,20 +158,29 @@ class DevLoopGraphMemory:
     # Seam 2 — research context injection
     # ------------------------------------------------------------------
 
-    async def build_research_context(self, brief: WorkBrief) -> Optional[str]:
+    async def build_research_context(
+        self, brief: Union[WorkBrief, str]
+    ) -> Optional[str]:
         """Build budget-capped, citable context for a research dispatch.
 
         Args:
-            brief: The work brief driving this run's research dispatch.
+            brief: The work brief driving this run's research dispatch, or
+                a bare query string. Feature-mode intake
+                (:class:`~parrot.flows.dev_loop.models.FeatureBrief`) has
+                no ``summary`` field to retrieve on, so ``PlannerNode``
+                passes a query string derived from its SDD document — the
+                same shape ``DevLoopWikiSearch.build_research_context``
+                already accepts.
 
         Returns:
             Markdown context text ready for prompt injection, or ``None``
             when nothing relevant was found (or on any internal error —
             context injection is best-effort, never fatal).
         """
+        query = brief if isinstance(brief, str) else brief.summary
         try:
             context = await self._context_builder.build(
-                brief.summary,
+                query,
                 ContextBuildConfig(max_tokens=_DEFAULT_CONTEXT_TOKENS),
             )
         except Exception as exc:  # noqa: BLE001 - best-effort context
