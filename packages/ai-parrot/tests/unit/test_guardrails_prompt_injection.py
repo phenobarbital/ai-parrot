@@ -144,7 +144,11 @@ class TestPromptInjectionGuardrail:
             assert result.action == GuardrailAction.PASS
 
     def test_lazy_import_no_torch_at_module_import(self):
-        """Importing the guardrails package alone never pulls in torch."""
+        """Importing the guardrails package alone never pulls in torch/onnxruntime.
+
+        FEAT-439 (TASK-2310): extended to also guard `onnxruntime` — the
+        ONNX engine's import boundary is exactly as lazy as pytector's.
+        """
         import subprocess
         import sys
 
@@ -152,6 +156,7 @@ class TestPromptInjectionGuardrail:
             "import sys; import parrot.bots.guardrails; "
             "assert 'torch' not in sys.modules, 'torch loaded eagerly'; "
             "assert 'pytector' not in sys.modules, 'pytector loaded eagerly'; "
+            "assert 'onnxruntime' not in sys.modules, 'onnxruntime loaded eagerly'; "
             "print('OK')"
         )
         result = subprocess.run(
@@ -435,8 +440,93 @@ def fake_ort_and_transformers(monkeypatch):
     return fake_ort
 
 
+@pytest.fixture
+def fake_onnx_dir_missing_graph(tmp_path):
+    """A `PARROT_INJECTION_ONNX_DIR` candidate missing `model.onnx`.
+
+    Everything else (config, tokenizer) looks valid — exercises the
+    "incomplete dir" fallback branch distinctly from a wholly-missing
+    directory (spec §4 — `test_env_dir_invalid_falls_through_loudly`).
+    """
+    (tmp_path / "config.json").write_text(
+        '{"id2label": {"0": "SAFE", "1": "INJECTION"}}'
+    )
+    return tmp_path
+
+
+@pytest.fixture
+def fake_onnx_dir_missing_tokenizer(tmp_path):
+    """A `PARROT_INJECTION_ONNX_DIR` candidate with the graph but no config.
+
+    `_resolve_injection_index` must degrade to the default (1) rather than
+    raise when `config.json` is absent.
+    """
+    (tmp_path / "model.onnx").write_bytes(b"fake-onnx-graph")
+    return tmp_path
+
+
+@pytest.fixture
+def no_hf_cache(monkeypatch):
+    """Force HF-cache probing to report nothing cached, anywhere.
+
+    Installs a fake `huggingface_hub` module whose `try_to_load_from_cache`
+    always returns `None` and asserts if `snapshot_download` is ever
+    called — the offline-probing contract (spec §2: "never download on the
+    request path") made mechanically impossible to violate within a test
+    using this fixture.
+    """
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.try_to_load_from_cache = lambda repo_id, filename, **kwargs: None
+    fake_hub.snapshot_download = MagicMock(
+        side_effect=AssertionError("snapshot_download must not be called (no_hf_cache)")
+    )
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    return fake_hub
+
+
 class TestEngineResolution:
-    """Spec §4 resolution-precedence matrix (subset — full matrix in TASK-2310)."""
+    """Spec §4 resolution-precedence matrix (full matrix, TASK-2310)."""
+
+    def test_cached_snapshot_selects_onnx(self, tmp_path, monkeypatch, fake_ort_and_transformers):
+        """Spec §4 `test_cached_snapshot_selects_onnx`: a cached HF snapshot
+        (distinct from the env-dir path) is selected as the ONNX engine."""
+        (tmp_path / "onnx").mkdir()
+        (tmp_path / "onnx" / "model.onnx").write_bytes(b"fake-onnx-graph")
+        (tmp_path / "config.json").write_text(
+            '{"id2label": {"0": "SAFE", "1": "INJECTION"}}'
+        )
+        monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
+        monkeypatch.setattr(pi_module, "_probe_cached_onnx_snapshot", lambda: tmp_path)
+
+        engine = pi_module._resolve_injection_engine()
+
+        assert engine is not None
+        assert engine.engine_name == "onnx"
+        assert engine.model_id == pi_module._ONNX_MODEL_ID
+
+    def test_missing_graph_falls_through_loudly(
+        self, fake_onnx_dir_missing_graph, monkeypatch, caplog,
+    ):
+        monkeypatch.setenv("PARROT_INJECTION_ONNX_DIR", str(fake_onnx_dir_missing_graph))
+        monkeypatch.setattr(pi_module, "_probe_cached_onnx_snapshot", lambda: None)
+        monkeypatch.setattr(pi_module.importlib.util, "find_spec", lambda name: None)
+
+        with caplog.at_level("ERROR"):
+            engine = pi_module._resolve_injection_engine()
+
+        assert engine is None
+        assert any("model.onnx" in record.message for record in caplog.records)
+
+    def test_missing_tokenizer_config_defaults_index(
+        self, fake_onnx_dir_missing_tokenizer, fake_ort_and_transformers,
+    ):
+        """No `config.json` -> `_resolve_injection_index` degrades to 1, no raise."""
+        engine = pi_module._OnnxInjectionEngine(
+            tokenizer_dir=fake_onnx_dir_missing_tokenizer,
+            graph_path=fake_onnx_dir_missing_tokenizer / "model.onnx",
+            model_id="x",
+        )
+        assert engine._injection_index == 1
 
     def test_env_dir_wins(self, fake_onnx_dir, monkeypatch, fake_ort_and_transformers):
         monkeypatch.setenv("PARROT_INJECTION_ONNX_DIR", str(fake_onnx_dir))
@@ -473,6 +563,16 @@ class TestEngineResolution:
         # Only cache-index probes ran — never a download API.
         assert "onnx/model.onnx" in calls
         assert not hasattr(fake_hub, "snapshot_download")
+
+    def test_full_resolution_with_no_hf_cache_touches_no_network(self, no_hf_cache, monkeypatch):
+        """Consolidated `no_hf_cache` fixture: full resolution chain, zero network."""
+        monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
+        monkeypatch.setattr(pi_module.importlib.util, "find_spec", lambda name: None)
+
+        engine = pi_module._resolve_injection_engine()
+
+        assert engine is None  # regex floor — nothing cached, pytector unavailable
+        no_hf_cache.snapshot_download.assert_not_called()
 
     def test_pytector_v2_snapshot_dir_used_when_present(self, tmp_path, monkeypatch):
         monkeypatch.delenv("PARROT_INJECTION_ONNX_DIR", raising=False)
