@@ -234,3 +234,39 @@ Smoke Testing" section so it isn't rediscovered per-session.
 `None`, Groq `ask()` model-default shadowing) are pre-existing behavior
 confirmed via `git diff dev...HEAD` against the untouched code paths —
 correctly left unfixed per this task's explicit scope boundary.
+
+**Addendum — post-review fixes (user-requested "fix all issues")**: after
+the adversarial code-reviewer's pass on the completed feature, the user
+explicitly asked to fix every finding. Three were addressed in a follow-up
+commit (`22ea6d7de`); two "IMPORTANT" findings were re-confirmed as
+deliberate, already-documented deviations and left as-is (Groq/Zai
+duplication for payload-parity safety — TASK-2303/2304; LocalLLM/vLLM
+`invoke()` funnel bypass for its real schema-in-prompt fallback value —
+TASK-2300):
+
+1. **CRITICAL** — `packages/ai-parrot/src/parrot/flows/dev_loop/
+   dispatchers/nova.py:114` (a *different* feature, `novaclient-dev-loop`,
+   never touched by any FEAT-438 task) constructed a plain `OpenAIClient`
+   pointed at the bedrock-mantle endpoint instead of `BedrockMantleClient`
+   — carrying `gpt-*` fallback/lightweight defaults on a non-OpenAI
+   endpoint, i.e. the exact bug class this feature exists to kill, just
+   reached via direct instantiation rather than inheritance. Swapped to
+   `BedrockMantleClient` (compatible `__init__` signature). This is
+   outside every FEAT-438 task's declared file scope, but the user's
+   explicit "fix all issues" instruction authorized it.
+2. **SUGGESTION** — `gpt.py`'s `OpenAIClient.invoke()` was a dead,
+   byte-for-byte functionally-identical duplicate of the inherited
+   `OpenAIBaseClient.invoke()` (Module 3 should have deleted it). Deleted.
+3. **SUGGESTION** — `vLLMClient.ask()`/`ask_stream()`'s pre-existing
+   `extra_body` `TypeError` (confirmed pre-existing on `dev`, first
+   diagnosed during this task's own live-smoke work) — fixed properly by
+   mirroring `NvidiaClient`'s `_sampling_ctx`/`_thinking_ctx` ContextVar
+   pattern: added `vLLMClient._chat_completion()` + `_extra_body_ctx`.
+   Rewrote 9 `test_vllm_client.py` tests that mocked `LocalLLMClient.ask`
+   directly (silently stopped receiving `extra_body` under the new
+   design) to stub the real SDK boundary instead, proving `extra_body`
+   reaches the wire.
+
+Full regression sweep after all three fixes: zero new failures (every
+remaining failure confirmed pre-existing via `git diff dev...HEAD`/`git
+stash` diffing, same methodology as every prior task in this feature).
