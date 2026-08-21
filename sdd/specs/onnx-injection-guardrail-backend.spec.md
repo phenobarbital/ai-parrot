@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-439
 **Date**: 2026-08-21
 **Author**: Jesús Lara (spec drafted with Claude Code)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.27.0
 
 > Brainstorm: `sdd/proposals/onnx-injection-guardrail-backend.brainstorm.md` (Option A)
