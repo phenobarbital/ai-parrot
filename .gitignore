@@ -21,6 +21,9 @@ plugins/*
 examples/**/*.py
 !examples/autonomous_analyst/**/*.py
 !examples/data/whatif_scenario_e2e.py
+# AWS Bedrock sample agents are documentation — they ship with the repo, so
+# new scripts here must not need `git add -f`.
+!examples/agents/aws/**/*.py
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
