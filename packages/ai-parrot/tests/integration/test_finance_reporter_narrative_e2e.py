@@ -222,6 +222,17 @@ class TestFinanceReporterNarrativeE2E:
             "variance_analysis", "top_movers", "division_breakdown", "narrative_facts",
         }
 
+    async def test_published_recipe_carries_replay_sql(self, published_report_recipe):
+        """The REAL dataset is a TableSource — it rejects a fetch with no SQL.
+
+        This fixture registers `snapshots` in memory (which ignores `sql`),
+        so nothing else here would notice the descriptor's `dataset_sql`
+        going missing — while a live replay would abort at the `data` stage.
+        """
+        by_alias = {ds.alias: ds for ds in published_report_recipe.data_sources}
+        assert set(by_alias) == {FINANCE_DATASET}
+        assert "troc.finance_projection" in (by_alias[FINANCE_DATASET].sql or "")
+
     async def test_report_profile_replay_no_narrator(
         self, wired_agent, recipe_store, published_report_recipe, pctx
     ):
