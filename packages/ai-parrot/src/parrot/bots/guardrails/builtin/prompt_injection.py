@@ -577,16 +577,24 @@ class PromptInjectionGuardrail(Guardrail):
         # detector sees the text (mirrors `abstract.py:665-674`).
         self._framework_sanitizer = PromptInjectionDetector(logger=self.logger)
 
-        # Lazy pytector boundary — the critical deliverable of this task.
+        # Engine resolution (FEAT-439 TASK-2307/2308) — the critical
+        # deliverable: resolves the best locally-available ML scoring
+        # engine (ONNX -> pytector -> None) once per process via the
+        # module-level singleton, then wires this guardrail to it.
+        # `_pytector_available`/`_pytector_detector` are preserved for
+        # back-compat with call sites/tests that inspect them directly;
+        # `_injection_engine` is the source of truth `check()` consults.
+        self._injection_engine = _resolve_injection_engine()
         self._pytector_available = importlib.util.find_spec("pytector") is not None
-        self._pytector_detector = None
-        if self._pytector_available:
-            # Reuse the process-wide shared detector instead of loading the
-            # deBERTa model once per guardrail/bot (mirrors `abstract.py:675-684`).
-            self._pytector_detector = _get_shared_injection_detector()
-            self._injection_detector = self._pytector_detector
-        else:
+        self._pytector_detector = (
+            self._injection_engine._detector
+            if isinstance(self._injection_engine, _PytectorInjectionEngine)
+            else None
+        )
+        if self._injection_engine is None:
             self._injection_detector = PromptInjectionDetector(logger=self.logger)
+        else:
+            self._injection_detector = self._pytector_detector
 
         self._security_logger = SecurityEventLogger(logger=self.logger)
 
@@ -609,6 +617,11 @@ class PromptInjectionGuardrail(Guardrail):
             return GuardrailResult(action=GuardrailAction.PASS)
         if not self.strict_mode:
             return GuardrailResult(action=GuardrailAction.PASS)
+        # Empty/whitespace-only input can never be an injection — short-
+        # circuit before framework stripping or any engine call (FEAT-439
+        # TASK-2308).
+        if not content or not content.strip():
+            return GuardrailResult(action=GuardrailAction.PASS)
 
         # Start by assuming input is safe so, absent any detector hit, the
         # ORIGINAL input passes through unchanged.
@@ -620,16 +633,20 @@ class PromptInjectionGuardrail(Guardrail):
         # detector; the original `content` still flows through untouched.
         scan_text = self._framework_sanitizer.strip_framework_patterns(content)
 
-        if self._pytector_available and self._pytector_detector is not None:
-            is_injection, probability = self._pytector_detector.detect_injection(scan_text)
-            if is_injection and probability > self.injection_probability_threshold:
+        if self._injection_engine is not None:
+            probability = self._injection_engine.score(scan_text)
+            if probability > self.injection_probability_threshold:
                 preview = (scan_text or "")[:120]
+                pattern = (
+                    "onnx-model" if self._injection_engine.engine_name == "onnx"
+                    else "pytector-model"
+                )
                 threats = [{
                     "type": "prompt_injection",
                     "level": ThreatLevel.CRITICAL,
                     "description": "High probability prompt injection detected",
                     "probability": probability,
-                    "pattern": "pytector-model",
+                    "pattern": pattern,
                     "matched_text": preview,
                 }]
         else:
