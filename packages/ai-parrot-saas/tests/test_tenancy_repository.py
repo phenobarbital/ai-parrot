@@ -9,7 +9,7 @@ from asyncdb import AsyncDB
 
 from parrot_saas.db.repository import BaseRepository, TenantScopeError
 from parrot_saas.db.schema import ensure_schema
-from parrot_saas.tenancy.context import TenantMode, TenantStatus
+from parrot_saas.tenancy.context import TenantStatus
 from parrot_saas.tenancy.models import Tenant, TenantCreate, TenantUpdate
 from parrot_saas.tenancy.repository import (
     TenantAlreadyExists,

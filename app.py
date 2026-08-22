@@ -333,6 +333,13 @@ class Main(AppHandler):
         auth.add_exclude_list('/a2a')
         auth.add_exclude_list('/a2a/*')
         auth.add_exclude_list('/.well-known/*')
+        # Review ingest webhooks authenticate with an HMAC signature over the
+        # raw body, not a session: a review platform registers a URL and POSTs
+        # to it, sending neither a cookie nor a tenant header. The tenant
+        # travels in the path and ReviewWebhookView verifies the signature
+        # against that tenant's stored secret, so leaving these routes in the
+        # auth/ABAC chain would 401 every legitimate delivery.
+        auth.add_exclude_list('/api/v1/saas/reviews/webhook/*')
 
         # ------------------------------------------------------------------
         # Multi-tenant SaaS plane.

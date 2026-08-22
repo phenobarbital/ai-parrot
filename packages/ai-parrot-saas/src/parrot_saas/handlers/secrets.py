@@ -32,6 +32,7 @@ from navigator.views import BaseView
 
 from ..llm.credentials import ANTHROPIC_API_KEY_SECRET, GOOGLE_API_KEY_SECRET
 from ..tenancy.middleware import current_tenant
+from .authz import check_policy
 from .tenants import APP_TENANT_RUNTIMES, json_error
 
 #: Key under which ``setup_saas_api`` publishes the memoising store factory.
@@ -55,10 +56,7 @@ MAX_VALUE_LENGTH = 8192
 #: hard-coding the strings a second time.
 KNOWN_KEYS = (GOOGLE_API_KEY_SECRET, ANTHROPIC_API_KEY_SECRET)
 
-#: PBAC resource this surface is gated by. ``ResourceType`` is a closed enum
-#: with no secret member, but ``ResourcePolicy.covers_resource`` supports custom
-#: string types, which is what ``policies/saas.yaml`` relies on.
-PBAC_RESOURCE_TYPE = "saas"
+#: PBAC resource this surface is gated by, under the shared ``saas`` type.
 PBAC_RESOURCE_NAME = "secrets"
 
 logger = logging.getLogger("parrot_saas.handlers.secrets")
@@ -125,75 +123,20 @@ class _SecretViewBase(BaseView):
     async def _authorize(self, action: str) -> Optional[web.Response]:
         """Check the tenant-admin policy for one action.
 
-        Enforced whenever a policy decision point is configured. When none is —
-        ``setup_pbac`` returns nothing at all if its policy directory is
-        missing — this logs and allows, matching the convention already used by
-        the agent handlers. That is defensible *here* specifically because
-        authorization is not the isolation boundary: without a PDP the
-        degradation is "any authenticated user of this tenant" rather than
-        "only its admin", never access to another tenant, whose separation the
-        resolution middleware enforces independently.
-
         Args:
             action: The policy action, e.g. ``"saas:secret:write"``.
 
         Returns:
-            ``None`` when allowed, or a 403 response.
+            ``None`` when allowed, or a 403 response. See
+            :func:`~parrot_saas.handlers.authz.check_policy` for what happens
+            when no policy engine is configured, and why.
         """
-        pdp = self.request.app.get("abac")
-        evaluator = getattr(pdp, "_evaluator", None) if pdp is not None else None
-        if evaluator is None:
-            logger.warning(
-                "no PBAC policy engine configured; serving %s without an "
-                "authorization decision",
-                action,
-            )
-            return None
-
-        try:
-            from navigator_auth.abac.context import EvalContext
-            from navigator_auth.abac.policies.environment import Environment
-
-            session = self.request.get("session") or {}
-            try:
-                from navigator_auth.conf import AUTH_SESSION_OBJECT
-
-                userinfo = session.get(AUTH_SESSION_OBJECT, {}) or {}
-            except ImportError:  # pragma: no cover - navigator-auth optional
-                userinfo = {}
-            ctx = EvalContext(
-                self.request,
-                user=self.request.get("user"),
-                userinfo=userinfo,
-                session=session,
-            )
-            result = evaluator.check_access(
-                ctx=ctx,
-                resource_type=PBAC_RESOURCE_TYPE,
-                resource_name=PBAC_RESOURCE_NAME,
-                action=action,
-                env=Environment(),
-            )
-        except Exception as exc:  # noqa: BLE001 - see below
-            # A broken evaluation must not become an open door on this surface.
-            logger.error("PBAC evaluation failed for %s: %s", action, exc)
-            return json_error(
-                403, "forbidden", "the authorization decision could not be made"
-            )
-
-        if not result.allowed:
-            logger.warning(
-                "PBAC denied %s for tenant %s (policy=%s)",
-                action,
-                self._tenant().tenant_id,
-                getattr(result, "matched_policy", None),
-            )
-            return json_error(
-                403,
-                "forbidden",
-                getattr(result, "reason", None) or f"{action} is not permitted",
-            )
-        return None
+        return await check_policy(
+            self.request,
+            action,
+            PBAC_RESOURCE_NAME,
+            subject=self._tenant().tenant_id,
+        )
 
     async def _invalidate_runtime(self, tenant_id: str) -> None:
         """Drop the tenant's cached runtime after a credential change.

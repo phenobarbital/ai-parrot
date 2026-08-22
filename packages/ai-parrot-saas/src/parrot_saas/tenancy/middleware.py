@@ -35,9 +35,13 @@ TENANT_HEADER = "X-Tenant-Id"
 REQUEST_TENANT_KEY = "tenant"
 
 #: Paths that never need a tenant. The control plane carries the tenant in its
-#: own route and is gated by an admin policy instead.
+#: own route and is gated by an admin policy instead; the review webhook
+#: carries it too, because a review platform POSTs to a registered URL and
+#: cannot send a header — there, the HMAC signature over the body is what
+#: authenticates, and the handler repeats these lifecycle checks by hand.
 DEFAULT_EXEMPT_PREFIXES: tuple[str, ...] = (
     "/api/v1/saas/control/",
+    "/api/v1/saas/reviews/webhook/",
     "/api/v1/abac/",
     "/health",
     "/api/docs",

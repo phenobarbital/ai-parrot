@@ -121,6 +121,13 @@ SAAS_CM_REPLY_MODEL: str = config.get(
     "SAAS_CM_REPLY_MODEL", fallback="claude-sonnet-5"
 )
 
+#: Upper bound on a webhook body, in bytes. Applied before the signature is
+#: computed, so an oversized payload costs a length check rather than an HMAC
+#: over megabytes.
+SAAS_WEBHOOK_MAX_BODY: int = int(
+    config.get("SAAS_WEBHOOK_MAX_BODY", fallback=262144)
+)
+
 # ---------------------------------------------------------------------------
 # Provisioning (Pulumi)
 # ---------------------------------------------------------------------------
@@ -177,4 +184,5 @@ __all__ = (
     "SAAS_TENANT_PORT_MIN",
     "SAAS_TENANT_RUNTIME_MAX",
     "SAAS_TENANT_RUNTIME_TTL",
+    "SAAS_WEBHOOK_MAX_BODY",
 )

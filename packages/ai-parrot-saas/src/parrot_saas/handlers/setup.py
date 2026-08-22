@@ -33,6 +33,14 @@ from ..tenancy.middleware import (
 )
 from ..tenancy.repository import TenantRepository
 from ..tenancy.runtime import TenantRuntime, TenantRuntimeCache
+from .reviews import (
+    APP_INGEST_SERVICE,
+    APP_REVIEW_SOURCES,
+    ReviewCollectionView,
+    ReviewItemView,
+    ReviewSimulateView,
+    setup_review_routes,
+)
 from .secrets import (
     APP_SECRET_STORE_FACTORY,
     SecretCollectionView,
@@ -165,6 +173,9 @@ def setup_saas_api(
     secret_store: Optional[Any] = None,
     runtime_builder: Optional[Any] = None,
     tool_manager_template: Optional[Any] = None,
+    review_sources: Optional[Any] = None,
+    run_launcher: Optional[Any] = None,
+    job_manager: Optional[Any] = None,
     strategies: Sequence[str] = DEFAULT_STRATEGIES,
     exempt_prefixes: Iterable[str] = DEFAULT_EXEMPT_PREFIXES,
     exempt_patterns: Iterable[str] = (),
@@ -187,6 +198,14 @@ def setup_saas_api(
         tool_manager_template: Process-wide ``ToolManager`` cloned per tenant
             by the default builder. Omitted, tenants run without tools — which
             is all the Community Manager flow needs today.
+        review_sources: Mapping of adapter name to ``ReviewSource``. Defaults
+            to the in-memory mock plus the signed generic webhook.
+        run_launcher: Coroutine started for each newly admitted review. Without
+            one, reviews are stored and a warning says no flow ran — see
+            ``parrot_saas.reviews.ingest.null_run_launcher``.
+        job_manager: Job manager used to run launches off the request. Defaults
+            to ``app['job_manager']`` when the jobs subsystem is configured;
+            without one the launcher is awaited inline.
         strategies: Tenant resolution strategies, in order.
         exempt_prefixes: Path prefixes skipping tenant resolution.
         exempt_patterns: Glob patterns skipping tenant resolution — for
@@ -236,6 +255,31 @@ def setup_saas_api(
     _app[APP_TENANT_REPOSITORY] = repository
     _app[APP_TENANT_RUNTIMES] = runtimes
     _app[APP_SECRET_STORE_FACTORY] = _secret_store
+
+    if review_sources is None:
+        from ..reviews.mock import MockReviewSource
+        from ..reviews.webhook import GenericWebhookReviewSource
+
+        review_sources = {
+            "mock": MockReviewSource(),
+            "webhook": GenericWebhookReviewSource(),
+        }
+    _app[APP_REVIEW_SOURCES] = review_sources
+
+    from ..reviews.ingest import ReviewIngestService
+    from ..reviews.repository import GuestRepository, ReviewRepository
+
+    review_repository = ReviewRepository(resolved_dsn, schema=resolved_schema)
+    guest_repository = GuestRepository(resolved_dsn, schema=resolved_schema)
+    _app[APP_INGEST_SERVICE] = ReviewIngestService(
+        reviews=review_repository,
+        guests=guest_repository,
+        # Resolved at wiring time, so a deployment that configures the jobs
+        # subsystem after this call gets the inline path. app.py configures it
+        # first (line 131), long before the SaaS plane.
+        job_manager=job_manager or _app.get("job_manager"),
+        run_launcher=run_launcher,
+    )
     if secret_store is not None:
         _app[APP_SECRET_STORE] = secret_store
 
@@ -246,6 +290,12 @@ def setup_saas_api(
             SecretCollectionView,
             SecretItemView,
             SecretRotateView,
+            # ReviewWebhookView is deliberately absent: it authenticates with
+            # an HMAC signature, not a session, and applying the decorators
+            # would make every platform delivery a 401.
+            ReviewCollectionView,
+            ReviewItemView,
+            ReviewSimulateView,
         )
 
     if install_middleware:
@@ -261,6 +311,7 @@ def setup_saas_api(
 
     setup_tenant_routes(_app)
     setup_secret_routes(_app)
+    setup_review_routes(_app)
 
     async def _on_startup(application: web.Application) -> None:
         """Create the SaaS schema if it does not exist."""
@@ -273,6 +324,8 @@ def setup_saas_api(
         """Release the runtime cache, repository and secret store."""
         await runtimes.aclose_all()
         await repository.aclose()
+        await review_repository.aclose()
+        await guest_repository.aclose()
         store = application.get(APP_SECRET_STORE)
         if store is not None and hasattr(store, "aclose"):
             await store.aclose()
@@ -289,4 +342,10 @@ def setup_saas_api(
     return _app
 
 
-__all__ = ("APP_SECRET_STORE", "APP_SECRET_STORE_FACTORY", "setup_saas_api")
+__all__ = (
+    "APP_INGEST_SERVICE",
+    "APP_REVIEW_SOURCES",
+    "APP_SECRET_STORE",
+    "APP_SECRET_STORE_FACTORY",
+    "setup_saas_api",
+)

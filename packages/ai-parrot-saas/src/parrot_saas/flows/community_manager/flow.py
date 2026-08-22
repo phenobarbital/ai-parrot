@@ -17,7 +17,7 @@ drift.
 """
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from parrot.bots.flows.flow.flow import AgentsFlow
 

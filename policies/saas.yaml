@@ -79,10 +79,14 @@ policies:
     resources:
       - "saas:coupons"
       - "saas:rules"
+      - "saas:reviews"
     actions:
       - "saas:offer:write"
       - "saas:rule:write"
       - "saas:rule:delete"
+      # Simulating a review starts a real run, which spends the tenant's own
+      # LLM budget — so it is an administrator's call, not an operator's.
+      - "saas:review:simulate"
     subjects:
       groups:
         - tenant_admin
