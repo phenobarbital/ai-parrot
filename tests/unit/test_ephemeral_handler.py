@@ -17,6 +17,14 @@ import sys
 import types
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+
+from aiohttp import web
+
+try:  # navigator_session is optional in some environments
+    from navigator_session import SESSION_OBJECT as _SESSION_OBJECT
+except ImportError:  # pragma: no cover - fallback matches the library constant
+    _SESSION_OBJECT = "NAV_SESSION"
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock
 
@@ -54,16 +62,23 @@ for _sname in _STUBS:
         sys.modules[_sname] = _m
 
 _WT_ROOT = Path(__file__).resolve().parents[2]
-_HANDLER_SRC = (
-    _WT_ROOT
-    / "packages"
-    / "ai-parrot"
-    / "src"
-    / "parrot"
-    / "handlers"
-    / "agents"
-    / "ephemeral.py"
-)
+def _parrot_source(relative: str) -> Path:
+    """Locate a ``parrot.*`` source file across the uv workspace packages.
+
+    Modules migrate between distributions — ``parrot.handlers`` and
+    ``parrot.manager`` now ship from ai-parrot-server, not from core — so
+    resolve by finding the file instead of hardcoding a package name.
+    """
+    for _pkg in sorted((_WT_ROOT / "packages").iterdir()):
+        _candidate = _pkg / "src" / relative
+        if _candidate.is_file():
+            return _candidate
+    raise FileNotFoundError(
+        f"{{relative!r}} not found under any packages/*/src in the workspace"
+    )
+
+
+_HANDLER_SRC = _parrot_source("parrot/handlers/agents/ephemeral.py")
 _MOD_NAME = "parrot.handlers.agents.ephemeral"
 
 if _MOD_NAME not in sys.modules:
@@ -75,9 +90,7 @@ if _MOD_NAME not in sys.modules:
 from parrot.handlers.agents.ephemeral import EphemeralUserAgentHandler  # noqa: E402
 
 # Also load ephemeral status model for fixtures
-_EPHEMERAL_SRC = (
-    _WT_ROOT / "packages" / "ai-parrot" / "src" / "parrot" / "manager" / "ephemeral.py"
-)
+_EPHEMERAL_SRC = _parrot_source("parrot/manager/ephemeral.py")
 if "parrot.manager.ephemeral" not in sys.modules:
     _espec = importlib.util.spec_from_file_location(
         "parrot.manager.ephemeral", str(_EPHEMERAL_SRC)
@@ -128,11 +141,39 @@ class _StubRequest:
         content_type: str = "application/json",
     ):
         self.method = method
+        self.path = "/api/v1/agents/ephemeral"
         self.match_info = match_info or {}
         self._json_data = json_data or {}
         self.content_type = content_type
         self.session = {"user_id": session_user_id} if session_user_id else None
         self.app = {"bot_manager": app_manager} if app_manager else {}
+        # navigator_auth's @is_authenticated reads `app["auth"]` when the
+        # request is not already authenticated; without a backend registry it
+        # raises HTTPBadRequest (400) instead of the 401 these tests assert.
+        # An empty backend set is the faithful "no credentials" case.
+        self.app.setdefault("auth", SimpleNamespace(backends={}))
+        # aiohttp's Request is a MutableMapping of request-scoped state, and
+        # the auth decorator calls `request.get("authenticated", False)`.
+        self._state: Dict[str, object] = {"authenticated": bool(session_user_id)}
+        if session_user_id:
+            # @user_session calls get_session(), which short-circuits when the
+            # session object is already on the request. Pre-seeding it keeps
+            # the stub free of a real navigator_session storage backend, and
+            # the decorator then assigns it to `self.session` on the handler.
+            self._state[_SESSION_OBJECT] = {"user_id": session_user_id}
+
+    # -- mapping interface, mirroring aiohttp.web.Request --------------------
+    def get(self, key: str, default=None):
+        return self._state.get(key, default)
+
+    def __getitem__(self, key: str):
+        return self._state[key]
+
+    def __setitem__(self, key: str, value) -> None:
+        self._state[key] = value
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._state
 
     async def json(self) -> Dict:
         return self._json_data
@@ -211,9 +252,14 @@ class TestEphemeralHandlerPost:
         """POST with no session returns 401."""
         req = _StubRequest(method="POST", session_user_id=None)
         handler = _StubHandler(req)
-        await handler.post()
 
-        assert handler._last_status == 401
+        # navigator_auth signals 401 by raising HTTPUnauthorized; in aiohttp
+        # that exception *is* the 401 response, so it never reaches the
+        # handler body and never sets _last_status.
+        with pytest.raises(web.HTTPUnauthorized) as excinfo:
+            await handler.post()
+
+        assert excinfo.value.status == 401
 
     @pytest.mark.asyncio
     async def test_post_no_manager_returns_503(self) -> None:
@@ -288,9 +334,14 @@ class TestEphemeralHandlerGet:
         """GET with no session returns 401."""
         req = _StubRequest(session_user_id=None)
         handler = _StubHandler(req)
-        await handler.get()
 
-        assert handler._last_status == 401
+        # navigator_auth signals 401 by raising HTTPUnauthorized; in aiohttp
+        # that exception *is* the 401 response, so it never reaches the
+        # handler body and never sets _last_status.
+        with pytest.raises(web.HTTPUnauthorized) as excinfo:
+            await handler.get()
+
+        assert excinfo.value.status == 401
 
     @pytest.mark.asyncio
     async def test_get_missing_chatbot_id_returns_400(self) -> None:
@@ -372,9 +423,14 @@ class TestEphemeralHandlerPromote:
         """PUT without session returns 401."""
         req = _StubRequest(session_user_id=None)
         handler = _StubHandler(req)
-        await handler.put()
 
-        assert handler._last_status == 401
+        # navigator_auth signals 401 by raising HTTPUnauthorized; in aiohttp
+        # that exception *is* the 401 response, so it never reaches the
+        # handler body and never sets _last_status.
+        with pytest.raises(web.HTTPUnauthorized) as excinfo:
+            await handler.put()
+
+        assert excinfo.value.status == 401
 
     @pytest.mark.asyncio
     async def test_promote_value_error_returns_409(self) -> None:
@@ -445,6 +501,11 @@ class TestEphemeralHandlerDelete:
         """DELETE without session returns 401."""
         req = _StubRequest(session_user_id=None)
         handler = _StubHandler(req)
-        await handler.delete()
 
-        assert handler._last_status == 401
+        # navigator_auth signals 401 by raising HTTPUnauthorized; in aiohttp
+        # that exception *is* the 401 response, so it never reaches the
+        # handler body and never sets _last_status.
+        with pytest.raises(web.HTTPUnauthorized) as excinfo:
+            await handler.delete()
+
+        assert excinfo.value.status == 401
