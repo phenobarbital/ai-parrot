@@ -404,6 +404,31 @@ def pytest_pycollect_makemodule(module_path, parent):
 
 
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_call(item):
+    """Skip tests whose *body* imports a missing optional dependency.
+
+    Some tests import lazily inside the test function, so the failure lands
+    in the call phase rather than at collection or setup (57 `aiogram`, 14
+    `xai-sdk`, 11 `anthropic` in the core job). A test that cannot run
+    without the dependency is a skip, not a failure. Same allowlist.
+    """
+    outcome = yield
+    try:
+        outcome.get_result()
+    except Exception as exc:  # noqa: BLE001 — re-raised unless allowlisted
+        missing = _missing_optional(exc)
+        if missing is None:
+            return
+        _SKIPPED_OPTIONAL[missing] = _SKIPPED_OPTIONAL.get(missing, 0) + 1
+        outcome.force_exception(
+            pytest.skip.Exception(
+                f"optional dependency {missing!r} is not installed",
+                _use_item_location=True,
+            )
+        )
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
 def pytest_runtest_setup(item):
     """Skip tests whose *setup* trips over a missing optional dependency.
 
