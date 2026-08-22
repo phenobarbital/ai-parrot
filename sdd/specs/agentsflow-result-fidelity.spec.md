@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-447
 **Date**: 2026-08-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.27.0
 
 ---
