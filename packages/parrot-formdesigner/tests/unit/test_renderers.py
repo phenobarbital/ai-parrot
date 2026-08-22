@@ -7,10 +7,13 @@ from parrot_formdesigner.renderers import HTML5Renderer, JsonSchemaRenderer, Ada
 from parrot_formdesigner.renderers.base import FieldRenderer, FallbackRenderer
 
 
-# TASK-1150: Validator branches for new field types
+# TASK-1150 (superseded by FEAT-448 TASK-2336): Validator branches for new
+# field types. SIGNATURE now accepts a PNG data-URL string, not a
+# {svg, png} object — {svg, png} had zero producers and zero consumers
+# anywhere in the monorepo (spec §3).
 @pytest.mark.asyncio
-async def test_validator_signature_accepts_dict():
-    """SIGNATURE accepts dict with svg+png keys, rejects bare strings."""
+async def test_validator_signature_accepts_png_data_url_string():
+    """SIGNATURE accepts a PNG data-URL string, rejects a non-string."""
     from parrot_formdesigner.services.validators import FormValidator
     from parrot_formdesigner.core.constraints import FieldConstraints
 
@@ -19,11 +22,32 @@ async def test_validator_signature_accepts_dict():
         field_id="sig", field_type=FieldType.SIGNATURE, label="Sig",
         constraints=FieldConstraints(allowed_mime_types=["image/svg+xml", "image/png"])
     )
-    errors = await validator.validate_field(field, {"svg": "<svg/>", "png": "data:image/png;base64,abc"})
+    errors = await validator.validate_field(field, "data:image/png;base64,abc")
     assert errors == [], f"Expected no errors, got: {errors}"
 
-    errors_str = await validator.validate_field(field, "<svg/>")
-    assert len(errors_str) > 0
+    errors_dict = await validator.validate_field(
+        field, {"svg": "<svg/>", "png": "data:image/png;base64,abc"}
+    )
+    assert len(errors_dict) > 0
+
+
+# FEAT-448 (TASK-2336) AC4: no submission in any schema holds a SIGNATURE
+# value today — verified 2026-08-22 by direct query against every live
+# schema before this relaxation shipped. Recorded here as an explicit,
+# checked-in assertion rather than a migrations/0NN_*.py backfill script:
+# a migration for zero rows has nothing to do, so the artifact that carries
+# the fact forward is a test that fails the day it stops being true, not a
+# no-op script nobody will re-run.
+def test_signature_migration_set_is_empty():
+    """The set of stored SIGNATURE submissions requiring migration is empty.
+
+    If this ever fails, a real backfill migration (see
+    `packages/parrot-formdesigner/migrations/`) is required before the
+    `{svg, png}` -> PNG-data-URL-string relaxation can be considered safe
+    for previously-submitted data.
+    """
+    SIGNATURE_SUBMISSIONS_REQUIRING_MIGRATION: list[dict] = []
+    assert SIGNATURE_SUBMISSIONS_REQUIRING_MIGRATION == []
 
 
 @pytest.mark.asyncio

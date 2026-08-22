@@ -450,10 +450,14 @@ class FormValidator:
                 "city": value.get("city"),
             }
 
+        # FEAT-448 (TASK-2336) — SIGNATURE accepts a PNG data-URL string.
+        # {svg, png} had zero producers and zero consumers anywhere in the
+        # monorepo; a vector signature is a DIFFERENT type to be named if
+        # someone needs one, not this type widened back to an optional key.
         elif ft == FieldType.SIGNATURE:
-            if isinstance(value, dict):
-                return value
-            raise ValueError("Signature must be a dict with 'svg' and 'png' keys")
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Signature must be a PNG data URL string")
 
         elif ft == FieldType.AVAILABILITY:
             if isinstance(value, list):
@@ -581,13 +585,11 @@ class FormValidator:
             if not PHONE_PATTERN.match(value):
                 errors.append(f"{label} must be a valid phone number")
 
-        # Phase 2 — new field types (FEAT-167)
+        # FEAT-448 (TASK-2336) — SIGNATURE: a PNG data-URL string, not a
+        # {svg, png} object.
         elif ft == FieldType.SIGNATURE:
-            if not isinstance(value, dict):
-                errors.append(f"{label} must be a dict with 'svg' and 'png' keys")
-            else:
-                if "svg" not in value or "png" not in value:
-                    errors.append(f"{label} must contain 'svg' and 'png' keys")
+            if isinstance(value, str) and not _PNG_DATA_URL_PATTERN.match(value):
+                errors.append(f"{label} must be a PNG data URL")
 
         elif ft == FieldType.DYNAMIC_SELECT:
             # Same validation as SELECT — option values checked upstream

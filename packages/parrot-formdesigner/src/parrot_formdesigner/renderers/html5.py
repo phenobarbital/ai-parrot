@@ -197,7 +197,7 @@ class HTML5Renderer(AbstractFormRenderer):
                 return self_._r._render_scale(field, prefilled)
 
         class _SignatureRenderer:
-            """Renderer for SIGNATURE field — canvas + hidden inputs."""
+            """Renderer for SIGNATURE field — canvas + one hidden input."""
 
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
@@ -791,20 +791,24 @@ class HTML5Renderer(AbstractFormRenderer):
         return "\n".join(parts)
 
     def _render_signature(self, field: FormField) -> str:
-        """Render a SIGNATURE field as a canvas + hidden inputs.
+        """Render a SIGNATURE field as a canvas + one hidden input.
+
+        FEAT-448 (TASK-2336): the field value is a single PNG data-URL
+        string, not a {svg, png} object, so there is exactly one hidden
+        input — named after the field itself — for the client to populate
+        via ``canvas.toDataURL('image/png')``.
 
         Args:
             field: SIGNATURE FormField.
 
         Returns:
-            HTML canvas + hidden inputs string.
+            HTML canvas + hidden input string.
         """
         tw = "block w-full border border-gray-300 rounded-md"
         return (
-            f'<canvas id="{field.field_id}" class="{tw}" '
+            f'<canvas id="{field.field_id}_canvas" class="{tw}" '
             f'data-signature="true" width="400" height="150"></canvas>'
-            f'<input type="hidden" id="{field.field_id}_svg" name="{field.field_id}_svg">'
-            f'<input type="hidden" id="{field.field_id}_png" name="{field.field_id}_png">'
+            f'<input type="hidden" id="{field.field_id}" name="{field.field_id}">'
         )
 
     def _render_dynamic_select(self, field: FormField, value: Any, locale: str) -> str:

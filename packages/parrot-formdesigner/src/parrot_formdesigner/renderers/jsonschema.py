@@ -44,7 +44,8 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.GROUP: "object",
     FieldType.ARRAY: "array",
     # New field types (FEAT-167)
-    FieldType.SIGNATURE: "object",
+    # FEAT-448 (TASK-2336): SIGNATURE is a PNG data-URL string, not an object.
+    FieldType.SIGNATURE: "string",
     FieldType.DYNAMIC_SELECT: "string",
     FieldType.TRANSFER_LIST: "array",
     FieldType.REMOTE_RESPONSE: "object",
@@ -337,13 +338,6 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 prop["minimum"] = 0
             if "maximum" not in prop:
                 prop["maximum"] = 5 if ft == FieldType.RANKING else 4
-
-        # SIGNATURE — object with svg + png keys
-        if ft == FieldType.SIGNATURE:
-            prop["properties"] = {
-                "svg": {"type": "string"},
-                "png": {"type": "string"},
-            }
 
         # AVAILABILITY — array of slot objects
         if ft == FieldType.AVAILABILITY:
