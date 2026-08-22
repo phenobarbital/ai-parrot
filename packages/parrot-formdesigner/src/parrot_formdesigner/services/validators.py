@@ -7,6 +7,7 @@ async-native to support ASYNC_REMOTE and UNIQUE validation callbacks.
 Migrated and enhanced from parrot/integrations/msteams/dialogs/validator.py.
 """
 
+import json
 import logging
 import re
 from datetime import datetime
@@ -48,6 +49,13 @@ def _validate_location(value: str) -> bool:
 EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 URL_PATTERN = re.compile(r"^https?://[^\s/$.?#].[^\s]*$")
 PHONE_PATTERN = re.compile(r"^\+?[\d\s\-().]{7,}$")
+
+# FEAT-448 — client-absorbed field types
+_HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
+_PNG_DATA_URL_PATTERN = re.compile(r"^data:image/png;base64,")
+_CRON_FIELD_COUNT = 5
+_IMAGE_DROPZONE_KEYS = ("name", "type", "size", "dataUrl")
+_MULTI_UPLOAD_KEYS = ("answer", "blob_ref")
 
 
 def _resolve_localized(value: LocalizedString | None, locale: str = "en") -> str | None:
@@ -441,6 +449,63 @@ class FormValidator:
                 return value
             raise ValueError("REST field value must be a dict with 'answer' and 'blob_ref' keys")
 
+        # FEAT-448 — client-absorbed field types (TASK-2333; CREDIT_CARD is TASK-2334)
+        elif ft == FieldType.SEARCH:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Search value must be a string")
+
+        elif ft == FieldType.MASKED:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Masked value must be a string")
+
+        elif ft == FieldType.COLOR_PICKER:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Color picker value must be a string")
+
+        elif ft == FieldType.EMOJI:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Emoji value must be a string")
+
+        elif ft == FieldType.CRON:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Cron value must be a string")
+
+        elif ft == FieldType.TREE_SELECT:
+            if isinstance(value, list):
+                return [str(v).strip() for v in value]
+            elif isinstance(value, str):
+                return value.strip()
+            raise ValueError("Tree select value must be a string or a list of strings")
+
+        elif ft == FieldType.SIGNATURE_PAD:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Signature pad value must be a PNG data URL string")
+
+        elif ft == FieldType.IMAGE_DROPZONE:
+            if isinstance(value, (dict, list)):
+                return value
+            raise ValueError("Image dropzone value must be a dict or a list of dicts")
+
+        elif ft == FieldType.MULTI_UPLOAD:
+            if isinstance(value, list):
+                return value
+            raise ValueError("Multi upload value must be a list of upload envelopes")
+
+        elif ft == FieldType.AI_CAPTURE:
+            # Unconstrained third-party API response — accept any JSON-serialisable
+            # value (nested object, list, or scalar) and stop there.
+            try:
+                json.dumps(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"AI capture value must be JSON-serialisable: {exc}")
+            return value
+
         return value
 
     def _validate_by_type(
@@ -550,6 +615,43 @@ class FormValidator:
                 scale_min = c.scale_min if c and c.scale_min is not None else 0
                 if not (scale_min <= value <= scale_max):
                     errors.append(f"{label} must be between {scale_min} and {scale_max}")
+
+        # FEAT-448 — client-absorbed field types (TASK-2333)
+        elif ft == FieldType.COLOR_PICKER:
+            if isinstance(value, str) and not _HEX_COLOR_PATTERN.match(value):
+                errors.append(f"{label} must be a lowercase hex color, e.g. '#1a2b3c'")
+
+        elif ft == FieldType.CRON:
+            if isinstance(value, str) and len(value.split()) != _CRON_FIELD_COUNT:
+                errors.append(f"{label} must be a 5-field cron expression")
+
+        elif ft == FieldType.SIGNATURE_PAD:
+            if isinstance(value, str) and not _PNG_DATA_URL_PATTERN.match(value):
+                errors.append(f"{label} must be a PNG data URL")
+
+        elif ft == FieldType.IMAGE_DROPZONE:
+            if isinstance(value, dict):
+                missing = [k for k in _IMAGE_DROPZONE_KEYS if k not in value]
+                if missing:
+                    errors.append(f"{label} is missing keys: {', '.join(missing)}")
+            elif isinstance(value, list):
+                for i, item in enumerate(value):
+                    if not isinstance(item, dict):
+                        errors.append(f"{label} item {i} must be an object")
+                        continue
+                    missing = [k for k in _IMAGE_DROPZONE_KEYS if k not in item]
+                    if missing:
+                        errors.append(f"{label} item {i} is missing keys: {', '.join(missing)}")
+
+        elif ft == FieldType.MULTI_UPLOAD:
+            if isinstance(value, list):
+                for i, item in enumerate(value):
+                    if not isinstance(item, dict):
+                        errors.append(f"{label} item {i} must be an object")
+                        continue
+                    missing = [k for k in _MULTI_UPLOAD_KEYS if k not in item]
+                    if missing:
+                        errors.append(f"{label} item {i} is missing keys: {', '.join(missing)}")
 
         return errors
 
