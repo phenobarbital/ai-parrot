@@ -283,6 +283,7 @@ OPTIONAL_DEPENDENCIES: frozenset[str] = frozenset({
     "selenium",             # ai-parrot[agents]
     "seleniumwire",
     "sentence_transformers",
+    "rustworkx",
     "xai_sdk",              # ai-parrot[xai]
     # --- sibling workspace packages a single-package sync does not install ---
     "parrot_formdesigner",
@@ -298,6 +299,44 @@ OPTIONAL_SUBMODULES: frozenset[str] = frozenset({
 _SKIPPED_OPTIONAL: dict[str, int] = {}
 
 _MISSING_RE = re.compile(r"No module named '([^']+)'")
+_CANNOT_IMPORT_RE = re.compile(r"cannot import name '([^']+)' from '([^']+)'")
+
+#: Distribution names that appear in hand-written "install X" ImportError
+#: messages but differ from the import name.
+_ALIASES: dict[str, str] = {
+    "xai-sdk": "xai_sdk",
+    "python-pptx": "pptx",
+    "python-docx": "docx",
+    "selenium-wire": "seleniumwire",
+    "sentence-transformers": "sentence_transformers",
+}
+
+
+def _is_optional(name: str) -> str | None:
+    """Return the canonical allowlisted module for ``name``, if it is one."""
+    name = _ALIASES.get(name, name)
+    if name in OPTIONAL_SUBMODULES or name.split(".")[0] in OPTIONAL_DEPENDENCIES:
+        return name
+    return None
+
+
+def _scan_message(msg: str) -> str | None:
+    """Find an allowlisted dependency named anywhere in an ImportError message.
+
+    Several modules raise a hand-written ImportError ("GrokClient requires the
+    'xai-sdk' package", "No PowerPoint processing backend available. Install
+    'markitdown' or 'python-pptx'") instead of letting ModuleNotFoundError
+    through, so matching only "No module named" misses them.
+
+    Restricted to the allowlist, so a genuine first-party breakage such as
+    "cannot import name 'Completeness' from 'parrot.bots.database.models'"
+    still fails loudly.
+    """
+    for token in re.findall(r"[A-Za-z_][A-Za-z0-9_.\-]*", msg):
+        found = _is_optional(token)
+        if found:
+            return found
+    return None
 
 
 def _missing_optional(exc: BaseException) -> str | None:
@@ -313,13 +352,24 @@ def _missing_optional(exc: BaseException) -> str | None:
         if e is None or id(e) in seen:
             continue
         seen.add(id(e))
-        names: list[str] = []
+        msg = str(e)
+
+        candidates: list[str] = []
         if isinstance(e, ModuleNotFoundError) and e.name:
-            names.append(e.name)
-        names += _MISSING_RE.findall(str(e))
-        for name in names:
-            if name in OPTIONAL_SUBMODULES or name.split(".")[0] in OPTIONAL_DEPENDENCIES:
-                return name
+            candidates.append(e.name)
+        candidates += _MISSING_RE.findall(msg)
+        candidates += [f"{pkg}.{sym}" for sym, pkg in _CANNOT_IMPORT_RE.findall(msg)]
+
+        for cand in candidates:
+            found = _is_optional(cand)
+            if found:
+                return found
+
+        if isinstance(e, ImportError):
+            found = _scan_message(msg)
+            if found:
+                return found
+
         stack.extend((e.__cause__, e.__context__))
     return None
 
