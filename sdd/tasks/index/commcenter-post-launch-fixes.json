@@ -14,14 +14,15 @@
       "feature_id": "FEAT-445",
       "feature": "commcenter-post-launch-fixes",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-2317-apply-commcenter-ddl.md",
-      "started_at": "2026-08-22T00:39:09+00:00"
+      "file": "sdd/tasks/completed/TASK-2317-apply-commcenter-ddl.md",
+      "started_at": "2026-08-22T00:39:09+00:00",
+      "completed_at": "2026-08-22T00:57:00+00:00"
     },
     {
       "id": "TASK-2318",
