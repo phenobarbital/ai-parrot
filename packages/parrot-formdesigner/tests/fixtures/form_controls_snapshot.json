@@ -1,0 +1,1827 @@
+{
+  "controls": [
+    {
+      "category": "advanced",
+      "description": "Third-party AI capture API response \u2014 unconstrained JSON.",
+      "icon": "ai-capture",
+      "is_container": false,
+      "label": "AI Capture",
+      "render_hint": "capture",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy"
+      ],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "ai_capture",
+      "value_shape": {
+        "format": "ai-capture",
+        "type": "object"
+      }
+    },
+    {
+      "category": "layout",
+      "description": "Repeating list of fields.",
+      "icon": "repeat",
+      "is_container": true,
+      "label": "Array",
+      "render_hint": "repeater",
+      "snippet": {
+        "field_id": "items",
+        "field_type": "array",
+        "item_template": {
+          "field_id": "item",
+          "field_type": "text",
+          "label": "Item"
+        },
+        "label": "Items"
+      },
+      "supported_effects": [
+        "show",
+        "hide"
+      ],
+      "supported_operations": [],
+      "supported_operators": [],
+      "supports_constraints": false,
+      "type": "array",
+      "value_shape": {
+        "type": "array"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Audio recording input with speech-to-text transcription.",
+      "icon": "microphone",
+      "is_container": false,
+      "label": "Audio",
+      "render_hint": "audio-recorder",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "audio",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Date/time range picker for scheduling availability.",
+      "icon": "availability",
+      "is_container": false,
+      "label": "Availability",
+      "render_hint": "availability",
+      "snippet": {
+        "field_id": "meeting_availability",
+        "field_type": "availability",
+        "label": "Meeting Availability"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy",
+        "date_diff",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "availability",
+      "value_shape": {
+        "format": "availability",
+        "items": {
+          "properties": {
+            "end": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "start": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Yes/No toggle.",
+      "icon": "toggle",
+      "is_container": false,
+      "label": "Boolean",
+      "render_hint": "toggle",
+      "snippet": {
+        "field_id": "accepted_terms",
+        "field_type": "boolean",
+        "label": "I accept terms"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy",
+        "set"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "boolean",
+      "value_shape": {
+        "type": "boolean"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Color picker.",
+      "icon": "color",
+      "is_container": false,
+      "label": "Color",
+      "render_hint": "color",
+      "snippet": {
+        "default": "#0ea5e9",
+        "field_id": "theme_color",
+        "field_type": "color",
+        "label": "Theme color"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "color",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Color picker returning a lowercase hex color string.",
+      "icon": "color-picker",
+      "is_container": false,
+      "label": "Color Picker",
+      "render_hint": "color",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "color_picker",
+      "value_shape": {
+        "format": "color-picker",
+        "type": "string"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Payment card reference \u2014 brand, last 4 digits, cardholder name and expiry only. Never accepts the full PAN or a CVV.",
+      "icon": "credit-card",
+      "is_container": false,
+      "label": "Credit Card",
+      "render_hint": "input",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "credit_card",
+      "value_shape": {
+        "format": "credit-card",
+        "properties": {
+          "brand": {
+            "type": "string"
+          },
+          "expiry": {
+            "type": "string"
+          },
+          "last4": {
+            "pattern": "^\\d{4}$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "last4",
+          "name",
+          "expiry"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "A 5-part cron expression.",
+      "icon": "cron",
+      "is_container": false,
+      "label": "Cron Expression",
+      "render_hint": "input",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "cron",
+      "value_shape": {
+        "format": "cron",
+        "type": "string"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Date picker.",
+      "icon": "calendar",
+      "is_container": false,
+      "label": "Date",
+      "render_hint": "datetime",
+      "snippet": {
+        "field_id": "start_date",
+        "field_type": "date",
+        "label": "Start date"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "date_diff",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "date",
+      "value_shape": {
+        "format": "date",
+        "type": "string"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Date and time picker.",
+      "icon": "calendar-clock",
+      "is_container": false,
+      "label": "Date & Time",
+      "render_hint": "datetime",
+      "snippet": {
+        "field_id": "appointment_at",
+        "field_type": "datetime",
+        "label": "Appointment time"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "date_diff",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "datetime",
+      "value_shape": {
+        "format": "date-time",
+        "type": "string"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Dropdown populated from a remote data source.",
+      "icon": "dynamic-select",
+      "is_container": false,
+      "label": "Dynamic Select",
+      "render_hint": "select",
+      "snippet": {
+        "field_id": "country",
+        "field_type": "dynamic_select",
+        "label": "Country",
+        "options_source": {
+          "label_field": "name",
+          "source_ref": "https://api.example.com/countries",
+          "source_type": "endpoint",
+          "value_field": "code"
+        }
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "lookup",
+        "reload_options"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "dynamic_select",
+      "value_shape": {
+        "format": "dynamic-select",
+        "type": "string"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Email-address input.",
+      "icon": "mail",
+      "is_container": false,
+      "label": "Email",
+      "render_hint": "input",
+      "snippet": {
+        "field_id": "email",
+        "field_type": "email",
+        "label": "Email",
+        "required": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "email",
+      "value_shape": {
+        "format": "email",
+        "type": "string"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Picker for a single emoji character.",
+      "icon": "emoji",
+      "is_container": false,
+      "label": "Emoji",
+      "render_hint": "picker",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "emoji",
+      "value_shape": {
+        "format": "emoji",
+        "type": "string"
+      }
+    },
+    {
+      "category": "media",
+      "description": "File upload.",
+      "icon": "file",
+      "is_container": false,
+      "label": "File",
+      "render_hint": "upload",
+      "snippet": {
+        "field_id": "resume",
+        "field_type": "file",
+        "label": "Resume"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "file",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Computed field \u2014 result derived from a BEDMAS expression over other field values. Expression evaluation is FEAT-301. Renders as a read-only placeholder until the evaluator ships.",
+      "icon": "formula",
+      "is_container": false,
+      "label": "Formula",
+      "render_hint": "readonly",
+      "snippet": {
+        "field_id": "total_price",
+        "field_type": "formula",
+        "label": "Total Price",
+        "meta": {
+          "expression": null,
+          "render_as": "readonly"
+        },
+        "required": false
+      },
+      "supported_effects": [],
+      "supported_operations": [],
+      "supported_operators": [],
+      "supports_constraints": false,
+      "type": "formula",
+      "value_shape": {
+        "format": "formula",
+        "type": "number"
+      }
+    },
+    {
+      "category": "layout",
+      "description": "Logical group of fields.",
+      "icon": "group",
+      "is_container": true,
+      "label": "Group",
+      "render_hint": "container",
+      "snippet": {
+        "children": [
+          {
+            "field_id": "street",
+            "field_type": "text",
+            "label": "Street"
+          },
+          {
+            "field_id": "city",
+            "field_type": "text",
+            "label": "City"
+          }
+        ],
+        "field_id": "address",
+        "field_type": "group",
+        "label": "Address"
+      },
+      "supported_effects": [
+        "show",
+        "hide"
+      ],
+      "supported_operations": [],
+      "supported_operators": [],
+      "supports_constraints": false,
+      "type": "group",
+      "value_shape": {
+        "type": "object"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Hidden field (not visible to the user).",
+      "icon": "hidden",
+      "is_container": false,
+      "label": "Hidden",
+      "render_hint": "hidden",
+      "snippet": {
+        "default": "{{record_id}}",
+        "field_id": "record_id",
+        "field_type": "hidden",
+        "label": "Record ID"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "set"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "hidden",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "media",
+      "description": "Image upload.",
+      "icon": "image",
+      "is_container": false,
+      "label": "Image",
+      "render_hint": "upload",
+      "snippet": {
+        "field_id": "profile_image",
+        "field_type": "image",
+        "label": "Profile image"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "image",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "media",
+      "description": "Drag-and-drop image upload; a single file or a list of files.",
+      "icon": "image-dropzone",
+      "is_container": false,
+      "label": "Image Dropzone",
+      "render_hint": "upload",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "image_dropzone",
+      "value_shape": {
+        "format": "image-dropzone",
+        "type": "object"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Whole number input.",
+      "icon": "integer",
+      "is_container": false,
+      "label": "Integer",
+      "render_hint": "input",
+      "snippet": {
+        "constraints": {
+          "min_value": 1
+        },
+        "field_id": "quantity",
+        "field_type": "integer",
+        "label": "Quantity"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent",
+        "copy",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "integer",
+      "value_shape": {
+        "type": "integer"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Likert-scale rating field with configurable range.",
+      "icon": "likert",
+      "is_container": false,
+      "label": "Likert Scale",
+      "render_hint": "rating",
+      "snippet": {
+        "constraints": {
+          "anchor_labels": {
+            "1": "Very Dissatisfied",
+            "5": "Very Satisfied"
+          },
+          "scale_max": 5,
+          "scale_min": 1
+        },
+        "field_id": "satisfaction",
+        "field_type": "likert",
+        "label": "Overall Satisfaction"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent",
+        "copy",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "likert",
+      "value_shape": {
+        "format": "likert",
+        "type": "integer"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Country or location selector using ISO codes.",
+      "icon": "location",
+      "is_container": false,
+      "label": "Location",
+      "render_hint": "select",
+      "snippet": {
+        "field_id": "country_code",
+        "field_type": "location",
+        "label": "Country",
+        "required": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "location",
+      "value_shape": {
+        "format": "iso-country",
+        "type": "string"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Text input rendered with an input mask (raw or masked, per config).",
+      "icon": "masked",
+      "is_container": false,
+      "label": "Masked Input",
+      "render_hint": "input",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "masked",
+      "value_shape": {
+        "format": "masked",
+        "type": "string"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Multiple-choice picker.",
+      "icon": "multiselect",
+      "is_container": false,
+      "label": "Multi Select",
+      "render_hint": "multiselect",
+      "snippet": {
+        "field_id": "skills",
+        "field_type": "multi_select",
+        "label": "Skills",
+        "options": [
+          {
+            "label": "Python",
+            "value": "python"
+          },
+          {
+            "label": "SQL",
+            "value": "sql"
+          }
+        ]
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "lookup",
+        "aggregate"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "multi_select",
+      "value_shape": {
+        "type": "array"
+      }
+    },
+    {
+      "category": "media",
+      "description": "Multiple-file upload; a list of REST-style {answer, blob_ref, display} envelopes.",
+      "icon": "multi-upload",
+      "is_container": false,
+      "label": "Multi Upload",
+      "render_hint": "upload",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "multi_upload",
+      "value_shape": {
+        "format": "multi-upload",
+        "items": {
+          "properties": {
+            "answer": {},
+            "blob_ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "display": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Net Promoter Score (0\u201310 rating scale).",
+      "icon": "nps",
+      "is_container": false,
+      "label": "NPS",
+      "render_hint": "rating",
+      "snippet": {
+        "constraints": {
+          "scale_max": 10,
+          "scale_min": 0
+        },
+        "field_id": "nps_score",
+        "field_type": "nps",
+        "label": "How likely are you to recommend us?",
+        "required": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent",
+        "copy",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "nps",
+      "value_shape": {
+        "format": "nps",
+        "type": "integer"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Decimal number input.",
+      "icon": "number",
+      "is_container": false,
+      "label": "Number",
+      "render_hint": "input",
+      "snippet": {
+        "constraints": {
+          "min_value": 0
+        },
+        "field_id": "amount",
+        "field_type": "number",
+        "label": "Amount"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent",
+        "copy",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "number",
+      "value_shape": {
+        "type": "number"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Masked password input.",
+      "icon": "lock",
+      "is_container": false,
+      "label": "Password",
+      "render_hint": "input",
+      "snippet": {
+        "field_id": "password",
+        "field_type": "password",
+        "label": "Password",
+        "required": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "password",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Phone-number input.",
+      "icon": "phone",
+      "is_container": false,
+      "label": "Phone",
+      "render_hint": "input",
+      "snippet": {
+        "field_id": "phone_number",
+        "field_type": "phone",
+        "label": "Phone number"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "phone",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Country \u2192 State \u2192 City cascade. Distinct from Location, which is a country-only picker.",
+      "icon": "place",
+      "is_container": false,
+      "label": "Place",
+      "render_hint": "cascade-select",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "place",
+      "value_shape": {
+        "format": "place",
+        "properties": {
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "maxLength": 2,
+            "minLength": 2,
+            "type": "string"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "country"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Numeric ranking field with configurable range.",
+      "icon": "ranking",
+      "is_container": false,
+      "label": "Ranking",
+      "render_hint": "rating",
+      "snippet": {
+        "constraints": {
+          "scale_max": 5,
+          "scale_min": 1
+        },
+        "field_id": "priority_rank",
+        "field_type": "ranking",
+        "label": "Priority Rank"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "percent",
+        "copy",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "ranking",
+      "value_shape": {
+        "format": "ranking",
+        "type": "integer"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Read-only field showing data fetched from a remote endpoint.",
+      "icon": "remote",
+      "is_container": false,
+      "label": "Remote Response",
+      "render_hint": "display",
+      "snippet": {
+        "field_id": "customer_data",
+        "field_type": "remote_response",
+        "label": "Customer Data",
+        "options_source": {
+          "source_ref": "https://api.example.com/customers/{{customer_id}}",
+          "source_type": "endpoint"
+        },
+        "read_only": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [
+        "copy"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "remote_response",
+      "value_shape": {
+        "format": "remote-response",
+        "type": "object"
+      }
+    },
+    {
+      "category": "advanced",
+      "description": "Upload content to a REST endpoint or callback; the API response becomes the field answer.",
+      "icon": "rest",
+      "is_container": false,
+      "label": "REST",
+      "render_hint": "upload",
+      "snippet": {
+        "constraints": {
+          "allowed_mime_types": [
+            "image/jpeg",
+            "image/png"
+          ],
+          "max_file_size_bytes": 10485760
+        },
+        "field_id": "planogram_photo",
+        "field_type": "rest",
+        "label": "Subir foto para planogram compliance",
+        "meta": {
+          "rest": {
+            "callback_ref": "planogram_compliance",
+            "display_template": "Compliance: {{ (answer * 100) | round }}/100",
+            "mode": "callback",
+            "persist_binary": true,
+            "response_path": "$.compliance_score"
+          }
+        },
+        "required": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "rest",
+      "value_shape": {
+        "format": "rest",
+        "type": "object"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Type-ahead search picker over a remote or local option set.",
+      "icon": "search",
+      "is_container": false,
+      "label": "Search",
+      "render_hint": "select",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "lookup",
+        "reload_options"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "search",
+      "value_shape": {
+        "format": "search",
+        "type": "string"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Single-choice dropdown.",
+      "icon": "select",
+      "is_container": false,
+      "label": "Select",
+      "render_hint": "select",
+      "snippet": {
+        "field_id": "department",
+        "field_type": "select",
+        "label": "Department",
+        "options": [
+          {
+            "label": "Sales",
+            "value": "sales"
+          },
+          {
+            "label": "Support",
+            "value": "support"
+          }
+        ]
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "lookup",
+        "reload_options"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "select",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "media",
+      "description": "Handwritten signature capture.",
+      "icon": "signature",
+      "is_container": false,
+      "label": "Signature",
+      "render_hint": "signature",
+      "snippet": {
+        "field_id": "customer_signature",
+        "field_type": "signature",
+        "label": "Customer Signature",
+        "required": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "signature",
+      "value_shape": {
+        "format": "signature",
+        "type": "string"
+      }
+    },
+    {
+      "category": "media",
+      "description": "Handwritten signature capture, stored as a PNG data URL.",
+      "icon": "signature",
+      "is_container": false,
+      "label": "Signature Pad",
+      "render_hint": "signature",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable"
+      ],
+      "supported_operations": [],
+      "supported_operators": [
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": false,
+      "type": "signature_pad",
+      "value_shape": {
+        "format": "signature-pad",
+        "type": "string"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Free-form tag input (comma-separated values).",
+      "icon": "tag",
+      "is_container": false,
+      "label": "Tags",
+      "render_hint": "tags",
+      "snippet": {
+        "field_id": "interests",
+        "field_type": "tags",
+        "label": "Interests",
+        "placeholder": "Add a tag..."
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "tags",
+      "value_shape": {
+        "format": "tags",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Single-line text input.",
+      "icon": "text",
+      "is_container": false,
+      "label": "Text",
+      "render_hint": "input",
+      "snippet": {
+        "field_id": "full_name",
+        "field_type": "text",
+        "label": "Full name",
+        "required": true
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "text",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Multi-line text input.",
+      "icon": "text-area",
+      "is_container": false,
+      "label": "Text Area",
+      "render_hint": "input",
+      "snippet": {
+        "field_id": "comments",
+        "field_type": "text_area",
+        "label": "Comments"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "text_area",
+      "value_shape": {
+        "type": "string"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "Time picker.",
+      "icon": "clock",
+      "is_container": false,
+      "label": "Time",
+      "render_hint": "datetime",
+      "snippet": {
+        "field_id": "preferred_time",
+        "field_type": "time",
+        "label": "Preferred time"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "date_diff",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "time",
+      "value_shape": {
+        "format": "time",
+        "type": "string"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Dual-list widget to move items between available and selected.",
+      "icon": "transfer",
+      "is_container": false,
+      "label": "Transfer List",
+      "render_hint": "transfer-list",
+      "snippet": {
+        "field_id": "selected_skills",
+        "field_type": "transfer_list",
+        "label": "Selected Skills",
+        "options": [
+          {
+            "label": "Python",
+            "value": "python"
+          },
+          {
+            "label": "SQL",
+            "value": "sql"
+          },
+          {
+            "label": "Machine Learning",
+            "value": "ml"
+          }
+        ]
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "aggregate"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "transfer_list",
+      "value_shape": {
+        "format": "transfer-list",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "category": "selection",
+      "description": "Hierarchical picker; single mode yields the node value, multi mode a list.",
+      "icon": "tree",
+      "is_container": false,
+      "label": "Tree Select",
+      "render_hint": "select",
+      "snippet": {},
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "lookup",
+        "aggregate"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "tree_select",
+      "value_shape": {
+        "format": "tree-select",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "category": "basic",
+      "description": "URL input.",
+      "icon": "link",
+      "is_container": false,
+      "label": "URL",
+      "render_hint": "input",
+      "snippet": {
+        "field_id": "portfolio_url",
+        "field_type": "url",
+        "label": "Portfolio URL"
+      },
+      "supported_effects": [
+        "show",
+        "hide",
+        "require",
+        "disable",
+        "set",
+        "calc",
+        "reload_options",
+        "cascade_clear"
+      ],
+      "supported_operations": [
+        "copy",
+        "concat",
+        "format"
+      ],
+      "supported_operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in",
+        "is_empty",
+        "is_not_empty"
+      ],
+      "supports_constraints": true,
+      "type": "url",
+      "value_shape": {
+        "format": "uri",
+        "type": "string"
+      }
+    }
+  ]
+}

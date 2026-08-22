@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.types import FieldType
+from ..renderers.jsonschema import type_level_value_shape
 from ..tools.field_helpers import get_form_field_schema_snippets
 from .registry import register_field_control
 
@@ -639,6 +640,10 @@ def _seed() -> None:
             supported_operators=meta.get("supported_operators", []),
             supported_effects=meta.get("supported_effects", []),
             supported_operations=meta.get("supported_operations", []),
+            # FEAT-448 (TASK-2338) — sourced from the JSON Schema renderer's
+            # own _TYPE_MAP/_FORMAT_MAP/_STRUCTURAL_EXTRAS, not a second
+            # hand-maintained list.
+            value_shape=type_level_value_shape(field_type),
         )
 
 
