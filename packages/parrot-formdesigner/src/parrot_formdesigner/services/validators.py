@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
+from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
@@ -433,6 +434,22 @@ class FormValidator:
         elif ft == FieldType.LOCATION:
             return str(value).strip().upper()
 
+        # FEAT-448 (TASK-2335) — PLACE is the granular Country/State/City
+        # cascade; LOCATION (above) is untouched. 'country' delegates to
+        # is_valid_iso_country_code so the two types cannot disagree about
+        # a country code.
+        elif ft == FieldType.PLACE:
+            if not isinstance(value, dict):
+                raise ValueError("Place value must be an object with a 'country' key")
+            country = value.get("country")
+            if not isinstance(country, str):
+                raise ValueError("Place 'country' is required and must be a string")
+            return {
+                "country": country.strip().upper(),
+                "state": value.get("state"),
+                "city": value.get("city"),
+            }
+
         elif ft == FieldType.SIGNATURE:
             if isinstance(value, dict):
                 return value
@@ -611,6 +628,16 @@ class FormValidator:
                 errors.append(f"{label} must be a 2-character ISO 3166 country code")
             elif not _validate_location(value):
                 errors.append(f"{label} '{value}' is not a valid ISO 3166 country code")
+
+        # FEAT-448 (TASK-2335) — PLACE: 'country' delegates to
+        # is_valid_iso_country_code (same message shape as LOCATION above);
+        # 'state'/'city' are optional and unconstrained.
+        elif ft == FieldType.PLACE:
+            country = value.get("country") if isinstance(value, dict) else None
+            if not isinstance(country, str) or len(country) != 2:
+                errors.append(f"{label} must include a 2-character ISO 3166 country code")
+            elif not is_valid_iso_country_code(country):
+                errors.append(f"{label} '{country}' is not a valid ISO 3166 country code")
 
         elif ft == FieldType.TAGS:
             if not isinstance(value, list):

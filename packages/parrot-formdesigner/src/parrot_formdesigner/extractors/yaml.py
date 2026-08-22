@@ -74,6 +74,7 @@ _LEGACY_FIELD_TYPE_MAP: dict[str, FieldType] = {
     "remote_response": FieldType.REMOTE_RESPONSE,
     "availability": FieldType.AVAILABILITY,
     "location": FieldType.LOCATION,
+    "place": FieldType.PLACE,
     "tags": FieldType.TAGS,
     "nps": FieldType.NPS,
     "likert": FieldType.LIKERT,

@@ -65,3 +65,6 @@ class FieldType(str, Enum):
     IMAGE_DROPZONE = "image_dropzone"
     MULTI_UPLOAD = "multi_upload"
     AI_CAPTURE = "ai_capture"
+    # FEAT-448 — the granular Country/State/City cascade; LOCATION (the
+    # country picker) is untouched and stays exactly what it is.
+    PLACE = "place"

@@ -603,6 +603,19 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supported_effects": _STANDARD_EFFECTS,
         "supported_operations": ["copy"],
     },
+    FieldType.PLACE: {
+        "label": "Place",
+        "description": "Country → State → City cascade. Distinct from Location, "
+                        "which is a country-only picker.",
+        "category": "selection",
+        "icon": "place",
+        "render_hint": "cascade-select",
+        "supports_constraints": False,
+        "is_container": False,
+        "supported_operators": ["eq", "neq", "is_empty", "is_not_empty"],
+        "supported_effects": _STANDARD_EFFECTS,
+        "supported_operations": ["copy"],
+    },
 }
 
 
