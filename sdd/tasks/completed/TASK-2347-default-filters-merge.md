@@ -230,10 +230,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-5 (sdd-start session)
+**Date**: 2026-08-22
+**Notes**: Added `default_filters: Optional[FirefliesFilters] = None`
+constructor kwarg (stored as `self.default_filters`) and the
+`_merge_filters()` field-by-field merge helper to
+`packages/ai-parrot/src/parrot/agents/obsidian.py`, exactly per scope —
+`sync_fireflies_transcripts()` itself is untouched (TASK-2348's job). Added
+8 new unit tests (`TestMergeFilters`, `TestDefaultFiltersConstructor`) —
+all pass; full `test_obsidian.py` suite (64 passed, 1 pre-existing skip)
+shows no regressions. No new lint findings introduced by this task's own
+lines (spot-checked against the task's line range — the only findings in
+that vicinity are pre-existing `Optional[...]`/`except Exception` patterns
+already present throughout the file, just shifted by the insertion).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

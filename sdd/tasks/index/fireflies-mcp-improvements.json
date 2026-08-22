@@ -33,7 +33,7 @@
       "feature_id": "FEAT-441",
       "feature": "fireflies-mcp-improvements",
       "spec": "sdd/specs/fireflies-mcp-improvements.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -43,8 +43,9 @@
       "parallelism_notes": "Extends the same class/file as TASK-2346 and is a direct prerequisite for TASK-2348.",
       "assigned_to": null,
       "started_at": "2026-08-22T17:53:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2347-default-filters-merge.md"
+      "completed_at": "2026-08-22T17:56:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2347-default-filters-merge.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2348",
