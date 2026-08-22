@@ -235,10 +235,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-5 (sdd-start session)
+**Date**: 2026-08-22
+**Notes**: Implemented `FirefliesFilters` (Pydantic model) and
+`_filters_to_tool_args()` exactly per scope in
+`packages/ai-parrot/src/parrot/agents/obsidian.py`. Added
+`email-validator>=2.0` to `packages/ai-parrot/pyproject.toml` (verified
+`EmailStr` raised `ImportError` before, works after `uv pip install
+email-validator`). Added 10 new unit tests (`TestFirefliesFilters`,
+`TestFiltersToToolArgs`) — all pass; full `test_obsidian.py` suite
+(56 passed, 1 pre-existing skip) shows no regressions. Fixed only the
+import-sort (`ruff --select I001 --fix`) introduced by my own new imports;
+left all other pre-existing ruff findings in the file untouched (out of
+this task's scope).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Environment note (not a scope deviation, but worth recording): this
+worktree's shared `.venv` was missing two things unrelated to this task —
+the compiled Cython extensions for `parrot.utils.types` /
+`parrot.utils.parsers.toml` (copied the `.so` files from the main repo
+checkout; both are gitignored build artifacts, not source changes) and the
+optional `google-genai` package (installed via `uv pip install
+google-genai`) which the test file's import chain needs transitively.
+Neither was caused by this task; both were blocking collection of the
+*entire* `test_obsidian.py` file, not just the new tests.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

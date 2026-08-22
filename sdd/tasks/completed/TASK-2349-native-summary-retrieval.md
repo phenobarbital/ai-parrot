@@ -327,10 +327,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-5 (sdd-start session)
+**Date**: 2026-08-22
+**Notes**: Added `FIREFLIES_SUMMARY_HEADING` class constant (alongside
+`ANALYSIS_HEADING`), `include_summary: bool = False` param on
+`sync_fireflies_transcripts()`, the summary-fetch block in the per-meeting
+loop (soft-fails on both a raising call and a non-raising
+`success=False` result), the `has_fireflies_summary` OKF marker, and
+`_append_fireflies_summary_section()` (modeled directly on
+`_append_analysis_section()`'s shape). No parsing of the summary response
+anywhere, per scope. Added 5 new tests (`TestIncludeSummary`) covering:
+default-off no-call, success path (section + OKF marker), soft-fail on
+exception, soft-fail on unsuccessful-but-non-raising result, and the
+helper function directly. Full suite: 74 passed, 1 pre-existing skip — no
+regressions. No new lint categories (the one new `BLE001` blind-except
+finding matches this file's pre-existing convention verbatim, same as
+TASK-2348's).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

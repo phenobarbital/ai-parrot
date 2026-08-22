@@ -153,10 +153,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-5 (sdd-start session)
+**Date**: 2026-08-22
+**Notes**: Added a commented `default_filters:` example (with `mine: true`
+and a commented `channel_id` line) under `agent.kwargs` in
+`examples/agents/fireflies_daemon.yaml`, matching the existing
+`# fireflies_token: ...` commenting style. Verified the file still parses
+as valid YAML and that `default_filters` does not appear in the parsed
+`agent.kwargs` dict (stays opt-in/commented). No other section touched —
+`git diff` confirms a 3-line, single-hunk addition.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

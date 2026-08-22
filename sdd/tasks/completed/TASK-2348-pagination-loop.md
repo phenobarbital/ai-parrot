@@ -314,10 +314,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-5 (sdd-start session)
+**Date**: 2026-08-22
+**Notes**: Added `filters: Optional[FirefliesFilters] = None` param to
+`sync_fireflies_transcripts()`, replaced the single
+`fireflies_get_transcripts` call with an internal pagination loop
+(`_merge_filters` + `_filters_to_tool_args` feeding each page's args,
+`skip=0,50,100,…` until `limit` reached or a short page is returned),
+updated the docstring to document `filters`, `limit`'s total-across-pages
+meaning, and the no-enforced-ceiling risk. Everything from the
+`existing_titles`/per-transcript loop onward is byte-for-byte unchanged, as
+scoped. Added 5 new tests (`TestSyncPagination`): no-filter regression,
+filter mapping, multi-page accumulation past 50, short-page early stop,
+and partial-pagination-failure handling. Full suite: 69 passed, 1
+pre-existing skip — no regressions, including the pre-existing
+`TestSyncMethod` tests for this exact method. No new lint categories
+introduced (the two ruff findings on my new lines — `List`/`Dict` typing,
+blind `except Exception` — both match this file's pre-existing,
+already-flagged conventions verbatim, including the task's own "Pattern to
+Follow" snippet).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
