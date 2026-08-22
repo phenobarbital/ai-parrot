@@ -550,6 +550,18 @@ class FormValidator:
             last4 = value.get("last4")
             if not (isinstance(last4, str) and re.fullmatch(r"\d{4}", last4)):
                 raise ValueError("Credit card 'last4' must be exactly 4 digits")
+            # codex F7 — the published contract requires all four properties,
+            # and only `last4` was checked, so a bare {"last4": "4242"} was
+            # accepted and stored. A validator laxer than its own advertised
+            # shape is the same class of defect as the catalog divergence this
+            # feature exists to close, just pointing inward.
+            missing = [k for k in ("brand", "name", "expiry") if not value.get(k)]
+            if missing:
+                raise ValueError(
+                    "Credit card value is missing required "
+                    f"{'property' if len(missing) == 1 else 'properties'}: "
+                    + ", ".join(missing)
+                )
             return value
 
         return value

@@ -23,10 +23,7 @@
       ],
       "supports_constraints": false,
       "type": "ai_capture",
-      "value_shape": {
-        "format": "ai-capture",
-        "type": "object"
-      }
+      "value_shape": {}
     },
     {
       "category": "layout",
@@ -711,8 +708,17 @@
       "supports_constraints": false,
       "type": "image_dropzone",
       "value_shape": {
-        "format": "image-dropzone",
-        "type": "object"
+        "oneOf": [
+          {
+            "type": "object"
+          },
+          {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        ]
       }
     },
     {
@@ -1774,11 +1780,17 @@
       "supports_constraints": true,
       "type": "tree_select",
       "value_shape": {
-        "format": "tree-select",
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ]
       }
     },
     {

@@ -68,21 +68,46 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.COLOR_PICKER: "string",
     FieldType.EMOJI: "string",
     FieldType.CRON: "string",
-    FieldType.TREE_SELECT: "array",
+    FieldType.TREE_SELECT: "array",  # single-select scalar via _UNION_SHAPES
     FieldType.SIGNATURE_PAD: "string",
     FieldType.CREDIT_CARD: "object",
-    # image_dropzone's control emits a single {name,type,size,dataUrl} dict
-    # OR an array of them (spec §4) — "object" covers the common single-file
-    # case; the array case is validated (services/validators.py) but not
-    # further constrained here.
-    FieldType.IMAGE_DROPZONE: "object",
+    FieldType.IMAGE_DROPZONE: "object",  # array form via _UNION_SHAPES
     FieldType.MULTI_UPLOAD: "array",
-    # ai_capture is an unconstrained third-party API response (spec §4
-    # Non-Goals — its shape is not ours to define); "object" is the common
-    # case, not a contract.
-    FieldType.AI_CAPTURE: "object",
+    FieldType.AI_CAPTURE: "object",  # genuinely unconstrained via _UNION_SHAPES
     FieldType.PLACE: "object",
 }
+
+# FEAT-448 codex F4/F5/F6 — types whose accepted value is a UNION.
+#
+# `_TYPE_MAP` holds ONE JSON Schema type keyword per FieldType, which cannot
+# express "string or array". The first pass papered over that in code comments
+# — "object covers the common single-file case", "'object' is the common case,
+# not a contract" — while publishing the narrow shape as if it were the
+# contract. That is precisely the divergence this feature exists to end: the
+# client asserts against this catalog (TASK-2338), so a published shape
+# narrower than the validator's means correct submissions are rejected by our
+# own contract. A comment does not reach the client.
+#
+# These fragments REPLACE the shape entirely rather than merging into it.
+_UNION_SHAPES: dict[FieldType, dict[str, Any]] = {
+    # validators.py accepts list[str] (multi) or a scalar node value (single)
+    FieldType.TREE_SELECT: {
+        "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+    },
+    # validators.py accepts one {name,type,size,dataUrl} or a list of them
+    FieldType.IMAGE_DROPZONE: {
+        "oneOf": [
+            {"type": "object"},
+            {"type": "array", "items": {"type": "object"}},
+        ],
+    },
+    # A third-party API's response. Its shape is explicitly not ours to define
+    # (spec §4 Non-Goals), so publish NO constraint — an empty schema, which is
+    # JSON Schema for "anything". Publishing `object` rejected server-valid
+    # arrays and scalars.
+    FieldType.AI_CAPTURE: {},
+}
+
 
 # FieldType → JSON Schema "format" keyword (where applicable)
 _FORMAT_MAP: dict[FieldType, str] = {
@@ -211,6 +236,10 @@ def type_level_value_shape(field_type: FieldType) -> dict[str, Any]:
         (``items``/``properties``/``required``) for types whose value shape
         is more than a bare scalar.
     """
+    if field_type in _UNION_SHAPES:
+        # A union cannot be narrowed to one `type` keyword; publish it whole.
+        return deepcopy(_UNION_SHAPES[field_type])
+
     shape: dict[str, Any] = {"type": _TYPE_MAP.get(field_type, "string")}
     if field_type in _FORMAT_MAP:
         shape["format"] = _FORMAT_MAP[field_type]

@@ -1131,15 +1131,27 @@ class HTML5Renderer(AbstractFormRenderer):
             city_options.append(f'<option value="{safe_city}" selected>{safe_city}</option>')
 
         required_attr = " required" if field.required else ""
+        # FEAT-448 codex F2 — the three controls MUST submit under the field's
+        # own name. The first pass named them `<field>_country` / `_state` /
+        # `_city`, so a plain form POST carried no value for `<field>` at all:
+        # a required PLACE failed validation and an optional one was silently
+        # discarded, unless an external script nobody ships assembled the
+        # object. Bracketed names (`<field>[country]`) are the standard HTML
+        # idiom for a composite value and need no script.
+        #
+        # NOT a template: the SIGNATURE renderer above has the identical defect
+        # (a canvas plus empty `_svg`/`_png` hidden inputs and no script to
+        # fill them). It is out of scope here and is NOT the pattern to copy —
+        # it is the reason this one was written wrong.
         return (
-            f'<div class="form-field__place" data-place="true">'
-            f'<select id="{country_id}" name="{country_id}" class="{tw}" '
+            f'<div class="form-field__place" data-place="true" data-place-field="{field.field_id}">'
+            f'<select id="{country_id}" name="{field.field_id}[country]" class="{tw}" '
             f'data-place-level="country"{required_attr}>\n'
             + "\n".join(country_options) + "\n</select>"
-            f'<select id="{state_id}" name="{state_id}" class="{tw}" '
+            f'<select id="{state_id}" name="{field.field_id}[state]" class="{tw}" '
             f'data-place-level="state" data-cascade-parent="{country_id}">\n'
             + "\n".join(state_options) + "\n</select>"
-            f'<select id="{city_id}" name="{city_id}" class="{tw}" '
+            f'<select id="{city_id}" name="{field.field_id}[city]" class="{tw}" '
             f'data-place-level="city" data-cascade-parent="{state_id}">\n'
             + "\n".join(city_options) + "\n</select>"
             f'</div>'

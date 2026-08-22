@@ -242,9 +242,25 @@ def test_value_shape_present_for_every_field_type():
     """Every FieldType's control entry publishes a non-empty value_shape."""
     sys.modules.pop("parrot_formdesigner.controls.builtin", None)
     importlib.import_module("parrot_formdesigner.controls.builtin")
+    # codex F4/F5/F6 — a published shape is not always a single `type`.
+    # Two kinds are legitimately different, and both are deliberate:
+    #   * a UNION (`oneOf`) where the validator accepts more than one shape;
+    #   * the EMPTY schema, JSON Schema for "anything", for a value whose
+    #     shape is explicitly not ours to define.
+    # The empty case is an allow-list of exactly one so it cannot spread by
+    # accident — an unconstrained contract must be argued for, once, per type.
+    _UNCONSTRAINED_BY_DESIGN = {"ai_capture"}
     for c in get_controls():
+        if c.type in _UNCONSTRAINED_BY_DESIGN:
+            assert c.value_shape == {}, (
+                f"{c.type} is declared unconstrained; its value_shape must be "
+                f"the empty schema, got {c.value_shape!r}"
+            )
+            continue
         assert c.value_shape, f"{c.type} has an empty value_shape"
-        assert "type" in c.value_shape, f"{c.type}'s value_shape is missing 'type'"
+        assert "type" in c.value_shape or "oneOf" in c.value_shape, (
+            f"{c.type}'s value_shape has neither 'type' nor 'oneOf'"
+        )
 
 
 @pytest.mark.parametrize("type_id", _TASK2337_TYPES)
