@@ -245,3 +245,83 @@ for _mod_name in (
             _importlib.import_module(_mod_name)
         except ImportError:
             pass  # noqa: S110 — some deps may not be available in all envs
+
+
+# ---------------------------------------------------------------------------
+# Optional-dependency skipping (CI)
+#
+# The GitHub CI jobs run `uv sync --package <pkg>`, which installs a package's
+# BASE dependencies only — no extras, and no sibling workspace packages. A
+# large part of the suite imports modules that only arrive via an extra
+# (selenium, aioquic, aiogram, ...), so on a runner those modules fail to
+# import and pytest reports a collection ERROR for the whole file.
+#
+# Rather than let any ImportError pass silently — which would hide real
+# breakage and make a green run meaningless — we skip ONLY for the explicit
+# allowlist below, and print a summary of everything that was skipped.
+#
+# The finder is appended LAST to sys.meta_path, so it is consulted only after
+# every real finder has failed: reaching it means the module is genuinely not
+# installed. Anything not on this list still fails loudly.
+# ---------------------------------------------------------------------------
+OPTIONAL_DEPENDENCIES: frozenset[str] = frozenset({
+    # --- third-party, provided by an extra ---
+    "aiogram",              # ai-parrot[telegram]
+    "aioquic",              # MCP QUIC transport (NOT declared by any extra — see note)
+    "anthropic",            # ai-parrot[anthropic]
+    "claude_agent_sdk",     # ai-parrot[claude-agent]
+    "docx",                 # ai-parrot-loaders[pdf] (python-docx)
+    "fitz",                 # PyMuPDF
+    "markdownify",
+    "markitdown",
+    "microsoft_agents",     # ai-parrot[integrations]
+    "msgraph",              # office365 toolkit
+    "pptx",                 # python-pptx
+    "selenium",             # ai-parrot[agents]
+    "seleniumwire",
+    "sentence_transformers",
+    "xai_sdk",              # ai-parrot[xai]
+    # --- sibling workspace packages a single-package sync does not install ---
+    "parrot_formdesigner",
+})
+
+#: Dotted submodules whose PARENT is installed but whose own extra is not.
+OPTIONAL_SUBMODULES: frozenset[str] = frozenset({
+    "google.genai",
+    "mcp.client",
+    "parrot.integrations.oauth2",
+})
+
+_SKIPPED_OPTIONAL: dict[str, int] = {}
+
+
+class _OptionalDependencyFinder:
+    """Turn a missing *allowlisted* optional module into a module-level skip.
+
+    Appended last to ``sys.meta_path``: if this finder is reached, no real
+    finder could locate the module, so it is genuinely absent.
+    """
+
+    def find_spec(self, fullname, path=None, target=None):  # noqa: D102
+        root = fullname.split(".")[0]
+        if root in OPTIONAL_DEPENDENCIES or fullname in OPTIONAL_SUBMODULES:
+            import pytest
+
+            _SKIPPED_OPTIONAL[fullname] = _SKIPPED_OPTIONAL.get(fullname, 0) + 1
+            pytest.skip(
+                f"optional dependency {fullname!r} is not installed",
+                allow_module_level=True,
+            )
+        return None
+
+
+sys.meta_path.append(_OptionalDependencyFinder())
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Make optional-dependency skips visible instead of silent."""
+    if not _SKIPPED_OPTIONAL:
+        return
+    terminalreporter.section("skipped optional dependencies")
+    for name, count in sorted(_SKIPPED_OPTIONAL.items(), key=lambda kv: -kv[1]):
+        terminalreporter.write_line(f"  {name}: {count} import(s) skipped")
