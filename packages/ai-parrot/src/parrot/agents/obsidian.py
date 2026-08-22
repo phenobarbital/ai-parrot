@@ -8,19 +8,21 @@ under the 'meetings' folder. Supports two operations:
 
 The sync operation is safe to schedule every 8 hours via /schedule.
 """
+import logging
 import os
 import re
-from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-import logging
+from typing import Any, Dict, List, Literal, Optional
+
 from navconfig import config
+from pydantic import BaseModel, EmailStr, Field
+
 from parrot.bots.agent import BasicAgent
-from parrot.tools.obsidian import ObsidianToolkit
-from parrot.models.responses import AIMessage
 from parrot.interfaces.obsidian.okf import project_okf_block
 from parrot.knowledge.okf.ontology import ConceptType, RelationType
-
+from parrot.models.responses import AIMessage
+from parrot.tools.obsidian import ObsidianToolkit
 
 #: Leading markdown/ordered list markers the LLM may already have written
 #: ("- ", "* ", "1. ", "2) ") — stripped so
@@ -43,6 +45,76 @@ def _strip_list_marker(line: str) -> str:
 
 
 logger = logging.getLogger(__name__)
+
+
+class FirefliesFilters(BaseModel):
+    """Structured, validated filters over the ``fireflies_get_transcripts``
+    MCP tool.
+
+    Field names are snake_case; :func:`_filters_to_tool_args` maps them to
+    the tool's camelCase parameter names before the call. See
+    ``sdd/specs/fireflies-mcp-improvements.spec.md`` §2 (Data Models).
+    """
+
+    from_date: Optional[str] = None
+    """ISO-8601 date string (e.g. ``"2023-01-01"``) → tool's ``fromDate``."""
+
+    to_date: Optional[str] = None
+    """ISO-8601 date string → tool's ``toDate``."""
+
+    keyword: Optional[str] = Field(default=None, max_length=255)
+    """Keyword to search for in meeting content."""
+
+    scope: Literal["title", "sentences", "all"] = "all"
+    """Keyword-search scope."""
+
+    organizers: List[EmailStr] = Field(default_factory=list)
+    """Organizer email addresses to filter by."""
+
+    participants: List[EmailStr] = Field(default_factory=list)
+    """Participant email addresses to filter by."""
+
+    mine: Optional[bool] = None
+    """Only include meetings owned by the authenticated user."""
+
+    channel_id: Optional[str] = None
+    """Raw Fireflies channel/folder ID → tool's ``channelId``. No
+    name-to-ID resolution is performed (out of scope)."""
+
+
+def _filters_to_tool_args(filters: "FirefliesFilters") -> Dict[str, Any]:
+    """Map a :class:`FirefliesFilters` instance to ``fireflies_get_transcripts``
+    tool arguments.
+
+    Converts snake_case field names to the tool's camelCase parameter names
+    and omits any field left at its unset/default value, so the resulting
+    dict only carries filters the caller actually specified.
+
+    Args:
+        filters: The filters to convert.
+
+    Returns:
+        A dict suitable for merging into the ``fireflies_get_transcripts``
+        tool-call arguments.
+    """
+    args: Dict[str, Any] = {}
+    if filters.from_date is not None:
+        args["fromDate"] = filters.from_date
+    if filters.to_date is not None:
+        args["toDate"] = filters.to_date
+    if filters.keyword is not None:
+        args["keyword"] = filters.keyword
+    if filters.scope != "all":
+        args["scope"] = filters.scope
+    if filters.organizers:
+        args["organizers"] = [str(email) for email in filters.organizers]
+    if filters.participants:
+        args["participants"] = [str(email) for email in filters.participants]
+    if filters.mine is not None:
+        args["mine"] = filters.mine
+    if filters.channel_id is not None:
+        args["channelId"] = filters.channel_id
+    return args
 
 
 class FirefliesObsidianAgent(BasicAgent):

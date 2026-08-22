@@ -15,9 +15,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from parrot.agents.obsidian import FirefliesObsidianAgent
+from parrot.agents.obsidian import (
+    FirefliesFilters,
+    FirefliesObsidianAgent,
+    _filters_to_tool_args,
+)
 from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
+from pydantic import ValidationError
 
 
 class _FakeCodexClient(OpenAICodexClient):
@@ -780,3 +784,79 @@ class TestStripAnalysisSection:
             path=f"{agent.meetings_folder}/{note_title}"
         )
         assert note["content"].count(FirefliesObsidianAgent.ANALYSIS_HEADING) == 1
+
+
+class TestFirefliesFilters:
+    """Test the FirefliesFilters Pydantic model (TASK-2346)."""
+
+    def test_valid_construction(self):
+        f = FirefliesFilters(from_date="2026-08-01", mine=True)
+        assert f.from_date == "2026-08-01"
+        assert f.mine is True
+
+    def test_rejects_bad_scope(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(scope="invalid")
+
+    def test_rejects_malformed_email_in_organizers(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(organizers=["not-an-email"])
+
+    def test_rejects_malformed_email_in_participants(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(participants=["also-not-an-email"])
+
+    def test_defaults(self):
+        f = FirefliesFilters()
+        assert f.scope == "all"
+        assert f.organizers == []
+        assert f.participants == []
+        assert f.from_date is None
+        assert f.to_date is None
+        assert f.keyword is None
+        assert f.mine is None
+        assert f.channel_id is None
+
+    def test_keyword_max_length_enforced(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(keyword="x" * 256)
+
+
+class TestFiltersToToolArgs:
+    """Test the _filters_to_tool_args() field-name mapping (TASK-2346)."""
+
+    def test_maps_camel_case_fields(self):
+        f = FirefliesFilters(
+            from_date="2026-08-01", to_date="2026-08-31", channel_id="abc123"
+        )
+        args = _filters_to_tool_args(f)
+        assert args["fromDate"] == "2026-08-01"
+        assert args["toDate"] == "2026-08-31"
+        assert args["channelId"] == "abc123"
+
+    def test_passthrough_fields_unchanged(self):
+        f = FirefliesFilters(keyword="standup", scope="title", mine=True)
+        args = _filters_to_tool_args(f)
+        assert args["keyword"] == "standup"
+        assert args["scope"] == "title"
+        assert args["mine"] is True
+
+    def test_email_lists_serialized_as_strings(self):
+        f = FirefliesFilters(
+            organizers=["boss@company.com"],
+            participants=["a@x.com", "b@x.com"],
+        )
+        args = _filters_to_tool_args(f)
+        assert args["organizers"] == ["boss@company.com"]
+        assert args["participants"] == ["a@x.com", "b@x.com"]
+
+    def test_unset_fields_omitted(self):
+        args = _filters_to_tool_args(FirefliesFilters())
+        assert "fromDate" not in args
+        assert "toDate" not in args
+        assert "keyword" not in args
+        assert "scope" not in args  # default "all" is omitted too
+        assert "organizers" not in args
+        assert "participants" not in args
+        assert "mine" not in args
+        assert "channelId" not in args
