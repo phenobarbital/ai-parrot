@@ -33,6 +33,13 @@ from ..tenancy.middleware import (
 )
 from ..tenancy.repository import TenantRepository
 from ..tenancy.runtime import TenantRuntime, TenantRuntimeCache
+from .rules import (
+    APP_RULE_REPOSITORY,
+    RuleCollectionView,
+    RuleEvaluateView,
+    RuleItemView,
+    setup_rule_routes,
+)
 from .reviews import (
     APP_INGEST_SERVICE,
     APP_REVIEW_SOURCES,
@@ -67,6 +74,7 @@ logger = logging.getLogger("parrot_saas.handlers.setup")
 def _make_runtime_builder(
     secret_store_factory: Any,
     tool_manager_template: Optional[Any] = None,
+    rule_repository: Optional[Any] = None,
 ):
     """Build the default per-tenant runtime builder.
 
@@ -78,6 +86,8 @@ def _make_runtime_builder(
         secret_store_factory: Zero-argument callable returning the store, or
             ``None`` when no store is configured.
         tool_manager_template: Template manager cloned per tenant, if any.
+        rule_repository: Repository the tenant's eligibility ruleset is
+            compiled from, if any.
 
     Returns:
         A coroutine function suitable for :class:`TenantRuntimeCache`.
@@ -141,10 +151,32 @@ def _make_runtime_builder(
                 strict=False,
             )
 
+        ruleset = None
+        if rule_repository is not None:
+            from ..rules.builder import build_ruleset
+            from ..rules.repository import PostgresRuleStorage
+
+            try:
+                specs = await PostgresRuleStorage(
+                    rule_repository, tenant.tenant_id
+                ).load()
+                # build_ruleset skips rules it cannot compile rather than
+                # raising: one bad row a tenant saved must not take their whole
+                # flow down, and an empty ruleset reads as "no coupon", which
+                # is the safe answer.
+                ruleset = build_ruleset(specs)
+            except Exception as exc:  # noqa: BLE001 - degrade, do not 500
+                logger.error(
+                    "could not load the eligibility ruleset for tenant %s: %s",
+                    tenant.tenant_id,
+                    exc,
+                )
+
         return TenantRuntime(
             tenant=tenant,
             tool_manager=tool_manager,
             agents=agents,
+            ruleset=ruleset,
             semaphore=asyncio.Semaphore(conf.SAAS_TENANT_MAX_CONCURRENT_RUNS),
         )
 
@@ -245,9 +277,15 @@ def setup_saas_api(
             _app[APP_SECRET_STORE] = _store_holder["store"]
         return _store_holder["store"]
 
+    from ..rules.repository import RuleRepository
+
+    rule_repository = RuleRepository(resolved_dsn, schema=resolved_schema)
+
     runtimes = TenantRuntimeCache(
         runtime_builder
-        or _make_runtime_builder(_secret_store, tool_manager_template),
+        or _make_runtime_builder(
+            _secret_store, tool_manager_template, rule_repository
+        ),
         max_size=conf.SAAS_TENANT_RUNTIME_MAX,
         ttl=conf.SAAS_TENANT_RUNTIME_TTL,
     )
@@ -255,6 +293,7 @@ def setup_saas_api(
     _app[APP_TENANT_REPOSITORY] = repository
     _app[APP_TENANT_RUNTIMES] = runtimes
     _app[APP_SECRET_STORE_FACTORY] = _secret_store
+    _app[APP_RULE_REPOSITORY] = rule_repository
 
     if review_sources is None:
         from ..reviews.mock import MockReviewSource
@@ -296,6 +335,9 @@ def setup_saas_api(
             ReviewCollectionView,
             ReviewItemView,
             ReviewSimulateView,
+            RuleCollectionView,
+            RuleEvaluateView,
+            RuleItemView,
         )
 
     if install_middleware:
@@ -312,6 +354,7 @@ def setup_saas_api(
     setup_tenant_routes(_app)
     setup_secret_routes(_app)
     setup_review_routes(_app)
+    setup_rule_routes(_app)
 
     async def _on_startup(application: web.Application) -> None:
         """Create the SaaS schema if it does not exist."""
@@ -326,6 +369,7 @@ def setup_saas_api(
         await repository.aclose()
         await review_repository.aclose()
         await guest_repository.aclose()
+        await rule_repository.aclose()
         store = application.get(APP_SECRET_STORE)
         if store is not None and hasattr(store, "aclose"):
             await store.aclose()
@@ -344,6 +388,7 @@ def setup_saas_api(
 
 __all__ = (
     "APP_INGEST_SERVICE",
+    "APP_RULE_REPOSITORY",
     "APP_REVIEW_SOURCES",
     "APP_SECRET_STORE",
     "APP_SECRET_STORE_FACTORY",

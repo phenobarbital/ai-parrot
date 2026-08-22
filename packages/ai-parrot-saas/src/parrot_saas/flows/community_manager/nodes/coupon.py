@@ -98,7 +98,11 @@ class CouponEligibilityNode(CMNode):
         ``result`` payload and the side effect is the caller's job. That
         separation is why issuance lives in the next node.
         """
-        from ...rules.context import build_environment, build_eval_context
+        # Four dots: this module is parrot_saas.flows.community_manager.nodes,
+        # so three would resolve to parrot_saas.flows.rules, which does not
+        # exist. The mistake stayed invisible while the ruleset was always
+        # None and this branch never ran.
+        from ....rules.context import build_environment, build_eval_context
 
         shared = self.shared_state(ctx)
         eval_ctx = build_eval_context(shared)

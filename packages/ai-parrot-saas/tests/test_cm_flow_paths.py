@@ -258,6 +258,81 @@ async def test_a_wired_review_source_actually_publishes(tenant) -> None:
 
 
 # ---------------------------------------------------------------------------
+# The rules engine, wired into the real graph
+# ---------------------------------------------------------------------------
+
+
+async def test_a_wired_ruleset_decides_eligibility(tenant) -> None:
+    """The engine has to fit its consumer, not just its own tests.
+
+    Every other path test seeds ``eligibility`` directly, so nothing else would
+    notice if the node's call into navrules drifted — or if the context builder
+    stopped producing the fields the rules read.
+    """
+    from parrot_saas.flows.community_manager.models import ContactCapture, ContactChannel
+    from parrot_saas.rules.builder import build_ruleset
+
+    ruleset = build_ruleset(
+        [
+            {
+                "name": "recover_detractor",
+                "priority": 100,
+                "conditions": {"ctx.rating": {"lte": 2}, "ctx.has_contact": True},
+                "result": {"offer_code": "RECOVER20", "reason": "detractor"},
+            }
+        ]
+    )
+    shared = {
+        "review": _review(rating=1),
+        "contact": ContactCapture(
+            contact_available=True, channel=ContactChannel.EMAIL, guest_id="g-1"
+        ),
+        "timezone": tenant.timezone,
+        "eligibility_ctx": {"rating": 1, "has_contact": True},
+    }
+
+    result, executed = await _run(tenant, shared, ruleset=ruleset)
+
+    assert topo.COUPON_ELIGIBILITY in executed
+    decision = result.responses[topo.COUPON_ELIGIBILITY]
+    assert decision.eligible is True
+    assert decision.offer_code == "RECOVER20"
+    assert decision.rule_name == "recover_detractor"
+
+
+async def test_a_wired_ruleset_can_decline(tenant) -> None:
+    """"No offer" is a decision the graph routes on, not an error."""
+    from parrot_saas.flows.community_manager.models import ContactCapture, ContactChannel
+    from parrot_saas.rules.builder import build_ruleset
+
+    ruleset = build_ruleset(
+        [
+            {
+                "name": "recover_detractor",
+                "priority": 100,
+                "conditions": {"ctx.rating": {"lte": 2}},
+                "result": {"offer_code": "RECOVER20"},
+            }
+        ]
+    )
+    shared = {
+        "review": _review(rating=5),
+        "contact": ContactCapture(
+            contact_available=True, channel=ContactChannel.EMAIL, guest_id="g-1"
+        ),
+        "eligibility_ctx": {"rating": 5},
+    }
+
+    result, executed = await _run(tenant, shared, ruleset=ruleset)
+
+    decision = result.responses[topo.COUPON_ELIGIBILITY]
+    assert decision.eligible is False
+    assert decision.reason == "no_rule_matched"
+    assert topo.COUPON_ISSUE not in executed
+    assert topo.CLOSE in executed
+
+
+# ---------------------------------------------------------------------------
 # Checkpointing stays available
 # ---------------------------------------------------------------------------
 

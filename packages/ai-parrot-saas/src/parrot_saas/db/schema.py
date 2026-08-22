@@ -156,6 +156,42 @@ def _statements(schema: str) -> Sequence[str]:
         CREATE INDEX IF NOT EXISTS review_replies_review_idx
             ON {schema}.review_replies (tenant_id, review_id, created_at DESC)
         """,
+        # -- eligibility rules ---------------------------------------------
+        # navrules rule rows, edited by the tenant through the rules API.
+        #
+        # There is deliberately no ``rule_type`` column. Only declarative
+        # ConditionRules are admissible — anything else makes
+        # ``RuleSet.evaluate_sync()`` raise, which would break the flow for
+        # every review that tenant receives — and storing a type that can only
+        # hold one value is an invitation to set it to another. The storage
+        # emits the type as a constant instead, which no SQL can subvert.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.rules (
+            rule_id     uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id   text        NOT NULL
+                                    REFERENCES {schema}.tenants (tenant_id),
+            ruleset     text        NOT NULL DEFAULT 'coupon_eligibility',
+            name        text        NOT NULL,
+            priority    integer     NOT NULL DEFAULT 0,
+            enabled     boolean     NOT NULL DEFAULT true,
+            conditions  jsonb       NOT NULL DEFAULT '{{}}'::jsonb,
+            result      jsonb       NOT NULL DEFAULT '{{}}'::jsonb,
+            description text        NOT NULL DEFAULT '',
+            created_at  timestamptz NOT NULL DEFAULT now(),
+            updated_at  timestamptz NOT NULL DEFAULT now(),
+            CONSTRAINT rules_name_uniq UNIQUE (tenant_id, ruleset, name)
+        )
+        """,
+        # ``rule_id`` is the tie-break, and it is load-bearing: RuleSet.compile()
+        # sorts by priority with a *stable* sort, so rules of equal priority
+        # keep the order they arrived in. Without a deterministic second key
+        # the winner between two equal-priority offers would depend on the
+        # order Postgres happened to return rows in.
+        f"""
+        CREATE INDEX IF NOT EXISTS rules_lookup_idx
+            ON {schema}.rules (tenant_id, ruleset, priority DESC, rule_id)
+            WHERE enabled
+        """,
     )
 
 

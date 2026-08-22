@@ -82,6 +82,7 @@ policies:
       - "saas:reviews"
     actions:
       - "saas:offer:write"
+      - "saas:rule:read"
       - "saas:rule:write"
       - "saas:rule:delete"
       # Simulating a review starts a real run, which spends the tenant's own
@@ -104,11 +105,16 @@ policies:
     resources:
       - "saas:reviews"
       - "saas:coupons"
+      - "saas:rules"
     actions:
       - "saas:review:read"
       - "saas:run:read"
       - "saas:coupon:read"
       - "saas:coupon:redeem"
+      # Reading rules, but not writing them: an operator fielding a review
+      # needs to answer "why did this guest get an offer?" without being able
+      # to change who gets one.
+      - "saas:rule:read"
     subjects:
       groups:
         - tenant_admin
