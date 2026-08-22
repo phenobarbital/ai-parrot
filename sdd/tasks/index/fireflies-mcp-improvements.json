@@ -76,7 +76,7 @@
       "feature_id": "FEAT-441",
       "feature": "fireflies-mcp-improvements",
       "spec": "sdd/specs/fireflies-mcp-improvements.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -84,8 +84,9 @@
       "parallelism_notes": "Functionally independent of TASK-2346/2347/2348 (filters/pagination), but modifies the same method in the same file (obsidian.py:sync_fireflies_transcripts) — shares no logic but shares the edit surface, so it is sequenced rather than run in a parallel worktree to avoid a merge conflict.",
       "assigned_to": null,
       "started_at": "2026-08-22T21:26:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2349-native-summary-retrieval.md"
+      "completed_at": "2026-08-22T21:29:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2349-native-summary-retrieval.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2350",
