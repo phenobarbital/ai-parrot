@@ -19,6 +19,7 @@ from parrot.agents.obsidian import (
     FirefliesFilters,
     FirefliesObsidianAgent,
     _filters_to_tool_args,
+    _merge_filters,
 )
 from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
 from pydantic import ValidationError
@@ -860,3 +861,56 @@ class TestFiltersToToolArgs:
         assert "participants" not in args
         assert "mine" not in args
         assert "channelId" not in args
+
+
+class TestMergeFilters:
+    """Test the _merge_filters() field-by-field precedence (TASK-2347)."""
+
+    def test_call_wins_on_shared_field(self):
+        default = FirefliesFilters(mine=False)
+        call = FirefliesFilters(mine=True)
+        merged = _merge_filters(default, call)
+        assert merged.mine is True
+
+    def test_default_fills_unset_call_fields(self):
+        default = FirefliesFilters(channel_id="X")
+        call = FirefliesFilters(mine=True)
+        merged = _merge_filters(default, call)
+        assert merged.channel_id == "X"
+        assert merged.mine is True
+
+    def test_both_none_returns_none(self):
+        assert _merge_filters(None, None) is None
+
+    def test_only_default_set(self):
+        default = FirefliesFilters(mine=True)
+        merged = _merge_filters(default, None)
+        assert merged.mine is True
+
+    def test_only_call_set(self):
+        call = FirefliesFilters(mine=True)
+        merged = _merge_filters(None, call)
+        assert merged.mine is True
+
+    def test_does_not_mutate_inputs(self):
+        default = FirefliesFilters(channel_id="X")
+        call = FirefliesFilters(mine=True)
+        _merge_filters(default, call)
+        assert default.mine is None
+        assert call.channel_id is None
+
+
+class TestDefaultFiltersConstructor:
+    """Test the default_filters constructor kwarg (TASK-2347)."""
+
+    def test_stores_default_filters(self, vault_path):
+        agent = FirefliesObsidianAgent(
+            vault_path=str(vault_path),
+            fireflies_token="test-token",
+            default_filters=FirefliesFilters(mine=True),
+            injection_detection=False,
+        )
+        assert agent.default_filters.mine is True
+
+    def test_default_filters_none_when_omitted(self, agent):
+        assert agent.default_filters is None

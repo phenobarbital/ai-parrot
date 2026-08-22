@@ -117,6 +117,37 @@ def _filters_to_tool_args(filters: "FirefliesFilters") -> Dict[str, Any]:
     return args
 
 
+def _merge_filters(
+    default: Optional["FirefliesFilters"],
+    call: Optional["FirefliesFilters"],
+) -> Optional["FirefliesFilters"]:
+    """Merge agent-level default filters with a per-call override.
+
+    Per-call fields win wherever the caller explicitly set them; the
+    agent's ``default_filters`` fills in any field the call left at its
+    model-default (unset) value. Field-by-field, never whole-object — see
+    ``sdd/specs/fireflies-mcp-improvements.spec.md`` §7 Known Risks.
+
+    Args:
+        default: The agent's standing ``default_filters`` (may be ``None``).
+        call: The per-call ``filters`` argument (may be ``None``).
+
+    Returns:
+        The merged filters, or ``None`` if both inputs are ``None``.
+    """
+    if default is None and call is None:
+        return None
+    if default is None:
+        return call
+    if call is None:
+        return default
+
+    merged = default.model_dump()
+    call_explicit = call.model_dump(exclude_defaults=True)
+    merged.update(call_explicit)
+    return FirefliesFilters(**merged)
+
+
 class FirefliesObsidianAgent(BasicAgent):
     """Agent that syncs Fireflies.ai transcripts into Obsidian vault.
 
@@ -151,6 +182,7 @@ class FirefliesObsidianAgent(BasicAgent):
         vault_path: Optional[str | Path] = None,
         fireflies_token: Optional[str] = None,
         meetings_folder: str = "meetings",
+        default_filters: Optional["FirefliesFilters"] = None,
         **kwargs,
     ):
         """Initialize the Fireflies→Obsidian sync agent.
@@ -160,6 +192,10 @@ class FirefliesObsidianAgent(BasicAgent):
             vault_path: Path to Obsidian vault (e.g. ~/vaults/notes)
             fireflies_token: Fireflies.ai API token (if None, will prompt)
             meetings_folder: Subfolder in vault to store meetings (default: 'meetings')
+            default_filters: Standing :class:`FirefliesFilters` scope applied
+                to every :meth:`sync_fireflies_transcripts` call (e.g. for a
+                scheduled daemon). Per-call ``filters`` override this
+                field-by-field — see :func:`_merge_filters`.
             **kwargs: Forwarded to Agent.__init__()
         """
         super().__init__(name=name, **kwargs)
@@ -172,6 +208,7 @@ class FirefliesObsidianAgent(BasicAgent):
             self.vault_path = Path(env_vault) if env_vault else Path.home() / "vaults" / "notes"
         self.fireflies_token = fireflies_token
         self.meetings_folder = meetings_folder
+        self.default_filters = default_filters
 
         # Initialize Obsidian toolkit
         self.obsidian_toolkit = ObsidianToolkit(
