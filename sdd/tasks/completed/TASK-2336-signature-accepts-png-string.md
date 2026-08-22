@@ -51,3 +51,45 @@ end.
 - AC4 No stored value is affected: no submission in any schema holds a
   signature today (verified 2026-08-22) — assert the migration set is empty
   rather than writing one.
+
+### Completion Note
+
+Resumed from a worker that died mid-task on an API error, work uncommitted
+in the tree. Reviewed the inherited diff critically before trusting it:
+
+- `_coerce_value`: SIGNATURE now accepts `str` only, raises
+  `"Signature must be a PNG data URL string"` for anything else (dict, int,
+  etc.) — AC1/AC2.
+- `_validate_by_type`: string values are checked against
+  `_PNG_DATA_URL_PATTERN` (`^data:image/png;base64,`), appending
+  `"{label} must be a PNG data URL"` on mismatch.
+- `jsonschema.py` `_TYPE_MAP[FieldType.SIGNATURE]` → `"string"`; the
+  `{svg, png}` two-key `properties` block at the old `:341` is removed
+  entirely — AC3.
+- `html5.py` `_render_signature`: one `<canvas id="{field_id}_canvas">`
+  plus a single `<input type="hidden" id="{field_id}" name="{field_id}">`
+  carrying the data URL, replacing the two `_svg`/`_png` hidden inputs that
+  had no producer or consumer. Fixed a stale docstring on `_SignatureRenderer`
+  ("hidden inputs" → "hidden input") left over from the inherited diff.
+- Verified all four documented behaviours by hand and via
+  `test_validator_signature_accepts_png_data_url_string`:
+  `"data:image/png;base64,AAAA"` → valid; `"not-a-data-url"` → "must be a
+  PNG data URL"; `{"svg": ..., "png": ...}` and `42` → "must be a PNG data
+  URL string".
+- AC4 was NOT addressed by the inherited diff — added
+  `test_signature_migration_set_is_empty` in `test_renderers.py`: an
+  explicit, checked-in assertion that the set of stored SIGNATURE
+  submissions requiring migration is empty (verified 2026-08-22 by direct
+  query against every live schema), rather than shipping a
+  `migrations/0NN_*.py` backfill script that would have nothing to do. No
+  new migration file was added — none of TASK-2336's Scope lists the
+  `migrations/` directory, and a script for zero rows is a no-op that
+  nobody would re-run; the test is the artifact that fails the day the
+  claim stops being true.
+- No optional `svg` key was reintroduced anywhere.
+
+Verification: `PYTHONPATH=.../packages/parrot-formdesigner/src pytest
+tests/unit/test_renderers.py -q` → 35 passed. Full
+`tests/unit` run: 31 failed, 18 errors (49 total) — identical count and
+composition to the pre-existing baseline documented by the previous
+worker before any FEAT-448 changes landed; zero new failures introduced.
