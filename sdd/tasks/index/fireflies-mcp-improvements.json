@@ -14,14 +14,14 @@
       "feature_id": "FEAT-441",
       "feature": "fireflies-mcp-improvements",
       "spec": "sdd/specs/fireflies-mcp-improvements.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundational module; TASK-2347 and TASK-2348 both depend on it. No prior task to run alongside.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-22T14:19:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2346-fireflies-filters-model.md"
     },
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-2346"],
+      "depends_on": [
+        "TASK-2346"
+      ],
       "parallel": false,
       "parallelism_notes": "Extends the same class/file as TASK-2346 and is a direct prerequisite for TASK-2348.",
       "assigned_to": null,
@@ -53,7 +55,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2346", "TASK-2347"],
+      "depends_on": [
+        "TASK-2346",
+        "TASK-2347"
+      ],
       "parallel": false,
       "parallelism_notes": "Rewrites the same method (sync_fireflies_transcripts) that TASK-2349 also modifies, in the same file (obsidian.py) — cannot run in a separate worktree from TASK-2349 without a merge conflict; sequenced in this same worktree instead.",
       "assigned_to": null,
@@ -89,7 +94,9 @@
       "status": "pending",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-2347"],
+      "depends_on": [
+        "TASK-2347"
+      ],
       "parallel": false,
       "parallelism_notes": "Documentation-only, different file (fireflies_daemon.yaml) from all other tasks — no file conflict exists, but it is trivially small and depends on TASK-2347's kwarg existing, so a separate worktree would add ceremony with no real time savings.",
       "assigned_to": null,
