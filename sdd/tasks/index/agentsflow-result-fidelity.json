@@ -1,0 +1,131 @@
+{
+  "feature": "agentsflow-result-fidelity",
+  "feature_id": "FEAT-447",
+  "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-22T00:57:00.481030+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2326",
+      "slug": "shared-unwrap-response",
+      "title": "Shared _unwrap_response() helper + populate NodeExecutionInfo.client",
+      "feature_id": "FEAT-447",
+      "feature": "agentsflow-result-fidelity",
+      "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Edits core/result.py, the shared metadata seam used by BOTH executors (5 crew call sites + flow + decision nodes). Must land FIRST and ALONE, gated on the crew regression suites \u2014 it is the only change in FEAT-447 that can silently break AgentCrew.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2326-shared-unwrap-response.md"
+    },
+    {
+      "id": "TASK-2327",
+      "slug": "node-results-envelope-unwrap",
+      "title": "Envelope-aware FlowResult.node_results + document the output shape contract",
+      "feature_id": "FEAT-447",
+      "feature": "agentsflow-result-fidelity",
+      "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Logically independent of TASK-2326 (different method, no shared logic) but edits the SAME file, core/result.py, so it cannot run in a parallel worktree. Sequence it after 2326 to avoid conflicting hunks.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2327-node-results-envelope-unwrap.md"
+    },
+    {
+      "id": "TASK-2328",
+      "slug": "aggregate-result-fidelity",
+      "title": "Faithful _aggregate_result \u2014 ordering, total_time, execution_log, metadata",
+      "feature_id": "FEAT-447",
+      "feature": "agentsflow-result-fidelity",
+      "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2326"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-2326: only after the shared helper unwraps envelopes does the metadata this method builds actually carry usage/tool_calls. Edits flow/flow.py, shared with TASK-2329.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2328-aggregate-result-fidelity.md"
+    },
+    {
+      "id": "TASK-2329",
+      "slug": "run-flow-context-wiring",
+      "title": "Wire run_flow to the faithful aggregator and enrich FlowContext",
+      "feature_id": "FEAT-447",
+      "feature": "agentsflow-result-fidelity",
+      "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the same file and the adjacent call sites as TASK-2328 (flow/flow.py:1881 and :1926). Strictly sequential \u2014 parallel execution would conflict on every hunk.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2329-run-flow-context-wiring.md"
+    },
+    {
+      "id": "TASK-2330",
+      "slug": "crew-flow-parity-test",
+      "title": "Crew/flow FlowResult parity contract test",
+      "feature_id": "FEAT-447",
+      "feature": "agentsflow-result-fidelity",
+      "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2326",
+        "TASK-2327",
+        "TASK-2328",
+        "TASK-2329"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Asserts the end state of all four implementation tasks, so it can only run once they are all complete. New file, no edit conflicts, but the dependency is total.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2330-crew-flow-parity-test.md"
+    },
+    {
+      "id": "TASK-2331",
+      "slug": "docs-flowresult-contract",
+      "title": "Document the FlowResult fidelity contract and output shape rule",
+      "feature_id": "FEAT-447",
+      "feature": "agentsflow-result-fidelity",
+      "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2328",
+        "TASK-2329"
+      ],
+      "parallel": true,
+      "parallelism_notes": "The ONLY parallelizable task in FEAT-447: touches docs/architecture/ 07-agentcrew.md exclusively, sharing no file with any other task. Can run in a separate worktree concurrently with TASK-2330 once 2328/2329 land.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2331-docs-flowresult-contract.md"
+    }
+  ]
+}
