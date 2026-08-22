@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-442",
+  "feature_slug": "saas-multi-tenant-flows",
+  "started_at": "2026-08-22T00:00:00Z",
+  "updated_at": "2026-08-22T00:00:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/saas-multi-tenant-flows.brainstorm.md",
+    "raw_path": "sdd/state/FEAT-442/source.md",
+    "fetched_at": "2026-08-22T00:00:00Z",
+    "summary_oneline": "Parrot Research Cloud - SaaS multi-tenant Flows (BYOK, 3 commercial modes, ~14-feature program, Option C core primitives + ai-parrot-saas satellite)"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "wiki_available": true,
+  "phase": "committed",
+  "phases": {
+    "source": {"status": "completed", "started_at": "2026-08-22T00:00:00Z", "completed_at": "2026-08-22T00:00:00Z"},
+    "plan": {"status": "completed", "started_at": "2026-08-22T00:00:00Z", "completed_at": "2026-08-22T00:10:00Z", "queries_total": 22, "approved_by_user": true, "edited_by_user": false, "plan_path": "sdd/state/FEAT-442/research_plan.json"},
+    "research": {"status": "completed", "started_at": "2026-08-22T00:10:00Z", "completed_at": "2026-08-22T00:25:00Z", "queries_executed": 22, "queries_skipped": 0, "depth_reached": 2, "files_read": 9, "grep_calls": 16, "git_calls": 3, "truncated": false, "truncation_reason": null},
+    "synthesis": {"status": "completed", "started_at": "2026-08-22T00:25:00Z", "completed_at": "2026-08-22T00:30:00Z", "synthesis_path": "sdd/state/FEAT-442/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 13, "claims_high_conf": 11, "claims_medium_conf": 2, "claims_low_conf": 0, "unknowns_count": 2, "lint_passed": true, "lint_iterations": 1},
+    "qa": {"status": "completed", "started_at": "2026-08-22T00:30:00Z", "completed_at": "2026-08-22T00:35:00Z", "questions_total": 2, "questions_answered": 2, "skipped_reason": null},
+    "output": {"status": "completed", "started_at": "2026-08-22T00:35:00Z", "completed_at": "2026-08-22T00:40:00Z", "proposal_path": "sdd/proposals/saas-multi-tenant-flows.proposal.md", "commit_sha": "dcd92771432c7133ec9d32b079e2afb93ea403ac", "next_command_recommended": "sdd-spec", "next_command_rationale": "Localization high-confidence and freshly re-verified; program already decomposed — next artifact is the S0 spec (saas-auth-hardening), with S3a (agentsflow-result-fidelity) in parallel."}
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {"files_read": 9, "grep_calls": 16, "git_calls": 3, "wall_seconds": 420},
+  "resume_hint": {"next_phase": "review_gate", "next_action": "Present synthesis summary; then targeted Q&A for U1 (S1 mechanism vs FEAT-421 precedent) and U2 (closed-model compatibility policy)"}
+}
