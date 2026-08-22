@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-446
 **Date**: 2026-08-22
 **Author**: phenobarbital (spec drafted with Claude, grounded in FEAT-442 research)
-**Status**: draft
+**Status**: approved
 **Target version**: next `ai-parrot` / `ai-parrot-server` minor
 **Program**: Parrot Research Cloud — S0 / Fase 0 (see `sdd/proposals/saas-multi-tenant-flows.brainstorm.md` and `sdd/proposals/saas-multi-tenant-flows.proposal.md`, FEAT-442)
 
