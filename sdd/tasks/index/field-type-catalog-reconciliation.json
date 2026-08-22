@@ -14,7 +14,7 @@
       "feature_id": "FEAT-448",
       "feature": "field-type-catalog-reconciliation",
       "spec": "sdd/specs/field-type-catalog-reconciliation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation. Nothing else can parse a client schema until this lands.",
       "assigned_to": null,
       "started_at": "2026-08-22T06:24:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2332-enum-and-registry-for-client-types.md"
+      "completed_at": "2026-08-22T06:40:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2332-enum-and-registry-for-client-types.md"
     },
     {
       "id": "TASK-2333",
