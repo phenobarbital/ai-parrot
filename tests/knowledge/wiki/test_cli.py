@@ -20,6 +20,14 @@ from parrot.knowledge.wiki.project import (
     wiki_write_lock,
 )
 
+# `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
+# pkgutil.resolve_name, which only walks attributes — it does NOT import
+# submodules. Locally these resolved by accident because something else had
+# already imported them; on CI nothing had, so patching died with
+# "module ... has no attribute ...". Import them explicitly so the target
+# resolves the same way in both environments.
+import parrot.knowledge.pageindex.toolkit  # noqa: F401
+
 PY_STORE = '"""A tiny key-value store module."""\n\n\nclass Store:\n    """In-memory key-value store."""\n\n    def get(self, key):\n        """Fetch a value."""\n        return key\n'
 PY_UTIL = '"""Utility helpers."""\n\n\ndef helper(key):\n    """Return the key unchanged."""\n    return key\n'
 

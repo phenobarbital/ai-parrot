@@ -14,6 +14,14 @@ from aiohttp import web
 # We need a concrete subclass for testing (AbstractBot is abstract)
 from parrot.bots.abstract import AbstractBot
 
+# `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
+# pkgutil.resolve_name, which only walks attributes — it does NOT import
+# submodules. Locally these resolved by accident because something else had
+# already imported them; on CI nothing had, so patching died with
+# "module ... has no attribute ...". Import them explicitly so the target
+# resolves the same way in both environments.
+import parrot.bots.abstract  # noqa: F401
+
 
 def _make_mock_bot():
     """Create a minimal concrete AbstractBot subclass for testing."""
