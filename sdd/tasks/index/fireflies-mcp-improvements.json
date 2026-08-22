@@ -54,7 +54,7 @@
       "feature_id": "FEAT-441",
       "feature": "fireflies-mcp-improvements",
       "spec": "sdd/specs/fireflies-mcp-improvements.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -64,7 +64,7 @@
       "parallel": false,
       "parallelism_notes": "Rewrites the same method (sync_fireflies_transcripts) that TASK-2349 also modifies, in the same file (obsidian.py) — cannot run in a separate worktree from TASK-2349 without a merge conflict; sequenced in this same worktree instead.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-22T19:30:17+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2348-pagination-loop.md"
     },
