@@ -52,7 +52,7 @@
       "feature_id": "FEAT-448",
       "feature": "field-type-catalog-reconciliation",
       "spec": "sdd/specs/field-type-catalog-reconciliation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Split from 2333 deliberately: a legal exposure, not the tenth item on a list.",
       "assigned_to": null,
       "started_at": "2026-08-22T06:24:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2334-credit-card-rejects-cardholder-data.md"
+      "completed_at": "2026-08-22T06:44:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2334-credit-card-rejects-cardholder-data.md"
     },
     {
       "id": "TASK-2335",
