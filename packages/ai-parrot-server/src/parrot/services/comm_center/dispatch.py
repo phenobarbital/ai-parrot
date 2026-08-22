@@ -11,11 +11,13 @@ that actually needs it is called without the ``comm-center`` extra
 installed.
 """
 import asyncio
+import importlib.metadata
 import logging
 import uuid
 from datetime import UTC, datetime
 
 from asyncdb import AsyncDB
+from packaging.version import Version
 from parrot.conf import PARROT_SCHEMA, default_dsn
 from parrot.handlers.models import NotificationBatchRecipient
 
@@ -40,6 +42,46 @@ _RETRYABLE_STATUSES = ("pending", "publish_failed")
 #: Never retried under any circumstances.
 _TERMINAL_STATUSES = ("queued", "skipped")
 
+#: Minimum async-notify version CommCenter requires (FEAT-445 TASK-2318).
+#: async-notify < 1.6.0 silently ignores the inline Jinja2 ``template`` key
+#: this module publishes in the xadd payload — it looks for a
+#: ``template_file`` in ``TEMPLATE_DIR`` instead, finds none, and delivers
+#: an empty body with no error on either side. async-notify 1.6.0 shipped
+#: FEAT-003 ("Inline Jinja2 template source for send()"), the exact
+#: capability CommCenter relies on.
+MIN_ASYNC_NOTIFY_VERSION = "1.6.0"
+
+#: Cached result of :func:`_check_async_notify_version` — set once the
+#: installed version has been confirmed to satisfy the floor, so the check
+#: runs at most once per process instead of on every request.
+_ASYNC_NOTIFY_VERSION_OK: bool | None = None
+
+
+def _check_async_notify_version() -> None:
+    """Raise if the installed async-notify is older than the CommCenter floor.
+
+    Sits immediately after the "is it installed at all" lazy-import guard
+    in :func:`_get_notify_client` — an old-but-present async-notify would
+    otherwise pass that check and then silently drop every template body
+    (see :data:`MIN_ASYNC_NOTIFY_VERSION`). Cached after the first
+    successful check so this does not re-run on every request.
+
+    Raises:
+        RuntimeError: The installed async-notify is older than
+            :data:`MIN_ASYNC_NOTIFY_VERSION`.
+    """
+    global _ASYNC_NOTIFY_VERSION_OK
+    if _ASYNC_NOTIFY_VERSION_OK:
+        return
+    installed = importlib.metadata.version("async-notify")
+    if Version(installed) < Version(MIN_ASYNC_NOTIFY_VERSION):
+        raise RuntimeError(
+            f"CommCenter requires async-notify >= {MIN_ASYNC_NOTIFY_VERSION} for "
+            f"inline Jinja2 template support (installed: {installed}). Upgrade "
+            f"with: pip install 'async-notify>={MIN_ASYNC_NOTIFY_VERSION}'"
+        )
+    _ASYNC_NOTIFY_VERSION_OK = True
+
 
 def _get_notify_client():
     """Lazily import and construct a ``NotifyClient`` (spec G11).
@@ -48,8 +90,9 @@ def _get_notify_client():
         A fresh, not-yet-connected ``NotifyClient``.
 
     Raises:
-        RuntimeError: ``async-notify`` is not installed. Actionable —
-            names the ``comm-center`` extra.
+        RuntimeError: ``async-notify`` is not installed (actionable — names
+            the ``comm-center`` extra), or it is installed but older than
+            :data:`MIN_ASYNC_NOTIFY_VERSION`.
     """
     try:
         from notify.server import NotifyClient
@@ -58,6 +101,7 @@ def _get_notify_client():
             "async-notify is required for CommCenter. "
             "Install with: pip install 'ai-parrot-server[comm-center]'"
         ) from exc
+    _check_async_notify_version()
     return NotifyClient()
 
 

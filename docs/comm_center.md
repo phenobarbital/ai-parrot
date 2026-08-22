@@ -13,6 +13,16 @@ to any provider directly and does not change NotifyWorker itself.
   `pandas`, `openpyxl`). Importing the handler or the service modules
   never requires it; only actually publishing does, and that failure
   returns a clear `503` naming the extra.
+- **`async-notify` minimum version: 1.6.0.** CommCenter enqueues an inline
+  Jinja2 template string in the xadd payload; `async-notify < 1.6.0`
+  silently ignores that key and looks for a `template_file` in
+  `TEMPLATE_DIR` instead, delivering an **empty body** with no error on
+  either side. `async-notify` 1.6.0 shipped inline Jinja2 template source
+  support, which CommCenter relies on. A runtime guard in
+  `parrot.services.comm_center.dispatch` raises a clear `RuntimeError`
+  (mapped to `503`) naming the required version if an older release is
+  installed — checked once per process, right after the "is it installed
+  at all" check.
 
 ## Two-pass rendering model
 

@@ -374,3 +374,42 @@ class TestLazyImport:
         monkeypatch.setattr(builtins, "__import__", blocking_import)
         with pytest.raises(RuntimeError, match="comm-center"):
             dispatch._get_notify_client()
+
+
+class TestAsyncNotifyVersionGuard:
+    """FEAT-445 TASK-2318: async-notify < 1.6.0 silently drops inline templates."""
+
+    def test_raises_when_installed_version_too_old(self, monkeypatch):
+        monkeypatch.setattr(dispatch, "_ASYNC_NOTIFY_VERSION_OK", None)
+        monkeypatch.setattr(
+            dispatch.importlib.metadata, "version", lambda name: "1.5.5"
+        )
+        with pytest.raises(RuntimeError, match="async-notify >= 1.6.0"):
+            dispatch._check_async_notify_version()
+
+    def test_passes_when_installed_version_satisfies_floor(self, monkeypatch):
+        monkeypatch.setattr(dispatch, "_ASYNC_NOTIFY_VERSION_OK", None)
+        monkeypatch.setattr(
+            dispatch.importlib.metadata, "version", lambda name: "1.6.0"
+        )
+        dispatch._check_async_notify_version()  # must not raise
+        assert dispatch._ASYNC_NOTIFY_VERSION_OK is True
+
+    def test_check_is_cached_after_first_success(self, monkeypatch):
+        monkeypatch.setattr(dispatch, "_ASYNC_NOTIFY_VERSION_OK", True)
+        calls = []
+        monkeypatch.setattr(
+            dispatch.importlib.metadata,
+            "version",
+            lambda name: calls.append(name) or "1.5.5",
+        )
+        dispatch._check_async_notify_version()  # must not raise -- cached
+        assert calls == []
+
+    def test_get_notify_client_enforces_version_guard(self, monkeypatch):
+        monkeypatch.setattr(dispatch, "_ASYNC_NOTIFY_VERSION_OK", None)
+        monkeypatch.setattr(
+            dispatch.importlib.metadata, "version", lambda name: "1.5.5"
+        )
+        with pytest.raises(RuntimeError, match="async-notify >= 1.6.0"):
+            dispatch._get_notify_client()
