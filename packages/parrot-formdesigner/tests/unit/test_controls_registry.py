@@ -18,20 +18,12 @@ from parrot_formdesigner.controls.registry import (
 )
 from parrot_formdesigner.core.types import FieldType
 
+
 # TASK-2337 (FEAT-448): the twelve types absorbed from the client catalog.
 _TASK2337_TYPES = [
-    "search",
-    "masked",
-    "color_picker",
-    "emoji",
-    "cron",
-    "tree_select",
-    "signature_pad",
-    "credit_card",
-    "image_dropzone",
-    "multi_upload",
-    "ai_capture",
-    "place",
+    "search", "masked", "color_picker", "emoji", "cron", "tree_select",
+    "signature_pad", "credit_card", "image_dropzone", "multi_upload",
+    "ai_capture", "place",
 ]
 
 
@@ -294,7 +286,9 @@ def _load_snapshot_script():
     package (mirrors the pattern in tests/unit/test_migrations_form_uid.py
     for migrations/003_migrate_form_data.py).
     """
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "generate_form_controls_snapshot.py"
+    script_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "generate_form_controls_snapshot.py"
+    )
     spec = importlib.util.spec_from_file_location("generate_form_controls_snapshot", script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -319,7 +313,8 @@ def test_form_controls_snapshot_is_fresh():
     )
     committed_text = gen.SNAPSHOT_PATH.read_text()
     assert committed_text == fresh_text, (
-        f"{gen.SNAPSHOT_PATH} is stale. Run " "`python scripts/generate_form_controls_snapshot.py` to regenerate it."
+        f"{gen.SNAPSHOT_PATH} is stale. Run "
+        "`python scripts/generate_form_controls_snapshot.py` to regenerate it."
     )
 
 

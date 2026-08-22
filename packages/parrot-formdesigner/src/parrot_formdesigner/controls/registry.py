@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..core.types import FieldType
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,7 +133,9 @@ def register_field_control(
     """
     type_id = field_type.value if isinstance(field_type, FieldType) else field_type
     if type_id in _REGISTRY:
-        logger.warning("register_field_control: overwriting existing entry for type=%s", type_id)
+        logger.warning(
+            "register_field_control: overwriting existing entry for type=%s", type_id
+        )
     _REGISTRY[type_id] = FieldControlMetadata(
         type=type_id,
         label=label,

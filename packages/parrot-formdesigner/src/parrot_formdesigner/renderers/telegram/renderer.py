@@ -187,22 +187,21 @@ class TelegramRenderer(AbstractFormRenderer):
         class _TelegramInlineFieldRenderer:
             """Async FieldRenderer stub for Telegram inline field dispatch."""
 
-            async def render(
-                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
-            ) -> Any:
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
                 return {"mode": "inline", "field_type": field.field_type.value}
 
         class _TelegramWebAppFieldRenderer:
             """Async FieldRenderer stub for Telegram WebApp field dispatch."""
 
-            async def render(
-                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
-            ) -> Any:
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
                 return {"mode": "webapp", "field_type": field.field_type.value}
 
         inline = _TelegramInlineFieldRenderer()
         webapp = _TelegramWebAppFieldRenderer()
-        self._registry = {ft: inline if ft in _INLINE_FIELD_TYPES else webapp for ft in FieldType}
+        self._registry = {
+            ft: inline if ft in _INLINE_FIELD_TYPES else webapp
+            for ft in FieldType
+        }
 
     def analyze_form(self, form: FormSchema) -> TelegramRenderMode:
         """Determine optimal rendering mode for a form.
@@ -260,11 +259,14 @@ class TelegramRenderer(AbstractFormRenderer):
         # Safety check: inline forced but form has file fields
         if effective_mode == TelegramRenderMode.INLINE:
             has_files = any(
-                field.field_type in _FILE_FIELD_TYPES for section in form.sections for field in section.iter_fields()
+                field.field_type in _FILE_FIELD_TYPES
+                for section in form.sections
+                for field in section.iter_fields()
             )
             if has_files:
                 self.logger.warning(
-                    "Form '%s' has file fields but inline mode was requested. " "Falling back to WebApp mode.",
+                    "Form '%s' has file fields but inline mode was requested. "
+                    "Falling back to WebApp mode.",
                     form.form_id,
                 )
                 effective_mode = TelegramRenderMode.WEBAPP
@@ -336,10 +338,7 @@ class TelegramRenderer(AbstractFormRenderer):
                 options_list = [("true", "Yes"), ("false", "No")]
             elif field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT):
                 keyboard = self._build_select_keyboard(
-                    fh,
-                    idx,
-                    field.options or [],
-                    locale,
+                    fh, idx, field.options or [], locale,
                     multi=field.field_type == FieldType.MULTI_SELECT,
                 )
                 options_list = [
@@ -378,11 +377,15 @@ class TelegramRenderer(AbstractFormRenderer):
                 [
                     {
                         "text": "Yes",
-                        "callback_data": FormFieldCallback(fh=fh, fi=field_idx, oi=1).pack(),
+                        "callback_data": FormFieldCallback(
+                            fh=fh, fi=field_idx, oi=1
+                        ).pack(),
                     },
                     {
                         "text": "No",
-                        "callback_data": FormFieldCallback(fh=fh, fi=field_idx, oi=0).pack(),
+                        "callback_data": FormFieldCallback(
+                            fh=fh, fi=field_idx, oi=0
+                        ).pack(),
                     },
                 ]
             ]
@@ -417,7 +420,9 @@ class TelegramRenderer(AbstractFormRenderer):
                 [
                     {
                         "text": label,
-                        "callback_data": FormFieldCallback(fh=fh, fi=field_idx, oi=opt_idx).pack(),
+                        "callback_data": FormFieldCallback(
+                            fh=fh, fi=field_idx, oi=opt_idx
+                        ).pack(),
                     }
                 ]
             )
@@ -429,7 +434,9 @@ class TelegramRenderer(AbstractFormRenderer):
                 [
                     {
                         "text": "Done",
-                        "callback_data": FormActionCallback(fh=fh, act="done").pack(),
+                        "callback_data": FormActionCallback(
+                            fh=fh, act="done"
+                        ).pack(),
                     }
                 ]
             )

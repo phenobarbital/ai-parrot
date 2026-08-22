@@ -6,6 +6,7 @@ used throughout the forms abstraction layer.
 
 from enum import Enum
 
+
 # LocalizedString supports both simple and i18n usage:
 # Simple: "Enter your name"
 # i18n:   {"en": "Enter your name", "es": "Ingrese su nombre"}

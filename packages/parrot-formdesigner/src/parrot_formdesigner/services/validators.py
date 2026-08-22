@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 # pycountry guard — only used for LOCATION validation
 try:
     import pycountry as _pycountry
-
     _HAS_PYCOUNTRY = True
 except ImportError:
     _pycountry = None  # type: ignore[assignment]
@@ -46,7 +45,6 @@ def _validate_location(value: str) -> bool:
     if not _HAS_PYCOUNTRY:
         return True  # skip validation when pycountry not available
     return _pycountry.countries.get(alpha_2=value.upper()) is not None
-
 
 # Standard regex patterns
 EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -184,17 +182,15 @@ class FormValidator:
         from .rule_evaluator import RuleEvaluator  # noqa: PLC0415
 
         resolution = await RuleEvaluator().resolve(
-            form,
-            data,
-            locale=locale,
-            location_vars=location_vars,
-            visit_context=visit_context,
+            form, data, locale=locale,
+            location_vars=location_vars, visit_context=visit_context,
         )
 
         # Validate each field
         for field in all_fields:
-            effective_required = resolution.required.get(field.field_id, field.required) and resolution.visible.get(
-                field.field_id, True
+            effective_required = (
+                resolution.required.get(field.field_id, field.required)
+                and resolution.visible.get(field.field_id, True)
             )
             field_errors = await self.validate_field(
                 field,
@@ -262,7 +258,9 @@ class FormValidator:
 
         # REMOTE_RESPONSE: resolve via external API before standard validation
         if field.field_type == FieldType.REMOTE_RESPONSE:
-            return await self._validate_remote_response(field, value, label, auth_context=auth_context)
+            return await self._validate_remote_response(
+                field, value, label, auth_context=auth_context
+            )
 
         # REST: validate the submitted {answer, blob_ref, status?} shape
         if field.field_type == FieldType.REST:
@@ -333,12 +331,16 @@ class FormValidator:
 
         # Cross-field validation via meta
         if field.meta and all_data:
-            cross_errors = await self._run_cross_field_validation(field, coerced, all_data, label, locale)
+            cross_errors = await self._run_cross_field_validation(
+                field, coerced, all_data, label, locale
+            )
             errors.extend(cross_errors)
 
         # Async remote validation via meta
         if field.meta and "async_validator" in field.meta:
-            remote_errors = await self._run_async_validator(field, coerced, all_data, label, locale)
+            remote_errors = await self._run_async_validator(
+                field, coerced, all_data, label, locale
+            )
             errors.extend(remote_errors)
 
         return errors
@@ -532,13 +534,19 @@ class FormValidator:
         # request logs. Do not echo the offending value in any message here.
         elif ft == FieldType.CREDIT_CARD:
             if not isinstance(value, dict):
-                raise ValueError("Credit card value must be an object with brand, last4, name and expiry")
+                raise ValueError(
+                    "Credit card value must be an object with brand, last4, name and expiry"
+                )
             if "cvv" in value:
                 raise ValueError(
-                    "Credit card value must not include a CVV — " "card verification values are never stored"
+                    "Credit card value must not include a CVV — "
+                    "card verification values are never stored"
                 )
             if "number" in value:
-                raise ValueError("Credit card value must not include the full card number — " "send 'last4' only")
+                raise ValueError(
+                    "Credit card value must not include the full card number — "
+                    "send 'last4' only"
+                )
             last4 = value.get("last4")
             if not (isinstance(last4, str) and re.fullmatch(r"\d{4}", last4)):
                 raise ValueError("Credit card 'last4' must be exactly 4 digits")
@@ -603,11 +611,7 @@ class FormValidator:
                         errors.append(f"{label} slot {i} must have 'start' and 'end' keys")
                         continue
                     try:
-                        start = (
-                            datetime.fromisoformat(str(slot["start"]))
-                            if isinstance(slot["start"], str)
-                            else slot["start"]
-                        )
+                        start = datetime.fromisoformat(str(slot["start"])) if isinstance(slot["start"], str) else slot["start"]
                         end = datetime.fromisoformat(str(slot["end"])) if isinstance(slot["end"], str) else slot["end"]
                         if end <= start:
                             errors.append(f"{label} slot {i}: 'end' must be after 'start'")
@@ -735,13 +739,8 @@ class FormValidator:
         # Extract only known RemoteResponseSpec fields from meta to avoid
         # extra keys that are not part of the spec.
         spec_fields = {
-            "endpoint",
-            "http_method",
-            "content_field",
-            "prompt",
-            "auth_ref",
-            "timeout_seconds",
-            "response_schema",
+            "endpoint", "http_method", "content_field", "prompt",
+            "auth_ref", "timeout_seconds", "response_schema",
         }
         spec_kwargs = {k: v for k, v in meta.items() if k in spec_fields}
 
@@ -759,7 +758,10 @@ class FormValidator:
         result = await resolver.resolve(spec, value, auth_context=auth_context)
 
         if not result.success:
-            errors.append(f"{label}: remote response failed" + (f": {result.error}" if result.error else ""))
+            errors.append(
+                f"{label}: remote response failed"
+                + (f": {result.error}" if result.error else "")
+            )
             return errors
 
         # Optional response_schema key presence check (informational only)
@@ -824,13 +826,17 @@ class FormValidator:
 
         # Shape check
         if not isinstance(value, dict):
-            errors.append(f"{label}: REST field value must be a dict with " "'answer' and 'blob_ref' keys")
+            errors.append(
+                f"{label}: REST field value must be a dict with "
+                "'answer' and 'blob_ref' keys"
+            )
             return errors
 
         # Reject in-flight uploads
         if value.get("status") == "in_progress":
             errors.append(
-                f"field_id={field.field_id} status=in_progress: " "cannot submit a field that is still uploading"
+                f"field_id={field.field_id} status=in_progress: "
+                "cannot submit a field that is still uploading"
             )
             return errors
 
@@ -873,7 +879,6 @@ class FormValidator:
         for validator_fn in validators:
             try:
                 import asyncio
-
                 if asyncio.iscoroutinefunction(validator_fn):
                     result = await validator_fn(value, all_data)
                 else:
@@ -913,7 +918,6 @@ class FormValidator:
             return errors
         try:
             import asyncio
-
             if asyncio.iscoroutinefunction(validator_fn):
                 result = await validator_fn(value)
             else:
@@ -963,7 +967,9 @@ class FormValidator:
     # ------------------------------------------------------------------
 
     # Field types that support numeric comparison operators and arithmetic ops
-    _NUMERIC_FIELD_TYPES: frozenset[FieldType] = frozenset({FieldType.NUMBER, FieldType.INTEGER})
+    _NUMERIC_FIELD_TYPES: frozenset[FieldType] = frozenset(
+        {FieldType.NUMBER, FieldType.INTEGER}
+    )
     # Operators that require numeric field types
     _NUMERIC_OPERATORS: frozenset[ConditionOperator] = frozenset(
         {
@@ -974,7 +980,9 @@ class FormValidator:
         }
     )
     # Operation kinds that require numeric operands
-    _ARITHMETIC_OPS: frozenset[str] = frozenset({"add", "subtract", "multiply", "divide", "percent"})
+    _ARITHMETIC_OPS: frozenset[str] = frozenset(
+        {"add", "subtract", "multiply", "divide", "percent"}
+    )
 
     def validate_rules(self, form: FormSchema) -> list[str]:
         """Validate rule integrity for all fields in the form.
@@ -1026,7 +1034,10 @@ class FormValidator:
                     # the same "unknown" path (unchanged failure mode).
                     ref = str(cond.field_uid) if cond.field_uid else ""
                     if ref not in field_map:
-                        errors.append(f"Field '{fid}': depends_on condition references unknown" f" field {ref!r}")
+                        errors.append(
+                            f"Field '{fid}': depends_on condition references unknown"
+                            f" field {ref!r}"
+                        )
                         continue
 
                     # Ordering: depends_on must reference earlier fields
@@ -1052,13 +1063,17 @@ class FormValidator:
 
                 # Operations on the rule
                 for op in rule.operations or []:
-                    errors.extend(self._validate_operation(op, fid, field_map, field_order, pos))
+                    errors.extend(
+                        self._validate_operation(op, fid, field_map, field_order, pos)
+                    )
 
             # --- post-dependency checks ---
             for post in field.post_depends or []:
                 target = post.target  # resolved field_uid string
                 if target not in field_map:
-                    errors.append(f"Field '{fid}': post_depends targets unknown field {target!r}")
+                    errors.append(
+                        f"Field '{fid}': post_depends targets unknown field {target!r}"
+                    )
                 else:
                     # Ordering: post_depends.target must be declared later
                     if field_order[target] <= pos:
@@ -1074,7 +1089,10 @@ class FormValidator:
                 for cond in post.conditions or []:
                     ref = str(cond.field_uid) if cond.field_uid else ""
                     if ref not in field_map:
-                        errors.append(f"Field '{fid}': post_depends condition references" f" unknown field {ref!r}")
+                        errors.append(
+                            f"Field '{fid}': post_depends condition references"
+                            f" unknown field {ref!r}"
+                        )
                         continue
                     ref_field = field_map[ref]
                     if (
@@ -1089,7 +1107,11 @@ class FormValidator:
 
                 # Operation on the post-dependency
                 if post.operation:
-                    errors.extend(self._validate_operation(post.operation, fid, field_map, field_order, pos))
+                    errors.extend(
+                        self._validate_operation(
+                            post.operation, fid, field_map, field_order, pos
+                        )
+                    )
 
         return errors
 
@@ -1124,7 +1146,10 @@ class FormValidator:
         # unknown reference (no crash).
         for ref in op.operands:
             if ref not in field_map:
-                errors.append(f"Field '{owner_fid}': operation '{op.op}' references unknown" f" operand field {ref!r}")
+                errors.append(
+                    f"Field '{owner_fid}': operation '{op.op}' references unknown"
+                    f" operand field {ref!r}"
+                )
                 continue
             # Arithmetic ops: operands must be numeric
             if op.op in self._ARITHMETIC_OPS:
@@ -1138,7 +1163,10 @@ class FormValidator:
 
         # Check target references a known field
         if op.target not in field_map:
-            errors.append(f"Field '{owner_fid}': operation '{op.op}' targets unknown" f" field {op.target!r}")
+            errors.append(
+                f"Field '{owner_fid}': operation '{op.op}' targets unknown"
+                f" field {op.target!r}"
+            )
 
         return errors
 
@@ -1232,7 +1260,9 @@ class FormValidator:
                     cycle_start = path.index(neighbor)
                     cycle = path[cycle_start:] + [neighbor]
                     cycle_field_ids = [field_map[uid].field_id for uid in cycle]
-                    cycles.append(f"Circular dependency detected: {' -> '.join(cycle_field_ids)}")
+                    cycles.append(
+                        f"Circular dependency detected: {' -> '.join(cycle_field_ids)}"
+                    )
                 elif state.get(neighbor) == UNVISITED:
                     dfs(neighbor, path)
             path.pop()

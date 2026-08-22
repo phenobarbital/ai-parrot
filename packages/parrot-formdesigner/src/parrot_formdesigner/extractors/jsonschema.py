@@ -231,7 +231,11 @@ class JsonSchemaExtractor:
         options: list[FieldOption] | None = None
         if "enum" in prop:
             field_type = FieldType.SELECT
-            options = [FieldOption(value=str(v), label=str(v)) for v in prop["enum"] if v is not None]
+            options = [
+                FieldOption(value=str(v), label=str(v))
+                for v in prop["enum"]
+                if v is not None
+            ]
 
         # Handle x-options-source → OptionsSource (FEAT-167)
         options_source: OptionsSource | None = None
@@ -298,7 +302,9 @@ class JsonSchemaExtractor:
                     try:
                         parsed_posts.append(PostDependency.model_validate(pd_data))
                     except Exception:  # noqa: BLE001
-                        logger.warning("Could not reconstruct a post_depends entry for field '%s'", name)
+                        logger.warning(
+                            "Could not reconstruct a post_depends entry for field '%s'", name
+                        )
             post_depends = parsed_posts or None
 
         return FormField(
