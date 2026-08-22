@@ -96,6 +96,20 @@ conflicts = [
         { package = "ai-parrot", extra = "images" },
     ],
     [
+        # `dev` pulls optimum[onnxruntime]>=2.0, whose transitive
+        # optimum-onnx chain cannot coexist with transformers>=5.0.
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot", extra = "dev" },
+    ],
+    [
+        # `security` pins huggingface_hub>=0.24,<1.0 (via pytector==0.2.0),
+        # while gemma4's transformers>=5.0 requires huggingface-hub>=1.3.
+        # Without this pair `uv lock` has no satisfiable universal solution
+        # and every CI run fails at `uv sync --all-packages`.
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot", extra = "security" },
+    ],
+    [
         { package = "ai-parrot", extra = "gemma4" },
         { package = "ai-parrot-loaders", extra = "audio" },
     ],
@@ -132,6 +146,35 @@ conflicts = [
     [
         { package = "ai-parrot", extra = "observability-openlit" },
         { package = "ai-parrot", extra = "all-fast" },
+    ],
+    # openlit>=1.40 caps openai<3.0, so it conflicts with EVERY extra in the
+    # workspace that pins openai>=3.3.1. The full set as of 2026-08-22:
+    # ai-parrot[openai,llms,mcp] (declared above), ai-parrot-embeddings[openai,all],
+    # ai-parrot-integrations[voice-openai] (and [voice]/[all], which include it).
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot-embeddings", extra = "all" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot-embeddings", extra = "openai" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot-integrations", extra = "voice-openai" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot-integrations", extra = "voice" },
+    ],
+    [
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot-integrations", extra = "all" },
+    ],
+    [
+        # The workspace `dev` dependency-group also carries openai>=3.3.1.
+        { package = "ai-parrot", extra = "observability-openlit" },
+        { package = "ai-parrot-workspace", group = "dev" },
     ],
     # flowtask/psutil vs liveavatar-voice — RESOLVED (flowtask 5.12.1).
     # openlit vs liveavatar-voice otel — RESOLVED via override-dependencies:
