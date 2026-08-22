@@ -146,6 +146,38 @@ happen through this API.
    recipient value is interpolated unescaped into HTML templates. There
    is no built-in escaping for untrusted recipient data today.
 
+## Database setup
+
+CommCenter depends on two Postgres tables in the `navigator` schema —
+`notification_templates` and `notification_batch_recipients` — authored as
+DDL alongside their models
+(`packages/ai-parrot-server/src/parrot/handlers/models/`) but **not applied
+automatically**; applying them is an operator/deployment step, per this
+repo's convention for handler DDL.
+
+Apply both files, in order, with:
+
+```bash
+make apply-commcenter-ddl DATABASE_URL=postgres://user:pass@host:5432/dbname
+```
+
+DSN resolution order: `DATABASE_URL` → `NAVIGATOR_DSN` → `PG_URL` — the
+target uses whichever of the three is set, so it also works unattended in
+an environment that already exports `NAVIGATOR_DSN`:
+
+```bash
+export NAVIGATOR_DSN=postgres://user:pass@host:5432/dbname
+make apply-commcenter-ddl
+```
+
+Both `.sql` files are idempotent (`CREATE TABLE IF NOT EXISTS`,
+`CREATE OR REPLACE FUNCTION`, `DROP TRIGGER IF EXISTS`, `CREATE INDEX IF
+NOT EXISTS`) — running the target twice, or against a database that
+already has the tables, is safe and makes no changes on the second run.
+
+Without this step, the template CRUD endpoints fail with `500` (no table
+to read/write) and no batch can be tracked.
+
 ## Retry & the row status state machine
 
 `GET /sender/{batch_id}` aggregates a flat, per-recipient tracking table
