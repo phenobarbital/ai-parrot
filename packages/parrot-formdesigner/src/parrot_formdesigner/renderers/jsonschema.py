@@ -59,6 +59,28 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.REST: "object",
     # FEAT-300 — formula fields (evaluator is FEAT-301)
     FieldType.FORMULA: "number",
+    # FEAT-448 (TASK-2337) — the twelve absorbed types (spec §4). Type
+    # follows the value shape each control actually emits, not a native-vs-
+    # fallback UI posture (JSON Schema has no rendering concept).
+    FieldType.SEARCH: "string",
+    FieldType.MASKED: "string",
+    FieldType.COLOR_PICKER: "string",
+    FieldType.EMOJI: "string",
+    FieldType.CRON: "string",
+    FieldType.TREE_SELECT: "array",
+    FieldType.SIGNATURE_PAD: "string",
+    FieldType.CREDIT_CARD: "object",
+    # image_dropzone's control emits a single {name,type,size,dataUrl} dict
+    # OR an array of them (spec §4) — "object" covers the common single-file
+    # case; the array case is validated (services/validators.py) but not
+    # further constrained here.
+    FieldType.IMAGE_DROPZONE: "object",
+    FieldType.MULTI_UPLOAD: "array",
+    # ai_capture is an unconstrained third-party API response (spec §4
+    # Non-Goals — its shape is not ours to define); "object" is the common
+    # case, not a contract.
+    FieldType.AI_CAPTURE: "object",
+    FieldType.PLACE: "object",
 }
 
 # FieldType → JSON Schema "format" keyword (where applicable)
@@ -83,6 +105,19 @@ _FORMAT_MAP: dict[FieldType, str] = {
     FieldType.REST: "rest",
     # FEAT-300 — formula fields
     FieldType.FORMULA: "formula",
+    # FEAT-448 (TASK-2337)
+    FieldType.SEARCH: "search",
+    FieldType.MASKED: "masked",
+    FieldType.COLOR_PICKER: "color-picker",
+    FieldType.EMOJI: "emoji",
+    FieldType.CRON: "cron",
+    FieldType.TREE_SELECT: "tree-select",
+    FieldType.SIGNATURE_PAD: "signature-pad",
+    FieldType.CREDIT_CARD: "credit-card",
+    FieldType.IMAGE_DROPZONE: "image-dropzone",
+    FieldType.MULTI_UPLOAD: "multi-upload",
+    FieldType.AI_CAPTURE: "ai-capture",
+    FieldType.PLACE: "place",
 }
 
 
@@ -356,6 +391,49 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         # TRANSFER_LIST — array of string values
         if ft == FieldType.TRANSFER_LIST:
             prop["items"] = {"type": "string"}
+
+        # FEAT-448 (TASK-2337) — TREE_SELECT: array of node values (single
+        # selection also yields the node value per spec §4, but the schema
+        # declares the multi-select shape as the structural contract).
+        if ft == FieldType.TREE_SELECT:
+            prop["items"] = {"type": "string"}
+
+        # FEAT-448 (TASK-2337) — MULTI_UPLOAD: array of REST-like upload
+        # envelopes (spec §4). Registered and typed, not further wired —
+        # the singular-vs-list mismatch with _validate_rest_field is
+        # fieldsync FEAT-514's blocker, not this renderer's.
+        if ft == FieldType.MULTI_UPLOAD:
+            prop["items"] = {
+                "type": "object",
+                "properties": {
+                    "answer": {},
+                    "blob_ref": {"type": ["string", "null"]},
+                    "display": {"type": "string"},
+                },
+            }
+
+        # FEAT-448 (TASK-2337) — CREDIT_CARD: server-accepted shape only
+        # (spec §4, TASK-2334) — brand/last4/name/expiry. cvv and the full
+        # PAN are never part of this contract; the validator rejects them.
+        if ft == FieldType.CREDIT_CARD:
+            prop["properties"] = {
+                "brand": {"type": "string"},
+                "last4": {"type": "string", "pattern": r"^\d{4}$"},
+                "name": {"type": "string"},
+                "expiry": {"type": "string"},
+            }
+            prop["required"] = ["brand", "last4", "name", "expiry"]
+
+        # FEAT-448 (TASK-2337) — PLACE: {country, state, city} — country is
+        # required and ISO 3166 alpha-2 (mirrors LOCATION's contract);
+        # state/city are optional and unconstrained (spec §3).
+        if ft == FieldType.PLACE:
+            prop["properties"] = {
+                "country": {"type": "string", "minLength": 2, "maxLength": 2},
+                "state": {"type": ["string", "null"]},
+                "city": {"type": ["string", "null"]},
+            }
+            prop["required"] = ["country"]
 
         # DYNAMIC_SELECT — options source required; enum not pre-set
         if ft == FieldType.DYNAMIC_SELECT and field.options_source:

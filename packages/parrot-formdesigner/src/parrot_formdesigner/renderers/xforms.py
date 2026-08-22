@@ -93,6 +93,24 @@ _FIELD_TO_XFORMS: dict[FieldType, tuple[str, str | None]] = {
     FieldType.REST: ("input", "string"),             # fallback: plain text
     # FEAT-300 — formula fields (evaluator is FEAT-301; render as read-only input)
     FieldType.FORMULA: ("input", "string"),          # fallback: plain text placeholder
+    # FEAT-448 (TASK-2337) — the twelve absorbed types. Plain scalar strings
+    # (search/masked/color_picker/emoji/cron) are native <xf:input>, same
+    # posture as COLOR/TAGS above. tree_select approximates TRANSFER_LIST's
+    # multi-value <xf:select>. The remaining six have no XForms element that
+    # represents their shape — plain text fallback, same posture as
+    # SIGNATURE/REST above.
+    FieldType.SEARCH: ("input", "string"),           # native: <xf:input>
+    FieldType.MASKED: ("input", "string"),           # native: <xf:input>
+    FieldType.COLOR_PICKER: ("input", "string"),     # native: <xf:input>, like COLOR
+    FieldType.EMOJI: ("input", "string"),            # native: <xf:input>
+    FieldType.CRON: ("input", "string"),             # native: <xf:input>
+    FieldType.TREE_SELECT: ("select", "string"),     # native: <xf:select>, like TRANSFER_LIST
+    FieldType.SIGNATURE_PAD: ("input", "string"),    # fallback: plain text
+    FieldType.CREDIT_CARD: ("input", "string"),      # fallback: plain text — never editable
+    FieldType.IMAGE_DROPZONE: ("input", "string"),   # fallback: plain text
+    FieldType.MULTI_UPLOAD: ("input", "string"),     # fallback: plain text
+    FieldType.AI_CAPTURE: ("input", "string"),       # fallback: plain text
+    FieldType.PLACE: ("input", "string"),            # fallback: plain text — no cascading bind support
 }
 
 

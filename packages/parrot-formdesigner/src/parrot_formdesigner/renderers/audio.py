@@ -42,6 +42,10 @@ _SELECT_TYPES: frozenset[FieldType] = frozenset(
 
 # FEAT-236 voice-capability taxonomy (spec §2 pillar 2). Field types not listed
 # in either set default to VoiceMode.VOICE (narrate + spoken/typed answer).
+# FEAT-448 (TASK-2337) additions: SEARCH (an option-based, DYNAMIC_SELECT-like
+# pick) and COLOR_PICKER (same posture as COLOR) join _PROMPT_SELECT_TYPES;
+# MASKED, EMOJI and CRON are plain scalar strings and are left to the VOICE
+# default, same posture as TEXT/PHONE/EMAIL above.
 _PROMPT_SELECT_TYPES: frozenset[FieldType] = frozenset(
     {
         FieldType.SELECT,
@@ -52,8 +56,15 @@ _PROMPT_SELECT_TYPES: frozenset[FieldType] = frozenset(
         FieldType.LIKERT,
         FieldType.NPS,
         FieldType.COLOR,
+        FieldType.SEARCH,
+        FieldType.COLOR_PICKER,
     }
 )
+# FEAT-448 (TASK-2337) additions: PLACE (LOCATION's cascade), TREE_SELECT
+# (TRANSFER_LIST's hierarchy), SIGNATURE_PAD (same shape as SIGNATURE),
+# CREDIT_CARD (structured object, security-sensitive), IMAGE_DROPZONE and
+# MULTI_UPLOAD (FILE-like), and AI_CAPTURE (unconstrained third-party
+# payload) — none of these has a sensible spoken/typed answer.
 _VISUAL_FALLBACK_TYPES: frozenset[FieldType] = frozenset(
     {
         FieldType.REST,
@@ -65,6 +76,13 @@ _VISUAL_FALLBACK_TYPES: frozenset[FieldType] = frozenset(
         FieldType.TRANSFER_LIST,
         FieldType.AVAILABILITY,
         FieldType.ARRAY,
+        FieldType.PLACE,
+        FieldType.TREE_SELECT,
+        FieldType.SIGNATURE_PAD,
+        FieldType.CREDIT_CARD,
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.AI_CAPTURE,
     }
 )
 

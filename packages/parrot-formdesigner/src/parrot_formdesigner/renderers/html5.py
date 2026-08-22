@@ -48,6 +48,38 @@ _INPUT_TYPE_MAP: dict[FieldType, str] = {
     FieldType.HIDDEN: "hidden",
     FieldType.FILE: "file",
     FieldType.IMAGE: "file",
+    # FEAT-448 (TASK-2337) — native, plain scalar-string carriers. Each is a
+    # recorded choice, not the anonymous text-input default: SEARCH gets the
+    # browser's native search affordance; COLOR_PICKER reuses the same
+    # native swatch as COLOR; MASKED/EMOJI/CRON are plain text (masking,
+    # emoji-picker UI and cron validation are client-side/JS concerns not
+    # shipped here, same posture SIGNATURE's canvas already has).
+    FieldType.SEARCH: "search",
+    FieldType.MASKED: "text",
+    FieldType.COLOR_PICKER: "color",
+    FieldType.EMOJI: "text",
+    FieldType.CRON: "text",
+}
+
+# FEAT-448 (TASK-2337) — types with no working upload/capture endpoint wired
+# in this renderer. Rendered as a disabled, clearly-labelled placeholder
+# (never a control that looks functional and is not — spec AC6/AC3) and
+# recorded with a RenderWarning, the same posture as FORMULA above.
+_HTML5_FALLBACK_TYPES: frozenset[FieldType] = frozenset({
+    FieldType.IMAGE_DROPZONE,
+    FieldType.MULTI_UPLOAD,
+    FieldType.AI_CAPTURE,
+    # credit_card's accepted shape ({brand, last4, name, expiry}) is never
+    # rendered as an editable input in any channel (spec §4) — read-only
+    # display only, never a generated card widget.
+    FieldType.CREDIT_CARD,
+})
+
+_HTML5_FALLBACK_LABELS: dict[FieldType, str] = {
+    FieldType.IMAGE_DROPZONE: "image upload",
+    FieldType.MULTI_UPLOAD: "multiple file upload",
+    FieldType.AI_CAPTURE: "AI capture",
+    FieldType.CREDIT_CARD: "credit card",
 }
 
 
@@ -343,6 +375,18 @@ class HTML5Renderer(AbstractFormRenderer):
                     field_type=FieldType.FORMULA.value,
                     renderer="html5",
                     reason="formula evaluation not available (FEAT-301) — rendered as read-only placeholder",
+                ))
+            # FEAT-448 (TASK-2337) — recorded fallback posture (spec §4/AC6).
+            elif _field.field_type in _HTML5_FALLBACK_TYPES:
+                warnings.append(RenderWarning(
+                    field_id=_field.field_id,
+                    field_uid=_field.field_uid,
+                    field_type=_field.field_type.value,
+                    renderer="html5",
+                    reason=(
+                        f"unsupported {_field.field_type.value} in html5"
+                        " — rendered as disabled placeholder"
+                    ),
                 ))
 
         template = self._env.get_template("form.html.j2")
@@ -775,6 +819,61 @@ class HTML5Renderer(AbstractFormRenderer):
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_formula_placeholder(field))
 
+        # FEAT-448 (TASK-2337) — recorded native postures for the twelve
+        # absorbed types (spec §4, AC6). Plain scalar-string carriers reuse
+        # _render_input via _INPUT_TYPE_MAP; tree_select, signature_pad and
+        # place get dedicated native renderers; the remaining four go
+        # through the html5 fallback placeholder below.
+        elif ft in (
+            FieldType.SEARCH,
+            FieldType.MASKED,
+            FieldType.COLOR_PICKER,
+            FieldType.EMOJI,
+            FieldType.CRON,
+        ):
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_input(field, value, locale))
+
+        elif ft == FieldType.TREE_SELECT:
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_tree_select(field, value, locale))
+
+        elif ft == FieldType.SIGNATURE_PAD:
+            # Same value shape as SIGNATURE (a PNG data-URL string) — reuse
+            # the same canvas + hidden-input renderer.
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_signature(field))
+
+        elif ft == FieldType.PLACE:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_place(field, value, locale))
+
+        elif ft in _HTML5_FALLBACK_TYPES:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_unsupported_placeholder(field, _HTML5_FALLBACK_LABELS[ft]))
+
         else:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
@@ -969,6 +1068,162 @@ class HTML5Renderer(AbstractFormRenderer):
                 options_html.append(f'<option value="{code}"{sel}>{name}</option>')
 
         return f'<select {" ".join(attrs)}>\n' + "\n".join(options_html) + "\n</select>"
+
+    def _render_place(self, field: FormField, value: Any, locale: str) -> str:
+        """Render a PLACE field as three cascading <select> elements.
+
+        FEAT-448 (TASK-2337): native posture. The country select is
+        populated the same way as LOCATION's (pycountry, with a small
+        static fallback). This codebase carries no state/city subdivision
+        data (see ``core/_location_data.py``), so the state and city
+        selects are emitted empty with ``data-cascade-parent``/
+        ``data-cascade-level`` attributes for a client script to populate
+        on change — the same "declared, client-populated" posture already
+        accepted for DYNAMIC_SELECT's ``data-source``. There is no script
+        shipped here, matching the SIGNATURE canvas precedent this feature
+        already reconciles (TASK-2336).
+
+        Args:
+            field: PLACE FormField.
+            value: Pre-filled ``{country, state, city}`` dict, if any.
+            locale: Locale for i18n.
+
+        Returns:
+            HTML string with three <select> elements inside a wrapper div.
+        """
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-2"
+        )
+        place_value = value if isinstance(value, dict) else {}
+        selected_country = str(place_value.get("country") or "").upper()
+        selected_state = place_value.get("state")
+        selected_city = place_value.get("city")
+
+        country_id = f"{field.field_id}_country"
+        state_id = f"{field.field_id}_state"
+        city_id = f"{field.field_id}_city"
+
+        country_options: list[str] = ['<option value="" disabled selected>Select country...</option>']
+        try:
+            import pycountry
+            countries = sorted(pycountry.countries, key=lambda c: c.name)
+            for country in countries:
+                sel = " selected" if country.alpha_2 == selected_country else ""
+                country_options.append(
+                    f'<option value="{country.alpha_2}"{sel}>{html.escape(country.name)}</option>'
+                )
+        except ImportError:
+            _FALLBACK = [("US", "United States"), ("GB", "United Kingdom"), ("ES", "Spain"),
+                         ("VE", "Venezuela"), ("MX", "Mexico"), ("CA", "Canada")]
+            for code, name in _FALLBACK:
+                sel = " selected" if code == selected_country else ""
+                country_options.append(f'<option value="{code}"{sel}>{name}</option>')
+
+        state_options = ['<option value="" selected>Select state/province...</option>']
+        if selected_state:
+            safe_state = html.escape(str(selected_state), quote=True)
+            state_options.append(f'<option value="{safe_state}" selected>{safe_state}</option>')
+
+        city_options = ['<option value="" selected>Select city...</option>']
+        if selected_city:
+            safe_city = html.escape(str(selected_city), quote=True)
+            city_options.append(f'<option value="{safe_city}" selected>{safe_city}</option>')
+
+        required_attr = " required" if field.required else ""
+        return (
+            f'<div class="form-field__place" data-place="true">'
+            f'<select id="{country_id}" name="{country_id}" class="{tw}" '
+            f'data-place-level="country"{required_attr}>\n'
+            + "\n".join(country_options) + "\n</select>"
+            f'<select id="{state_id}" name="{state_id}" class="{tw}" '
+            f'data-place-level="state" data-cascade-parent="{country_id}">\n'
+            + "\n".join(state_options) + "\n</select>"
+            f'<select id="{city_id}" name="{city_id}" class="{tw}" '
+            f'data-place-level="city" data-cascade-parent="{state_id}">\n'
+            + "\n".join(city_options) + "\n</select>"
+            f'</div>'
+        )
+
+    def _render_tree_select(self, field: FormField, value: Any, locale: str) -> str:
+        """Render a TREE_SELECT field as a multi-value <select>.
+
+        FEAT-448 (TASK-2337): native posture. ``FieldOption`` carries no
+        parent/child relationship in this codebase (``core/options.py``), so
+        the flat option list is the closest native representation; a
+        ``data-tree-select="true"`` attribute is emitted for a client script
+        to progressively enhance it into a real tree widget if option
+        values encode a hierarchy (e.g. a ``"parent/child"`` convention).
+
+        Args:
+            field: TREE_SELECT FormField.
+            value: Pre-selected node value(s) — a list for multi-select, or
+                a single value.
+            locale: Locale for i18n option labels.
+
+        Returns:
+            HTML select element string.
+        """
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        )
+        attrs: list[str] = [
+            f'id="{field.field_id}"',
+            f'name="{field.field_id}"',
+            f'class="{tw}"',
+            'multiple',
+            'data-tree-select="true"',
+        ]
+        if field.required:
+            attrs.append("required")
+
+        selected_values: set[str] = set()
+        if isinstance(value, list):
+            selected_values = {str(v) for v in value}
+        elif isinstance(value, str) and value:
+            selected_values = {value}
+
+        options_html: list[str] = []
+        if field.options:
+            for opt in field.options:
+                opt_label = _resolve(opt.label, locale) or opt.value
+                disabled_attr = " disabled" if opt.disabled else ""
+                sel = " selected" if opt.value in selected_values else ""
+                options_html.append(
+                    f'<option value="{opt.value}"{sel}{disabled_attr}>{opt_label}</option>'
+                )
+
+        return f'<select {" ".join(attrs)}>\n' + "\n".join(options_html) + "\n</select>"
+
+    def _render_unsupported_placeholder(self, field: FormField, label_hint: str) -> str:
+        """Render a disabled, clearly-labelled placeholder for a fallback type.
+
+        FEAT-448 (TASK-2337): shared implementation for the html5 fallback
+        posture (spec AC6/AC3) — a disabled input that cannot be mistaken
+        for a working control, paired with a RenderWarning emitted at the
+        top-level ``render()`` call.
+
+        Args:
+            field: The FormField being rendered as a fallback.
+            label_hint: Human-readable description of the unsupported type,
+                e.g. "image upload".
+
+        Returns:
+            HTML string for a disabled placeholder input.
+        """
+        safe_id = html.escape(str(field.field_id), quote=True)
+        safe_hint = html.escape(label_hint, quote=True)
+        tw = (
+            "block w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 "
+            "text-sm text-gray-500 cursor-not-allowed"
+        )
+        return (
+            f'<input type="text" id="{safe_id}" name="{safe_id}" '
+            f'class="{tw}" disabled readonly '
+            f'placeholder="[{safe_hint} not available in this view]" '
+            f'data-unsupported-type="{field.field_type.value}">'
+        )
 
     def _render_tags(self, field: FormField, value: Any, locale: str) -> str:
         """Render a TAGS field as a text input with data-tags attribute.
