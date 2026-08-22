@@ -69,6 +69,9 @@ defining the path for the first time, and must be conservative about it.
 - **No force-push to `staging` or `main`, ever.** The cut is a merge, not
   a re-point. See §7 for why the "re-create staging at the nightly SHA"
   alternative was rejected.
+- **No fast-forward promotion of `main`.** Branch protection on `main`
+  requires a PR; `git push origin staging:main` is rejected. There must be
+  no such code path, not even behind a feature flag.
 - **No change to `nightly` semantics.** `/sdd-release` reads `nightly`;
   it never writes to it.
 - **No new SDD flow type.** FEAT-187 already resolved that releases are
@@ -306,6 +309,7 @@ FEAT-187 §8 open question resolved, citing this spec.
 - [ ] The notes file is consumable by
       `scripts/release.py gh-release --notes-file` unmodified.
 - [ ] `promote` opens exactly one `staging → main` PR and never merges it.
+- [ ] No code path attempts to fast-forward or push directly to `main`.
 - [ ] `/sdd-release` performs no version bump, no tag, and no PyPI publish.
 - [ ] `--dry-run` on every verb mutates nothing.
 - [ ] FEAT-187 §8's `/sdd-release-cut` question is marked resolved with a
@@ -379,6 +383,9 @@ Verified absent at spec time — created by this feature or by FEAT-443:
 ### Known Risks / Gotchas
 
 - **The ancestry trap after a release, and why the cut is a merge.**
+  This is a certainty, not a risk to be mitigated: branch protection on
+  `main` requires a PR, so a fast-forward promotion is impossible and every
+  release necessarily creates a merge commit.
   Once the `staging → main` PR merges as a merge commit, `main` holds a
   commit that `dev` does not. `sync-down.yml` then propagates it into both
   `staging` and `dev` — by separate merges, with separate commits. From
@@ -404,6 +411,11 @@ Verified absent at spec time — created by this feature or by FEAT-443:
 - **Concurrent pushes to `dev` are routine here** (four moves in under an
   hour during the design session). Resolve `nightly` once and pin it for
   the whole run.
+- **Inherited blocking prerequisite: `ci.yml` is red.** Measured
+  2026-08-22, 30 of the last 30 runs on `dev` failed and none of the last
+  100 was green (root cause documented in FEAT-443 §7). Since `nightly`
+  only advances on a green SHA, a red CI means `nightly` never moves, which
+  means there is nothing to cut. This feature is inert until CI is fixed.
 - **First cut is special.** `staging == main` today, so the first cut is a
   clean fast-forward and there is no previous release tag. Notes assembly
   must handle a `None` last tag rather than crashing.
@@ -443,11 +455,16 @@ No new Python dependencies. Hard internal dependency on FEAT-443.
   in the k8s `development` environment (a signal from the sibling infra
   spec), rather than trusting the nightly gates alone? — *Owner: Jesus
   Lara*. Depends on what signal that spec exposes.
-- [ ] Should `main` be fast-forwarded from `staging` (`git push origin
-  staging:main`) instead of merged via PR, to keep `main` a strict
-  ancestor of `dev` and avoid the sync-down round trip entirely? This is
-  cleaner topologically but conflicts with PR-based branch protection on
-  `main`. — *Owner: Jesus Lara*.
+- [x] Should `main` be fast-forwarded from `staging` instead of merged via
+  PR? — *Resolved during design discussion (2026-08-22)*: **no — it is not
+  possible.** Branch protection is active on `main` and requires a PR, so
+  `git push origin staging:main` is rejected outright. The PR path is the
+  only path. This makes the ancestry consequence in §7 a **certainty rather
+  than a possibility**: every release puts a merge commit on `main` that
+  `dev` does not have, `sync-down.yml` propagates it into `staging` and
+  `dev` by separate merges, and the next cut is therefore always a real
+  merge. The implementation must not contain a fast-forward-to-`main` code
+  path at all, not even as an optimization guarded by a capability check.
 - [ ] Does fieldsync need the same three-verb surface, or only `cut`? —
   *Owner: Jesus Lara*. Decide when porting.
 

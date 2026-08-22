@@ -187,9 +187,19 @@ class FeatureEntry(BaseModel):
     checklist: list[str]             # AC lines harvested from the task files
 
 class UnattributedChange(BaseModel):
-    """Commits in the window that map to no FEAT-ID — the health metric."""
+    """Commits in the window that map to no FEAT-ID.
+
+    Whether a high count is a *defect* is repository policy, not a
+    universal truth: in AI-Parrot, low-ceremony direct commits to ``dev``
+    are an explicitly supported mode, so a large bucket is normal. In
+    fieldsync the same number would be an alarm. The count is therefore
+    always reported, but only flagged when it exceeds a configured
+    threshold.
+    """
     commit_count: int
     subjects: list[str]              # truncated sample for the changelog
+    threshold: int | None = None     # per-repo expectation; None = report only
+    over_threshold: bool = False
 
 class SnapshotManifest(BaseModel):
     """The full contract emitted by one snapshot run."""
@@ -368,6 +378,13 @@ synthetic git fixture repo:
 - [ ] Three consecutive failures produce an escalated `::error::` naming
       the blocking commit and the pointer's age.
 - [ ] `sync-down.yml`'s matrix is unchanged (still `[staging, dev]`).
+- [ ] The set of CI jobs required to be green is read from configuration,
+      not hardcoded; a job absent from the set is informational only.
+- [ ] The unattributed-commit count is reported always, but flagged only
+      when a configured threshold is exceeded; with no threshold set it is
+      never reported as a defect.
+- [ ] `ci.yml` is green on `dev` before this feature is accepted
+      (blocking prerequisite — see §7).
 
 ---
 
@@ -493,6 +510,24 @@ feature; do not `import` or reference them as if they already exist:
 
 ### Known Risks / Gotchas
 
+- **BLOCKING PREREQUISITE — `ci.yml` is currently red on every run.**
+  Measured 2026-08-22: 30 of the last 30 runs on `dev` failed; no green run
+  in the last 100. The green-CI gate this spec depends on would never fire,
+  so `nightly` would never advance past its initial position. Root cause is
+  a `uv sync --all-packages` resolution failure, with two contributing
+  defects:
+  (a) **mutually exclusive extras** — `ai-parrot[gemma4]` requires
+  `transformers>=5.0.0` while `ai-parrot[images]` requires
+  `transformers>=4.48.0,<5.0`;
+  (b) **an unbounded `requires-python = ">=3.11"`** across all 12
+  distributions, which forces `uv` to solve for 3.14+ where the
+  `transformers` 5.x chain is unsatisfiable (uv's own hint: *"Consider
+  limiting your project's supported Python versions using
+  `requires-python`"*). A yanked `transformers==5.10.0` compounds it.
+  Two latent inconsistencies surfaced alongside: `ci.yml` tests Python
+  `3.10`, which `requires-python = ">=3.11"` excludes; and `release.yml`
+  builds for `3.14`, which does not resolve. **Fixing CI is not in this
+  spec's scope, but this feature cannot be accepted until it is green.**
 - **The nightly pre-release must not publish to PyPI.** `release.yml`
   fires on `release: [created]`, which includes pre-releases. Module 6
   MUST either gate `release.yml` on `if: !github.event.release.prerelease`
@@ -558,13 +593,37 @@ No new Python dependencies.
 - [x] Should `nightly` join the `sync-down.yml` matrix? — *Resolved during
   design discussion (2026-08-22)*: no. It receives merges from nobody; a
   hotfix reaches it via `dev` on the next snapshot.
-- [ ] Which subset of `ci.yml` jobs constitutes "green" for eligibility —
-  all matrix legs, or a named required set? — *Owner: Jesus Lara*.
-  Decide during Module 2 implementation.
-- [ ] Should `dev` be protected (no direct pushes, required status checks)
-  as the actual prevention layer? This is the fix for the fieldsync
-  failure that the nightly pointer only contains. — *Owner: Jesus Lara*.
-  Separate spec; blocks nothing here.
+- [x] Which subset of `ci.yml` jobs constitutes "green" for eligibility? —
+  *Resolved during design discussion (2026-08-22), empirically*: the
+  question was measured rather than answered from preference. **All 30 of
+  the last 30 `ci.yml` runs on `dev` failed, and no run in the last 100 was
+  green.** Only `test-navrules` (`rust=on` / `rust=off`) passes; every other
+  job is red or cancelled. Requiring "all matrix legs green" would freeze
+  `nightly` permanently at its initial position. The resolution is
+  therefore two-part:
+  1. **Blocking prerequisite** — the CI failure must be fixed before this
+     feature can function at all. See §7 Known Risks for the root cause.
+  2. **Named required set, config-driven** — Module 2 reads the required
+     job names from a config list rather than hardcoding "all jobs". This
+     lets the set start small (`lint-and-registry` + `test-core`) and grow
+     as jobs are stabilized, and it makes the gate auditable. A job absent
+     from the list is informational, never blocking.
+- [x] Should `dev` be protected as the actual prevention layer? —
+  *Resolved during design discussion (2026-08-22)*: **the answer differs
+  per repository, and AI-Parrot deliberately stays unprotected.**
+  AI-Parrot has a single owner and no collaborators, so there is nobody to
+  approve the owner's own PRs; and the majority of direct commits to `dev`
+  are low-ceremony local commits made by Claude Code choosing not to open a
+  worktree — a mode that is explicitly supported here. Protecting `dev`
+  would break that mode for no governance gain. **In AI-Parrot the nightly
+  gate substitutes for dev protection**: a broken direct commit never
+  reaches `nightly`, because `nightly` requires a green CI SHA.
+  fieldsync is the opposite case — multiple newer developers and a mentor
+  who can review — and there the profile is: require a PR, require one
+  CODEOWNERS approval, require status checks, no bypass for non-mentors.
+  Consequence for this spec: the unattributed-commit count is **not**
+  universally a defect signal. See the `unattributed_threshold` config in
+  §2 Data Models.
 - [ ] Chat delivery once FEAT-417 (commcenter-notify) lands — should the
   escalation alerts route there? — *Owner: Jesus Lara*.
 - [ ] Does fieldsync need the identical manifest schema, or a profile of
