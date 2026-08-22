@@ -32,6 +32,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from navconfig import config
 
@@ -105,6 +106,27 @@ def _list_env(key: str) -> List[str]:
 
 #: Timezone applied to all three cron triggers.
 _TZ: str = config.get("FIREFLIES_WIKI_TZ", fallback="UTC")
+
+
+def _schedule_tzinfo() -> timezone | ZoneInfo:
+    """Resolve :data:`_TZ` to a tzinfo, falling back to UTC.
+
+    The digest windows must be computed in the SAME timezone the cron
+    triggers fire in. Computing "today" in UTC while the job fires at
+    08:00 Asia/Tokyo would select the previous day's meetings — the
+    window would be silently shifted by one day.
+
+    Returns:
+        A ``ZoneInfo`` for :data:`_TZ`, or ``timezone.utc`` when the name
+        is unknown (missing tzdata, typo).
+    """
+    try:
+        return ZoneInfo(_TZ)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        logger.warning(
+            "FIREFLIES_WIKI_TZ=%r is not a known timezone — using UTC.", _TZ
+        )
+        return timezone.utc
 
 #: Daily sync (Fireflies → Obsidian → wiki).
 _SYNC_HOUR: int = _int_env("FIREFLIES_WIKI_SYNC_HOUR", 7)
@@ -552,7 +574,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             body = await self._ask_llm(prompt_builder(analyses))
             subject = (
                 f"{subject_prefix} — "
-                f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')} "
+                f"{datetime.now(_schedule_tzinfo()).strftime('%Y-%m-%d')} "
                 f"({len(analyses)} meeting{'s' if len(analyses) != 1 else ''})"
             )
             outcome["emailed"] = await self._email(subject, body, recipients)
@@ -588,7 +610,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             Sorted note titles inside the window. Titles without a parseable
             ``YYYY-MM-DD`` prefix are ignored rather than raising.
         """
-        reference = (now or datetime.now(timezone.utc)).date()
+        reference = (now or datetime.now(_schedule_tzinfo())).date()
         cutoff = reference - timedelta(days=days)
 
         selected: List[str] = []

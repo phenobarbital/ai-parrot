@@ -144,6 +144,44 @@ class TestNotesInWindow:
         assert result == ["2026-08-23-ok"]
 
     @pytest.mark.asyncio
+    async def test_window_uses_schedule_timezone_not_utc(self, agent, agent_module, monkeypatch):
+        """The window must be computed in the timezone the triggers fire in.
+
+        Regression: with FIREFLIES_WIKI_TZ=Asia/Tokyo the 08:00 job runs at
+        23:00 the PREVIOUS day UTC, so a UTC-based "today" selected the wrong
+        day's meetings and silently shifted the whole window.
+        """
+        from zoneinfo import ZoneInfo
+
+        monkeypatch.setattr(
+            agent_module, "_schedule_tzinfo", lambda: ZoneInfo("Asia/Tokyo")
+        )
+        agent._get_existing_meeting_titles = AsyncMock(
+            return_value={"2026-08-23-tokyo-standup"}
+        )
+
+        # 2026-08-23 08:00 Tokyo == 2026-08-22 23:00 UTC.
+        result = await agent._notes_in_window(0)
+
+        # Only correct if "today" is resolved in Tokyo, not UTC.
+        tokyo_today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+        expected = (
+            ["2026-08-23-tokyo-standup"]
+            if tokyo_today.isoformat() == "2026-08-23"
+            else []
+        )
+        assert result == expected
+
+    def test_unknown_timezone_falls_back_to_utc(self, agent_module):
+        """A bogus timezone name degrades to UTC rather than raising."""
+        original = agent_module._TZ
+        try:
+            agent_module._TZ = "Not/AZone"
+            assert agent_module._schedule_tzinfo() is timezone.utc
+        finally:
+            agent_module._TZ = original
+
+    @pytest.mark.asyncio
     async def test_future_dated_notes_excluded(self, agent):
         """A note dated after the reference date is outside the window."""
         agent._get_existing_meeting_titles = AsyncMock(

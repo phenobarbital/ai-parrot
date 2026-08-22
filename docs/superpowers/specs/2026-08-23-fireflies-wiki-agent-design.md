@@ -174,6 +174,12 @@ evaluates its arguments at decoration time (the same constraint that makes
 | `FIREFLIES_WIKI_DAILY_WINDOW_DAYS` | `1` | Daily digest lookback |
 | `FIREFLIES_WIKI_EXTRACT_ENTITIES` | `false` | Phase-2 LLM entity extraction |
 
+The digest windows are computed in **the same timezone the triggers fire
+in**, resolved by `_schedule_tzinfo()` (`ZoneInfo(_TZ)`, falling back to UTC
+on an unknown name). Computing "today" in UTC while the job fires at 08:00
+`Asia/Tokyo` would select the *previous* day's meetings — the window would be
+silently shifted by a day. The email subject line uses the same local date.
+
 `ScheduleType.CRON` is used rather than `DAILY`/`WEEKLY` because
 `AgentSchedulerManager._create_trigger` forwards `CronTrigger(**config)`
 verbatim only for the `CRON` branch — it is the only branch that accepts a
@@ -216,7 +222,8 @@ pytest-asyncio, no network, no real LLM.
 
 ## Deliverables
 
-- `agents/fireflies_wiki.py` — the agent (committed with `git add -f`)
+- `agents/fireflies_wiki.py` — the agent (committed with `git add -f`;
+  `examples/**/*.py` is *also* gitignored, so the example needs `-f` too)
 - `tests/test_fireflies_wiki_agent.py` — unit tests
 - `examples/agents/fireflies_wiki_agent.py` — manual one-shot runner for
   each of the three methods, alongside the existing
