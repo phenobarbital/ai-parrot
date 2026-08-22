@@ -22,7 +22,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-2317-apply-commcenter-ddl.md",
       "started_at": "2026-08-22T00:39:09+00:00",
-      "completed_at": "2026-08-22T00:57:00+00:00"
+      "completed_at": "2026-08-22T00:57:00+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2318",
@@ -39,7 +40,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-2318-async-notify-version-guard.md",
       "started_at": "2026-08-22T00:39:09+00:00",
-      "completed_at": "2026-08-22T00:58:12+00:00"
+      "completed_at": "2026-08-22T00:58:12+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2319",
@@ -58,7 +60,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-2319-batch-list-endpoint.md",
       "started_at": "2026-08-22T00:39:09+00:00",
-      "completed_at": "2026-08-22T00:59:28+00:00"
+      "completed_at": "2026-08-22T00:59:28+00:00",
+      "verification": "verified"
     }
   ]
 }
