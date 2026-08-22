@@ -506,6 +506,31 @@ class FormValidator:
                 raise ValueError(f"AI capture value must be JSON-serialisable: {exc}")
             return value
 
+        # FEAT-448 (TASK-2334) — credit_card REJECTS cardholder data, it does
+        # not sanitize it. cvv and the full PAN ('number') are errors, not
+        # keys to strip: stripping would satisfy "not stored" while leaving
+        # every client free to keep sending them over the wire and into
+        # request logs. Do not echo the offending value in any message here.
+        elif ft == FieldType.CREDIT_CARD:
+            if not isinstance(value, dict):
+                raise ValueError(
+                    "Credit card value must be an object with brand, last4, name and expiry"
+                )
+            if "cvv" in value:
+                raise ValueError(
+                    "Credit card value must not include a CVV — "
+                    "card verification values are never stored"
+                )
+            if "number" in value:
+                raise ValueError(
+                    "Credit card value must not include the full card number — "
+                    "send 'last4' only"
+                )
+            last4 = value.get("last4")
+            if not (isinstance(last4, str) and re.fullmatch(r"\d{4}", last4)):
+                raise ValueError("Credit card 'last4' must be exactly 4 digits")
+            return value
+
         return value
 
     def _validate_by_type(
