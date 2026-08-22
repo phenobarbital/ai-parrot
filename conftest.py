@@ -19,7 +19,10 @@ test suites can collect without requiring the newer navigator.
 """
 import sys
 import os
+import re
 import types
+
+import pytest
 
 # Worktree root — the directory that contains THIS file.
 _WORKTREE_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -294,28 +297,60 @@ OPTIONAL_SUBMODULES: frozenset[str] = frozenset({
 
 _SKIPPED_OPTIONAL: dict[str, int] = {}
 
+_MISSING_RE = re.compile(r"No module named '([^']+)'")
 
-class _OptionalDependencyFinder:
-    """Turn a missing *allowlisted* optional module into a module-level skip.
 
-    Appended last to ``sys.meta_path``: if this finder is reached, no real
-    finder could locate the module, so it is genuinely absent.
+def _missing_optional(exc: BaseException) -> str | None:
+    """Return the allowlisted module that made ``exc`` happen, if any.
+
+    Walks the whole ``__cause__``/``__context__`` chain, because pytest wraps
+    a test module's ImportError in a CollectError.
+    """
+    seen: set[int] = set()
+    stack: list[BaseException | None] = [exc]
+    while stack:
+        e = stack.pop()
+        if e is None or id(e) in seen:
+            continue
+        seen.add(id(e))
+        names: list[str] = []
+        if isinstance(e, ModuleNotFoundError) and e.name:
+            names.append(e.name)
+        names += _MISSING_RE.findall(str(e))
+        for name in names:
+            if name in OPTIONAL_SUBMODULES or name.split(".")[0] in OPTIONAL_DEPENDENCIES:
+                return name
+        stack.extend((e.__cause__, e.__context__))
+    return None
+
+
+class _OptionalDependencyModule(pytest.Module):
+    """A test module that skips itself when an optional dependency is absent.
+
+    The check happens at *test-module import* time only. An earlier version
+    hooked ``sys.meta_path`` instead, which was wrong: it also fired inside
+    library code doing ``try: import x / except ImportError: <fallback>``,
+    turning a graceful degradation into a skipped file and silently costing
+    ~286 tests that had been passing.
     """
 
-    def find_spec(self, fullname, path=None, target=None):  # noqa: D102
-        root = fullname.split(".")[0]
-        if root in OPTIONAL_DEPENDENCIES or fullname in OPTIONAL_SUBMODULES:
-            import pytest
-
-            _SKIPPED_OPTIONAL[fullname] = _SKIPPED_OPTIONAL.get(fullname, 0) + 1
+    def collect(self):  # noqa: D102
+        try:
+            return super().collect()
+        except Exception as exc:  # noqa: BLE001 — re-raised unless allowlisted
+            missing = _missing_optional(exc)
+            if missing is None:
+                raise
+            _SKIPPED_OPTIONAL[missing] = _SKIPPED_OPTIONAL.get(missing, 0) + 1
             pytest.skip(
-                f"optional dependency {fullname!r} is not installed",
+                f"optional dependency {missing!r} is not installed",
                 allow_module_level=True,
             )
-        return None
 
 
-sys.meta_path.append(_OptionalDependencyFinder())
+def pytest_pycollect_makemodule(module_path, parent):
+    """Route every test module through the optional-dependency-aware collector."""
+    return _OptionalDependencyModule.from_parent(parent, path=module_path)
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -324,4 +359,4 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         return
     terminalreporter.section("skipped optional dependencies")
     for name, count in sorted(_SKIPPED_OPTIONAL.items(), key=lambda kv: -kv[1]):
-        terminalreporter.write_line(f"  {name}: {count} import(s) skipped")
+        terminalreporter.write_line(f"  {name}: {count} module(s) skipped")
