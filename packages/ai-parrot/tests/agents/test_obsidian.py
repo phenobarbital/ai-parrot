@@ -914,3 +914,113 @@ class TestDefaultFiltersConstructor:
 
     def test_default_filters_none_when_omitted(self, agent):
         assert agent.default_filters is None
+
+
+class TestSyncPagination:
+    """Test sync_fireflies_transcripts()'s filters + pagination (TASK-2348)."""
+
+    @pytest.mark.asyncio
+    async def test_no_filters_single_call_unchanged(self, agent):
+        """Zero-filter callers still make exactly one tool call."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            return_value=MagicMock(success=True, result="")
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+
+        await agent.sync_fireflies_transcripts(limit=10)
+
+        agent._call_fireflies_tool.assert_called_once()
+        call_args = agent._call_fireflies_tool.call_args.args
+        assert call_args[0] == "fireflies_get_transcripts"
+        assert call_args[1]["limit"] == 10
+        assert call_args[1]["skip"] == 0
+        # No filter keys leaked in when filters=None and no default_filters
+        assert "fromDate" not in call_args[1]
+        assert "channelId" not in call_args[1]
+
+    @pytest.mark.asyncio
+    async def test_filters_merge_into_tool_args(self, agent):
+        """Passing filters maps to the correct camelCase tool args."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            return_value=MagicMock(success=True, result="")
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+
+        await agent.sync_fireflies_transcripts(
+            limit=10,
+            filters=FirefliesFilters(from_date="2026-08-01", mine=True),
+        )
+
+        call_args = agent._call_fireflies_tool.call_args.args
+        assert call_args[1]["fromDate"] == "2026-08-01"
+        assert call_args[1]["mine"] is True
+
+    @pytest.mark.asyncio
+    async def test_paginates_beyond_fifty(self, agent):
+        """limit > 50 issues multiple calls with increasing skip."""
+        page1 = "\n".join(f'  - id: "id{i}"' for i in range(50))
+        page2 = "\n".join(f'  - id: "id{i}"' for i in range(50, 70))
+        transcript_calls = [
+            MagicMock(success=True, result=page1),
+            MagicMock(success=True, result=page2),
+        ] + [MagicMock(success=True, result="transcript text")] * 70
+
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(side_effect=transcript_calls)
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent.obsidian_toolkit = AsyncMock()
+
+        report = await agent.sync_fireflies_transcripts(limit=70)
+
+        assert report["synced"] == 70
+        # First two calls are the paginated list-fetch calls
+        first_call_kwargs = agent._call_fireflies_tool.call_args_list[0].args
+        second_call_kwargs = agent._call_fireflies_tool.call_args_list[1].args
+        assert first_call_kwargs[0] == "fireflies_get_transcripts"
+        assert first_call_kwargs[1]["skip"] == 0
+        assert first_call_kwargs[1]["limit"] == 50
+        assert second_call_kwargs[0] == "fireflies_get_transcripts"
+        assert second_call_kwargs[1]["skip"] == 50
+        assert second_call_kwargs[1]["limit"] == 20
+
+    @pytest.mark.asyncio
+    async def test_stops_on_short_page(self, agent):
+        """A page shorter than requested stops pagination early."""
+        short_page = "\n".join(f'  - id: "id{i}"' for i in range(5))
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[MagicMock(success=True, result=short_page)]
+            + [MagicMock(success=True, result="transcript text")] * 5
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent.obsidian_toolkit = AsyncMock()
+
+        report = await agent.sync_fireflies_transcripts(limit=50)
+
+        assert report["synced"] == 5
+        # Only one list-fetch call (the per-transcript fetches follow after)
+        list_calls = [
+            c for c in agent._call_fireflies_tool.call_args_list
+            if c.args[0] == "fireflies_get_transcripts"
+        ]
+        assert len(list_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_partial_pagination_failure_keeps_prior_pages(self, agent):
+        """A page-fetch error stops pagination but keeps prior results."""
+        page1 = "\n".join(f'  - id: "id{i}"' for i in range(50))
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[MagicMock(success=True, result=page1), Exception("page 2 failed")]
+            + [MagicMock(success=True, result="transcript text")] * 50
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent.obsidian_toolkit = AsyncMock()
+
+        report = await agent.sync_fireflies_transcripts(limit=100)
+
+        assert report["status"] == "ok"
+        assert report["synced"] == 50
+        assert any("page" in e.lower() for e in report["errors"])

@@ -282,14 +282,34 @@ class FirefliesObsidianAgent(BasicAgent):
         self,
         limit: int = 10,
         skip_existing: bool = True,
+        filters: Optional["FirefliesFilters"] = None,
     ) -> Dict[str, Any]:
         """Fetch latest Fireflies transcripts and save to Obsidian.
 
         **Deterministic**: No LLM involved, safe to schedule every 8 hours.
 
+        ``limit`` is the **total** number of transcripts desired across all
+        pages, not a page size — the underlying ``fireflies_get_transcripts``
+        tool caps a single call at 50, so any ``limit > 50`` is satisfied by
+        multiple internal calls (``skip=0,50,100,…``) until either ``limit``
+        is reached or the API returns a short/exhausted page.
+
+        **No pagination ceiling is enforced.** A broad or unfiltered
+        ``limit``/``filters`` combination against a large Fireflies account
+        can issue many sequential tool calls in one invocation — this is an
+        accepted, explicit design choice (see
+        ``sdd/specs/fireflies-mcp-improvements.spec.md`` §7 Known Risks), not
+        a bug. Scope ``filters``/``limit`` accordingly for large accounts.
+
         Args:
-            limit: Max transcripts to fetch (default: 10)
+            limit: Max transcripts to fetch, total across all pages (default: 10)
             skip_existing: Skip transcripts already in vault (default: True)
+            filters: Optional :class:`FirefliesFilters` to scope which
+                meetings are fetched (date range, keyword/scope,
+                organizer/participant emails, mine-only, channel). Merged
+                with ``self.default_filters`` — per-call fields here win over
+                the agent's default on the same field (see
+                :func:`_merge_filters`).
 
         Returns:
             Dict with:
@@ -313,24 +333,48 @@ class FirefliesObsidianAgent(BasicAgent):
         try:
             await self._ensure_fireflies_mcp()
 
-            # List transcripts via Fireflies MCP tool
-            self.logger.info(f"Fetching latest {limit} Fireflies transcripts...")
-
-            # Call Fireflies get_transcripts tool
-            tool_result = await self._call_fireflies_tool(
-                "fireflies_get_transcripts",
-                {"limit": limit}
+            effective_filters = _merge_filters(self.default_filters, filters)
+            filter_args = (
+                _filters_to_tool_args(effective_filters) if effective_filters else {}
             )
 
-            # Extract transcripts from ToolResult
-            # The result.result field contains formatted text with transcript metadata
-            if not tool_result or not tool_result.success:
-                self.logger.info("No transcripts found or API error")
-                return report
+            # Fetch transcripts, paginating transparently past the tool's
+            # 50-per-call cap until `limit` is reached or the API is
+            # exhausted. `limit` means "total across all pages."
+            self.logger.info(f"Fetching latest {limit} Fireflies transcripts...")
+            transcripts: List[Dict[str, Any]] = []
+            skip = 0
+            while len(transcripts) < limit:
+                page_limit = min(50, limit - len(transcripts))
+                if page_limit <= 0:
+                    break
+                try:
+                    tool_result = await self._call_fireflies_tool(
+                        "fireflies_get_transcripts",
+                        {**filter_args, "limit": page_limit, "skip": skip},
+                    )
+                except Exception as e:
+                    report["errors"].append(
+                        f"Page fetch failed (skip={skip}): {e}"
+                    )
+                    self.logger.error(
+                        f"Fireflies page fetch failed (skip={skip}): {e}"
+                    )
+                    break
 
-            # Parse the result text to extract individual transcripts
-            self.logger.debug(f"Fireflies API response: {tool_result.result[:200]}...")
-            transcripts = self._parse_fireflies_response(tool_result.result)
+                if not tool_result or not tool_result.success:
+                    self.logger.info("No transcripts found or API error")
+                    break
+
+                self.logger.debug(
+                    f"Fireflies API response: {tool_result.result[:200]}..."
+                )
+                page = self._parse_fireflies_response(tool_result.result)
+                transcripts.extend(page)
+                if len(page) < page_limit:
+                    break  # API exhausted — fewer results than requested
+                skip += page_limit
+
             if not transcripts:
                 self.logger.info("No transcripts found")
                 return report
