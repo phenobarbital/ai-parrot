@@ -126,3 +126,24 @@ both `GET` and `POST`.
 not in this task's Files to Create/Modify list, and TASK-2317 already
 established the existing DDL as final/idempotent. Flagging as a possible
 follow-up if list-batches query performance becomes a concern at scale.
+
+**Post-completion code-review fixes** (adversarial review found two real
+bugs not caught by the original test suite; both fixed, tests
+strengthened):
+1. The status breakdown omitted `publishing` (one of the five values the
+   table's own CHECK constraint allows), so `queued+skipped+
+   publish_failed+pending` did not sum to `total` whenever a batch had an
+   in-flight row. Added `COUNT(*) FILTER (WHERE status = 'publishing')`
+   and included it in the response; added a regression test asserting
+   the five counts sum to `total`.
+2. `created_after`/`created_before` were applied as row-level predicates
+   before `GROUP BY`, inconsistent with `status`/`provider`'s
+   batch-selecting subquery — a batch whose rows don't share one exact
+   `created_at` could have its own aggregate counts silently truncated.
+   Switched to the same `batch_id IN (SELECT ...)` pattern; strengthened
+   the date-filter test to assert the subquery pattern is present, not
+   just that the SQL text contains `created_at >=`/`<=`.
+
+Both fixes committed separately (`fix(commcenter-post-launch-fixes):
+TASK-2319 code-review follow-up — ...`); full suite re-verified at 136
+passed after the fixes.

@@ -120,3 +120,21 @@ gets installed. No `uv.lock` file was modified — `uv lock`/`--dry-run`
 failing never writes a partial lockfile, so the existing lockfile is
 untouched. Recommend a follow-up ticket to resolve the `flowtask`
 `azure-identity` pin conflict before this pin bump can be locked.
+
+**Post-completion code-review fixes**:
+1. `ai-parrot[notify-all]`'s `async-notify[all]>=1.4.2` pin was missed by
+   the original "all relevant extras" pass (only the base `ai-parrot`
+   pin, `ai-parrot[integrations]`, and `ai-parrot-server[comm-center]`
+   were bumped). Bumped to `>=1.6.0` for consistency — this does not
+   change the `uv lock` outcome above (the conflict already reproduces
+   from the other three pins regardless), but it does close the AC's
+   literal "all relevant extras" wording.
+2. `docs/comm_center.md` claimed the version guard's `RuntimeError` is
+   "mapped to `503`" — tracing both `_get_notify_client()` call sites
+   (`dispatch.fan_out` for bulk send, `dispatch.publish_one` for single
+   send) shows this is inaccurate: on the bulk path it fires inside the
+   backgrounded fan-out task (after the `202` has already been returned)
+   and is absorbed into per-row retry bookkeeping; on the single-send
+   path it is caught by the generic publish-failure handler and mapped
+   to `502`, not `503`. Corrected the doc to describe actual behavior on
+   both paths.
