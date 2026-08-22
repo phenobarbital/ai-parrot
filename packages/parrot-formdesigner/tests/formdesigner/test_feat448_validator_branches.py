@@ -38,12 +38,15 @@ VALID_VALUES: dict[FieldType, object] = {
     FieldType.SEARCH: "widget-123",
     FieldType.MASKED: "555-123-4567",
     FieldType.COLOR_PICKER: "#1a2b3c",
-    FieldType.EMOJI: "\U0001F600",
+    FieldType.EMOJI: "\U0001f600",
     FieldType.CRON: "0 0 * * *",
     FieldType.TREE_SELECT: ["node-1", "node-2"],
     FieldType.SIGNATURE_PAD: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA",
     FieldType.IMAGE_DROPZONE: {
-        "name": "photo.png", "type": "image/png", "size": 1024, "dataUrl": "data:image/png;base64,AA==",
+        "name": "photo.png",
+        "type": "image/png",
+        "size": 1024,
+        "dataUrl": "data:image/png;base64,AA==",
     },
     FieldType.MULTI_UPLOAD: [{"answer": "a1", "blob_ref": "b1", "display": "Photo 1"}],
     FieldType.AI_CAPTURE: {"nested": {"score": 0.9}},
@@ -51,9 +54,7 @@ VALID_VALUES: dict[FieldType, object] = {
 
 
 class TestValidValuesAccepted:
-    @pytest.mark.parametrize(
-        "field_type", list(VALID_VALUES.keys()), ids=[ft.value for ft in VALID_VALUES]
-    )
+    @pytest.mark.parametrize("field_type", list(VALID_VALUES.keys()), ids=[ft.value for ft in VALID_VALUES])
     @pytest.mark.asyncio
     async def test_accepts_control_value(self, validator: FormValidator, field_type: FieldType):
         field = _field(field_type)
@@ -100,9 +101,7 @@ WRONG_TYPE_VALUES: dict[FieldType, object] = {
 
 
 class TestWrongTypeRejected:
-    @pytest.mark.parametrize(
-        "field_type", list(WRONG_TYPE_VALUES.keys()), ids=[ft.value for ft in WRONG_TYPE_VALUES]
-    )
+    @pytest.mark.parametrize("field_type", list(WRONG_TYPE_VALUES.keys()), ids=[ft.value for ft in WRONG_TYPE_VALUES])
     @pytest.mark.asyncio
     async def test_rejects_wrong_shape(self, validator: FormValidator, field_type: FieldType):
         field = _field(field_type)

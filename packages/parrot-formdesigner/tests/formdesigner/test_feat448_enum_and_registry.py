@@ -17,7 +17,6 @@ from parrot_formdesigner.controls.registry import get_controls
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 
-
 CLIENT_ELEVEN = [
     FieldType.SEARCH,
     FieldType.MASKED,
@@ -34,12 +33,39 @@ CLIENT_ELEVEN = [
 
 # The 33 values that existed before FEAT-448 (verified against core/types.py).
 PRE_EXISTING_33 = {
-    "text", "text_area", "number", "integer", "boolean", "date", "datetime",
-    "time", "select", "multi_select", "file", "image", "color", "url",
-    "email", "phone", "password", "hidden", "group", "array",
-    "signature", "dynamic_select", "transfer_list", "remote_response",
-    "availability", "location", "tags", "nps", "likert", "ranking",
-    "rest", "audio", "formula",
+    "text",
+    "text_area",
+    "number",
+    "integer",
+    "boolean",
+    "date",
+    "datetime",
+    "time",
+    "select",
+    "multi_select",
+    "file",
+    "image",
+    "color",
+    "url",
+    "email",
+    "phone",
+    "password",
+    "hidden",
+    "group",
+    "array",
+    "signature",
+    "dynamic_select",
+    "transfer_list",
+    "remote_response",
+    "availability",
+    "location",
+    "tags",
+    "nps",
+    "likert",
+    "ranking",
+    "rest",
+    "audio",
+    "formula",
 }
 
 
@@ -61,10 +87,7 @@ class TestFormSchemaParsesAllEleven:
     """AC2 — a FormSchema containing all eleven at once parses."""
 
     def test_schema_with_all_eleven_parses(self):
-        fields = [
-            FormField(field_id=f"f_{ft.value}", field_type=ft, label=ft.value)
-            for ft in CLIENT_ELEVEN
-        ]
+        fields = [FormField(field_id=f"f_{ft.value}", field_type=ft, label=ft.value) for ft in CLIENT_ELEVEN]
         schema = FormSchema(
             form_id="feat448-client-eleven",
             title="Client Eleven",

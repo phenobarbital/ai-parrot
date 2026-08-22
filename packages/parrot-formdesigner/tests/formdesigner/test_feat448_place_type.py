@@ -43,18 +43,12 @@ class TestPlaceAccepts:
 
 class TestPlaceRejectsInvalidCountry:
     @pytest.mark.asyncio
-    async def test_ac2_invalid_country_code_rejected(
-        self, validator: FormValidator, place_field: FormField
-    ):
-        errors = await validator.validate_field(
-            place_field, {"country": "ZZ", "state": "ON", "city": "Ottawa"}
-        )
+    async def test_ac2_invalid_country_code_rejected(self, validator: FormValidator, place_field: FormField):
+        errors = await validator.validate_field(place_field, {"country": "ZZ", "state": "ON", "city": "Ottawa"})
         assert errors
 
     @pytest.mark.asyncio
-    async def test_ac2_error_message_matches_location_wording(
-        self, validator: FormValidator, place_field: FormField
-    ):
+    async def test_ac2_error_message_matches_location_wording(self, validator: FormValidator, place_field: FormField):
         """Same message shape is_valid_iso_country_code drives for location."""
         errors = await validator.validate_field(place_field, {"country": "ZZ"})
         assert any("is not a valid ISO 3166 country code" in e for e in errors)
@@ -76,29 +70,21 @@ class TestLocationByteIdentical:
     through, so pin every observable piece of its behaviour."""
 
     @pytest.mark.asyncio
-    async def test_location_still_accepts_valid_code(
-        self, validator: FormValidator, location_field: FormField
-    ):
+    async def test_location_still_accepts_valid_code(self, validator: FormValidator, location_field: FormField):
         errors = await validator.validate_field(location_field, "ca")
         assert errors == []
 
     @pytest.mark.asyncio
     async def test_location_coercion_still_uppercases(self, validator: FormValidator):
-        assert validator._coerce_value("ca", FormField(
-            field_id="c", field_type=FieldType.LOCATION, label="C"
-        )) == "CA"
+        assert validator._coerce_value("ca", FormField(field_id="c", field_type=FieldType.LOCATION, label="C")) == "CA"
 
     @pytest.mark.asyncio
-    async def test_location_still_rejects_wrong_length(
-        self, validator: FormValidator, location_field: FormField
-    ):
+    async def test_location_still_rejects_wrong_length(self, validator: FormValidator, location_field: FormField):
         errors = await validator.validate_field(location_field, "USA")
         assert any("2-character ISO 3166 country code" in e for e in errors)
 
     @pytest.mark.asyncio
-    async def test_location_still_rejects_invalid_code(
-        self, validator: FormValidator, location_field: FormField
-    ):
+    async def test_location_still_rejects_invalid_code(self, validator: FormValidator, location_field: FormField):
         errors = await validator.validate_field(location_field, "ZZ")
         assert any("is not a valid ISO 3166 country code" in e for e in errors)
 

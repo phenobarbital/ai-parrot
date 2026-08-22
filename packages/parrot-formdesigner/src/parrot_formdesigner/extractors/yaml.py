@@ -145,9 +145,7 @@ class YamlExtractor:
             ValueError: If the YAML content is invalid or missing required fields.
         """
         if yaml_loads is None:
-            raise ImportError(
-                "No YAML parser available. Install yaml_rs or PyYAML: pip install pyyaml"
-            )
+            raise ImportError("No YAML parser available. Install yaml_rs or PyYAML: pip install pyyaml")
         data = yaml_loads(content)
         if not isinstance(data, dict):
             raise ValueError("YAML content must be a mapping (dict) at the top level")
@@ -321,22 +319,14 @@ class YamlExtractor:
         post_depends: list[PostDependency] | None = None
         raw_post = field_config.get("post_depends")
         if raw_post and isinstance(raw_post, list):
-            parsed_posts = [
-                self._parse_post_dependency(pd)
-                for pd in raw_post
-                if isinstance(pd, dict)
-            ]
+            parsed_posts = [self._parse_post_dependency(pd) for pd in raw_post if isinstance(pd, dict)]
             parsed_posts = [p for p in parsed_posts if p is not None]
             post_depends = parsed_posts or None
 
         # Parse children (GROUP fields)
         children = None
         if "children" in field_config and field_config["children"]:
-            children = [
-                self._parse_field(child)
-                for child in field_config["children"]
-                if child is not None
-            ]
+            children = [self._parse_field(child) for child in field_config["children"] if child is not None]
             children = [c for c in children if c is not None]
 
         # Parse item_template (ARRAY fields)
@@ -383,9 +373,17 @@ class YamlExtractor:
         if isinstance(constraints_data, dict):
             for key, value in constraints_data.items():
                 if key in (
-                    "min_length", "max_length", "min_value", "max_value", "step",
-                    "pattern", "pattern_message", "min_items", "max_items",
-                    "allowed_mime_types", "max_file_size_bytes",
+                    "min_length",
+                    "max_length",
+                    "min_value",
+                    "max_value",
+                    "step",
+                    "pattern",
+                    "pattern_message",
+                    "min_items",
+                    "max_items",
+                    "allowed_mime_types",
+                    "max_file_size_bytes",
                 ):
                     kwargs[key] = value
 
@@ -426,17 +424,17 @@ class YamlExtractor:
                 options.append(FieldOption(value=item, label=item))
             elif isinstance(item, dict):
                 value = item.get("value", item.get("id", ""))
-                label = self._parse_localized(
-                    item.get("label") or item.get("title") or value
-                )
+                label = self._parse_localized(item.get("label") or item.get("title") or value)
                 desc = self._parse_localized(item.get("description"))
-                options.append(FieldOption(
-                    value=str(value),
-                    label=label,
-                    description=desc,
-                    disabled=item.get("disabled", False),
-                    icon=item.get("icon"),
-                ))
+                options.append(
+                    FieldOption(
+                        value=str(value),
+                        label=label,
+                        description=desc,
+                        disabled=item.get("disabled", False),
+                        icon=item.get("icon"),
+                    )
+                )
         return options if options else None
 
     def _parse_dependency_rule(self, data: dict[str, Any]) -> DependencyRule | None:
@@ -468,11 +466,13 @@ class YamlExtractor:
                 except ValueError:
                     operator = ConditionOperator.EQ
                 value = cond.get("value")
-                conditions.append(FieldCondition(
-                    field_id=field_id,
-                    operator=operator,
-                    value=value,
-                ))
+                conditions.append(
+                    FieldCondition(
+                        field_id=field_id,
+                        operator=operator,
+                        value=value,
+                    )
+                )
 
         if not conditions:
             return None
@@ -484,11 +484,7 @@ class YamlExtractor:
         operations: list[DependencyOperation] | None = None
         raw_ops = data.get("operations")
         if raw_ops and isinstance(raw_ops, list):
-            parsed_ops = [
-                self._parse_dependency_operation(op)
-                for op in raw_ops
-                if isinstance(op, dict)
-            ]
+            parsed_ops = [self._parse_dependency_operation(op) for op in raw_ops if isinstance(op, dict)]
             parsed_ops = [o for o in parsed_ops if o is not None]
             operations = parsed_ops or None
 
@@ -560,11 +556,13 @@ class YamlExtractor:
                     except ValueError:
                         operator = ConditionOperator.EQ
                     value = cond.get("value")
-                    parsed_conds.append(FieldCondition(
-                        field_id=field_id,
-                        operator=operator,
-                        value=value,
-                    ))
+                    parsed_conds.append(
+                        FieldCondition(
+                            field_id=field_id,
+                            operator=operator,
+                            value=value,
+                        )
+                    )
             conditions = parsed_conds or None
 
         # Parse optional operation (for set/calc effects)

@@ -16,7 +16,6 @@ from parrot_formdesigner.controls import (
 )
 from parrot_formdesigner.controls.registry import _REGISTRY
 
-
 EXPECTED_KEYS = {
     "type",
     "label",
@@ -67,15 +66,17 @@ def test_metadata_model_fields_match_expected():
 def test_extra_keys_are_rejected():
     """The model is configured with ``extra='forbid'``."""
     with pytest.raises(Exception):
-        FieldControlMetadata.model_validate({
-            "type": "x",
-            "label": "X",
-            "description": "d",
-            "category": "basic",
-            "icon": "x",
-            "snippet": {},
-            "render_hint": "input",
-            "supports_constraints": True,
-            "is_container": False,
-            "extra_field": "should fail",
-        })
+        FieldControlMetadata.model_validate(
+            {
+                "type": "x",
+                "label": "X",
+                "description": "d",
+                "category": "basic",
+                "icon": "x",
+                "snippet": {},
+                "render_hint": "input",
+                "supports_constraints": True,
+                "is_container": False,
+                "extra_field": "should fail",
+            }
+        )

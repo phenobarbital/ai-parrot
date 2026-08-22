@@ -125,42 +125,32 @@ class TestSplitIntoQuestions:
         assert questions[0].field_id == "name"
         assert questions[1].field_id == "age"
 
-    def test_question_carries_field_uid(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    def test_question_carries_field_uid(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """FEAT-393: AudioQuestion.field_uid is populated from the source field."""
         questions = renderer.split_into_questions(simple_form)
         name_field, age_field, _secret_field = simple_form.sections[0].fields
         assert questions[0].field_uid == name_field.field_uid
         assert questions[1].field_uid == age_field.field_uid
 
-    def test_questions_are_indexed(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    def test_questions_are_indexed(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """Questions have sequential zero-based indices."""
         questions = renderer.split_into_questions(simple_form)
         assert questions[0].index == 0
         assert questions[1].index == 1
 
-    def test_required_flag(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    def test_required_flag(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """required flag is propagated from FormField."""
         questions = renderer.split_into_questions(simple_form)
         assert questions[0].required is True
         assert questions[1].required is False
 
-    def test_skips_hidden_fields(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    def test_skips_hidden_fields(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """HIDDEN fields are excluded from the question list."""
         questions = renderer.split_into_questions(simple_form)
         field_ids = [q.field_id for q in questions]
         assert "secret" not in field_ids
 
-    def test_select_options_included(
-        self, renderer: AudioFormRenderer, form_with_select: FormSchema
-    ) -> None:
+    def test_select_options_included(self, renderer: AudioFormRenderer, form_with_select: FormSchema) -> None:
         """SELECT field includes options list in the question."""
         questions = renderer.split_into_questions(form_with_select)
         assert len(questions) == 1
@@ -168,9 +158,7 @@ class TestSplitIntoQuestions:
         assert len(questions[0].options) == 2
         assert questions[0].options[0]["value"] == "red"
 
-    def test_group_children_expanded(
-        self, renderer: AudioFormRenderer, form_with_group: FormSchema
-    ) -> None:
+    def test_group_children_expanded(self, renderer: AudioFormRenderer, form_with_group: FormSchema) -> None:
         """GROUP field children become individual questions."""
         questions = renderer.split_into_questions(form_with_group)
         assert len(questions) == 2
@@ -179,9 +167,7 @@ class TestSplitIntoQuestions:
         assert "city" in field_ids
         assert "address" not in field_ids
 
-    def test_field_type_is_string(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    def test_field_type_is_string(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """AudioQuestion.field_type is a string value (not enum)."""
         questions = renderer.split_into_questions(simple_form)
         assert questions[0].field_type == "text"
@@ -192,17 +178,13 @@ class TestRender:
     """Tests for AudioFormRenderer.render()."""
 
     @pytest.mark.asyncio
-    async def test_returns_rendered_form(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    async def test_returns_rendered_form(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """render() returns a RenderedForm with JSON content type."""
         result = await renderer.render(simple_form)
         assert result.content_type == "application/json"
 
     @pytest.mark.asyncio
-    async def test_manifest_structure(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    async def test_manifest_structure(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """render() returns correct manifest structure."""
         result = await renderer.render(simple_form)
         # FEAT-389: manifest identity is form_uid, not the mutable form_id slug.
@@ -211,42 +193,32 @@ class TestRender:
         assert "questions" in result.content
 
     @pytest.mark.asyncio
-    async def test_manifest_has_ws_endpoint(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    async def test_manifest_has_ws_endpoint(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """render() manifest includes WebSocket endpoint path."""
         result = await renderer.render(simple_form)
         assert "/audio/ws" in result.content["ws_endpoint"]
         assert str(simple_form.form_uid) in result.content["ws_endpoint"]
 
     @pytest.mark.asyncio
-    async def test_manifest_locale(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    async def test_manifest_locale(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """render() manifest uses the provided locale."""
         result = await renderer.render(simple_form, locale="es")
         assert result.content["locale"] == "es"
 
     @pytest.mark.asyncio
-    async def test_audio_prompt_excluded_from_json(
-        self, renderer: AudioFormRenderer, simple_form: FormSchema
-    ) -> None:
+    async def test_audio_prompt_excluded_from_json(self, renderer: AudioFormRenderer, simple_form: FormSchema) -> None:
         """audio_prompt bytes are excluded from the JSON manifest content."""
         result = await renderer.render(simple_form)
         for q in result.content["questions"]:
             assert "audio_prompt" not in q
 
     @pytest.mark.asyncio
-    async def test_render_with_tts_synthesizer(
-        self, simple_form: FormSchema
-    ) -> None:
+    async def test_render_with_tts_synthesizer(self, simple_form: FormSchema) -> None:
         """render() calls synthesizer.synthesize() for each question."""
         from unittest.mock import AsyncMock, MagicMock
 
         mock_synth = AsyncMock()
-        mock_synth.synthesize.return_value = MagicMock(
-            audio=b"fake-audio", mime_format="audio/ogg"
-        )
+        mock_synth.synthesize.return_value = MagicMock(audio=b"fake-audio", mime_format="audio/ogg")
         renderer = AudioFormRenderer(synthesizer=mock_synth)
         result = await renderer.render(simple_form)
         # 2 visible questions → 2 synthesis calls
@@ -392,8 +364,10 @@ class TestVoiceModeTagging:
                         FormField(field_id="name", field_type=FieldType.TEXT, label="Name?"),
                         FormField(field_id="color", field_type=FieldType.SELECT, label="Color?"),
                         FormField(
-                            field_id="doc", field_type=FieldType.REST,
-                            label="Upload doc", required=True,
+                            field_id="doc",
+                            field_type=FieldType.REST,
+                            label="Upload doc",
+                            required=True,
                         ),
                         FormField(field_id="pw", field_type=FieldType.PASSWORD, label="Password?"),
                         FormField(field_id="h", field_type=FieldType.HIDDEN, label="h"),
@@ -482,9 +456,7 @@ class TestBuildAudioSynthesizer:
     async def test_falls_back_to_google(self, monkeypatch) -> None:
         """SuperTonic raising at synthesis time → Google backend used."""
         _FakeSynth.backends_tried = []
-        monkeypatch.setattr(
-            "parrot.voice.tts.synthesizer.VoiceSynthesizer", _FakeSynth
-        )
+        monkeypatch.setattr("parrot.voice.tts.synthesizer.VoiceSynthesizer", _FakeSynth)
         audio = await synthesize_with_fallback("hello")
         assert audio == b"GOOGLE_WAV"
         assert _FakeSynth.backends_tried == ["supertonic", "google"]
@@ -493,9 +465,7 @@ class TestBuildAudioSynthesizer:
     async def test_returns_none_when_no_backend(self, monkeypatch) -> None:
         """All backends failing → None (text-only), no exception raised."""
         _FakeSynth.backends_tried = []
-        monkeypatch.setattr(
-            "parrot.voice.tts.synthesizer.VoiceSynthesizer", _AlwaysFailSynth
-        )
+        monkeypatch.setattr("parrot.voice.tts.synthesizer.VoiceSynthesizer", _AlwaysFailSynth)
         audio = await synthesize_with_fallback("hello")
         assert audio is None
         assert _FakeSynth.backends_tried == ["supertonic", "google"]
