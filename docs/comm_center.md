@@ -20,9 +20,17 @@ to any provider directly and does not change NotifyWorker itself.
   either side. `async-notify` 1.6.0 shipped inline Jinja2 template source
   support, which CommCenter relies on. A runtime guard in
   `parrot.services.comm_center.dispatch` raises a clear `RuntimeError`
-  (mapped to `503`) naming the required version if an older release is
-  installed — checked once per process, right after the "is it installed
-  at all" check.
+  naming the required version if an older release is installed — checked
+  once per process, right after the "is it installed at all" check, inside
+  `_get_notify_client()`. Because that function is only ever called from
+  the actual publish path (not before a response is sent), the guard does
+  **not** surface as an HTTP `503` on either send endpoint: for
+  `POST /sender` it fires inside the backgrounded fan-out task, leaving
+  the batch's rows retryable rather than producing an HTTP response; for
+  `POST /message` it is caught by the generic publish-failure handler and
+  returned as `502` (`status=publish_failed`). (The `503` `_map_error()`
+  does return is for a different call site — resolving a `template_file`
+  via `notify.conf` during request handling, before any publish attempt.)
 
 ## Two-pass rendering model
 

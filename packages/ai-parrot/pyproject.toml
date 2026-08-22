@@ -150,8 +150,12 @@ wikitoolkit = "parrot.knowledge.wiki.cli:main"
 # ---------------------------------------------------------------------------
 
 # All notification backends (msgraph, twilio, o365, etc.)
+# Floor raised to >=1.6.0 (FEAT-445 TASK-2318, code-review follow-up) — this
+# extra requests the same async-notify[all] distribution the CommCenter
+# runtime version guard protects; left at >=1.4.2 in the original pass,
+# which the acceptance criterion ("all relevant extras") did not cover.
 notify-all = [
-    "async-notify[all]>=1.4.2",
+    "async-notify[all]>=1.6.0",
 ]
 
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
