@@ -171,17 +171,13 @@ class TestResolveTemplateSource:
         assert body == "Hola {{ name }}"
         assert subject is None
 
-    async def test_missing_template_file_raises_template_not_found(
-        self, tmp_path, monkeypatch
-    ):
+    async def test_missing_template_file_raises_template_not_found(self, tmp_path, monkeypatch):
         import parrot.handlers.comm_center as comm_center_module
 
         class FakeConf:
             TEMPLATE_DIR = tmp_path
 
-        monkeypatch.setitem(
-            __import__("sys").modules, "notify.conf", FakeConf()
-        )
+        monkeypatch.setitem(__import__("sys").modules, "notify.conf", FakeConf())
         handler = comm_center_module.CommCenterHandler()
 
         class Meta:
@@ -206,9 +202,7 @@ class TestIngestFromRequest:
             captured.update(kwargs)
             return ["fake-recipient"]
 
-        monkeypatch.setattr(
-            comm_center_module, "ingest_recipients", fake_ingest_recipients
-        )
+        monkeypatch.setattr(comm_center_module, "ingest_recipients", fake_ingest_recipients)
 
         class FakeRequest:
             content_type = "application/json"
@@ -345,9 +339,7 @@ class TestGetBatches:
         monkeypatch.setattr(comm_center_module, "_get_db", lambda: _FakeBatchAsyncDB(conn))
 
         handler = CommCenterHandler()
-        response = await _call_get_batches(
-            handler, _fake_request({"limit": "500", "offset": "10"})
-        )
+        response = await _call_get_batches(handler, _fake_request({"limit": "500", "offset": "10"}))
         body = await _decode(response)
 
         assert body["limit"] == 100  # clamped to the documented max
@@ -377,9 +369,7 @@ class TestGetBatches:
         handler = CommCenterHandler()
         await _call_get_batches(
             handler,
-            _fake_request(
-                {"created_after": "2026-01-01", "created_before": "2026-12-31"}
-            ),
+            _fake_request({"created_after": "2026-01-01", "created_before": "2026-12-31"}),
         )
 
         list_query, list_params = conn.queries[0]

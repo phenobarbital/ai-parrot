@@ -6,6 +6,7 @@ monkeypatching ``NotificationBatchRecipient.get``/``filter`` onto an
 in-memory ``FakeRow`` store, since a live Postgres is not available to this
 test suite. No real Redis or Postgres connection is ever attempted.
 """
+
 import asyncio
 import uuid
 
@@ -76,11 +77,7 @@ def row_store(monkeypatch):
         return store[id]
 
     async def fake_filter(**kwargs):
-        return [
-            row
-            for row in store.values()
-            if all(getattr(row, key) == value for key, value in kwargs.items())
-        ]
+        return [row for row in store.values() if all(getattr(row, key) == value for key, value in kwargs.items())]
 
     monkeypatch.setattr(NotificationBatchRecipient, "get", staticmethod(fake_get))
     monkeypatch.setattr(NotificationBatchRecipient, "filter", staticmethod(fake_filter))
@@ -209,9 +206,7 @@ class TestFanOut:
         monkeypatch.setattr(dispatch, "_get_notify_client", lambda: client)
 
         with pytest.raises(RuntimeError, match="dry-run"):
-            await publish_one(
-                uuid.uuid4(), _payload(), uuid.uuid4(), client=client, dry_run=True
-            )
+            await publish_one(uuid.uuid4(), _payload(), uuid.uuid4(), client=client, dry_run=True)
         assert client.calls == []
 
 
@@ -245,9 +240,7 @@ class TestRetry:
         monkeypatch.setattr(dispatch, "_get_notify_client", lambda: client)
 
         pending = FakeRow(row_store, batch_id=batch_id, status="pending", attempts=0)
-        failed = FakeRow(
-            row_store, batch_id=batch_id, status="publish_failed", attempts=1
-        )
+        failed = FakeRow(row_store, batch_id=batch_id, status="publish_failed", attempts=1)
 
         result = await retry_batch(batch_id)
         await asyncio.sleep(0.05)
@@ -346,9 +339,7 @@ class TestAggregation:
 
         monkeypatch.setattr(dispatch, "_get_db", lambda: FakeAsyncDBWithFetch())
 
-        result = await dispatch.aggregate_batch_status(
-            batch_id, details=True, limit=10_000
-        )
+        result = await dispatch.aggregate_batch_status(batch_id, details=True, limit=10_000)
 
         assert len(result["rows"]) == 5  # clamped internally, but only 5 rows exist
 
@@ -381,17 +372,13 @@ class TestAsyncNotifyVersionGuard:
 
     def test_raises_when_installed_version_too_old(self, monkeypatch):
         monkeypatch.setattr(dispatch, "_ASYNC_NOTIFY_VERSION_OK", None)
-        monkeypatch.setattr(
-            dispatch.importlib.metadata, "version", lambda name: "1.5.5"
-        )
+        monkeypatch.setattr(dispatch.importlib.metadata, "version", lambda name: "1.5.5")
         with pytest.raises(RuntimeError, match="async-notify >= 1.6.0"):
             dispatch._check_async_notify_version()
 
     def test_passes_when_installed_version_satisfies_floor(self, monkeypatch):
         monkeypatch.setattr(dispatch, "_ASYNC_NOTIFY_VERSION_OK", None)
-        monkeypatch.setattr(
-            dispatch.importlib.metadata, "version", lambda name: "1.6.0"
-        )
+        monkeypatch.setattr(dispatch.importlib.metadata, "version", lambda name: "1.6.0")
         dispatch._check_async_notify_version()  # must not raise
         assert dispatch._ASYNC_NOTIFY_VERSION_OK is True
 
@@ -408,8 +395,6 @@ class TestAsyncNotifyVersionGuard:
 
     def test_get_notify_client_enforces_version_guard(self, monkeypatch):
         monkeypatch.setattr(dispatch, "_ASYNC_NOTIFY_VERSION_OK", None)
-        monkeypatch.setattr(
-            dispatch.importlib.metadata, "version", lambda name: "1.5.5"
-        )
+        monkeypatch.setattr(dispatch.importlib.metadata, "version", lambda name: "1.5.5")
         with pytest.raises(RuntimeError, match="async-notify >= 1.6.0"):
             dispatch._get_notify_client()

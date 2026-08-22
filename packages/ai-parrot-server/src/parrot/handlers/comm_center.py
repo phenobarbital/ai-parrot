@@ -19,6 +19,7 @@ endpoint uses, publishing synchronously via
 :func:`~parrot.services.comm_center.dispatch.publish_one` — no background
 task for a single ``xadd``.
 """
+
 import base64
 import uuid
 from pathlib import Path
@@ -165,9 +166,7 @@ class CommCenterHandler(BaseHandler):
                 file_entries = entries
                 break
             if not file_entries:
-                raise IngestionError(
-                    "multipart/form-data request must include an uploaded file"
-                )
+                raise IngestionError("multipart/form-data request must include an uploaded file")
             recipients = await ingest_recipients(file_path=file_entries[0]["file_path"])
             return recipients, form
 
@@ -181,9 +180,7 @@ class CommCenterHandler(BaseHandler):
                     filename=body.get("filename") or "upload.csv",
                 )
             else:
-                raise IngestionError(
-                    "JSON request body must include 'recipients' or 'file_b64'"
-                )
+                raise IngestionError("JSON request body must include 'recipients' or 'file_b64'")
             return recipients, body
 
         raise IngestionError(f"Unsupported Content-Type: {content_type!r}")
@@ -212,10 +209,7 @@ class CommCenterHandler(BaseHandler):
         template_file = meta.template_file
         provided = [v for v in (template_id, template_name, template, template_file) if v]
         if len(provided) != 1:
-            raise ValueError(
-                "Exactly one of template_id, template_name, template, "
-                "template_file must be provided"
-            )
+            raise ValueError("Exactly one of template_id, template_name, template, " "template_file must be provided")
 
         if template:
             return template, None
@@ -310,9 +304,7 @@ class CommCenterHandler(BaseHandler):
                     if value is not None
                 }
             )
-            template_source, default_subject = await self._resolve_template_source(
-                sender_request
-            )
+            template_source, default_subject = await self._resolve_template_source(sender_request)
             subject = sender_request.subject or default_subject
 
             prepared = await prepare(
@@ -352,9 +344,7 @@ class CommCenterHandler(BaseHandler):
                     row_number=msg.row_number,
                     provider=msg.payload.get("provider"),
                     recipient_name=msg.recipient.name,
-                    recipient_address=(
-                        msg.recipient.email or msg.recipient.phone or msg.recipient.address
-                    ),
+                    recipient_address=(msg.recipient.email or msg.recipient.phone or msg.recipient.address),
                     status="pending",
                     template_ref=template_source,
                     subject=subject,
@@ -418,9 +408,7 @@ class CommCenterHandler(BaseHandler):
         """
         batch_id = request.match_info["batch_id"]
         qs = self.query_parameters(request)
-        result = await dispatch_retry_batch(
-            uuid.UUID(batch_id), force=_as_bool(qs.get("force"))
-        )
+        result = await dispatch_retry_batch(uuid.UUID(batch_id), force=_as_bool(qs.get("force")))
         return self.json_response(result, status=200)
 
     @is_authenticated()
@@ -453,14 +441,10 @@ class CommCenterHandler(BaseHandler):
 
         if status_filter:
             params.append(status_filter)
-            where_clauses.append(
-                f"batch_id IN (SELECT batch_id FROM {table} WHERE status = ${len(params)})"
-            )
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE status = ${len(params)})")
         if provider_filter:
             params.append(provider_filter)
-            where_clauses.append(
-                f"batch_id IN (SELECT batch_id FROM {table} WHERE provider = ${len(params)})"
-            )
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE provider = ${len(params)})")
         if created_after:
             params.append(created_after)
             where_clauses.append(f"created_at >= ${len(params)}")
@@ -503,9 +487,7 @@ class CommCenterHandler(BaseHandler):
             {
                 "batch_id": str(row["batch_id"]),
                 "created_at": (
-                    row["created_at"].isoformat()
-                    if hasattr(row["created_at"], "isoformat")
-                    else row["created_at"]
+                    row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else row["created_at"]
                 ),
                 "created_by": row["created_by"],
                 "total": row["total"],
@@ -576,9 +558,7 @@ class CommCenterHandler(BaseHandler):
                     if value is not None
                 }
             )
-            template_source, default_subject = await self._resolve_template_source(
-                message_request
-            )
+            template_source, default_subject = await self._resolve_template_source(message_request)
             subject = message_request.subject or default_subject
 
             prepared = await prepare(
@@ -630,9 +610,7 @@ class CommCenterHandler(BaseHandler):
                 row_number=0,
                 provider=msg.payload.get("provider"),
                 recipient_name=recipient.name,
-                recipient_address=(
-                    recipient.email or recipient.phone or recipient.address
-                ),
+                recipient_address=(recipient.email or recipient.phone or recipient.address),
                 status="pending",
                 template_ref=template_source,
                 subject=subject,
@@ -644,9 +622,7 @@ class CommCenterHandler(BaseHandler):
             # returned) -- passed through explicitly anyway so publish_one's
             # own defense-in-depth guard is exercised on this call site too,
             # not just relied upon implicitly.
-            message_id = await publish_one(
-                batch_id, msg.payload, row.id, dry_run=prepared.dry_run
-            )
+            message_id = await publish_one(batch_id, msg.payload, row.id, dry_run=prepared.dry_run)
         except Exception as exc:
             raise web.HTTPBadGateway(
                 text=json_encoder(
@@ -703,11 +679,7 @@ class CommCenterHandler(BaseHandler):
         db = _get_db()
         async with await db.connection() as conn:
             NotificationTemplate.Meta.connection = conn
-            rows = (
-                await NotificationTemplate.filter(**db_filters)
-                if db_filters
-                else await NotificationTemplate.all()
-            )
+            rows = await NotificationTemplate.filter(**db_filters) if db_filters else await NotificationTemplate.all()
 
         tags_filter = None
         if qs.get("tags"):
@@ -776,9 +748,7 @@ class CommCenterHandler(BaseHandler):
             except Exception as exc:
                 if _looks_like_unique_violation(exc):
                     raise web.HTTPConflict(
-                        text=json_encoder(
-                            {"message": f"Template name {body['name']!r} already exists"}
-                        ),
+                        text=json_encoder({"message": f"Template name {body['name']!r} already exists"}),
                         content_type="application/json",
                     ) from exc
                 raise
@@ -826,9 +796,7 @@ class CommCenterHandler(BaseHandler):
             except Exception as exc:
                 if _looks_like_unique_violation(exc):
                     raise web.HTTPConflict(
-                        text=json_encoder(
-                            {"message": f"Template name {body.get('name')!r} already exists"}
-                        ),
+                        text=json_encoder({"message": f"Template name {body.get('name')!r} already exists"}),
                         content_type="application/json",
                     ) from exc
                 raise
@@ -872,13 +840,9 @@ class CommCenterHandler(BaseHandler):
         )
         r.add_route("POST", "/api/v1/comm_center/message", self.post_message)
         r.add_route("GET", "/api/v1/comm_center/templates", self.list_templates)
-        r.add_route(
-            "GET", "/api/v1/comm_center/templates/{template_id}", self.get_template
-        )
+        r.add_route("GET", "/api/v1/comm_center/templates/{template_id}", self.get_template)
         r.add_route("POST", "/api/v1/comm_center/templates", self.create_template)
-        r.add_route(
-            "PUT", "/api/v1/comm_center/templates/{template_id}", self.update_template
-        )
+        r.add_route("PUT", "/api/v1/comm_center/templates/{template_id}", self.update_template)
         r.add_route(
             "PATCH",
             "/api/v1/comm_center/templates/{template_id}",

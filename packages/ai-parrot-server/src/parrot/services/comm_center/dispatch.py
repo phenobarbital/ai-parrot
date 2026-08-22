@@ -10,6 +10,7 @@ requires it, and a clear, actionable error is raised only when a function
 that actually needs it is called without the ``comm-center`` extra
 installed.
 """
+
 import asyncio
 import importlib.metadata
 import logging
@@ -98,8 +99,7 @@ def _get_notify_client():
         from notify.server import NotifyClient
     except ImportError as exc:
         raise RuntimeError(
-            "async-notify is required for CommCenter. "
-            "Install with: pip install 'ai-parrot-server[comm-center]'"
+            "async-notify is required for CommCenter. " "Install with: pip install 'ai-parrot-server[comm-center]'"
         ) from exc
     _check_async_notify_version()
     return NotifyClient()
@@ -118,8 +118,7 @@ def _notify_worker_stream() -> str:
         from notify.conf import NOTIFY_WORKER_STREAM
     except ImportError as exc:
         raise RuntimeError(
-            "async-notify is required for CommCenter. "
-            "Install with: pip install 'ai-parrot-server[comm-center]'"
+            "async-notify is required for CommCenter. " "Install with: pip install 'ai-parrot-server[comm-center]'"
         ) from exc
     return NOTIFY_WORKER_STREAM
 
@@ -209,9 +208,7 @@ async def publish_one(
                 row.status = "publish_failed"
                 row.reason = str(exc)
                 await row.update()
-                logger.warning(
-                    "Batch %s row %s: publish_failed (%s)", batch_id, row_id, exc
-                )
+                logger.warning("Batch %s row %s: publish_failed (%s)", batch_id, row_id, exc)
                 raise
 
             row.status = "queued"
@@ -311,9 +308,7 @@ async def _finalize_batch(batch_id: uuid.UUID, task, attempted_ids: set) -> None
     db = _get_db()
     async with await db.connection() as conn:
         NotificationBatchRecipient.Meta.connection = conn
-        stranded = await NotificationBatchRecipient.filter(
-            batch_id=batch_id, status="publishing"
-        )
+        stranded = await NotificationBatchRecipient.filter(batch_id=batch_id, status="publishing")
         for row in stranded or []:
             if row.id not in attempted_ids:
                 continue
@@ -339,9 +334,7 @@ def launch_fan_out(batch_id: uuid.UUID, payloads: list):
     """
     attempted_ids = {row_id for row_id, _ in payloads}
     task = asyncio.create_task(fan_out(batch_id, payloads))
-    task.add_done_callback(
-        lambda t: asyncio.create_task(_finalize_batch(batch_id, t, attempted_ids))
-    )
+    task.add_done_callback(lambda t: asyncio.create_task(_finalize_batch(batch_id, t, attempted_ids)))
     return task
 
 
@@ -480,9 +473,7 @@ async def retry_batch(batch_id: uuid.UUID, *, force: bool = False) -> dict:
 
         ambiguous = 0
         if not force:
-            still_publishing = await NotificationBatchRecipient.filter(
-                batch_id=batch_id, status="publishing"
-            )
+            still_publishing = await NotificationBatchRecipient.filter(batch_id=batch_id, status="publishing")
             ambiguous = len(still_publishing or [])
 
     payloads = [(row.id, _rebuild_payload(row)) for row in to_retry]
