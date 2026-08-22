@@ -106,7 +106,10 @@ dependencies = [
     # NotificationMixin unconditionally, and parrot/notifications/__init__.py
     # does `from notify import Notify` at module level, so `parrot.bots` cannot
     # be imported without it. Use `ai-parrot[notify-all]` for the backends.
-    "async-notify>=1.4.2",
+    # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) to keep this base pin at
+    # or above ai-parrot-server[comm-center]'s own floor — see that extra's
+    # comment for why CommCenter requires >=1.6.0.
+    "async-notify>=1.6.0",
     "ddgs>=9.5.2",
     # State machine / workflow (core)
     "python-statemachine==2.5.0",
@@ -147,8 +150,12 @@ wikitoolkit = "parrot.knowledge.wiki.cli:main"
 # ---------------------------------------------------------------------------
 
 # All notification backends (msgraph, twilio, o365, etc.)
+# Floor raised to >=1.6.0 (FEAT-445 TASK-2318, code-review follow-up) — this
+# extra requests the same async-notify[all] distribution the CommCenter
+# runtime version guard protects; left at >=1.4.2 in the original pass,
+# which the acceptance criterion ("all relevant extras") did not cover.
 notify-all = [
-    "async-notify[all]>=1.4.2",
+    "async-notify[all]>=1.6.0",
 ]
 
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
@@ -487,7 +494,9 @@ llms = [
 
 integrations = [
     "querysource>=4.1.11",
-    "async-notify[all]>=1.5.2",
+    # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) — see ai-parrot[agents]'s
+    # base async-notify pin and ai-parrot-server[comm-center]'s comment.
+    "async-notify[all]>=1.6.0",
     # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 

@@ -31,6 +31,10 @@ dependencies = [
     # (FEAT-327) — dtype-preserving via pyarrow. Declared here (not
     # transitive through pandas) per the resolved brainstorm decision.
     "pyarrow>=25.0",
+    # CommCenter's async-notify runtime version guard (FEAT-445 TASK-2318)
+    # imports packaging.version.Version directly. Declared here (was
+    # previously an undeclared transitive dependency).
+    "packaging>=23.0",
 ]
 
 [project.optional-dependencies]
@@ -65,8 +69,12 @@ autonomous = [
 # publishing, plus Excel/CSV recipient ingestion. Lazy-imported (spec G11):
 # importing parrot.handlers.comm_center / parrot.services.comm_center never
 # requires this extra; only calling a function that actually publishes does.
+# Pin >=1.6.0 (FEAT-445 TASK-2318): CommCenter enqueues an inline Jinja2
+# template string in the xadd payload; async-notify < 1.6.0 silently
+# ignores that key and delivers an empty body instead (fixed by
+# async-notify FEAT-003, "Inline Jinja2 template source for send()").
 comm-center = [
-    "async-notify>=1.5.5",
+    "async-notify>=1.6.0",
     "pandas>=2.2",
     "openpyxl>=3.1.2,<=3.1.5",
 ]
