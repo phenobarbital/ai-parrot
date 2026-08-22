@@ -10,7 +10,9 @@ from navconfig import config as nav_config
 from parrot.mcp.server import MCPServerConfig, HttpMCPServer, SseMCPServer
 from parrot.mcp.transports.unix import UnixMCPServer
 from parrot.mcp.transports.stdio import StdioMCPServer
-from parrot.mcp.transports.quic import QuicMCPServer, QuicMCPConfig
+# QUIC lives behind the optional `ai-parrot-server[mcp]` extra (aioquic);
+# resolved lazily so a bare install can still use the other transports.
+from parrot.mcp._quic import load_quic, quic_attr
 from parrot.mcp.config import AuthMethod
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.toolkit import AbstractToolkit
@@ -152,8 +154,9 @@ class SimpleMCPServer:
         elif self.transport == "stdio":
             self.server = StdioMCPServer(config)
         elif self.transport == "quic":
+            quic = load_quic()
             # Extract QUIC config from kwargs
-            quic_config = QuicMCPConfig(
+            quic_config = quic.QuicMCPConfig(
                 host=self.host,
                 port=self.port,
                 cert_path=self.extra_config.get("cert_path", "cert.pem"),
@@ -165,7 +168,7 @@ class SimpleMCPServer:
                 if hasattr(quic_config, k):
                     setattr(quic_config, k, v)
                     
-            self.server = QuicMCPServer(config, quic_config=quic_config)
+            self.server = quic.QuicMCPServer(config, quic_config=quic_config)
         else:
             self.server = HttpMCPServer(config, parent_app=self.app)
             
@@ -292,3 +295,13 @@ class SimpleMCPServer:
             # For other transports (stdio, unix, quic)
             await self.server.start()
             return self.server
+
+
+_QUIC_REEXPORTS = ("QuicMCPServer", "QuicMCPConfig")
+
+
+def __getattr__(name: str):
+    """Lazily re-export the QUIC symbols for backwards compatibility (PEP 562)."""
+    if name in _QUIC_REEXPORTS:
+        return quic_attr(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -29,11 +29,10 @@ from .transports.unix import UnixMCPSession
 from .transports.http import HttpMCPSession
 from .transports.websocket import WebSocketMCPSession
 from .transports.sse import SseMCPSession
-from .transports.quic import (
-    QuicMCPSession,
-    QuicMCPConfig,
-    SerializationFormat
-)
+# QUIC lives behind the optional `ai-parrot-server[mcp]` extra (aioquic), so
+# its symbols are resolved lazily — see parrot.mcp._quic. Importing them here
+# would make every other transport unusable on a bare install.
+from ._quic import quic_attr
 from .chrome import ChromeManager
 from .filtering import ToolPredicate, filter_tools
 
@@ -373,12 +372,8 @@ class MCPClient:
 
                 self._session = WebSocketMCPSession(self.config, self.logger)
             elif transport == "quic":
-                try:
-                    self._session = QuicMCPSession(self.config, self.logger)
-                except ImportError as e:
-                    raise ImportError(
-                        "QUIC transport requires 'aioquic' package. Install with: pip install aioquic msgpack"
-                    ) from e
+                quic_session_cls = quic_attr("QuicMCPSession")
+                self._session = quic_session_cls(self.config, self.logger)
             else:
                 raise ValueError(
                     f"Unsupported transport: {transport}"
@@ -1289,11 +1284,12 @@ def create_quic_mcp_server(
     Returns:
         MCPServerConfig configured for QUIC transport
     """
-    quic_fmt = SerializationFormat.MSGPACK
+    serialization_format = quic_attr("SerializationFormat")
+    quic_fmt = serialization_format.MSGPACK
     if serialization.lower() == "json":
-        quic_fmt = SerializationFormat.JSON
+        quic_fmt = serialization_format.JSON
 
-    quic_conf = QuicMCPConfig(
+    quic_conf = quic_attr("QuicMCPConfig")(
         host=host,
         port=port,
         cert_path=cert_path,
@@ -1907,3 +1903,15 @@ async def validate_mcp_http(config: "MCPServerConfig") -> None:
     finally:
         with contextlib.suppress(Exception):
             await client.disconnect()
+
+
+# Backwards compatibility: these QUIC symbols used to be re-exported from this
+# module. Resolve them on attribute access so the import above can stay lazy.
+_QUIC_REEXPORTS = ("QuicMCPSession", "QuicMCPConfig", "SerializationFormat")
+
+
+def __getattr__(name: str):
+    """Resolve the lazily re-exported QUIC symbols (PEP 562)."""
+    if name in _QUIC_REEXPORTS:
+        return quic_attr(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

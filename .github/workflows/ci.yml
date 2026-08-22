@@ -82,7 +82,7 @@ jobs:
         run: mkdir -p env/dev && touch env/dev/.env
 
       - name: Run core tests
-        run: uv run pytest tests/ -x -q --tb=short --ignore=tests/tools
+        run: uv run pytest tests/ -q --tb=short --ignore=tests/tools --continue-on-collection-errors
 
   test-navrules:
     name: "Test navrules (rust=${{ matrix.rust }})"
@@ -168,7 +168,7 @@ jobs:
         run: mkdir -p env/dev && touch env/dev/.env
 
       - name: Run tools tests
-        run: uv run pytest tests/tools/ -x -q --tb=short
+        run: uv run pytest tests/tools/ -q --tb=short --continue-on-collection-errors
 
   test-loaders:
     name: "Test ai-parrot-loaders (Python ${{ matrix.python-version }})"
@@ -201,4 +201,4 @@ jobs:
         run: mkdir -p env/dev && touch env/dev/.env
 
       - name: Run loaders tests
-        run: uv run pytest tests/loaders/ -x -q --tb=short
+        run: uv run pytest tests/loaders/ -q --tb=short --continue-on-collection-errors
