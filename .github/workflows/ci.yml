@@ -73,6 +73,14 @@ jobs:
       - name: Sync core package
         run: uv sync --package ai-parrot
 
+      # NavConfig refuses to import without an env/<environment>/.env file,
+      # and env/ is gitignored — so the suite could never even be collected on
+      # a runner (pytest exited 4 on a conftest ImportError). An empty dev
+      # env is enough to let navconfig bootstrap; `kardex env create` is the
+      # interactive equivalent.
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
       - name: Run core tests
         run: uv run pytest tests/ -x -q --tb=short --ignore=tests/tools
 
@@ -151,6 +159,14 @@ jobs:
       - name: Sync tools package
         run: uv sync --package ai-parrot-tools
 
+      # NavConfig refuses to import without an env/<environment>/.env file,
+      # and env/ is gitignored — so the suite could never even be collected on
+      # a runner (pytest exited 4 on a conftest ImportError). An empty dev
+      # env is enough to let navconfig bootstrap; `kardex env create` is the
+      # interactive equivalent.
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
       - name: Run tools tests
         run: uv run pytest tests/tools/ -x -q --tb=short
 
@@ -175,6 +191,14 @@ jobs:
 
       - name: Sync loaders package
         run: uv sync --package ai-parrot-loaders
+
+      # NavConfig refuses to import without an env/<environment>/.env file,
+      # and env/ is gitignored — so the suite could never even be collected on
+      # a runner (pytest exited 4 on a conftest ImportError). An empty dev
+      # env is enough to let navconfig bootstrap; `kardex env create` is the
+      # interactive equivalent.
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
 
       - name: Run loaders tests
         run: uv run pytest tests/loaders/ -x -q --tb=short
