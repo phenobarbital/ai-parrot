@@ -31,6 +31,8 @@ EXPECTED_KEYS = {
     "supported_operators",
     "supported_effects",
     "supported_operations",
+    # FEAT-448 (TASK-2338): value-shape contract (optional, default {})
+    "value_shape",
 }
 
 

@@ -7,6 +7,7 @@ async-native to support ASYNC_REMOTE and UNIQUE validation callbacks.
 Migrated and enhanced from parrot/integrations/msteams/dialogs/validator.py.
 """
 
+import json
 import logging
 import re
 from datetime import datetime
@@ -14,6 +15,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
+from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
@@ -48,6 +50,13 @@ def _validate_location(value: str) -> bool:
 EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 URL_PATTERN = re.compile(r"^https?://[^\s/$.?#].[^\s]*$")
 PHONE_PATTERN = re.compile(r"^\+?[\d\s\-().]{7,}$")
+
+# FEAT-448 — client-absorbed field types
+_HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-f]{6}$")
+_PNG_DATA_URL_PATTERN = re.compile(r"^data:image/png;base64,")
+_CRON_FIELD_COUNT = 5
+_IMAGE_DROPZONE_KEYS = ("name", "type", "size", "dataUrl")
+_MULTI_UPLOAD_KEYS = ("answer", "blob_ref")
 
 
 def _resolve_localized(value: LocalizedString | None, locale: str = "en") -> str | None:
@@ -425,10 +434,30 @@ class FormValidator:
         elif ft == FieldType.LOCATION:
             return str(value).strip().upper()
 
+        # FEAT-448 (TASK-2335) — PLACE is the granular Country/State/City
+        # cascade; LOCATION (above) is untouched. 'country' delegates to
+        # is_valid_iso_country_code so the two types cannot disagree about
+        # a country code.
+        elif ft == FieldType.PLACE:
+            if not isinstance(value, dict):
+                raise ValueError("Place value must be an object with a 'country' key")
+            country = value.get("country")
+            if not isinstance(country, str):
+                raise ValueError("Place 'country' is required and must be a string")
+            return {
+                "country": country.strip().upper(),
+                "state": value.get("state"),
+                "city": value.get("city"),
+            }
+
+        # FEAT-448 (TASK-2336) — SIGNATURE accepts a PNG data-URL string.
+        # {svg, png} had zero producers and zero consumers anywhere in the
+        # monorepo; a vector signature is a DIFFERENT type to be named if
+        # someone needs one, not this type widened back to an optional key.
         elif ft == FieldType.SIGNATURE:
-            if isinstance(value, dict):
-                return value
-            raise ValueError("Signature must be a dict with 'svg' and 'png' keys")
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Signature must be a PNG data URL string")
 
         elif ft == FieldType.AVAILABILITY:
             if isinstance(value, list):
@@ -440,6 +469,100 @@ class FormValidator:
             if isinstance(value, dict):
                 return value
             raise ValueError("REST field value must be a dict with 'answer' and 'blob_ref' keys")
+
+        # FEAT-448 — client-absorbed field types (TASK-2333; CREDIT_CARD is TASK-2334)
+        elif ft == FieldType.SEARCH:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Search value must be a string")
+
+        elif ft == FieldType.MASKED:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Masked value must be a string")
+
+        elif ft == FieldType.COLOR_PICKER:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Color picker value must be a string")
+
+        elif ft == FieldType.EMOJI:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Emoji value must be a string")
+
+        elif ft == FieldType.CRON:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Cron value must be a string")
+
+        elif ft == FieldType.TREE_SELECT:
+            if isinstance(value, list):
+                return [str(v).strip() for v in value]
+            elif isinstance(value, str):
+                return value.strip()
+            raise ValueError("Tree select value must be a string or a list of strings")
+
+        elif ft == FieldType.SIGNATURE_PAD:
+            if isinstance(value, str):
+                return value.strip()
+            raise ValueError("Signature pad value must be a PNG data URL string")
+
+        elif ft == FieldType.IMAGE_DROPZONE:
+            if isinstance(value, (dict, list)):
+                return value
+            raise ValueError("Image dropzone value must be a dict or a list of dicts")
+
+        elif ft == FieldType.MULTI_UPLOAD:
+            if isinstance(value, list):
+                return value
+            raise ValueError("Multi upload value must be a list of upload envelopes")
+
+        elif ft == FieldType.AI_CAPTURE:
+            # Unconstrained third-party API response — accept any JSON-serialisable
+            # value (nested object, list, or scalar) and stop there.
+            try:
+                json.dumps(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"AI capture value must be JSON-serialisable: {exc}")
+            return value
+
+        # FEAT-448 (TASK-2334) — credit_card REJECTS cardholder data, it does
+        # not sanitize it. cvv and the full PAN ('number') are errors, not
+        # keys to strip: stripping would satisfy "not stored" while leaving
+        # every client free to keep sending them over the wire and into
+        # request logs. Do not echo the offending value in any message here.
+        elif ft == FieldType.CREDIT_CARD:
+            if not isinstance(value, dict):
+                raise ValueError(
+                    "Credit card value must be an object with brand, last4, name and expiry"
+                )
+            if "cvv" in value:
+                raise ValueError(
+                    "Credit card value must not include a CVV — "
+                    "card verification values are never stored"
+                )
+            if "number" in value:
+                raise ValueError(
+                    "Credit card value must not include the full card number — "
+                    "send 'last4' only"
+                )
+            last4 = value.get("last4")
+            if not (isinstance(last4, str) and re.fullmatch(r"\d{4}", last4)):
+                raise ValueError("Credit card 'last4' must be exactly 4 digits")
+            # codex F7 — the published contract requires all four properties,
+            # and only `last4` was checked, so a bare {"last4": "4242"} was
+            # accepted and stored. A validator laxer than its own advertised
+            # shape is the same class of defect as the catalog divergence this
+            # feature exists to close, just pointing inward.
+            missing = [k for k in ("brand", "name", "expiry") if not value.get(k)]
+            if missing:
+                raise ValueError(
+                    "Credit card value is missing required "
+                    f"{'property' if len(missing) == 1 else 'properties'}: "
+                    + ", ".join(missing)
+                )
+            return value
 
         return value
 
@@ -474,13 +597,11 @@ class FormValidator:
             if not PHONE_PATTERN.match(value):
                 errors.append(f"{label} must be a valid phone number")
 
-        # Phase 2 — new field types (FEAT-167)
+        # FEAT-448 (TASK-2336) — SIGNATURE: a PNG data-URL string, not a
+        # {svg, png} object.
         elif ft == FieldType.SIGNATURE:
-            if not isinstance(value, dict):
-                errors.append(f"{label} must be a dict with 'svg' and 'png' keys")
-            else:
-                if "svg" not in value or "png" not in value:
-                    errors.append(f"{label} must contain 'svg' and 'png' keys")
+            if isinstance(value, str) and not _PNG_DATA_URL_PATTERN.match(value):
+                errors.append(f"{label} must be a PNG data URL")
 
         elif ft == FieldType.DYNAMIC_SELECT:
             # Same validation as SELECT — option values checked upstream
@@ -522,6 +643,16 @@ class FormValidator:
             elif not _validate_location(value):
                 errors.append(f"{label} '{value}' is not a valid ISO 3166 country code")
 
+        # FEAT-448 (TASK-2335) — PLACE: 'country' delegates to
+        # is_valid_iso_country_code (same message shape as LOCATION above);
+        # 'state'/'city' are optional and unconstrained.
+        elif ft == FieldType.PLACE:
+            country = value.get("country") if isinstance(value, dict) else None
+            if not isinstance(country, str) or len(country) != 2:
+                errors.append(f"{label} must include a 2-character ISO 3166 country code")
+            elif not is_valid_iso_country_code(country):
+                errors.append(f"{label} '{country}' is not a valid ISO 3166 country code")
+
         elif ft == FieldType.TAGS:
             if not isinstance(value, list):
                 errors.append(f"{label} must be a list of strings")
@@ -550,6 +681,43 @@ class FormValidator:
                 scale_min = c.scale_min if c and c.scale_min is not None else 0
                 if not (scale_min <= value <= scale_max):
                     errors.append(f"{label} must be between {scale_min} and {scale_max}")
+
+        # FEAT-448 — client-absorbed field types (TASK-2333)
+        elif ft == FieldType.COLOR_PICKER:
+            if isinstance(value, str) and not _HEX_COLOR_PATTERN.match(value):
+                errors.append(f"{label} must be a lowercase hex color, e.g. '#1a2b3c'")
+
+        elif ft == FieldType.CRON:
+            if isinstance(value, str) and len(value.split()) != _CRON_FIELD_COUNT:
+                errors.append(f"{label} must be a 5-field cron expression")
+
+        elif ft == FieldType.SIGNATURE_PAD:
+            if isinstance(value, str) and not _PNG_DATA_URL_PATTERN.match(value):
+                errors.append(f"{label} must be a PNG data URL")
+
+        elif ft == FieldType.IMAGE_DROPZONE:
+            if isinstance(value, dict):
+                missing = [k for k in _IMAGE_DROPZONE_KEYS if k not in value]
+                if missing:
+                    errors.append(f"{label} is missing keys: {', '.join(missing)}")
+            elif isinstance(value, list):
+                for i, item in enumerate(value):
+                    if not isinstance(item, dict):
+                        errors.append(f"{label} item {i} must be an object")
+                        continue
+                    missing = [k for k in _IMAGE_DROPZONE_KEYS if k not in item]
+                    if missing:
+                        errors.append(f"{label} item {i} is missing keys: {', '.join(missing)}")
+
+        elif ft == FieldType.MULTI_UPLOAD:
+            if isinstance(value, list):
+                for i, item in enumerate(value):
+                    if not isinstance(item, dict):
+                        errors.append(f"{label} item {i} must be an object")
+                        continue
+                    missing = [k for k in _MULTI_UPLOAD_KEYS if k not in item]
+                    if missing:
+                        errors.append(f"{label} item {i} is missing keys: {', '.join(missing)}")
 
         return errors
 
