@@ -334,41 +334,41 @@ def agent(vault_path):
 
 > This feature is complete when ALL of the following are true:
 
-- [x] `FirefliesFilters` Pydantic model exists with fields `from_date`,
+- [ ] `FirefliesFilters` Pydantic model exists with fields `from_date`,
       `to_date`, `keyword`, `scope`, `organizers`, `participants`, `mine`,
       `channel_id`, matching the types in §2 Data Models.
-- [x] `sync_fireflies_transcripts(filters=None)` (i.e. omitted) produces
+- [ ] `sync_fireflies_transcripts(filters=None)` (i.e. omitted) produces
       identical `_call_fireflies_tool` arguments and note output to today's
       behavior — no regression for existing callers.
-- [x] Passing `filters=FirefliesFilters(...)` maps to the correct
+- [ ] Passing `filters=FirefliesFilters(...)` maps to the correct
       camelCase `fireflies_get_transcripts` arguments, dropping unset
       fields.
-- [x] `FirefliesObsidianAgent(default_filters=...)` merges with a per-call
+- [ ] `FirefliesObsidianAgent(default_filters=...)` merges with a per-call
       `filters` such that per-call fields win and default fields fill in
       what the call left unset.
-- [x] A `limit` greater than 50 transparently triggers multiple
+- [ ] A `limit` greater than 50 transparently triggers multiple
       `fireflies_get_transcripts` calls (`skip=0,50,…`) until either
       `limit` is reached or the API returns a short/empty page.
-- [x] A page-fetch failure mid-pagination preserves transcripts from prior
+- [ ] A page-fetch failure mid-pagination preserves transcripts from prior
       successful pages, records the failure in `report["errors"]`, and
       leaves `report["status"] == "ok"`.
-- [x] `sync_fireflies_transcripts()`'s docstring documents that pagination
+- [ ] `sync_fireflies_transcripts()`'s docstring documents that pagination
       has no enforced ceiling (accepted risk, not a bug).
-- [x] `include_summary=False` (default) issues zero
+- [ ] `include_summary=False` (default) issues zero
       `fireflies_get_summary` calls.
-- [x] `include_summary=True` appends a `## Fireflies Summary` section
+- [ ] `include_summary=True` appends a `## Fireflies Summary` section
       (raw text, unparsed) to the note and sets `has_fireflies_summary:
       true` in the note's OKF frontmatter, on a successful summary call.
-- [x] A failed `fireflies_get_summary` call under `include_summary=True`
+- [ ] A failed `fireflies_get_summary` call under `include_summary=True`
       soft-fails: the note is still created from the transcript, the
       meeting still counts under `report["synced"]`, and the failure is
       recorded in `report["errors"]`.
-- [x] `fireflies_fetch` is not referenced anywhere in the implementation.
-- [x] `email-validator` is added to `packages/ai-parrot/pyproject.toml`
+- [ ] `fireflies_fetch` is not referenced anywhere in the implementation.
+- [ ] `email-validator` is added to `packages/ai-parrot/pyproject.toml`
       dependencies (required for `pydantic.EmailStr`).
-- [x] `examples/agents/fireflies_daemon.yaml` documents the
+- [ ] `examples/agents/fireflies_daemon.yaml` documents the
       `default_filters` constructor option.
-- [x] All unit tests pass:
+- [ ] All unit tests pass:
       `pytest packages/ai-parrot/tests/agents/test_obsidian.py -v`
 
 ---
