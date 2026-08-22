@@ -176,6 +176,12 @@ class FirefliesObsidianAgent(BasicAgent):
     #: used to detect notes that were already summarized.
     ANALYSIS_HEADING: str = "## Analysis"
 
+    #: Heading written by :meth:`_append_fireflies_summary_section` when
+    #: ``include_summary=True``. Kept distinct from :attr:`ANALYSIS_HEADING`
+    #: — this is Fireflies' own native summary (unparsed, verbatim), never
+    #: the agent's LLM-derived analysis.
+    FIREFLIES_SUMMARY_HEADING: str = "## Fireflies Summary"
+
     def __init__(
         self,
         name: str = "FirefliesObsidianSync",
@@ -283,6 +289,7 @@ class FirefliesObsidianAgent(BasicAgent):
         limit: int = 10,
         skip_existing: bool = True,
         filters: Optional["FirefliesFilters"] = None,
+        include_summary: bool = False,
     ) -> Dict[str, Any]:
         """Fetch latest Fireflies transcripts and save to Obsidian.
 
@@ -310,6 +317,15 @@ class FirefliesObsidianAgent(BasicAgent):
                 with ``self.default_filters`` — per-call fields here win over
                 the agent's default on the same field (see
                 :func:`_merge_filters`).
+            include_summary: When ``True``, additionally fetch Fireflies'
+                native per-meeting summary (``fireflies_get_summary``) and
+                append it verbatim as a :attr:`FIREFLIES_SUMMARY_HEADING`
+                section (no field-level parsing). Default ``False`` — zero
+                extra API calls unless explicitly requested. A failed
+                summary fetch soft-fails: the note is still created from
+                the transcript alone and still counts under
+                ``report["synced"]``; the failure is recorded in
+                ``report["errors"]``.
 
         Returns:
             Dict with:
@@ -411,6 +427,36 @@ class FirefliesObsidianAgent(BasicAgent):
                         else str(transcript_result)
                     )
 
+                    # Optionally fetch Fireflies' native summary. Additive
+                    # to the transcript above, never a replacement — a
+                    # failure here is soft: the note is still created from
+                    # the transcript alone.
+                    has_summary = False
+                    if include_summary:
+                        try:
+                            summary_result = await self._call_fireflies_tool(
+                                "fireflies_get_summary",
+                                {"transcriptId": transcript_id}
+                            )
+                            if summary_result and getattr(summary_result, "success", False):
+                                summary_text = (
+                                    summary_result.result
+                                    if hasattr(summary_result, "result")
+                                    else str(summary_result)
+                                )
+                                transcript_text = self._append_fireflies_summary_section(
+                                    transcript_text, summary_text
+                                )
+                                has_summary = True
+                            else:
+                                report["errors"].append(
+                                    f"Fireflies summary unavailable for {transcript_id}"
+                                )
+                        except Exception as e:
+                            error_msg = f"Failed to fetch Fireflies summary for {transcript_id}: {e}"
+                            self.logger.error(error_msg)
+                            report["errors"].append(error_msg)
+
                     # Save to Obsidian
                     metadata = {
                         "fireflies_id": transcript_id,
@@ -432,6 +478,8 @@ class FirefliesObsidianAgent(BasicAgent):
 
                     # Merge OKF metadata with basic Fireflies metadata
                     merged_metadata = {**metadata, **okf_metadata}
+                    if has_summary:
+                        merged_metadata["has_fireflies_summary"] = True
 
                     await self.obsidian_toolkit.create_note(
                         path=f"{self.meetings_folder}/{note_title}.md",
@@ -1018,3 +1066,30 @@ Be concise and actionable."""
 """
 
         return transcript + analysis
+
+    @staticmethod
+    def _append_fireflies_summary_section(transcript: str, summary_text: str) -> str:
+        """Append Fireflies' native summary as a distinct, unparsed section.
+
+        Kept separate from :meth:`_append_analysis_section`'s
+        :attr:`ANALYSIS_HEADING` block — this is Fireflies' own computed
+        summary (verbatim, no field-level parsing), not the agent's
+        LLM-derived analysis. See
+        ``sdd/specs/fireflies-mcp-improvements.spec.md`` §2/§7 for why this
+        response is never parsed into discrete fields.
+
+        Args:
+            transcript: The note content built so far (transcript text).
+            summary_text: Raw ``fireflies_get_summary`` response text.
+
+        Returns:
+            ``transcript`` with the Fireflies Summary section appended.
+        """
+        return f"""{transcript}
+
+---
+
+{FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING}
+
+{summary_text}
+"""

@@ -1024,3 +1024,90 @@ class TestSyncPagination:
         assert report["status"] == "ok"
         assert report["synced"] == 50
         assert any("page" in e.lower() for e in report["errors"])
+
+
+class TestIncludeSummary:
+    """Test opt-in native Fireflies summary retrieval (TASK-2349)."""
+
+    @pytest.mark.asyncio
+    async def test_default_off_no_summary_call(self, agent):
+        """include_summary omitted issues zero fireflies_get_summary calls."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+        ])
+
+        await agent.sync_fireflies_transcripts(limit=1)
+
+        called_tools = [
+            c.args[0] for c in agent._call_fireflies_tool.call_args_list
+        ]
+        assert "fireflies_get_summary" not in called_tools
+
+    @pytest.mark.asyncio
+    async def test_include_summary_appends_section(self, agent):
+        """A successful summary fetch adds the section + OKF marker."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+            MagicMock(success=True, result="native summary text"),
+        ])
+
+        await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
+
+        create_call = agent.obsidian_toolkit.create_note.call_args
+        assert FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING in create_call.kwargs["content"]
+        assert "native summary text" in create_call.kwargs["content"]
+        assert create_call.kwargs["frontmatter"].get("has_fireflies_summary") is True
+
+    @pytest.mark.asyncio
+    async def test_include_summary_soft_fails_on_error(self, agent):
+        """A failing summary call doesn't block note creation or sync count."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+            Exception("summary fetch failed"),
+        ])
+
+        report = await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
+
+        assert report["synced"] == 1
+        assert any("summary" in e.lower() for e in report["errors"])
+        create_call = agent.obsidian_toolkit.create_note.call_args
+        assert FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING not in create_call.kwargs["content"]
+        assert "has_fireflies_summary" not in create_call.kwargs["frontmatter"]
+
+    @pytest.mark.asyncio
+    async def test_include_summary_soft_fails_on_unsuccessful_result(self, agent):
+        """A non-successful (but non-raising) summary result also soft-fails."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+            MagicMock(success=False, result=""),
+        ])
+
+        report = await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
+
+        assert report["synced"] == 1
+        assert any("summary" in e.lower() for e in report["errors"])
+
+    def test_append_fireflies_summary_section(self):
+        """_append_fireflies_summary_section() adds the heading verbatim."""
+        result = FirefliesObsidianAgent._append_fireflies_summary_section(
+            "Original transcript.", "Keywords: budget, timeline."
+        )
+        assert "Original transcript." in result
+        assert FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING in result
+        assert "Keywords: budget, timeline." in result
