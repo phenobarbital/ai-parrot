@@ -424,8 +424,16 @@ class CommCenterHandler(BaseHandler):
         Query params: ``limit`` (default 25, clamped to 100), ``offset``
         (default 0), ``status`` (batches with at least one row in this
         status), ``provider`` (batches with at least one row for this
-        provider), ``created_after`` / ``created_before`` (ISO-8601 date
-        range, applied to each row's ``created_at``).
+        provider), ``created_after`` / ``created_before`` (batches with at
+        least one row whose ``created_at`` falls in this ISO-8601 range).
+        All four filters select whole *batches* via a
+        ``batch_id IN (SELECT ...)`` predicate rather than filtering rows
+        directly, so a matching batch's own aggregate counts always
+        reflect every row in that batch — never just the rows that
+        happened to match the filter (code-review fix: the date filters
+        originally filtered rows before ``GROUP BY``, which could silently
+        truncate a batch's own counts if its rows did not share an
+        identical ``created_at``).
         """
         qs = self.query_parameters(request)
         limit = min(int(qs.get("limit", 25)), 100)
@@ -446,11 +454,21 @@ class CommCenterHandler(BaseHandler):
             params.append(provider_filter)
             where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE provider = ${len(params)})")
         if created_after:
+            # Batch-level, like status/provider above (not a row-level
+            # predicate before GROUP BY): a batch's rows share one insert
+            # transaction but are not guaranteed byte-identical created_at
+            # values, so filtering rows directly here could truncate a
+            # matching batch's own aggregate counts instead of
+            # selecting/excluding it wholesale (code-review finding).
             params.append(created_after)
-            where_clauses.append(f"created_at >= ${len(params)}")
+            where_clauses.append(
+                f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at >= ${len(params)})"
+            )
         if created_before:
             params.append(created_before)
-            where_clauses.append(f"created_at <= ${len(params)}")
+            where_clauses.append(
+                f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at <= ${len(params)})"
+            )
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -464,7 +482,8 @@ class CommCenterHandler(BaseHandler):
                    COUNT(*) FILTER (WHERE status = 'queued') AS queued,
                    COUNT(*) FILTER (WHERE status = 'skipped') AS skipped,
                    COUNT(*) FILTER (WHERE status = 'publish_failed') AS publish_failed,
-                   COUNT(*) FILTER (WHERE status = 'pending') AS pending
+                   COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+                   COUNT(*) FILTER (WHERE status = 'publishing') AS publishing
             FROM {table}
             {where_sql}
             GROUP BY batch_id
@@ -495,6 +514,7 @@ class CommCenterHandler(BaseHandler):
                 "skipped": row["skipped"],
                 "publish_failed": row["publish_failed"],
                 "pending": row["pending"],
+                "publishing": row["publishing"],
                 "template_ref": row["template_ref"],
                 "provider": row["provider"],
             }

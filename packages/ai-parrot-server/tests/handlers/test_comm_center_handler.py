@@ -373,6 +373,12 @@ class TestGetBatches:
         )
 
         list_query, list_params = conn.queries[0]
+        # Code-review fix: date filters must select whole batches via the
+        # same `batch_id IN (SELECT ...)` pattern as status/provider, NOT
+        # filter rows directly before GROUP BY -- a direct row-level
+        # predicate here would silently truncate a matching batch's own
+        # aggregate counts if its rows don't share one exact `created_at`.
+        assert "batch_id IN (SELECT batch_id FROM" in list_query
         assert "created_at >=" in list_query
         assert "created_at <=" in list_query
         assert "2026-01-01" in list_params
@@ -394,6 +400,7 @@ class TestGetBatches:
             skipped=8,
             publish_failed=2,
             pending=0,
+            publishing=0,
         )
         conn = _FakeBatchConn(list_rows=[row], total=1)
         monkeypatch.setattr(comm_center_module, "_get_db", lambda: _FakeBatchAsyncDB(conn))
@@ -411,8 +418,49 @@ class TestGetBatches:
         assert batch["skipped"] == 8
         assert batch["publish_failed"] == 2
         assert batch["pending"] == 0
+        assert batch["publishing"] == 0
         assert batch["template_ref"] == "monthly-report"
         assert batch["provider"] == "email"
+
+    async def test_publishing_status_counted_and_included(self, monkeypatch):
+        """Code-review fix: a batch with an in-flight (``publishing``) row
+        must report it — otherwise queued+skipped+publish_failed+pending
+        would not add up to ``total`` and the discrepancy would go
+        unexplained (the row's own state machine, and dispatch.py's own
+        stranded-row retry logic, both treat ``publishing`` as a real,
+        distinct, in-flight state)."""
+        import parrot.handlers.comm_center as comm_center_module
+
+        row = _FakeBatchRow(
+            batch_id=uuid.uuid4(),
+            created_at=datetime(2026, 8, 6, tzinfo=UTC),
+            created_by=1,
+            template_ref="t",
+            provider="email",
+            total=3,
+            queued=1,
+            skipped=0,
+            publish_failed=0,
+            pending=1,
+            publishing=1,
+        )
+        conn = _FakeBatchConn(list_rows=[row], total=1)
+        monkeypatch.setattr(comm_center_module, "_get_db", lambda: _FakeBatchAsyncDB(conn))
+
+        handler = CommCenterHandler()
+        response = await _call_get_batches(handler, _fake_request({}))
+        body = await _decode(response)
+
+        batch = body["batches"][0]
+        assert batch["publishing"] == 1
+        assert (
+            batch["queued"]
+            + batch["skipped"]
+            + batch["publish_failed"]
+            + batch["pending"]
+            + batch["publishing"]
+            == batch["total"]
+        )
 
 
 class TestGetBatchesAuthentication:

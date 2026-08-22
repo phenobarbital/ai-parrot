@@ -93,7 +93,8 @@ so batch-level metadata is derived by aggregation — there is no separate
     {
       "batch_id": "uuid", "created_at": "ISO-8601", "created_by": 42,
       "total": 150, "queued": 140, "skipped": 8, "publish_failed": 2,
-      "pending": 0, "template_ref": "monthly-report", "provider": "email"
+      "pending": 0, "publishing": 0,
+      "template_ref": "monthly-report", "provider": "email"
     }
   ],
   "total": 47, "limit": 25, "offset": 0
@@ -103,8 +104,12 @@ so batch-level metadata is derived by aggregation — there is no separate
 Query params: `limit` (default 25, clamped to 100), `offset` (default 0),
 `status` (batches with at least one row in this status), `provider`
 (batches with at least one row for this provider), `created_after` /
-`created_before` (ISO-8601 date range). Disambiguated from `GET
-/sender/{batch_id}` by the absence of a path parameter.
+`created_before` (batches with at least one row whose `created_at` falls
+in this ISO-8601 range). All four filters select whole batches — a
+matching batch's own aggregate counts always reflect every row in that
+batch, never just the rows that happened to match the filter.
+Disambiguated from `GET /sender/{batch_id}` by the absence of a path
+parameter.
 
 ### `POST /message` — single recipient (G13)
 
