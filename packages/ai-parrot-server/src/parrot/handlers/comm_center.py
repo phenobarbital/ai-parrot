@@ -32,7 +32,7 @@ from navconfig.logging import logging
 from navigator.views import BaseHandler
 from navigator_auth.decorators import is_authenticated
 from navigator_session import get_session
-from parrot.conf import default_dsn
+from parrot.conf import PARROT_SCHEMA, default_dsn
 from parrot.handlers.comm_center_placeholders import build_catalog
 from parrot.handlers.models import NotificationBatchRecipient, NotificationTemplate
 from parrot.services.comm_center.dispatch import (
@@ -423,6 +423,106 @@ class CommCenterHandler(BaseHandler):
         )
         return self.json_response(result, status=200)
 
+    @is_authenticated()
+    async def get_batches(self, request: web.Request) -> web.Response:
+        """``GET /api/v1/comm_center/sender`` — paginated batch list (FEAT-445 TASK-2319).
+
+        The tracking table (``navigator.notification_batch_recipients``) is
+        flat — one row per recipient, ``batch_id`` repeated — so batch-level
+        metadata (totals, timestamps, status breakdown) is derived by
+        aggregation, mirroring :func:`aggregate_batch_status`'s single-batch
+        query but grouped across every batch.
+
+        Query params: ``limit`` (default 25, clamped to 100), ``offset``
+        (default 0), ``status`` (batches with at least one row in this
+        status), ``provider`` (batches with at least one row for this
+        provider), ``created_after`` / ``created_before`` (ISO-8601 date
+        range, applied to each row's ``created_at``).
+        """
+        qs = self.query_parameters(request)
+        limit = min(int(qs.get("limit", 25)), 100)
+        offset = int(qs.get("offset", 0))
+        status_filter = qs.get("status")
+        provider_filter = qs.get("provider")
+        created_after = qs.get("created_after")
+        created_before = qs.get("created_before")
+
+        table = f"{PARROT_SCHEMA}.{NotificationBatchRecipient.Meta.name}"
+        where_clauses: list = []
+        params: list = []
+
+        if status_filter:
+            params.append(status_filter)
+            where_clauses.append(
+                f"batch_id IN (SELECT batch_id FROM {table} WHERE status = ${len(params)})"
+            )
+        if provider_filter:
+            params.append(provider_filter)
+            where_clauses.append(
+                f"batch_id IN (SELECT batch_id FROM {table} WHERE provider = ${len(params)})"
+            )
+        if created_after:
+            params.append(created_after)
+            where_clauses.append(f"created_at >= ${len(params)}")
+        if created_before:
+            params.append(created_before)
+            where_clauses.append(f"created_at <= ${len(params)}")
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        list_query = f"""
+            SELECT batch_id,
+                   MIN(created_at) AS created_at,
+                   MIN(created_by) AS created_by,
+                   MIN(template_ref) AS template_ref,
+                   MIN(provider) AS provider,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE status = 'queued') AS queued,
+                   COUNT(*) FILTER (WHERE status = 'skipped') AS skipped,
+                   COUNT(*) FILTER (WHERE status = 'publish_failed') AS publish_failed,
+                   COUNT(*) FILTER (WHERE status = 'pending') AS pending
+            FROM {table}
+            {where_sql}
+            GROUP BY batch_id
+            ORDER BY MIN(created_at) DESC
+            LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}
+        """
+        count_query = f"""
+            SELECT COUNT(*) AS total FROM (
+                SELECT batch_id FROM {table} {where_sql} GROUP BY batch_id
+            ) sub
+        """
+
+        db = _get_db()
+        async with await db.connection() as conn:
+            rows = await conn.fetchall(list_query, (*params, limit, offset))
+            count_rows = await conn.fetchall(count_query, tuple(params))
+        total = count_rows[0]["total"] if count_rows else 0
+
+        batches = [
+            {
+                "batch_id": str(row["batch_id"]),
+                "created_at": (
+                    row["created_at"].isoformat()
+                    if hasattr(row["created_at"], "isoformat")
+                    else row["created_at"]
+                ),
+                "created_by": row["created_by"],
+                "total": row["total"],
+                "queued": row["queued"],
+                "skipped": row["skipped"],
+                "publish_failed": row["publish_failed"],
+                "pending": row["pending"],
+                "template_ref": row["template_ref"],
+                "provider": row["provider"],
+            }
+            for row in (rows or [])
+        ]
+        return self.json_response(
+            {"batches": batches, "total": total, "limit": limit, "offset": offset},
+            status=200,
+        )
+
     # ------------------------------------------------------------------
     # Placeholders (static catalog)
     # ------------------------------------------------------------------
@@ -763,6 +863,7 @@ class CommCenterHandler(BaseHandler):
         """Register every CommCenter route (spec §2). Repo convention, not inherited."""
         r = app.router
         r.add_route("POST", "/api/v1/comm_center/sender", self.post_sender)
+        r.add_route("GET", "/api/v1/comm_center/sender", self.get_batches)
         r.add_route("GET", "/api/v1/comm_center/sender/{batch_id}", self.get_batch)
         r.add_route(
             "POST",

@@ -48,6 +48,7 @@ All endpoints require `@is_authenticated`.
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/api/v1/comm_center/sender` | Bulk send. `dry_run` is a body field. |
+| `GET` | `/api/v1/comm_center/sender` | Paginated batch list — `limit` (default 25, max 100), `offset`, `status`, `provider`, `created_after`, `created_before` |
 | `GET` | `/api/v1/comm_center/sender/{batch_id}` | `details`, `status`, `limit` (default 100, max 1000), `offset` |
 | `POST` | `/api/v1/comm_center/sender/{batch_id}/retry` | `force` (bool, default `false`) |
 | `POST` | `/api/v1/comm_center/message` | Single recipient, synchronous, explicit `provider`. `dry_run` is a body field. |
@@ -71,6 +72,31 @@ per-row `provider` column overrides it. Returns `202` with `batch_id`,
 Rows missing their provider's contact field are **skipped with a
 reason**, never silently dropped — the rest of the batch still sends.
 Fan-out happens in a background task; the response does not wait for it.
+
+### `GET /sender` — list batches (FEAT-445 TASK-2319)
+
+The tracking table is flat (one row per recipient, `batch_id` repeated),
+so batch-level metadata is derived by aggregation — there is no separate
+"batches" table to page through directly. Returns:
+
+```json
+{
+  "batches": [
+    {
+      "batch_id": "uuid", "created_at": "ISO-8601", "created_by": 42,
+      "total": 150, "queued": 140, "skipped": 8, "publish_failed": 2,
+      "pending": 0, "template_ref": "monthly-report", "provider": "email"
+    }
+  ],
+  "total": 47, "limit": 25, "offset": 0
+}
+```
+
+Query params: `limit` (default 25, clamped to 100), `offset` (default 0),
+`status` (batches with at least one row in this status), `provider`
+(batches with at least one row for this provider), `created_after` /
+`created_before` (ISO-8601 date range). Disambiguated from `GET
+/sender/{batch_id}` by the absence of a path parameter.
 
 ### `POST /message` — single recipient (G13)
 
