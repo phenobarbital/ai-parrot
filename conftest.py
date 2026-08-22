@@ -403,6 +403,33 @@ def pytest_pycollect_makemodule(module_path, parent):
     return _OptionalDependencyModule.from_parent(parent, path=module_path)
 
 
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_setup(item):
+    """Skip tests whose *setup* trips over a missing optional dependency.
+
+    The collector above only sees failures at test-module import time. A
+    fixture that imports an optional module fails later, during setup, and
+    surfaces as an ERROR rather than a collection error — 86 of them in the
+    core job (`parrot.bots` -> `google.genai`, `claude_agent_sdk`,
+    `microsoft_agents`). Same allowlist, same guarantee: anything not on it
+    is re-raised untouched.
+    """
+    outcome = yield
+    try:
+        outcome.get_result()
+    except Exception as exc:  # noqa: BLE001 — re-raised unless allowlisted
+        missing = _missing_optional(exc)
+        if missing is None:
+            return
+        _SKIPPED_OPTIONAL[missing] = _SKIPPED_OPTIONAL.get(missing, 0) + 1
+        outcome.force_exception(
+            pytest.skip.Exception(
+                f"optional dependency {missing!r} is not installed",
+                _use_item_location=True,
+            )
+        )
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Make optional-dependency skips visible instead of silent."""
     if not _SKIPPED_OPTIONAL:
