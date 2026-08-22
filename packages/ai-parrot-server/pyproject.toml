@@ -40,6 +40,10 @@ scheduler = [
 ]
 
 # MCP server transports (QUIC, gRPC, etc.)
+# aioquic/pylsqpack power the optional QUIC + WebTransport transport. Every
+# consumer resolves those symbols lazily through parrot.mcp._quic.load_quic(),
+# so the MCP layer imports fine without this extra — only selecting the "quic"
+# transport raises, with an install hint.
 mcp = [
     "aioquic==1.3.0",
     "pylsqpack==0.3.23",

@@ -15,13 +15,17 @@ from parrot.mcp.local_server import LocalMCPServerBase
 from parrot.mcp.server_base import MCPServerBase as CoreMCPServerBase
 from parrot.mcp.transports.base import MCPServerBase, RemoteMCPServerBase
 from parrot.mcp.transports.http import HttpMCPServer
-from parrot.mcp.transports.quic import QuicMCPServer
 from parrot.mcp.transports.sse import SseMCPServer
 from parrot.mcp.transports.stdio import StdioMCPServer
 from parrot.mcp.transports.unix import UnixMCPServer
 from parrot.mcp.transports.websocket import WebSocketMCPServer
 from parrot.tools.abstract import AbstractTool
 from pydantic import BaseModel, Field
+
+try:  # QUIC ships in the optional `ai-parrot-server[mcp]` extra (aioquic)
+    from parrot.mcp.transports.quic import QuicMCPServer
+except ImportError:  # pragma: no cover - exercised only without the extra
+    QuicMCPServer = None
 
 
 class EchoInput(BaseModel):
@@ -57,12 +61,14 @@ class TestRemoteTransportsReparenting:
 
     @pytest.mark.parametrize("transport_cls", [
         HttpMCPServer, SseMCPServer, UnixMCPServer,
-        QuicMCPServer, WebSocketMCPServer,
+        pytest.param(QuicMCPServer, marks=pytest.mark.requires_aioquic),
+        WebSocketMCPServer,
     ])
     def test_transport_inherits_remote_base(self, transport_cls):
         assert issubclass(transport_cls, RemoteMCPServerBase)
 
 
+@pytest.mark.requires_aioquic
 class TestQuicHandleToolsCall:
     """Regression guard for the removed QuicMCPServer.handle_tools_call
     override, which called MCPToolAdapter.execute(**arguments) — broken
