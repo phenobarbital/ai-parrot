@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-22T14:17:06+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-22T22:03:57+00:00",
   "tasks": [
     {
       "id": "TASK-2346",
@@ -95,7 +95,7 @@
       "feature_id": "FEAT-441",
       "feature": "fireflies-mcp-improvements",
       "spec": "sdd/specs/fireflies-mcp-improvements.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "Documentation-only, different file (fireflies_daemon.yaml) from all other tasks — no file conflict exists, but it is trivially small and depends on TASK-2347's kwarg existing, so a separate worktree would add ceremony with no real time savings.",
       "assigned_to": null,
       "started_at": "2026-08-22T22:03:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2350-daemon-yaml-docs.md"
+      "completed_at": "2026-08-22T22:03:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2350-daemon-yaml-docs.md",
+      "verification": "verified"
     }
   ]
 }
