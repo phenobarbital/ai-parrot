@@ -199,14 +199,40 @@ a registry entry.
 
 ### Three that need a decision, not just a branch
 
-**`credit_card` carries `cvv`.** The control emits it and a form submission
-would persist it in `data` jsonb. Storing a CVV after authorization is
-prohibited by PCI DSS, and nothing here is doing an authorization. Absorbing
-this type as-is writes card verification values into `fs_form_data`. Options:
-adopt the type but drop `cvv` at the boundary; adopt it and never persist;
-or adopt the shape and mark the field type unusable outside a PCI scope. **This
-must be answered before the branch is written** — it is the one item in this
-feature that is a liability rather than a gap.
+**`credit_card` — DECIDED 2026-08-22 (Juan): cardholder data is never stored.**
+
+The control today emits both a CVV and the **full PAN in cleartext**:
+
+```js
+emit({ ...card, number: digits });   // 15-16 digits, unmasked
+emit({ ...card, cvv: digits });
+```
+
+Absorbing that shape unchanged writes both into `fs_form_data.data`, and from
+there into staging whenever tables are copied across. Storing a card
+verification value after authorization is prohibited outright by PCI DSS;
+storing a PAN is permitted only where it is rendered unreadable — truncated,
+masked, hashed or strongly encrypted — which a general-purpose jsonb column is
+not. Nothing in this platform authorizes a payment, so neither value has a
+purpose here at all.
+
+Juan ruled the CVV out. The PAN is the same defect at a different intensity and
+is closed with it, so the accepted server shape is:
+
+```
+credit_card   {"brand": str, "last4": str, "name": str, "expiry": str}
+```
+
+- **`cvv` is rejected, not stripped.** A validator that silently drops it
+  teaches the next client that sending it is fine. Its presence is an error.
+- **`number` is accepted only as `last4`** (exactly 4 digits) plus `brand`.
+  A value with more digits is an error, not something to truncate server-side —
+  truncating means the PAN reached the server, which is what must not happen.
+- The client stops emitting both (navigator-svelte FEAT-515).
+
+Rejecting rather than sanitizing is deliberate: sanitizing makes the server the
+last line of defence for something that should never leave the browser, and it
+hides the fact that a client is still sending it.
 
 **`image_dropzone` emits inline base64.** A `dataUrl` per file in the
 submission payload is the wrong carrier at any real photo count, and the
@@ -273,8 +299,11 @@ answer. A native renderer only where the type is genuinely used in that channel.
   renderers, native or fallback, and none raises.
 - **AC7** A test enumerates both catalogs and fails if they diverge — the
   ratchet this feature exists to install.
-- **AC8** The `cvv` decision is implemented, whichever way it went, and the
-  test states which.
+- **AC8** `credit_card` REJECTS a payload containing `cvv`, and REJECTS a
+  `number`/`last4` longer than 4 digits. Both asserted as validation errors,
+  not as silent sanitization — a test that only checks the value is absent
+  afterwards would pass against a stripping implementation, which is the
+  behaviour this AC exists to forbid.
 
 ---
 
@@ -327,9 +356,13 @@ real, and separable.
 
 - **Shipping one side.** The two repos release independently. Shipping half of
   this reproduces the original defect with a new set of names.
-- **Absorbing `credit_card` without answering the `cvv` question**, and
-  discovering later that card verification values are sitting in
-  `fs_form_data`. AC8 exists for this.
+- **A sanitizing implementation of AC8.** Dropping `cvv` quietly satisfies
+  "it is not stored" and leaves every client free to keep sending it over the
+  wire and into logs. The requirement is rejection.
+- **Existing rows.** No `credit_card` field is stored in any schema today
+  (verified across epson/flexroc/pokemon/navigator), so there is no cardholder
+  data to purge. That is a fact with a shelf life: it holds only until the type
+  ships, which is why the shape must be right on the first release.
 - **Letting "fallback" become the answer everywhere.** It is legitimate per
   type and negligent as a blanket. AC6 requires a recorded choice, not a
   default.
