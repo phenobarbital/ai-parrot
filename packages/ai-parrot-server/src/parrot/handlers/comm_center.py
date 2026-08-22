@@ -461,14 +461,10 @@ class CommCenterHandler(BaseHandler):
             # matching batch's own aggregate counts instead of
             # selecting/excluding it wholesale (code-review finding).
             params.append(created_after)
-            where_clauses.append(
-                f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at >= ${len(params)})"
-            )
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at >= ${len(params)})")
         if created_before:
             params.append(created_before)
-            where_clauses.append(
-                f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at <= ${len(params)})"
-            )
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at <= ${len(params)})")
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 

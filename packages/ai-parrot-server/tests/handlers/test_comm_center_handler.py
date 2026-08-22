@@ -454,11 +454,7 @@ class TestGetBatches:
         batch = body["batches"][0]
         assert batch["publishing"] == 1
         assert (
-            batch["queued"]
-            + batch["skipped"]
-            + batch["publish_failed"]
-            + batch["pending"]
-            + batch["publishing"]
+            batch["queued"] + batch["skipped"] + batch["publish_failed"] + batch["pending"] + batch["publishing"]
             == batch["total"]
         )
 
