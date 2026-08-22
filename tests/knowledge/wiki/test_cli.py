@@ -20,13 +20,20 @@ from parrot.knowledge.wiki.project import (
     wiki_write_lock,
 )
 
+# Patch through the imported module object rather than a dotted string:
+# pkgutil.resolve_name (used by mock.patch and monkeypatch.setattr) walks
+# attributes from `sys.modules['parrot']`, and `parrot` is a PEP 420
+# namespace package whose submodule attributes are not reliably bound on
+# CI — hence "module 'parrot' has no attribute 'bots'" even though the
+# submodule imports fine. The module object sidesteps resolution entirely.
+#
 # `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
 # pkgutil.resolve_name, which only walks attributes — it does NOT import
 # submodules. Locally these resolved by accident because something else had
 # already imported them; on CI nothing had, so patching died with
 # "module ... has no attribute ...". Import them explicitly so the target
 # resolves the same way in both environments.
-import parrot.knowledge.pageindex.toolkit  # noqa: F401
+import parrot.knowledge.pageindex.toolkit as _pageindex_toolkit  # noqa: F401
 
 PY_STORE = '"""A tiny key-value store module."""\n\n\nclass Store:\n    """In-memory key-value store."""\n\n    def get(self, key):\n        """Fetch a value."""\n        return key\n'
 PY_UTIL = '"""Utility helpers."""\n\n\ndef helper(key):\n    """Return the key unchanged."""\n    return key\n'
@@ -561,9 +568,7 @@ def stub_ingest_wiring(monkeypatch):
 
     monkeypatch.setattr(cli_module, "_build_triage_adapters", _fake_build_adapters)
     monkeypatch.setattr(cli_module, "_build_novelty_scorer", _fake_build_novelty_scorer)
-    monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.PageIndexToolkit", _FakePageIndexToolkit
-    )
+    monkeypatch.setattr(_pageindex_toolkit, "PageIndexToolkit", _FakePageIndexToolkit)
     monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "stub:light")
     monkeypatch.setenv("WIKI_MODEL", "stub:heavy")
     return light, heavy
@@ -641,9 +646,7 @@ class TestSupervisedIngestCrossProviderModels:
         monkeypatch.setattr(
             cli_module, "_build_novelty_scorer", lambda root, config, store: _FakeNoveltyScorer()
         )
-        monkeypatch.setattr(
-            "parrot.knowledge.pageindex.toolkit.PageIndexToolkit", _SpyToolkit
-        )
+        monkeypatch.setattr(_pageindex_toolkit, "PageIndexToolkit", _SpyToolkit)
         monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "groq:llama")
         monkeypatch.setenv("WIKI_MODEL", "groq:llama-big" if same_provider else "anthropic:claude")
 
