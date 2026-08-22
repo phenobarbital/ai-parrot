@@ -14,7 +14,7 @@
       "feature_id": "FEAT-441",
       "feature": "fireflies-mcp-improvements",
       "spec": "sdd/specs/fireflies-mcp-improvements.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundational module; TASK-2347 and TASK-2348 both depend on it. No prior task to run alongside.",
       "assigned_to": null,
       "started_at": "2026-08-22T14:19:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2346-fireflies-filters-model.md"
+      "completed_at": "2026-08-22T14:28:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2346-fireflies-filters-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2347",
