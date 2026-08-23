@@ -32,7 +32,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Edits agents/fireflies_wiki.py, shared with TASK-2379/2380/2381 — sequential to avoid conflicts. Logically independent though: no depends_on, so it may be taken first.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2378-scope-nightly-vault-ingest-to-meetings.md"
+      "completed_at": "2026-08-23T02:17:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2378-scope-nightly-vault-ingest-to-meetings.md"
     },
     {
       "id": "TASK-2379",
