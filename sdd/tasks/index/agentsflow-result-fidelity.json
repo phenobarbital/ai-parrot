@@ -32,7 +32,7 @@
       "feature_id": "FEAT-447",
       "feature": "agentsflow-result-fidelity",
       "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Logically independent of TASK-2326 (different method, no shared logic) but edits the SAME file, core/result.py, so it cannot run in a parallel worktree. Sequence it after 2326 to avoid conflicting hunks.",
       "assigned_to": null,
       "started_at": "2026-08-23T23:10:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2327-node-results-envelope-unwrap.md"
+      "completed_at": "2026-08-23T23:53:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2327-node-results-envelope-unwrap.md"
     },
     {
       "id": "TASK-2328",

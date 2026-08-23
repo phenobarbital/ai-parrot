@@ -240,10 +240,46 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-08-24
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Module 2 landed as specified.
+
+- `FlowResult.node_results` gained one branch, placed **before** the generic
+  `hasattr(resp, "output")` check: `isinstance(resp, dict) and "output" in resp`
+  -> `resp["output"]`. A comment states why the check must be explicit (a dict
+  has no `.output` attribute, so envelopes previously fell through to `else`
+  and leaked the whole mapping). `None` -> `None`, `AgentResponse` -> `.output`,
+  and any other value -> itself are all unchanged, so the `agent_results`
+  alias inherits the fix for free. No mutation of `self.responses`.
+- Documented the `output` scalar-vs-dict contract in three places, as the task
+  listed: the `output` field docstring (the normative statement — single
+  executed leaf -> scalar, fan-out -> `dict[node_id, Any]`, nothing executed ->
+  `None`, plus a pointer to `node_results` for consumers that must not branch
+  on shape and an explicit "there is no plural `outputs` field"), and the
+  `content` / `final_result` property docstrings, which state they inherit that
+  contract verbatim.
+
+Tests: the 2 specified tests, in a new `TestNodeResultsEnvelope` class. They go
+slightly beyond the scaffold on the negative side: a dict-without-`"output"`
+(`{"other": 1}`) is asserted to pass through unchanged, the AC8 property is
+asserted directly (no value in `node_results` is an envelope dict), and the
+read-only-projection guarantee is asserted (`responses` still holds the full
+envelope afterwards).
+
+Verification:
+- `test_flow_primitives/test_result.py`: 41 passed (+2).
+- Crew regression suites: 32 passed, unchanged.
+- `tests/bots/flows/` + `tests/test_flow_primitives/`: 709 passed
+  (699 clean-`dev` baseline + 8 from TASK-2326 + 2 here).
+- `ruff`: byte-for-byte the same finding set as before this task (the file's
+  56 pre-existing defaults-only findings + the 3 `UP045` from TASK-2326); this
+  task introduced none. `mypy`: the same 2 pre-existing errors (lines 36, 666),
+  no new ones.
+
+**Deviations from spec**: none. In particular `FlowResult.responses` still
+stores raw envelopes for AgentsFlow (spec §8 open question — status quo kept
+deliberately; unwrapping on read in `node_results` is what makes it acceptable,
+and changing the stored contents would be a breaking change to an existing
+field).
