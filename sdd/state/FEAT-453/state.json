@@ -71,7 +71,7 @@
       "status": "completed",
       "started_at": "2026-08-23T09:40:00Z",
       "proposal_path": "sdd/proposals/web-automation-infra.proposal.md",
-      "commit_sha": "0108171df364a11d01ce23da51edd236879fec09",
+      "commit_sha": "5f1eb18655a33489e75df35b01c99624abccaea8",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Stub closure + load-time plan validation + the Hooba domain toolkit on TemplatePlan/ScrapingFlow is high-confidence, precisely localized, and blocks everything else. Single feature per U4, wiki layer ordered last.",
       "completed_at": "2026-08-23T09:44:00Z"
