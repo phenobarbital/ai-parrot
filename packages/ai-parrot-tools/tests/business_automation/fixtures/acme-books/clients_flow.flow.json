@@ -1,0 +1,7 @@
+{
+  "name": "clients_flow",
+  "description": "List every registered client (read-only)",
+  "nodes": [
+    {"id": "n1", "plan_ref": "clients_flow"}
+  ]
+}

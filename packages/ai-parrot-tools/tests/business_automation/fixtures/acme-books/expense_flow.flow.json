@@ -1,0 +1,7 @@
+{
+  "name": "expense_flow",
+  "description": "Register a single expense (single-node flow)",
+  "nodes": [
+    {"id": "n1", "plan_ref": "expense_flow"}
+  ]
+}
