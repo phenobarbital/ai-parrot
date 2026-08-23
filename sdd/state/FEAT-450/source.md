@@ -155,3 +155,10 @@ this repo's own `.parrot/wiki.json` already carries `exclude_dirs: [".parrot/wik
 `scan_vault(root, body_max_chars, max_file_bytes)` is the whole signature — a vault namespace
 inherits the *vault's own* `wiki.json` caps, not the registering repo's; `find_project_root` does
 not mis-detect the vault's `.parrot/` when the CLI runs inside a repo that registers it.
+
+
+---
+
+## Delta 2 (user, 2026-08-23, at acceptance) — `vault` resolution via `load_project_config`
+
+The `vault` namespace kind resolves its plane through `load_project_config(<vault>)` exactly like the `path` kind: the vault's own `.parrot/wiki.json` (when present) decides `storage_dir`, backend and scan caps; when absent, defaults apply (`<vault>/.parrot/wiki/wiki.db`, sqlite). `vault` = `path` + `.obsidian/` probe + `wikitoolkit build --path <vault>` hint. Supersedes the hard-coded `<vault>/.parrot/wiki` rule in D4.2. Proposal accepted by the user at this point (`status: accepted`).

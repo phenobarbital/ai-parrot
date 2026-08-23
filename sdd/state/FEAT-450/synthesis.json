@@ -8,7 +8,7 @@
       "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
       "symbol": "_resolve_read_store",
       "lines": "199-251",
-      "role": "single-store read resolver (--store/WIKI_STORE) — becomes the federation entry point",
+      "role": "single-store read resolver (--store/WIKI_STORE) \u2014 becomes the federation entry point",
       "evidence": [
         "F002"
       ]
@@ -264,7 +264,7 @@
       "implication": "low conflict risk; rebase over b5893f4e4 cli.py changes only"
     },
     {
-      "statement": "_prune_removed deletes every file:/dir: page and every source URI outside the current scan, store-wide, and VaultIngestTool calls it against the project's own store — repo scan + vault in one plane annihilate each other on alternating builds (on top of the F010 id collision)",
+      "statement": "_prune_removed deletes every file:/dir: page and every source URI outside the current scan, store-wide, and VaultIngestTool calls it against the project's own store \u2014 repo scan + vault in one plane annihilate each other on alternating builds (on top of the F010 id collision)",
       "evidence": [
         "F017",
         "F010"
@@ -283,23 +283,23 @@
   "enrichment": {
     "new": [
       {
-        "item": "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py — FederatedWikiStore(BaseWikiStore)",
-        "role": "{name: store} + local name; reads fan out (asyncio.gather), ids prefixed ns::, merge via per-namespace min-max + dedup; get_page/neighbors route by prefix (unprefixed → local); writes delegate to local only; stats per namespace; unbuilt/unreachable namespaces skipped with a note"
+        "item": "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py \u2014 FederatedWikiStore(BaseWikiStore)",
+        "role": "{name: store} + local name; reads fan out (asyncio.gather), ids prefixed ns::, merge via per-namespace min-max + dedup; get_page/neighbors route by prefix (unprefixed \u2192 local); writes delegate to local only; stats per namespace; unbuilt/unreachable namespaces skipped with a note"
       },
       {
-        "item": "project.py — WikiNamespaceConfig + WikiProjectConfig.namespaces + load_global_registry(~/.parrot/wikis.json) + resolve_namespaces()",
-        "role": "merged map (repo overrides global) → opened read-only stores"
+        "item": "project.py \u2014 WikiNamespaceConfig + WikiProjectConfig.namespaces + load_global_registry(~/.parrot/wikis.json) + resolve_namespaces()",
+        "role": "merged map (repo overrides global) \u2192 opened read-only stores"
       },
       {
-        "item": "cli.py — --ns option on query/page/related/status; `wikitoolkit ns list|add|remove`",
+        "item": "cli.py \u2014 --ns option on query/page/related/status; `wikitoolkit ns list|add|remove`",
         "role": "explicit + broadcast routing; `ns add --global` writes the user registry"
       },
       {
-        "item": "tools.py — optional namespace field on WikiQueryInput/WikiPageInput/WikiRelatedInput; wiki_status lists namespaces",
+        "item": "tools.py \u2014 optional namespace field on WikiQueryInput/WikiPageInput/WikiRelatedInput; wiki_status lists namespaces",
         "role": "MCP/agent parity"
       },
       {
-        "item": "docs — parrot-wiki-cli.md 'Namespaces' section; wiki-claude-code.md note",
+        "item": "docs \u2014 parrot-wiki-cli.md 'Namespaces' section; wiki-claude-code.md note",
         "role": "operator guidance"
       },
       {
@@ -307,8 +307,8 @@
         "role": "id round-trip, merge, write routing, read-only guarantee, skip-on-missing, precedence"
       },
       {
-        "item": "project.py — WikiNamespaceConfig.vault (obsidian namespace kind) + cli.py `ns add --vault <path>`",
-        "role": "delta 1: a vault registers as {\"vault\": <path>} and resolves to <vault>/.parrot/wiki (sqlite, read-only for reads); built by the existing vault-aware `wikitoolkit build --path <vault>` — no new build path; registration probes (<path>/.obsidian).is_dir() inline to keep project.py dependency-light; unbuilt planes skipped with a build hint"
+        "item": "project.py \u2014 WikiNamespaceConfig.vault (obsidian namespace kind) + cli.py `ns add --vault <path>`",
+        "role": "delta 1: a vault registers as {\"vault\": <path>} and resolves to <vault>/.parrot/wiki (sqlite, read-only for reads); built by the existing vault-aware `wikitoolkit build --path <vault>` \u2014 no new build path; registration probes (<path>/.obsidian).is_dir() inline to keep project.py dependency-light; unbuilt planes skipped with a build hint"
       }
     ],
     "modified": [
@@ -408,10 +408,10 @@
       "claude_code/hook.py (single-root nudge)",
       "SQLite schema, ArangoDB/InMemory backends' internals",
       "MultiStoreSearchToolkit (FEAT-379) and FEAT-449 GraphIndex namespaces",
-      "Automatic/LLM intent routing (IntentRouterMixin) — v2 follow-up",
-      "Cross-namespace edges and broadcast/multi-target writes — v2 follow-up (v1 writes target exactly one namespace)",
-      "RRF ranking — v2 follow-up",
-      "vault_dir / resolve_vault_dir semantics — still the MCP ObsidianToolkit pointer, never auto-promoted to a namespace (D4.3)",
+      "Automatic/LLM intent routing (IntentRouterMixin) \u2014 v2 follow-up",
+      "Cross-namespace edges and broadcast/multi-target writes \u2014 v2 follow-up (v1 writes target exactly one namespace)",
+      "RRF ranking \u2014 v2 follow-up",
+      "vault_dir / resolve_vault_dir semantics \u2014 still the MCP ObsidianToolkit pointer, never auto-promoted to a namespace (D4.3)",
       "FEAT-392 (llmwiki-obsidian-plugin): vault -> PageIndex/GraphIndex is a different plane",
       "Obsidian write-back (remember/note -> vault notes via ObsidianToolkit) and vault<->code cross-namespace edges: v2"
     ],
@@ -447,7 +447,7 @@
         ]
       },
       {
-        "pattern": "delta 1: a vault is an ordinary wiki project — `wikitoolkit build --path <vault>` auto-detects .obsidian/ and routes to scan_vault, so namespaces reuse it instead of adding a build path",
+        "pattern": "delta 1: a vault is an ordinary wiki project \u2014 `wikitoolkit build --path <vault>` auto-detects .obsidian/ and routes to scan_vault, so namespaces reuse it instead of adding a build path",
         "evidence": [
           "F017"
         ]
@@ -463,7 +463,7 @@
         ]
       },
       {
-        "risk": "Large planes (ai-parrot wiki.db ≈311 MB) × N namespaces per query",
+        "risk": "Large planes (ai-parrot wiki.db \u2248311 MB) \u00d7 N namespaces per query",
         "impact": "latency on broadcast",
         "mitigation": "SQLite opens lazily; gather concurrently; limit per-namespace top_k; WAL read-only",
         "evidence": [
@@ -681,18 +681,18 @@
         "F009"
       ],
       "confidence": "medium",
-      "reasoning": "is_obsidian_vault is a one-line is_dir() check but its module imports parrot.interfaces.obsidian — the probe must be inlined, not imported"
+      "reasoning": "is_obsidian_vault is a one-line is_dir() check but its module imports parrot.interfaces.obsidian \u2014 the probe must be inlined, not imported"
     }
   ],
   "unknowns": [
     {
       "id": "U1",
-      "question": "How do entries reach the global registry ~/.parrot/wikis.json — only via explicit `wikitoolkit ns add --global`, or should `wikitoolkit build` self-register every built project?",
+      "question": "How do entries reach the global registry ~/.parrot/wikis.json \u2014 only via explicit `wikitoolkit ns add --global`, or should `wikitoolkit build` self-register every built project?",
       "blocks_claims": [
         "C12"
       ],
       "plausible_answers": [
-        "manual only (`ns add --global`) — explicit, no surprises (recommended for v1)",
+        "manual only (`ns add --global`) \u2014 explicit, no surprises (recommended for v1)",
         "build self-registers under its wiki_name, `ns add` for non-repo brains",
         "both, with `build --no-register` opt-out"
       ],
@@ -707,7 +707,7 @@
         "C3"
       ],
       "plausible_answers": [
-        "refuse in v1 — writes always local; foreign stores opened read-only (recommended)",
+        "refuse in v1 \u2014 writes always local; foreign stores opened read-only (recommended)",
         "allow with an explicit --ns, opening that single store read-write"
       ],
       "ask_user": true,
@@ -716,13 +716,13 @@
     },
     {
       "id": "U3",
-      "question": "In broadcast output, should the local namespace's ids stay unprefixed (file:x) while foreign ones carry ns:: — or should every id be prefixed uniformly when namespaces are configured?",
+      "question": "In broadcast output, should the local namespace's ids stay unprefixed (file:x) while foreign ones carry ns:: \u2014 or should every id be prefixed uniformly when namespaces are configured?",
       "blocks_claims": [
         "C11"
       ],
       "plausible_answers": [
-        "local unprefixed, foreign prefixed — keeps existing CLAUDE.md/hook examples valid (recommended)",
-        "uniform prefix for all when ≥1 namespace is configured"
+        "local unprefixed, foreign prefixed \u2014 keeps existing CLAUDE.md/hook examples valid (recommended)",
+        "uniform prefix for all when \u22651 namespace is configured"
       ],
       "ask_user": true,
       "user_answer": "yes: local namespace ids stay unprefixed (file:x); only foreign ids carry ns::",
@@ -756,7 +756,7 @@
         "explicit store path, no default"
       ],
       "ask_user": true,
-      "user_answer": "inside the vault — <vault>/.parrot/wiki/wiki.db, built by `wikitoolkit build --path <vault>`; accepted cost: .parrot/ inside a possibly-synced vault",
+      "user_answer": "inside the vault \u2014 <vault>/.parrot/wiki/wiki.db, built by `wikitoolkit build --path <vault>`; accepted cost: .parrot/ inside a possibly-synced vault | Delta 2 (user, 2026-08-23): the vault kind resolves via load_project_config(<vault>) exactly like the path kind \u2014 the vault's own wiki.json decides storage_dir/backend/caps; defaults to <vault>/.parrot/wiki sqlite when absent.",
       "resolved_at": "2026-08-23T12:00:00Z"
     },
     {
@@ -766,8 +766,8 @@
         "C18"
       ],
       "plausible_answers": [
-        "no — ns add --vault only (consistent with U1)",
-        "yes — implicit namespace for back-compat"
+        "no \u2014 ns add --vault only (consistent with U1)",
+        "yes \u2014 implicit namespace for back-compat"
       ],
       "ask_user": true,
       "user_answer": "no; vault_dir keeps its MCP ObsidianToolkit job",
@@ -785,13 +785,13 @@
         "document as unsupported"
       ],
       "ask_user": true,
-      "user_answer": "inside FEAT-450 — v1 already namespace-scopes writes",
+      "user_answer": "inside FEAT-450 \u2014 v1 already namespace-scopes writes",
       "resolved_at": "2026-08-23T12:00:00Z"
     }
   ],
   "recommended_next_command": {
     "command": "sdd-spec",
-    "rationale": "Localization and reuse points are high-confidence; the three architectural decisions and U1-U3 are all resolved by the user — no open question remains."
+    "rationale": "Localization and reuse points are high-confidence; the three architectural decisions and U1-U3 are all resolved by the user \u2014 no open question remains."
   },
   "overall_confidence": "high",
   "meta": {
@@ -815,6 +815,6 @@
       "F017"
     ],
     "findings_unused": [],
-    "notes": "F016 backs the v2 follow-up only. Unknowns U1-U3 each carry a recommended default so /sdd-spec can proceed without blocking. Delta 1 (2026-08-23, post-synthesis, pre-approval): obsidian namespace kind — one new finding F017 (verified against source, research phase not re-run); D4.1-D4.4 answered by the user."
+    "notes": "F016 backs the v2 follow-up only. Unknowns U1-U3 each carry a recommended default so /sdd-spec can proceed without blocking. Delta 1 (2026-08-23, post-synthesis, pre-approval): obsidian namespace kind \u2014 one new finding F017 (verified against source, research phase not re-run); D4.1-D4.4 answered by the user."
   }
 }

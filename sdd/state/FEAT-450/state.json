@@ -3,7 +3,7 @@
   "feat_id": "FEAT-450",
   "feature_slug": "wiki-namespaces",
   "started_at": "2026-08-23T00:17:13Z",
-  "updated_at": "2026-08-23T12:00:00Z",
+  "updated_at": "2026-08-23T00:51:03Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -102,8 +102,19 @@
             "sdd/proposals/wiki-namespaces.proposal.md"
           ],
           "research_rerun": false
+        },
+        {
+          "id": 2,
+          "date": "2026-08-23",
+          "summary": "vault kind resolves via load_project_config(<vault>) like path; default <vault>/.parrot/wiki sqlite",
+          "evidence": [
+            "F009",
+            "F017"
+          ]
         }
-      ]
+      ],
+      "accepted_by_user": true,
+      "accepted_at": "2026-08-23T00:51:03Z"
     }
   },
   "budget": {
@@ -123,6 +134,6 @@
   "detected_mode": "enrichment",
   "resume_hint": {
     "next_phase": "done",
-    "next_action": "Run /sdd-spec FEAT-450; all unknowns resolved (U1-U3, D4.1-D4.4 incl. delta 1 \u2014 obsidian namespace kind)."
+    "next_action": "Proposal accepted; run /sdd-spec FEAT-450."
   }
 }

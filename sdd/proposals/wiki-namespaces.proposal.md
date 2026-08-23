@@ -4,7 +4,7 @@ title: Namespaces for wikitoolkit — federate N wiki stores (repos, Obsidian va
 slug: wiki-namespaces
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
@@ -21,6 +21,10 @@ deltas:
     date: 2026-08-23
     summary: "`obsidian` namespace kind — a vault registers as `{vault: <path>}`, plane inside the vault, `_prune_removed` scoping fixed in-feature"
     evidence: F017
+  - id: 2
+    date: 2026-08-23
+    summary: "`vault` kind resolves via `load_project_config(<vault>)` like `path` (vault's own wiki.json honoured; defaults when absent) — not a hard-coded `<vault>/.parrot/wiki` sqlite"
+    evidence: F009, F017
 ---
 
 # FEAT-450 — Namespaces for wikitoolkit (multi-wiki federation)
@@ -58,7 +62,9 @@ The original request, preserved verbatim (full text at `sdd/state/FEAT-450/sourc
 3. **v1 routing = explicit + broadcast** (`--ns <name>` / `--ns all`), per-namespace min-max +
    merge/dedup. Automatic intent/LLM routing is a **v2 follow-up**, documented, not built.
 4. **`obsidian` is a namespace kind** — *Delta 1, 2026-08-23, after synthesis*. A vault registers
-   as `{"vault": "<path>"}`; its plane lives **inside the vault** (`<vault>/.parrot/wiki/wiki.db`)
+   as `{"vault": "<path>"}`; its plane lives **inside the vault** — resolved through
+   `load_project_config(<vault>)` exactly like the `path` kind (the vault's own `.parrot/wiki.json`
+   decides `storage_dir`/backend/caps; defaults → `<vault>/.parrot/wiki/wiki.db`, *Delta 2*) —
    and is built by the existing vault-aware `wikitoolkit build --path <vault>`. Registration is
    `ns add --vault` only (consistent with U1); `vault_dir` is not auto-promoted. The
    `_prune_removed` blast radius is fixed **inside this feature**. Full rationale and the four
@@ -217,8 +223,10 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
 - **Docs** — "Namespaces" section in `documentation/parrot-wiki-cli.md` (next to the existing
   `--store` section, lines 424-451) and a note in `docs/wiki-claude-code.md`.
 - **[Δ1] `vault` namespace kind** — `WikiNamespaceConfig.vault: str | None` (mutually exclusive
-  with `path` / `store` / `database`), resolving to `<vault>/.parrot/wiki` on the sqlite backend,
-  opened read-only for reads like any foreign namespace. Registered by
+  with `path` / `store` / `database`), resolved as `path` is — `load_project_config(<vault>)`
+  (the vault's own `wiki.json` decides storage dir, backend and caps; defaults when absent →
+  `<vault>/.parrot/wiki`, sqlite; Delta 2) — opened read-only for reads like any foreign
+  namespace. `vault` therefore equals `path` + an `.obsidian/` probe + a build hint. Registered by
   `wikitoolkit ns add <name> --vault <path> [--global]`; detection at registration time is a cheap
   `(<path>/.obsidian).is_dir()` probe, **not** a `scan_vault` import (`project.py` must stay
   dependency-light — F009). An unbuilt vault plane is skipped with the standard note plus a
@@ -255,8 +263,9 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
 - **[Δ1] `vault_scan.py`::`VAULT_EXCLUDE_DIRS`** — add `.parrot` (or honour
   `config.exclude_dirs`), so a vault-hosted plane's `index.md`/`log.md` are not scanned back in.
   *Evidence*: F017
-- **[Δ1] `project.py`::`WikiNamespaceConfig`** — the `vault` kind and its resolution rule
-  (`<vault>/.parrot/wiki`, sqlite). *Evidence*: F017, F009
+- **[Δ1/Δ2] `project.py`::`WikiNamespaceConfig`** — the `vault` kind; resolution reuses the
+  `path` rule (`load_project_config(<vault>)` → that config's `storage_path`/backend; defaults
+  `<vault>/.parrot/wiki`, sqlite when no `wiki.json`). *Evidence*: F017, F009
 - **`toolkit.py`::`LLMWikiToolkit._config_for` / `list_wikis`** — *optional*: accept an injected
   federated store and enumerate namespaces; otherwise untouched. *Evidence*: F006
 
@@ -365,9 +374,11 @@ Distribution: **14** high, **4** medium, **0** low.
 - [x] **D4.1 — Is Obsidian a namespace kind or a second corpus in the local plane?** — *Resolved*:
   a namespace kind (`{"vault": "<path>"}`), routed like every other namespace. *Resolves*: C15, C16
 - [x] **D4.2 — Where does a vault namespace's plane live?** — *Resolved*: **inside the vault**,
-  `<vault>/.parrot/wiki/wiki.db`, built by the existing `wikitoolkit build --path <vault>`; the
-  vault becomes a self-contained wiki project shared by every repo that registers it. Accepted
-  cost: a `.parrot/` directory inside a possibly-synced vault. *Resolves*: C15, C17
+  resolved via `load_project_config(<vault>)` like the `path` kind (vault's own `wiki.json`
+  honoured; default `<vault>/.parrot/wiki/wiki.db` — *Delta 2, user 2026-08-23*), built by the
+  existing `wikitoolkit build --path <vault>`; the vault becomes a self-contained wiki project
+  shared by every repo that registers it. Accepted cost: a `.parrot/` directory inside a
+  possibly-synced vault. *Resolves*: C15, C17
 - [x] **D4.3 — Does `vault_dir` auto-register as a namespace?** — *Resolved*: no. `ns add --vault`
   only (consistent with U1); `vault_dir` keeps its MCP `ObsidianToolkit` job. *Resolves*: C18
 - [x] **D4.4 — Where does the `_prune_removed` blast-radius fix belong?** — *Resolved*: **inside
@@ -415,8 +426,9 @@ original run only.
 
 **Gate note**: the Phase-1 plan gate was not shown interactively — the user pre-approved the
 research direction and fixed the three design decisions in the preceding conversation. Phase-5
-Q&A: U1–U3 answered by the user on 2026-08-23 (3/3). `status: review` pending an explicit
-"accept".
+Q&A: U1–U3 answered by the user on 2026-08-23 (3/3). Delta 1 (obsidian kind, D4.1–D4.4) and
+Delta 2 (`vault` resolution via `load_project_config`) verified against the code.
+**Accepted by the user on 2026-08-23** (`status: accepted`).
 
 ---
 
