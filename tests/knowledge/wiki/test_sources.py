@@ -1,10 +1,9 @@
 """Unit tests for SourceCollectionManager (TASK-1629)."""
 
-import time
 from pathlib import Path
 
 import pytest
-
+from parrot.knowledge.wiki.models import SourceManifestEntry
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 
 
@@ -453,3 +452,209 @@ class TestFormatDecisionLogDetails:
         entry = mgr.record_decision(sample_source, destination="discard")
         details = format_decision_log_details(entry)
         assert "composite: n/a" in details
+
+
+class TestDocumentMetadataColumns:
+    """FEAT-451 (TASK-2355): additive `sources` migration for document metadata."""
+
+    def test_sources_migration_old_db(self, tmp_path: Path):
+        """A pre-FEAT-451 (11-column, post-FEAT-402) sources table opens
+        cleanly and gains the new document-metadata columns with safe
+        (NULL) defaults; existing rows are preserved unchanged."""
+        import sqlite3
+
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        db_path = sources_dir.parent / "wiki.db"
+
+        # Manually create a pre-FEAT-451 (post-FEAT-402, 11-column) sources
+        # table with one pre-existing row, simulating a database created
+        # before this feature's migration existed.
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            """
+            CREATE TABLE sources (
+                source_id        TEXT PRIMARY KEY,
+                source_uri       TEXT NOT NULL UNIQUE,
+                file_hash        TEXT NOT NULL,
+                mtime            REAL NOT NULL,
+                ingested_at      TEXT NOT NULL,
+                pages_generated  TEXT NOT NULL DEFAULT '[]',
+                status           TEXT NOT NULL DEFAULT 'ingested',
+                destination      TEXT,
+                decision_source  TEXT,
+                charter_version  TEXT,
+                composite_score  REAL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO sources VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "src-old000002",
+                "/docs/legacy2.md",
+                "cafebabe" * 5,
+                1.0,
+                "2025-06-01T00:00:00Z",
+                "[]",
+                "ingested",
+                None,
+                None,
+                None,
+                None,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        # Opening a manager against this pre-existing DB must not raise,
+        # and must additively migrate the schema (new columns only).
+        mgr = SourceCollectionManager(sources_dir, db_path=db_path)
+
+        raw_conn = sqlite3.connect(str(db_path))
+        columns = {row[1] for row in raw_conn.execute("PRAGMA table_info(sources)")}
+        raw_conn.close()
+        assert {"doc_metadata", "content_type", "loader"} <= columns
+
+        rows = mgr.list_sources()
+        assert rows and all(r.doc_metadata is None for r in rows)
+
+        entry = mgr.get_source("src-old000002")
+        assert entry is not None
+        assert entry.status == "ingested"  # pre-existing row untouched
+        assert entry.doc_metadata is None
+        assert entry.content_type is None
+        assert entry.loader is None
+
+    def test_sources_migration_idempotent(self, tmp_path: Path):
+        """Opening the same DB twice does not error or duplicate columns."""
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        mgr = SourceCollectionManager(sources_dir)
+        # Second call must not raise (idempotent ALTER TABLE guard).
+        mgr._migrate_sources_columns()
+
+    def test_new_db_has_document_columns_from_migration(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        """A brand-new database already has the document metadata columns
+        (added by the additive migration that always runs at __init__)."""
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.add_source(sample_source)
+        assert entry.doc_metadata is None
+        assert entry.content_type is None
+        assert entry.loader is None
+
+    def test_doc_metadata_roundtrip(self, sources_dir: Path, sample_source: Path):
+        """doc_metadata round-trips as an equal dict through _upsert/get_source."""
+        mgr = SourceCollectionManager(sources_dir)
+        added = mgr.add_source(sample_source)
+        entry = SourceManifestEntry(
+            **{
+                **added.model_dump(),
+                "doc_metadata": {"author": "Legal", "page_count": 42},
+                "content_type": "application/pdf",
+                "loader": "MarkdownLoader",
+            }
+        )
+        mgr._upsert(entry)
+
+        got = mgr.get_source(entry.source_id)
+        assert got is not None
+        assert got.doc_metadata == {"author": "Legal", "page_count": 42}
+        assert got.content_type == "application/pdf"
+        assert got.loader == "MarkdownLoader"
+
+    def test_corrupt_doc_metadata_degrades_to_none(
+        self, sources_dir: Path, sample_source: Path
+    ):
+        """A bad JSON cell must not break list_sources()/get_source()."""
+        import sqlite3
+
+        mgr = SourceCollectionManager(sources_dir)
+        added = mgr.add_source(sample_source)
+
+        with sqlite3.connect(str(mgr.db_path)) as conn:
+            conn.execute(
+                "UPDATE sources SET doc_metadata = ? WHERE source_id = ?",
+                ("{not valid json", added.source_id),
+            )
+
+        entry = mgr.get_source(added.source_id)
+        assert entry is not None
+        assert entry.doc_metadata is None
+
+        rows = mgr.list_sources()
+        assert any(r.source_id == added.source_id for r in rows)
+
+    def test_arango_doc_metadata_roundtrip(self, tmp_path: Path):
+        """The same doc_metadata/content_type/loader round-trip holds on
+        the Arango backend (_doc_to_entry / _async_upsert)."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_arango_db = MagicMock()
+        mock_arango_db.query = AsyncMock(return_value=([], None))
+        mock_arango_db.execute = AsyncMock(return_value=([], None))
+        mgr = SourceCollectionManager(
+            tmp_path / "sources", backend="arangodb", arango_db=mock_arango_db
+        )
+
+        entry = SourceManifestEntry(
+            source_id="src-arango1",
+            source_uri="/docs/a.pdf",
+            file_hash="deadbeef",
+            mtime=1.0,
+            ingested_at="2026-08-23T00:00:00Z",
+            doc_metadata={"author": "Legal", "page_count": 3},
+            content_type="application/pdf",
+            loader="MarkdownLoader",
+        )
+        mgr._upsert(entry)
+        bind_vars = mock_arango_db.execute.call_args.kwargs["bind_vars"]
+        assert bind_vars["doc"]["doc_metadata"] == {"author": "Legal", "page_count": 3}
+        assert bind_vars["doc"]["content_type"] == "application/pdf"
+        assert bind_vars["doc"]["loader"] == "MarkdownLoader"
+
+        # Round-trip back through _doc_to_entry.
+        mock_arango_db.query = AsyncMock(
+            return_value=([bind_vars["doc"]], None)
+        )
+        fetched = mgr.get_source("src-arango1")
+        assert fetched is not None
+        assert fetched.doc_metadata == {"author": "Legal", "page_count": 3}
+        assert fetched.content_type == "application/pdf"
+        assert fetched.loader == "MarkdownLoader"
+
+
+class TestRecordDocumentMetadata:
+    """FEAT-451 (TASK-2355): SourceCollectionManager.record_document_metadata."""
+
+    def test_persists_all_three_fields(self, sources_dir: Path, sample_source: Path):
+        mgr = SourceCollectionManager(sources_dir)
+        added = mgr.add_source(sample_source)
+
+        mgr.record_document_metadata(
+            added.source_id,
+            doc_metadata={"author": "Legal", "page_count": 42},
+            content_type="application/pdf",
+            loader="MarkdownLoader",
+        )
+
+        fetched = mgr.get_source(added.source_id)
+        assert fetched is not None
+        assert fetched.doc_metadata == {"author": "Legal", "page_count": 42}
+        assert fetched.content_type == "application/pdf"
+        assert fetched.loader == "MarkdownLoader"
+        # Untouched fields survive the update.
+        assert fetched.source_uri == added.source_uri
+        assert fetched.file_hash == added.file_hash
+
+    def test_no_op_for_unknown_source_id(self, sources_dir: Path, caplog):
+        mgr = SourceCollectionManager(sources_dir)
+        mgr.record_document_metadata(
+            "src-does-not-exist",
+            doc_metadata={"author": "X"},
+            content_type="application/pdf",
+            loader="MarkdownLoader",
+        )
+        assert mgr.list_sources() == []

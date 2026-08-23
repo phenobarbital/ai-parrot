@@ -31,9 +31,9 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from parrot.knowledge.wiki.models import SourceManifestEntry
 
@@ -51,6 +51,16 @@ _SOURCES_DECISION_COLUMNS: dict[str, str] = {
     "decision_source": "TEXT",
     "charter_version": "TEXT",
     "composite_score": "REAL",
+}
+
+#: FEAT-451 additive columns on the `sources` table: extracted document
+#: metadata. All nullable so pre-FEAT-451 databases keep opening cleanly;
+#: see ``_migrate_sources_columns``. ``doc_metadata`` is JSON-encoded
+#: (sqlite has no native JSON column type) — see ``_upsert``/``_row_to_entry``.
+_SOURCES_DOCUMENT_COLUMNS: dict[str, str] = {
+    "doc_metadata": "TEXT",
+    "content_type": "TEXT",
+    "loader": "TEXT",
 }
 
 
@@ -82,10 +92,10 @@ class SourceCollectionManager:
     def __init__(
         self,
         sources_dir: Path,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         backend: Literal["sqlite", "json", "arangodb"] = "sqlite",
-        arango_db: Optional[Any] = None,
-        arango_store: Optional[Any] = None,
+        arango_db: Any | None = None,
+        arango_store: Any | None = None,
     ) -> None:
         """Initialise the manager's chosen persistence backend.
 
@@ -131,9 +141,9 @@ class SourceCollectionManager:
         self.manifest_path: Path = self.sources_dir / self._MANIFEST_FILENAME
         self.logger: logging.Logger = logging.getLogger(__name__)
         self._manifest: dict[str, SourceManifestEntry] = {}
-        self._arango_db: Optional[Any] = arango_db
-        self._arango_store: Optional[Any] = arango_store
-        self._arango_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._arango_db: Any | None = arango_db
+        self._arango_store: Any | None = arango_store
+        self._arango_loop: asyncio.AbstractEventLoop | None = None
         if backend == "arangodb":
             if arango_db is None and arango_store is None:
                 raise ValueError(
@@ -197,7 +207,7 @@ class SourceCollectionManager:
             source_uri=source_uri,
             file_hash=self._compute_hash(path),
             mtime=path.stat().st_mtime,
-            ingested_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ingested_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             pages_generated=[],
             status="ingested",
         )
@@ -227,7 +237,7 @@ class SourceCollectionManager:
             ).fetchall()
         return [self._row_to_entry(row) for row in rows]
 
-    def get_source(self, source_id: str) -> Optional[SourceManifestEntry]:
+    def get_source(self, source_id: str) -> SourceManifestEntry | None:
         """Retrieve a single source entry by its ID.
 
         Args:
@@ -295,7 +305,7 @@ class SourceCollectionManager:
         source_id: str,
         pages_generated: list[str],
         status: str = "ingested",
-    ) -> Optional[SourceManifestEntry]:
+    ) -> SourceManifestEntry | None:
         """Update the sources table after a successful ingest run.
 
         Args:
@@ -334,11 +344,11 @@ class SourceCollectionManager:
         path: Path,
         *,
         destination: str,
-        decision_source: Optional[str] = None,
-        charter_version: Optional[str] = None,
-        composite_score: Optional[float] = None,
-        pages_generated: Optional[list[str]] = None,
-        status: Optional[str] = None,
+        decision_source: str | None = None,
+        charter_version: str | None = None,
+        composite_score: float | None = None,
+        pages_generated: list[str] | None = None,
+        status: str | None = None,
     ) -> SourceManifestEntry:
         """Register or update a source with its supervised-ingestion decision.
 
@@ -401,7 +411,7 @@ class SourceCollectionManager:
             ingested_at=(
                 existing.ingested_at
                 if existing
-                else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                else datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             ),
             pages_generated=(
                 pages_generated
@@ -424,6 +434,53 @@ class SourceCollectionManager:
             resolved_status,
         )
         return entry
+
+    def record_document_metadata(
+        self,
+        source_id: str,
+        *,
+        doc_metadata: dict[str, Any] | None,
+        content_type: str | None,
+        loader: str | None,
+    ) -> None:
+        """Persist FEAT-451 extracted document metadata for a tracked source.
+
+        Sibling to :meth:`mark_ingested`/:meth:`record_decision`: updates
+        the descriptive document-metadata columns on an already-tracked
+        source. Unlike :meth:`record_decision`, this method never creates
+        a new entry — document metadata is only meaningful once the
+        source itself is tracked (e.g. via :meth:`add_source` or
+        :meth:`record_decision`).
+
+        Args:
+            source_id: The tracked source to update.
+            doc_metadata: Extracted ``DocumentMetadata`` as a dict, or
+                ``None``.
+            content_type: MIME type of the source document, or ``None``.
+            loader: Name of the loader used to extract the document, or
+                ``None``.
+        """
+        entry = self.get_source(source_id)
+        if entry is None:
+            self.logger.warning(
+                "record_document_metadata: source_id=%s not found", source_id
+            )
+            return
+
+        updated = entry.model_copy(
+            update={
+                "doc_metadata": doc_metadata,
+                "content_type": content_type,
+                "loader": loader,
+            }
+        )
+        self._upsert(updated)
+        self.logger.debug(
+            "Recorded document metadata: source_id=%s content_type=%s loader=%s",
+            source_id,
+            content_type,
+            loader,
+        )
 
     def remove_source(self, source_id: str) -> bool:
         """Remove a source from the sources table.
@@ -456,7 +513,7 @@ class SourceCollectionManager:
             self.logger.debug("Source removed: source_id=%s", source_id)
         return removed
 
-    def find_by_uri(self, source_uri: str) -> Optional[str]:
+    def find_by_uri(self, source_uri: str) -> str | None:
         """Look up an existing source ID by URI (public API).
 
         Args:
@@ -497,8 +554,9 @@ class SourceCollectionManager:
                 "INSERT INTO sources"
                 " (source_id, source_uri, file_hash, mtime, ingested_at,"
                 "  pages_generated, status, destination, decision_source,"
-                "  charter_version, composite_score)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "  charter_version, composite_score, doc_metadata,"
+                "  content_type, loader)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(source_id) DO UPDATE SET"
                 "  source_uri=excluded.source_uri, file_hash=excluded.file_hash,"
                 "  mtime=excluded.mtime, ingested_at=excluded.ingested_at,"
@@ -506,7 +564,10 @@ class SourceCollectionManager:
                 "  destination=excluded.destination,"
                 "  decision_source=excluded.decision_source,"
                 "  charter_version=excluded.charter_version,"
-                "  composite_score=excluded.composite_score",
+                "  composite_score=excluded.composite_score,"
+                "  doc_metadata=excluded.doc_metadata,"
+                "  content_type=excluded.content_type,"
+                "  loader=excluded.loader",
                 (
                     entry.source_id,
                     entry.source_uri,
@@ -519,6 +580,13 @@ class SourceCollectionManager:
                     entry.decision_source,
                     entry.charter_version,
                     entry.composite_score,
+                    (
+                        json.dumps(entry.doc_metadata)
+                        if entry.doc_metadata is not None
+                        else None
+                    ),
+                    entry.content_type,
+                    entry.loader,
                 ),
             )
 
@@ -550,6 +618,16 @@ class SourceCollectionManager:
             pages = json.loads(row["pages_generated"] or "[]")
         except (json.JSONDecodeError, TypeError):
             pages = []
+        raw_doc_metadata = SourceCollectionManager._optional_column(
+            row, "doc_metadata"
+        )
+        try:
+            doc_metadata = (
+                json.loads(raw_doc_metadata) if raw_doc_metadata is not None else None
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            # A corrupt cell must never make the whole manifest unreadable.
+            doc_metadata = None
         return SourceManifestEntry(
             source_id=row["source_id"],
             source_uri=row["source_uri"],
@@ -568,6 +646,11 @@ class SourceCollectionManager:
             composite_score=SourceCollectionManager._optional_column(
                 row, "composite_score"
             ),
+            doc_metadata=doc_metadata,
+            content_type=SourceCollectionManager._optional_column(
+                row, "content_type"
+            ),
+            loader=SourceCollectionManager._optional_column(row, "loader"),
         )
 
     def _compute_hash(self, path: Path) -> str:
@@ -602,7 +685,7 @@ class SourceCollectionManager:
         uid = uuid.uuid5(uuid.NAMESPACE_URL, source_uri)
         return f"src-{uid.hex[:12]}"
 
-    def _find_id_by_uri(self, source_uri: str) -> Optional[str]:
+    def _find_id_by_uri(self, source_uri: str) -> str | None:
         """Look up an existing source ID by URI (internal implementation)."""
         if self.backend == "json":
             for sid, entry in self._manifest.items():
@@ -742,6 +825,9 @@ class SourceCollectionManager:
             ingested_at=doc["ingested_at"],
             pages_generated=doc.get("pages_generated") or [],
             status=doc.get("status", "ingested"),
+            doc_metadata=doc.get("doc_metadata"),
+            content_type=doc.get("content_type"),
+            loader=doc.get("loader"),
         )
 
     async def _async_upsert(self, entry: SourceManifestEntry) -> None:
@@ -755,6 +841,9 @@ class SourceCollectionManager:
             "ingested_at": entry.ingested_at,
             "pages_generated": entry.pages_generated,
             "status": entry.status,
+            "doc_metadata": entry.doc_metadata,
+            "content_type": entry.content_type,
+            "loader": entry.loader,
         }
         await self._arango_execute(
             "UPSERT {_key: @key} INSERT @doc UPDATE @doc IN @@collection",
@@ -775,7 +864,7 @@ class SourceCollectionManager:
 
     async def _async_get_source(
         self, source_id: str
-    ) -> Optional[SourceManifestEntry]:
+    ) -> SourceManifestEntry | None:
         """Fetch a single source document by its ``_key``."""
         rows = await self._arango_query(
             "FOR doc IN @@collection FILTER doc._key == @key LIMIT 1 RETURN doc",
@@ -792,7 +881,7 @@ class SourceCollectionManager:
         )
         return bool(rows)
 
-    async def _async_find_id_by_uri(self, source_uri: str) -> Optional[str]:
+    async def _async_find_id_by_uri(self, source_uri: str) -> str | None:
         """Look up an existing source ID by URI."""
         rows = await self._arango_query(
             "FOR doc IN @@collection FILTER doc.source_uri == @uri"
@@ -802,26 +891,27 @@ class SourceCollectionManager:
         return rows[0] if rows else None
 
     def _migrate_sources_columns(self) -> None:
-        """Additively add the FEAT-402 decision columns to ``sources``.
+        """Additively add the FEAT-402/FEAT-451 columns to ``sources``.
 
         Idempotent — guarded on ``PRAGMA table_info(sources)`` — and
         additive only, never rewriting or dropping existing rows/columns,
-        so pre-FEAT-402 databases keep opening cleanly. Follows the
-        :meth:`_migrate_json_manifest` compatibility precedent (existing
-        data is never touched; only missing structure is added).
+        so pre-FEAT-402 and pre-FEAT-451 databases keep opening cleanly.
+        Follows the :meth:`_migrate_json_manifest` compatibility precedent
+        (existing data is never touched; only missing structure is added).
         """
         with self._connect() as conn:
             existing = {
                 row["name"]
                 for row in conn.execute("PRAGMA table_info(sources)").fetchall()
             }
-            for name, col_type in _SOURCES_DECISION_COLUMNS.items():
-                if name in existing:
-                    continue
-                conn.execute(f"ALTER TABLE sources ADD COLUMN {name} {col_type}")
-                self.logger.debug(
-                    "Migrated sources table: added column %s (%s)", name, col_type
-                )
+            for column_map in (_SOURCES_DECISION_COLUMNS, _SOURCES_DOCUMENT_COLUMNS):
+                for name, col_type in column_map.items():
+                    if name in existing:
+                        continue
+                    conn.execute(f"ALTER TABLE sources ADD COLUMN {name} {col_type}")
+                    self.logger.debug(
+                        "Migrated sources table: added column %s (%s)", name, col_type
+                    )
 
     def _migrate_json_manifest(self) -> None:
         """One-time migration of a legacy ``.manifest.json`` into SQLite.
