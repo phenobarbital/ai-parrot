@@ -371,10 +371,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Added `DocumentAcquirer` with `_acquire_plaintext` (read + strip
+frontmatter via `split_frontmatter`) and `_acquire_via_loader` (lazy
+`parrot_loaders.factory.get_loader_class` import, `loader._load()`,
+`pymupdf` page-count for `.pdf`), plus `_normalize_metadata` and
+`_metadata_from_mapping` helpers. `_acquire_url` raises `NotImplementedError`
+pending TASK-2354. One real bug found and fixed during implementation:
+`MarkdownLoader`/`PDFLoader` create_metadata emits a top-level
+`content_type` kwarg meaning chunk-kind (`"full_document"`), which
+collided with `DocumentMetadata.content_type`'s MIME-type meaning of the
+same field name — excluded `content_type`/`loader` from the generic
+catch-all mapping in `_normalize_metadata` via
+`_LOADER_METADATA_RESERVED_KEYS` so both are always derived independently
+(mimetypes / loader class name), never copied verbatim from loader
+metadata. All 28 tests in `tests/knowledge/wiki/test_documents.py` pass (7
+new `TestAcquireLocal` tests + 2 local fixtures: `no_parrot_loaders`,
+`sample_pdf`); `ruff check` and `mypy` (targeted at `documents.py`) clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — `sample_pdf` fixture was added locally in
+`test_documents.py` rather than `tests/knowledge/wiki/conftest.py` since
+this task's Files to Create/Modify list only names `documents.py` and
+`test_documents.py`; the shared conftest fixture (per spec §4) is left for
+TASK-2358 (integration tests), which is expected to consume it there.
