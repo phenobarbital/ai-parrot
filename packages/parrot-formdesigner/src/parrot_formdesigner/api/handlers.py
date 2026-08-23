@@ -387,6 +387,53 @@ class FormAPIHandler:
         return AuthContext(scheme="none")
 
     # ------------------------------------------------------------------
+    # Store-context helpers (FEAT-440 spec §3 Module 5)
+    # ------------------------------------------------------------------
+
+    def _extract_visit_context(
+        self, body: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Split an optional caller-supplied ``visit_context`` out of the request body.
+
+        The render/validate handlers accept a store context from the caller
+        and forward it to ``FormValidator.validate()`` as ``visit_context``.
+        This package only ACCEPTS what it is handed — assembling the
+        context (which store a visit belongs to) is FieldSync's job, not
+        this one's (spec §1 Non-Goals).
+
+        The wire shape reserves a top-level ``"visit_context"`` key in the
+        SAME JSON body already used for submitted answers, so existing
+        callers that never send it are unaffected — ``data`` comes back
+        unchanged when the key is absent. A caller that wants store-gated
+        rules to fire adds one field:
+        ``{"field_a": "...", "visit_context": {"store_groups": [...]}}``.
+
+        Args:
+            body: The parsed JSON request body (answers, optionally plus a
+                ``visit_context`` key).
+
+        Returns:
+            ``(data, validate_kwargs)`` — ``data`` is ``body`` with any
+            ``visit_context`` key removed (or ``body`` unchanged when
+            absent). ``validate_kwargs`` is ``{"visit_context": {...}}``
+            when a dict-shaped context was supplied, or ``{}`` otherwise —
+            meant to be splatted into ``FormValidator.validate(form, data,
+            **validate_kwargs)`` so a caller that never supplies context
+            reaches ``validate()`` with EXACTLY the same two positional
+            arguments as before this passthrough existed (no keyword-arg
+            surprise for test doubles/callers with a narrower signature).
+            Absent context means no context: a rule referencing a store the
+            caller did not describe does not fire — failing closed is
+            deliberate (spec §3 Module 5).
+        """
+        raw = body.get("visit_context") if isinstance(body, dict) else None
+        if not isinstance(raw, dict):
+            return body, {}
+        data = dict(body)
+        del data["visit_context"]
+        return data, {"visit_context": raw}
+
+    # ------------------------------------------------------------------
     # Partial-save helpers
     # ------------------------------------------------------------------
 
@@ -979,11 +1026,12 @@ class FormAPIHandler:
         # mounted tenant="public".
         enforce_membership_unless_public(request, form, tenant)
         try:
-            data = await request.json()
+            body = await request.json()
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        result = await self.validator.validate(form, data)
+        data, validate_kwargs = self._extract_visit_context(body)
+        result = await self.validator.validate(form, data, **validate_kwargs)
         status = 200 if result.is_valid else 422
         return JSONResponse(
             {"is_valid": result.is_valid, "errors": result.errors},
@@ -1476,9 +1524,14 @@ class FormAPIHandler:
         enforce_membership_unless_public(request, form, tenant)
 
         try:
-            data = await request.json()
+            body = await request.json()
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        # Split off an optional caller-supplied store context before it can
+        # be treated as an answer field by the merge/lifecycle steps below
+        # (spec §3 Module 5) — `data` is pure answers from here on.
+        data, _validate_kwargs = self._extract_visit_context(body)
 
         # lifecycle: outer envelope for onError dispatch on any exception.
         # FormEventAbort from onBeforeSubmit is caught INSIDE and handled
@@ -1543,7 +1596,7 @@ class FormAPIHandler:
                 )
 
             # Validate submission data against form schema
-            result = await self.validator.validate(form, data)
+            result = await self.validator.validate(form, data, **_validate_kwargs)
             if not result.is_valid:
                 _validation_exc = ValueError(f"Validation failed: {result.errors}")
                 # dispatch onError (best-effort) before the early 422 return
