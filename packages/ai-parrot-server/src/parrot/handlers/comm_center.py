@@ -19,6 +19,7 @@ endpoint uses, publishing synchronously via
 :func:`~parrot.services.comm_center.dispatch.publish_one` — no background
 task for a single ``xadd``.
 """
+
 import base64
 import uuid
 from pathlib import Path
@@ -32,7 +33,7 @@ from navconfig.logging import logging
 from navigator.views import BaseHandler
 from navigator_auth.decorators import is_authenticated
 from navigator_session import get_session
-from parrot.conf import default_dsn
+from parrot.conf import PARROT_SCHEMA, default_dsn
 from parrot.handlers.comm_center_placeholders import build_catalog
 from parrot.handlers.models import NotificationBatchRecipient, NotificationTemplate
 from parrot.services.comm_center.dispatch import (
@@ -165,9 +166,7 @@ class CommCenterHandler(BaseHandler):
                 file_entries = entries
                 break
             if not file_entries:
-                raise IngestionError(
-                    "multipart/form-data request must include an uploaded file"
-                )
+                raise IngestionError("multipart/form-data request must include an uploaded file")
             recipients = await ingest_recipients(file_path=file_entries[0]["file_path"])
             return recipients, form
 
@@ -181,9 +180,7 @@ class CommCenterHandler(BaseHandler):
                     filename=body.get("filename") or "upload.csv",
                 )
             else:
-                raise IngestionError(
-                    "JSON request body must include 'recipients' or 'file_b64'"
-                )
+                raise IngestionError("JSON request body must include 'recipients' or 'file_b64'")
             return recipients, body
 
         raise IngestionError(f"Unsupported Content-Type: {content_type!r}")
@@ -212,10 +209,7 @@ class CommCenterHandler(BaseHandler):
         template_file = meta.template_file
         provided = [v for v in (template_id, template_name, template, template_file) if v]
         if len(provided) != 1:
-            raise ValueError(
-                "Exactly one of template_id, template_name, template, "
-                "template_file must be provided"
-            )
+            raise ValueError("Exactly one of template_id, template_name, template, " "template_file must be provided")
 
         if template:
             return template, None
@@ -310,9 +304,7 @@ class CommCenterHandler(BaseHandler):
                     if value is not None
                 }
             )
-            template_source, default_subject = await self._resolve_template_source(
-                sender_request
-            )
+            template_source, default_subject = await self._resolve_template_source(sender_request)
             subject = sender_request.subject or default_subject
 
             prepared = await prepare(
@@ -352,9 +344,7 @@ class CommCenterHandler(BaseHandler):
                     row_number=msg.row_number,
                     provider=msg.payload.get("provider"),
                     recipient_name=msg.recipient.name,
-                    recipient_address=(
-                        msg.recipient.email or msg.recipient.phone or msg.recipient.address
-                    ),
+                    recipient_address=(msg.recipient.email or msg.recipient.phone or msg.recipient.address),
                     status="pending",
                     template_ref=template_source,
                     subject=subject,
@@ -418,10 +408,118 @@ class CommCenterHandler(BaseHandler):
         """
         batch_id = request.match_info["batch_id"]
         qs = self.query_parameters(request)
-        result = await dispatch_retry_batch(
-            uuid.UUID(batch_id), force=_as_bool(qs.get("force"))
-        )
+        result = await dispatch_retry_batch(uuid.UUID(batch_id), force=_as_bool(qs.get("force")))
         return self.json_response(result, status=200)
+
+    @is_authenticated()
+    async def get_batches(self, request: web.Request) -> web.Response:
+        """``GET /api/v1/comm_center/sender`` — paginated batch list (FEAT-445 TASK-2319).
+
+        The tracking table (``navigator.notification_batch_recipients``) is
+        flat — one row per recipient, ``batch_id`` repeated — so batch-level
+        metadata (totals, timestamps, status breakdown) is derived by
+        aggregation, mirroring :func:`aggregate_batch_status`'s single-batch
+        query but grouped across every batch.
+
+        Query params: ``limit`` (default 25, clamped to 100), ``offset``
+        (default 0), ``status`` (batches with at least one row in this
+        status), ``provider`` (batches with at least one row for this
+        provider), ``created_after`` / ``created_before`` (batches with at
+        least one row whose ``created_at`` falls in this ISO-8601 range).
+        All four filters select whole *batches* via a
+        ``batch_id IN (SELECT ...)`` predicate rather than filtering rows
+        directly, so a matching batch's own aggregate counts always
+        reflect every row in that batch — never just the rows that
+        happened to match the filter (code-review fix: the date filters
+        originally filtered rows before ``GROUP BY``, which could silently
+        truncate a batch's own counts if its rows did not share an
+        identical ``created_at``).
+        """
+        qs = self.query_parameters(request)
+        limit = min(int(qs.get("limit", 25)), 100)
+        offset = int(qs.get("offset", 0))
+        status_filter = qs.get("status")
+        provider_filter = qs.get("provider")
+        created_after = qs.get("created_after")
+        created_before = qs.get("created_before")
+
+        table = f"{PARROT_SCHEMA}.{NotificationBatchRecipient.Meta.name}"
+        where_clauses: list = []
+        params: list = []
+
+        if status_filter:
+            params.append(status_filter)
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE status = ${len(params)})")
+        if provider_filter:
+            params.append(provider_filter)
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE provider = ${len(params)})")
+        if created_after:
+            # Batch-level, like status/provider above (not a row-level
+            # predicate before GROUP BY): a batch's rows share one insert
+            # transaction but are not guaranteed byte-identical created_at
+            # values, so filtering rows directly here could truncate a
+            # matching batch's own aggregate counts instead of
+            # selecting/excluding it wholesale (code-review finding).
+            params.append(created_after)
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at >= ${len(params)})")
+        if created_before:
+            params.append(created_before)
+            where_clauses.append(f"batch_id IN (SELECT batch_id FROM {table} WHERE created_at <= ${len(params)})")
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        list_query = f"""
+            SELECT batch_id,
+                   MIN(created_at) AS created_at,
+                   MIN(created_by) AS created_by,
+                   MIN(template_ref) AS template_ref,
+                   MIN(provider) AS provider,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE status = 'queued') AS queued,
+                   COUNT(*) FILTER (WHERE status = 'skipped') AS skipped,
+                   COUNT(*) FILTER (WHERE status = 'publish_failed') AS publish_failed,
+                   COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+                   COUNT(*) FILTER (WHERE status = 'publishing') AS publishing
+            FROM {table}
+            {where_sql}
+            GROUP BY batch_id
+            ORDER BY MIN(created_at) DESC
+            LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}
+        """
+        count_query = f"""
+            SELECT COUNT(*) AS total FROM (
+                SELECT batch_id FROM {table} {where_sql} GROUP BY batch_id
+            ) sub
+        """
+
+        db = _get_db()
+        async with await db.connection() as conn:
+            rows = await conn.fetchall(list_query, (*params, limit, offset))
+            count_rows = await conn.fetchall(count_query, tuple(params))
+        total = count_rows[0]["total"] if count_rows else 0
+
+        batches = [
+            {
+                "batch_id": str(row["batch_id"]),
+                "created_at": (
+                    row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else row["created_at"]
+                ),
+                "created_by": row["created_by"],
+                "total": row["total"],
+                "queued": row["queued"],
+                "skipped": row["skipped"],
+                "publish_failed": row["publish_failed"],
+                "pending": row["pending"],
+                "publishing": row["publishing"],
+                "template_ref": row["template_ref"],
+                "provider": row["provider"],
+            }
+            for row in (rows or [])
+        ]
+        return self.json_response(
+            {"batches": batches, "total": total, "limit": limit, "offset": offset},
+            status=200,
+        )
 
     # ------------------------------------------------------------------
     # Placeholders (static catalog)
@@ -476,9 +574,7 @@ class CommCenterHandler(BaseHandler):
                     if value is not None
                 }
             )
-            template_source, default_subject = await self._resolve_template_source(
-                message_request
-            )
+            template_source, default_subject = await self._resolve_template_source(message_request)
             subject = message_request.subject or default_subject
 
             prepared = await prepare(
@@ -530,9 +626,7 @@ class CommCenterHandler(BaseHandler):
                 row_number=0,
                 provider=msg.payload.get("provider"),
                 recipient_name=recipient.name,
-                recipient_address=(
-                    recipient.email or recipient.phone or recipient.address
-                ),
+                recipient_address=(recipient.email or recipient.phone or recipient.address),
                 status="pending",
                 template_ref=template_source,
                 subject=subject,
@@ -544,9 +638,7 @@ class CommCenterHandler(BaseHandler):
             # returned) -- passed through explicitly anyway so publish_one's
             # own defense-in-depth guard is exercised on this call site too,
             # not just relied upon implicitly.
-            message_id = await publish_one(
-                batch_id, msg.payload, row.id, dry_run=prepared.dry_run
-            )
+            message_id = await publish_one(batch_id, msg.payload, row.id, dry_run=prepared.dry_run)
         except Exception as exc:
             raise web.HTTPBadGateway(
                 text=json_encoder(
@@ -603,11 +695,7 @@ class CommCenterHandler(BaseHandler):
         db = _get_db()
         async with await db.connection() as conn:
             NotificationTemplate.Meta.connection = conn
-            rows = (
-                await NotificationTemplate.filter(**db_filters)
-                if db_filters
-                else await NotificationTemplate.all()
-            )
+            rows = await NotificationTemplate.filter(**db_filters) if db_filters else await NotificationTemplate.all()
 
         tags_filter = None
         if qs.get("tags"):
@@ -676,9 +764,7 @@ class CommCenterHandler(BaseHandler):
             except Exception as exc:
                 if _looks_like_unique_violation(exc):
                     raise web.HTTPConflict(
-                        text=json_encoder(
-                            {"message": f"Template name {body['name']!r} already exists"}
-                        ),
+                        text=json_encoder({"message": f"Template name {body['name']!r} already exists"}),
                         content_type="application/json",
                     ) from exc
                 raise
@@ -726,9 +812,7 @@ class CommCenterHandler(BaseHandler):
             except Exception as exc:
                 if _looks_like_unique_violation(exc):
                     raise web.HTTPConflict(
-                        text=json_encoder(
-                            {"message": f"Template name {body.get('name')!r} already exists"}
-                        ),
+                        text=json_encoder({"message": f"Template name {body.get('name')!r} already exists"}),
                         content_type="application/json",
                     ) from exc
                 raise
@@ -763,6 +847,7 @@ class CommCenterHandler(BaseHandler):
         """Register every CommCenter route (spec §2). Repo convention, not inherited."""
         r = app.router
         r.add_route("POST", "/api/v1/comm_center/sender", self.post_sender)
+        r.add_route("GET", "/api/v1/comm_center/sender", self.get_batches)
         r.add_route("GET", "/api/v1/comm_center/sender/{batch_id}", self.get_batch)
         r.add_route(
             "POST",
@@ -771,13 +856,9 @@ class CommCenterHandler(BaseHandler):
         )
         r.add_route("POST", "/api/v1/comm_center/message", self.post_message)
         r.add_route("GET", "/api/v1/comm_center/templates", self.list_templates)
-        r.add_route(
-            "GET", "/api/v1/comm_center/templates/{template_id}", self.get_template
-        )
+        r.add_route("GET", "/api/v1/comm_center/templates/{template_id}", self.get_template)
         r.add_route("POST", "/api/v1/comm_center/templates", self.create_template)
-        r.add_route(
-            "PUT", "/api/v1/comm_center/templates/{template_id}", self.update_template
-        )
+        r.add_route("PUT", "/api/v1/comm_center/templates/{template_id}", self.update_template)
         r.add_route(
             "PATCH",
             "/api/v1/comm_center/templates/{template_id}",

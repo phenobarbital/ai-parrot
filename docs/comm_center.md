@@ -13,6 +13,24 @@ to any provider directly and does not change NotifyWorker itself.
   `pandas`, `openpyxl`). Importing the handler or the service modules
   never requires it; only actually publishing does, and that failure
   returns a clear `503` naming the extra.
+- **`async-notify` minimum version: 1.6.0.** CommCenter enqueues an inline
+  Jinja2 template string in the xadd payload; `async-notify < 1.6.0`
+  silently ignores that key and looks for a `template_file` in
+  `TEMPLATE_DIR` instead, delivering an **empty body** with no error on
+  either side. `async-notify` 1.6.0 shipped inline Jinja2 template source
+  support, which CommCenter relies on. A runtime guard in
+  `parrot.services.comm_center.dispatch` raises a clear `RuntimeError`
+  naming the required version if an older release is installed — checked
+  once per process, right after the "is it installed at all" check, inside
+  `_get_notify_client()`. Because that function is only ever called from
+  the actual publish path (not before a response is sent), the guard does
+  **not** surface as an HTTP `503` on either send endpoint: for
+  `POST /sender` it fires inside the backgrounded fan-out task, leaving
+  the batch's rows retryable rather than producing an HTTP response; for
+  `POST /message` it is caught by the generic publish-failure handler and
+  returned as `502` (`status=publish_failed`). (The `503` `_map_error()`
+  does return is for a different call site — resolving a `template_file`
+  via `notify.conf` during request handling, before any publish attempt.)
 
 ## Two-pass rendering model
 
@@ -38,6 +56,7 @@ All endpoints require `@is_authenticated`.
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/api/v1/comm_center/sender` | Bulk send. `dry_run` is a body field. |
+| `GET` | `/api/v1/comm_center/sender` | Paginated batch list — `limit` (default 25, max 100), `offset`, `status`, `provider`, `created_after`, `created_before` |
 | `GET` | `/api/v1/comm_center/sender/{batch_id}` | `details`, `status`, `limit` (default 100, max 1000), `offset` |
 | `POST` | `/api/v1/comm_center/sender/{batch_id}/retry` | `force` (bool, default `false`) |
 | `POST` | `/api/v1/comm_center/message` | Single recipient, synchronous, explicit `provider`. `dry_run` is a body field. |
@@ -61,6 +80,36 @@ per-row `provider` column overrides it. Returns `202` with `batch_id`,
 Rows missing their provider's contact field are **skipped with a
 reason**, never silently dropped — the rest of the batch still sends.
 Fan-out happens in a background task; the response does not wait for it.
+
+### `GET /sender` — list batches (FEAT-445 TASK-2319)
+
+The tracking table is flat (one row per recipient, `batch_id` repeated),
+so batch-level metadata is derived by aggregation — there is no separate
+"batches" table to page through directly. Returns:
+
+```json
+{
+  "batches": [
+    {
+      "batch_id": "uuid", "created_at": "ISO-8601", "created_by": 42,
+      "total": 150, "queued": 140, "skipped": 8, "publish_failed": 2,
+      "pending": 0, "publishing": 0,
+      "template_ref": "monthly-report", "provider": "email"
+    }
+  ],
+  "total": 47, "limit": 25, "offset": 0
+}
+```
+
+Query params: `limit` (default 25, clamped to 100), `offset` (default 0),
+`status` (batches with at least one row in this status), `provider`
+(batches with at least one row for this provider), `created_after` /
+`created_before` (batches with at least one row whose `created_at` falls
+in this ISO-8601 range). All four filters select whole batches — a
+matching batch's own aggregate counts always reflect every row in that
+batch, never just the rows that happened to match the filter.
+Disambiguated from `GET /sender/{batch_id}` by the absence of a path
+parameter.
 
 ### `POST /message` — single recipient (G13)
 
@@ -145,6 +194,38 @@ happen through this API.
    (matching `notify.templates`'s own pass-2 configuration), so a
    recipient value is interpolated unescaped into HTML templates. There
    is no built-in escaping for untrusted recipient data today.
+
+## Database setup
+
+CommCenter depends on two Postgres tables in the `navigator` schema —
+`notification_templates` and `notification_batch_recipients` — authored as
+DDL alongside their models
+(`packages/ai-parrot-server/src/parrot/handlers/models/`) but **not applied
+automatically**; applying them is an operator/deployment step, per this
+repo's convention for handler DDL.
+
+Apply both files, in order, with:
+
+```bash
+make apply-commcenter-ddl DATABASE_URL=postgres://user:pass@host:5432/dbname
+```
+
+DSN resolution order: `DATABASE_URL` → `NAVIGATOR_DSN` → `PG_URL` — the
+target uses whichever of the three is set, so it also works unattended in
+an environment that already exports `NAVIGATOR_DSN`:
+
+```bash
+export NAVIGATOR_DSN=postgres://user:pass@host:5432/dbname
+make apply-commcenter-ddl
+```
+
+Both `.sql` files are idempotent (`CREATE TABLE IF NOT EXISTS`,
+`CREATE OR REPLACE FUNCTION`, `DROP TRIGGER IF EXISTS`, `CREATE INDEX IF
+NOT EXISTS`) — running the target twice, or against a database that
+already has the tables, is safe and makes no changes on the second run.
+
+Without this step, the template CRUD endpoints fail with `500` (no table
+to read/write) and no batch can be tracked.
 
 ## Retry & the row status state machine
 
