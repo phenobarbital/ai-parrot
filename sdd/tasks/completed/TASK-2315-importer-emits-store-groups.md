@@ -104,3 +104,67 @@ fieldsync); it mirrors the `visit_context` key name (`store_groups`) used
 throughout the spec's example and the already-shipped evaluator tests
 (TASK-2312/2313), so it is consistent with the rest of the feature rather
 than invented in isolation.
+
+---
+
+### Post-completion code-review fix (2026-08-24)
+
+The adversarial `code-reviewer` pass on the full FEAT-440 diff found a
+**CRITICAL, reproducible correctness bug** in `_map_store_group_rule`:
+every `shared_conditions` entry was ANDed verbatim into each store-group
+`LogicGroup`. When the source expresses an answer alternative as TWO
+`logic_groups` on the SAME field (e.g. "visit type == Brand Ambassador OR
+visit type == Assisted Sales") — which the spec's own Motivation (§1)
+names as the MAJORITY real dual-axis shape (23 of 26 elements needing
+AND-of-ORs) — this produced `field_9050 == "4784" AND field_9050 ==
+"4782"` inside every group: unsatisfiable for a single-valued field, so
+the imported rule could never fire for ANY store or answer. The
+reviewer reproduced this directly against the worktree code (not just by
+reading it) and I independently re-reproduced their exact repro before
+fixing.
+
+**Root cause**: the flat (non-store) path already handles this exact case
+correctly, by choosing a top-level `logic="or"` when every condition
+targets the same field (see the "Multiple groups mean AND — EXCEPT..."
+comment above the flat-path return). But a `LogicGroup` only ever ANDs
+its conditions — it has no equivalent top-level "or" — so the same
+same-field-alternatives detection cannot be expressed the same way inside
+a group; the store-group path needed its own transform, which TASK-2315
+never added.
+
+**Fix**: added `_collapse_same_field_alternatives()` — folds same-field
+`EQ` conditions into one `FieldCondition(operator=IN, value=[...])` before
+they're copied into each store-group `LogicGroup`, called immediately
+before `_map_store_group_rule` in the `if store_groups:` branch. This is
+the exact shape spec §2's own worked example already uses
+(`FieldCondition(field_id="field_9050", operator="in", value=["4782",
+"4783"])`), so the fix is bringing the store-group path in line with
+spec intent, not inventing new behavior. Conditions on genuinely
+different fields are left untouched and still AND, matching the flat
+path's own reasoning.
+
+**Verification of the fix**: re-ran the reviewer's exact repro (two
+`block_logic_groups` on `field_9050` with values `4784`/`4782`, plus
+`store_groups=["Ring of Fire","Epson Test Store"]`) — all 4
+answer × store combinations that were previously stuck `visible=False`
+now correctly resolve `visible=True`. Added two permanent regression
+tests: `test_store_group_collapses_same_field_alternatives_into_in`
+(asserts the collapsed `IN` shape) and
+`test_store_group_alternatives_evaluate_for_either_answer_value`
+(end-to-end `_eval_rule` pass proving EITHER alternative answer fires at
+a matching store, and neither fires at a non-matching one). Full suite
+re-run after the fix: identical 40-failure baseline (diffed explicitly),
+2222 passed (2220 prior + 2 new). `ruff check` — same 7 pre-existing
+findings, zero new.
+
+The review's other two findings were addressed separately: the
+`_extract_visit_context` field-name-collision risk (🟠 IMPORTANT) is
+already explicitly documented as a flagged design tradeoff in both the
+code docstring and TASK-2316's own Completion Note — left as-is per the
+review's own framing ("not a blocker given the documented tradeoff...
+should be an explicit decision"), since it is low-probability (import-
+based field IDs are always `field_<column>`-shaped, never literally
+`visit_context`) and non-crashing. The 🟡 suggestion (widen the two
+pre-existing test doubles to accept `**kwargs` instead of having
+production code branch around them) is noted for a future, separate,
+low-priority cleanup — out of this task's file scope to fix here.
