@@ -1,11 +1,14 @@
-"""Unit tests for parrot.knowledge.wiki.documents (FEAT-451, TASK-2351/2352)."""
+"""Unit tests for parrot.knowledge.wiki.documents (FEAT-451, TASK-2351/2352/2353)."""
+
+import builtins
+from pathlib import Path
 
 import click
 import pytest
 import yaml
-
 from parrot.knowledge.wiki.documents import (
     AcquiredDocument,
+    DocumentAcquirer,
     DocumentAcquisitionError,
     DocumentMetadata,
     DocumentRef,
@@ -133,3 +136,116 @@ class TestSplitFrontmatter:
         text = "---\r\ntitle: A\r\n---\r\nbody\r\n"
         meta, _ = split_frontmatter(text)
         assert meta == {"title": "A"}
+
+
+@pytest.fixture
+def no_parrot_loaders(monkeypatch):
+    """Force `from parrot_loaders... import ...` to raise ImportError."""
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("parrot_loaders"):
+            raise ImportError("simulated: ai-parrot-loaders not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+
+@pytest.fixture
+def sample_pdf(tmp_path):
+    """A tiny 2-page PDF with Title/Author set, written via pymupdf."""
+    import pymupdf
+
+    pdf_path = tmp_path / "sample.pdf"
+    doc = pymupdf.open()
+    try:
+        for _ in range(2):
+            page = doc.new_page()
+            page.insert_text((72, 72), "Hello world")
+        doc.set_metadata({"title": "Sample Report", "author": "Jane Doe"})
+        doc.save(str(pdf_path))
+    finally:
+        doc.close()
+    return pdf_path
+
+
+class TestAcquireLocal:
+    async def test_plaintext_without_loaders(self, tmp_path, no_parrot_loaders):
+        p = tmp_path / "a.md"
+        p.write_text("# Title\nbody\n")
+        doc = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(p), suffix=".md")
+        )
+        assert "body" in doc.text
+        assert doc.metadata.loader == "plaintext"
+
+    async def test_strips_md_frontmatter(self, tmp_path):
+        p = tmp_path / "a.md"
+        p.write_text("---\ntitle: Contrato\nauthor: Legal\n---\n# Body\n")
+        doc = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(p), suffix=".md")
+        )
+        assert doc.text.lstrip().startswith("# Body")
+        assert "title: Contrato" not in doc.text
+        assert doc.metadata.title == "Contrato"
+        assert doc.metadata.author == "Legal"
+
+    async def test_binary_without_loaders_raises(self, tmp_path, no_parrot_loaders):
+        p = tmp_path / "a.pdf"
+        p.write_bytes(b"%PDF-1.4\n\x00\x01binary")
+        with pytest.raises(DocumentAcquisitionError):
+            await DocumentAcquirer().acquire(
+                DocumentRef(uri=str(p), suffix=".pdf")
+            )
+
+    async def test_binary_uses_loader(self, tmp_path, monkeypatch, sample_pdf):
+        doc = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
+        )
+        assert doc.text.strip()
+        assert "\x00" not in doc.text
+        assert doc.metadata.content_type == "application/pdf"
+
+    async def test_pdf_page_count(self, sample_pdf):
+        import pymupdf
+
+        doc = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
+        )
+        pdf = pymupdf.open(str(sample_pdf))
+        try:
+            expected = pdf.page_count
+        finally:
+            pdf.close()
+        assert doc.metadata.page_count == expected
+
+    async def test_empty_extraction_raises(self, tmp_path, monkeypatch):
+        """A loader returning empty content is a failure, not an empty doc."""
+        from parrot.stores.models import Document
+        from parrot_loaders import factory
+
+        class _EmptyLoader:
+            def __init__(self, source):
+                self.source = source
+
+            async def _load(self, path, **kwargs):
+                return [Document(page_content="", metadata={})]
+
+        monkeypatch.setattr(factory, "get_loader_class", lambda ext: _EmptyLoader)
+
+        p = tmp_path / "a.pdf"
+        p.write_bytes(b"%PDF-1.4")
+        with pytest.raises(DocumentAcquisitionError):
+            await DocumentAcquirer().acquire(
+                DocumentRef(uri=str(p), suffix=".pdf")
+            )
+
+    def test_no_module_level_loader_import(self):
+        repo_root = Path(__file__).resolve().parents[3]
+        src = (
+            repo_root
+            / "packages/ai-parrot/src/parrot/knowledge/wiki/documents.py"
+        )
+        text = src.read_text()
+        head = text.split("class DocumentAcquirer")[0]
+        assert "import parrot_loaders" not in head

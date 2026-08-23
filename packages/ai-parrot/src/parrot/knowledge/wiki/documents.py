@@ -14,15 +14,20 @@ argument into a list of :class:`DocumentRef`.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import mimetypes
 import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import click
+import pymupdf
 import yaml
 from pydantic import BaseModel, Field
+
+from parrot.knowledge.graphindex.extractors.loader import PLAIN_TEXT_EXTENSIONS
 
 logger = logging.getLogger("parrot.knowledge.wiki.documents")
 
@@ -284,3 +289,316 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         return {}, text
 
     return parsed, text[match.end() :]
+
+
+# Fields on DocumentMetadata that a flat mapping (e.g. parsed frontmatter)
+# can populate directly; everything else lands in `extra`.
+_METADATA_FIELD_NAMES: frozenset[str] = frozenset(DocumentMetadata.model_fields) - {
+    "extra"
+}
+
+# Keys consumed out of the `document_meta` closed shape
+# ({source_type, category, type, language, title} — abstract.py:864) that
+# map onto a named DocumentMetadata field.
+_DOCUMENT_META_NAMED_FIELDS: dict[str, str] = {
+    "title": "title",
+    "language": "language",
+}
+
+# Loader-metadata keys whose *loader-side* meaning differs from the
+# DocumentMetadata field of the same name, so they must never be
+# auto-mapped by the generic catch-all in _normalize_metadata(). E.g.
+# MarkdownLoader emits a top-level "content_type" kwarg meaning the kind
+# of chunk ("full_document" / "chapter" / "section" / "summary") — not a
+# MIME type. `content_type` and `loader` on DocumentMetadata are always
+# derived independently by DocumentAcquirer (mimetypes / loader class
+# name), never copied verbatim from loader metadata.
+_LOADER_METADATA_RESERVED_KEYS: frozenset[str] = frozenset({"content_type", "loader"})
+
+
+def _metadata_from_mapping(mapping: dict[str, Any]) -> DocumentMetadata:
+    """Build a :class:`DocumentMetadata` from a flat key/value mapping.
+
+    Used for parsed YAML frontmatter: keys matching a named
+    ``DocumentMetadata`` field populate it directly; every other key lands
+    in ``extra`` — nothing is silently dropped.
+
+    Args:
+        mapping: A flat mapping, typically the parsed block returned by
+            :func:`split_frontmatter`.
+
+    Returns:
+        A populated :class:`DocumentMetadata`.
+    """
+    fields: dict[str, Any] = {}
+    extra: dict[str, Any] = {}
+    for key, value in mapping.items():
+        if key in _METADATA_FIELD_NAMES and value is not None:
+            fields[key] = value
+        else:
+            extra[key] = value
+    if extra:
+        fields["extra"] = extra
+    return DocumentMetadata(**fields)
+
+
+def _normalize_metadata(doc_metadata: dict[str, Any]) -> DocumentMetadata:
+    """Map a loader ``Document.metadata`` dict into :class:`DocumentMetadata`.
+
+    ``doc_metadata`` follows the canonical FEAT-125 shape produced by
+    ``AbstractLoader.create_metadata`` (abstract.py:864): top-level keys
+    (``url``, ``source``, ``filename``, ``type``, ``source_type``,
+    ``created_at``, ``category``, ``document_meta``, plus loader-specific
+    extras) and a closed-shape ``document_meta`` sub-dict (``source_type``,
+    ``category``, ``type``, ``language``, ``title``).
+
+    Canonical keys map onto named ``DocumentMetadata`` fields where a
+    field exists (``document_meta.title`` → ``title``,
+    ``document_meta.language`` → ``language``, top-level ``created_at`` →
+    ``created_at``, ``word_count`` → ``word_count``). Everything else —
+    including the remainder of ``document_meta`` and any nested
+    ``extracted_metadata`` block from ``MarkdownLoader`` — lands in
+    ``extra``, nothing is silently dropped.
+
+    Args:
+        doc_metadata: The ``metadata`` dict off a loader-returned
+            ``Document``.
+
+    Returns:
+        A populated :class:`DocumentMetadata`.
+    """
+    remaining = dict(doc_metadata)
+    fields: dict[str, Any] = {}
+    extra: dict[str, Any] = {}
+
+    document_meta = remaining.pop("document_meta", None)
+    if isinstance(document_meta, dict):
+        for key, value in document_meta.items():
+            target = _DOCUMENT_META_NAMED_FIELDS.get(key)
+            if target is not None and value:
+                fields[target] = value
+            elif value is not None:
+                extra[f"document_meta.{key}"] = value
+
+    extracted_metadata = remaining.pop("extracted_metadata", None)
+    if isinstance(extracted_metadata, dict):
+        for key, value in extracted_metadata.items():
+            if key == "title" and "title" not in fields and value:
+                fields["title"] = value
+            elif key == "word_count" and value is not None:
+                fields.setdefault("word_count", value)
+            elif value is not None:
+                extra[f"extracted_metadata.{key}"] = value
+
+    created_at = remaining.pop("created_at", None)
+    if created_at:
+        fields["created_at"] = str(created_at)
+
+    word_count = remaining.pop("word_count", None)
+    if word_count is not None:
+        fields.setdefault("word_count", word_count)
+
+    author = remaining.pop("author", None)
+    if author:
+        fields["author"] = author
+
+    modified_at = remaining.pop("modified_at", None)
+    if modified_at:
+        fields["modified_at"] = str(modified_at)
+
+    for key, value in remaining.items():
+        if (
+            key in _METADATA_FIELD_NAMES
+            and key not in _LOADER_METADATA_RESERVED_KEYS
+            and value is not None
+        ):
+            fields.setdefault(key, value)
+        elif value is not None:
+            extra[key] = value
+
+    if extra:
+        fields["extra"] = extra
+    return DocumentMetadata(**fields)
+
+
+def _validate_extracted_text(text: str, path: Path) -> None:
+    """Raise :class:`DocumentAcquisitionError` on unusable extracted text.
+
+    Empty text and text carrying a NUL byte (the mojibake/binary-read-as-
+    text tell) must never reach the triage LLM.
+
+    Args:
+        text: Extracted text to validate.
+        path: Source path, used only for the error message.
+
+    Raises:
+        DocumentAcquisitionError: When ``text`` is empty/whitespace-only,
+            or contains a ``\\x00`` byte.
+    """
+    if not text or not text.strip():
+        raise DocumentAcquisitionError(f"{path}: extraction produced no text")
+    if "\x00" in text:
+        raise DocumentAcquisitionError(
+            f"{path}: extracted text contains a NUL byte "
+            "(likely a binary file misread as text)"
+        )
+
+
+class DocumentAcquirer:
+    """Extracts markdown text + metadata from a :class:`DocumentRef`.
+
+    Plain-text extensions (:data:`PLAIN_TEXT_EXTENSIONS`) are read directly
+    off disk with no optional dependency. Everything else is dispatched
+    through ``parrot_loaders.factory.get_loader_class``, imported lazily
+    (inside :meth:`acquire`, never at module scope) so core ``ai-parrot``
+    never hard-depends on the optional ``ai-parrot-loaders`` satellite.
+
+    Attributes:
+        fetch_timeout: Timeout, in seconds, for a URL fetch.
+        max_bytes: Maximum number of bytes to download for a URL source.
+        cache_dir: Optional directory for temporary URL downloads.
+    """
+
+    def __init__(
+        self,
+        *,
+        fetch_timeout: float = 30.0,
+        max_bytes: int = 100 * 1024 * 1024,
+        cache_dir: Path | None = None,
+    ) -> None:
+        """Initialize the acquirer.
+
+        Args:
+            fetch_timeout: Timeout, in seconds, for a URL fetch.
+            max_bytes: Maximum number of bytes to download for a URL
+                source.
+            cache_dir: Optional directory for temporary URL downloads.
+        """
+        self.fetch_timeout = fetch_timeout
+        self.max_bytes = max_bytes
+        self.cache_dir = cache_dir
+
+    async def acquire(self, ref: DocumentRef) -> AcquiredDocument:
+        """Extract text and metadata for a single resolved document.
+
+        Args:
+            ref: The document to acquire.
+
+        Returns:
+            The extracted :class:`AcquiredDocument`.
+
+        Raises:
+            DocumentAcquisitionError: When the document cannot be decoded
+                or fetched. Callers SKIP the document rather than triage
+                undecodable content.
+        """
+        if ref.is_url:
+            return await self._acquire_url(ref)
+        path = Path(ref.uri)
+        if ref.suffix in PLAIN_TEXT_EXTENSIONS:
+            return await self._acquire_plaintext(ref, path)
+        return await self._acquire_via_loader(ref, path)
+
+    async def _acquire_url(self, ref: DocumentRef) -> AcquiredDocument:
+        """Fetch and acquire a remote document. Implemented in TASK-2354."""
+        raise NotImplementedError(
+            "URL acquisition is implemented in TASK-2354"
+        )
+
+    async def _acquire_plaintext(
+        self, ref: DocumentRef, path: Path
+    ) -> AcquiredDocument:
+        """Acquire a plain-text/markdown document with no loader backend.
+
+        Args:
+            ref: The document ref being acquired.
+            path: Local filesystem path for ``ref``.
+
+        Returns:
+            The extracted :class:`AcquiredDocument`, with any leading YAML
+            frontmatter parsed into ``metadata`` and stripped from ``text``.
+
+        Raises:
+            DocumentAcquisitionError: On decode failure or unusable text.
+        """
+        try:
+            raw = await asyncio.to_thread(path.read_text, encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise DocumentAcquisitionError(
+                f"{path}: could not decode as UTF-8 plain text: {exc}"
+            ) from exc
+        except OSError as exc:
+            raise DocumentAcquisitionError(f"{path}: could not be read: {exc}") from exc
+
+        frontmatter, body = split_frontmatter(raw)
+        metadata = _metadata_from_mapping(frontmatter) if frontmatter else DocumentMetadata()
+
+        guessed_type, _ = mimetypes.guess_type(str(path))
+        metadata.content_type = metadata.content_type or guessed_type or "text/plain"
+        metadata.loader = "plaintext"
+
+        _validate_extracted_text(body, path)
+        return AcquiredDocument(ref=ref, text=body, metadata=metadata)
+
+    async def _acquire_via_loader(
+        self, ref: DocumentRef, path: Path
+    ) -> AcquiredDocument:
+        """Acquire a document through a lazily-imported ``parrot_loaders`` loader.
+
+        Args:
+            ref: The document ref being acquired.
+            path: Local filesystem path for ``ref``.
+
+        Returns:
+            The extracted :class:`AcquiredDocument`.
+
+        Raises:
+            DocumentAcquisitionError: When ``ai-parrot-loaders`` is not
+                installed, the loader fails, or extraction yields no
+                usable text.
+        """
+        try:
+            from parrot_loaders.factory import get_loader_class
+        except ImportError as exc:
+            logger.warning(
+                "No loader for %s: ai-parrot-loaders is not installed "
+                "(only %s are readable without it)",
+                path,
+                ", ".join(sorted(PLAIN_TEXT_EXTENSIONS)),
+            )
+            raise DocumentAcquisitionError(
+                f"{path}: ai-parrot-loaders is not installed; cannot extract "
+                f"{ref.suffix or 'this file type'}"
+            ) from exc
+
+        loader_cls = get_loader_class(ref.suffix)
+        loader = loader_cls(str(path))
+        try:
+            docs = await loader._load(str(path))
+        except Exception as exc:
+            raise DocumentAcquisitionError(
+                f"{path}: loader extraction failed: {exc}"
+            ) from exc
+
+        if not docs:
+            raise DocumentAcquisitionError(f"{path}: loader extracted no content")
+
+        text = docs[0].page_content
+        _validate_extracted_text(text, path)
+
+        metadata = _normalize_metadata(docs[0].metadata)
+        guessed_type, _ = mimetypes.guess_type(str(path))
+        metadata.content_type = metadata.content_type or guessed_type
+        metadata.loader = loader.__class__.__name__
+
+        if ref.suffix == ".pdf":
+            try:
+                pdf = pymupdf.open(str(path))
+                try:
+                    metadata.page_count = pdf.page_count
+                finally:
+                    pdf.close()
+            except Exception as exc:  # noqa: BLE001 — page count is nice-to-have, never fatal
+                logger.warning("Could not read page count for %s: %s", path, exc)
+
+        return AcquiredDocument(ref=ref, text=text, metadata=metadata)
