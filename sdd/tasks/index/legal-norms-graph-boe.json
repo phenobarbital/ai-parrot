@@ -90,7 +90,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Imports parse_consolidated from TASK-2372 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2373-boe-datasource.md"
+      "completed_at": "2026-08-23T01:39:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2373-boe-datasource.md"
     },
     {
       "id": "TASK-2374",
