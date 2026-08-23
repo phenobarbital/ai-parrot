@@ -88,7 +88,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Cross-package dependency: needs the chat scope from TASK-2377 (without it get_current_telegram_chat_id() returns None and per-chat mode cannot work) and the capture tool from TASK-2380.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2381-note-mode-and-intent-routing.md"
+      "completed_at": "2026-08-23T02:34:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2381-note-mode-and-intent-routing.md"
     },
     {
       "id": "TASK-2382",
