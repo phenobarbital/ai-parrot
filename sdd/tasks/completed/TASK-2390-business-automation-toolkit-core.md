@@ -247,10 +247,56 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Created the `business_automation` package: `models.py`
+(`OperationKind`, `BusinessOperation`, `ImportRun`) and `toolkit.py`
+(`BusinessAutomationToolkit`). The SUBMIT gate is a **manual, code-level**
+invocation of `ConfirmationGuard.confirm()` inside `run_operation()` —
+not the static, whole-method `AbstractToolkit.confirming_tools` marking.
+This was a necessary design decision: `confirming_tools` is consulted once
+at `get_tools()` time (fixed per method name), but the task requires the
+gate to vary **per resolved operation kind** at call time, and
+`toolkit.run_operation(...)` as tested here is a direct method call — it
+never goes through `ToolManager.execute_tool()`'s automatic grant→confirm
+dispatch at all. `run_operation` therefore builds a minimal
+`SimpleNamespace(name=..., routing_meta={"requires_confirmation": True,
+"confirm_window_seconds": 0, "confirm_template": ...})` stand-in and passes
+it to `self._confirmation_guard.confirm(tool=stub, parameters=params)` —
+verified `ConfirmationGuard.confirm()`/`render_briefing()` read only
+`tool.name`/`tool.routing_meta`, so this is a faithful, non-invented use of
+the real guard, only for SUBMIT operations; DRAFT/READ never call
+`.confirm()` at all. `validate_steps()` runs via `_validate_flow()` —
+binding every node's `TemplatePlan` and calling `ScrapingPlan.validate_steps()`
+— strictly before `_ensure_open()`, so a malformed plan is a clean error
+with no browser ever opened, and a denied SUBMIT confirmation short-circuits
+before `_validate_flow()`/`_ensure_open()` are even reached. `run_operation`
+returns a `run_id` immediately (`asyncio.create_task` pattern mirroring
+`ExecutionPlanToolkit.plan_execute`), with `resume_operation` re-invoking
+`FlowExecutor.run(..., resume_from=...)` against the same run_id slot.
+20 new tests pass (list/describe, SUBMIT gate wired through the real
+`ConfirmationGuard` fail-closed path, spy-guard window/confirm-count tests,
+validate-before-open, run_id immediacy, zero-site-identifier scan). Full
+`packages/ai-parrot-tools/tests/scraping/` + new `tests/business_automation/`
+suites (839 tests) re-run — same 7 pre-existing, unrelated
+`CrawlEngine`/FEAT-013 failures, zero regressions. `ruff check` clean except
+the same `UP006`/`UP035`/`UP037`/`UP045`/`UP007` pyupgrade-style debt already
+established by this feature's other new files (`session_actions.py`
+convention of `typing.Dict`/`List`/`Optional`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Per the task's own explicit exclusion ("NOT in
+scope: loading the plans directory — TASK-2391"), the constructor accepts
+and stores `plans_dir` but does **not** scan it. Operations/flows/templates
+are instead seeded via `operations`/`flows`/`templates` constructor kwargs
+(popped from `**kwargs`, which the given signature explicitly allows) — an
+interim seam that TASK-2391's `TemplatePlanStore` (Module 6, a *separate*
+`store.py` file this task does not create) is expected to populate for real.
+This is disclosed, not silent: documented in both the class docstring and
+inline comments. (2) `_validate_flow()`'s pre-flight validation is
+best-effort for multi-node flows: nodes whose `FlowNode.inputs` reference a
+prior node's output are validated using only the flow's `global_params` +
+caller params (a static lint pass), since the real cross-node data isn't
+available until the flow actually runs — `FlowExecutor` performs the
+authoritative resolution at execution time. All of this task's own test
+flows are single-node, so this limitation isn't exercised by the test suite;
+noting it for whoever builds a multi-node operation later.

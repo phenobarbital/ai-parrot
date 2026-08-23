@@ -133,7 +133,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "The engine; depends on a corrected dispatcher, plan validation and broker auth.",
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2390-business-automation-toolkit-core.md"
+      "completed_at": "2026-08-23T23:46:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2390-business-automation-toolkit-core.md"
     },
     {
       "id": "TASK-2391",
