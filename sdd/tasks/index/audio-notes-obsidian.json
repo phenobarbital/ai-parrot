@@ -14,7 +14,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Only task outside agents/fireflies_wiki.py — lives in ai-parrot-integrations. Shares no files with any other task, so it can run in its own worktree. Must complete before TASK-2381.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2377-telegram-agent-command-chat-scope.md"
+      "completed_at": "2026-08-23T02:17:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2377-telegram-agent-command-chat-scope.md"
     },
     {
       "id": "TASK-2378",
