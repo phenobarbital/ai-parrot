@@ -135,7 +135,7 @@
       "feature_id": "FEAT-451",
       "feature": "wikitoolkit-ingest-documents",
       "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -146,8 +146,8 @@
       "parallelism_notes": "Hot file (cli.py, 2694 lines). Must be last of the implementation tasks so the diff stays a single focused rebase target.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2357-cli-source-argument-wiring.md"
+      "completed_at": "2026-08-23T01:44:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2357-cli-source-argument-wiring.md"
     },
     {
       "id": "TASK-2358",

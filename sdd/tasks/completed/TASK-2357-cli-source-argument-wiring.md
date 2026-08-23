@@ -349,10 +349,54 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Re-anchored the Codebase Contract against `cli.py` at pickup
+time (line numbers matched almost exactly, `ingest` command at line 2280
+as documented). Widened `SOURCE` (`@click.argument("source")`, plain
+`str`), added `--recursive/--no-recursive` and `--fetch-timeout`, updated
+the docstring, deleted `_discover_documents` (verified no other callers
+via grep first), and swapped `_discover_documents(folder)` for
+`resolve_sources(source, recursive=recursive)`. Rewrote `_triage_all` to
+acquire via `DocumentAcquirer`, catching `DocumentAcquisitionError` per
+ref (log + skip + continue) and returning `(entries, acquired_by_uri,
+skipped)` — `acquired_by_uri` is keyed by `str(Path(ref.uri))`, the exact
+value `router.triage()` turns into `entry.source_uri`, deliberately
+avoiding a raw-`ref.uri` key (`Path("https://x/y")` round-trips to
+`"https:/x/y"` — single slash — so a naive key would silently fail to
+match for URLs). `_apply_all` gained an `acquired_by_uri` parameter
+(default `None`) passed through to `orch.ingest(acquired=...)`; the
+`--review` call site is untouched (omits the argument, so it re-acquires
+by necessity, matching spec §7). Added `_report_skipped()` (echoes the
+count; lists paths under `-v/--verbose`, read via
+`click.get_current_context().find_root().params` — no new flag needed,
+reusing the existing group-level `--verbose`) and extended
+`_print_triage_summary()` with an optional `skipped` row. All three
+triaging modes' summary lines (dry-run, interactive, auto) now report the
+skipped count; `--review` doesn't call `_triage_all` at all, so it has no
+skip concept and its summary line is unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Caught and fixed the same scope-boundary mistake as TASK-2356: an initial
+`ruff check --fix` pass touched pre-existing unrelated code. Reverted via
+`git diff`/manual correction was not needed this time because I ran
+`ruff check` WITHOUT `--fix` throughout this task (lesson carried over)
+and hand-verified every finding against a `git show HEAD:...` baseline
+copy before deciding whether to touch it. Result: `git diff --stat`
+shows a 152-line, single-file, non-reformatting diff; the only `cli.py`
+ruff findings are the same 4 pre-existing ones on `dev` before this task
+(F821 `Optional` typo unrelated to `ingest`, two `SIM11x` findings in
+an unrelated function, one `ISC004` in an unrelated docstring block) —
+confirmed byte-identical line-for-line via `git stash`/diff, zero new
+findings; my own new code follows the file's `Optional[X]` convention
+(not `X | None`) since — like `ingest.py` — this file isn't pyupgraded
+yet. `mypy` on `cli.py`: same 15 pre-existing errors (verified via
+`git stash`/diff, only line numbers shifted), zero new. All 52 tests in
+`test_cli.py` pass (44 pre-existing + 8 new in `TestIngestSourceArgument`
+covering single-file, URL, missing-path, `--no-recursive`,
+skip-and-report, `--fetch-timeout` plumbing via a spy on
+`DocumentAcquirer.__init__`, no-double-acquisition via a spy on
+`DocumentAcquirer.acquire` counting exactly 1 call across triage+apply,
+and `_discover_documents` removal). The pre-existing `test_build_unaffected`
+regression guard still passes.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
