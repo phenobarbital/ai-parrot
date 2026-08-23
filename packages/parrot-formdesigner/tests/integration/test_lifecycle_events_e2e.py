@@ -300,9 +300,9 @@ class TestOnBeforeSubmitPayloadReplacement:
 
         orig = handler.validator.validate
 
-        async def capture(f, data):  # type: ignore[no-untyped-def]
+        async def capture(f, data, **kwargs):  # type: ignore[no-untyped-def]
             received.append(dict(data))
-            return await orig(f, data)
+            return await orig(f, data, **kwargs)
 
         handler.validator.validate = capture
         req = _make_request_post(form.form_uid, body={"name": "RAW"})

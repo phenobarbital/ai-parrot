@@ -44,6 +44,27 @@ def _make_form() -> FormSchema:
     )
 
 
+def _make_form_with_visit_context_field() -> FormSchema:
+    """A hand-authored form with a real field literally named `visit_context`.
+
+    Nothing in core/schema.py reserves this name, so a legal (if unusual)
+    form can collide with the store-context envelope key.
+    """
+    return FormSchema(
+        form_id="colliding-form",
+        title="Colliding Form",
+        tenant=_TEST_TENANT,
+        sections=[
+            FormSection(
+                section_id="s1",
+                fields=[
+                    FormField(field_id="visit_context", field_type=FieldType.TEXT, label="Visit Context"),
+                ],
+            )
+        ],
+    )
+
+
 def _make_request(body: dict) -> MagicMock:
     """Minimal aiohttp request mock for validate()/submit_data() (no merge_partials)."""
     req = MagicMock(spec=web.Request)
@@ -143,6 +164,52 @@ class TestSubmitDataVisitContext:
         await handler.submit_data(req)
 
         assert captured["visit_context"] is None
+        assert captured["data"] == {"name": "Alice"}
+
+
+class TestVisitContextFieldNameCollision:
+    """Code-review finding (FEAT-440): a hand-authored form could legally
+    name a real field ``visit_context`` — the envelope key must never
+    silently swallow that field's answer."""
+
+    async def test_real_field_named_visit_context_is_preserved(self):
+        """The colliding key stays an ordinary answer; no context is extracted."""
+        form = _make_form_with_visit_context_field()
+        handler = _make_handler(form)
+        captured = _capture_validate(handler)
+
+        req = _make_request({"visit_context": "some answer value"})
+        await handler.validate(req)
+
+        # Not treated as context...
+        assert captured["visit_context"] is None
+        # ...and NOT stripped from the answers either.
+        assert captured["data"] == {"visit_context": "some answer value"}
+
+    async def test_real_field_named_visit_context_dict_value_also_preserved(self):
+        """Even a dict-shaped answer (indistinguishable in shape from real
+        context) must not be misread as context when the form owns the name."""
+        form = _make_form_with_visit_context_field()
+        handler = _make_handler(form)
+        captured = _capture_validate(handler)
+
+        req = _make_request({"visit_context": {"store_groups": ["Ring of Fire"]}})
+        await handler.submit_data(req)
+
+        assert captured["visit_context"] is None
+        assert captured["data"] == {"visit_context": {"store_groups": ["Ring of Fire"]}}
+
+    async def test_non_colliding_form_still_extracts_normally(self):
+        """Sanity check: the guard is per-form, not global — an ordinary
+        form is unaffected by the collision check."""
+        form = _make_form()
+        handler = _make_handler(form)
+        captured = _capture_validate(handler)
+
+        req = _make_request({"name": "Alice", "visit_context": {"store_groups": ["Best Buy"]}})
+        await handler.validate(req)
+
+        assert captured["visit_context"] == {"store_groups": ["Best Buy"]}
         assert captured["data"] == {"name": "Alice"}
 
 

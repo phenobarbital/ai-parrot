@@ -387,7 +387,9 @@ class FormAPIHandler:
     # Store-context helpers (FEAT-440 spec §3 Module 5)
     # ------------------------------------------------------------------
 
-    def _extract_visit_context(self, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _extract_visit_context(
+        self, form: FormSchema, body: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """Split an optional caller-supplied ``visit_context`` out of the request body.
 
         The render/validate handlers accept a store context from the caller
@@ -403,30 +405,51 @@ class FormAPIHandler:
         rules to fire adds one field:
         ``{"field_a": "...", "visit_context": {"store_groups": [...]}}``.
 
+        Collision guard (code-review finding, FEAT-440): nothing in
+        ``core/schema.py`` reserves ``"visit_context"`` as a ``field_id`` —
+        a hand-authored form (e.g. via ``create_blank_form``) could
+        legally name a real field ``visit_context``, and that field's
+        submitted answer would otherwise be silently intercepted and
+        stripped before ever reaching ``validate()``/storage, with no
+        error surfaced to the caller. Rather than reserving the name
+        globally (a bigger, cross-cutting schema change), this checks
+        THIS form's own fields at extraction time: if it actually has one
+        named ``visit_context``, the key is left alone as an ordinary
+        answer and no context is extracted for this request — logged so
+        the reason store-gated rules never fire for that form is
+        traceable, not silent.
+
         Args:
+            form: The form the request targets — checked for a real
+                ``field_id == "visit_context"`` collision.
             body: The parsed JSON request body (answers, optionally plus a
                 ``visit_context`` key).
 
         Returns:
-            ``(data, validate_kwargs)`` — ``data`` is ``body`` with any
+            ``(data, visit_context)`` — ``data`` is ``body`` with any
             ``visit_context`` key removed (or ``body`` unchanged when
-            absent). ``validate_kwargs`` is ``{"visit_context": {...}}``
-            when a dict-shaped context was supplied, or ``{}`` otherwise —
-            meant to be splatted into ``FormValidator.validate(form, data,
-            **validate_kwargs)`` so a caller that never supplies context
-            reaches ``validate()`` with EXACTLY the same two positional
-            arguments as before this passthrough existed (no keyword-arg
-            surprise for test doubles/callers with a narrower signature).
-            Absent context means no context: a rule referencing a store the
-            caller did not describe does not fire — failing closed is
-            deliberate (spec §3 Module 5).
+            absent, not a dict, or reserved by a real field on ``form``).
+            ``visit_context`` is the extracted dict, or ``None`` when not
+            supplied/applicable. Absent context means no context: a rule
+            referencing a store the caller did not describe does not fire
+            — failing closed is deliberate (spec §3 Module 5).
         """
         raw = body.get("visit_context") if isinstance(body, dict) else None
         if not isinstance(raw, dict):
-            return body, {}
+            return body, None
+
+        if any(f.field_id == "visit_context" for f in form.iter_all_fields()):
+            self.logger.warning(
+                "Form %s has a real field named 'visit_context' — the reserved "
+                "store-context envelope key is disabled for this form; its "
+                "answer is preserved and no visit_context will be applied.",
+                form.form_id,
+            )
+            return body, None
+
         data = dict(body)
         del data["visit_context"]
-        return data, {"visit_context": raw}
+        return data, raw
 
     # ------------------------------------------------------------------
     # Partial-save helpers
@@ -983,8 +1006,8 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        data, validate_kwargs = self._extract_visit_context(body)
-        result = await self.validator.validate(form, data, **validate_kwargs)
+        data, visit_context = self._extract_visit_context(form, body)
+        result = await self.validator.validate(form, data, visit_context=visit_context)
         status = 200 if result.is_valid else 422
         return JSONResponse(
             {"is_valid": result.is_valid, "errors": result.errors},
@@ -1458,7 +1481,7 @@ class FormAPIHandler:
         # Split off an optional caller-supplied store context before it can
         # be treated as an answer field by the merge/lifecycle steps below
         # (spec §3 Module 5) — `data` is pure answers from here on.
-        data, _validate_kwargs = self._extract_visit_context(body)
+        data, visit_context = self._extract_visit_context(form, body)
 
         # lifecycle: outer envelope for onError dispatch on any exception.
         # FormEventAbort from onBeforeSubmit is caught INSIDE and handled
@@ -1523,7 +1546,7 @@ class FormAPIHandler:
                 )
 
             # Validate submission data against form schema
-            result = await self.validator.validate(form, data, **_validate_kwargs)
+            result = await self.validator.validate(form, data, visit_context=visit_context)
             if not result.is_valid:
                 _validation_exc = ValueError(f"Validation failed: {result.errors}")
                 # dispatch onError (best-effort) before the early 422 return

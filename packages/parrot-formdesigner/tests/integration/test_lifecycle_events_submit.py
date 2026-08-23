@@ -175,9 +175,9 @@ class TestOnBeforeSubmit:
         # Capture what the validator receives
         original_validate = handler.validator.validate
 
-        async def capturing_validate(form, data):  # type: ignore[no-untyped-def]
+        async def capturing_validate(form, data, **kwargs):  # type: ignore[no-untyped-def]
             received_payloads.append(dict(data))
-            return await original_validate(form, data)
+            return await original_validate(form, data, **kwargs)
 
         handler.validator.validate = capturing_validate
         req = _make_request(body={"name": "RAW"})
