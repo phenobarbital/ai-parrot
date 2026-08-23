@@ -70,7 +70,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Imports parrot_tools.legal.ids from TASK-2369 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2372-boe-consolidated-parser.md"
+      "completed_at": "2026-08-23T01:34:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2372-boe-consolidated-parser.md"
     },
     {
       "id": "TASK-2373",

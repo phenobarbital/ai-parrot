@@ -239,11 +239,52 @@ class TestBOEParser:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: Implemented `ArticleVersion`/`ParsedNorm` (models.py) and
+`parse_consolidated()` (parser.py) exactly per spec §2. Version chaining
+(`valid_to[n] = valid_from[n+1]`, last `valid_to=None`, `modified_by=None`
+for n=0), `source="boe_consolidada"`/`derived=False` always, and
+`kind="supresion"` implies `text=None` are all enforced as parser
+invariants. `modifica` (Norma→Articulo) relations are derived from each
+non-original version's `id_norma` attribute (article-level granularity,
+which the norma-level `análisis` metadata alone cannot provide); `deroga`
+(Norma→Norma) relations are derived from `analisis/referencias/anteriores`
+entries with `relacion codigo="210"`. Malformed/structurally incomplete
+XML surfaces via `ParsedNorm.errors`, never a silent empty record. 10 unit
+tests pass (`pytest -c pytest.ini packages/ai-parrot-tools/tests/legal/test_boe_parser.py -v`).
+`ruff check` clean (fixed ISC004 string concat, DTZ007 naive-datetime, and
+RUF007 zip-vs-pairwise findings during self-review).
 
-**Completed by**:
-**Date**:
-**Notes**:
-**BOE segmentation finding (spec §8)**:
+**BOE segmentation finding (spec §8)**: Verified live against the real BOE
+datos abiertos `legislacion-consolidada` API
+(`https://www.boe.es/datosabiertos/api/legislacion-consolidada/id/<BOE-ID>`,
+`Accept: application/xml`) for 3 real norms: BOE-A-2015-10566 (Ley
+40/2015), BOE-A-2018-16673 (LOPDGDD), and BOE-A-1889-4763 (Código Civil,
+~750KB response). Segmentation IS uniform across all three: `<texto>`
+contains `<bloque id="..." tipo="precepto" titulo="...">` per article/
+disposición, each with one or more `<version id_norma="..."
+fecha_publicacion="..." fecha_vigencia="...">` dated wording blocks in
+ascending chronological document order — no normalisation step was needed.
+`fecha_vigencia` maps directly to `valid_from`. Amendment annotations
+appear as `<blockquote><p class="nota_pie">Se modifica/añade/suprime
+...</p></blockquote>` inside each non-original version, giving a reliable
+keyword-based `kind` classification signal. One gap: none of the 3 sampled
+norms contained a genuine *whole-article* suppression (an entire `<bloque>`
+version with empty body) within the portions inspected — Código Civil
+Art. 681 showed sub-paragraph-level suppression ("Segundo. Sin contenido.")
+but the article itself persisted. The fixture's `Articulo 999` block is
+therefore a constructed (clearly XML-commented, non-verbatim) addition
+exercising the `kind="supresion"` → `text=None` code path, following the
+authentic BOE `nota_pie` annotation convention. `Artículo 50` of Ley
+40/2015 is a genuine, hand-verifiable 3-version amendment chain (original
+2015 → Real Decreto-ley 36/2020 → Ley 22/2021) checked into the fixture
+verbatim, along with real `analisis/referencias/anteriores` DEROGA entries
+— useful raw material for TASK-2376's end-to-end amendment-chain test.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. One design decision not explicit in the
+spec: `modifica` relations are sourced from per-version `id_norma`
+(article-level) rather than the norma-level `analisis/referencias`
+MODIFICA entries, because the ontology's `modifica` relation (TASK-2370)
+is fixed to `Norma → Articulo`, which only the per-version data can supply
+at the correct granularity.
