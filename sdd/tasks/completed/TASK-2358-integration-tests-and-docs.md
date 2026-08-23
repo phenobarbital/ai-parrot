@@ -386,3 +386,64 @@ own test technique) rather than literally uninstalling the package from
 this shared dev venv, which would have risked breaking unrelated test
 suites. `test_undecodable_never_reaches_llm` exercises this path
 directly and deterministically.
+
+## Code Review Disposition (post-completion)
+
+The `code-reviewer` agent reviewed the full `dev...HEAD` diff (874 tests
+passing, 1 pre-existing unrelated failure) and raised 4 IMPORTANT
+findings plus suggestions/nitpicks. Disposition:
+
+1. **CONFIRM — fixed.** The `except (FileNotFoundError, OSError)` swallow
+   in `ingest.py`'s Step 1 was gated on `triage is not None`, broader than
+   the URL-only motivation it was introduced for — a missing *local* file
+   between triage and apply would now proceed silently instead of
+   erroring. Narrowed to `urlparse(source_uri).scheme in ("http",
+   "https")` so the swallow is scoped exactly to URL sources; a missing
+   local file still hard-errors via `_error_report`, unchanged from
+   before this feature. See commit `db1412e9b`.
+2. **CONFIRM — fixed.** 4 new `UP045` (`Optional[X]` vs `X | None`) ruff
+   findings were genuinely introduced by this feature's own new code in
+   `ingest.py` (`_provenance_from`'s signature, `ingest()`'s new
+   `acquired` param) — inconsistent with this same feature's sibling new
+   code in `documents.py`/`sources.py`, which are fully modern. Converted
+   those specific 2 signatures to `X | None`; the file's ~15 remaining
+   pre-existing `Optional[X]` occurrences (unrelated, predate this
+   feature, part of a larger not-yet-pyupgraded file) are deliberately
+   left untouched — ruff/mypy diffed against `dev` confirm zero remaining
+   *new* findings from this feature. See commit `db1412e9b`.
+3. **CONFIRM — fixed.** The literal acceptance criterion "asserted
+   directly against the stub adapter's received content, not inferred"
+   for `.md` frontmatter stripping had no test exercising the real
+   `router.triage()` call path — `test_strips_md_frontmatter` in
+   `test_documents.py` only asserted at the `DocumentAcquirer` unit
+   level. Added `test_md_frontmatter_stripped_before_triage` to
+   `test_integration.py`, asserting directly against
+   `_FakeTriageAdapter.received_prompts`. See commit `db1412e9b`.
+4. **ESCALATE — not fixed, disclosed.** A URL source's persisted
+   `SourceManifestEntry.source_uri` is the single-slash-collapsed
+   `str(Path(ref.uri))` form (e.g. `"https:/host/a.pdf"`), not the
+   original double-slash URL — `pathlib.Path` collapses this on
+   construction regardless of `.resolve()`. This is consistent
+   everywhere (frontmatter's `source_url` field, set independently from
+   `DocumentMetadata.source_url`, IS correct), so it is not a
+   functional/regression risk, but anyone reading the `sources` table
+   directly for a URL source sees a corrupted URL string. Root cause is
+   `IngestTriageRouter.triage(path: Path, ...)`'s FROZEN signature
+   (spec §1 Non-Goals; TASK-2357's own contract explicitly sanctions
+   `Path(ref.uri)`) forcing URL identity through `pathlib.Path`. Fixing
+   this properly needs a dedicated URL-identity representation across
+   `triage.py`/`ingest.py`/`sources.py`, which is a genuine redesign, not
+   a bug-fix-sized change — left as a follow-up candidate for a future
+   spec delta, not addressed in this feature. Already disclosed in the
+   original completion note above.
+
+Suggestions/nitpicks (SUGGESTION/🟡, NITPICK/💡 tier — noted, not fixed,
+per Cardinal Rule against unbounded scope creep): the `no_parrot_loaders`
+fixture is duplicated across `test_documents.py`/`test_ingest.py`/
+`test_cli.py` rather than centralized in `conftest.py`;
+`record_document_metadata`'s read-modify-write in `sources.py` has no
+locking (low risk — `wikitoolkit ingest` is single-process); calling
+`loader._load()` (underscore-prefixed) directly in `documents.py` matches
+an existing codebase precedent (`GraphIndexBuilder`'s `LoaderExtractor`);
+`render_frontmatter`'s docstring is slightly imprecise about when it
+returns `""`.
