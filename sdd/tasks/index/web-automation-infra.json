@@ -14,7 +14,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Creates session_actions.py, which TASK-2385/2386 then extend. Must land first.",
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2384-session-actions-scaffold-auth-cookies.md"
+      "completed_at": "2026-08-23T22:47:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2384-session-actions-scaffold-auth-cookies.md"
     },
     {
       "id": "TASK-2385",
